@@ -1,0 +1,138 @@
+package com.influora.web;
+
+import com.influora.common.ApiResponse;
+import com.influora.security.AuthPrincipal;
+import com.influora.service.DealService;
+import com.influora.service.DisputeService;
+import com.influora.web.dto.dispute.DisputeDtos.DisputeResponse;
+import com.influora.web.dto.dispute.DisputeDtos.OpenDisputeRequest;
+import com.influora.web.dto.deal.DealDtos.CounterRequest;
+import com.influora.web.dto.deal.DealDtos.CreateDealRequest;
+import com.influora.web.dto.deal.DealDtos.DealMessageResponse;
+import com.influora.web.dto.deal.DealDtos.DealResponse;
+import com.influora.web.dto.deal.DealDtos.OkResponse;
+import com.influora.web.dto.deal.DealDtos.RejectRequest;
+import com.influora.web.dto.deal.DealDtos.SendMessageRequest;
+import com.influora.web.dto.deliverable.CreatorDeliverableDtos.DeliverableListItem;
+import jakarta.validation.Valid;
+import java.util.List;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * Task #9 — unified deal room for brand + creator. Backed by {@link
+ * com.influora.domain.entity.Collaboration} + {@link com.influora.domain.entity.DealMessage}
+ * timeline. Identity always from JWT {@link AuthPrincipal} via {@code CreatorContextService} /
+ * {@code BrandContextService} — never trust path-param user ids.
+ */
+@RestController
+@RequestMapping("/deals")
+public class DealController {
+
+    private final DealService dealService;
+    private final DisputeService disputeService;
+
+    public DealController(DealService dealService, DisputeService disputeService) {
+        this.dealService = dealService;
+        this.disputeService = disputeService;
+    }
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<DealResponse>>> list(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(required = false, defaultValue = "all") String status) {
+        return ResponseEntity.ok(ApiResponse.ok(dealService.list(principal, status)));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<DealResponse>> get(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String id) {
+        return ResponseEntity.ok(ApiResponse.ok(dealService.get(principal, id)));
+    }
+
+    @PostMapping
+    public ResponseEntity<ApiResponse<DealResponse>> create(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @Valid @RequestBody CreateDealRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.ok(dealService.createProposal(principal, body)));
+    }
+
+    @PostMapping("/{id}/accept")
+    public ResponseEntity<ApiResponse<DealResponse>> accept(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String id,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ResponseEntity.ok(ApiResponse.ok(dealService.accept(principal, id, idempotencyKey)));
+    }
+
+    @PostMapping("/{id}/reject")
+    public ResponseEntity<ApiResponse<OkResponse>> reject(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String id,
+            @RequestBody(required = false) RejectRequest body) {
+        return ResponseEntity.ok(ApiResponse.ok(dealService.reject(principal, id, body)));
+    }
+
+    @PostMapping("/{id}/counter")
+    public ResponseEntity<ApiResponse<DealResponse>> counter(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String id,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody CounterRequest body) {
+        return ResponseEntity.ok(
+                ApiResponse.ok(dealService.counter(principal, id, body, idempotencyKey)));
+    }
+
+    @GetMapping("/{dealId}/messages")
+    public ResponseEntity<ApiResponse<List<DealMessageResponse>>> listMessages(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String dealId,
+            @RequestParam(required = false) String before) {
+        return ResponseEntity.ok(ApiResponse.ok(dealService.listMessages(principal, dealId, before)));
+    }
+
+    @PostMapping("/{dealId}/messages")
+    public ResponseEntity<ApiResponse<DealMessageResponse>> sendMessage(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String dealId,
+            @Valid @RequestBody SendMessageRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.ok(dealService.sendMessage(principal, dealId, body)));
+    }
+
+    @PostMapping("/{dealId}/messages/read")
+    public ResponseEntity<ApiResponse<OkResponse>> markRead(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String dealId) {
+        return ResponseEntity.ok(ApiResponse.ok(dealService.markRead(principal, dealId)));
+    }
+
+    /**
+     * Brand Deal Room persistence gap closure (B-1) — previously 404'd; {@code
+     * src/lib/api.ts}'s {@code deliverables.list} already called this exact path expecting it.
+     */
+    @GetMapping("/{dealId}/deliverables")
+    public ResponseEntity<ApiResponse<List<DeliverableListItem>>> listDeliverables(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String dealId) {
+        return ResponseEntity.ok(ApiResponse.ok(dealService.listDeliverables(principal, dealId)));
+    }
+
+    /** Task #34 — either party may open a dispute; identity resolved in {@link DisputeService}. */
+    @PostMapping("/{dealId}/disputes")
+    public ResponseEntity<ApiResponse<DisputeResponse>> openDispute(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String dealId,
+            @Valid @RequestBody OpenDisputeRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.ok(disputeService.openDispute(principal, dealId, body)));
+    }
+}

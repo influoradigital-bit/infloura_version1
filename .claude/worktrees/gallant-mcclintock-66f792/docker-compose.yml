@@ -1,0 +1,24 @@
+# Local MySQL 8 for influora-api (Spring Boot + Flyway)
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: influora-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: influora
+      MYSQL_USER: influora
+      MYSQL_PASSWORD: influora
+    ports:
+      - "3306:3306"
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - influora_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  influora_mysql_data:

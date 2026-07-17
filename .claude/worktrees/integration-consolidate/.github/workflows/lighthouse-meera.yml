@@ -1,0 +1,53 @@
+name: Lighthouse — Meera workspace (M2.5 DoD gate)
+
+# Closes FRONTEND-BUILD-SPEC-MEERA.md §9 "Lighthouse ≥85 mobile; no layout shift"
+# for /brand/meera. The route is behind ProtectedRoute (src/App.tsx), and the
+# ?demo=true bypass is dead-stripped from prod builds, so the job seeds a
+# brand_token via puppeteer-core before Lighthouse navigates. See
+# ci/lighthouse-meera.mjs for the full rationale.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lighthouse-meera:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      LH_ORIGIN: http://localhost:4173
+      LH_PERF_MIN: '85'
+      LH_CLS_MAX: '0.01'
+      # The script spawns and tears down `vite preview` itself.
+      LH_MANAGE_SERVER: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build
+        run: npm run build
+
+      # google-chrome-stable is preinstalled on ubuntu-latest; pin its path so
+      # puppeteer-core (which downloads no Chromium) drives it.
+      - name: Locate Chrome
+        run: echo "LH_CHROME_PATH=$(which google-chrome || which google-chrome-stable || which chromium-browser)" >> "$GITHUB_ENV"
+
+      - name: Lighthouse mobile gate (/brand/meera)
+        run: npm run lh:meera
+
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-meera-mobile
+          path: ci/.lighthouse/
+          if-no-files-found: warn

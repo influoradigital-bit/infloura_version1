@@ -1,0 +1,1522 @@
+import * as React from 'react';
+import { lazy, Suspense } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import {
+  Search,
+  Filter,
+  X,
+  Heart,
+  MessageSquare,
+  Send,
+  ExternalLink,
+  CheckCircle2,
+  Users,
+  TrendingUp,
+  MapPin,
+  Grid3X3,
+  List,
+  ChevronDown,
+  SlidersHorizontal,
+  Bookmark,
+  BookmarkCheck,
+  Sparkles,
+  Plus,
+  IndianRupee,
+} from 'lucide-react';
+
+import { cn } from '@/lib/utils';
+import type { Platform, CreatorProfile } from '@/lib/types';
+import { api, isApiLive, ApiError } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Slider } from '@/components/ui/slider';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+  SheetFooter,
+} from '@/components/ui/sheet';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { CanvasFallback } from '@/components/3d';
+
+const DiscoverCanvasGate = lazy(() =>
+  import('@/components/3d/DiscoverCanvas').then((m) => ({ default: m.DiscoverCanvasGate })),
+);
+
+// Indian cities for filter
+const INDIAN_CITIES = [
+  'Mumbai',
+  'Delhi',
+  'Bangalore',
+  'Hyderabad',
+  'Chennai',
+  'Kolkata',
+  'Pune',
+  'Ahmedabad',
+  'Jaipur',
+  'Lucknow',
+  'Chandigarh',
+  'Goa',
+  'Kochi',
+  'Indore',
+  'Surat',
+];
+
+// Mock creator data with Indian locations and INR pricing
+const mockCreators: CreatorProfile[] = [
+  {
+    id: '1',
+    userId: 'u1',
+    displayName: 'Priya Sharma',
+    bio: 'Fashion & lifestyle creator from Mumbai. Sharing daily OOTDs, beauty tips and travel diaries with 9L+ followers.',
+    avatarUrl: undefined,
+    coverImageUrl: undefined,
+    location: 'Mumbai, Maharashtra',
+    categories: ['Fashion', 'Lifestyle', 'Beauty'],
+    platforms: [
+      { platform: 'INSTAGRAM', handle: '@priyasharma', followers: 920000, engagementRate: 4.8, isVerified: true },
+      { platform: 'YOUTUBE', handle: 'PriyaSharmaVlogs', followers: 450000, engagementRate: 3.5, isVerified: true },
+    ],
+    totalFollowers: 1370000,
+    engagementRate: 4.2,
+    averageRate: 75000,
+    currency: 'INR',
+    isVerified: true,
+    portfolioItems: [],
+    languages: ['Hindi', 'English'],
+    contentStyles: ['Aesthetic', 'Minimalist', 'Trendy'],
+  },
+  {
+    id: '2',
+    userId: 'u2',
+    displayName: 'Arjun Kapoor',
+    bio: 'Tech reviewer & gadget enthusiast. Honest reviews in Hindi & English. 5L+ tech-savvy community.',
+    avatarUrl: undefined,
+    coverImageUrl: undefined,
+    location: 'Bangalore, Karnataka',
+    categories: ['Technology', 'Gadgets', 'Reviews'],
+    platforms: [
+      { platform: 'YOUTUBE', handle: 'ArjunTechReview', followers: 680000, engagementRate: 5.2, isVerified: true },
+      { platform: 'INSTAGRAM', handle: '@arjuntech', followers: 220000, engagementRate: 4.1, isVerified: true },
+    ],
+    totalFollowers: 900000,
+    engagementRate: 4.6,
+    averageRate: 50000,
+    currency: 'INR',
+    isVerified: true,
+    portfolioItems: [],
+    languages: ['Hindi', 'English'],
+    contentStyles: ['Educational', 'Professional', 'Detailed'],
+  },
+  {
+    id: '3',
+    userId: 'u3',
+    displayName: 'Sneha Reddy',
+    bio: 'Mom of twins, home decor lover. Sharing parenting tips, DIY home hacks, and family vlogs from Hyderabad.',
+    avatarUrl: undefined,
+    coverImageUrl: undefined,
+    location: 'Hyderabad, Telangana',
+    categories: ['Lifestyle', 'Home Decor', 'Parenting'],
+    platforms: [
+      { platform: 'INSTAGRAM', handle: '@snehareddy', followers: 540000, engagementRate: 6.1, isVerified: true },
+      { platform: 'YOUTUBE', handle: 'SnehaFamilyVlogs', followers: 320000, engagementRate: 5.8, isVerified: false },
+    ],
+    totalFollowers: 860000,
+    engagementRate: 5.9,
+    averageRate: 45000,
+    currency: 'INR',
+    isVerified: true,
+    portfolioItems: [],
+    languages: ['Telugu', 'Hindi', 'English'],
+    contentStyles: ['Warm', 'Authentic', 'Family-friendly'],
+  },
+  {
+    id: '4',
+    userId: 'u4',
+    displayName: 'Vikram Singh',
+    bio: 'Fitness coach & nutrition expert. Helping India get fit, one workout at a time. 7L+ fitness community.',
+    avatarUrl: undefined,
+    coverImageUrl: undefined,
+    location: 'Delhi, NCR',
+    categories: ['Fitness', 'Health', 'Nutrition'],
+    platforms: [
+      { platform: 'INSTAGRAM', handle: '@vikramfitness', followers: 780000, engagementRate: 5.5, isVerified: true },
+      { platform: 'YOUTUBE', handle: 'VikramFitIndia', followers: 420000, engagementRate: 4.8, isVerified: true },
+    ],
+    totalFollowers: 1200000,
+    engagementRate: 5.2,
+    averageRate: 65000,
+    currency: 'INR',
+    isVerified: true,
+    portfolioItems: [],
+    languages: ['Hindi', 'English', 'Punjabi'],
+    contentStyles: ['Motivational', 'Educational', 'High-energy'],
+  },
+  {
+    id: '5',
+    userId: 'u5',
+    displayName: 'Ananya Menon',
+    bio: 'Food blogger & home chef. South Indian recipes with a modern twist. 4L+ foodies following!',
+    avatarUrl: undefined,
+    coverImageUrl: undefined,
+    location: 'Chennai, Tamil Nadu',
+    categories: ['Food', 'Cooking', 'Recipes'],
+    platforms: [
+      { platform: 'INSTAGRAM', handle: '@ananyacooks', followers: 380000, engagementRate: 7.2, isVerified: true },
+      { platform: 'YOUTUBE', handle: 'AnanyaKitchen', followers: 290000, engagementRate: 6.5, isVerified: false },
+    ],
+    totalFollowers: 670000,
+    engagementRate: 6.8,
+    averageRate: 35000,
+    currency: 'INR',
+    isVerified: true,
+    portfolioItems: [],
+    languages: ['Tamil', 'English'],
+    contentStyles: ['Authentic', 'Tutorial', 'Homestyle'],
+  },
+  {
+    id: '6',
+    userId: 'u6',
+    displayName: 'Rohan Mehta',
+    bio: 'Travel vlogger exploring India & beyond. Adventure, culture, and hidden gems. 8L+ travel enthusiasts.',
+    avatarUrl: undefined,
+    coverImageUrl: undefined,
+    location: 'Pune, Maharashtra',
+    categories: ['Travel', 'Adventure', 'Culture'],
+    platforms: [
+      { platform: 'YOUTUBE', handle: 'RohanTravels', followers: 920000, engagementRate: 4.9, isVerified: true },
+      { platform: 'INSTAGRAM', handle: '@rohanmehta', followers: 450000, engagementRate: 5.1, isVerified: true },
+    ],
+    totalFollowers: 1370000,
+    engagementRate: 5.0,
+    averageRate: 80000,
+    currency: 'INR',
+    isVerified: true,
+    portfolioItems: [],
+    languages: ['Hindi', 'English', 'Marathi'],
+    contentStyles: ['Cinematic', 'Adventure', 'Documentary'],
+  },
+  {
+    id: '7',
+    userId: 'u7',
+    displayName: 'Kavya Nair',
+    bio: 'Beauty & skincare creator. Honest product reviews, makeup tutorials, and skincare routines for Indian skin.',
+    avatarUrl: undefined,
+    coverImageUrl: undefined,
+    location: 'Kochi, Kerala',
+    categories: ['Beauty', 'Skincare', 'Makeup'],
+    platforms: [
+      { platform: 'INSTAGRAM', handle: '@kavyabeauty', followers: 620000, engagementRate: 5.8, isVerified: true },
+      { platform: 'YOUTUBE', handle: 'KavyaGlam', followers: 380000, engagementRate: 4.5, isVerified: true },
+    ],
+    totalFollowers: 1000000,
+    engagementRate: 5.2,
+    averageRate: 55000,
+    currency: 'INR',
+    isVerified: true,
+    portfolioItems: [],
+    languages: ['Malayalam', 'Hindi', 'English'],
+    contentStyles: ['Tutorial', 'Review', 'Aesthetic'],
+  },
+  {
+    id: '8',
+    userId: 'u8',
+    displayName: 'Aditya Joshi',
+    bio: 'Finance & investing made simple. Helping millennials build wealth. 3L+ financially savvy followers.',
+    avatarUrl: undefined,
+    coverImageUrl: undefined,
+    location: 'Ahmedabad, Gujarat',
+    categories: ['Finance', 'Investing', 'Education'],
+    platforms: [
+      { platform: 'YOUTUBE', handle: 'AdityaFinance', followers: 420000, engagementRate: 4.2, isVerified: true },
+      { platform: 'INSTAGRAM', handle: '@adityamoney', followers: 180000, engagementRate: 3.8, isVerified: false },
+    ],
+    totalFollowers: 600000,
+    engagementRate: 4.0,
+    averageRate: 40000,
+    currency: 'INR',
+    isVerified: true,
+    portfolioItems: [],
+    languages: ['Hindi', 'Gujarati', 'English'],
+    contentStyles: ['Educational', 'Explainer', 'Data-driven'],
+  },
+];
+
+// Mock campaigns for invite modal
+const mockCampaigns = [
+  { id: 'c1', name: 'Diwali Collection Launch 2024', status: 'ACTIVE' },
+  { id: 'c2', name: 'Summer Skincare Range', status: 'ACTIVE' },
+  { id: 'c3', name: 'Fitness App Promotion', status: 'DRAFT' },
+];
+
+// Format currency in INR
+const formatINR = (amount: number): string => {
+  if (amount >= 100000) {
+    return `₹${(amount / 100000).toFixed(1)}L`;
+  }
+  if (amount >= 1000) {
+    return `₹${(amount / 1000).toFixed(0)}K`;
+  }
+  return `₹${amount}`;
+};
+
+// Format followers
+const formatFollowers = (num: number): string => {
+  if (num >= 10000000) return `${(num / 10000000).toFixed(1)}Cr`;
+  if (num >= 100000) return `${(num / 100000).toFixed(1)}L`;
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+  return num.toString();
+};
+
+const platforms: Platform[] = ['INSTAGRAM', 'YOUTUBE', 'TIKTOK', 'TWITTER'];
+const categories = [
+  'Fashion',
+  'Beauty',
+  'Lifestyle',
+  'Technology',
+  'Fitness',
+  'Food',
+  'Travel',
+  'Parenting',
+  'Finance',
+  'Education',
+  'Entertainment',
+  'Gaming',
+];
+
+const contentStyles = [
+  'Aesthetic',
+  'Educational',
+  'Entertainment',
+  'Tutorial',
+  'Review',
+  'Vlog',
+  'Comedy',
+  'Motivational',
+];
+
+const languages = ['Hindi', 'English', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Bengali', 'Marathi', 'Gujarati', 'Punjabi'];
+
+export function CreatorDiscovery() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const liveApi = isApiLive();
+
+  const [apiCreators, setApiCreators] = React.useState<CreatorProfile[]>([]);
+  const [apiLoading, setApiLoading] = React.useState(false);
+  const [inviteCampaigns, setInviteCampaigns] = React.useState(mockCampaigns);
+
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [selectedPlatforms, setSelectedPlatforms] = React.useState<Platform[]>([]);
+  const [selectedCategories, setSelectedCategories] = React.useState<string[]>([]);
+  const [selectedCities, setSelectedCities] = React.useState<string[]>([]);
+  const [selectedLanguages, setSelectedLanguages] = React.useState<string[]>([]);
+  const [followerRange, setFollowerRange] = React.useState<[number, number]>([0, 10000000]);
+  const [priceRange, setPriceRange] = React.useState<[number, number]>([5000, 200000]);
+  const [engagementRange, setEngagementRange] = React.useState<[number, number]>([0, 15]);
+  const [verifiedOnly, setVerifiedOnly] = React.useState(false);
+  const [sortBy, setSortBy] = React.useState<'relevance' | 'followers' | 'engagement' | 'price_low' | 'price_high'>('relevance');
+  const [viewMode, setViewMode] = React.useState<'grid' | 'list'>('grid');
+  
+  // UI state
+  const [savedCreators, setSavedCreators] = React.useState<string[]>([]);
+  const [isFilterOpen, setIsFilterOpen] = React.useState(false);
+  const [isInviteOpen, setIsInviteOpen] = React.useState(false);
+  const [inviteCreator, setInviteCreator] = React.useState<CreatorProfile | null>(null);
+  const [selectedCampaign, setSelectedCampaign] = React.useState('');
+  const [inviteMessage, setInviteMessage] = React.useState('');
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [createNewCampaign, setCreateNewCampaign] = React.useState(false);
+  
+  // Structured Proposal State
+  const [proposalStep, setProposalStep] = React.useState<'campaign' | 'proposal' | 'confirm'>('campaign');
+  const [proposalData, setProposalData] = React.useState({
+    deliverables: [{ type: 'REEL', count: 1 }],
+    budget: 0,
+    deadline: '',
+    usageRights: '3_MONTHS',
+    exclusivity: false,
+    revisionCap: 2,
+  });
+
+  const handleOpenInvite = (creator: CreatorProfile) => {
+    setInviteCreator(creator);
+    setIsInviteOpen(true);
+    setCreateNewCampaign(false);
+    setSelectedCampaign('');
+    setProposalStep('campaign');
+    setProposalData({
+      deliverables: [{ type: 'REEL', count: 1 }],
+      budget: creator.averageRate || 50000,
+      deadline: '',
+      usageRights: '3_MONTHS',
+      exclusivity: false,
+      revisionCap: 2,
+    });
+    setInviteMessage('');
+  };
+
+  const handleInvite = async () => {
+    if (createNewCampaign) {
+      navigate(`/brand/campaigns/new?creator=${inviteCreator?.id}`);
+      setIsInviteOpen(false);
+      return;
+    }
+
+    // Step flow for structured proposal
+    if (proposalStep === 'campaign' && selectedCampaign) {
+      setProposalStep('proposal');
+      return;
+    }
+
+    if (proposalStep === 'proposal') {
+      setProposalStep('confirm');
+      return;
+    }
+
+    if (!inviteCreator?.id || !selectedCampaign) return;
+
+    setIsSubmitting(true);
+    try {
+      if (liveApi) {
+        await api.creators.invite(inviteCreator.id, selectedCampaign, inviteMessage || undefined);
+        toast({
+          title: 'Invitation sent',
+          description: `${inviteCreator.displayName} has been invited to the campaign.`,
+        });
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+      setIsInviteOpen(false);
+      setSelectedCampaign('');
+      setInviteMessage('');
+      setInviteCreator(null);
+      setProposalStep('campaign');
+      navigate('/brand/chat');
+    } catch (e) {
+      const message =
+        e instanceof ApiError ? e.message : 'Could not send invitation. Try again.';
+      toast({ title: 'Invite failed', description: message, variant: 'destructive' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const togglePlatform = (platform: Platform) => {
+    setSelectedPlatforms((prev) =>
+      prev.includes(platform) ? prev.filter((p) => p !== platform) : [...prev, platform]
+    );
+  };
+
+  const toggleCategory = (category: string) => {
+    setSelectedCategories((prev) =>
+      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
+    );
+  };
+
+  const toggleCity = (city: string) => {
+    setSelectedCities((prev) =>
+      prev.includes(city) ? prev.filter((c) => c !== city) : [...prev, city]
+    );
+  };
+
+  const toggleLanguage = (language: string) => {
+    setSelectedLanguages((prev) =>
+      prev.includes(language) ? prev.filter((l) => l !== language) : [...prev, language]
+    );
+  };
+
+  const toggleSaved = async (creatorId: string) => {
+    const nextSaved = !savedCreators.includes(creatorId);
+    setSavedCreators((prev) =>
+      nextSaved ? [...prev, creatorId] : prev.filter((id) => id !== creatorId),
+    );
+    if (!liveApi) return;
+    try {
+      await api.creators.toggleSaved(creatorId, nextSaved);
+    } catch {
+      setSavedCreators((prev) =>
+        nextSaved ? prev.filter((id) => id !== creatorId) : [...prev, creatorId],
+      );
+      toast({ title: 'Could not update saved list', variant: 'destructive' });
+    }
+  };
+
+  React.useEffect(() => {
+    if (!liveApi) return;
+    let cancelled = false;
+    const run = async () => {
+      setApiLoading(true);
+      try {
+        const list = await api.creators.search({
+          q: searchQuery || undefined,
+          city: selectedCities.length ? selectedCities.join(',') : undefined,
+          platforms: selectedPlatforms.length ? selectedPlatforms : undefined,
+          verticals: selectedCategories.length
+            ? selectedCategories.map((c) => c.toLowerCase())
+            : undefined,
+          minFollowers: followerRange[0] > 0 ? followerRange[0] : undefined,
+          maxFollowers: followerRange[1] < 10000000 ? followerRange[1] : undefined,
+          minRate: priceRange[0] > 5000 ? priceRange[0] : undefined,
+          maxRate: priceRange[1] < 200000 ? priceRange[1] : undefined,
+          limit: 50,
+        });
+        if (!cancelled) {
+          setApiCreators(list);
+          const saved = list.filter((c) => (c as CreatorProfile & { saved?: boolean }).saved).map((c) => c.id);
+          if (saved.length) setSavedCreators((prev) => [...new Set([...prev, ...saved])]);
+        }
+      } catch {
+        if (!cancelled) setApiCreators([]);
+      } finally {
+        if (!cancelled) setApiLoading(false);
+      }
+    };
+    const t = window.setTimeout(run, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [
+    liveApi,
+    searchQuery,
+    selectedPlatforms,
+    selectedCategories,
+    selectedCities,
+    followerRange,
+    priceRange,
+  ]);
+
+  React.useEffect(() => {
+    if (!liveApi) return;
+    api.campaigns
+      .list({ limit: 50 })
+      .then((rows) =>
+        setInviteCampaigns(
+          rows.map((c) => ({ id: c.id, name: c.title, status: c.status })),
+        ),
+      )
+      .catch(() => setInviteCampaigns([]));
+  }, [liveApi]);
+
+  const clearFilters = () => {
+    setSelectedPlatforms([]);
+    setSelectedCategories([]);
+    setSelectedCities([]);
+    setSelectedLanguages([]);
+    setFollowerRange([0, 10000000]);
+    setPriceRange([5000, 200000]);
+    setEngagementRange([0, 15]);
+    setVerifiedOnly(false);
+  };
+
+  // Filter creators
+  const filteredCreators = React.useMemo(() => {
+    let result = liveApi ? [...apiCreators] : [...mockCreators];
+
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(
+        (c) =>
+          c.displayName.toLowerCase().includes(query) ||
+          (c.bio?.toLowerCase().includes(query) ?? false) ||
+          c.categories.some((cat) => cat.toLowerCase().includes(query)) ||
+          (c.location?.toLowerCase().includes(query) ?? false)
+      );
+    }
+
+    // Platform filter
+    if (selectedPlatforms.length > 0) {
+      result = result.filter((c) =>
+        c.platforms.some((p) => selectedPlatforms.includes(p.platform))
+      );
+    }
+
+    // Category filter
+    if (selectedCategories.length > 0) {
+      result = result.filter((c) =>
+        c.categories.some((cat) => selectedCategories.includes(cat))
+      );
+    }
+
+    // City filter
+    if (selectedCities.length > 0) {
+      result = result.filter((c) =>
+        selectedCities.some((city) => c.location?.includes(city))
+      );
+    }
+
+    // Language filter
+    if (selectedLanguages.length > 0) {
+      result = result.filter((c) =>
+        c.languages?.some((lang) => selectedLanguages.includes(lang))
+      );
+    }
+
+    // Follower range filter
+    result = result.filter(
+      (c) => c.totalFollowers >= followerRange[0] && c.totalFollowers <= followerRange[1]
+    );
+
+    // Price range filter
+    result = result.filter(
+      (c) => (c.averageRate ?? 0) >= priceRange[0] && (c.averageRate ?? 0) <= priceRange[1]
+    );
+
+    // Engagement range filter
+    result = result.filter(
+      (c) => c.engagementRate >= engagementRange[0] && c.engagementRate <= engagementRange[1]
+    );
+
+    // Verified filter
+    if (verifiedOnly) {
+      result = result.filter((c) => c.isVerified);
+    }
+
+    // Sort
+    switch (sortBy) {
+      case 'followers':
+        result.sort((a, b) => b.totalFollowers - a.totalFollowers);
+        break;
+      case 'engagement':
+        result.sort((a, b) => b.engagementRate - a.engagementRate);
+        break;
+      case 'price_low':
+        result.sort((a, b) => (a.averageRate ?? 0) - (b.averageRate ?? 0));
+        break;
+      case 'price_high':
+        result.sort((a, b) => (b.averageRate ?? 0) - (a.averageRate ?? 0));
+        break;
+      default:
+        // relevance - keep original order
+        break;
+    }
+
+    return result;
+  }, [
+    liveApi,
+    apiCreators,
+    searchQuery,
+    selectedPlatforms,
+    selectedCategories,
+    selectedCities,
+    selectedLanguages,
+    followerRange,
+    priceRange,
+    engagementRange,
+    verifiedOnly,
+    sortBy,
+  ]);
+
+  const activeFilterCount =
+    selectedPlatforms.length +
+    selectedCategories.length +
+    selectedCities.length +
+    selectedLanguages.length +
+    (verifiedOnly ? 1 : 0) +
+    (followerRange[0] > 0 || followerRange[1] < 10000000 ? 1 : 0) +
+    (priceRange[0] > 5000 || priceRange[1] < 200000 ? 1 : 0) +
+    (engagementRange[0] > 0 || engagementRange[1] < 15 ? 1 : 0);
+
+  return (
+    <TooltipProvider>
+      <div className="flex flex-col gap-6 p-4 md:p-6">
+        {/* 3D hero — desktop only */}
+        <div className="hidden lg:block -mx-4 md:-mx-6 overflow-hidden rounded-2xl border border-border h-[320px]">
+          <Suspense fallback={<CanvasFallback variant="discover" className="min-h-0 h-full" />}>
+            <DiscoverCanvasGate />
+          </Suspense>
+        </div>
+
+        {/* Header */}
+        <div className="flex flex-col gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Discover Creators</h1>
+            <p className="text-muted-foreground">
+              Find verified creators across India for your next campaign
+            </p>
+          </div>
+
+          {/* Search and Filter Bar */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by name, category, city..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* Filter Sheet */}
+              <Sheet open={isFilterOpen} onOpenChange={setIsFilterOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="outline" className="gap-2">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Filters
+                    {activeFilterCount > 0 && (
+                      <Badge variant="secondary" className="ml-1 h-5 w-5 rounded-full p-0 text-xs">
+                        {activeFilterCount}
+                      </Badge>
+                    )}
+                  </Button>
+                </SheetTrigger>
+                <SheetContent className="w-full sm:max-w-md">
+                  <SheetHeader>
+                    <SheetTitle>Filter Creators</SheetTitle>
+                    <SheetDescription>
+                      Narrow down creators based on your requirements
+                    </SheetDescription>
+                  </SheetHeader>
+
+                  <ScrollArea className="h-[calc(100vh-200px)] pr-4">
+                    <div className="space-y-6 py-6">
+                      {/* Platforms */}
+                      <div className="space-y-3">
+                        <Label className="text-sm font-medium">Platforms</Label>
+                        <div className="flex flex-wrap gap-2">
+                          {platforms.map((platform) => (
+                            <Badge
+                              key={platform}
+                              variant={selectedPlatforms.includes(platform) ? 'default' : 'outline'}
+                              className="cursor-pointer"
+                              onClick={() => togglePlatform(platform)}
+                            >
+                              {platform}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+
+                      <Separator />
+
+                      {/* Categories */}
+                      <div className="space-y-3">
+                        <Label className="text-sm font-medium">Categories</Label>
+                        <div className="flex flex-wrap gap-2">
+                          {categories.map((category) => (
+                            <Badge
+                              key={category}
+                              variant={selectedCategories.includes(category) ? 'default' : 'outline'}
+                              className="cursor-pointer"
+                              onClick={() => toggleCategory(category)}
+                            >
+                              {category}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+
+                      <Separator />
+
+                      {/* Cities */}
+                      <div className="space-y-3">
+                        <Label className="text-sm font-medium">City</Label>
+                        <div className="flex flex-wrap gap-2">
+                          {INDIAN_CITIES.map((city) => (
+                            <Badge
+                              key={city}
+                              variant={selectedCities.includes(city) ? 'default' : 'outline'}
+                              className="cursor-pointer"
+                              onClick={() => toggleCity(city)}
+                            >
+                              {city}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+
+                      <Separator />
+
+                      {/* Languages */}
+                      <div className="space-y-3">
+                        <Label className="text-sm font-medium">Languages</Label>
+                        <div className="flex flex-wrap gap-2">
+                          {languages.map((language) => (
+                            <Badge
+                              key={language}
+                              variant={selectedLanguages.includes(language) ? 'default' : 'outline'}
+                              className="cursor-pointer"
+                              onClick={() => toggleLanguage(language)}
+                            >
+                              {language}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+
+                      <Separator />
+
+                      {/* Price Range */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm font-medium">Price Range (per post)</Label>
+                          <span className="text-sm text-muted-foreground">
+                            {formatINR(priceRange[0])} - {formatINR(priceRange[1])}
+                          </span>
+                        </div>
+                        <Slider
+                          value={priceRange}
+                          onValueChange={(value) => setPriceRange(value as [number, number])}
+                          min={5000}
+                          max={200000}
+                          step={5000}
+                          className="py-2"
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>₹5K</span>
+                          <span>₹2L</span>
+                        </div>
+                      </div>
+
+                      <Separator />
+
+                      {/* Follower Range */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm font-medium">Followers</Label>
+                          <span className="text-sm text-muted-foreground">
+                            {formatFollowers(followerRange[0])} - {formatFollowers(followerRange[1])}
+                          </span>
+                        </div>
+                        <Slider
+                          value={followerRange}
+                          onValueChange={(value) => setFollowerRange(value as [number, number])}
+                          min={0}
+                          max={10000000}
+                          step={10000}
+                          className="py-2"
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>0</span>
+                          <span>1Cr</span>
+                        </div>
+                      </div>
+
+                      <Separator />
+
+                      {/* Engagement Range */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm font-medium">Engagement Rate</Label>
+                          <span className="text-sm text-muted-foreground">
+                            {engagementRange[0]}% - {engagementRange[1]}%
+                          </span>
+                        </div>
+                        <Slider
+                          value={engagementRange}
+                          onValueChange={(value) => setEngagementRange(value as [number, number])}
+                          min={0}
+                          max={15}
+                          step={0.5}
+                          className="py-2"
+                        />
+                      </div>
+
+                      <Separator />
+
+                      {/* Verified Only */}
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="verified"
+                          checked={verifiedOnly}
+                          onCheckedChange={(checked) => setVerifiedOnly(checked as boolean)}
+                        />
+                        <Label htmlFor="verified" className="text-sm font-medium cursor-pointer">
+                          Verified creators only
+                        </Label>
+                      </div>
+                    </div>
+                  </ScrollArea>
+
+                  <SheetFooter className="flex-row gap-2 pt-4">
+                    <Button variant="outline" onClick={clearFilters} className="flex-1">
+                      Clear All
+                    </Button>
+                    <Button onClick={() => setIsFilterOpen(false)} className="flex-1">
+                      Apply Filters
+                    </Button>
+                  </SheetFooter>
+                </SheetContent>
+              </Sheet>
+
+              {/* Sort Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="gap-2">
+                    Sort
+                    <ChevronDown className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setSortBy('relevance')}>
+                    Relevance
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortBy('followers')}>
+                    Most Followers
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortBy('engagement')}>
+                    Highest Engagement
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortBy('price_low')}>
+                    Price: Low to High
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortBy('price_high')}>
+                    Price: High to Low
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* View Toggle */}
+              <div className="flex items-center rounded-lg border p-1">
+                <Button
+                  variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setViewMode('grid')}
+                >
+                  <Grid3X3 className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setViewMode('list')}
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Active Filters Display */}
+          {activeFilterCount > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted-foreground">Active filters:</span>
+              {selectedPlatforms.map((platform) => (
+                <Badge key={platform} variant="secondary" className="gap-1">
+                  {platform}
+                  <X
+                    className="h-3 w-3 cursor-pointer"
+                    onClick={() => togglePlatform(platform)}
+                  />
+                </Badge>
+              ))}
+              {selectedCategories.map((category) => (
+                <Badge key={category} variant="secondary" className="gap-1">
+                  {category}
+                  <X
+                    className="h-3 w-3 cursor-pointer"
+                    onClick={() => toggleCategory(category)}
+                  />
+                </Badge>
+              ))}
+              {selectedCities.map((city) => (
+                <Badge key={city} variant="secondary" className="gap-1">
+                  {city}
+                  <X
+                    className="h-3 w-3 cursor-pointer"
+                    onClick={() => toggleCity(city)}
+                  />
+                </Badge>
+              ))}
+              {selectedLanguages.map((language) => (
+                <Badge key={language} variant="secondary" className="gap-1">
+                  {language}
+                  <X
+                    className="h-3 w-3 cursor-pointer"
+                    onClick={() => toggleLanguage(language)}
+                  />
+                </Badge>
+              ))}
+              {verifiedOnly && (
+                <Badge variant="secondary" className="gap-1">
+                  Verified
+                  <X
+                    className="h-3 w-3 cursor-pointer"
+                    onClick={() => setVerifiedOnly(false)}
+                  />
+                </Badge>
+              )}
+              {(priceRange[0] > 5000 || priceRange[1] < 200000) && (
+                <Badge variant="secondary" className="gap-1">
+                  {formatINR(priceRange[0])} - {formatINR(priceRange[1])}
+                  <X
+                    className="h-3 w-3 cursor-pointer"
+                    onClick={() => setPriceRange([5000, 200000])}
+                  />
+                </Badge>
+              )}
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-6 text-xs">
+                Clear all
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Results Count */}
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {filteredCreators.length} creators
+          </p>
+        </div>
+
+        {/* Creator Grid/List */}
+        {viewMode === 'grid' ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {filteredCreators.map((creator) => (
+              <Card key={creator.id} className="group overflow-hidden transition-all hover:shadow-lg">
+                {/* Cover/Header */}
+                <div className="relative h-24 bg-gradient-to-br from-primary/20 to-primary/5">
+                  <div className="absolute -bottom-8 left-4">
+                    <Avatar className="h-16 w-16 border-4 border-background">
+                      <AvatarImage src={creator.avatarUrl || undefined} />
+                      <AvatarFallback className="text-lg bg-primary/10">
+                        {creator.displayName.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                  </div>
+                  <div className="absolute right-2 top-2 flex gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => toggleSaved(creator.id)}
+                        >
+                          {savedCreators.includes(creator.id) ? (
+                            <BookmarkCheck className="h-4 w-4 text-primary" />
+                          ) : (
+                            <Bookmark className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {savedCreators.includes(creator.id) ? 'Remove from saved' : 'Save creator'}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
+
+                <CardContent className="pt-10">
+                  {/* Name and Verification */}
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="font-semibold truncate">{creator.displayName}</h3>
+                    {creator.isVerified && (
+                      <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-primary" />
+                    )}
+                  </div>
+
+                  {/* Location */}
+                  <div className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+                    <MapPin className="h-3 w-3" />
+                    <span className="truncate">{creator.location}</span>
+                  </div>
+
+                  {/* Bio */}
+                  <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                    {creator.bio}
+                  </p>
+
+                  {/* Categories */}
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {creator.categories.slice(0, 3).map((cat) => (
+                      <Badge key={cat} variant="secondary" className="text-xs">
+                        {cat}
+                      </Badge>
+                    ))}
+                  </div>
+
+                  {/* Stats */}
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-lg bg-muted/50 p-2">
+                      <p className="text-sm font-semibold">{formatFollowers(creator.totalFollowers)}</p>
+                      <p className="text-xs text-muted-foreground">Followers</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/50 p-2">
+                      <p className="text-sm font-semibold">{creator.engagementRate}%</p>
+                      <p className="text-xs text-muted-foreground">Engagement</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/50 p-2">
+                      <p className="text-sm font-semibold">{formatINR(creator.averageRate ?? 0)}</p>
+                      <p className="text-xs text-muted-foreground">Avg Rate</p>
+                    </div>
+                  </div>
+
+                  {/* Platforms */}
+                  <div className="mt-3 flex gap-1.5">
+                    {creator.platforms.map((p) => (
+                      <Tooltip key={p.platform}>
+                        <TooltipTrigger>
+                          <Badge variant="outline" className="text-xs">
+                            {p.platform === 'INSTAGRAM' && 'IG'}
+                            {p.platform === 'YOUTUBE' && 'YT'}
+                            {p.platform === 'TIKTOK' && 'TT'}
+                            {p.platform === 'TWITTER' && 'X'}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {p.platform}: {formatFollowers(p.followers)} followers, {p.engagementRate}% ER
+                        </TooltipContent>
+                      </Tooltip>
+                    ))}
+                  </div>
+                </CardContent>
+
+                <CardFooter className="flex gap-2 border-t pt-4">
+                  <Button variant="outline" size="sm" className="flex-1" asChild>
+                    <Link to={`/brand/creators/${creator.id}`}>
+                      View Profile
+                    </Link>
+                  </Button>
+                  <Button size="sm" className="flex-1 gap-1.5" onClick={() => handleOpenInvite(creator)}>
+                    <Send className="h-3.5 w-3.5" />
+                    Invite
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card>
+            <div className="divide-y">
+              {filteredCreators.map((creator) => (
+                <div key={creator.id} className="flex items-center gap-4 p-4">
+                  <Avatar className="h-12 w-12">
+                    <AvatarImage src={creator.avatarUrl || undefined} />
+                    <AvatarFallback>{creator.displayName.charAt(0)}</AvatarFallback>
+                  </Avatar>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="font-semibold truncate">{creator.displayName}</h3>
+                      {creator.isVerified && (
+                        <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-primary" />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />
+                        {creator.location}
+                      </span>
+                      <span>|</span>
+                      <span>{creator.categories.slice(0, 2).join(', ')}</span>
+                    </div>
+                  </div>
+
+                  <div className="hidden md:flex items-center gap-6 text-sm">
+                    <div className="text-center">
+                      <p className="font-semibold">{formatFollowers(creator.totalFollowers)}</p>
+                      <p className="text-xs text-muted-foreground">Followers</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="font-semibold">{creator.engagementRate}%</p>
+                      <p className="text-xs text-muted-foreground">ER</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="font-semibold">{formatINR(creator.averageRate ?? 0)}</p>
+                      <p className="text-xs text-muted-foreground">Rate</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => toggleSaved(creator.id)}
+                    >
+                      {savedCreators.includes(creator.id) ? (
+                        <BookmarkCheck className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Bookmark className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                      <Link to={`/brand/creators/${creator.id}`}>View</Link>
+                    </Button>
+                    <Button size="sm" className="gap-1.5" onClick={() => handleOpenInvite(creator)}>
+                      <Send className="h-3.5 w-3.5" />
+                      Invite
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Invite Dialog - Multi-Step Proposal */}
+        <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>
+                {proposalStep === 'campaign' && `Invite ${inviteCreator?.displayName}`}
+                {proposalStep === 'proposal' && 'Create Proposal'}
+                {proposalStep === 'confirm' && 'Review & Send'}
+              </DialogTitle>
+              <DialogDescription>
+                {proposalStep === 'campaign' && 'Select a campaign to invite this creator to collaborate.'}
+                {proposalStep === 'proposal' && 'Define the deliverables, budget, and terms for this collaboration.'}
+                {proposalStep === 'confirm' && 'Review your proposal before sending to the creator.'}
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Step Indicator */}
+            {!createNewCampaign && (
+              <div className="flex items-center justify-center gap-2 py-2">
+                {['campaign', 'proposal', 'confirm'].map((step, idx) => (
+                  <React.Fragment key={step}>
+                    <div className={cn(
+                      'h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors',
+                      proposalStep === step ? 'bg-primary text-primary-foreground' :
+                      ['campaign', 'proposal', 'confirm'].indexOf(proposalStep) > idx ? 'bg-stage-approved text-stage-approved-fg' :
+                      'bg-muted text-muted-foreground'
+                    )}>
+                      {idx + 1}
+                    </div>
+                    {idx < 2 && <div className="w-8 h-0.5 bg-muted" />}
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
+
+            <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+              {/* Step 1: Campaign Selection */}
+              {proposalStep === 'campaign' && (
+                <>
+                  <div className="space-y-3">
+                    <Label>Select Campaign</Label>
+                    <Select 
+                      value={createNewCampaign ? 'new' : selectedCampaign} 
+                      onValueChange={(value) => {
+                        if (value === 'new') {
+                          setCreateNewCampaign(true);
+                          setSelectedCampaign('');
+                        } else {
+                          setCreateNewCampaign(false);
+                          setSelectedCampaign(value);
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose a campaign" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {inviteCampaigns.filter(c => c.status === 'ACTIVE').map((campaign) => (
+                          <SelectItem key={campaign.id} value={campaign.id}>
+                            <div className="flex items-center gap-2">
+                              <span>{campaign.name}</span>
+                              <Badge variant="outline" className="text-xs">Active</Badge>
+                            </div>
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="new">
+                          <div className="flex items-center gap-2 text-primary">
+                            <Plus className="h-4 w-4" />
+                            <span>Create New Campaign</span>
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {createNewCampaign && (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                      <p className="text-sm text-muted-foreground">
+                        You will be redirected to create a new campaign with {inviteCreator?.displayName} pre-selected.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Step 2: Proposal Details */}
+              {proposalStep === 'proposal' && (
+                <>
+                  {/* Deliverables */}
+                  <div className="space-y-3">
+                    <Label>Deliverables</Label>
+                    <div className="space-y-2">
+                      {proposalData.deliverables.map((del, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <Select 
+                            value={del.type}
+                            onValueChange={(value) => {
+                              const updated = [...proposalData.deliverables];
+                              updated[idx].type = value;
+                              setProposalData({ ...proposalData, deliverables: updated });
+                            }}
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="REEL">Reel</SelectItem>
+                              <SelectItem value="POST">Post</SelectItem>
+                              <SelectItem value="STORY">Story</SelectItem>
+                              <SelectItem value="VIDEO">Video</SelectItem>
+                              <SelectItem value="SHORT">Short</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <span className="text-muted-foreground">x</span>
+                          <Input 
+                            type="number" 
+                            value={del.count}
+                            onChange={(e) => {
+                              const updated = [...proposalData.deliverables];
+                              updated[idx].count = parseInt(e.target.value) || 1;
+                              setProposalData({ ...proposalData, deliverables: updated });
+                            }}
+                            className="w-16"
+                            min={1}
+                          />
+                          {proposalData.deliverables.length > 1 && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => {
+                                const updated = proposalData.deliverables.filter((_, i) => i !== idx);
+                                setProposalData({ ...proposalData, deliverables: updated });
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setProposalData({
+                          ...proposalData,
+                          deliverables: [...proposalData.deliverables, { type: 'POST', count: 1 }]
+                        })}
+                      >
+                        <Plus className="h-4 w-4 mr-1" /> Add Deliverable
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Budget */}
+                  <div className="space-y-2">
+                    <Label>Budget Offer</Label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">₹</span>
+                      <Input 
+                        type="number"
+                        value={proposalData.budget}
+                        onChange={(e) => setProposalData({ ...proposalData, budget: parseInt(e.target.value) || 0 })}
+                        className="flex-1"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Creator&apos;s avg rate: {formatINR(inviteCreator?.averageRate || 0)}
+                    </p>
+                  </div>
+
+                  {/* Deadline */}
+                  <div className="space-y-2">
+                    <Label>Deadline</Label>
+                    <Input 
+                      type="date"
+                      value={proposalData.deadline}
+                      onChange={(e) => setProposalData({ ...proposalData, deadline: e.target.value })}
+                    />
+                  </div>
+
+                  {/* Usage Rights */}
+                  <div className="space-y-2">
+                    <Label>Usage Rights</Label>
+                    <Select 
+                      value={proposalData.usageRights}
+                      onValueChange={(value) => setProposalData({ ...proposalData, usageRights: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1_MONTH">1 Month</SelectItem>
+                        <SelectItem value="3_MONTHS">3 Months</SelectItem>
+                        <SelectItem value="6_MONTHS">6 Months</SelectItem>
+                        <SelectItem value="1_YEAR">1 Year</SelectItem>
+                        <SelectItem value="PERPETUAL">Perpetual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Revision Cap */}
+                  <div className="space-y-2">
+                    <Label>Revisions Included</Label>
+                    <Select 
+                      value={proposalData.revisionCap.toString()}
+                      onValueChange={(value) => setProposalData({ ...proposalData, revisionCap: parseInt(value) })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1 Revision</SelectItem>
+                        <SelectItem value="2">2 Revisions</SelectItem>
+                        <SelectItem value="3">3 Revisions</SelectItem>
+                        <SelectItem value="5">5 Revisions</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Exclusivity */}
+                  <div className="flex items-center gap-2">
+                    <Checkbox 
+                      id="exclusivity"
+                      checked={proposalData.exclusivity}
+                      onCheckedChange={(checked) => setProposalData({ ...proposalData, exclusivity: !!checked })}
+                    />
+                    <Label htmlFor="exclusivity" className="text-sm cursor-pointer">
+                      Require exclusivity (no competitor collabs during campaign)
+                    </Label>
+                  </div>
+
+                  {/* Personal Message */}
+                  <div className="space-y-2">
+                    <Label>Personal Message (Optional)</Label>
+                    <Textarea
+                      placeholder="Write a personalized message to the creator..."
+                      value={inviteMessage}
+                      onChange={(e) => setInviteMessage(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Step 3: Confirmation */}
+              {proposalStep === 'confirm' && (
+                <div className="space-y-4">
+                  <div className="rounded-lg border p-4 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-12 w-12">
+                        <AvatarFallback>{inviteCreator?.displayName?.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="font-medium">{inviteCreator?.displayName}</p>
+                        <p className="text-sm text-muted-foreground">{inviteCreator?.location}</p>
+                      </div>
+                    </div>
+                    <Separator />
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Deliverables</p>
+                        <p className="font-medium">
+                          {proposalData.deliverables.map(d => `${d.count} ${d.type}`).join(', ')}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Budget</p>
+                        <p className="font-medium">{formatINR(proposalData.budget)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Deadline</p>
+                        <p className="font-medium">{proposalData.deadline || 'Not set'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Usage Rights</p>
+                        <p className="font-medium">{proposalData.usageRights.replace('_', ' ')}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Revisions</p>
+                        <p className="font-medium">{proposalData.revisionCap}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Exclusivity</p>
+                        <p className="font-medium">{proposalData.exclusivity ? 'Yes' : 'No'}</p>
+                      </div>
+                    </div>
+                    {inviteMessage && (
+                      <>
+                        <Separator />
+                        <div>
+                          <p className="text-muted-foreground text-sm">Your Message</p>
+                          <p className="text-sm mt-1">{inviteMessage}</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div className="rounded-lg bg-amber-50 border border-stage-negotiating-border p-3">
+                    <p className="text-sm text-amber-800">
+                      This proposal will be sent to the creator&apos;s Deal Room. They can accept, counter, or decline.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              {proposalStep !== 'campaign' && !createNewCampaign && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => setProposalStep(proposalStep === 'confirm' ? 'proposal' : 'campaign')}
+                >
+                  Back
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => setIsInviteOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleInvite} 
+                disabled={(!selectedCampaign && !createNewCampaign) || isSubmitting}
+              >
+                {isSubmitting ? 'Sending...' : 
+                 createNewCampaign ? 'Create Campaign' : 
+                 proposalStep === 'campaign' ? 'Next: Define Proposal' :
+                 proposalStep === 'proposal' ? 'Next: Review' :
+                 'Send Proposal'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </TooltipProvider>
+  );
+}

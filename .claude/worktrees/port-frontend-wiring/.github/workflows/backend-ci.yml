@@ -1,0 +1,38 @@
+name: Backend CI
+
+# Meera I-4 — fast compile+test gate for influora-api. Complements backend-tests.yml (full
+# MySQL/Redis integration test run) with a quick, dependency-light "does it even compile" check.
+
+on:
+  push:
+    paths:
+      - 'influora-api/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    paths:
+      - 'influora-api/**'
+      - '.github/workflows/backend-ci.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Compile and test influora-api
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Compile
+        working-directory: influora-api
+        run: mvn -B -q clean compile
+
+      - name: Test
+        working-directory: influora-api
+        run: mvn -B test

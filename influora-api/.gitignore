@@ -1,0 +1,16 @@
+target/
+.idea/
+*.iml
+.env
+*.log
+
+# JVM crash artifacts — redundant under *.log above, listed so the intent survives
+# if that blanket rule is ever narrowed.
+hs_err_pid*.log
+replay_pid*.log
+*.hprof
+
+# Maven build-classpath dumps (mvn dependency:build-classpath -Dmdep.outputFile).
+# Not a *.log, which is how cp.txt got committed in dbf765e.
+cp.txt
+classpath.txt

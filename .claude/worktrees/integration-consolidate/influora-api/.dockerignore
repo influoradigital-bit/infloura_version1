@@ -1,0 +1,8 @@
+target/
+*.log
+hs_err_pid*.log
+replay_pid*.log
+cp.txt
+.git
+.idea
+*.iml

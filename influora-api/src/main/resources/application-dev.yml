@@ -1,0 +1,41 @@
+# Local profile: docker compose up -d mysql
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+influora:
+  auth:
+    require-email-verification: false
+    require-email-otp-before-register: false
+  # V0-1 (Kabir/Priya finding) — PiiEncryptionProperties has no default and fails closed
+  # (AesGcmCipher.decodeKey throws IllegalStateException) if either key is blank, which blocks
+  # boot on every profile including dev/local. These are throwaway, locally-generated AES-256
+  # keys for the `dev` profile ONLY — never used for anything real, safe to be in git history,
+  # and MUST NOT be copied into application-prod.yml (CompanyTaxStartupValidator-style
+  # startup validators are expected to keep failing prod closed on a missing/placeholder key).
+  pii:
+    email-phone-encryption-key: "Y0qNDKt5l8ZHRP5YM/W//xzLo6vlQKG1jIFGVfxQ72g="
+    bank-encryption-key: "firPYXL3GeFuCDyWKgQ4cww6Ee81JPv868voxkbEclY="
+  # Same fail-closed pattern as pii above: MetaTokenStorage / ShopifyTokenStorage /
+  # WooCommerceIntegrationService each decode an AES-256 token-encryption-key in their constructor
+  # and throw IllegalStateException on a blank key, blocking boot on every profile. These blocks
+  # are absent from application.yml (no prod default — a real deploy MUST supply them via env), so
+  # dev/local had nothing to bind and failed closed. Throwaway, locally-generated AES-256 keys for
+  # the `dev` profile ONLY — never used for anything real, safe in git history, and MUST NOT be
+  # copied into application-prod.yml.
+  meta:
+    token-encryption-key: "B6H0IzLGM9JN9SorCtoCb7HEIY9jUaui9POewoAtMfw="
+  shopify:
+    token-encryption-key: "ekrJz4FTMPn0/VZNG0gdQnzQm45z1VFgdoS8Wow5sBY="
+  woocommerce:
+    token-encryption-key: "NU2joJWw8bK+18CqEtiaqGI9jbMtUNjGpHPxDB/F1kw="
+  # ConversionWebhookSecretService — same fail-closed constructor pattern, no application.yml
+  # default. Throwaway dev-only AES-256 key (see note above); MUST NOT reach prod.
+  conversion-webhook:
+    token-encryption-key: "7Jw7JsuzTxyAFRblivLMKGoFjIrlhcvXI6T+0CV+Z8M="
+
+logging:
+  level:
+    com.influora: DEBUG
+    org.hibernate.SQL: WARN

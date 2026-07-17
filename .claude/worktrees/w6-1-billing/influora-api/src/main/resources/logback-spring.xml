@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  H-28 (INFLUORA-PRODUCTION-READINESS-AUDIT-2026-07-14.md) — the app previously had no logback
+  config at all (pure Spring Boot default pattern), so there was no correlation id in any log
+  line and no way to grep one request's log lines out of interleaved concurrent traffic.
+
+  This adds `correlationId` (stamped into MDC per-request by CorrelationIdFilter — see
+  common/CorrelationIdFilter.java) as a structured, always-present field on every line, plus
+  `thread`/`logger` for triage. It is a structured KEY=VALUE console pattern, not JSON — true JSON
+  logging (e.g. via `logstash-logback-encoder`) needs a new Maven dependency, which per
+  TECH-STACK.md rule 6 requires CTO sign-off in wiki/tech/approved-deps.md before merge; flagged
+  as a fast-follow rather than added unapproved in this pass.
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <property name="STRUCTURED_PATTERN"
+              value="%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} level=%-5level correlationId=%X{correlationId:-n/a} thread=%thread logger=%logger{36} msg=%msg%n%wEx"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${STRUCTURED_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

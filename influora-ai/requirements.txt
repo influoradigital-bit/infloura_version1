@@ -1,0 +1,14 @@
+# Influora AI service (Meera reasoner) — pinned versions.
+# Run `pip-audit` in CI; build fails on high/critical per the security spec.
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx[http2]==0.28.1
+anthropic==0.42.0
+google-genai==0.8.0
+playwright==1.49.1
+pyjwt[crypto]==2.10.1
+
+# Transitive-but-explicit pins used directly in app code.
+pydantic==2.10.4
+python-multipart==0.0.20

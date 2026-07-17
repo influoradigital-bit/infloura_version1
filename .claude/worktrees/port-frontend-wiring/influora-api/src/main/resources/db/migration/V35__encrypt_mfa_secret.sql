@@ -1,0 +1,32 @@
+-- [SEC: Kabir cycle 2 audit finding, ship-blocking per
+-- wiki/decisions/admin-panel-security-priority.md] V34__admin_tables.sql's admin_users.mfa_secret
+-- (TOTP shared secret for admin-panel login) was a plaintext VARCHAR(255) column -- inconsistent
+-- with the AES-256-GCM encryption-at-rest convention already used for every other secret column
+-- in this schema (MetaOAuthToken.encrypted_access_token, ConversionWebhookSecret.encrypted_secret).
+--
+-- This migration:
+--   1. Renames mfa_secret -> encrypted_mfa_secret, matching the encrypted_* naming convention used
+--      by the two columns above -- makes it structurally obvious at the schema level that this
+--      column never holds plaintext.
+--   2. Widens VARCHAR(255) -> TEXT, matching those same two columns' columnDefinition, since the
+--      stored value is now Base64(IV || AES-256-GCM ciphertext || 16-byte tag), not a raw Base32
+--      TOTP secret. (In practice this is well under 255 chars for a 20-byte TOTP secret -- the
+--      widen is for consistency with the established convention, not because 255 was measured to
+--      overflow.)
+--
+-- Application-side encryption is AdminMfaSecretCipher (com.influora.service.admin), wired into
+-- AdminAuthService.setupMfa/login/verifyMfa -- see those classes' javadoc for the encrypt-on-write
+-- / decrypt-on-read call sites. Key sourced from influora.admin.mfa-secret-encryption-key
+-- (application.yml) / ADMIN_MFA_SECRET_ENCRYPTION_KEY (.env).
+--
+-- Data migration: NOT NEEDED. Verified via `SELECT COUNT(*) FROM admin_users` against the real
+-- persistent dev DB (influora_ai, native MySQL80, see wiki/processes/schema-changes.md Meera
+-- cycle 2 entry for how that DB was confirmed to be the one in active use) -- 0 rows. AdminAuthService
+-- javadoc already documents "No admin self-registration/seeding endpoint exists ... rows must be
+-- inserted out-of-band" (Phase 1 P0 scope was login/session only), so no admin account -- and
+-- therefore no MFA secret, plaintext or otherwise -- has ever actually been provisioned yet. A
+-- straight RENAME + TYPE CHANGE is safe: there is no existing plaintext ciphertext-shaped data to
+-- re-encrypt, and no risk of silently corrupting a real admin's MFA enrollment.
+
+ALTER TABLE admin_users
+  CHANGE COLUMN mfa_secret encrypted_mfa_secret TEXT NULL;

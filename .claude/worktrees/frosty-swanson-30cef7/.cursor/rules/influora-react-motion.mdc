@@ -1,0 +1,33 @@
+---
+description: Influora React motion standards — Emil rules, Lilac Mist tokens, motion levels, no layout 3D
+globs: src/**/*
+alwaysApply: false
+---
+
+# Influora Motion (always-on for src/)
+
+## Stack
+
+React 19 · Vite · Tailwind 4 · Framer Motion · R3F · Lilac Mist (`#9b8cf2`, `#f0ebfa`)
+
+## Before animating
+
+1. Check motion level in `docs/react/INFLUORA-3D-MOTION-BLUEPRINT.md`
+2. Reuse `@/components/motion` — do not reinvent FadeUp/Stagger
+3. Chat/deals = Level 0–1, no 3D, no message stagger
+
+## Emil rules
+
+- `active:scale-[0.97]` on buttons — never `transition-all`
+- `ease-out` only — never `ease-in`
+- `useReducedMotion()` on every animation
+- Max 3 R3F canvases: auth, discover hero, public portfolio
+
+## Vite (not Next.js)
+
+- Lazy: `React.lazy()` + `Suspense`
+- Routes: `useLocation()` from react-router-dom
+
+## Cursor skills
+
+`.cursor/skills/influora-*` — emil, framer, framer-scroll-reveal, framer-stagger, framer-animate-presence, framer-layout, r3f, threejs-performance, threejs-materials, threejs-scenes, motion-test, vite, audit, shadcn, motion-components

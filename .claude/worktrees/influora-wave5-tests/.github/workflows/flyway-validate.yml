@@ -1,0 +1,136 @@
+name: Flyway Migration Validation
+
+on:
+  pull_request:
+    paths:
+      - 'influora-api/src/main/resources/db/migration/**'
+      - '.github/workflows/flyway-validate.yml'
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    name: Validate Flyway migrations
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: flyway_root_password
+          MYSQL_DATABASE: influora_flyway
+          MYSQL_USER: flyway_user
+          MYSQL_PASSWORD: flyway_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Wait for MySQL
+        run: |
+          for i in {1..30}; do
+            if mysqladmin ping -h 127.0.0.1 -P 3306 -u flyway_user -pflyway_password --silent; then
+              echo "MySQL is ready"
+              exit 0
+            fi
+            echo "Waiting for MySQL... ($i/30)"
+            sleep 2
+          done
+          echo "MySQL failed to become ready"
+          exit 1
+
+      - name: Check migration file naming
+        working-directory: influora-api/src/main/resources/db/migration
+        run: |
+          echo "=== Checking migration file naming conventions ==="
+
+          # Check all migrations follow V{version}__{description}.sql pattern
+          for file in V*.sql; do
+            if [[ ! "$file" =~ ^V[0-9]+__[a-z_]+\.sql$ ]]; then
+              echo "❌ Invalid migration filename: $file"
+              echo "   Expected format: V{number}__{lowercase_description}.sql"
+              echo "   Example: V48__creator_reliability_stats.sql"
+              exit 1
+            fi
+          done
+
+          echo "✅ All migration files follow naming convention"
+
+      - name: Validate migration checksums
+        working-directory: influora-api
+        env:
+          SPRING_FLYWAY_URL: jdbc:mysql://127.0.0.1:3306/influora_flyway
+          SPRING_FLYWAY_USER: flyway_user
+          SPRING_FLYWAY_PASSWORD: flyway_password
+        run: |
+          echo "=== Running Flyway info ==="
+          mvn --batch-mode flyway:info
+
+          echo ""
+          echo "=== Running Flyway validate ==="
+          mvn --batch-mode flyway:validate
+
+      - name: Run migrations (dry-run)
+        working-directory: influora-api
+        env:
+          SPRING_FLYWAY_URL: jdbc:mysql://127.0.0.1:3306/influora_flyway
+          SPRING_FLYWAY_USER: flyway_user
+          SPRING_FLYWAY_PASSWORD: flyway_password
+        run: |
+          echo "=== Running all migrations in test environment ==="
+          mvn --batch-mode flyway:migrate
+
+          echo ""
+          echo "=== Final migration state ==="
+          mvn --batch-mode flyway:info
+
+      - name: Detect migration conflicts
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "=== Checking for migration version conflicts ==="
+
+          # Get list of migration files in this PR
+          PR_MIGRATIONS=$(git diff --name-only --diff-filter=A origin/${{ github.base_ref }}...HEAD | grep 'db/migration/V.*\.sql' || true)
+
+          if [ -z "$PR_MIGRATIONS" ]; then
+            echo "No new migrations in this PR"
+            exit 0
+          fi
+
+          echo "New migrations in this PR:"
+          echo "$PR_MIGRATIONS"
+
+          # Extract version numbers
+          for migration in $PR_MIGRATIONS; do
+            VERSION=$(basename "$migration" | sed -n 's/^V\([0-9]*\)__.*/\1/p')
+            echo "  Version: $VERSION"
+
+            # Check if this version already exists in base branch
+            BASE_MIGRATIONS=$(git ls-tree -r --name-only origin/${{ github.base_ref }} | grep "db/migration/V${VERSION}__" || true)
+
+            if [ -n "$BASE_MIGRATIONS" ]; then
+              echo "❌ Migration version conflict detected!"
+              echo "   PR adds: $migration"
+              echo "   Base branch already has: $BASE_MIGRATIONS"
+              echo ""
+              echo "Action required: Rebase and renumber your migration to the next available version."
+              exit 1
+            fi
+          done
+
+          echo "✅ No version conflicts detected"

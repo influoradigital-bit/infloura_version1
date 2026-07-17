@@ -1,0 +1,14 @@
+-- Priya's Phase 3a CTO sign-off (SHARED_CONTEXT.md, 2026-07-14, point 4 "latent debt"): the Free
+-- plan row was seeded (V55) with fee_bps=1000 -- coincidentally equal to the global
+-- PlatformFeeConfig.brandFeeBps default, but never actually read: BrandCampaignFeeService.
+-- tryResolvePlanFeeBps only consults Plan.feeBps when plan.getCode() == PRO (Free never reaches
+-- that read). Plan.java's own javadoc already says "Null means use the global config" -- this
+-- migration makes the DATA honestly match that contract instead of relying on the comment alone,
+-- so a future promo-rate change to the global config can never look like it silently "un-hooked"
+-- Free from admin control just because Free's row happens to hold a stale-but-matching value.
+--
+-- Verified safe (Phase 3b Task 22, Vikram): BrandCampaignFeeService.tryResolvePlanFeeBps's guard
+-- is `plan.getCode() == PlanCode.PRO && plan.getFeeBps() != null` -- short-circuits on the code
+-- check before ever calling plan.getFeeBps() for a FREE-code plan, so NULLing this column
+-- introduces no NPE risk. No code change required alongside this migration.
+UPDATE plans SET fee_bps = NULL WHERE code = 'FREE';

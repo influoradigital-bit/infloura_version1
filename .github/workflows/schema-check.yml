@@ -1,0 +1,137 @@
+name: Schema Drift Check
+
+on:
+  pull_request:
+    paths:
+      - 'influora-ai/app/tools/schemas.py'
+      - 'influora-api/src/main/java/com/influora/domain/enums/MeeraToolName.java'
+      - 'influora-api/src/main/java/com/influora/web/dto/meera/MeeraToolDtos.java'
+  push:
+    branches:
+      - main
+      - feature/**
+
+jobs:
+  schema-drift-detection:
+    runs-on: ubuntu-latest
+    name: Detect Python ↔ Java schema drift
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Extract Python schema (TOOL_SCHEMAS)
+        id: python-schema
+        run: |
+          cd influora-ai
+          python3 << 'EOF'
+          import sys
+          import json
+          sys.path.insert(0, 'app')
+          from tools.schemas import TOOL_SCHEMAS
+
+          # Extract tool names
+          tool_names = sorted([t['name'] for t in TOOL_SCHEMAS])
+          print("PYTHON_TOOL_NAMES=" + json.dumps(tool_names))
+
+          # Extract calculate_budget goal enum
+          calc_budget = next(t for t in TOOL_SCHEMAS if t['name'] == 'calculate_budget')
+          goal_enum = calc_budget['input_schema']['properties']['goal']['enum']
+          print("PYTHON_GOAL_ENUM=" + json.dumps(sorted(goal_enum)))
+
+          # Extract create_campaign campaign_type enum
+          create_camp = next(t for t in TOOL_SCHEMAS if t['name'] == 'create_campaign')
+          campaign_type_enum = create_camp['input_schema']['properties']['campaign_type']['enum']
+          print("PYTHON_CAMPAIGN_TYPE_ENUM=" + json.dumps(sorted(campaign_type_enum)))
+          EOF
+
+      - name: Extract Java schema (MeeraToolName enum)
+        id: java-schema
+        run: |
+          cd influora-api
+          # Extract enum values from MeeraToolName.java
+          JAVA_TOOL_NAMES=$(grep -oP '^\s+\K\w+(?=,?)' src/main/java/com/influora/domain/enums/MeeraToolName.java | jq -R -s -c 'split("\n")[:-1] | sort')
+          echo "JAVA_TOOL_NAMES=$JAVA_TOOL_NAMES"
+
+      - name: Check for drift
+        run: |
+          echo "=== SCHEMA DRIFT CHECK ==="
+          echo ""
+          echo "Python TOOL_SCHEMAS tool names (from schemas.py):"
+          echo "${{ steps.python-schema.outputs.PYTHON_TOOL_NAMES }}"
+          echo ""
+          echo "Java MeeraToolName enum values:"
+          echo "${{ steps.java-schema.outputs.JAVA_TOOL_NAMES }}"
+          echo ""
+
+          # Blocking invariant: Java is canonical, Python must mirror the tool-name set.
+          TOOLNAME_DRIFT=0
+          # Report-only: goal vs campaign_type are different concepts (Priya ruling), never blocks.
+          DRIFT_DETECTED=0
+
+          # Compare tool names — BLOCKING
+          if [ "${{ steps.python-schema.outputs.PYTHON_TOOL_NAMES }}" != "${{ steps.java-schema.outputs.JAVA_TOOL_NAMES }}" ]; then
+            echo "❌ DRIFT DETECTED: Tool names do not match between Python and Java"
+            TOOLNAME_DRIFT=1
+          else
+            echo "✅ Tool names match"
+          fi
+
+          echo ""
+          echo "Python 'goal' enum (calculate_budget):"
+          echo "${{ steps.python-schema.outputs.PYTHON_GOAL_ENUM }}"
+          echo ""
+          echo "Python 'campaign_type' enum (create_campaign):"
+          echo "${{ steps.python-schema.outputs.PYTHON_CAMPAIGN_TYPE_ENUM }}"
+          echo ""
+
+          # EXPECTED EXCEPTION (Priya ruling — wiki/ai-review/T4-schema-fix-correction.md):
+          # Python exposing 3 of Java's 4 campaign_type values (STANDARD absent) is CORRECT BY DESIGN.
+          # STANDARD is the server-side default/fallback and is deliberately NOT exposed to the AI.
+          # The goal ↔ campaign_type MAPPING (which goal implies which type) is a Wave-2 ruling,
+          # not Wave 1 drift. These two fields are different concepts (marketing objective vs.
+          # execution format), not one vocabulary. This check will flip to BLOCKING after the
+          # Wave-2 mapping is ruled and vocabularies are reconciled — for now it REPORTS drift
+          # without failing CI so the Wave-1 injection fixes (V1.2/V1.3) can ship.
+
+          # Check if goal and campaign_type enums match (expected to REPORT drift, not block)
+          if [ "${{ steps.python-schema.outputs.PYTHON_GOAL_ENUM }}" != "${{ steps.python-schema.outputs.PYTHON_CAMPAIGN_TYPE_ENUM }}" ]; then
+            echo "⚠️  DRIFT REPORTED (non-blocking): 'goal' enum (calculate_budget) does not match 'campaign_type' enum (create_campaign)"
+            echo ""
+            echo "DETAILS:"
+            echo "  - calculate_budget.goal: ${{ steps.python-schema.outputs.PYTHON_GOAL_ENUM }}"
+            echo "  - create_campaign.campaign_type: ${{ steps.python-schema.outputs.PYTHON_CAMPAIGN_TYPE_ENUM }}"
+            echo ""
+            echo "REASON: These represent different concepts (marketing objective vs. execution format)."
+            echo "ACTION: Wave-2 task — needs goal↔campaign_type mapping ruling (Priya/Swapnil sign-off)."
+            echo "See: wiki/ai-review/T4-schema-fix-correction.md, 00-AI-FEATURES-ARCHITECTURE.md §5 rule 6"
+            DRIFT_DETECTED=1
+          else
+            echo "✅ goal and campaign_type enums match"
+          fi
+
+          echo ""
+          if [ $DRIFT_DETECTED -eq 1 ]; then
+            echo "⚠️  goal↔campaign_type difference reported (non-blocking, Wave-2 mapping ruling pending)."
+          fi
+
+          # Fail CI only on the blocking invariant (tool-name set must match Java).
+          if [ $TOOLNAME_DRIFT -eq 1 ]; then
+            echo ""
+            echo "❌ BLOCKING: Python TOOL_SCHEMAS tool names have drifted from Java MeeraToolName."
+            echo "   Java is canonical (00-AI-FEATURES-ARCHITECTURE.md §5 rule 6) — reconcile schemas.py."
+            exit 1
+          fi
+
+          echo "✅ Blocking schema invariants passed (tool-name set matches Java)."

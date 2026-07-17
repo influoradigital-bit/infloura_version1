@@ -1,0 +1,15 @@
+# Local profile: docker compose up -d mysql
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+influora:
+  auth:
+    require-email-verification: false
+    require-email-otp-before-register: false
+
+logging:
+  level:
+    com.influora: DEBUG
+    org.hibernate.SQL: WARN

@@ -1,0 +1,38 @@
+{
+  "date": "2026-07-12",
+  "monthly_budget": 133,
+  "spent_this_month": 68.95,
+  "remaining": 64.05,
+  "budget_percent_used": 51.84,
+  "alert_level": "GREEN",
+  "daily_tasks": [
+    {
+      "task": "P2-13 affiliate per-campaign commission rate model spec (data model, default/override rule, range cap, who-can-set)",
+      "agents": ["rohan"],
+      "estimated_tokens": 48000,
+      "estimated_cost": 0.72,
+      "time_minutes": 25
+    },
+    {
+      "task": "P2-17 production AI-spend ceiling + kill-switch proposal (daily/workspace/monthly thresholds, enforcement spec for Vikram)",
+      "agents": ["rohan"],
+      "estimated_tokens": 52000,
+      "estimated_cost": 0.78,
+      "time_minutes": 30
+    }
+  ],
+  "summary": "Budget healthy (dev-tooling), 51.8% used. Unblocked both P2-13 and P2-17 today now that P0-1 (backend compiles/tests run) is done -- wrote concrete specs for both and handed off to Vikram: P2-13 (wiki/decisions/2026-07-12-P2-13-affiliate-commission-rate-model.md) adds a nullable per-campaign commission_rate column, falls back to the existing flat 10%; P2-17 (wiki/decisions/budget-proposals/2026-07-12-ai-spend-ceiling-and-killswitch.md) sets a $15/day global hard ceiling + kill-switch env var + $3/day per-workspace soft cap across Meera chat, classify_site, and brand-safety -- this is the first hard-coded production AI budget line the company has had; Swapnil should be looped in per the proposal's sign-off note.",
+  "influora_production_ai": {
+    "status": "SPEC SIGNED OFF 2026-07-12 -- implementation in progress (Vikram), not yet live",
+    "note": "P2-17 proposal sets the ceiling numbers: $15/day global hard stop (all 3 production AI routes combined), AI_SPEND_KILL_SWITCH env var for instant hard block, $3/day per-workspace soft cap (log-only this pass), $300/month informational (manually tracked here until a cross-instance ledger exists -- documented limitation, spend counter is per-process in this pass). Numbers will be re-priced once a full month of real logged spend exists, same discipline as the 2026-07-11 brand-safety proposal.",
+    "monthly_budget": 300,
+    "spent_this_month": 0,
+    "daily_hard_ceiling": 15,
+    "per_workspace_daily_soft_cap": 3,
+    "kill_switch_env_var": "AI_SPEND_KILL_SWITCH",
+    "pending_from_2026_07_11": {
+      "dry_run_ceiling": 5,
+      "provisional_full_backfill_ceiling": 100
+    }
+  }
+}

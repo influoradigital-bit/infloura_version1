@@ -1,0 +1,8 @@
+# Dev/test-only dependencies for the eval harness (tests/eval/) and any other
+# local test runs. Never installed in the production image (Dockerfile only
+# uses requirements.txt) -- kept separate so prod dependency surface stays
+# minimal per the security spec.
+
+-r requirements.txt
+pytest==8.3.4
+pytest-asyncio==0.25.2

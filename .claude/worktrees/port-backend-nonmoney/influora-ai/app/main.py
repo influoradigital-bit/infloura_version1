@@ -1,0 +1,85 @@
+"""FastAPI app entrypoint — Meera AI reasoner service (influora-ai).
+
+Stateless per request: no DB, no session store, no local disk writes.
+Registers /chat, /analyze-site, /voice/transcribe, /voice/speak, /healthz,
+/readyz. Wires redaction-based structured JSON logging as the process-wide
+logging config.
+
+`/healthz` and `/readyz` are the only unauthenticated endpoints. Every other
+route goes through the auth dependency in `app.auth.service_token` at the
+route-body level (workspace_id must be read from the body before the token can
+be checked against it, so auth is enforced inside each route handler rather
+than as a blanket dependency — see each route module).
+"""
+
+from __future__ import annotations
+
+import logging
+
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+from app.config import CLAUDE_MODEL, GEMINI_MODEL, PROMPT_VERSION, get_settings
+from app.routes import analyze_site, chat, voice
+from app.security.redaction import configure_logging
+
+settings = get_settings()
+configure_logging(settings.log_level)
+logger = logging.getLogger("influora_ai.main")
+
+app = FastAPI(
+    title="Influora AI Service (Meera Reasoner)",
+    description="Stateless FastAPI service: chat orchestration, website analyzer, voice. No DB, no money.",
+    version=PROMPT_VERSION,
+)
+
+app.include_router(chat.router, tags=["chat"])
+app.include_router(analyze_site.router, tags=["analyze-site"])
+app.include_router(voice.router, tags=["voice"])
+
+
+@app.on_event("startup")
+async def _refuse_boot_on_missing_secrets() -> None:
+    missing = settings.require_boot_secrets()
+    if missing:
+        logger.error("refusing to boot: missing required secrets/config: %s", ", ".join(missing))
+        raise RuntimeError(f"missing required secrets/config: {', '.join(missing)}")
+    logger.info(
+        "influora-ai booted: env=%s claude_model=%s gemini_model=%s prompt_version=%s",
+        settings.env,
+        CLAUDE_MODEL,
+        GEMINI_MODEL,
+        PROMPT_VERSION,
+    )
+
+
+@app.get("/healthz")
+async def healthz():
+    """Liveness — no auth. Process is up."""
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz():
+    """Readiness — no auth. Reports provider reachability + keys loaded (shape
+    only, never the key values themselves).
+    """
+    keys_loaded = {
+        "anthropic": bool(settings.anthropic_api_key),
+        "gemini": bool(settings.gemini_api_key),
+        "sarvam": bool(settings.sarvam_api_key),
+        "internal_hmac": bool(settings.internal_hmac_key),
+        "service_token_signing_key": bool(settings.service_token_signing_key),
+        "jwks_or_dev_secret": bool(settings.spring_jwks_url or settings.dev_shared_jwt_secret),
+    }
+    ready = all(keys_loaded.values())
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={
+            "status": "ready" if ready else "not_ready",
+            "keys_loaded": keys_loaded,
+            "prompt_version": PROMPT_VERSION,
+            "claude_model": CLAUDE_MODEL,
+            "gemini_model": GEMINI_MODEL,
+        },
+    )
