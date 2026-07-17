@@ -228,6 +228,38 @@ class SecurityConfigMatcherTest {
                 !isGranted(authenticatedAs(UserType.BRAND), request(HttpMethod.POST, "/admin/auth/logout")));
     }
 
+    // ---- Public creator portfolio permitAll (GET view + POST contact) ----------------------
+
+    @Test
+    @DisplayName("Portfolio: anonymous GET /portfolio/{username} is permitted (shareable public page)")
+    void publicPortfolioGetPermittedAnonymous() {
+        assertTrue(isGranted(ANONYMOUS, request(HttpMethod.GET, "/portfolio/priyacreates")));
+    }
+
+    @Test
+    @DisplayName("Portfolio: anonymous POST /portfolio/{username}/contact is permitted (brand contact form)")
+    void publicPortfolioContactPermittedAnonymous() {
+        assertTrue(isGranted(ANONYMOUS, request(HttpMethod.POST, "/portfolio/priyacreates/contact")));
+    }
+
+    @Test
+    @DisplayName("Portfolio narrowness: anonymous GET /me/portfolio is DENIED (single-'*' permit cannot leak the creator-only route)")
+    void myPortfolioGetStillDeniedAnonymous() {
+        assertTrue(!isGranted(ANONYMOUS, request(HttpMethod.GET, "/me/portfolio")));
+    }
+
+    @Test
+    @DisplayName("Portfolio narrowness: anonymous GET /me/portfolio/analytics is DENIED (creator-only analytics stays authenticated)")
+    void myPortfolioAnalyticsStillDeniedAnonymous() {
+        assertTrue(!isGranted(ANONYMOUS, request(HttpMethod.GET, "/me/portfolio/analytics")));
+    }
+
+    @Test
+    @DisplayName("Portfolio method-scoping: anonymous PATCH /portfolio/{username} is DENIED (only GET is opened, not writes)")
+    void publicPortfolioPatchDeniedAnonymous() {
+        assertTrue(!isGranted(ANONYMOUS, request(HttpMethod.PATCH, "/portfolio/priyacreates")));
+    }
+
     // ---- Pre-existing behavior must be unchanged -------------------------------------------
 
     @Test

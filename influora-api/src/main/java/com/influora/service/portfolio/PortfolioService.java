@@ -14,10 +14,12 @@ import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.PlatformStat;
+import com.influora.domain.entity.PortfolioEvent;
 import com.influora.domain.entity.Review;
 import com.influora.domain.entity.User;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CollaborationStatus;
+import com.influora.domain.enums.PortfolioEventType;
 import com.influora.domain.enums.ReviewerType;
 import com.influora.integration.storage.R2StorageService;
 import com.influora.service.security.MalwareScanService;
@@ -28,6 +30,7 @@ import com.influora.repository.CollaborationRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.DeliverableRepository;
 import com.influora.repository.PlatformStatRepository;
+import com.influora.repository.PortfolioEventRepository;
 import com.influora.repository.ReviewRepository;
 import com.influora.repository.UserRepository;
 import com.influora.repository.WorkspaceRepository;
@@ -50,6 +53,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -88,6 +92,10 @@ public class PortfolioService {
     private final ApplicationEventPublisher eventPublisher;
     private final UserRepository userRepository;
     private final DeliverableRepository deliverableRepository;
+    private final PortfolioEventRepository portfolioEventRepository;
+
+    /** Trailing window for the "Page views (30d)" analytics number and its period-over-period delta. */
+    private static final Duration ANALYTICS_WINDOW = Duration.ofDays(30);
 
     public PortfolioService(
             CreatorContextService creatorContext,
@@ -104,7 +112,8 @@ public class PortfolioService {
             MalwareScanService malwareScanService,
             ApplicationEventPublisher eventPublisher,
             UserRepository userRepository,
-            DeliverableRepository deliverableRepository) {
+            DeliverableRepository deliverableRepository,
+            PortfolioEventRepository portfolioEventRepository) {
         this.creatorContext = creatorContext;
         this.creatorProfileService = creatorProfileService;
         this.creatorProfileRepository = creatorProfileRepository;
@@ -120,6 +129,7 @@ public class PortfolioService {
         this.eventPublisher = eventPublisher;
         this.userRepository = userRepository;
         this.deliverableRepository = deliverableRepository;
+        this.portfolioEventRepository = portfolioEventRepository;
     }
 
     @Transactional(readOnly = true)
@@ -127,6 +137,29 @@ public class PortfolioService {
         CreatorProfile profile = creatorProfileService.requireProfileByUsername(username);
         requireDiscoverablePortfolio(profile);
         return assemble(profile, true);
+    }
+
+    /**
+     * Records one public view of {@code username}'s portfolio (Priya CTO ruling 2026-07-18). Its
+     * OWN writable transaction, separate from the read-only {@link #getPublic} that serves the page,
+     * so the view write is never entangled with page assembly. The controller calls this off the
+     * response path and swallows any failure — a view-counter write must NEVER turn a good page into
+     * a 500. Silently no-ops for a non-discoverable profile (nothing public was actually served).
+     * v1 records raw views (no dedup); {@code visitorHash} stays null until the unique-visitor pass.
+     */
+    @Transactional
+    public void recordPublicView(String username) {
+        CreatorProfile profile = creatorProfileService.requireProfileByUsername(username);
+        if (!profile.isDiscoverable()) {
+            return;
+        }
+        portfolioEventRepository.save(
+                PortfolioEvent.builder()
+                        .id(Ulids.newUlid())
+                        .creatorProfileId(profile.getId())
+                        .eventType(PortfolioEventType.VIEW)
+                        .occurredAt(Instant.now())
+                        .build());
     }
 
     @Transactional(readOnly = true)
@@ -193,9 +226,8 @@ public class PortfolioService {
     public PortfolioAnalyticsResponse analytics(AuthPrincipal principal) {
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
 
-        // Calculate real portfolio metrics from existing data
-        // Page views and link clicks tracking not yet implemented (requires analytics events table)
-        // For now, return real counts from what we have: collaborations as proxy for brand inquiries
+        // Calculate real portfolio metrics from existing data.
+        // Link clicks tracking is still not implemented (requires per-custom-link counters).
 
         // collaborations.creator_id is an FK to users.id (V6), NOT creator_profiles.id — scope
         // these counts by the profile's userId or they silently return 0 in production, since
@@ -206,15 +238,20 @@ public class PortfolioService {
 
         long totalInquiries = collaborationRepository.countByCreatorId(profile.getUserId());
 
-        // Media kit downloads not tracked yet — return 0 until analytics table added
-        long mediaKitDownloads = 0;
+        // Real media-kit download count (portfolio_events, type MEDIA_KIT_DOWNLOAD). Returns 0
+        // until the media-kit PDF download endpoint exists to record them — but it is now a real
+        // query, not a hardcoded literal, so it becomes live the moment that endpoint ships.
+        long mediaKitDownloads =
+                portfolioEventRepository.countByCreatorProfileIdAndEventType(
+                        profile.getId(), PortfolioEventType.MEDIA_KIT_DOWNLOAD);
 
         // Profile clicks from platform stats (total followers as proxy metric)
         long profileClicks = profile.getTotalFollowers() > 0 ?
                 profile.getTotalFollowers() / 100 : 0; // Rough estimate
 
-        // Page views calculation deferred until analytics events table exists
-        var pageViews = new PortfolioAnalyticsResponse.PageViews(0, 0);
+        // Real page views from portfolio_events (type VIEW), keyed by creator_profiles.id (the same
+        // id recordPublicView writes) — NOT userId like the collaboration counts above.
+        var pageViews = computePageViews(profile.getId());
 
         return new PortfolioAnalyticsResponse(
                 pageViews,
@@ -223,6 +260,31 @@ public class PortfolioService {
                 totalInquiries,
                 mediaKitDownloads
         );
+    }
+
+    /**
+     * Real "Page views (30d)" plus a period-over-period delta, from {@code portfolio_events} (VIEW).
+     * {@code last30Days} = views in the trailing 30 days; {@code deltaPercent} compares that to the
+     * preceding 30 days. Delta is 0 when the prior window had no views (no baseline to grow from —
+     * avoids a divide-by-zero and a misleading "+100%" on a creator's very first views).
+     */
+    private PortfolioAnalyticsResponse.PageViews computePageViews(String creatorProfileId) {
+        Instant now = Instant.now();
+        Instant windowStart = now.minus(ANALYTICS_WINDOW);
+        Instant priorStart = windowStart.minus(ANALYTICS_WINDOW);
+
+        long last30Days =
+                portfolioEventRepository.countByCreatorProfileIdAndEventTypeAndOccurredAtAfter(
+                        creatorProfileId, PortfolioEventType.VIEW, windowStart);
+        long prior30Days =
+                portfolioEventRepository.countByCreatorProfileIdAndEventTypeAndOccurredAtBetween(
+                        creatorProfileId, PortfolioEventType.VIEW, priorStart, windowStart);
+
+        int deltaPercent =
+                prior30Days == 0
+                        ? 0
+                        : (int) Math.round(((last30Days - prior30Days) * 100.0) / prior30Days);
+        return new PortfolioAnalyticsResponse.PageViews(last30Days, deltaPercent);
     }
 
     /**

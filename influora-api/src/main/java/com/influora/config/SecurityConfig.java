@@ -115,6 +115,24 @@ public class SecurityConfig {
                                         // See ConversionWebhookController#trackClick.
                                         .requestMatchers(HttpMethod.GET, "/track/click/**")
                                         .permitAll()
+                                        // Public creator portfolio — influora.com/@handle is a
+                                        // shareable, indexable page (see CREATOR-PORTFOLIO-PAGE.md,
+                                        // App.tsx "/:handle"). Both endpoints are served to a
+                                        // logged-out visitor / brand / crawler who cannot present a
+                                        // JWT, so without these they fell through to
+                                        // anyRequest().authenticated() and 401'd — making every
+                                        // shared link dead unless the opener was already logged in.
+                                        //   GET  /portfolio/{username}         — read the page
+                                        //   POST /portfolio/{username}/contact — brand contact form
+                                        // Single-segment '*' (not '**') keeps this narrow: it cannot
+                                        // match /me/portfolio/**. Only these two verbs+paths are
+                                        // opened; /me/portfolio/** stays authenticated. Server-side
+                                        // anti-spam on contact is enforced in PortfolioService, not
+                                        // here. See PortfolioController#getPublic / #contact.
+                                        .requestMatchers(HttpMethod.GET, "/portfolio/*")
+                                        .permitAll()
+                                        .requestMatchers(HttpMethod.POST, "/portfolio/*/contact")
+                                        .permitAll()
                                         // Wave-1 S3 — AdminAuthController is @RequestMapping("/admin/auth")
                                         // and was unreachable unauthenticated (fell through to
                                         // anyRequest().authenticated()), so an admin could never obtain a

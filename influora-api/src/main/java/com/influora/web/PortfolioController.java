@@ -11,6 +11,8 @@ import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioPageResponse;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioPatchRequest;
 import com.influora.web.dto.portfolio.PortfolioDtos.SyncPlatformsResponse;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,6 +28,8 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController
 public class PortfolioController {
 
+    private static final Logger log = LoggerFactory.getLogger(PortfolioController.class);
+
     private final PortfolioService portfolioService;
 
     public PortfolioController(PortfolioService portfolioService) {
@@ -34,7 +38,17 @@ public class PortfolioController {
 
     @GetMapping("/portfolio/{username}")
     public ResponseEntity<ApiResponse<PortfolioPageResponse>> getPublic(@PathVariable String username) {
-        return ResponseEntity.ok(ApiResponse.ok(portfolioService.getPublic(username)));
+        PortfolioPageResponse page = portfolioService.getPublic(username);
+        // Record the view only after the page assembled successfully (so a 404 for an unknown/
+        // hidden handle is never counted). Isolated in its own transaction inside the service and
+        // caught here: a view-counter write must NEVER turn a good page into a 500. See
+        // PortfolioService#recordPublicView.
+        try {
+            portfolioService.recordPublicView(username);
+        } catch (RuntimeException ex) {
+            log.warn("Failed to record portfolio view for username={}", username, ex);
+        }
+        return ResponseEntity.ok(ApiResponse.ok(page));
     }
 
     @PostMapping("/portfolio/{username}/contact")
