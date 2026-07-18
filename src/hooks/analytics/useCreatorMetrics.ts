@@ -9,6 +9,11 @@
  *
  * trendData is only populated by the backend when both startDate and endDate
  * are supplied; otherwise it comes back as an empty array (never fabricated).
+ *
+ * When creatorId === CREATOR_ANALYTICS_SELF, routes to the creator-self
+ * endpoint (api.creatorAnalytics.getMyMetrics) instead of the brand-facing
+ * /analytics/creators/{id}/metrics endpoint — see the branch in refresh()
+ * below (matches the pattern in useCreatorDemographics.ts).
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -49,7 +54,10 @@ export function useCreatorMetrics(
     setLoading(true);
     setError(null);
     try {
-      const result = await api.analytics.getCreatorMetrics(creatorId, startIso, endIso);
+      const result =
+        creatorId === CREATOR_ANALYTICS_SELF
+          ? await api.creatorAnalytics.getMyMetrics(startIso, endIso)
+          : await api.analytics.getCreatorMetrics(creatorId, startIso, endIso);
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load creator metrics');

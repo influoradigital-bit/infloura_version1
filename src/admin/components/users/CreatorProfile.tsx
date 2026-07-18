@@ -47,12 +47,25 @@ import {
   Gauge,
   CalendarDays,
   RefreshCw,
+  Pencil,
+  X,
+  ArrowUpDown,
+  ArrowRight,
   type LucideIcon,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,6 +82,7 @@ import { useCreatorDetail } from '../../hooks/useCreatorDetail';
 import { creatorApi } from '../../services/api-contracts';
 import KpiCard from '../dashboard/KpiCard';
 import { CreatorApplicationStatus } from '../../types/admin.types';
+import type { Creator } from '../../types/admin.types';
 
 // ============================================
 // FORMATTING
@@ -161,6 +175,29 @@ export default function CreatorProfile({ creatorId, className }: CreatorProfileP
   const [rejectApplicationOpen, setRejectApplicationOpen] = useState(false);
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [reinstateOpen, setReinstateOpen] = useState(false);
+
+  // --------------------------------------------
+  // Edit mode — only the backend's allow-listed fields for `PUT
+  // /admin/creators/{id}` (`AdminCreatorDtos.UpdateCreatorRequest`): name,
+  // niche. Application status, suspension, tier, follower/engagement/quality
+  // stats, and Instagram verification are NOT editable here — they have
+  // their own dedicated, audited mutations (tier adjustment has its own
+  // control below; the rest are the existing action buttons).
+  // --------------------------------------------
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editNiche, setEditNiche] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+
+  // --------------------------------------------
+  // Adjust tier — a moderation/quality-gate action, requires a reason.
+  // --------------------------------------------
+  const [tierOpen, setTierOpen] = useState(false);
+  const [newTier, setNewTier] = useState<Creator['tier']>('NANO');
+  const [tierReason, setTierReason] = useState('');
+  const [tierError, setTierError] = useState<string | null>(null);
+  const [tierLoading, setTierLoading] = useState(false);
 
   // --------------------------------------------
   // Action handlers — live-wired to creatorApi (P1-WIRE-3). Server-side
@@ -256,6 +293,58 @@ export default function CreatorProfile({ creatorId, className }: CreatorProfileP
   }
 
   // --------------------------------------------
+  // Edit mode handlers
+  // --------------------------------------------
+
+  function startEditing() {
+    if (!creator) return;
+    setEditName(creator.name);
+    setEditNiche(creator.niche.join(', '));
+    setEditError(null);
+    setIsEditing(true);
+  }
+
+  function cancelEditing() {
+    setIsEditing(false);
+    setEditError(null);
+  }
+
+  async function handleSaveEdit() {
+    setEditLoading(true);
+    setEditError(null);
+    const niche = editNiche
+      .split(',')
+      .map((n) => n.trim())
+      .filter((n) => n.length > 0);
+    const res = await creatorApi.update(creatorId, { name: editName.trim(), niche });
+    if (res.success) {
+      setIsEditing(false);
+      refresh();
+    } else {
+      setEditError(res.error ?? 'Failed to update creator.');
+    }
+    setEditLoading(false);
+  }
+
+  // --------------------------------------------
+  // Adjust tier handler
+  // --------------------------------------------
+
+  async function handleAdjustTier() {
+    setTierLoading(true);
+    setTierError(null);
+    const res = await creatorApi.adjustTier({ creatorId, newTier, reason: tierReason });
+    if (res.success) {
+      setTierReason('');
+      setTierOpen(false);
+      refresh();
+    } else {
+      setTierError(res.error ?? 'Failed to adjust tier.');
+    }
+    setTierLoading(false);
+  }
+
+  // --------------------------------------------
 
   if (isLoading) {
     return (
@@ -336,9 +425,69 @@ export default function CreatorProfile({ creatorId, className }: CreatorProfileP
                 Active
               </StatusPill>
             )}
+            {!isEditing && (
+              <Button type="button" size="sm" variant="outline" onClick={startEditing}>
+                <Pencil aria-hidden="true" />
+                Edit
+              </Button>
+            )}
           </div>
         </div>
       </Card>
+
+      {/* Edit form — only the backend allow-listed fields (name, niche).
+          Application status/suspension/tier/verification stay read-only
+          here — tier has its own dedicated control below. */}
+      {isEditing && (
+        <Card className="gap-4 p-5">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">Edit Creator</h3>
+            <Button type="button" size="sm" variant="ghost" onClick={cancelEditing} disabled={editLoading}>
+              <X aria-hidden="true" />
+              Cancel
+            </Button>
+          </div>
+
+          {editError && (
+            <p className="rounded-lg border border-destructive-foreground/30 bg-card px-3 py-2 text-xs text-destructive-foreground">
+              {editError}
+            </p>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="creator-edit-name">Name</Label>
+              <Input
+                id="creator-edit-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                disabled={editLoading}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="creator-edit-niche">Niche (comma-separated)</Label>
+              <Input
+                id="creator-edit-niche"
+                value={editNiche}
+                onChange={(e) => setEditNiche(e.target.value)}
+                disabled={editLoading}
+                placeholder="e.g. Beauty, Lifestyle"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleSaveEdit()}
+              disabled={editLoading || editName.trim().length === 0}
+            >
+              {editLoading ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -419,6 +568,85 @@ export default function CreatorProfile({ creatorId, className }: CreatorProfileP
             <dd className="font-medium text-foreground">{creator.qualityMetrics.disputeRate}%</dd>
           </div>
         </dl>
+
+        <div className="border-t border-border pt-4">
+          <AlertDialog
+            open={tierOpen}
+            onOpenChange={(open) => {
+              setTierOpen(open);
+              if (open) {
+                setNewTier(creator.tier);
+                setTierReason('');
+                setTierError(null);
+              }
+            }}
+          >
+            <AlertDialogTrigger asChild>
+              <Button type="button" size="sm" variant="outline">
+                <ArrowUpDown aria-hidden="true" />
+                Adjust Tier
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Adjust tier for {creator.name}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This overrides the creator's tier independent of the daily score calculation job.
+                  Recorded on the creator's review trail. Provide a reason.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="creator-new-tier">New Tier</Label>
+                  <Select value={newTier} onValueChange={(value) => setNewTier(value as Creator['tier'])}>
+                    <SelectTrigger id="creator-new-tier" disabled={tierLoading}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NANO">Nano</SelectItem>
+                      <SelectItem value="MICRO">Micro</SelectItem>
+                      <SelectItem value="MID">Mid</SelectItem>
+                      <SelectItem value="MACRO">Macro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">{creator.tier}</span>
+                  <ArrowRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                  <span className="font-medium text-foreground">{newTier}</span>
+                </div>
+
+                <Textarea
+                  value={tierReason}
+                  onChange={(e) => setTierReason(e.target.value)}
+                  placeholder="Reason for tier adjustment (min. 10 characters, e.g. Manual override — follower audit confirmed higher reach than automated scoring)"
+                  disabled={tierLoading}
+                />
+              </div>
+
+              {tierError && (
+                <p className="rounded-lg border border-destructive-foreground/30 bg-card px-3 py-2 text-xs text-destructive-foreground">
+                  {tierError}
+                </p>
+              )}
+
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={tierLoading}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void handleAdjustTier();
+                  }}
+                  disabled={tierLoading || tierReason.trim().length < 10}
+                >
+                  {tierLoading ? 'Saving…' : 'Confirm Tier Adjustment'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </Card>
 
       {/* Collaboration history */}

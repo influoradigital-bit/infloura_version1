@@ -15,7 +15,7 @@
  * full returned list — the backend has no pagination/filter/sort params yet.
  */
 
-import { type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -24,6 +24,11 @@ import {
   CheckCircle2,
   TrendingDown,
   Megaphone,
+  Loader2,
+  FileText,
+  Handshake,
+  ListChecks,
+  Wallet,
 } from 'lucide-react';
 import {
   Table,
@@ -42,8 +47,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { useCampaignList, type CampaignSortField } from '../../hooks/useCampaignList';
+import { useCampaignDetail } from '../../hooks/useCampaignDetail';
 import type { CampaignSummary } from '../../types/admin.types';
 
 // ============================================
@@ -56,6 +69,14 @@ function formatCompactINR(amount: number): string {
     currency: 'INR',
     notation: 'compact',
     maximumFractionDigits: 1,
+  }).format(amount);
+}
+
+function formatINR(amount: number): string {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
   }).format(amount);
 }
 
@@ -96,6 +117,7 @@ function statusPillTone(status: CampaignSummary['status']): PillTone {
   switch (status) {
     case 'ACTIVE':
       return 'success';
+    case 'PENDING_APPROVAL':
     case 'PAUSED':
       return 'warning';
     case 'CANCELLED':
@@ -115,7 +137,7 @@ function statusPillTone(status: CampaignSummary['status']): PillTone {
  * duplicate of that field.
  */
 function performanceFlag(campaign: CampaignSummary): { tone: PillTone; icon: typeof AlertTriangle; label: string } {
-  if (campaign.status === 'DRAFT' || campaign.status === 'CANCELLED') {
+  if (campaign.status === 'DRAFT' || campaign.status === 'PENDING_APPROVAL' || campaign.status === 'CANCELLED') {
     return { tone: 'neutral', icon: CheckCircle2, label: 'N/A' };
   }
   if (campaign.slaBreachRate >= 15) {
@@ -161,6 +183,162 @@ function SortableHead({ field, activeField, direction, onSort, children, classNa
   );
 }
 
+function timelineStatusTone(status: 'ON_TRACK' | 'AT_RISK' | 'DELAYED'): PillTone {
+  switch (status) {
+    case 'AT_RISK':
+      return 'warning';
+    case 'DELAYED':
+      return 'destructive';
+    case 'ON_TRACK':
+    default:
+      return 'success';
+  }
+}
+
+function collabStatusTone(status: CampaignSummary['status'] | string): PillTone {
+  switch (status) {
+    case 'COMPLETED':
+      return 'success';
+    case 'CONTRACTED':
+    case 'DELIVERING':
+      return 'neutral';
+    default:
+      return 'warning';
+  }
+}
+
+// ============================================
+// DETAIL DRAWER — clicking a row opens the full `CampaignDetail` (brief,
+// deliverables, contracted creators, escrow balance, timeline status), backed
+// by `useCampaignDetail()` (`campaignApi.getById()`). Read-only for now — no
+// campaign mutation endpoints exist yet on the admin surface.
+// ============================================
+
+function CampaignDetailDrawer({
+  campaignId,
+  onOpenChange,
+}: {
+  campaignId: string | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { data: campaign, isLoading, error } = useCampaignDetail(campaignId ?? undefined);
+
+  return (
+    <Sheet open={Boolean(campaignId)} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-lg">
+        <SheetHeader>
+          <SheetTitle>{campaign?.name ?? (isLoading ? 'Loading campaign…' : 'Campaign')}</SheetTitle>
+          <SheetDescription>
+            {campaign ? `${campaign.brandName} · ${campaign.type}` : 'Campaign detail'}
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4">
+          {isLoading && (
+            <div className="flex flex-1 items-center justify-center py-10 text-muted-foreground">
+              <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+            </div>
+          )}
+
+          {error && !isLoading && (
+            <div className="rounded-lg border border-destructive-foreground/30 bg-card p-4 text-sm text-destructive-foreground">
+              Failed to load campaign: {error}
+            </div>
+          )}
+
+          {campaign && !isLoading && (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusPill tone={statusPillTone(campaign.status)}>{campaign.status}</StatusPill>
+                <StatusPill tone={timelineStatusTone(campaign.timelineStatus)}>
+                  {campaign.timelineStatus.replace('_', ' ')}
+                </StatusPill>
+                <Badge variant="outline">{campaign.type}</Badge>
+              </div>
+
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-border bg-card p-3 text-sm">
+                <dt className="text-muted-foreground">Budget</dt>
+                <dd className="text-foreground">{formatINR(campaign.budget)}</dd>
+                <dt className="text-muted-foreground">Spent</dt>
+                <dd className="text-foreground">{formatINR(campaign.spent)}</dd>
+                <dt className="flex items-center gap-1 text-muted-foreground">
+                  <Wallet className="size-3.5" aria-hidden="true" />
+                  Escrow Balance
+                </dt>
+                <dd className="text-foreground">{formatINR(campaign.escrowBalance)}</dd>
+                <dt className="text-muted-foreground">Started</dt>
+                <dd className="text-foreground">{formatDate(campaign.createdAt)}</dd>
+                <dt className="text-muted-foreground">Ends</dt>
+                <dd className="text-foreground">{formatDate(campaign.endsAt)}</dd>
+                <dt className="text-muted-foreground">SLA Breach Rate</dt>
+                <dd className="text-foreground">{campaign.slaBreachRate}%</dd>
+              </dl>
+
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <FileText className="size-4" aria-hidden="true" />
+                  Brief
+                </div>
+                <p className="rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground">
+                  {campaign.brief || 'No brief on file.'}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <ListChecks className="size-4" aria-hidden="true" />
+                  Deliverables ({campaign.deliverables.length})
+                </div>
+                {campaign.deliverables.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No deliverables on file.</p>
+                ) : (
+                  <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
+                    {campaign.deliverables.map((d) => (
+                      <li key={d.id} className="flex items-center justify-between gap-3 p-3 text-sm">
+                        <div>
+                          <p className="font-medium text-foreground">
+                            {d.type} · {d.quantity}x
+                          </p>
+                          <p className="text-muted-foreground">{d.description}</p>
+                        </div>
+                        <span className="whitespace-nowrap text-xs text-muted-foreground">
+                          Due {formatDate(d.deadline)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Handshake className="size-4" aria-hidden="true" />
+                  Creators ({campaign.creators.length})
+                </div>
+                {campaign.creators.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No creators contracted yet.</p>
+                ) : (
+                  <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
+                    {campaign.creators.map((c) => (
+                      <li key={c.creatorId} className="flex items-center justify-between gap-3 p-3 text-sm">
+                        <span className="font-medium text-foreground">{c.creatorName}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">{formatINR(c.amount)}</span>
+                          <StatusPill tone={collabStatusTone(c.status)}>{c.status}</StatusPill>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 // ============================================
 // PROPS
 // ============================================
@@ -175,6 +353,7 @@ export interface CampaignTableProps {
 
 export default function CampaignTable({ className }: CampaignTableProps) {
   const { campaigns, totalCount, isLoading, error, filters, setFilters, sort, setSort } = useCampaignList();
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
 
   function handleSort(field: CampaignSortField) {
     setSort({
@@ -216,6 +395,7 @@ export default function CampaignTable({ className }: CampaignTableProps) {
             <SelectContent>
               <SelectItem value="ALL">All statuses</SelectItem>
               <SelectItem value="DRAFT">Draft</SelectItem>
+              <SelectItem value="PENDING_APPROVAL">Pending Approval</SelectItem>
               <SelectItem value="ACTIVE">Active</SelectItem>
               <SelectItem value="PAUSED">Paused</SelectItem>
               <SelectItem value="COMPLETED">Completed</SelectItem>
@@ -313,7 +493,20 @@ export default function CampaignTable({ className }: CampaignTableProps) {
                 const flag = performanceFlag(campaign);
                 const FlagIcon = flag.icon;
                 return (
-                  <TableRow key={campaign.id}>
+                  <TableRow
+                    key={campaign.id}
+                    onClick={() => setSelectedCampaignId(campaign.id)}
+                    className="cursor-pointer"
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`Open campaign: ${campaign.name}`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedCampaignId(campaign.id);
+                      }
+                    }}
+                  >
                     <TableCell className="max-w-56 whitespace-normal font-medium text-foreground">
                       {campaign.name}
                       <Badge variant="outline" className="ml-2 align-middle">
@@ -351,6 +544,13 @@ export default function CampaignTable({ className }: CampaignTableProps) {
           </TableBody>
         </Table>
       </div>
+
+      <CampaignDetailDrawer
+        campaignId={selectedCampaignId}
+        onOpenChange={(open) => {
+          if (!open) setSelectedCampaignId(null);
+        }}
+      />
     </div>
   );
 }

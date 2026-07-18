@@ -3,22 +3,28 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Influora — Lilac Mist (pastel, light default, no black primary) */
+/* Influora — Violet Ink (2026-07-17 recalibration, CEO directive: palette read
+   as dull/washed-out. Was "Lilac Mist" — pale lavender bg + #9b8cf2 primary,
+   whose white-on-primary contrast was ~2.9:1, failing WCAG AA on every CTA.
+   Now: near-white base so lavender becomes an intentional tint (secondary/
+   muted/accent), a committed violet primary aligned with the Meera
+   money-serious accent family (--meera-accent #6D5AE6, white text 4.9:1 AA),
+   and a real ink foreground. Brand hue unchanged — only commitment. */
 :root {
-  --background: #f0ebfa;
-  --foreground: #3d3852;
+  --background: #faf9fd;
+  --foreground: #221e35;
   --card: #ffffff;
-  --card-foreground: #3d3852;
+  --card-foreground: #221e35;
   --popover: #ffffff;
-  --popover-foreground: #3d3852;
-  --primary: #9b8cf2;
+  --popover-foreground: #221e35;
+  --primary: #6d5ae6;
   --primary-foreground: #ffffff;
   --secondary: #ebe4f8;
-  --secondary-foreground: #3d3852;
+  --secondary-foreground: #221e35;
   --muted: #ebe4f8;
-  --muted-foreground: #7a738f;
+  --muted-foreground: #67617d;
   --accent: #ede9fe;
-  --accent-foreground: #5b4db3;
+  --accent-foreground: #4c3bc2;
   --destructive: #ffe5e5;
   --destructive-foreground: #a63a3a;
   --success: #ddf5e8;
@@ -29,21 +35,21 @@
   --info-foreground: #3e6fae;
   --border: #d8d4e8;
   --input: #d8d4e8;
-  --ring: #9b8cf2;
-  --chart-1: #9b8cf2;
+  --ring: #6d5ae6;
+  --chart-1: #6d5ae6;
   --chart-2: #7ec8e8;
   --chart-3: #f5b89a;
   --chart-4: #2e7d7d;
   --chart-5: #a85a36;
   --radius: 0.625rem;
-  --sidebar: #ebe4f8;
-  --sidebar-foreground: #3d3852;
-  --sidebar-primary: #9b8cf2;
+  --sidebar: #f3effc;
+  --sidebar-foreground: #221e35;
+  --sidebar-primary: #6d5ae6;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #ede9fe;
-  --sidebar-accent-foreground: #5b4db3;
+  --sidebar-accent-foreground: #4c3bc2;
   --sidebar-border: #d8d4e8;
-  --sidebar-ring: #9b8cf2;
+  --sidebar-ring: #6d5ae6;
 
   /* Stage palette — production v1 */
   --stage-draft: #e8e6ed;
@@ -121,8 +127,10 @@
   --card-foreground: #f0eef5;
   --popover: #353347;
   --popover-foreground: #f0eef5;
+  /* Light-purple button needs dark ink text — white on #b0a3f5 was ~2.1:1,
+     a hard WCAG fail; #201c33 on it is ~7.4:1. */
   --primary: #b0a3f5;
-  --primary-foreground: #ffffff;
+  --primary-foreground: #201c33;
   --secondary: #3d3a4d;
   --secondary-foreground: #f0eef5;
   --muted: #3d3a4d;
@@ -143,7 +151,7 @@
   --sidebar: #252330;
   --sidebar-foreground: #f0eef5;
   --sidebar-primary: #b0a3f5;
-  --sidebar-primary-foreground: #ffffff;
+  --sidebar-primary-foreground: #201c33;
   --sidebar-accent: #3d3a4d;
   --sidebar-accent-foreground: #f0eef5;
   --sidebar-border: #4a4560;

@@ -30,6 +30,7 @@ import type {
   CreatorScores,
   DeliverableStatus,
   Platform,
+  VerificationStatus,
 } from './types';
 import {
   persistBrandSession,
@@ -582,6 +583,40 @@ export const auth = {
   setToken: (role: Role, token: string) => http.setToken(role, token),
 };
 
+/**
+ * L-9 — {@code GET /workspaces/me} response (WorkspaceMemberDtos.WorkspaceReadResponse). `email`
+ * maps to `workspaces.billing_email` server-side. No `phone` field — no backing column exists
+ * anywhere on `workspaces` or `users`, so it is never returned (TECH-STACK.md rule 7: no
+ * fabricated backend contracts).
+ */
+export interface WorkspaceMeResponse {
+  id: string;
+  name: string;
+  slug: string;
+  email: string | null;
+  industry: string | null;
+  companySize: string | null;
+  websiteUrl: string | null;
+  logoUrl: string | null;
+  verificationStatus: VerificationStatus | null;
+}
+
+/**
+ * L-9 — {@code PATCH /workspaces/me} request body (WorkspaceMemberDtos.WorkspaceUpdateRequest).
+ * Full-replace semantics for every included field (not a deep merge) — a field omitted here is
+ * cleared server-side. `name` is the only required field. Deliberately no `phone` — never send
+ * it, there is no column to persist it into.
+ */
+export interface WorkspaceMeUpdatePayload {
+  name: string;
+  email?: string;
+  websiteUrl?: string;
+  industry?: string;
+  companySize?: string;
+  description?: string;
+  logoUrl?: string;
+}
+
 export const workspaces = {
   /** GET /workspaces/slug-check?slug= */
   checkSlug: (slug: string) =>
@@ -592,6 +627,44 @@ export const workspaces = {
           { query: { slug } },
         )
       : mockOr({ slug, available: true, suggestions: [] }),
+
+  /**
+   * GET /workspaces/me — L-9, WorkspaceController.getMyWorkspace. Any active brand member may
+   * read (no OWNER/ADMIN restriction on the read side).
+   */
+  getMe: () =>
+    isLive()
+      ? http.request<WorkspaceMeResponse>('GET', '/workspaces/me')
+      : mockOr<WorkspaceMeResponse>({
+          id: 'ws_1',
+          name: 'Tech Brands Co.',
+          slug: 'tech-brands-co',
+          email: 'admin@techbrands.in',
+          industry: null,
+          companySize: null,
+          websiteUrl: 'www.techbrands.in',
+          logoUrl: null,
+          verificationStatus: 'VERIFIED',
+        }),
+
+  /**
+   * PATCH /workspaces/me — L-9, WorkspaceController.updateMyWorkspace. OWNER/ADMIN only —
+   * backend returns 403 for any other role. Never include `phone`; there is no column for it.
+   */
+  updateMe: (payload: WorkspaceMeUpdatePayload) =>
+    isLive()
+      ? http.request<WorkspaceMeResponse>('PATCH', '/workspaces/me', { body: payload })
+      : mockOr<WorkspaceMeResponse>({
+          id: 'ws_1',
+          name: payload.name,
+          slug: 'tech-brands-co',
+          email: payload.email ?? null,
+          industry: payload.industry ?? null,
+          companySize: payload.companySize ?? null,
+          websiteUrl: payload.websiteUrl ?? null,
+          logoUrl: payload.logoUrl ?? null,
+          verificationStatus: 'VERIFIED',
+        }),
 };
 
 export const onboarding = {
@@ -1088,7 +1161,154 @@ export const messages = {
     isLive()
       ? http.request<{ ok: true }>('POST', `/deals/${dealId}/messages/read`, { role })
       : mockOr({ ok: true as const }),
+
+  /**
+   * GET /deals/:dealId/messages/stream — realtime deal-chat SSE.
+   *
+   * Backend contract (locked, Priya direct assignment 2026-07-18, see
+   * SHARED_CONTEXT.md "Realtime messaging for brand-chat"): named event
+   * `deal-message`, `data:` = the SAME DealMessageResponse shape `messages.list`
+   * already returns — mapped 1:1 onto `DealMessage` here, no parallel type.
+   *
+   * Must be fetch-based SSE with a standard `Authorization: Bearer <token>`
+   * header, NOT raw `EventSource` (EventSource can't send headers and the
+   * token must never ride in the URL). Mirrors `src/hooks/useMeeraStream.ts`'s
+   * fetch + ReadableStream + manual SSE-frame-parsing approach; unlike that
+   * hook this is a plain GET with no request body and no stream token — it
+   * uses the same ordinary role token (`brand_token`/`creator_token`) every
+   * other brand/creator deal request uses.
+   *
+   * Returns a handle whose `close()` aborts the underlying fetch — callers
+   * must call it on deal switch and on unmount to avoid leaking connections
+   * or letting a stale deal's stream write into the newly selected one.
+   *
+   * Never throws synchronously and never rejects the caller's render path:
+   * connection failures, non-OK responses, and stream read errors all route
+   * through `handlers.onError` (optional) so a dropped/failed stream degrades
+   * silently to the existing fetch-on-load (`messages.list`) path.
+   */
+  stream: (role: Role, dealId: string, handlers: DealMessageStreamHandlers): DealMessageStreamHandle => {
+    const controller = new AbortController();
+
+    void (async () => {
+      const token = localStorage.getItem(TOKEN_KEYS[role]);
+      let response: Response;
+      try {
+        response = await fetch(`${API_BASE_URL}/deals/${dealId}/messages/stream`, {
+          method: 'GET',
+          headers: {
+            Accept: 'text/event-stream',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          credentials: 'include',
+          signal: controller.signal,
+        });
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        handlers.onError?.(
+          err instanceof Error ? err : new Error('Deal message stream connection failed'),
+        );
+        return;
+      }
+
+      if (controller.signal.aborted) return;
+
+      if (!response.ok || !response.body) {
+        handlers.onError?.(new Error(`Deal message stream rejected (HTTP ${response.status})`));
+        return;
+      }
+
+      handlers.onOpen?.();
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          // Frames are separated by a blank line (\n\n or \r\n\r\n) — same
+          // framing useMeeraStream's SSE reader uses.
+          for (;;) {
+            const sep = buffer.search(/\r?\n\r?\n/);
+            if (sep === -1) break;
+            const rawFrame = buffer.slice(0, sep);
+            buffer = buffer.slice(sep).replace(/^\r?\n\r?\n/, '');
+
+            const frame = parseDealMessageSseFrame(rawFrame);
+            if (!frame || frame.event !== 'deal-message') continue; // heartbeat/other events
+            try {
+              const dto = JSON.parse(frame.data) as DealMessage;
+              handlers.onMessage(dto);
+            } catch {
+              // Malformed event payload — skip this frame only, non-fatal.
+              console.debug('[messages.stream] malformed deal-message payload:', frame.data);
+            }
+          }
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          handlers.onError?.(err instanceof Error ? err : new Error('Deal message stream interrupted'));
+        }
+      }
+    })();
+
+    return {
+      close: () => controller.abort(),
+    };
+  },
 };
+
+export interface DealMessageStreamHandlers {
+  /** Called for each `deal-message` SSE event with the parsed DealMessage DTO. */
+  onMessage: (message: DealMessage) => void;
+  /** Called once the connection is established (headers received), before any events. */
+  onOpen?: () => void;
+  /**
+   * Called on connection failure, a non-OK response, or a stream read error.
+   * Never throws internally — the caller decides whether/how to degrade.
+   */
+  onError?: (error: Error) => void;
+}
+
+export interface DealMessageStreamHandle {
+  /** Aborts the underlying fetch and stops reading the stream. */
+  close: () => void;
+}
+
+interface DealMessageSseFrame {
+  event: string;
+  data: string;
+}
+
+/**
+ * Parse a single raw SSE frame (the text between two blank lines) per the SSE
+ * spec — mirrors `src/hooks/useMeeraStream.ts`'s `parseSseFrame`: `:`-prefixed
+ * lines are comments (heartbeats), multiple `data:` lines join with `\n`, one
+ * optional leading space after the field colon is stripped. Returns `null`
+ * for a comment-only/heartbeat frame.
+ */
+function parseDealMessageSseFrame(rawFrame: string): DealMessageSseFrame | null {
+  let event = 'message';
+  const dataLines: string[] = [];
+
+  for (const rawLine of rawFrame.split(/\r?\n/)) {
+    if (rawLine === '' || rawLine.startsWith(':')) continue;
+    const colon = rawLine.indexOf(':');
+    const field = colon === -1 ? rawLine : rawLine.slice(0, colon);
+    let value = colon === -1 ? '' : rawLine.slice(colon + 1);
+    if (value.startsWith(' ')) value = value.slice(1);
+
+    if (field === 'event') event = value;
+    else if (field === 'data') dataLines.push(value);
+  }
+
+  if (dataLines.length === 0) return null;
+  return { event, data: dataLines.join('\n') };
+}
 
 // ---------------------------------------------------------------------------
 // Contracts
@@ -1258,6 +1478,21 @@ export interface WalletTopUpResponse {
 }
 
 /**
+ * GET /wallet/escrow row / GET /wallet/escrow/{id} response — MoneyDtos.EscrowStatusResponse
+ * (EscrowController.java:58, :91). The list endpoint returns the exact same shape per item as the
+ * single-hold status lookup.
+ */
+export interface EscrowHoldRow {
+  escrowHoldId: string;
+  status: 'PENDING' | 'FUNDED' | 'RELEASED' | 'CANCELLED';
+  amount: number;
+  currency: string;
+  campaignId: string;
+  milestoneId: string | null;
+  fundedAt: string | null;
+}
+
+/**
  * GET /wallet/payout-methods row / POST /wallet/payout-methods response. Backed by the encrypted
  * CreatorBankAccountService (Kabir M-K6-C3-2) — the account number / UPI VPA is never decrypted for
  * a read, only `displayMask` (e.g. "****1234") is ever returned. `usable` reflects the 24h
@@ -1366,6 +1601,17 @@ export const wallet = {
     isLive()
       ? http.request<PayoutMethod>('PUT', `/wallet/payout-methods/${id}/primary`, { role })
       : mockOr<PayoutMethod>({ id, type: 'UPI', displayMask: '****0000', isPrimary: true, usable: true }),
+
+  /**
+   * GET /wallet/escrow (brand-scoped, paginated) — EscrowController.java:58. Backs the
+   * brand-wallet page's escrow-items panel. Server resolves the workspace from the auth
+   * principal, so no `role`/workspace id is passed — this is brand-only (creator calls
+   * getEscrowStatus per-hold via the Meera API instead).
+   */
+  escrowList: (page = 1, limit = 20) =>
+    isLive()
+      ? http.request<EscrowHoldRow[]>('GET', '/wallet/escrow', { query: { page, limit } })
+      : mockOr<EscrowHoldRow[]>([]),
 };
 
 // ---------------------------------------------------------------------------
@@ -1582,7 +1828,11 @@ export const notifications = {
   /**
    * GET /notifications/preferences — per-event-type email unsubscribe state for the
    * authenticated user (Domain B, 07-NOTIFICATION-SYSTEM-SPEC.md EmailPreference model).
-   * There is no backend model for push/SMS/digest channels — this only covers email.
+   * Real route as of 2026-07-18 (NotificationController.getPreferences), backed by the existing
+   * email_preferences table — auth-scoped server-side via AuthPrincipal, never a request param.
+   * Sparse list: an event type absent from the response is implicitly subscribed. Use eventType
+   * "*" for the global email opt-out. There is no backend model for push/SMS/digest channels —
+   * this only covers email.
    */
   getPreferences: (role: Role) =>
     isLive()
@@ -1591,7 +1841,10 @@ export const notifications = {
           .then((r) => r.preferences)
       : mockOr<NotificationPreference[]>([]),
 
-  /** POST /notifications/preferences — subscribe/unsubscribe a single event type's email. */
+  /**
+   * POST /notifications/preferences — subscribe/unsubscribe a single event type's email.
+   * Real route as of 2026-07-18 (NotificationController.setPreference).
+   */
   setPreference: (role: Role, eventType: string, subscribed: boolean) =>
     isLive()
       ? http.request<void>('POST', '/notifications/preferences', {
@@ -2033,9 +2286,11 @@ export const portfolio = {
         })
       : mockOr({ delivered: true }),
 
-  /** Media kit PDF — returns a direct download URL (server-rendered, watermarked) */
-  mediaKitUrl: (username: string) =>
-    `${API_BASE_URL}/portfolio/${encodeURIComponent(username)}/media-kit.pdf`,
+  // NOTE (2026-07-17): `mediaKitUrl` was removed. It pointed at
+  // `GET /portfolio/{username}/media-kit.pdf`, which PortfolioController does
+  // NOT expose (only getPublic/contact/getMine/updateMine/sync/cover/analytics
+  // exist). Every "Media Kit (PDF)" button built on it 404'd in live mode.
+  // Re-add this ONLY once the backend actually serves the PDF.
 
   /** GET /me/portfolio/analytics  — last 30 days */
   analytics: () =>

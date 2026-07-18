@@ -39,7 +39,7 @@ function AvatarDisc({ avatarUrl }: { avatarUrl?: string }) {
         {texture ? (
           <meshBasicMaterial map={texture} toneMapped={false} />
         ) : (
-          <meshStandardMaterial color="#9b8cf2" roughness={0.4} metalness={0.05} />
+          <meshStandardMaterial color="#7c6ae8" roughness={0.4} metalness={0.05} />
         )}
       </mesh>
     </group>

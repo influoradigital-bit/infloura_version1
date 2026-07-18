@@ -4,12 +4,16 @@ import {
   ArrowRight,
   Briefcase,
   CheckCircle2,
+  Eye,
   FileSignature,
+  Globe,
   IndianRupee,
   Loader2,
   Megaphone,
   MessageCircle,
+  Share2,
   Sparkles,
+  TrendingUp,
   Upload,
   Wallet,
 } from 'lucide-react';
@@ -26,6 +30,7 @@ import {
   ApiError,
   isApiLive,
   type CreatorDeliverableListItem,
+  type PortfolioAnalytics,
   type WalletSummaryResponse,
 } from '@/lib/api';
 import {
@@ -63,6 +68,9 @@ interface DashboardData {
   wallet: WalletSummaryResponse;
   deals: CreatorDealsPageRow[];
   pending: PendingBreakdown;
+  /** Portfolio reach + handle — supplementary, null if the portfolio API is unreachable. */
+  analytics: PortfolioAnalytics | null;
+  username: string | null;
 }
 
 const EMPTY_WALLET: WalletSummaryResponse = {
@@ -89,10 +97,23 @@ async function loadDeliverablePendingCount(dealIds: string[]): Promise<number> {
   return lists.reduce((sum, items) => sum + countSubmittableDeliverables(items), 0);
 }
 
+/**
+ * Portfolio reach + handle for the "Your public page" card. Supplementary to
+ * the core dashboard — both calls self-gate mock/live and each fails soft to
+ * null so a portfolio hiccup never blocks wallet/deals from rendering.
+ */
+async function fetchPortfolioExtras(): Promise<Pick<DashboardData, 'analytics' | 'username'>> {
+  const [analytics, mine] = await Promise.all([
+    api.portfolio.analytics().catch(() => null),
+    api.portfolio.getMine().catch(() => null),
+  ]);
+  return { analytics, username: mine?.username ?? null };
+}
+
 async function fetchDashboardData(): Promise<DashboardData> {
   if (!isApiLive()) {
     const deals = mockDeals;
-    const wallet = await api.wallet.get('creator');
+    const [wallet, extras] = await Promise.all([api.wallet.get('creator'), fetchPortfolioExtras()]);
     const unreadMessages = deals.reduce((sum, d) => sum + d.unreadCount, 0);
     const activeIds = deals.filter(isActiveDeal).map((d) => d.id);
     const submittableDeliverables = await loadDeliverablePendingCount(activeIds);
@@ -103,12 +124,13 @@ async function fetchDashboardData(): Promise<DashboardData> {
       submittableDeliverables,
       total: unreadMessages + awaitingSignature + submittableDeliverables,
     };
-    return { wallet, deals, pending };
+    return { wallet, deals, pending, ...extras };
   }
 
-  const [wallet, dealRows] = await Promise.all([
+  const [wallet, dealRows, extras] = await Promise.all([
     api.wallet.get('creator'),
     api.deals.list('creator', 'all'),
+    fetchPortfolioExtras(),
   ]);
 
   const deals = dealRows.map(mapDealToDealsPageRow);
@@ -131,7 +153,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     total: unreadMessages + awaitingSignature + submittableDeliverables,
   };
 
-  return { wallet, deals, pending };
+  return { wallet, deals, pending, ...extras };
 }
 
 const quickLinks = [
@@ -153,7 +175,136 @@ const quickLinks = [
     href: '/creator/wallet',
     icon: Wallet,
   },
+  {
+    label: 'Affiliate earnings',
+    description: 'Commission from every sale you drove',
+    href: '/creator/affiliate',
+    icon: IndianRupee,
+  },
+  {
+    label: 'Your public page',
+    description: 'Edit and share your influora.com profile',
+    href: '/creator/portfolio',
+    icon: Globe,
+  },
 ] as const;
+
+/**
+ * "Your public page" — the growth nudge. Answers "who's looking at me" using
+ * the live /me/portfolio/analytics reach numbers, and makes sharing the
+ * influora.com/@handle link one tap (native share sheet on mobile, clipboard
+ * copy elsewhere). Reach stats render only when analytics loaded; the share
+ * action always works from the handle alone.
+ */
+function PublicPageCard({
+  username,
+  analytics,
+}: {
+  username: string;
+  analytics: PortfolioAnalytics | null;
+}) {
+  const [copied, setCopied] = React.useState(false);
+  const publicUrl = `${window.location.origin}/@${username}`;
+
+  const share = React.useCallback(async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `@${username} on Influora`, url: publicUrl });
+        return;
+      } catch {
+        // dismissed — fall through to clipboard
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked — no-op */
+    }
+  }, [publicUrl, username]);
+
+  const views = analytics?.pageViews.last30Days ?? null;
+  const delta = analytics?.pageViews.deltaPercent ?? null;
+  const inquiries = analytics?.brandInquiries ?? null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-medium">Your public page</CardTitle>
+        <CardDescription>
+          Share your link so brands can find and hire you.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <a
+            href={`/@${username}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+          >
+            <Globe className="h-4 w-4" aria-hidden />
+            influora.com/@{username}
+          </a>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={share} className="gap-1.5">
+              {copied ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4" aria-hidden />
+                  Link copied
+                </>
+              ) : (
+                <>
+                  <Share2 className="h-4 w-4" aria-hidden />
+                  Share page
+                </>
+              )}
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/creator/portfolio">Edit</Link>
+            </Button>
+          </div>
+        </div>
+
+        {(views !== null || inquiries !== null) && (
+          <div className="grid grid-cols-2 gap-3 border-t border-border pt-4">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Eye className="h-4 w-4" aria-hidden />
+              </div>
+              <div className="min-w-0">
+                <p className="text-lg font-semibold leading-none tabular-nums">
+                  {views !== null ? views.toLocaleString('en-IN') : '—'}
+                </p>
+                <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                  Profile views · 30d
+                  {typeof delta === 'number' && delta > 0 && (
+                    <span className="inline-flex items-center gap-0.5 text-success">
+                      <TrendingUp className="h-3 w-3" aria-hidden />
+                      {delta}%
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <MessageCircle className="h-4 w-4" aria-hidden />
+              </div>
+              <div className="min-w-0">
+                <p className="text-lg font-semibold leading-none tabular-nums">
+                  {inquiries !== null ? inquiries.toLocaleString('en-IN') : '—'}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">Brand inquiries · 30d</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function CreatorDashboardPage() {
   const navigate = useNavigate();
@@ -163,6 +314,8 @@ export default function CreatorDashboardPage() {
   const [wallet, setWallet] = React.useState<WalletSummaryResponse>(EMPTY_WALLET);
   const [deals, setDeals] = React.useState<CreatorDealsPageRow[]>([]);
   const [pending, setPending] = React.useState<PendingBreakdown>(EMPTY_PENDING);
+  const [analytics, setAnalytics] = React.useState<PortfolioAnalytics | null>(null);
+  const [username, setUsername] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -175,11 +328,15 @@ export default function CreatorDashboardPage() {
         setWallet(data.wallet);
         setDeals(data.deals);
         setPending(data.pending);
+        setAnalytics(data.analytics);
+        setUsername(data.username);
       } catch (e) {
         if (cancelled) return;
         setWallet(EMPTY_WALLET);
         setDeals([]);
         setPending(EMPTY_PENDING);
+        setAnalytics(null);
+        setUsername(null);
         setError(e instanceof ApiError ? e.message : 'Could not load dashboard. Try again.');
       } finally {
         if (!cancelled) setLoading(false);
@@ -323,6 +480,12 @@ export default function CreatorDashboardPage() {
             </Card>
           </StaggerItem>
         </StaggerContainer>
+
+        {!loading && username && (
+          <FadeUp delay={0.05}>
+            <PublicPageCard username={username} analytics={analytics} />
+          </FadeUp>
+        )}
 
         {!loading && pending.total > 0 && (
           <FadeUp delay={0.05}>

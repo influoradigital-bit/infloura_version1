@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import type { CreatorScores } from '@/lib/types';
+import { CREATOR_ANALYTICS_SELF } from '@/hooks/analytics/useCreatorMetrics';
 
 export interface UseCreatorScoresResult {
   data: CreatorScores | null;
@@ -34,7 +35,10 @@ export function useCreatorScores(creatorId: string | undefined): UseCreatorScore
     setLoading(true);
     setError(null);
     try {
-      const result = await api.analytics.getCreatorScores(creatorId);
+      const result =
+        creatorId === CREATOR_ANALYTICS_SELF
+          ? await api.creatorAnalytics.getMyScores()
+          : await api.analytics.getCreatorScores(creatorId);
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load creator scores');

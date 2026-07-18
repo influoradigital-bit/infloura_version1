@@ -10,6 +10,7 @@ export type MeeraFunctionCall =
   | 'analyze_site'
   | 'calculate_budget'
   | 'show_creators'
+  | 'create_campaign'
   | 'request_payment'
   | 'confirm_launch'
 

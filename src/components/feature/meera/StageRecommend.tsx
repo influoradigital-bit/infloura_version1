@@ -46,22 +46,31 @@ export function StageRecommend({ toolResult, className }: StageRecommendProps) {
     )
   }
 
-  // Live mode — calculate_budget only reports the budget numbers (no campaign
-  // type/window/reach in this contract, 02 §3), so we render what we actually
-  // have rather than padding the layout with fabricated stats.
+  // Live mode — `CalculateBudgetResult` (Spring DTO) is an advisory suggestion:
+  // suggestedPoolTotal / suggestedPerCreatorRate / suggestedCreatorCount /
+  // currency / rationale. There's no pool/fee/total split on this DTO, so we
+  // show exactly what it provides rather than inventing a platformFee.
   if (!isCalculateBudgetPayload(toolResult)) {
     return <StageLoadingState label="Crunching the budget…" className={className} />
   }
 
   return (
     <div className={cn('space-y-4', className)}>
+      <div className="grid grid-cols-2 gap-3">
+        <StatPair label="Suggested pool" value={toolResult.suggestedPoolTotal} formatFn={(n) => formatINR(n)} />
+        <StatPair label="Per creator" value={toolResult.suggestedPerCreatorRate} formatFn={(n) => formatINR(n)} />
+      </div>
       <StatPair
-        label="Per creator"
-        value={toolResult.perCreator}
-        formatFn={(n) => formatINR(n)}
+        label="Suggested creators"
+        value={toolResult.suggestedCreatorCount}
+        formatFn={(n) => `${Math.round(n)}`}
         className="max-w-[12rem]"
       />
-      <FeeBreakdown pool={toolResult.pool} fee={toolResult.platformFee} total={toolResult.total} />
+      {toolResult.rationale && (
+        <p className="rounded-lg border border-meera-border bg-meera-surface-2 p-3 text-xs text-meera-text-muted">
+          {toolResult.rationale}
+        </p>
+      )}
     </div>
   )
 }

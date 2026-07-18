@@ -42,7 +42,7 @@ function Blob({ position, scale, color, speed = 2, distort = 0.35 }: BlobProps) 
 }
 
 function Scene({ degraded, accent }: { degraded: boolean; accent: 'brand' | 'creator' }) {
-  const primary = accent === 'creator' ? '#7ec8e8' : '#9b8cf2';
+  const primary = accent === 'creator' ? '#7ec8e8' : '#7c6ae8';
   const secondary = accent === 'creator' ? '#a8d8f0' : '#c4b5fd';
 
   return (

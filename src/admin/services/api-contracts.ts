@@ -275,7 +275,7 @@ export const creatorApi = {
     }),
 
   getPendingApplications: (page = 1, pageSize = 20) =>
-    apiRequest<PaginatedResponse<Creator>>(
+    apiRequest<PaginatedResponse<CreatorSummary>>(
       `/creators/applications/pending?page=${page}&pageSize=${pageSize}`
     ),
 };
@@ -384,18 +384,16 @@ export const financeApi = {
    * last observed by this client) as an optimistic-concurrency token — see
    * `PlatformFeeUpdateRequest.expectedEffectiveDate` in admin.types.ts for the full rationale.
    *
-   * IMPORTANT — not fully enforced yet: `PlatformFeeConfigDtos.UpdatePlatformFeeConfigRequest`
-   * doesn't declare this field server-side, so today it's silently dropped on arrival
-   * (fail-on-unknown-properties is off) rather than validated. The only real guard right now is
-   * Hibernate `@Version` on `PlatformFeeConfig#version` (V44 migration), checked entirely
-   * inside `PlatformFeeAdminService#update`'s own load-then-save transaction — that only 409s
-   * when two PUTs race within that same transaction window, NOT the realistic case of two
-   * SUPER_ADMINs submitting minutes apart (the second transaction loads the already-bumped row
-   * and commits cleanly, silently reverting the first admin's change with no 409 at all). Do
-   * not treat receiving a 409 here as proof of full protection until Vikram wires server-side
-   * comparison of `expectedEffectiveDate`/`version` against the freshly-loaded row inside
-   * `update()`. The client's 409 handling below (surface + refresh, never overwrite) is already
-   * correct and will start triggering reliably for the realistic race once that lands.
+   * ENFORCED server-side: `PlatformFeeConfigDtos.UpdatePlatformFeeConfigRequest` now declares
+   * `expectedEffectiveDate` as a `@NotNull` field, and `PlatformFeeAdminService#update()`
+   * unconditionally compares it against the freshly-loaded row's `effectiveDate` inside its own
+   * transaction, throwing `FEE_CONFIG_CONFLICT` (HTTP 409) on any mismatch — so the realistic
+   * "two SUPER_ADMINs submitting minutes apart" race now 409s reliably instead of silently
+   * reverting the first admin's change. Hibernate `@Version` on `PlatformFeeConfig#version`
+   * (V44 migration) remains as a defense-in-depth backstop for same-transaction-window races.
+   * Because the token is mandatory server-side, this client MUST always send it (FeeControlPanel
+   * echoes the currently-loaded `effectiveDate`); omitting it now yields a 400, not a silent
+   * overwrite. The client's 409 handling below (surface + refresh, never overwrite) is correct.
    *
    * Bypasses the shared `apiRequest` helper for the error path on purpose:
    * that helper reads `error.message` off the raw response body, but

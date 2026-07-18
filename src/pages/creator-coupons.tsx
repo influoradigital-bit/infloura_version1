@@ -9,17 +9,12 @@ import { useCreatorCoupons } from '@/hooks/creator/useCreatorCoupons';
 /**
  * Creator-facing "My Coupons" page — Wave A task A4
  * (wiki/tech/REMAINING_WORK_PLAN.md, ANANYA_FRONTEND_IMPLEMENTATION_SPEC.md §15).
- *
- * Backend gap: no creator-authed read endpoint exists yet for "my coupons
- * across all campaigns" — see the gap note in src/lib/api.ts above
- * `creatorCoupons`. `useCreatorCoupons` surfaces that as `notImplemented`,
- * rendered below as an explicit "API not yet available" banner rather than a
- * silent empty state or fabricated data. In demo/mock mode
+ * Backed by GET /creator/coupons (CreatorCouponController). In demo/mock mode
  * (VITE_API_MODE !== 'live') the hook returns clearly-labeled illustrative
- * rows so the shell can be reviewed without a live backend.
+ * rows so the page can be reviewed without a live backend.
  */
 export default function CreatorCouponsPage() {
-  const { data, loading, error, notImplemented, refresh } = useCreatorCoupons();
+  const { data, loading, error, refresh } = useCreatorCoupons();
 
   return (
     <CreatorLayout>
@@ -31,20 +26,6 @@ export default function CreatorCouponsPage() {
             with your audience.
           </p>
         </div>
-
-        {notImplemented && (
-          <Alert className="mb-5 border-amber-300 bg-amber-50">
-            <AlertTriangle className="h-4 w-4 text-amber-700" />
-            <AlertTitle className="text-amber-900">API not yet available</AlertTitle>
-            <AlertDescription className="text-amber-800">
-              The backend endpoint that lists a creator's coupons across all campaigns
-              (<code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-xs">GET /creator/coupons</code>)
-              has not been built yet — brands can already generate coupons, but creators can't read
-              them back yet. This screen is a UI shell so the design can be reviewed early; it will
-              light up once that endpoint ships.
-            </AlertDescription>
-          </Alert>
-        )}
 
         {error && (
           <Alert className="mb-5" variant="destructive">
@@ -65,7 +46,7 @@ export default function CreatorCouponsPage() {
           <div className="flex items-center justify-center py-16">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
-        ) : data.length === 0 && !notImplemented && !error ? (
+        ) : data.length === 0 && !error ? (
           <EmptyState />
         ) : (
           <div className="space-y-4">

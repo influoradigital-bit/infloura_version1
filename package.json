@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "postbuild": "node scripts/prerender.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "lh:meera": "node ci/lighthouse-meera.mjs"

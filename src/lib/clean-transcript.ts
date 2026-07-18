@@ -1,5 +1,14 @@
 /**
- * MOCK — replace with backend LLM cleanup post-M2 (see spec §5A.C).
+ * MOCK, scoped to the browser-fallback STT path only.
+ *
+ * The primary voice-input path (`useVoiceInput` recording audio and calling
+ * `meeraApi.transcribe`) now gets `cleaned_text` back from the Sarvam
+ * backend already cleaned up server-side — this function is never applied
+ * to that result. It still runs on the ONE remaining client-side path:
+ * `webkitSpeechRecognition`'s raw transcript, used when Sarvam recording is
+ * unavailable or the transcribe call soft-fails. Replacing this with a real
+ * cleanup call (or retiring it once the browser-fallback path itself goes
+ * away) is still open.
  *
  * Deterministic, light-touch transcript tidy for voice input. This is
  * explicitly NOT a grammar/Hinglish rewriter — that needs an LLM and lands

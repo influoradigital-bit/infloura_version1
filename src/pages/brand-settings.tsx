@@ -10,9 +10,12 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import { api, isApiLive, ApiError } from '@/lib/api';
+import { toast } from '@/hooks/use-toast';
 
 export default function BrandSettingsPage() {
   const navigate = useNavigate();
+  const liveApi = isApiLive();
   const [activeTab, setActiveTab] = React.useState('general');
   const [settings, setSettings] = React.useState({
     workspaceName: 'Tech Brands Co.',
@@ -28,9 +31,139 @@ export default function BrandSettingsPage() {
     bidNotifications: true,
     twoFactorAuth: false,
   });
+  const [emailPrefLoading, setEmailPrefLoading] = React.useState(false);
+  const [emailPrefSaving, setEmailPrefSaving] = React.useState(false);
+  const [emailPrefError, setEmailPrefError] = React.useState<string | null>(null);
 
-  const handleSave = () => {
-    alert('Settings saved successfully!');
+  // autoRecharge* and twoFactorAuth still have no backend route — those stay UI-only local
+  // state with the Save control disabled and an honest caption below.
+  const SETTINGS_PERSISTENCE_UNAVAILABLE =
+    "Settings sync isn't available yet — changes apply to this session only.";
+
+  // UPDATE (2026-07-18): GET/PATCH /workspaces/me now exist (WorkspaceController, L-9) and
+  // cover name/email(-> billing_email)/websiteUrl for this "Workspace Information" card.
+  // `email` is the workspace's billing/contact email server-side, not a login email.
+  // PHONE HAS NO BACKEND COLUMN (anywhere on workspaces or users) — never sent to PATCH, input
+  // stays disabled with an honest caption rather than pretending it persists.
+  const [workspaceInfoLoading, setWorkspaceInfoLoading] = React.useState(false);
+  const [workspaceInfoLoadError, setWorkspaceInfoLoadError] = React.useState<string | null>(null);
+  const [workspaceInfoSaving, setWorkspaceInfoSaving] = React.useState(false);
+  const [workspaceInfoSaveError, setWorkspaceInfoSaveError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!liveApi) return; // mock mode: local defaults are the whole story
+    let cancelled = false;
+    setWorkspaceInfoLoading(true);
+    setWorkspaceInfoLoadError(null);
+    api.workspaces
+      .getMe()
+      .then((ws) => {
+        if (cancelled) return;
+        setSettings((prev) => ({
+          ...prev,
+          workspaceName: ws.name,
+          email: ws.email ?? prev.email,
+          website: ws.websiteUrl ?? prev.website,
+        }));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Failed to load workspace information', err);
+        setWorkspaceInfoLoadError('Could not load workspace information.');
+      })
+      .finally(() => {
+        if (!cancelled) setWorkspaceInfoLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [liveApi]);
+
+  const handleSaveWorkspaceInfo = async () => {
+    if (!settings.workspaceName.trim()) {
+      setWorkspaceInfoSaveError('Workspace name is required.');
+      return;
+    }
+    setWorkspaceInfoSaving(true);
+    setWorkspaceInfoSaveError(null);
+    try {
+      const updated = await api.workspaces.updateMe({
+        name: settings.workspaceName,
+        email: settings.email,
+        websiteUrl: settings.website,
+      });
+      setSettings((prev) => ({
+        ...prev,
+        workspaceName: updated.name,
+        email: updated.email ?? prev.email,
+        website: updated.websiteUrl ?? prev.website,
+      }));
+      toast({ title: 'Workspace updated', description: 'Your workspace information has been saved.' });
+    } catch (err) {
+      console.error('Failed to save workspace information', err);
+      const message =
+        err instanceof ApiError && err.status === 403
+          ? 'Only workspace owners/admins can change these settings.'
+          : 'Could not save workspace information. Please try again.';
+      setWorkspaceInfoSaveError(message);
+      toast({ title: 'Save failed', description: message, variant: 'destructive' });
+    } finally {
+      setWorkspaceInfoSaving(false);
+    }
+  };
+
+  // UPDATE (2026-07-18): notifications.getPreferences/setPreference (src/lib/api.ts) now hit a
+  // real, auth-scoped route (GET/POST /notifications/preferences, NotificationController.java),
+  // backed by the existing email_preferences table. It covers exactly the global email opt-out
+  // (eventType "*"), which is what "Email Notifications" below is wired to. pushNotifications has
+  // no backend channel at all (no push infra); campaignAlerts/bidNotifications/weeklyDigest have
+  // no matching backend event-category or digest job to bind to — they stay UI-only local state
+  // rather than pretend to persist (same precedent as creator-settings.tsx).
+  React.useEffect(() => {
+    let cancelled = false;
+    setEmailPrefLoading(true);
+    api.notifications
+      .getPreferences('brand')
+      .then((prefs) => {
+        if (cancelled) return;
+        const globalPref = prefs.find((p) => p.eventType === '*');
+        setSettings((prev) => ({ ...prev, emailNotifications: !globalPref?.unsubscribed }));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Failed to load notification preferences', err);
+        setEmailPrefError('Could not load your email notification preference.');
+      })
+      .finally(() => {
+        if (!cancelled) setEmailPrefLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleEmailPrefChange = async (checked: boolean) => {
+    const previous = settings.emailNotifications;
+    setSettings({ ...settings, emailNotifications: checked });
+    setEmailPrefError(null);
+
+    if (!liveApi) return; // mock mode: local state is the whole story
+
+    setEmailPrefSaving(true);
+    try {
+      await api.notifications.setPreference('brand', '*', checked);
+    } catch (err) {
+      console.error('Failed to save notification preference', err);
+      setSettings((prev) => ({ ...prev, emailNotifications: previous })); // revert on failure
+      setEmailPrefError('Could not save. Please try again.');
+      toast({
+        title: 'Save failed',
+        description: 'Could not update your email notification preference.',
+        variant: 'destructive',
+      });
+    } finally {
+      setEmailPrefSaving(false);
+    }
   };
 
   return (
@@ -73,6 +206,12 @@ export default function BrandSettingsPage() {
           <TabsContent value="general" className="space-y-6">
             <Card className="p-6">
               <h3 className="font-semibold mb-6">Workspace Information</h3>
+              {workspaceInfoLoading && (
+                <p className="text-xs text-muted-foreground mb-4">Loading workspace information…</p>
+              )}
+              {workspaceInfoLoadError && (
+                <p className="text-xs text-destructive mb-4">{workspaceInfoLoadError}</p>
+              )}
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="workspace-name">Workspace Name</Label>
@@ -80,6 +219,7 @@ export default function BrandSettingsPage() {
                     id="workspace-name"
                     value={settings.workspaceName}
                     onChange={(e) => setSettings({ ...settings, workspaceName: e.target.value })}
+                    disabled={workspaceInfoLoading}
                     className="mt-2"
                   />
                 </div>
@@ -90,8 +230,10 @@ export default function BrandSettingsPage() {
                     type="email"
                     value={settings.email}
                     onChange={(e) => setSettings({ ...settings, email: e.target.value })}
+                    disabled={workspaceInfoLoading}
                     className="mt-2"
                   />
+                  <p className="text-xs text-muted-foreground mt-1">Used for billing & workspace contact</p>
                 </div>
                 <div>
                   <Label htmlFor="phone">Phone</Label>
@@ -99,8 +241,11 @@ export default function BrandSettingsPage() {
                     id="phone"
                     value={settings.phone}
                     onChange={(e) => setSettings({ ...settings, phone: e.target.value })}
+                    disabled
+                    title="Phone isn't saved yet"
                     className="mt-2"
                   />
+                  <p className="text-xs text-muted-foreground mt-1">Phone isn't saved yet</p>
                 </div>
                 <div>
                   <Label htmlFor="website">Website</Label>
@@ -108,13 +253,21 @@ export default function BrandSettingsPage() {
                     id="website"
                     value={settings.website}
                     onChange={(e) => setSettings({ ...settings, website: e.target.value })}
+                    disabled={workspaceInfoLoading}
                     className="mt-2"
                   />
                 </div>
-                <Button onClick={handleSave} className="gap-2">
+                <Button
+                  onClick={handleSaveWorkspaceInfo}
+                  disabled={workspaceInfoLoading || workspaceInfoSaving}
+                  className="gap-2"
+                >
                   <Save className="h-4 w-4" />
-                  Save Changes
+                  {workspaceInfoSaving ? 'Saving…' : 'Save Changes'}
                 </Button>
+                {workspaceInfoSaveError && (
+                  <p className="text-xs text-destructive">{workspaceInfoSaveError}</p>
+                )}
               </div>
             </Card>
 
@@ -151,15 +304,28 @@ export default function BrandSettingsPage() {
             <Card className="p-6">
               <h3 className="font-semibold mb-6">Notification Preferences</h3>
               <div className="space-y-5">
-                <div className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <p className="font-medium text-sm">Email Notifications</p>
-                    <p className="text-xs text-muted-foreground">Receive updates via email</p>
+                <div className="p-4 border rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-sm">Email Notifications</p>
+                      <p className="text-xs text-muted-foreground">Receive updates via email</p>
+                    </div>
+                    <Switch
+                      checked={settings.emailNotifications}
+                      disabled={emailPrefLoading || emailPrefSaving}
+                      onCheckedChange={handleEmailPrefChange}
+                    />
                   </div>
-                  <Switch
-                    checked={settings.emailNotifications}
-                    onCheckedChange={(e) => setSettings({ ...settings, emailNotifications: e })}
-                  />
+                  {(emailPrefLoading || emailPrefSaving || emailPrefError) && (
+                    <p
+                      className={cn(
+                        'text-xs mt-1',
+                        emailPrefError ? 'text-destructive' : 'text-muted-foreground',
+                      )}
+                    >
+                      {emailPrefError ?? (emailPrefLoading ? 'Loading preference…' : 'Saving…')}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between p-4 border rounded-lg">
@@ -167,10 +333,9 @@ export default function BrandSettingsPage() {
                     <p className="font-medium text-sm">Push Notifications</p>
                     <p className="text-xs text-muted-foreground">Browser notifications</p>
                   </div>
-                  <Switch
-                    checked={settings.pushNotifications}
-                    onCheckedChange={(e) => setSettings({ ...settings, pushNotifications: e })}
-                  />
+                  {/* No push channel exists server-side — disabled rather than a switch that
+                      silently does nothing. */}
+                  <Switch checked={false} disabled title="Push notifications are not available yet" />
                 </div>
 
                 <div className="flex items-center justify-between p-4 border rounded-lg">
@@ -181,6 +346,8 @@ export default function BrandSettingsPage() {
                   <Switch
                     checked={settings.campaignAlerts}
                     onCheckedChange={(e) => setSettings({ ...settings, campaignAlerts: e })}
+                    disabled
+                    title="Category preferences aren't available yet"
                   />
                 </div>
 
@@ -192,6 +359,8 @@ export default function BrandSettingsPage() {
                   <Switch
                     checked={settings.bidNotifications}
                     onCheckedChange={(e) => setSettings({ ...settings, bidNotifications: e })}
+                    disabled
+                    title="Category preferences aren't available yet"
                   />
                 </div>
 
@@ -203,13 +372,16 @@ export default function BrandSettingsPage() {
                   <Switch
                     checked={settings.weeklyDigest}
                     onCheckedChange={(e) => setSettings({ ...settings, weeklyDigest: e })}
+                    disabled
+                    title="Category preferences aren't available yet"
                   />
                 </div>
 
-                <Button onClick={handleSave} className="w-full gap-2">
+                <Button disabled title={SETTINGS_PERSISTENCE_UNAVAILABLE} className="w-full gap-2">
                   <Save className="h-4 w-4" />
                   Save Preferences
                 </Button>
+                <p className="text-xs text-muted-foreground text-center">{SETTINGS_PERSISTENCE_UNAVAILABLE}</p>
               </div>
             </Card>
           </TabsContent>
@@ -268,10 +440,11 @@ export default function BrandSettingsPage() {
                   </div>
                 )}
 
-                <Button onClick={handleSave} className="w-full gap-2">
+                <Button disabled title={SETTINGS_PERSISTENCE_UNAVAILABLE} className="w-full gap-2">
                   <Save className="h-4 w-4" />
                   Save Settings
                 </Button>
+                <p className="text-xs text-muted-foreground text-center">{SETTINGS_PERSISTENCE_UNAVAILABLE}</p>
               </div>
             </Card>
           </TabsContent>

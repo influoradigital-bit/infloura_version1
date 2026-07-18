@@ -2,12 +2,11 @@ import { CreatorLayout } from '@/components/creator/creator-layout';
 import { AffiliateEarningsView } from '@/components/creator/AffiliateEarningsView';
 
 /**
- * Creator-facing affiliate earnings page — Wave A task A4 stub
- * (ANANYA_FRONTEND_IMPLEMENTATION_SPEC.md §17). Affiliate is a Wave D feature
- * that hasn't started on the backend (see AffiliateEarningsView.tsx javadoc-
- * style comment for the full gap explanation) — this route exists so the
- * placeholder is discoverable now and can be swapped for the real view once
- * Wave D ships, without a routing change.
+ * Creator-facing affiliate earnings page (ANANYA_FRONTEND_IMPLEMENTATION_SPEC.md
+ * §17). Live since 2026-07-17: AffiliateEarningsView renders real per-sale
+ * commission rows + summary from GET /creator/affiliate-earnings via
+ * useAffiliateEarnings — the Wave D backend (AffiliateEarningsService, V28
+ * migration, settlement job) shipped and replaced the old coming-soon stub.
  */
 export default function CreatorAffiliateEarningsPage() {
   return (

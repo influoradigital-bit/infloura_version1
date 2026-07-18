@@ -8,12 +8,21 @@
  * real `dashboardApi.getPulse()` call (`GET /api/v1/admin/dashboard/pulse`,
  * `AdminDashboardController`). The hook is a hand-rolled fetch-on-mount
  * (not a `react-query` `useQuery`), but the data is real, not mocked.
+ *
+ * A5 (Priya-routed admin-panel audit fix): also surfaces
+ * `useOperationsSummary()` (src/admin/hooks/useOperationsSummary.ts), wired
+ * to the previously-unused `dashboardApi.getOperationsSummary()` call
+ * (`GET /api/v1/admin/dashboard/operations`) — reviewBacklog/
+ * campaignsAtRisk/avgReviewTime have no equivalent in `CeoPulseData` above,
+ * so this renders as its own "Operations" KPI row rather than folding into
+ * the Pulse grid.
  */
 
 import { AlertTriangle, ShieldAlert } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { usePulseData } from '../../hooks/usePulseData';
+import { useOperationsSummary } from '../../hooks/useOperationsSummary';
 import KpiCard from './KpiCard';
 import type { KpiCard as KpiCardData, RedFlag } from '../../types/admin.types';
 
@@ -58,12 +67,17 @@ function formatCompactNumber(value: number): string {
   return new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 }
 
+function formatHours(hours: number): string {
+  return `${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 }).format(hours)}h`;
+}
+
 // ============================================
 // COMPONENT
 // ============================================
 
 export default function PulseDashboard() {
   const { data, isLoading, error } = usePulseData();
+  const { data: opsData, isLoading: opsIsLoading, error: opsError } = useOperationsSummary();
 
   const kpis: KpiCardData[] = data
     ? [
@@ -74,6 +88,16 @@ export default function PulseDashboard() {
         { title: 'Support Queue Depth', value: data.supportQueueDepth, icon: 'support' },
         { title: 'Brand MAU', value: formatCompactNumber(data.mauBrands), icon: 'brands' },
         { title: 'Creator MAU', value: formatCompactNumber(data.mauCreators), icon: 'creators' },
+      ]
+    : [];
+
+  const opsKpis: KpiCardData[] = opsData
+    ? [
+        { title: 'Active Campaigns', value: opsData.activeCampaigns, icon: 'campaigns' },
+        { title: 'Campaigns At Risk', value: opsData.campaignsAtRisk, icon: 'risk' },
+        { title: 'Review Backlog', value: opsData.reviewBacklog, icon: 'moderation' },
+        { title: 'Support Queue Depth', value: opsData.supportQueueDepth, icon: 'support' },
+        { title: 'Avg Review Time', value: formatHours(opsData.avgReviewTime), icon: 'risk' },
       ]
     : [];
 
@@ -97,6 +121,23 @@ export default function PulseDashboard() {
       </div>
 
       <RedFlagsPanel redFlags={data?.redFlags ?? []} isLoading={isLoading} />
+
+      <div>
+        <h2 className="text-xl font-semibold text-foreground">Operations</h2>
+        <p className="text-sm text-muted-foreground">Campaign health, review backlog, and support queue depth.</p>
+      </div>
+
+      {opsError && (
+        <Card className="border-destructive-foreground/30 bg-card p-4 text-sm text-destructive-foreground">
+          Failed to load operations summary: {opsError}
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {opsIsLoading
+          ? Array.from({ length: 5 }).map((_, i) => <KpiCard key={i} title="" value="" isLoading />)
+          : opsKpis.map((kpi) => <KpiCard key={kpi.title} {...kpi} />)}
+      </div>
     </div>
   );
 }

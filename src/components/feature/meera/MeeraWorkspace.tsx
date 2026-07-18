@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ChevronUp } from 'lucide-react'
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -9,6 +10,7 @@ import { useBrandTheme } from '@/hooks/useBrandTheme'
 import { useMeeraStage } from '@/hooks/useMeeraStage'
 import { MEERA_MOBILE } from '@/data/meera-copy'
 import { MOCK_BRAND_SNAPSHOT } from '@/data/meera-mock'
+import { MEERA_HELP_PRESEED_PARAM } from '@/lib/meera-help'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -41,6 +43,12 @@ export function MeeraWorkspace() {
 
   const { stage, isPaid, advance, markPaid, stagePayloads } = useMeeraStage('snapshot')
   const [sheetOpen, setSheetOpen] = useState(false)
+
+  // "Ask Meera" help pre-seed: brand-help / the Help menu navigate here with
+  // `?ask=<prompt>`. We pre-fill the composer with it (never auto-send) — the
+  // single agreed entry path (see MEERA_HELP_PRESEED_PARAM contract).
+  const [searchParams] = useSearchParams()
+  const initialDraft = searchParams.get(MEERA_HELP_PRESEED_PARAM) ?? undefined
 
   // Living-presence state (spec §5A.A) — owned here as the single point
   // combining MeeraChatPanel's phase with TTS isSpeaking, threaded via
@@ -87,6 +95,7 @@ export function MeeraWorkspace() {
           onFunctionCall={advance}
           onPhaseChange={setChatPhase}
           onSpeakingChange={setIsSpeaking}
+          initialDraft={initialDraft}
           className="h-full"
         />
       </div>

@@ -5,6 +5,7 @@ import { Users } from 'lucide-react'
 import { CreatorCard } from '@/components/ui/creator-card'
 import { QuickReplyChip } from '@/components/ui/quick-reply-chip'
 import { StatPair } from '@/components/ui/stat-pair'
+import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { StageLoadingState } from '@/components/feature/meera/StageLoadingState'
 import { MEERA_STAGGER_ITEM_VARIANTS, meeraStaggerDelay, MEERA_STAGGER_MAX_ITEMS } from '@/data/motion-tokens'
 import { MOCK_CREATORS, MOCK_TOTAL_FOUND, MOCK_TOP_MATCHED } from '@/data/meera-mock'
@@ -20,8 +21,9 @@ interface StageMatchingProps {
 
 const FILTERS = ['Mumbai', 'Skincare', 'Beauty'] as const
 
-/** Compact row for a live-matched creator — `show_creators` (02 §3) doesn't carry
- * city/niche/avatar/verified, so this intentionally isn't the mock CreatorCard. */
+/** Compact row for a live-matched creator. `ShowCreatorsResult.CreatorSummary` (Spring DTO)
+ * has real city/categories/verified fields, but not the mock's handle/avatarEmoji/niche — so
+ * this intentionally isn't the mock CreatorCard. */
 function LiveCreatorRow({ creator }: { creator: ShowCreatorsPayload['creators'][number] }) {
   return (
     <div className="flex items-center gap-3 rounded-lg border border-meera-border bg-meera-surface p-3">
@@ -29,12 +31,20 @@ function LiveCreatorRow({ creator }: { creator: ShowCreatorsPayload['creators'][
         <Users className="h-4 w-4" aria-hidden="true" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-meera-text">{creator.displayName}</p>
+        <div className="flex items-center gap-1">
+          <p className="truncate text-sm font-medium text-meera-text">{creator.displayName}</p>
+          {creator.verified && <VerifiedBadge tone="escrow" label="Instagram-verified stats" />}
+        </div>
+        {creator.city && <p className="truncate text-xs text-meera-text-muted">{creator.city}</p>}
       </div>
       <span className="shrink-0 text-xs font-medium tabular-nums text-meera-text-muted">
-        {(creator.followers / 1000).toFixed(creator.followers % 1000 === 0 ? 0 : 1)}k
-        <span className="mx-1 text-meera-border-strong">|</span>
-        {creator.engagementRate.toFixed(1)}%
+        {(creator.totalFollowers / 1000).toFixed(creator.totalFollowers % 1000 === 0 ? 0 : 1)}k
+        {creator.engagementRate !== undefined && (
+          <>
+            <span className="mx-1 text-meera-border-strong">|</span>
+            {creator.engagementRate.toFixed(1)}%
+          </>
+        )}
       </span>
     </div>
   )
@@ -114,29 +124,33 @@ export function StageMatching({ toolResult, className }: StageMatchingProps) {
     )
   }
 
-  // Live mode
+  // Live mode — `ShowCreatorsResult` has no separate "matched total" field
+  // (02 §3 as documented was stale); the creators array length IS the count.
   if (!isShowCreatorsPayload(toolResult)) {
     return <StageLoadingState label="Matching creators…" className={className} />
   }
 
   const capped = toolResult.creators.slice(0, MEERA_STAGGER_MAX_ITEMS)
+  const remaining = toolResult.creators.length - capped.length
 
   return (
     <div className={cn('space-y-4', className)}>
-      <div className="grid grid-cols-2 gap-3">
-        <StatPair label="Total found" value={toolResult.matchedTotal} formatFn={(n) => `${Math.round(n)}`} />
-        <StatPair label="Top matched" value={toolResult.creators.length} formatFn={(n) => `${Math.round(n)}`} />
-      </div>
+      <StatPair
+        label="Creators matched"
+        value={toolResult.creators.length}
+        formatFn={(n) => `${Math.round(n)}`}
+        className="max-w-[12rem]"
+      />
 
       {capped.length > 0 ? (
         <div className="grid grid-cols-1 gap-2">
           {reduceMotion ? (
-            capped.map((creator) => <LiveCreatorRow key={creator.creatorId} creator={creator} />)
+            capped.map((creator) => <LiveCreatorRow key={creator.creatorProfileId} creator={creator} />)
           ) : (
             <AnimatePresence mode="popLayout">
               {capped.map((creator, i) => (
                 <motion.div
-                  key={creator.creatorId}
+                  key={creator.creatorProfileId}
                   layout
                   variants={MEERA_STAGGER_ITEM_VARIANTS}
                   initial="hidden"
@@ -154,6 +168,10 @@ export function StageMatching({ toolResult, className }: StageMatchingProps) {
         <p className="rounded-lg border border-dashed border-meera-border bg-meera-surface-2 p-4 text-center text-xs text-meera-text-muted">
           No matching creators found yet.
         </p>
+      )}
+
+      {remaining > 0 && (
+        <p className="text-center text-[10px] text-meera-text-muted">+{remaining} more matched</p>
       )}
     </div>
   )

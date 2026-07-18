@@ -75,9 +75,11 @@ import {
   ticketDetailQueryKey,
   type TicketSortField,
 } from '../../hooks/useTicketList';
+import { useSupportStats } from '../../hooks/useSupportStats';
 import { TicketStatus, TicketPriority } from '../../types/admin.types';
 import type { SupportTicket } from '../../types/admin.types';
 import { supportApi } from '../../services/api-contracts';
+import KpiCard from '../dashboard/KpiCard';
 
 // ============================================
 // FORMATTING
@@ -86,6 +88,21 @@ import { supportApi } from '../../services/api-contracts';
 function formatDateTime(iso: string | undefined): string {
   if (!iso) return '—';
   return new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+}
+
+/**
+ * Formats a minutes duration for the stats strip. `0` is rendered as "No
+ * data yet" rather than a literal "0m" — the backend has no distinct
+ * sentinel for "nothing resolved yet" vs. "resolved instantly", and the
+ * former is overwhelmingly the honest read for a fresh/quiet queue (see
+ * useSupportStats.ts doc comment).
+ */
+function formatDuration(minutes: number): string {
+  if (minutes <= 0) return 'No data yet';
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  const hours = Math.floor(minutes / 60);
+  const rest = Math.round(minutes % 60);
+  return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
 // ============================================
@@ -485,6 +502,41 @@ function TicketDetailDrawer({
 }
 
 // ============================================
+// STATS STRIP — open / in-progress / waiting-user / avg response / avg
+// resolution, backed by `useSupportStats()` (`supportApi.getStats()`).
+// ============================================
+
+function SupportStatsStrip() {
+  const { data, isLoading, error } = useSupportStats();
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-destructive-foreground/30 bg-card p-3 text-xs text-destructive-foreground">
+        Failed to load support stats: {error}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <KpiCard title="Open" value={data?.open ?? 0} icon="support" isLoading={isLoading} />
+      <KpiCard title="In Progress" value={data?.inProgress ?? 0} icon="support" isLoading={isLoading} />
+      <KpiCard title="Waiting on User" value={data?.waitingUser ?? 0} icon="support" isLoading={isLoading} />
+      <KpiCard
+        title="Avg. Response"
+        value={data ? formatDuration(data.avgResponseTime) : ''}
+        isLoading={isLoading}
+      />
+      <KpiCard
+        title="Avg. Resolution"
+        value={data ? formatDuration(data.avgResolutionTime) : ''}
+        isLoading={isLoading}
+      />
+    </div>
+  );
+}
+
+// ============================================
 // PROPS
 // ============================================
 
@@ -517,6 +569,9 @@ export default function TicketList({ className }: TicketListProps) {
 
   return (
     <div className={cn('flex flex-col gap-4', className)}>
+      {/* Stats strip */}
+      <SupportStatsStrip />
+
       {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">

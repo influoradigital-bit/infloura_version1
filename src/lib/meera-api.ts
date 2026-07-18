@@ -42,14 +42,46 @@ export interface MeeraSessionResponse {
   };
 }
 
-/** Send turn response (02 section 1.2) */
+/** Send turn response (02 section 1.2, MeeraDtos.SendTurnResponse) */
 export interface MeeraTurnResponse {
   messageId: string;
+  /**
+   * Id of the ASSISTANT message Spring already persisted for this turn.
+   * Present on the synchronous (A4) backend flow, where the reply is
+   * generated Java->Python before this response returns.
+   */
+  assistantMessageId?: string;
   streamToken: string;
   streamUrl: string;
   creditsRemaining: number;
-  /** Placeholder reply for non-streaming fallback */
-  placeholderReply?: string;
+  /**
+   * The authoritative assistant reply, already generated AND persisted by
+   * Spring's synchronous Java->Python turn (MeeraSessionService A4 flow).
+   * When present, the turn is complete — opening the SSE stream would run a
+   * SECOND paid generation of a reply that already exists, so the client
+   * must render this directly instead. Absent only if the backend moves to
+   * a stream-first turn split (mint token, return immediately, browser
+   * streams the one-and-only generation).
+   */
+  reply?: string;
+  /**
+   * Workspace id for the stream request body (chat.py requires
+   * `workspace_id` and 403s a token/body conversation mismatch). Only
+   * needed — and only expected to be present — on a stream-first backend;
+   * the current synchronous flow doesn't return it and doesn't need it.
+   */
+  workspaceId?: string;
+  /**
+   * SECURITY FIX #1 (docs/security/meera-onbehalf-auth-security-design.md
+   * §2): the dedicated, per-turn, scoped on-behalf credential Spring mints
+   * alongside `streamToken`. MUST be forwarded verbatim as `onbehalf_jwt` in
+   * the SSE stream body (`MeeraChatPanel.tsx`'s `handleLiveSend`) instead of
+   * reading the user's full access token out of `localStorage` — that old
+   * path handed influora-ai (and anything downstream of it) a durable,
+   * full-account-scope credential. Only present on the stream-first backend,
+   * same as `workspaceId`.
+   */
+  onBehalfToken?: string;
 }
 
 /** Credit status response (02 section 1.3) */
@@ -79,6 +111,19 @@ export interface MeeraEscrowFundResponse {
   currency: 'INR';
   razorpayOrderId: string;
   status: 'PENDING' | 'FUNDED';
+}
+
+/**
+ * POST /meera/voice/transcribe success payload, parsed from the backend's
+ * flat `{ raw_transcript, cleaned_text, lang_detected, fallback }` shape
+ * into the camelCase this codebase's TS interfaces otherwise use. `fallback`
+ * itself is not surfaced here — `meeraApi.transcribe` collapses it to a
+ * `null` return so callers have exactly one thing to check.
+ */
+export interface MeeraTranscribeResult {
+  rawTranscript: string;
+  cleanedText: string;
+  langDetected?: string;
 }
 
 /** Escrow status response (02 section 1.5) */
@@ -132,22 +177,38 @@ export interface MeeraErrorEvent {
   message?: string;
 }
 
-/** Tool result payloads (02 section 3) */
+/**
+ * Tool result payloads. Wire shape verified against the actual Spring DTOs
+ * (`influora-api/.../web/dto/meera/MeeraToolDtos.java`), NOT the (stale)
+ * `02-API-CONTRACT-BRAND.md` §3 prose — Spring `ApiResponse.ok(DTO)` →
+ * Python `spring.py` unwraps `.data` → `loop.py` forwards it verbatim in the
+ * SSE `tool_result` frame, so these interfaces are the Java records' JSON
+ * shape one-for-one. Kept in sync via QA/Vikram's DTO fix (2026-07-17).
+ */
 export interface ShowCreatorsPayload {
+  /** `MeeraToolDtos.ShowCreatorsResult` — no separate "matched total", the array length IS the count. */
   creators: Array<{
-    creatorId: string;
+    creatorProfileId: string;
     displayName: string;
-    followers: number;
-    engagementRate: number;
+    /** Nullable on the DTO (`String`) — omitted from JSON when null. */
+    city?: string;
+    /** Nullable on the DTO (`List<String>`) — omitted from JSON when null. */
+    categories?: string[];
+    totalFollowers: number;
+    /** Nullable on the DTO (`BigDecimal`) — omitted from JSON when null. */
+    engagementRate?: number;
+    verified: boolean;
   }>;
-  matchedTotal: number;
 }
 
+/** `MeeraToolDtos.CalculateBudgetResult` — advisory suggestion, not a locked-in fee breakdown. */
 export interface CalculateBudgetPayload {
-  pool: number;
-  perCreator: number;
-  platformFee: number;
-  total: number;
+  suggestedPoolTotal: number;
+  suggestedPerCreatorRate: number;
+  suggestedCreatorCount: number;
+  currency: string;
+  /** Nullable on the DTO (`String`) — omitted from JSON when null. */
+  rationale?: string;
 }
 
 export interface CreateCampaignPayload {
@@ -156,12 +217,22 @@ export interface CreateCampaignPayload {
   serverBudget: number;
 }
 
+/** `MeeraToolDtos.RequestPaymentResult` — no `escrowHoldId`/`razorpayOrderId`/`action` on this DTO. */
 export interface RequestPaymentPayload {
-  escrowHoldId: string;
+  status: string;
+  campaignIntentId: string;
   serverAmount: number;
-  currency: 'INR';
-  razorpayOrderId: string;
-  action: 'AWAIT_HUMAN_CONFIRM';
+  currency: string;
+  confirmActionUrl: string;
+  replay: boolean;
+}
+
+/** `MeeraToolDtos.ConfirmLaunchResult` — the `confirm_launch` tool's own result, not a live dashboard-stats feed. */
+export interface ConfirmLaunchPayload {
+  campaignId: string;
+  status: string;
+  creatorsInvited: number;
+  replay: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,19 +249,29 @@ export interface RequestPaymentPayload {
 export function isShowCreatorsPayload(data: unknown): data is ShowCreatorsPayload {
   if (!data || typeof data !== 'object') return false;
   const d = data as Partial<ShowCreatorsPayload>;
-  return Array.isArray(d.creators) && typeof d.matchedTotal === 'number';
+  return Array.isArray(d.creators);
 }
 
 export function isCalculateBudgetPayload(data: unknown): data is CalculateBudgetPayload {
   if (!data || typeof data !== 'object') return false;
   const d = data as Partial<CalculateBudgetPayload>;
-  return typeof d.pool === 'number' && typeof d.total === 'number' && typeof d.platformFee === 'number';
+  return (
+    typeof d.suggestedPoolTotal === 'number' &&
+    typeof d.suggestedPerCreatorRate === 'number' &&
+    typeof d.suggestedCreatorCount === 'number'
+  );
 }
 
 export function isRequestPaymentPayload(data: unknown): data is RequestPaymentPayload {
   if (!data || typeof data !== 'object') return false;
   const d = data as Partial<RequestPaymentPayload>;
-  return typeof d.escrowHoldId === 'string' && typeof d.serverAmount === 'number';
+  return typeof d.serverAmount === 'number';
+}
+
+export function isConfirmLaunchPayload(data: unknown): data is ConfirmLaunchPayload {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Partial<ConfirmLaunchPayload>;
+  return typeof d.campaignId === 'string' && typeof d.status === 'string';
 }
 
 // ---------------------------------------------------------------------------
@@ -258,6 +339,18 @@ async function request<T>(
 
 const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * `crypto.randomUUID` only exists in secure contexts (https / localhost) — an
+ * http:// staging host would throw. Idempotency keys just need per-click
+ * uniqueness, not crypto strength, so fall back to a timestamp+random id.
+ */
+function safeRandomUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `idk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 // ---------------------------------------------------------------------------
 // API methods
 // ---------------------------------------------------------------------------
@@ -292,14 +385,22 @@ export const meeraApi = {
       await delay();
       return {
         messageId: `mock_msg_${Date.now()}`,
+        assistantMessageId: `mock_msg_${Date.now()}_assistant`,
         streamToken: 'mock_stream_token',
         streamUrl: `${MEERA_STREAM_BASE_URL}/stream`,
         creditsRemaining: 99,
-        placeholderReply: 'This is a placeholder reply in mock mode.',
+        reply: 'This is a placeholder reply in mock mode.',
+        onBehalfToken: 'mock_onbehalf_token',
       };
     }
+    // Spring's POST /meera/sessions/{id}/messages requires an Idempotency-Key
+    // header (MeeraController) and 400s without it. The panel never re-POSTs a
+    // failed turn (double-spend guard), so a fresh key per call is correct.
+    // (Kavya QA: if a retry path is ever added, the SAME key must be reused
+    // across retries of one logical turn or the backend dedupe is bypassed.)
     return request<MeeraTurnResponse>('POST', `/meera/sessions/${conversationId}/messages`, {
       body: { content },
+      idempotencyKey: safeRandomUUID(),
     });
   },
 
@@ -407,6 +508,117 @@ export const meeraApi = {
       `/meera/sessions/${conversationId}/messages`,
       { query: { after: afterMessageId } }
     );
+  },
+
+  /**
+   * POST /meera/voice/speak - Server-side TTS (Sarvam) for a Meera reply.
+   *
+   * Returns the raw WAV audio as a Blob on success, or `null` for every
+   * "no audio available" case: mock mode (browser voice owns mock TTS),
+   * the backend's own `{"fallback": true}` response, a non-2xx status, a
+   * non-`audio/*` content type, or any network/parsing failure. This method
+   * never throws — `useVoiceOutput` treats a `null` return as "fall back to
+   * SpeechSynthesis", so a thrown error here would break that contract.
+   *
+   * Deliberately bypasses the shared `request()` helper: that helper assumes
+   * a JSON `{ success, data }` envelope, but this endpoint's success body is
+   * raw audio bytes, not JSON.
+   */
+  speak: async (text: string): Promise<Blob | null> => {
+    if (!isApiLive()) return null;
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const token = getToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE_URL}/meera/voice/speak`, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ text }),
+      });
+
+      if (!res.ok) return null;
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.startsWith('audio/')) return null;
+
+      return await res.blob();
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * POST /meera/voice/transcribe - Server-side STT (Sarvam) for the
+   * composer's mic input. Mirrors `speak()`'s discipline in reverse: sends a
+   * recorded clip, gets text back.
+   *
+   * Returns the parsed transcript on success, or `null` for every "no
+   * transcript available" case: mock mode (browser STT owns mock input), the
+   * backend's own `{"fallback": true}` soft-fail, a non-2xx status, an
+   * unparsable body, or any network failure. This method never throws —
+   * `useVoiceInput` treats a `null` return as "fall back to
+   * webkitSpeechRecognition", so a thrown error here would break that
+   * contract.
+   *
+   * Deliberately bypasses the shared `request()` helper: that helper assumes
+   * a JSON `{ success, data }` envelope and a JSON request body, but this
+   * endpoint takes multipart form data (a single `audio` file part) and
+   * returns a flat JSON object, not the envelope shape.
+   */
+  transcribe: async (audio: Blob): Promise<MeeraTranscribeResult | null> => {
+    if (!isApiLive()) return null;
+
+    try {
+      const headers: Record<string, string> = {};
+      const token = getToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const formData = new FormData();
+      // Field name is contractual — the backend reads the multipart part
+      // named `audio`. No workspace_id in the body; the server derives it
+      // from the auth token, same as every other /meera/* call.
+      formData.append('audio', audio);
+
+      const res = await fetch(`${API_BASE_URL}/meera/voice/transcribe`, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: formData,
+      });
+
+      if (!res.ok) return null;
+
+      let body: {
+        raw_transcript?: unknown;
+        cleaned_text?: unknown;
+        lang_detected?: unknown;
+        fallback?: unknown;
+      };
+      try {
+        body = await res.json();
+      } catch {
+        return null;
+      }
+
+      if (body.fallback === true) return null;
+
+      const rawTranscript = typeof body.raw_transcript === 'string' ? body.raw_transcript : '';
+      const cleanedText = typeof body.cleaned_text === 'string' ? body.cleaned_text : '';
+      // Nothing usable came back — treat like a soft-fail rather than
+      // handing the caller two empty strings to deal with.
+      if (!rawTranscript && !cleanedText) return null;
+
+      return {
+        rawTranscript,
+        cleanedText,
+        langDetected: typeof body.lang_detected === 'string' ? body.lang_detected : undefined,
+      };
+    } catch {
+      return null;
+    }
   },
 };
 

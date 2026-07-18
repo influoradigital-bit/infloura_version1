@@ -33,6 +33,7 @@ import {
   ShieldX,
   UserRound,
   Users as UsersIcon,
+  Hourglass,
 } from 'lucide-react';
 import {
   Table,
@@ -56,6 +57,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { useBrandList } from '../hooks/useBrandList';
 import { useCreatorList } from '../hooks/useCreatorList';
+import { useCreatorApplications } from '../hooks/useCreatorApplications';
 import BrandProfile from '../components/users/BrandProfile';
 import CreatorProfile from '../components/users/CreatorProfile';
 import {
@@ -523,6 +525,111 @@ function CreatorsTable() {
 }
 
 // ============================================
+// PENDING APPLICATIONS TAB — creatorApi.getPendingApplications(). Row click
+// opens the existing CreatorProfile detail route, which already carries the
+// approve/reject application actions (PENDING-status branch) — this tab
+// intentionally does not duplicate that action UI.
+//
+// Rows are `CreatorSummary` (see useCreatorApplications.ts), the same lighter
+// shape `creatorApi.list()` returns — id/name/email/followers/
+// applicationStatus/tier/isSuspended/createdAt only. No
+// niche/engagementRate/instagramVerified/qualityScore fields here.
+// ============================================
+
+function PendingApplicationsTable() {
+  const { applications, totalCount, totalPages, isLoading, error, page, setPage } = useCreatorApplications();
+  const navigate = useNavigate();
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-destructive-foreground/30 bg-card p-4 text-sm text-destructive-foreground">
+        Failed to load pending applications: {error}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="whitespace-nowrap text-sm text-muted-foreground">
+        {isLoading ? 'Loading…' : `${applications.length} of ${totalCount} pending applications`}
+      </p>
+
+      <div className="overflow-hidden rounded-lg border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Creator</TableHead>
+              <TableHead>Followers</TableHead>
+              <TableHead>Tier</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Applied</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  {Array.from({ length: 5 }).map((__, j) => (
+                    <TableCell key={j}>
+                      <div className="h-4 w-full max-w-24 animate-pulse rounded bg-muted" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : applications.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                  <div className="flex flex-col items-center gap-2">
+                    <Hourglass className="size-6 text-muted-foreground/60" aria-hidden="true" />
+                    No pending applications.
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              applications.map((creator) => (
+                <TableRow
+                  key={creator.id}
+                  onClick={() => navigate(`creators/${creator.id}`)}
+                  className="cursor-pointer"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open creator application: ${creator.name}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      navigate(`creators/${creator.id}`);
+                    }
+                  }}
+                >
+                  <TableCell className="max-w-56 whitespace-normal font-medium text-foreground">
+                    {creator.name}
+                    <div className="text-xs font-normal text-muted-foreground">{creator.email}</div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{formatCompactNumber(creator.followers)}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">{creator.tier}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <StatusPill tone={applicationPillTone(creator.applicationStatus)}>
+                      {creator.applicationStatus}
+                    </StatusPill>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {formatDate(creator.createdAt)}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <PageControls page={page} totalPages={totalPages} onPageChange={setPage} />
+    </div>
+  );
+}
+
+// ============================================
 // LIST VIEW (index route) — tabs
 // ============================================
 
@@ -544,12 +651,16 @@ function UsersListView() {
         <TabsList>
           <TabsTrigger value="brands">Brands</TabsTrigger>
           <TabsTrigger value="creators">Creators</TabsTrigger>
+          <TabsTrigger value="pending">Pending Applications</TabsTrigger>
         </TabsList>
         <TabsContent value="brands">
           <BrandsTable />
         </TabsContent>
         <TabsContent value="creators">
           <CreatorsTable />
+        </TabsContent>
+        <TabsContent value="pending">
+          <PendingApplicationsTable />
         </TabsContent>
       </Tabs>
     </div>

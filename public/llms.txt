@@ -23,7 +23,6 @@ Influora is a platform, not an agency. It does not take a cut of creator content
 - [Escrow Protection](https://influora.in/features/escrow): deep-dive explainer on how escrow-held payments work and what happens in a dispute.
 - [Deal Room](https://influora.in/features/deal-room): the negotiation and agreement workspace for a single brand-creator collaboration.
 - [Hype Campaigns](https://influora.in/features/hype): multi-creator UGC campaign management.
-- [Contracts & Compliance](https://influora.in/features/contracts): auto-generated contracts and compliance handling.
 - [Pricing](https://influora.in/pricing): current fee structure and what's included.
 - [About](https://influora.in/about): company background and mission.
 - [Blog](https://influora.in/blog): guides on influencer payments, contracts, pricing, and campaign management in India.

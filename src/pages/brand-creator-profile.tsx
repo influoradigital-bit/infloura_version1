@@ -25,7 +25,10 @@ import {
   Languages,
   Briefcase,
   IndianRupee,
+  type LucideIcon,
 } from 'lucide-react';
+import { api, isApiLive, ApiError } from '@/lib/api';
+import type { CreatorProfile, Platform } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -51,8 +54,67 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 
+// View-model shape the JSX below renders. Mock data and the live-mapped API
+// response (buildLiveCreatorView, further down) both produce this exact shape
+// so the JSX never needs to branch on data source.
+interface CreatorPlatformView {
+  name: string;
+  icon: LucideIcon;
+  handle: string;
+  followers: number;
+  engagement: number;
+  verified: boolean;
+  color: string;
+}
+
+interface CreatorDisplayModel {
+  id: string;
+  displayName: string;
+  username: string;
+  bio: string;
+  avatarUrl: string | null;
+  location: string;
+  languages: string[];
+  website: string | null;
+  isVerified: boolean;
+  isAvailable: boolean;
+  joinedDate: string;
+  categories: string[];
+  stats: {
+    totalFollowers: number;
+    avgEngagement: number;
+    avgLikes: number;
+    avgComments: number;
+    avgViews: number;
+    completedCampaigns: number;
+    rating: number;
+    reviewCount: number;
+  };
+  platforms: CreatorPlatformView[];
+  audience: {
+    ageGroups: { range: string; percentage: number }[];
+    gender: { female: number; male: number; other: number };
+    topCities: { city: string; percentage: number }[];
+    interests: string[];
+    authenticity: number;
+  };
+  portfolio: { id: number | string; type: string; brand: string; views: number; likes: number }[];
+  rates: {
+    instagram: { type: string; price: number }[];
+    youtube: { type: string; price: number }[];
+  };
+  pastBrands: string[];
+  reviews: { brand: string; rating: number; comment: string; date: string }[];
+  metrics: {
+    responseTime: string;
+    completionRate: number;
+    onTimeDelivery: number;
+    repeatClients: number;
+  };
+}
+
 // Mock Creator Data - Indian Context
-const mockCreator = {
+const mockCreator: CreatorDisplayModel = {
   id: '1',
   displayName: 'Priya Sharma',
   username: '@priyacreates',
@@ -60,7 +122,6 @@ const mockCreator = {
   avatarUrl: null,
   location: 'Mumbai, Maharashtra',
   languages: ['Hindi', 'English', 'Marathi'],
-  email: 'priya@priyacreates.com',
   website: 'priyacreates.com',
   isVerified: true,
   isAvailable: true,
@@ -179,10 +240,142 @@ const formatINR = (n: number): string => {
   return n.toLocaleString('en-IN');
 };
 
+// ---------------------------------------------------------------------------
+// Live mode mapping — GET /creators/:id (CreatorController.get, verified at
+// influora-api/.../web/CreatorController.java:153) returns CreatorDtos.CreatorResponse.
+// That DTO only covers a subset of what this page renders (identity, platform
+// stats, categories/languages, aggregate follower/engagement/rate numbers).
+// Sections with no backend equivalent get an honest empty/zero fallback below
+// (each flagged // TODO(vikram)) rather than invented numbers.
+// ---------------------------------------------------------------------------
+
+// `api.creators.get` resolves to the shared `CreatorProfile` FE type (src/lib/types.ts),
+// which does not declare `username` even though CreatorResponse.username exists on the
+// wire — this widens the resolved row with that one extra optional field.
+type LiveCreatorRow = CreatorProfile & { username?: string };
+
+const PLATFORM_LABEL: Partial<Record<Platform, string>> = {
+  INSTAGRAM: 'Instagram',
+  YOUTUBE: 'YouTube',
+  TIKTOK: 'TikTok',
+  TWITTER: 'Twitter/X',
+  LINKEDIN: 'LinkedIn',
+  FACEBOOK: 'Facebook',
+  TWITCH: 'Twitch',
+  OTHER: 'Other',
+};
+
+const PLATFORM_ICON: Partial<Record<Platform, LucideIcon>> = {
+  INSTAGRAM: Instagram,
+  YOUTUBE: Youtube,
+  TWITTER: Twitter,
+};
+
+const PLATFORM_COLOR: Partial<Record<Platform, string>> = {
+  INSTAGRAM: '#E4405F',
+  YOUTUBE: '#FF0000',
+  TWITTER: '#1DA1F2',
+};
+
+function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
+  return {
+    id: row.id,
+    displayName: row.displayName,
+    username: row.username ? `@${row.username}` : row.displayName,
+    bio: row.bio ?? '',
+    avatarUrl: row.avatarUrl ?? null,
+    location: row.location ?? '',
+    languages: row.languages ?? [],
+    website: null, // TODO(vikram): CreatorResponse DTO has no website field
+    isVerified: row.isVerified,
+    isAvailable: false, // TODO(vikram): CreatorResponse DTO has no availability field
+    joinedDate: '', // TODO(vikram): CreatorResponse DTO has no joinedDate/createdAt field
+    categories: row.categories ?? [],
+    stats: {
+      totalFollowers: row.totalFollowers,
+      avgEngagement: row.engagementRate,
+      avgLikes: 0, // TODO(vikram): DTO has no per-post average likes
+      avgComments: 0, // TODO(vikram): DTO has no per-post average comments
+      avgViews: 0, // TODO(vikram): DTO has no per-post average views
+      completedCampaigns: 0, // TODO(vikram): DTO has no completed-campaign count
+      rating: 0, // TODO(vikram): DTO has no rating
+      reviewCount: 0, // TODO(vikram): DTO has no reviewCount
+    },
+    platforms: (row.platforms ?? []).map((p) => ({
+      name: PLATFORM_LABEL[p.platform] ?? p.platform,
+      icon: PLATFORM_ICON[p.platform] ?? Globe,
+      handle: p.handle,
+      followers: p.followers,
+      engagement: p.engagementRate,
+      verified: p.isVerified,
+      color: PLATFORM_COLOR[p.platform] ?? '#6B7280',
+    })),
+    audience: {
+      // TODO(vikram): CreatorResponse DTO has no audience-demographics fields/endpoint
+      ageGroups: [],
+      gender: { female: 0, male: 0, other: 0 },
+      topCities: [],
+      interests: [],
+      authenticity: 0,
+    },
+    // TODO(vikram): PortfolioItemResponse (id/title/description/thumbnailUrl/mediaUrl/platform)
+    // has no brand/type/views/likes fields, so it can't be mapped into this grid without inventing data
+    portfolio: [],
+    // TODO(vikram): DTO only has a single averageRate/currency, no per-platform/per-type rate cards
+    rates: { instagram: [], youtube: [] },
+    pastBrands: [], // TODO(vikram): DTO has no past-brands history
+    reviews: [], // TODO(vikram): DTO has no reviews
+    metrics: {
+      // TODO(vikram): DTO has no work-quality metrics (response time / completion / on-time / repeat)
+      responseTime: '—',
+      completionRate: 0,
+      onTimeDelivery: 0,
+      repeatClients: 0,
+    },
+  };
+}
+
 export default function BrandCreatorProfilePage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const creator = mockCreator;
+  const liveApi = isApiLive();
+
+  // Live mode: GET /creators/:id, mapped through buildLiveCreatorView above.
+  // Mock mode keeps rendering mockCreator exactly as before.
+  const [liveCreator, setLiveCreator] = React.useState<CreatorDisplayModel | null>(null);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [notFound, setNotFound] = React.useState(false);
+  const [reloadToken, setReloadToken] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!liveApi || !id) return;
+    let cancelled = false;
+    setLoadError(null);
+    setNotFound(false);
+    (async () => {
+      try {
+        const row = await api.creators.get(id);
+        if (cancelled) return;
+        if (!row) {
+          setNotFound(true);
+        } else {
+          setLiveCreator(buildLiveCreatorView(row));
+        }
+      } catch (e) {
+        if (cancelled) return;
+        if (e instanceof ApiError && e.status === 404) {
+          setNotFound(true);
+        } else {
+          setLoadError(e instanceof ApiError ? e.message : 'Could not load creator. Try again.');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [liveApi, id, reloadToken]);
+
+  const creator: CreatorDisplayModel | null = liveApi ? liveCreator : mockCreator;
 
   const [isSaved, setIsSaved] = React.useState(false);
   const [isInviteOpen, setIsInviteOpen] = React.useState(false);
@@ -197,18 +390,89 @@ export default function BrandCreatorProfilePage() {
     { id: 'new', name: '+ Create New Campaign' },
   ];
 
+  // Live mode: load the brand's real campaigns for the invite dropdown; mock
+  // mode keeps the demo rows so the offline/demo experience is unchanged.
+  const [liveCampaigns, setLiveCampaigns] = React.useState<{ id: string; name: string }[] | null>(null);
+  React.useEffect(() => {
+    if (!liveApi) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await api.campaigns.list({});
+        if (!cancelled) setLiveCampaigns(rows.map((c) => ({ id: c.id, name: c.title })));
+      } catch {
+        if (!cancelled) setLiveCampaigns([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [liveApi]);
+
+  const campaignOptions = liveApi
+    ? [...(liveCampaigns ?? []), { id: 'new', name: '+ Create New Campaign' }]
+    : mockCampaigns;
+
+  const [inviteError, setInviteError] = React.useState<string | null>(null);
+
   const handleInvite = async () => {
     if (selectedCampaign === 'new') {
       navigate('/brand/campaigns/new');
       return;
     }
     setIsSubmitting(true);
-    await new Promise((r) => setTimeout(r, 1500));
-    setIsSubmitting(false);
-    setIsInviteOpen(false);
-    setSelectedCampaign('');
-    setInviteMessage('');
+    setInviteError(null);
+    try {
+      if (liveApi && id) {
+        await api.creators.invite(id, selectedCampaign, inviteMessage || undefined);
+      } else {
+        // Mock mode: keep the original simulated send.
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      setIsInviteOpen(false);
+      setSelectedCampaign('');
+      setInviteMessage('');
+    } catch (e) {
+      setInviteError(e instanceof ApiError ? e.message : 'Could not send invite. Try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  // Loading / error / not-found states (live mode only — mock mode always
+  // resolves `creator` synchronously above).
+  if (!creator) {
+    if (loadError) {
+      return (
+        <div className="mx-auto max-w-md px-4 py-16 text-center">
+          <p className="text-sm font-medium text-destructive">Could not load creator</p>
+          <p className="mt-1 text-sm text-muted-foreground">{loadError}</p>
+          <Button variant="outline" className="mt-4" onClick={() => setReloadToken((k) => k + 1)}>
+            Try again
+          </Button>
+        </div>
+      );
+    }
+    if (notFound) {
+      return (
+        <div className="mx-auto max-w-md px-4 py-16 text-center">
+          <p className="text-sm font-medium">Creator not found</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            This creator profile doesn&apos;t exist or is no longer available.
+          </p>
+          <Button variant="outline" className="mt-4" onClick={() => navigate(-1)}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Go back
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center text-sm text-muted-foreground">
+        Loading creator profile…
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -267,10 +531,12 @@ export default function BrandCreatorProfilePage() {
                 <Languages className="h-3.5 w-3.5" />
                 {creator.languages.join(', ')}
               </span>
-              <span className="flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5" />
-                Joined {creator.joinedDate}
-              </span>
+              {creator.joinedDate && (
+                <span className="flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5" />
+                  Joined {creator.joinedDate}
+                </span>
+              )}
               {creator.isAvailable && (
                 <Badge variant="secondary" className="bg-green-500/10 text-stage-approved-fg border-0">
                   <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
@@ -301,12 +567,14 @@ export default function BrandCreatorProfilePage() {
                 <Mail className="mr-2 h-4 w-4" />
                 Message
               </Button>
-              <Button variant="outline" asChild>
-                <a href={`https://${creator.website}`} target="_blank" rel="noopener noreferrer">
-                  <Globe className="mr-2 h-4 w-4" />
-                  Website
-                </a>
-              </Button>
+              {creator.website && (
+                <Button variant="outline" asChild>
+                  <a href={`https://${creator.website}`} target="_blank" rel="noopener noreferrer">
+                    <Globe className="mr-2 h-4 w-4" />
+                    Website
+                  </a>
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -671,7 +939,7 @@ export default function BrandCreatorProfilePage() {
                   <SelectValue placeholder="Choose a campaign" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockCampaigns.map((c) => (
+                  {campaignOptions.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.name}
                     </SelectItem>
@@ -689,6 +957,9 @@ export default function BrandCreatorProfilePage() {
                   rows={3}
                 />
               </div>
+            )}
+            {inviteError && (
+              <p className="text-sm text-destructive">{inviteError}</p>
             )}
           </div>
           <DialogFooter>

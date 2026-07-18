@@ -25,10 +25,18 @@ import {
   Package,
   CreditCard,
   FileSignature,
+  Loader2,
 } from 'lucide-react';
 
 import { cn, formatINR } from '@/lib/utils';
-import { messages as messagesApi, deliverables as deliverablesApi, isApiLive, type DealMessage } from '@/lib/api';
+import {
+  messages as messagesApi,
+  deliverables as deliverablesApi,
+  deals as dealsApi,
+  isApiLive,
+  type DealMessage,
+  type Deal,
+} from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -103,8 +111,82 @@ const dealStatusConfig = {
   completed: { label: 'Completed', color: 'border bg-stage-approved text-stage-approved-fg border-stage-approved-border', icon: CheckCircle2 },
 };
 
+// Deal room list row shape — shared by mock and live-mode (I6) rendering.
+interface ChatDealRoom {
+  id: string;
+  creatorId: string;
+  creatorName: string;
+  creatorHandle: string;
+  creatorAvatar: string;
+  campaignName: string;
+  dealStatus: keyof typeof dealStatusConfig;
+  dealValue: number;
+  lastMessage: string;
+  lastMessageTime: Date;
+  unreadCount: number;
+  progress: number;
+  deliverablesDone: number;
+  deliverablesTotal: number;
+  nextDeadline: Date | null;
+}
+
+// ---------------------------------------------------------------------------
+// Live-mode mapping (I6) — Deal (src/lib/api.ts) -> ChatDealRoom (this file's
+// deal-room-list shape). Deals with no equivalent dealStatus (CANCELLED,
+// DISPUTED) are filtered out — this list has no matching status chip for them.
+// ---------------------------------------------------------------------------
+function mapDealStatusToChatStatus(status: Deal['status']): ChatDealRoom['dealStatus'] | null {
+  switch (status) {
+    case 'INVITED':
+    case 'APPLIED':
+    case 'SHORTLISTED':
+    case 'IN_NEGOTIATION':
+      return 'negotiating';
+    case 'TERMS_AGREED':
+    case 'CONTRACT_PENDING':
+    case 'CONTRACTED':
+      return 'contracted';
+    case 'IN_PROGRESS':
+      return 'in_progress';
+    case 'REVIEW_PENDING':
+    case 'REVISION_REQUESTED':
+      return 'review';
+    case 'COMPLETED':
+      return 'completed';
+    case 'CANCELLED':
+    case 'DISPUTED':
+    default:
+      return null;
+  }
+}
+
+function mapDealToChatRoom(deal: Deal): ChatDealRoom | null {
+  const dealStatus = mapDealStatusToChatStatus(deal.status);
+  if (!dealStatus) return null;
+  return {
+    id: deal.id,
+    creatorId: deal.counterpartyId,
+    creatorName: deal.counterpartyName,
+    creatorHandle: deal.counterpartyHandle || '',
+    creatorAvatar: deal.counterpartyAvatar || '',
+    campaignName: deal.campaignName,
+    dealStatus,
+    dealValue: deal.dealValue,
+    lastMessage: deal.lastMessage || 'No messages yet',
+    lastMessageTime: deal.lastMessageAt ? new Date(deal.lastMessageAt) : new Date(0),
+    unreadCount: deal.unreadCount,
+    progress:
+      deal.deliverablesTotal > 0
+        ? Math.round((deal.deliverablesDone / deal.deliverablesTotal) * 100)
+        : 0,
+    deliverablesDone: deal.deliverablesDone,
+    deliverablesTotal: deal.deliverablesTotal,
+    nextDeadline: deal.nextDeadline ? new Date(deal.nextDeadline) : null,
+  };
+}
+
 // Mock conversations / deal rooms
-const mockDealRooms = [
+const mockDealRooms: ChatDealRoom[] = [
   {
     id: 'deal-1',
     creatorId: 'cr-1',
@@ -400,7 +482,17 @@ export default function BrandChatPage() {
   const dealIdFromUrl = searchParams.get('deal');
   const tabFromUrl = searchParams.get('tab');
 
-  const [selectedDeal, setSelectedDeal] = React.useState(mockDealRooms[0]);
+  // I6: live deal-room list (GET /deals?role=brand). Live mode only; demo mode
+  // keeps the static mockDealRooms list untouched.
+  const [liveDealRooms, setLiveDealRooms] = React.useState<ChatDealRoom[]>([]);
+  const [dealsLoading, setDealsLoading] = React.useState(false);
+  const [dealsError, setDealsError] = React.useState<string | null>(null);
+
+  const dealRooms = isApiLive() ? liveDealRooms : mockDealRooms;
+
+  const [selectedDeal, setSelectedDeal] = React.useState<ChatDealRoom | null>(
+    isApiLive() ? null : mockDealRooms[0],
+  );
   const [message, setMessage] = React.useState('');
   const [chatMessages, setChatMessages] = React.useState<Array<{
     id: string; sender: 'brand' | 'creator'; content: string; timestamp: Date; status: 'sent' | 'delivered' | 'read';
@@ -436,7 +528,7 @@ export default function BrandChatPage() {
     [searchParams, setSearchParams],
   );
 
-  const selectDeal = (deal: (typeof mockDealRooms)[0]) => {
+  const selectDeal = (deal: ChatDealRoom) => {
     setSelectedDeal(deal);
     setOpenPanel(null);
     syncUrl(deal.id, null);
@@ -447,7 +539,31 @@ export default function BrandChatPage() {
     if (selectedDeal) syncUrl(selectedDeal.id, panel);
   };
 
+  const loadDealRooms = React.useCallback(async () => {
+    setDealsLoading(true);
+    setDealsError(null);
+    try {
+      const remote = await dealsApi.list('brand');
+      setLiveDealRooms(
+        Array.isArray(remote)
+          ? remote.map(mapDealToChatRoom).filter((d): d is ChatDealRoom => d !== null)
+          : [],
+      );
+    } catch {
+      setLiveDealRooms([]);
+      setDealsError('Could not load deal rooms. Check your connection and retry.');
+    } finally {
+      setDealsLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
+    if (isApiLive()) void loadDealRooms();
+  }, [loadDealRooms]);
+
+  // Demo mode: URL param selection against the static mock list (unchanged).
+  React.useEffect(() => {
+    if (isApiLive()) return;
     if (dealIdFromUrl) {
       const deal = mockDealRooms.find((d) => d.id === dealIdFromUrl);
       if (deal) setSelectedDeal(deal);
@@ -456,6 +572,18 @@ export default function BrandChatPage() {
       if (deal) setSelectedDeal(deal);
     }
   }, [dealIdFromUrl, creatorIdFromUrl]);
+
+  // Live mode (I6): select from the live list once it arrives — via URL param
+  // if present, else the first deal room.
+  React.useEffect(() => {
+    if (!isApiLive() || selectedDeal || liveDealRooms.length === 0) return;
+    const match = dealIdFromUrl
+      ? liveDealRooms.find((d) => d.id === dealIdFromUrl)
+      : creatorIdFromUrl
+        ? liveDealRooms.find((d) => d.creatorId === creatorIdFromUrl)
+        : undefined;
+    setSelectedDeal(match || liveDealRooms[0]);
+  }, [liveDealRooms, selectedDeal, dealIdFromUrl, creatorIdFromUrl]);
 
   React.useEffect(() => {
     const valid: ToolsPanel[] = ['contract', 'deliverables', 'payments'];
@@ -586,6 +714,46 @@ export default function BrandChatPage() {
     }
   }, [selectedDeal, loadMessages, loadDeliverables]);
 
+  // Realtime messaging (Priya direct assignment, SHARED_CONTEXT.md "Realtime
+  // messaging for brand-chat"): opens the deal-message SSE stream after the
+  // initial messagesApi.list load, live mode only. Dedupe by message id is
+  // mandatory — sendMessage's publish-on-send fires to every open emitter
+  // for the deal including the sender's own, and handleSendMessage already
+  // appends the message returned by messagesApi.send, so without this guard
+  // the sender would see every own-message twice.
+  //
+  // Keyed on selectedDeal?.id (not the selectedDeal object) so a deal-room
+  // list refresh that returns a new object for the same deal doesn't tear
+  // down and reopen the connection. The effect cleanup — which fires on
+  // both id change and unmount — closes the stream, so switching deals or
+  // navigating away never leaves a previous deal's stream writing into the
+  // newly selected one.
+  React.useEffect(() => {
+    if (!isApiLive() || !selectedDeal) return;
+    const dealId = selectedDeal.id;
+
+    const handle = messagesApi.stream('brand', dealId, {
+      onMessage: (incoming) => {
+        setLiveMessages((prev) => {
+          if (prev.some((m) => m.id === incoming.id)) return prev;
+          return [...prev, incoming];
+        });
+        setTimeout(scrollToBottom, 50);
+      },
+      onError: () => {
+        // Graceful degrade: a dropped/failed stream is silent and non-fatal —
+        // the existing fetch-on-load path (loadMessages) already covers
+        // message delivery, so send/render must never be blocked by this.
+        console.debug('[brand-chat] deal message stream error/closed for deal', dealId);
+      },
+    });
+
+    return () => {
+      handle.close();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDeal?.id]);
+
   const handleSendMessage = async () => {
     if (!message.trim()) return;
     const content = message.trim();
@@ -636,7 +804,7 @@ export default function BrandChatPage() {
     // In real app: add proposal to mockEvents or call API
   };
   
-  const filteredDeals = mockDealRooms.filter(deal =>
+  const filteredDeals = dealRooms.filter(deal =>
     deal.creatorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     deal.campaignName.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -678,7 +846,24 @@ export default function BrandChatPage() {
         
         <ScrollArea className="flex-1">
           <div className="p-2">
-            {filteredDeals.map((deal) => {
+            {isApiLive() && dealsLoading && (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            {isApiLive() && !dealsLoading && dealsError && (
+              <div className="p-6 text-center">
+                <AlertCircle className="h-8 w-8 text-destructive mx-auto mb-2" />
+                <p className="text-sm text-destructive">{dealsError}</p>
+              </div>
+            )}
+            {isApiLive() && !dealsLoading && !dealsError && filteredDeals.length === 0 && (
+              <div className="p-6 text-center">
+                <MessageCircle className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">No deal rooms found</p>
+              </div>
+            )}
+            {(!isApiLive() || (!dealsLoading && !dealsError)) && filteredDeals.map((deal) => {
               const status = dealStatusConfig[deal.dealStatus as keyof typeof dealStatusConfig];
               return (
                 <button

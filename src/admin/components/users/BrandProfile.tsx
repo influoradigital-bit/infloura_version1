@@ -31,12 +31,25 @@ import {
   Users,
   FileText,
   CalendarDays,
+  Pencil,
+  X,
+  Wallet,
+  ArrowRight,
   type LucideIcon,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,6 +66,7 @@ import { useBrandDetail } from '../../hooks/useBrandDetail';
 import { brandApi } from '../../services/api-contracts';
 import KpiCard from '../dashboard/KpiCard';
 import { KycStatus } from '../../types/admin.types';
+import type { Brand } from '../../types/admin.types';
 
 // ============================================
 // FORMATTING
@@ -152,6 +166,34 @@ export default function BrandProfile({ brandId, className }: BrandProfileProps) 
   const [reinstateOpen, setReinstateOpen] = useState(false);
 
   // --------------------------------------------
+  // Edit mode — only the backend's allow-listed fields for `PUT
+  // /admin/brands/{id}` (`AdminBrandDtos.UpdateBrandRequest`): name, industry,
+  // size, email. KYC status, suspension, and money fields are NOT editable
+  // here — they have their own dedicated, audited mutations above.
+  // --------------------------------------------
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editIndustry, setEditIndustry] = useState('');
+  const [editSize, setEditSize] = useState<Brand['size']>('SMB');
+  const [editEmail, setEditEmail] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+
+  // --------------------------------------------
+  // Override campaign budget — money-moving path. Deliberately gated behind
+  // an explicit confirm dialog (not just the inline campaign picker) with a
+  // required reason, same "second confirmation step" pattern as
+  // FeeControlPanel.tsx's fee-schedule change.
+  // --------------------------------------------
+  const [overrideCampaignId, setOverrideCampaignId] = useState('');
+  const [overrideBudget, setOverrideBudget] = useState('');
+  const [overrideReason, setOverrideReason] = useState('');
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+  const [overrideLoading, setOverrideLoading] = useState(false);
+  const [overrideConfirmOpen, setOverrideConfirmOpen] = useState(false);
+  const [overrideNote, setOverrideNote] = useState<string | null>(null);
+
+  // --------------------------------------------
   // Action handlers — live-wired to brandApi (P1-WIRE-3). Server-side
   // role/MFA re-authorization (AdminContextService) is the real authority;
   // these handlers are UX only. Every mutation requires an admin-entered
@@ -223,6 +265,80 @@ export default function BrandProfile({ brandId, className }: BrandProfileProps) 
   }
 
   // --------------------------------------------
+  // Edit mode handlers
+  // --------------------------------------------
+
+  function startEditing() {
+    if (!brand) return;
+    setEditName(brand.name);
+    setEditIndustry(brand.industry);
+    setEditSize(brand.size);
+    setEditEmail(brand.email);
+    setEditError(null);
+    setIsEditing(true);
+  }
+
+  function cancelEditing() {
+    setIsEditing(false);
+    setEditError(null);
+  }
+
+  async function handleSaveEdit() {
+    setEditLoading(true);
+    setEditError(null);
+    const res = await brandApi.update(brandId, {
+      name: editName.trim(),
+      industry: editIndustry.trim(),
+      size: editSize,
+      email: editEmail.trim(),
+    });
+    if (res.success) {
+      setIsEditing(false);
+      refresh();
+    } else {
+      setEditError(res.error ?? 'Failed to update brand.');
+    }
+    setEditLoading(false);
+  }
+
+  // --------------------------------------------
+  // Budget override handlers — money path, requires confirm + reason.
+  // --------------------------------------------
+
+  function openOverrideConfirm() {
+    setOverrideError(null);
+    setOverrideConfirmOpen(true);
+  }
+
+  async function handleConfirmOverrideBudget() {
+    setOverrideLoading(true);
+    setOverrideError(null);
+    setOverrideNote(null);
+    const budgetValue = Number(overrideBudget);
+    const res = await brandApi.overrideBudget(brandId, overrideCampaignId, budgetValue, overrideReason);
+    if (res.success) {
+      setOverrideNote('Campaign budget override submitted.');
+      setOverrideCampaignId('');
+      setOverrideBudget('');
+      setOverrideReason('');
+      setOverrideConfirmOpen(false);
+      refresh();
+    } else {
+      setOverrideError(res.error ?? 'Failed to override campaign budget.');
+    }
+    setOverrideLoading(false);
+  }
+
+  const overrideSelectedCampaign = brand?.campaigns.find((c) => c.id === overrideCampaignId) ?? null;
+  const overrideBudgetValue = Number(overrideBudget);
+  const overrideBudgetValid =
+    overrideCampaignId.length > 0 &&
+    overrideBudget.trim().length > 0 &&
+    Number.isFinite(overrideBudgetValue) &&
+    overrideBudgetValue > 0 &&
+    overrideReason.trim().length >= 10;
+
+  // --------------------------------------------
 
   if (isLoading) {
     return (
@@ -285,9 +401,85 @@ export default function BrandProfile({ brandId, className }: BrandProfileProps) 
                 Active
               </StatusPill>
             )}
+            {!isEditing && (
+              <Button type="button" size="sm" variant="outline" onClick={startEditing}>
+                <Pencil aria-hidden="true" />
+                Edit
+              </Button>
+            )}
           </div>
         </div>
       </Card>
+
+      {/* Edit form — only the backend allow-listed fields (name, industry,
+          size, email). KYC/suspension/money fields stay read-only here. */}
+      {isEditing && (
+        <Card className="gap-4 p-5">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">Edit Brand</h3>
+            <Button type="button" size="sm" variant="ghost" onClick={cancelEditing} disabled={editLoading}>
+              <X aria-hidden="true" />
+              Cancel
+            </Button>
+          </div>
+
+          {editError && (
+            <p className="rounded-lg border border-destructive-foreground/30 bg-card px-3 py-2 text-xs text-destructive-foreground">
+              {editError}
+            </p>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="brand-edit-name">Company Name</Label>
+              <Input id="brand-edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} disabled={editLoading} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="brand-edit-email">Email</Label>
+              <Input
+                id="brand-edit-email"
+                type="email"
+                value={editEmail}
+                onChange={(e) => setEditEmail(e.target.value)}
+                disabled={editLoading}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="brand-edit-industry">Industry</Label>
+              <Input
+                id="brand-edit-industry"
+                value={editIndustry}
+                onChange={(e) => setEditIndustry(e.target.value)}
+                disabled={editLoading}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="brand-edit-size">Size</Label>
+              <Select value={editSize} onValueChange={(value) => setEditSize(value as Brand['size'])}>
+                <SelectTrigger id="brand-edit-size" disabled={editLoading}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="STARTUP">Startup</SelectItem>
+                  <SelectItem value="SMB">SMB</SelectItem>
+                  <SelectItem value="ENTERPRISE">Enterprise</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleSaveEdit()}
+              disabled={editLoading || editName.trim().length === 0 || editEmail.trim().length === 0}
+            >
+              {editLoading ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -350,6 +542,150 @@ export default function BrandProfile({ brandId, className }: BrandProfileProps) 
           </ul>
         )}
       </Card>
+
+      {/* Override campaign budget — money path. Requires an explicit confirm
+          dialog + mandatory reason (>=10 chars, server-enforced) before the
+          mutation fires. */}
+      <Card className="gap-4 p-5">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Wallet className="size-4" aria-hidden="true" />
+          Override Campaign Budget
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          Directly sets a campaign's budget, bypassing the brand's normal spend controls. This is a
+          money-moving action — recorded on the campaign's audit trail.
+        </p>
+
+        {overrideNote && (
+          <p className="rounded-lg border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+            {overrideNote}
+          </p>
+        )}
+        {overrideError && !overrideConfirmOpen && (
+          <p className="rounded-lg border border-destructive-foreground/30 bg-card px-3 py-2 text-xs text-destructive-foreground">
+            {overrideError}
+          </p>
+        )}
+
+        {brand.campaigns.length === 0 ? (
+          <p className="text-sm text-muted-foreground">This brand has no campaigns to override.</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="override-campaign">Campaign</Label>
+                <Select value={overrideCampaignId} onValueChange={setOverrideCampaignId}>
+                  <SelectTrigger id="override-campaign" disabled={overrideLoading}>
+                    <SelectValue placeholder="Select a campaign" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {brand.campaigns.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} ({formatCompactINR(c.budget)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="override-new-budget">New Budget (INR)</Label>
+                <Input
+                  id="override-new-budget"
+                  type="number"
+                  min={1}
+                  step="1"
+                  inputMode="decimal"
+                  value={overrideBudget}
+                  onChange={(e) => setOverrideBudget(e.target.value)}
+                  disabled={overrideLoading}
+                  placeholder="e.g. 150000"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="override-reason">Reason (min. 10 characters, required)</Label>
+              <Textarea
+                id="override-reason"
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                disabled={overrideLoading}
+                placeholder="e.g. Brand requested a mid-campaign budget increase, approved by account manager"
+              />
+            </div>
+
+            <div>
+              <Button type="button" size="sm" variant="destructive" onClick={openOverrideConfirm} disabled={!overrideBudgetValid}>
+                <Wallet aria-hidden="true" />
+                Review Budget Override
+              </Button>
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* Budget override confirm dialog — spells out old -> new before anything is sent. */}
+      <AlertDialog
+        open={overrideConfirmOpen}
+        onOpenChange={(open) => {
+          if (overrideLoading) return;
+          setOverrideConfirmOpen(open);
+          if (!open) setOverrideError(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm campaign budget override?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This directly changes the campaign's budget. Review carefully before confirming — this is
+              a money-moving action.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {overrideSelectedCampaign && (
+            <div className="flex flex-col gap-3 text-sm">
+              <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Campaign</span>
+                  <span className="font-medium text-foreground">{overrideSelectedCampaign.name}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Budget</span>
+                  <span className="flex items-center gap-1.5 font-medium text-foreground">
+                    {formatINR(overrideSelectedCampaign.budget)}
+                    <ArrowRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                    {Number.isFinite(overrideBudgetValue) ? formatINR(overrideBudgetValue) : '—'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Reason: </span>
+                {overrideReason}
+              </div>
+            </div>
+          )}
+
+          {overrideError && (
+            <p className="rounded-lg border border-destructive-foreground/30 bg-card px-3 py-2 text-xs text-destructive-foreground">
+              {overrideError}
+            </p>
+          )}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={overrideLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmOverrideBudget();
+              }}
+              disabled={overrideLoading}
+            >
+              {overrideLoading ? 'Submitting…' : 'Confirm Budget Override'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Actions */}
       <Card className="gap-4 p-5">

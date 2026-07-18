@@ -462,7 +462,7 @@ export interface CampaignSummary {
   name: string;
   brandName: string;
   type: 'STANDARD' | 'HYPE';
-  status: 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
   budget: number;
   spent: number;
   creatorCount: number;
@@ -817,6 +817,14 @@ export type DisputeListResponse = PaginatedResponse<DisputeSummary>;
 // AUDIT LOG
 // ============================================
 
+/**
+ * Kabir finding 2.1 (red-team): distinguishes rows the server itself wrote
+ * (authoritative) from rows a client submitted (self-reported, unverified) so
+ * a super-admin can't pass off a fabricated entry as authoritative in the
+ * viewer. Must be rendered, not just carried — see AuditLogPage.tsx.
+ */
+export type AuditLogSource = 'SERVER_INTERNAL' | 'CLIENT_REPORTED';
+
 export interface AuditLogEntry {
   id: string;
   adminId: string;
@@ -829,6 +837,7 @@ export interface AuditLogEntry {
   reason?: string;
   ipAddress: string;
   timestamp: string;
+  source: AuditLogSource;
 }
 
 // ============================================

@@ -1,0 +1,18 @@
+# SPA fallback for Netlify/Cloudflare Pages
+# Deep links serve app-shell.html with HTTP 200 (not 404).
+#
+# NOTE (scripts/prerender.mjs): dist/index.html is now PRERENDERED, real
+# content for the "/" marketing route — a physical file, so exact requests
+# for "/" serve it directly without ever consulting this rule. Everything
+# else that has no physical dist/<route>/index.html (the private SPA zones
+# /brand/*, /creator/*, /admin/*, and the /:handle public-portfolio
+# catch-all) falls through to this wildcard rule instead. It must NOT point
+# at index.html anymore — robots.txt has a blanket `Allow: /` with no
+# disallow for those private zones, so a crawler hitting e.g. /brand/login
+# would otherwise be served the prerendered LANDING PAGE's title/canonical/
+# JSON-LD mislabeled under that URL. dist/app-shell.html is the pristine,
+# content-free bootstrap shell (empty #root + the bundle <script> tag) that
+# scripts/prerender.mjs writes on every build, before it touches
+# dist/index.html — React Router then renders the correct client-side page
+# for whatever path the browser actually requested.
+/*  /app-shell.html  200

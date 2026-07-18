@@ -8,15 +8,17 @@ import { StageLoadingState } from '@/components/feature/meera/StageLoadingState'
 import { MEERA_STAT_LABELS } from '@/data/meera-copy'
 import { MOCK_CREATORS, MOCK_LIVE_STATS } from '@/data/meera-mock'
 import { isApiLive } from '@/lib/api'
+import { isConfirmLaunchPayload } from '@/lib/meera-api'
 import { cn } from '@/lib/utils'
 
 interface StageLiveProps {
   /**
    * Latest `confirm_launch` tool_result payload for this session, if any.
-   * There's no documented contract for this payload (02 §3 only specs the
-   * other four tools) — the go-live confirmation itself (ai.md
-   * ConfirmLaunchExecutor) is what we know happened, not a dashboard-stats
-   * shape, so this only gates loading vs. a plain launch confirmation.
+   * `MeeraToolDtos.ConfirmLaunchResult` gives us `{campaignId, status,
+   * creatorsInvited, replay}` — a go-live confirmation, not a live
+   * invites-accepted/payout-ledger dashboard feed, so this only unlocks an
+   * honest confirmation card (with the real invited count when present),
+   * never the mock's full stats grid.
    */
   toolResult?: unknown
   className?: string
@@ -58,11 +60,13 @@ export function StageLive({ toolResult, className }: StageLiveProps) {
     )
   }
 
-  // Live mode — `confirm_launch` has no documented dashboard-stats contract, so
-  // invites/slots/payouts aren't fabricated here. Once launched, this is an
-  // honest confirmation; live campaign stats belong to a real polling/detail
-  // endpoint that doesn't exist yet (tracked as a known gap, not silently mocked).
-  if (toolResult === undefined) {
+  // Live mode — `confirm_launch`'s own result isn't a live invites-accepted/
+  // payout dashboard feed, so slot progress + payouts aren't fabricated here.
+  // Once launched, this is an honest confirmation (with the real invited
+  // count when the DTO has one); accepted-slots/payout-ledger data belongs to
+  // a real polling/detail endpoint that doesn't exist yet (known gap, not
+  // silently mocked).
+  if (!isConfirmLaunchPayload(toolResult)) {
     return <StageLoadingState label="Launching your campaign…" className={className} />
   }
 
@@ -71,8 +75,11 @@ export function StageLive({ toolResult, className }: StageLiveProps) {
       <CheckCircle2 className="h-8 w-8 text-meera-escrow" aria-hidden="true" />
       <div>
         <p className="text-sm font-semibold text-meera-text">Campaign is live</p>
+        {typeof toolResult.creatorsInvited === 'number' && (
+          <p className="mt-1 text-xs text-meera-text-muted">{toolResult.creatorsInvited} creators invited</p>
+        )}
         <p className="mt-1 text-xs text-meera-text-muted">
-          Invite and payout stats will appear here as creators respond.
+          Slot and payout stats will appear here as creators respond.
         </p>
       </div>
     </div>

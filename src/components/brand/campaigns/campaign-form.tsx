@@ -148,36 +148,51 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
   const isEditing = !!campaignId;
   const currentStepIndex = steps.findIndex((s) => s.id === currentStep);
 
-  // Load existing campaign data when editing
+  // When editing, we must fetch the real campaign and prefill before the form is
+  // submittable — otherwise a save (PATCH) would overwrite the record with empty
+  // defaults. `isLoading` gates the render until the fetch resolves.
+  const [isLoading, setIsLoading] = React.useState<boolean>(!!campaignId);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+
   React.useEffect(() => {
-    if (campaignId) {
-      // Mock data for editing - in real app, fetch from API
-      const mockCampaign = {
-        'active-1': {
-          title: 'Summer Collection Launch',
-          description: 'Promote our new summer fashion line with lifestyle content. Looking for creators who can showcase our products in authentic, lifestyle settings.',
-          objectives: ['Brand awareness', 'Drive sales'],
-          platforms: ['INSTAGRAM' as Platform, 'TIKTOK' as Platform],
-          contentTypes: ['REEL' as ContentType, 'POST' as ContentType, 'STORY' as ContentType],
-          budgetMin: 20000,
-          budgetMax: 25000,
-          currency: 'USD' as const,
-          startDate: new Date('2024-05-01'),
-          endDate: new Date('2024-08-15'),
-          requirements: ['Must tag @brandhandle in all posts', 'Include discount code in caption'],
-          hashtags: ['#SummerStyle', '#BrandName'],
-          targetLocations: ['United States', 'Canada'],
-          targetAge: [18, 35] as [number, number],
-          targetGender: 'all' as const,
-          autoApprove: false,
-        },
-      };
-      
-      const existingCampaign = mockCampaign[campaignId as keyof typeof mockCampaign];
-      if (existingCampaign) {
-        setFormData((prev) => ({ ...prev, ...existingCampaign }));
+    if (!campaignId) return;
+    let cancelled = false;
+    setIsLoading(true);
+    setLoadError(null);
+    (async () => {
+      try {
+        const c = await api.campaigns.get(campaignId);
+        if (cancelled) return;
+        // Mock/non-live mode resolves to null: leave a blank form, allow editing.
+        if (c) {
+          setFormData({
+            title: c.title,
+            description: c.description ?? '',
+            objectives: c.objectives ?? [],
+            platforms: c.platforms,
+            contentTypes: c.contentTypes,
+            budgetMin: c.budget.min,
+            budgetMax: c.budget.max,
+            currency: c.budget.currency,
+            startDate: c.timeline.startDate ? new Date(c.timeline.startDate) : undefined,
+            endDate: c.timeline.endDate ? new Date(c.timeline.endDate) : undefined,
+            maxCollaborators: c.maxCollaborators ?? initialFormData.maxCollaborators,
+            requirements: c.requirements ?? [],
+            hashtags: c.hashtags ?? [],
+            brandGuidelines: c.brandGuidelines ?? '',
+            isPrivate: c.isPrivate,
+          });
+        }
+        setIsLoading(false);
+      } catch (e) {
+        if (cancelled) return;
+        setLoadError(e instanceof ApiError ? e.message : 'Could not load this campaign.');
+        setIsLoading(false);
       }
-    }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [campaignId]);
 
   const updateFormData = (updates: Partial<CampaignFormData>) => {
@@ -336,6 +351,32 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
       hashtags: formData.hashtags.filter((_, i) => i !== index),
     });
   };
+
+  // While an edit fetch is in flight (or failed), never show a submittable form —
+  // that is exactly what let a save overwrite the campaign with empty defaults.
+  if (isEditing && (isLoading || loadError)) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 p-6 text-center">
+        {loadError ? (
+          <>
+            <p className="text-sm font-medium text-destructive">Could not load this campaign</p>
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+            <Button variant="outline" asChild>
+              <Link to="/brand/campaigns">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to campaigns
+              </Link>
+            </Button>
+          </>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading campaign…
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <TooltipProvider>

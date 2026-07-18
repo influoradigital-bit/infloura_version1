@@ -49,46 +49,40 @@
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://influora.in/features/contracts</loc>
-    <lastmod>2026-07-13</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
     <loc>https://influora.in/blog</loc>
     <lastmod>2026-07-13</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
+    <loc>https://influora.in/blog/what-is-escrow-in-influencer-marketing</loc>
+    <lastmod>2026-07-13</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://influora.in/blog/how-to-pay-influencers-safely-india-2026</loc>
+    <lastmod>2026-07-13</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://influora.in/blog/micro-influencer-pricing-guide-india-2026</loc>
+    <lastmod>2026-07-13</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://influora.in/contact</loc>
+    <lastmod>2026-07-13</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
     <loc>https://influora.in/support</loc>
     <lastmod>2026-07-13</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://influora.in/kyc</loc>
-    <lastmod>2026-07-13</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://influora.in/tds</loc>
-    <lastmod>2026-07-13</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://influora.in/guidelines/creators</loc>
-    <lastmod>2026-07-13</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
-  </url>
-  <url>
-    <loc>https://influora.in/guidelines/brands</loc>
-    <lastmod>2026-07-13</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
   </url>
   <url>
     <loc>https://influora.in/terms</loc>
@@ -98,12 +92,6 @@
   </url>
   <url>
     <loc>https://influora.in/privacy</loc>
-    <lastmod>2026-07-13</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>https://influora.in/refund-policy</loc>
     <lastmod>2026-07-13</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>

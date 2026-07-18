@@ -38,7 +38,9 @@ export default defineConfig(({ mode, command }) => {
       },
     },
     server: {
-      port: 3000,
+      // PORT env override lets a second dev instance (e.g. a preview harness)
+      // run alongside the default 3000 without fighting over the port.
+      port: Number(process.env.PORT) || 3000,
       host: true,
       allowedHosts: ['sb-s0hdyco25nig.vercel.run'],
       // The admin console (src/admin/services/api-contracts.ts) calls the backend

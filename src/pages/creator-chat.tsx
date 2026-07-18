@@ -30,9 +30,11 @@ import {
   FileSignature,
   Package,
   CreditCard,
+  Loader2,
 } from 'lucide-react';
 
 import { cn, formatINR } from '@/lib/utils';
+import { api, isApiLive, type Deal, type DealMessage, type MessageKind } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -66,7 +68,7 @@ import { ShippingAddressForm, type ShippingAddressData } from '@/components/crea
 import { ReceiptConfirmation, type ReceiptData } from '@/components/creator/deal-room/receipt-confirmation';
 import { ShipmentCard, type ShipmentStatus } from '@/components/shared/shipment-card';
 import { MapPin, Truck } from 'lucide-react';
-import type { TimelineEvent as LibTimelineEvent, TimelineEventMetadata } from '@/lib/types';
+import type { TimelineEvent as LibTimelineEvent, TimelineEventMetadata, CollaborationStatus } from '@/lib/types';
 import {
   addPersistedMessage,
   formatMessageTimestamp,
@@ -394,6 +396,98 @@ const mockTimelineEvents: ChatTimelineEvent[] = [
 ];
 
 // ============================================================================
+// Live-mode mappers — api.deals.list('creator', ...) / api.messages.list(...)
+// map onto the DealRoom / ChatTimelineEvent shapes this page already renders.
+// ============================================================================
+
+function mapDealStatusToRoomStatus(status: CollaborationStatus): DealRoom['status'] {
+  switch (status) {
+    case 'INVITED':
+    case 'APPLIED':
+    case 'SHORTLISTED':
+      return 'new_proposal';
+    case 'IN_NEGOTIATION':
+      return 'negotiating';
+    case 'TERMS_AGREED':
+    case 'CONTRACT_PENDING':
+    case 'CONTRACTED':
+      return 'contracted';
+    case 'IN_PROGRESS':
+      return 'in_progress';
+    case 'REVIEW_PENDING':
+    case 'REVISION_REQUESTED':
+    case 'DISPUTED':
+      return 'review';
+    case 'COMPLETED':
+    case 'CANCELLED':
+      return 'completed';
+    default:
+      return 'new_proposal';
+  }
+}
+
+function initialsFromName(name: string): string {
+  return (name || '?')
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function relativeTimeFromIso(iso?: string): string {
+  if (!iso) return '';
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+/** Deal (api.deals.list) -> local DealRoom shape this page already renders. */
+function mapDealToRoom(d: Deal): DealRoom {
+  return {
+    id: d.id,
+    brandName: d.counterpartyName,
+    brandLogo: d.counterpartyAvatar ?? '',
+    brandInitials: initialsFromName(d.counterpartyName),
+    campaignName: d.campaignName,
+    status: mapDealStatusToRoomStatus(d.status),
+    dealAmount: d.dealValue,
+    lastMessage: d.lastMessage ?? '',
+    lastMessageTime: relativeTimeFromIso(d.lastMessageAt),
+    unreadCount: d.unreadCount,
+    deliverablesDone: d.deliverablesDone,
+    deliverablesTotal: d.deliverablesTotal,
+  };
+}
+
+const MESSAGE_KIND_TO_EVENT_TYPE: Record<MessageKind, ChatTimelineEvent['type']> = {
+  text: 'message',
+  system: 'system',
+  proposal: 'proposal',
+  contract: 'contract',
+  deliverable: 'deliverable',
+  payment: 'payment',
+  shipment: 'system',
+};
+
+/** DealMessage (api.messages.list/send) -> local ChatTimelineEvent shape. */
+function dealMessageToEvent(m: DealMessage): ChatTimelineEvent {
+  return {
+    id: m.id,
+    type: MESSAGE_KIND_TO_EVENT_TYPE[m.kind],
+    sender: m.senderType,
+    timestamp: formatMessageTimestamp(m.createdAt),
+    content: m.content,
+    metadata: m.metadata,
+  };
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -423,13 +517,76 @@ const calculateEarnings = (grossAmount: number) => {
 // ============================================================================
 
 export default function CreatorChatPage() {
+  const liveApi = isApiLive();
   const [searchParams, setSearchParams] = useSearchParams();
   const dealId = searchParams.get('deal');
   const tabFromUrl = searchParams.get('tab');
 
-  const [selectedDeal, setSelectedDeal] = React.useState<DealRoom>(
-    mockDealRooms.find(d => d.id === dealId) || mockDealRooms[0]
+  // Deal/conversation list — GET /deals?role=creator (api.deals.list). Mock mode
+  // keeps the original hardcoded mockDealRooms so the demo still works.
+  const [dealRooms, setDealRooms] = React.useState<DealRoom[]>(liveApi ? [] : mockDealRooms);
+  const [dealsLoading, setDealsLoading] = React.useState(liveApi);
+  const [dealsError, setDealsError] = React.useState<string | null>(null);
+  const [selectedDealId, setSelectedDealId] = React.useState<string | null>(dealId);
+
+  const loadDeals = React.useCallback(async () => {
+    if (!liveApi) return;
+    setDealsLoading(true);
+    setDealsError(null);
+    try {
+      const remote = await api.deals.list('creator', 'all');
+      setDealRooms(remote.map(mapDealToRoom));
+    } catch (err) {
+      console.error('Failed to load deal rooms', err);
+      setDealsError('Failed to load your deals. Please try again.');
+    } finally {
+      setDealsLoading(false);
+    }
+  }, [liveApi]);
+
+  React.useEffect(() => {
+    loadDeals();
+  }, [loadDeals]);
+
+  const selectedDeal = React.useMemo(
+    () => dealRooms.find((d) => d.id === selectedDealId) ?? dealRooms[0] ?? null,
+    [dealRooms, selectedDealId],
   );
+
+  // Message thread for the selected deal — GET/POST /deals/:id/messages (api.messages.*).
+  const [liveMessages, setLiveMessages] = React.useState<DealMessage[]>([]);
+  const [messagesLoading, setMessagesLoading] = React.useState(false);
+  const [messagesError, setMessagesError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!liveApi || !selectedDeal) return;
+    let cancelled = false;
+    setMessagesLoading(true);
+    setMessagesError(null);
+    (async () => {
+      try {
+        const remote = await api.messages.list('creator', selectedDeal.id);
+        if (!cancelled) setLiveMessages(remote);
+      } catch (err) {
+        console.error('Failed to load messages', err);
+        if (!cancelled) setMessagesError('Failed to load messages for this deal.');
+      } finally {
+        if (!cancelled) setMessagesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [liveApi, selectedDeal?.id]);
+
+  // Mark the thread read once opened (mirrors creator-deals.tsx openDeal flow).
+  React.useEffect(() => {
+    if (!liveApi || !selectedDeal || selectedDeal.unreadCount === 0) return;
+    api.messages.markRead('creator', selectedDeal.id).catch((err) => {
+      console.error('Failed to mark messages read', err);
+    });
+  }, [liveApi, selectedDeal?.id, selectedDeal?.unreadCount]);
+
   const [message, setMessage] = React.useState('');
   const [messageRefreshKey, setMessageRefreshKey] = React.useState(0);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -451,22 +608,21 @@ export default function CreatorChatPage() {
   );
 
   const selectDeal = (deal: DealRoom) => {
-    setSelectedDeal(deal);
+    setSelectedDealId(deal.id);
     setOpenPanel(null);
     syncUrl(deal.id, null);
   };
 
   const openTool = (panel: CreatorToolsPanel) => {
     setOpenPanel(panel);
-    syncUrl(selectedDeal.id, panel);
+    if (selectedDeal) syncUrl(selectedDeal.id, panel);
   };
 
   const openContractTab = () => openTool('contract');
 
   React.useEffect(() => {
     if (dealId) {
-      const deal = mockDealRooms.find((d) => d.id === dealId);
-      if (deal) setSelectedDeal(deal);
+      setSelectedDealId(dealId);
     }
   }, [dealId]);
 
@@ -516,12 +672,22 @@ export default function CreatorChatPage() {
     setShowReceiptConfirmation(false);
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     const text = message.trim();
-    if (!text) return;
-    addPersistedMessage(selectedDeal.id, text, 'creator');
+    if (!text || !selectedDeal) return;
     setMessage('');
-    setMessageRefreshKey((k) => k + 1);
+    if (liveApi) {
+      try {
+        const sent = await api.messages.send('creator', selectedDeal.id, text);
+        setLiveMessages((prev) => [...prev, sent]);
+      } catch (err) {
+        console.error('Failed to send message', err);
+        setMessagesError('Failed to send your message. Please try again.');
+      }
+    } else {
+      addPersistedMessage(selectedDeal.id, text, 'creator');
+      setMessageRefreshKey((k) => k + 1);
+    }
   };
 
   const handleAcceptProposal = (proposalId: string) => {
@@ -611,15 +777,31 @@ export default function CreatorChatPage() {
     setShowContractPanel(true);
   };
   
-  const filteredDeals = mockDealRooms.filter(deal =>
+  const filteredDeals = dealRooms.filter(deal =>
     deal.brandName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     deal.campaignName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const baseEventsForDeal =
-    selectedDeal.id === '1' ? mockTimelineEvents : mockTimelineEvents.slice(0, 3);
+  const baseEventsForDeal = !selectedDeal
+    ? []
+    : selectedDeal.id === '1'
+      ? mockTimelineEvents
+      : mockTimelineEvents.slice(0, 3);
 
   const events = React.useMemo(() => {
+    if (!selectedDeal) return [];
+
+    if (liveApi) {
+      return liveMessages
+        .map(dealMessageToEvent)
+        .sort((a, b) => {
+          const ta = new Date(a.timestamp.replace(' ', 'T')).getTime();
+          const tb = new Date(b.timestamp.replace(' ', 'T')).getTime();
+          return ta - tb;
+        })
+        .map((event) => enrichContractEvent(event, selectedDeal));
+    }
+
     const persisted: ChatTimelineEvent[] = getPersistedMessages(selectedDeal.id).map((m) => ({
       id: m.id,
       type: 'message' as const,
@@ -643,11 +825,48 @@ export default function CreatorChatPage() {
     });
 
     return sorted.map((event) => enrichContractEvent(event, selectedDeal));
-  }, [baseEventsForDeal, selectedDeal, messageRefreshKey, enrichContractEvent]);
+  }, [liveApi, liveMessages, baseEventsForDeal, selectedDeal, messageRefreshKey, enrichContractEvent]);
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [events, openPanel]);
+
+  // --- Guards (after all hooks, before dereferencing selectedDeal below) ---
+  if (dealsLoading) {
+    return (
+      <CreatorLayout>
+        <div className="flex h-[calc(100vh-4rem)] items-center justify-center bg-background">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </CreatorLayout>
+    );
+  }
+  if (dealsError) {
+    return (
+      <CreatorLayout>
+        <div className="flex h-[calc(100vh-4rem)] flex-col items-center justify-center gap-3 bg-background text-center">
+          <AlertCircle className="h-8 w-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground max-w-xs">{dealsError}</p>
+          <Button variant="outline" size="sm" onClick={() => loadDeals()}>
+            Retry
+          </Button>
+        </div>
+      </CreatorLayout>
+    );
+  }
+  if (!selectedDeal) {
+    return (
+      <CreatorLayout>
+        <div className="flex h-[calc(100vh-4rem)] flex-col items-center justify-center gap-2 bg-background text-center">
+          <MessageCircle className="h-10 w-10 text-muted-foreground/50" />
+          <p className="font-medium">No deals yet</p>
+          <p className="text-sm text-muted-foreground max-w-xs">
+            Brands you're talking to will show up here as deal rooms.
+          </p>
+        </div>
+      </CreatorLayout>
+    );
+  }
 
   const contractStatus = resolveDealContractStatus(selectedDeal);
   const contractId = dealHasContract(selectedDeal.id, selectedDeal.status)
@@ -858,6 +1077,19 @@ export default function CreatorChatPage() {
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <ScrollArea className="flex-1 p-4">
           <div className="space-y-4 max-w-3xl mx-auto">
+            {liveApi && messagesLoading && (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            {liveApi && messagesError && !messagesLoading && (
+              <div className="text-center py-8 text-sm text-destructive">{messagesError}</div>
+            )}
+            {liveApi && !messagesLoading && !messagesError && events.length === 0 && (
+              <div className="text-center py-12 text-sm text-muted-foreground">
+                No messages yet. Say hello to get the conversation started.
+              </div>
+            )}
             {events.map((event) => (
               <React.Fragment key={event.id}>
                 {/* Regular Messages */}

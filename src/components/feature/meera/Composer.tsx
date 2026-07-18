@@ -19,6 +19,12 @@ interface ComposerProps {
    * paywall copy shown; this is a turn-engine pacing state, not a gate.
    */
   sendLocked?: boolean
+  /**
+   * One-time starter text to pre-fill the input with (e.g. the "Ask Meera"
+   * help pre-seed). Seeds the draft only; it is never auto-sent — the user
+   * reviews/edits and sends themselves.
+   */
+  initialDraft?: string
   className?: string
 }
 
@@ -29,8 +35,8 @@ interface ComposerProps {
  * calls `onSend`. If STT is unsupported, the mic simply isn't rendered and
  * the text path is unaffected.
  */
-export function Composer({ onSend, suggestedReplies = [], disabled, sendLocked, className }: ComposerProps) {
-  const [value, setValue] = useState('')
+export function Composer({ onSend, suggestedReplies = [], disabled, sendLocked, initialDraft, className }: ComposerProps) {
+  const [value, setValue] = useState(() => initialDraft ?? '')
   const [voiceFallback, setVoiceFallback] = useState<string | null>(null)
   /** Announced via aria-live so screen-reader users hear what Meera transcribed. */
   const [transcriptionAnnouncement, setTranscriptionAnnouncement] = useState<string | null>(null)

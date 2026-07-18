@@ -44,6 +44,15 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  api,
+  isApiLive,
+  type Deal,
+  type CreatorDeliverableListItem,
+  type CreatorDeliverableRowStatus,
+} from '@/lib/api';
+import type { CollaborationStatus } from '@/lib/types';
+import { toast } from '@/hooks/use-toast';
 
 // Collaboration states matching the PDF
 type CollaborationState = 
@@ -132,6 +141,116 @@ function formatINR(amount: number): string {
   }).format(amount);
 }
 
+// ============================================================================
+// Live-mode types + mappers — api.deals.list('creator', 'all') is the source
+// for the collaboration list; api.creatorDeliverables.listForDeal(id) is the
+// source for the per-deliverable detail once a card is opened.
+// ============================================================================
+
+/** UI-local deliverable status bucket (mirrors DealDeliverablesTab convention). */
+type DeliverableUiStatus = 'PENDING' | 'SUBMITTED' | 'REVISION' | 'APPROVED';
+
+interface DeliverableItem {
+  id: string;
+  type: string;
+  title: string;
+  status: DeliverableUiStatus;
+  /** Not returned by GET /creator/deliverables — omitted (not fabricated) when absent. */
+  dueDate?: string;
+  revisionNotes?: string;
+  currentRevision?: number | null;
+  maxRevisions?: number | null;
+}
+
+interface Collaboration {
+  id: string;
+  brandName: string;
+  brandLogo: string;
+  campaignTitle: string;
+  state: CollaborationState;
+  deliverables: DeliverableItem[];
+  budget: number;
+  deadline?: string;
+  progress: number;
+  escrowAmount: number;
+  revisionsRemaining?: number;
+  startedAt?: string;
+}
+
+/** Deal.status (backend CollaborationStatus) -> this page's CollaborationState.
+ *  Returns null for pre-contract stages that don't belong on this "active
+ *  collaborations" page (those live on creator-deals.tsx instead). */
+function mapDealStatusToCollabState(status: CollaborationStatus): CollaborationState | null {
+  switch (status) {
+    case 'TERMS_AGREED':
+    case 'CONTRACT_PENDING':
+    case 'CONTRACTED':
+      return 'CONTRACT_SIGNING';
+    case 'IN_PROGRESS':
+      return 'IN_PROGRESS';
+    case 'REVIEW_PENDING':
+      return 'REVIEW_PENDING';
+    case 'REVISION_REQUESTED':
+      return 'REVISION_REQUESTED';
+    case 'COMPLETED':
+      return 'COMPLETED';
+    case 'DISPUTED':
+      return 'DISPUTED';
+    default:
+      return null; // INVITED/APPLIED/SHORTLISTED/IN_NEGOTIATION/CANCELLED — not this page's concern
+  }
+}
+
+function mapDealToCollaboration(d: Deal): Collaboration | null {
+  const state = mapDealStatusToCollabState(d.status);
+  if (!state) return null;
+  return {
+    id: d.id,
+    brandName: d.counterpartyName,
+    brandLogo: d.counterpartyAvatar ?? '',
+    campaignTitle: d.campaignName,
+    state,
+    deliverables: [], // fetched lazily from api.creatorDeliverables.listForDeal on open
+    budget: d.dealValue,
+    deadline: d.nextDeadline,
+    progress: d.deliverablesTotal > 0 ? Math.round((d.deliverablesDone / d.deliverablesTotal) * 100) : 0,
+    escrowAmount: d.escrowFunded ? d.dealValue : 0,
+  };
+}
+
+function mapDeliverableStatus(status: CreatorDeliverableRowStatus): DeliverableUiStatus {
+  switch (status) {
+    case 'SUBMITTED':
+    case 'RESUBMITTED':
+      return 'SUBMITTED';
+    case 'REVISION_REQUESTED':
+    case 'REJECTED':
+      return 'REVISION';
+    case 'APPROVED':
+    case 'POSTED':
+    case 'METRICS_REPORTED':
+    case 'VERIFIED':
+      return 'APPROVED';
+    case 'PENDING':
+    case 'DRAFT':
+    default:
+      return 'PENDING';
+  }
+}
+
+function mapDeliverableItem(item: CreatorDeliverableListItem): DeliverableItem {
+  return {
+    id: item.id,
+    type: '', // not returned by the backend list endpoint — icon falls back to default
+    title: item.title,
+    status: mapDeliverableStatus(item.status),
+    // No dueDate/revisionNotes field on CreatorDeliverableListItem — left undefined
+    // rather than fabricated; the description field is a brief, not brand feedback.
+    currentRevision: item.currentRevision,
+    maxRevisions: item.maxRevisions,
+  };
+}
+
 function daysUntil(dateString: string): number {
   const date = new Date(dateString);
   const now = new Date();
@@ -140,31 +259,121 @@ function daysUntil(dateString: string): number {
 }
 
 export default function CreatorActivePage() {
+  const liveApi = isApiLive();
   const navigate = useNavigate();
-  const [selectedCollab, setSelectedCollab] = React.useState<typeof mockCollaborations[0] | null>(null);
+
+  // Active + completed collaborations — GET /deals?role=creator (api.deals.list).
+  // Mock mode keeps the original hardcoded mockCollaborations.
+  const [collaborations, setCollaborations] = React.useState<Collaboration[]>(
+    liveApi ? [] : (mockCollaborations as unknown as Collaboration[]),
+  );
+  const [collabsLoading, setCollabsLoading] = React.useState(liveApi);
+  const [collabsError, setCollabsError] = React.useState<string | null>(null);
+
+  const loadCollaborations = React.useCallback(async () => {
+    if (!liveApi) return;
+    setCollabsLoading(true);
+    setCollabsError(null);
+    try {
+      const remote = await api.deals.list('creator', 'all');
+      const mapped = remote
+        .map(mapDealToCollaboration)
+        .filter((c): c is Collaboration => c !== null);
+      setCollaborations(mapped);
+    } catch (err) {
+      console.error('Failed to load active collaborations', err);
+      setCollabsError('Failed to load your collaborations. Please try again.');
+    } finally {
+      setCollabsLoading(false);
+    }
+  }, [liveApi]);
+
+  React.useEffect(() => {
+    loadCollaborations();
+  }, [loadCollaborations]);
+
+  const [selectedCollab, setSelectedCollab] = React.useState<Collaboration | null>(null);
+  const [deliverablesLoading, setDeliverablesLoading] = React.useState(false);
   const [showUploadDialog, setShowUploadDialog] = React.useState(false);
-  const [selectedDeliverable, setSelectedDeliverable] = React.useState<typeof mockCollaborations[0]['deliverables'][0] | null>(null);
+  const [selectedDeliverable, setSelectedDeliverable] = React.useState<DeliverableItem | null>(null);
+  const [uploadFile, setUploadFile] = React.useState<File | null>(null);
+  const uploadInputRef = React.useRef<HTMLInputElement>(null);
   const [uploadCaption, setUploadCaption] = React.useState('');
   const [isUploading, setIsUploading] = React.useState(false);
   const [showTimeline, setShowTimeline] = React.useState(false);
-  const [timelineCollab, setTimelineCollab] = React.useState<typeof mockCollaborations[0] | null>(null);
+  const [timelineCollab, setTimelineCollab] = React.useState<Collaboration | null>(null);
   const [showContractSheet, setShowContractSheet] = React.useState(false);
-  const [contractCollab, setContractCollab] = React.useState<typeof mockCollaborations[0] | null>(null);
+  const [contractCollab, setContractCollab] = React.useState<Collaboration | null>(null);
 
-  const activeCollabs = mockCollaborations.filter(
+  const activeCollabs = collaborations.filter(
     (c) => !['COMPLETED', 'DISPUTED'].includes(c.state)
   );
-  const completedCollabs = mockCollaborations.filter(
+  const completedCollabs = collaborations.filter(
     (c) => c.state === 'COMPLETED'
   );
 
+  // Loads real per-deliverable status/titles for the opened collaboration —
+  // GET /creator/deliverables?collaboration_id= (api.creatorDeliverables.listForDeal).
+  const openCollab = React.useCallback(async (collab: Collaboration) => {
+    setSelectedCollab(collab);
+    if (!liveApi) return;
+    setDeliverablesLoading(true);
+    try {
+      const items = await api.creatorDeliverables.listForDeal(collab.id);
+      const deliverables = items.map(mapDeliverableItem);
+      const revisionCandidates = deliverables
+        .filter((d) => d.maxRevisions != null && d.currentRevision != null)
+        .map((d) => Math.max(0, (d.maxRevisions as number) - (d.currentRevision as number)));
+      const revisionsRemaining = revisionCandidates.length > 0 ? Math.min(...revisionCandidates) : undefined;
+      setCollaborations((prev) =>
+        prev.map((c) => (c.id === collab.id ? { ...c, deliverables, revisionsRemaining } : c)),
+      );
+      setSelectedCollab((prev) => (prev && prev.id === collab.id ? { ...prev, deliverables, revisionsRemaining } : prev));
+    } catch (err) {
+      console.error('Failed to load deliverables for collaboration', err);
+      toast({
+        title: 'Could not load deliverables',
+        description: 'Please try opening this collaboration again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeliverablesLoading(false);
+    }
+  }, [liveApi]);
+
   const handleUpload = async () => {
+    if (!selectedDeliverable) return;
     setIsUploading(true);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setIsUploading(false);
-    setShowUploadDialog(false);
-    setSelectedDeliverable(null);
-    setUploadCaption('');
+    try {
+      if (liveApi) {
+        if (!uploadFile) {
+          toast({ title: 'Choose a file first', variant: 'destructive' });
+          return;
+        }
+        const { url } = await api.uploads.upload(uploadFile, 'creator');
+        await api.deliverables.submit(selectedDeliverable.id, {
+          fileUrls: [url],
+          notes: uploadCaption || undefined,
+        });
+        if (selectedCollab) await openCollab(selectedCollab);
+        toast({ title: 'Deliverable submitted', description: 'The brand has been notified for review.' });
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      setShowUploadDialog(false);
+      setSelectedDeliverable(null);
+      setUploadCaption('');
+      setUploadFile(null);
+    } catch (err) {
+      console.error('Failed to submit deliverable', err);
+      toast({
+        title: 'Submission failed',
+        description: 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const getDeliverableIcon = (type: string) => {
@@ -204,6 +413,20 @@ export default function CreatorActivePage() {
           </p>
         </div>
 
+        {collabsLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : collabsError ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <AlertCircle className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground max-w-xs">{collabsError}</p>
+            <Button variant="outline" size="sm" onClick={() => loadCollaborations()}>
+              Retry
+            </Button>
+          </div>
+        ) : (
+        <>
         {/* Summary Cards */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           <Card>
@@ -237,7 +460,7 @@ export default function CreatorActivePage() {
         </div>
 
         {/* Urgent Actions */}
-        {mockCollaborations.some((c) => c.state === 'REVISION_REQUESTED') && (
+        {collaborations.some((c) => c.state === 'REVISION_REQUESTED') && (
           <Card className="mb-6 border-orange-300 bg-orange-50">
             <CardContent className="p-4">
               <div className="flex items-start gap-3">
@@ -266,10 +489,17 @@ export default function CreatorActivePage() {
           </TabsList>
 
           <TabsContent value="active" className="space-y-4">
+            {activeCollabs.length === 0 && (
+              <div className="text-center py-12 text-muted-foreground">
+                <FileText className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
+                <p>No active collaborations</p>
+                <p className="text-sm">Contracted deals in progress will show up here</p>
+              </div>
+            )}
             {activeCollabs.map((collab) => {
-              const daysLeft = daysUntil(collab.deadline);
-              const isUrgent = daysLeft <= 3 && daysLeft > 0;
-              const isOverdue = daysLeft < 0;
+              const daysLeft = collab.deadline ? daysUntil(collab.deadline) : null;
+              const isUrgent = daysLeft !== null && daysLeft <= 3 && daysLeft > 0;
+              const isOverdue = daysLeft !== null && daysLeft < 0;
               const stateInfo = stateConfig[collab.state];
 
               return (
@@ -279,7 +509,7 @@ export default function CreatorActivePage() {
                     'cursor-pointer transition-all hover:shadow-md',
                     collab.state === 'REVISION_REQUESTED' && 'border-orange-300'
                   )}
-                  onClick={() => setSelectedCollab(collab)}
+                  onClick={() => openCollab(collab)}
                 >
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-3 mb-3">
@@ -318,7 +548,13 @@ export default function CreatorActivePage() {
                           isOverdue && 'text-stage-disputed-fg font-medium',
                           isUrgent && 'text-stage-negotiating-fg font-medium'
                         )}>
-                          {isOverdue ? 'Overdue' : isUrgent ? `${daysLeft}d left` : `Due ${new Date(collab.deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
+                          {isOverdue
+                            ? 'Overdue'
+                            : isUrgent
+                              ? `${daysLeft}d left`
+                              : collab.deadline
+                                ? `Due ${new Date(collab.deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+                                : 'No deadline set'}
                         </span>
                       </div>
                       <div className="flex items-center gap-1 text-stage-approved-fg font-medium">
@@ -340,6 +576,8 @@ export default function CreatorActivePage() {
             </div>
           </TabsContent>
         </Tabs>
+        </>
+        )}
       </div>
 
       {/* Collaboration Detail Dialog */}
@@ -388,6 +626,13 @@ export default function CreatorActivePage() {
                 {/* Deliverables */}
                 <div>
                   <h4 className="font-medium mb-3">Deliverables</h4>
+                  {deliverablesLoading ? (
+                    <div className="flex items-center justify-center py-6">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : selectedCollab.deliverables.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-3">No deliverables recorded yet.</p>
+                  ) : (
                   <div className="space-y-2">
                     {selectedCollab.deliverables.map((deliverable) => {
                       const Icon = getDeliverableIcon(deliverable.type);
@@ -414,9 +659,11 @@ export default function CreatorActivePage() {
                             </div>
                             <div className="min-w-0">
                               <p className="font-medium text-sm truncate">{deliverable.title}</p>
-                              <p className="text-xs text-muted-foreground">
-                                Due {new Date(deliverable.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                              </p>
+                              {deliverable.dueDate && (
+                                <p className="text-xs text-muted-foreground">
+                                  Due {new Date(deliverable.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                </p>
+                              )}
                               {deliverable.revisionNotes && (
                                 <p className="text-xs text-orange-700 mt-1 line-clamp-2">
                                   {deliverable.revisionNotes}
@@ -443,15 +690,19 @@ export default function CreatorActivePage() {
                       );
                     })}
                   </div>
+                  )}
                 </div>
 
-                {/* Revisions Info */}
-                <div className="flex items-center gap-2 text-sm bg-muted/50 rounded-lg p-3">
-                  <RotateCcw className="h-4 w-4 text-muted-foreground" />
-                  <span>
-                    {selectedCollab.revisionsRemaining} revision{selectedCollab.revisionsRemaining !== 1 ? 's' : ''} remaining
-                  </span>
-                </div>
+                {/* Revisions Info — only shown when the backend reported per-deliverable
+                    revision counts (api.creatorDeliverables.listForDeal); never fabricated. */}
+                {typeof selectedCollab.revisionsRemaining === 'number' && (
+                  <div className="flex items-center gap-2 text-sm bg-muted/50 rounded-lg p-3">
+                    <RotateCcw className="h-4 w-4 text-muted-foreground" />
+                    <span>
+                      {selectedCollab.revisionsRemaining} revision{selectedCollab.revisionsRemaining !== 1 ? 's' : ''} remaining
+                    </span>
+                  </div>
+                )}
 
                 {/* Actions */}
                 <div className="flex gap-2">
@@ -497,9 +748,21 @@ export default function CreatorActivePage() {
           </DialogHeader>
           <div className="space-y-4">
             {/* Upload Area */}
-            <div className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:bg-muted/50 transition-colors">
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept="video/mp4,video/quicktime,image/jpeg,image/png"
+              className="hidden"
+              onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+            />
+            <div
+              onClick={() => uploadInputRef.current?.click()}
+              className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:bg-muted/50 transition-colors"
+            >
               <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-              <p className="font-medium">Click to upload or drag and drop</p>
+              <p className="font-medium">
+                {uploadFile ? uploadFile.name : 'Click to upload or drag and drop'}
+              </p>
               <p className="text-sm text-muted-foreground mt-1">
                 MP4, MOV up to 2GB or JPG, PNG up to 25MB
               </p>
@@ -525,10 +788,10 @@ export default function CreatorActivePage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowUploadDialog(false)}>
+            <Button variant="outline" onClick={() => { setShowUploadDialog(false); setUploadFile(null); }}>
               Cancel
             </Button>
-            <Button onClick={handleUpload} disabled={isUploading}>
+            <Button onClick={handleUpload} disabled={isUploading || (liveApi && !uploadFile)}>
               {isUploading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -608,7 +871,11 @@ export default function CreatorActivePage() {
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Deadline</span>
-                    <span>{new Date(contractCollab.deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    <span>
+                      {contractCollab.deadline
+                        ? new Date(contractCollab.deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                        : 'Not set'}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Status</span>
@@ -627,7 +894,9 @@ export default function CreatorActivePage() {
                     <div key={d.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                       <div>
                         <span className="text-sm font-medium">{d.title}</span>
-                        <p className="text-xs text-muted-foreground">Due {new Date(d.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                        {d.dueDate && (
+                          <p className="text-xs text-muted-foreground">Due {new Date(d.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                        )}
                       </div>
                       {d.status === 'APPROVED' ? (
                         <Badge className="bg-stage-approved text-stage-approved-fg">Approved</Badge>

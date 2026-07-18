@@ -10,10 +10,13 @@
  * - /admin/campaigns → CampaignTable
  * - /admin/finance → FeeControlPanel
  * - /admin/support → TicketList
- * - /admin/moderation → FlagQueue
+ * - /admin/moderation → ModerationPage (Content Flags + Approvals tabs, A7)
  * - /admin/disputes → DisputesPage (Task #9)
  * - /admin/billing → BillingPage (Subscription billing console, Task #25 — UI shell,
  *   mock data until AdminBillingController ships)
+ * - /admin/audit → AuditLogPage (Audit log viewer, A6)
+ * - /admin/errors → ErrorLogPage (Error log console — recent errors + stats + resolve)
+ * - /admin/emails → EmailQueuePage (Email queue console — queue + stats + templates + retry)
  *
  * Route-level auth gating happens in `AdminProtectedRoute` (src/App.tsx) — this
  * component assumes it is only ever rendered for an authenticated session.
@@ -26,9 +29,12 @@ import UsersPage from '@/admin/pages/UsersPage';
 import CampaignTable from '@/admin/components/campaigns/CampaignTable';
 import FeeControlPanel from '@/admin/components/finance/FeeControlPanel';
 import TicketList from '@/admin/components/support/TicketList';
-import FlagQueue from '@/admin/components/moderation/FlagQueue';
+import ModerationPage from '@/admin/pages/ModerationPage';
 import DisputesPage from '@/admin/pages/DisputesPage';
 import BillingPage from '@/admin/pages/BillingPage';
+import AuditLogPage from '@/admin/pages/AuditLogPage';
+import ErrorLogPage from '@/admin/pages/ErrorLogPage';
+import EmailQueuePage from '@/admin/pages/EmailQueuePage';
 import { useAdminAuth } from '@/admin/hooks/useAdminAuth';
 
 export default function AdminConsolePage() {
@@ -47,9 +53,12 @@ export default function AdminConsolePage() {
         <Route path="campaigns" element={<CampaignTable />} />
         <Route path="finance" element={<FeeControlPanel />} />
         <Route path="support" element={<TicketList />} />
-        <Route path="moderation" element={<FlagQueue />} />
+        <Route path="moderation" element={<ModerationPage />} />
         <Route path="disputes" element={<DisputesPage />} />
         <Route path="billing" element={<BillingPage />} />
+        <Route path="audit" element={<AuditLogPage />} />
+        <Route path="errors" element={<ErrorLogPage />} />
+        <Route path="emails" element={<EmailQueuePage />} />
         {/* Catch unmatched /admin/* paths — redirect to dashboard */}
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>

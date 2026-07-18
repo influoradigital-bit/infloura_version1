@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useReducedMotion } from 'framer-motion'
 
 import { VoiceToggle } from '@/components/ui/voice-toggle'
 import { MeeraOrb } from '@/components/feature/meera/MeeraOrb'
@@ -6,6 +7,7 @@ import { MessageBubble } from '@/components/feature/meera/MessageBubble'
 import { ThinkingState } from '@/components/feature/meera/ThinkingState'
 import { Composer } from '@/components/feature/meera/Composer'
 import { CreditPaywall } from '@/components/feature/meera/CreditPaywall'
+import { ToolResultRenderer } from '@/components/feature/meera/ToolResultRenderer'
 import { useVoiceOutput } from '@/hooks/useVoiceOutput'
 import { useMeeraStream } from '@/hooks/useMeeraStream'
 import { MEERA_IDENTITY, MEERA_THINKING_STEPS } from '@/data/meera-copy'
@@ -34,13 +36,29 @@ interface MeeraChatPanelProps {
   onPhaseChange?: (phase: Phase) => void
   /** Reports TTS isSpeaking up so MeeraPresence can show the "talking" state. */
   onSpeakingChange?: (isSpeaking: boolean) => void
+  /**
+   * One-time starter text for the composer (e.g. the "Ask Meera" help
+   * pre-seed threaded from the `?ask=` query param). Pre-fills the input
+   * only — never auto-sent.
+   */
+  initialDraft?: string
   className?: string
+}
+
+/** LIVE-only: one `tool_result` event captured against the assistant turn it belongs to, for inline rendering. */
+interface LiveToolResult {
+  id: string
+  name: string
+  status: 'ok' | 'error'
+  data?: unknown
 }
 
 interface RenderedMessage {
   id: string
   role: 'meera' | 'brand'
   text: string
+  /** LIVE-only — never set in mock mode. Rendered via ToolResultRenderer after this message's bubble. */
+  toolResults?: LiveToolResult[]
 }
 
 const STAGE_TO_CALL: Record<string, MeeraFunctionCall> = {
@@ -51,11 +69,19 @@ const STAGE_TO_CALL: Record<string, MeeraFunctionCall> = {
   live: 'confirm_launch',
 }
 
-/** Every tool name the live Python stream can report via `tool_result` (04 §4 / 02 §3). */
+/**
+ * Every tool name the LIVE Python stream can actually report via `tool_result`
+ * — matches the 5-tool backend contract one-for-one (influora-ai/app/tools/
+ * schemas.py:32-38: show_creators, calculate_budget, create_campaign,
+ * request_payment, confirm_launch). `analyze_site` is NOT a real backend tool
+ * — it only exists as a mock-mode stage trigger (STAGE_TO_CALL above) and must
+ * never gate the live stream, or a live `create_campaign` tool_result would be
+ * silently dropped here while a tool that can never fire stayed allow-listed.
+ */
 const MEERA_FUNCTION_CALLS: readonly MeeraFunctionCall[] = [
-  'analyze_site',
   'calculate_budget',
   'show_creators',
+  'create_campaign',
   'request_payment',
   'confirm_launch',
 ]
@@ -85,6 +111,7 @@ export function MeeraChatPanel({
   paused = false,
   onPhaseChange,
   onSpeakingChange,
+  initialDraft,
   className,
 }: MeeraChatPanelProps) {
   // P10: real turns go straight to the Python SSE edge; VITE_API_MODE=mock
@@ -99,7 +126,9 @@ export function MeeraChatPanel({
   const [thinkingKey, setThinkingKey] = useState<keyof typeof MEERA_THINKING_STEPS | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const timerRef = useRef<number | null>(null)
+  const revealTimerRef = useRef<number | null>(null)
   const nextIdRef = useRef(0)
+  const reduceMotion = useReducedMotion()
 
   // Live-mode-only state — session handle, in-flight stream bookkeeping, and
   // the credit-paywall gate driven by a real 402/CREDITS_EXHAUSTED signal
@@ -199,18 +228,75 @@ export function MeeraChatPanel({
   useEffect(() => {
     return () => {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+      if (revealTimerRef.current !== null) window.clearInterval(revealTimerRef.current)
     }
   }, [])
 
   /**
-   * LIVE send path — drives a real turn through `meeraApi.sendTurn` (Spring)
-   * then `useMeeraStream` (Python SSE edge). Tokens stream into the
-   * in-progress assistant bubble; `tool_result` events bubble up via
-   * `onFunctionCall` so the Living Canvas stage keeps advancing exactly like
-   * it did off the mock script.
+   * Progressive local reveal of an already-complete reply — the A4 sync
+   * backend returns the full authoritative text in the sendTurn response, so
+   * "streaming" it over the network again is impossible without paying for a
+   * second generation. This gives the same token-by-token feel from the text
+   * we already hold. Instant under prefers-reduced-motion.
+   */
+  const revealReply = (assistantMessageId: string, fullText: string) => {
+    setAwaitingFirstToken(false)
+
+    const finish = () => {
+      setMessages((prev) => prev.map((m) => (m.id === assistantMessageId ? { ...m, text: fullText } : m)))
+      setLiveThinkingSteps([])
+      setPhase('awaiting-input')
+      // Voice is additive only — the bubble is fully rendered before we speak
+      // it (Priya's voice handoff §5A.B).
+      speak(fullText)
+    }
+
+    if (reduceMotion) {
+      finish()
+      return
+    }
+
+    const words = fullText.split(/(\s+)/) // keep whitespace so joins are lossless
+    let cursor = 0
+    revealTimerRef.current = window.setInterval(() => {
+      cursor = Math.min(cursor + 3, words.length)
+      const partial = words.slice(0, cursor).join('')
+      setMessages((prev) => prev.map((m) => (m.id === assistantMessageId ? { ...m, text: partial } : m)))
+      if (cursor >= words.length) {
+        if (revealTimerRef.current !== null) {
+          window.clearInterval(revealTimerRef.current)
+          revealTimerRef.current = null
+        }
+        finish()
+      }
+    }, 40)
+  }
+
+  /**
+   * LIVE send path — drives a real turn through `meeraApi.sendTurn` (Spring).
+   *
+   * Two backend shapes are supported (2026-07-17 streaming-seam fix):
+   *  - Synchronous (current A4 flow): Spring already called Python, persisted
+   *    the reply, and returns it as `reply`. We render it directly with a
+   *    local progressive reveal. Opening the SSE stream here would trigger a
+   *    SECOND paid LLM generation of a turn that is already complete — so we
+   *    deliberately never do that.
+   *  - Stream-first (future turn split): no `reply` in the response — the
+   *    browser owns the one-and-only generation via a POST SSE stream
+   *    (useMeeraStream). Tokens stream into the in-progress bubble;
+   *    `tool_result` events bubble up via `onFunctionCall` so the Living
+   *    Canvas stage keeps advancing.
    */
   const handleLiveSend = (text: string) => {
     if (!conversationId || phase !== 'awaiting-input' || paused || creditsExhausted) return
+
+    const history = [
+      ...messages.map((m) => ({
+        role: m.role === 'brand' ? 'user' : 'assistant',
+        content: m.text,
+      })),
+      { role: 'user', content: text },
+    ]
 
     setMessages((prev) => [...prev, { id: makeId('brand'), role: 'brand', text }])
     setPhase('thinking')
@@ -225,6 +311,33 @@ export function MeeraChatPanel({
       .then((turnRes) => {
         setMessages((prev) => [...prev, { id: assistantMessageId, role: 'meera', text: '' }])
 
+        if (turnRes.reply != null) {
+          revealReply(assistantMessageId, turnRes.reply)
+          return
+        }
+
+        // chat.py contract: stream token authenticates via the Authorization
+        // header (set inside useMeeraStream); the body carries workspace/turn
+        // identity plus a dedicated per-turn on-behalf credential so
+        // server-side tool calls are authorized instead of 401ing into plain
+        // text. SECURITY FIX #1 (docs/security/meera-onbehalf-auth-security-
+        // design.md §2): this MUST be the scoped, ≤120s on-behalf token
+        // Spring minted alongside streamToken (turnRes.onBehalfToken) — never
+        // the user's full-lifetime access token. Reading
+        // localStorage.getItem('brand_token') here was the vulnerability the
+        // design doc's finding #1 flags: it forwarded a durable,
+        // full-account-scope credential to a separate service, straight out
+        // of XSS-readable storage (the exact regression H-30's
+        // in-memory token store, src/lib/token-store.ts, was written to
+        // close).
+        const streamBody = {
+          workspace_id: turnRes.workspaceId ?? '',
+          conversation_id: conversationId,
+          turn_id: turnRes.messageId,
+          onbehalf_jwt: turnRes.onBehalfToken ?? '',
+          conversation: history,
+        }
+
         stream.open(turnRes.streamUrl, turnRes.streamToken, {
           onThinking: (event) => {
             if (event.done) return
@@ -237,7 +350,29 @@ export function MeeraChatPanel({
             setMessages((prev) => prev.map((m) => (m.id === assistantMessageId ? { ...m, text: renderedText } : m)))
           },
           onToolResult: (event) => {
-            if (event.status === 'ok' && isMeeraFunctionCall(event.name)) {
+            if (!isMeeraFunctionCall(event.name)) return
+
+            // Attach the result to the assistant turn it belongs to so it
+            // renders inline right after that message (create_campaign sits
+            // between matching/funding with no Living Canvas stage of its
+            // own — advance() below simply no-ops for it via
+            // stageForFunctionCall, so this is the only place its result
+            // becomes visible).
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMessageId
+                  ? {
+                      ...m,
+                      toolResults: [
+                        ...(m.toolResults ?? []),
+                        { id: makeId('tool'), name: event.name, status: event.status, data: event.data },
+                      ],
+                    }
+                  : m,
+              ),
+            )
+
+            if (event.status === 'ok') {
               onFunctionCall(event.name, event.data)
             }
           },
@@ -281,7 +416,7 @@ export function MeeraChatPanel({
               })
               .finally(() => setPhase('awaiting-input'))
           },
-        })
+        }, streamBody)
       })
       .catch((err: unknown) => {
         setAwaitingFirstToken(false)
@@ -374,9 +509,24 @@ export function MeeraChatPanel({
 
       {/* Message list */}
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4 scrollbar-thin">
-        {messages.map((message) => (
-          <MessageBubble key={message.id} role={message.role} text={message.text} />
-        ))}
+        {messages.map((message) =>
+          live ? (
+            <div key={message.id}>
+              <MessageBubble role={message.role} text={message.text} />
+              {message.toolResults?.map((tr) => (
+                <ToolResultRenderer
+                  key={tr.id}
+                  toolName={tr.name}
+                  status={tr.status}
+                  data={tr.data}
+                  className="ml-9 mt-1.5"
+                />
+              ))}
+            </div>
+          ) : (
+            <MessageBubble key={message.id} role={message.role} text={message.text} />
+          ),
+        )}
         {!live && thinkingKey && <ThinkingState steps={MEERA_THINKING_STEPS[thinkingKey]} />}
         {live && awaitingFirstToken && <ThinkingState steps={liveThinkingDisplaySteps} />}
       </div>
@@ -388,6 +538,7 @@ export function MeeraChatPanel({
         ) : (
           <Composer
             onSend={handleSend}
+            initialDraft={initialDraft}
             suggestedReplies={!live && !conversationDone && phase === 'awaiting-input' ? turn.suggestedReplies : []}
             sendLocked={live ? !conversationId || phase !== 'awaiting-input' : conversationDone || phase !== 'awaiting-input'}
           />

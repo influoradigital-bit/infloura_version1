@@ -8,7 +8,6 @@ import {
   Briefcase,
   CheckCircle2,
   Clock,
-  Download,
   GraduationCap,
   Heart,
   Image as ImageIcon,
@@ -21,6 +20,7 @@ import {
   Play,
   RefreshCw,
   Send,
+  Share2,
   ShoppingCart,
   Sparkles,
   Star,
@@ -86,6 +86,28 @@ export default function CreatorPortfolioPublicPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [contactOpen, setContactOpen] = React.useState(false);
+  const [shared, setShared] = React.useState(false);
+
+  const sharePage = React.useCallback(async () => {
+    const url = `${window.location.origin}/@${username}`;
+    const title = page ? `${page.displayName} on Influora` : 'Influora creator';
+    // Native share sheet on mobile; clipboard copy everywhere else.
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, url });
+        return;
+      } catch {
+        // user dismissed the share sheet — fall through to copy
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setShared(true);
+      window.setTimeout(() => setShared(false), 2000);
+    } catch {
+      /* clipboard blocked — no-op, button stays idle */
+    }
+  }, [username, page]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -154,7 +176,6 @@ export default function CreatorPortfolioPublicPage() {
     );
   }
 
-  const mediaKitUrl = api.portfolio.mediaKitUrl(username);
   const totalRepeat = page.stats.repeatBrands;
 
   // Brand-acquisition deep-link: if not logged in, brand-login then back here with intent
@@ -201,7 +222,7 @@ export default function CreatorPortfolioPublicPage() {
           <div
             className={cn(
               'h-32 sm:h-48 w-full',
-              !page.coverUrl && 'bg-gradient-to-br from-primary/30 via-purple-300/40 to-pink-300/30',
+              !page.coverUrl && 'bg-gradient-to-br from-primary/30 via-primary/15 to-accent',
             )}
             style={
               page.coverUrl
@@ -259,11 +280,18 @@ export default function CreatorPortfolioPublicPage() {
                     Invite to Campaign
                   </Link>
                 </Button>
-                <Button asChild size="lg" variant="outline" className="gap-2">
-                  <a href={mediaKitUrl} target="_blank" rel="noreferrer">
-                    <Download className="h-4 w-4" />
-                    Media Kit (PDF)
-                  </a>
+                <Button size="lg" variant="outline" className="gap-2" onClick={sharePage}>
+                  {shared ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-success" />
+                      Link copied
+                    </>
+                  ) : (
+                    <>
+                      <Share2 className="h-4 w-4" />
+                      Share page
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
@@ -439,7 +467,7 @@ export default function CreatorPortfolioPublicPage() {
             SECTION 10 — CONTACT CTA
         ============================================================ */}
         <section className="px-4 sm:px-6 mt-10">
-          <Card className="bg-gradient-to-br from-primary/5 via-purple-50 to-pink-50 border-primary/20">
+          <Card className="bg-gradient-to-br from-primary/5 via-accent/40 to-primary/5 border-primary/20">
             <CardContent className="p-6 sm:p-8 text-center">
               <h2 className="text-xl sm:text-2xl font-semibold">
                 Ready to collaborate with {firstName(page.displayName)}?

@@ -2,7 +2,6 @@ import * as React from 'react';
 import { Link } from 'react-router-dom';
 import {
   Copy,
-  Download,
   ExternalLink,
   Eye,
   EyeOff,
@@ -225,21 +224,11 @@ export default function CreatorPortfolioEditorPage() {
                   <TrendingUp className="h-4 w-4 text-emerald-600" />
                   Last 30 days
                 </p>
-                <a
-                  href={api.portfolio.mediaKitUrl(page.username)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                >
-                  <Download className="h-3 w-3" />
-                  Media kit
-                </a>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <Stat label="Page views" value={analytics.pageViews.last30Days} delta={analytics.pageViews.deltaPercent} />
                 <Stat label="Profile clicks" value={analytics.profileClicks} />
                 <Stat label="Brand inquiries" value={analytics.brandInquiries} />
-                <Stat label="Media kit DLs" value={analytics.mediaKitDownloads} />
               </div>
             </CardContent>
           </Card>

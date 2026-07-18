@@ -21,6 +21,7 @@ import {
   Instagram,
   Youtube,
   Timer,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -44,6 +45,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { deals as dealsApi, isApiLive, type Deal } from '@/lib/api';
 
 interface Collaboration {
   id: string;
@@ -57,10 +59,87 @@ interface Collaboration {
   status: 'OUTREACH' | 'NEGOTIATING' | 'CONTRACTED' | 'IN_PROGRESS' | 'REVIEW' | 'SETTLED';
   slaHoursRemaining?: number; // SLA time remaining
   daysRemaining?: number;
-  engagementRate: number;
-  matchScore: number;
+  /** No DTO source on GET /deals — deals API carries no engagement metric. Only ever set in mock data; never rendered today. */
+  engagementRate?: number;
+  /** No DTO source on GET /deals — deals API carries no match-score concept. Left undefined in live mode; "Match" stat hidden rather than fabricated. */
+  matchScore?: number;
   lastActivity: string;
   deliverableProgress?: number; // 0-100
+}
+
+// ---------------------------------------------------------------------------
+// Live-mode mapping — Deal (src/lib/api.ts) -> Collaboration (this file's
+// board/list/timeline shape). Fields with no DTO source are left undefined
+// rather than fabricated (see Collaboration comments above). Deals with no
+// equivalent pipeline stage (CANCELLED, DISPUTED) are filtered out — this
+// 6-stage board has no "rejected" column to honestly place them in.
+// ---------------------------------------------------------------------------
+function mapDealStatusToStage(status: Deal['status']): Collaboration['status'] | null {
+  switch (status) {
+    case 'INVITED':
+    case 'APPLIED':
+    case 'SHORTLISTED':
+      return 'OUTREACH';
+    case 'IN_NEGOTIATION':
+      return 'NEGOTIATING';
+    case 'TERMS_AGREED':
+    case 'CONTRACT_PENDING':
+    case 'CONTRACTED':
+      return 'CONTRACTED';
+    case 'IN_PROGRESS':
+      return 'IN_PROGRESS';
+    case 'REVIEW_PENDING':
+    case 'REVISION_REQUESTED':
+      return 'REVIEW';
+    case 'COMPLETED':
+      return 'SETTLED';
+    case 'CANCELLED':
+    case 'DISPUTED':
+    default:
+      return null;
+  }
+}
+
+function relativeLastActivity(iso?: string): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+function daysUntil(iso?: string): number | undefined {
+  if (!iso) return undefined;
+  const deadline = new Date(iso);
+  if (Number.isNaN(deadline.getTime())) return undefined;
+  return Math.ceil((deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+function mapDealToCollaboration(deal: Deal): Collaboration | null {
+  const status = mapDealStatusToStage(deal.status);
+  if (!status) return null;
+  return {
+    id: deal.id,
+    creatorId: deal.counterpartyId,
+    creatorName: deal.counterpartyName,
+    creatorAvatar: deal.counterpartyAvatar || '',
+    creatorFollowers: '',
+    campaignTitle: deal.campaignName,
+    budget: deal.dealValue,
+    platforms: [],
+    status,
+    daysRemaining: daysUntil(deal.nextDeadline),
+    lastActivity: relativeLastActivity(deal.lastMessageAt),
+    deliverableProgress:
+      deal.deliverablesTotal > 0
+        ? Math.round((deal.deliverablesDone / deal.deliverablesTotal) * 100)
+        : undefined,
+  };
 }
 
 const mockCollaborations: Collaboration[] = [
@@ -224,17 +303,46 @@ export default function BrandPipelinePage() {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showAtRiskOnly, setShowAtRiskOnly] = React.useState(false);
 
-  const filteredCollabs = mockCollaborations.filter((c) => {
+  // Live mode (isApiLive()) state — mock rendering above stays untouched.
+  const [liveCollaborations, setLiveCollaborations] = React.useState<Collaboration[]>([]);
+  const [collabsLoading, setCollabsLoading] = React.useState(false);
+  const [collabsError, setCollabsError] = React.useState<string | null>(null);
+
+  const collaborations = isApiLive() ? liveCollaborations : mockCollaborations;
+
+  const loadCollaborations = React.useCallback(async () => {
+    setCollabsLoading(true);
+    setCollabsError(null);
+    try {
+      const remote = await dealsApi.list('brand');
+      setLiveCollaborations(
+        Array.isArray(remote)
+          ? remote.map(mapDealToCollaboration).filter((c): c is Collaboration => c !== null)
+          : [],
+      );
+    } catch {
+      setLiveCollaborations([]);
+      setCollabsError('Could not load the pipeline. Check your connection and retry.');
+    } finally {
+      setCollabsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (isApiLive()) void loadCollaborations();
+  }, [loadCollaborations]);
+
+  const filteredCollabs = collaborations.filter((c) => {
     if (showAtRiskOnly && !isAtRisk(c)) return false;
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      return c.creatorName.toLowerCase().includes(query) || 
+      return c.creatorName.toLowerCase().includes(query) ||
              c.campaignTitle.toLowerCase().includes(query);
     }
     return true;
   });
 
-  const atRiskCount = mockCollaborations.filter(isAtRisk).length;
+  const atRiskCount = collaborations.filter(isAtRisk).length;
 
   const getCollaborationsByStage = (stageId: string) => 
     filteredCollabs.filter((c) => c.status === stageId);
@@ -242,15 +350,25 @@ export default function BrandPipelinePage() {
   const CollaborationCard = ({ collab }: { collab: Collaboration }) => {
     const stage = stages.find((s) => s.id === collab.status);
     const atRiskStatus = isAtRisk(collab);
-    
+    const openDeal = () => navigate(`/brand/deals/${collab.id}`);
+
     return (
-      <Card 
+      <Card
         className={cn(
           'p-3 cursor-pointer hover:shadow-md transition-all border-l-4',
           stage?.color || 'border-l-muted',
           atRiskStatus && 'ring-2 ring-red-200 bg-red-50/50'
         )}
-        onClick={() => navigate(`/brand/deals/${collab.id}`)}
+        role="button"
+        tabIndex={0}
+        aria-label={`Open deal with ${collab.creatorName}`}
+        onClick={openDeal}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openDeal();
+          }
+        }}
       >
         {/* SLA Warning */}
         {atRiskStatus && (
@@ -279,16 +397,18 @@ export default function BrandPipelinePage() {
             <span className="text-muted-foreground">Budget</span>
             <p className="font-semibold">{formatINR(collab.budget)}</p>
           </div>
-          <div>
-            <span className="text-muted-foreground">Match</span>
-            <p className={cn(
-              'font-semibold',
-              collab.matchScore >= 90 ? 'text-stage-approved-fg' : 
-              collab.matchScore >= 80 ? 'text-stage-negotiating-fg' : 'text-muted-foreground'
-            )}>
-              {collab.matchScore}%
-            </p>
-          </div>
+          {collab.matchScore !== undefined && (
+            <div>
+              <span className="text-muted-foreground">Match</span>
+              <p className={cn(
+                'font-semibold',
+                collab.matchScore >= 90 ? 'text-stage-approved-fg' :
+                collab.matchScore >= 80 ? 'text-stage-negotiating-fg' : 'text-muted-foreground'
+              )}>
+                {collab.matchScore}%
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Deliverable Progress (for IN_PROGRESS) */}
@@ -376,15 +496,25 @@ export default function BrandPipelinePage() {
           {filteredCollabs.map((collab) => {
             const stage = stages.find((s) => s.id === collab.status);
             const atRiskStatus = isAtRisk(collab);
-            
+            const openDeal = () => navigate(`/brand/deals/${collab.id}`);
+
             return (
-              <tr 
-                key={collab.id} 
+              <tr
+                key={collab.id}
                 className={cn(
                   'hover:bg-muted/30 cursor-pointer transition-colors',
                   atRiskStatus && 'bg-red-50'
                 )}
-                onClick={() => navigate(`/brand/deals/${collab.id}`)}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open deal with ${collab.creatorName}`}
+                onClick={openDeal}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openDeal();
+                  }
+                }}
               >
                 <td className="p-3">
                   <div className="flex items-center gap-3">
@@ -406,12 +536,16 @@ export default function BrandPipelinePage() {
                 </td>
                 <td className="p-3 text-sm font-medium">{formatINR(collab.budget)}</td>
                 <td className="p-3">
-                  <span className={cn(
-                    'text-sm font-medium',
-                    collab.matchScore >= 90 ? 'text-stage-approved-fg' : 'text-muted-foreground'
-                  )}>
-                    {collab.matchScore}%
-                  </span>
+                  {collab.matchScore !== undefined ? (
+                    <span className={cn(
+                      'text-sm font-medium',
+                      collab.matchScore >= 90 ? 'text-stage-approved-fg' : 'text-muted-foreground'
+                    )}>
+                      {collab.matchScore}%
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  )}
                 </td>
                 <td className="p-3">
                   {collab.slaHoursRemaining !== undefined && (
@@ -441,15 +575,25 @@ export default function BrandPipelinePage() {
         const stageIndex = stages.findIndex((s) => s.id === collab.status);
         const progress = ((stageIndex + 1) / stages.length) * 100;
         const atRiskStatus = isAtRisk(collab);
-        
+        const openDeal = () => navigate(`/brand/deals/${collab.id}`);
+
         return (
-          <div 
+          <div
             key={collab.id}
             className={cn(
               'rounded-lg border p-4 cursor-pointer hover:shadow-md transition-all',
               atRiskStatus && 'ring-2 ring-red-200 bg-red-50/50'
             )}
-            onClick={() => navigate(`/brand/deals/${collab.id}`)}
+            role="button"
+            tabIndex={0}
+            aria-label={`Open deal with ${collab.creatorName}`}
+            onClick={openDeal}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openDeal();
+              }
+            }}
           >
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
@@ -575,9 +719,27 @@ export default function BrandPipelinePage() {
         </div>
 
         {/* Content */}
-        {viewMode === 'board' && <BoardView />}
-        {viewMode === 'list' && <ListView />}
-        {viewMode === 'timeline' && <TimelineView />}
+        {isApiLive() && collabsLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : isApiLive() && collabsError ? (
+          <Card className="p-6 text-center">
+            <AlertCircle className="h-10 w-10 text-destructive mx-auto mb-2" />
+            <p className="text-sm text-destructive">{collabsError}</p>
+          </Card>
+        ) : filteredCollabs.length === 0 ? (
+          <Card className="p-6 text-center">
+            <MessageSquare className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No collaborations found</p>
+          </Card>
+        ) : (
+          <>
+            {viewMode === 'board' && <BoardView />}
+            {viewMode === 'list' && <ListView />}
+            {viewMode === 'timeline' && <TimelineView />}
+          </>
+        )}
       </div>
     </TooltipProvider>
   );

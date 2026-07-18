@@ -13,7 +13,7 @@ import type { Group, Mesh } from 'three';
 
 import { CanvasFallback } from '@/components/3d/CanvasFallback';
 
-const PRIMARY = '#9b8cf2';
+const PRIMARY = '#7c6ae8'; // committed brand violet (2026-07-17 palette recalibration)
 
 // Distinct radius + orbital tilt per satellite so the rings never collapse onto
 // one plane — that coplanar clumping is what made the labels pile up on one side.

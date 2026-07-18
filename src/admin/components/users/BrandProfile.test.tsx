@@ -27,6 +27,21 @@ vi.mock('../../hooks/useBrandDetail', () => ({
   useBrandDetail: (brandId: string) => mockUseBrandDetail(brandId),
 }));
 
+// Mock the live-wired brandApi (P1-WIRE-3). The action handlers call
+// brandApi.verifyKyc / .suspend / .reinstate; mocking here keeps these unit
+// tests off the network (the real client fetches /api/v1/admin/... which has no
+// base URL under jsdom) while letting us assert the exact mutation payloads.
+const mockVerifyKyc = vi.fn();
+const mockSuspend = vi.fn();
+const mockReinstate = vi.fn();
+vi.mock('../../services/api-contracts', () => ({
+  brandApi: {
+    verifyKyc: (...args: unknown[]) => mockVerifyKyc(...args),
+    suspend: (...args: unknown[]) => mockSuspend(...args),
+    reinstate: (...args: unknown[]) => mockReinstate(...args),
+  },
+}));
+
 // Mock lucide-react icons to avoid rendering issues
 vi.mock('lucide-react', async () => {
   const actual = await vi.importActual('lucide-react');
@@ -88,6 +103,10 @@ const MOCK_BRAND_SUSPENDED = {
 describe('BrandProfile Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Successful mutation by default; individual tests can override.
+    mockVerifyKyc.mockResolvedValue({ success: true });
+    mockSuspend.mockResolvedValue({ success: true });
+    mockReinstate.mockResolvedValue({ success: true });
   });
 
   // ============================================
@@ -297,76 +316,76 @@ describe('BrandProfile Component', () => {
       expect(screen.queryByRole('button', { name: /Reject KYC/i })).not.toBeInTheDocument();
     });
 
-    it('should call handleApproveKyc and show stub notice on Approve click', async () => {
+    it('should open dialog, accept justification, and call verifyKyc(APPROVE) on Approve flow', async () => {
       const user = userEvent.setup();
-      const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
 
       mockUseBrandDetail.mockReturnValue({
         data: MOCK_BRAND_PENDING_KYC,
         isLoading: false,
         error: null,
+        refresh: vi.fn(),
       });
 
       render(<BrandProfile brandId="brand-123" />);
 
-      const approveButton = screen.getByRole('button', { name: /Approve KYC/i });
-      await user.click(approveButton);
+      // Click the Approve KYC trigger (opens the AlertDialog)
+      await user.click(screen.getByRole('button', { name: /Approve KYC/i }));
 
-      // Verify console log (stub behavior)
+      // Dialog appears; a justification is required before the action enables
+      const textarea = await screen.findByPlaceholderText(/Justification for approval/i);
+      await user.type(textarea, 'GST/PAN docs verified');
+
+      // The confirm action is the last button labelled "Approve KYC" (trigger is first)
+      const approveButtons = screen.getAllByRole('button', { name: /Approve KYC/i });
+      await user.click(approveButtons[approveButtons.length - 1]);
+
       await waitFor(() => {
-        expect(consoleInfo).toHaveBeenCalledWith(
-          '[BrandProfile] stub: approve KYC',
-          expect.objectContaining({ brandId: 'brand-123' })
-        );
+        expect(mockVerifyKyc).toHaveBeenCalledWith({
+          brandId: 'brand-123',
+          action: 'APPROVE',
+          reason: 'GST/PAN docs verified',
+        });
       });
 
-      // Verify stub notice appears
-      expect(screen.getByText(/KYC approval is stubbed/i)).toBeInTheDocument();
-
-      consoleInfo.mockRestore();
+      // Confirmation note replaces the stub notice from the pre-wiring version
+      expect(await screen.findByText(/KYC approved\./i)).toBeInTheDocument();
     });
 
-    it('should open dialog, accept reason, and call handleRejectKyc on Reject flow', async () => {
+    it('should open dialog, accept reason, and call verifyKyc(REJECT) on Reject flow', async () => {
       const user = userEvent.setup();
-      const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
 
       mockUseBrandDetail.mockReturnValue({
         data: MOCK_BRAND_PENDING_KYC,
         isLoading: false,
         error: null,
+        refresh: vi.fn(),
       });
 
       render(<BrandProfile brandId="brand-123" />);
 
       // Click Reject KYC button (opens AlertDialog)
-      const rejectButton = screen.getByRole('button', { name: /Reject KYC/i });
-      await user.click(rejectButton);
+      await user.click(screen.getByRole('button', { name: /Reject KYC/i }));
 
       // Dialog should appear with title
-      await waitFor(() => {
-        expect(screen.getByText(/Reject KYC for Acme Corp/i)).toBeInTheDocument();
-      });
+      await screen.findByText(/Reject KYC for Acme Corp/i);
 
       // Find textarea and type a reason
       const textarea = screen.getByPlaceholderText(/Reason for rejection/i);
       await user.type(textarea, 'Incorporation document expired');
 
-      // Click "Reject KYC" action button in dialog
-      const dialogRejectButtons = screen.getAllByRole('button', { name: /Reject KYC/i });
-      const dialogRejectButton = dialogRejectButtons[dialogRejectButtons.length - 1]; // Last one is in dialog
-      await user.click(dialogRejectButton);
+      // Click the "Reject KYC" action button in the dialog (last of the matches)
+      const rejectButtons = screen.getAllByRole('button', { name: /Reject KYC/i });
+      await user.click(rejectButtons[rejectButtons.length - 1]);
 
-      // Verify console log was called
       await waitFor(() => {
-        expect(consoleInfo).toHaveBeenCalled();
-      }, { timeout: 3000 });
+        expect(mockVerifyKyc).toHaveBeenCalledWith({
+          brandId: 'brand-123',
+          action: 'REJECT',
+          reason: 'Incorporation document expired',
+        });
+      });
 
-      // Verify stub notice appears
-      await waitFor(() => {
-        expect(screen.getByText(/KYC rejection is stubbed/i)).toBeInTheDocument();
-      }, { timeout: 3000 });
-
-      consoleInfo.mockRestore();
+      expect(await screen.findByText(/KYC rejected\./i)).toBeInTheDocument();
     });
   });
 
@@ -401,71 +420,64 @@ describe('BrandProfile Component', () => {
       expect(screen.queryByRole('button', { name: /Suspend Account/i })).not.toBeInTheDocument();
     });
 
-    it('should open dialog, accept reason, and call handleSuspend on Suspend flow', async () => {
+    it('should open dialog, accept reason, and call suspend on Suspend flow', async () => {
       const user = userEvent.setup();
-      const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
 
       mockUseBrandDetail.mockReturnValue({
         data: MOCK_BRAND_PENDING_KYC,
         isLoading: false,
         error: null,
+        refresh: vi.fn(),
       });
 
       render(<BrandProfile brandId="brand-123" />);
 
-      const suspendButton = screen.getByRole('button', { name: /Suspend Account/i });
-      await user.click(suspendButton);
+      await user.click(screen.getByRole('button', { name: /Suspend Account/i }));
 
       // Dialog should appear
-      await waitFor(() => {
-        expect(screen.getByText(/Suspend Acme Corp/i)).toBeInTheDocument();
-      });
+      await screen.findByText(/Suspend Acme Corp/i);
 
       const textarea = screen.getByPlaceholderText(/Reason for suspension/i);
       await user.type(textarea, 'Policy violation');
 
-      const dialogSuspendButtons = screen.getAllByRole('button', { name: /Suspend Account/i });
-      const dialogSuspendButton = dialogSuspendButtons[dialogSuspendButtons.length - 1];
-      await user.click(dialogSuspendButton);
+      const suspendButtons = screen.getAllByRole('button', { name: /Suspend Account/i });
+      await user.click(suspendButtons[suspendButtons.length - 1]);
 
-      // Verify console log was called
       await waitFor(() => {
-        expect(consoleInfo).toHaveBeenCalled();
-      }, { timeout: 3000 });
+        expect(mockSuspend).toHaveBeenCalledWith('brand-123', 'Policy violation');
+      });
 
-      // Verify stub notice appears
-      await waitFor(() => {
-        expect(screen.getByText(/Suspend is stubbed/i)).toBeInTheDocument();
-      }, { timeout: 3000 });
-
-      consoleInfo.mockRestore();
+      expect(await screen.findByText(/Brand suspended\./i)).toBeInTheDocument();
     });
 
-    it('should call handleReinstate when Reinstate button clicked', async () => {
+    it('should open dialog, accept reason, and call reinstate on Reinstate flow', async () => {
       const user = userEvent.setup();
-      const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
 
       mockUseBrandDetail.mockReturnValue({
         data: MOCK_BRAND_SUSPENDED,
         isLoading: false,
         error: null,
+        refresh: vi.fn(),
       });
 
       render(<BrandProfile brandId="brand-123" />);
 
-      const reinstateButton = screen.getByRole('button', { name: /Reinstate Account/i });
-      await user.click(reinstateButton);
+      await user.click(screen.getByRole('button', { name: /Reinstate Account/i }));
+
+      // Reinstate is also a reason-gated dialog (audit trail), not a bare click
+      await screen.findByText(/Reinstate Acme Corp/i);
+
+      const textarea = screen.getByPlaceholderText(/Reason for reinstatement/i);
+      await user.type(textarea, 'Appeal reviewed, docs re-verified');
+
+      const reinstateButtons = screen.getAllByRole('button', { name: /Reinstate Account/i });
+      await user.click(reinstateButtons[reinstateButtons.length - 1]);
 
       await waitFor(() => {
-        expect(consoleInfo).toHaveBeenCalledWith(
-          '[BrandProfile] stub: reinstate brand',
-          expect.objectContaining({ brandId: 'brand-123' })
-        );
+        expect(mockReinstate).toHaveBeenCalledWith('brand-123', 'Appeal reviewed, docs re-verified');
       });
 
-      expect(screen.getByText(/Reinstate is stubbed/i)).toBeInTheDocument();
-
-      consoleInfo.mockRestore();
+      expect(await screen.findByText(/Brand reinstated\./i)).toBeInTheDocument();
     });
   });
 

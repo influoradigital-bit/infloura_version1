@@ -25,9 +25,17 @@ import {
   Smile,
   Mic,
   X,
+  Loader2,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import {
+  deals as dealsApi,
+  messages as messagesApi,
+  isApiLive,
+  type Deal,
+  type DealMessage,
+} from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -254,6 +262,38 @@ const mockMessagesByConversation: Record<string, Message[]> = {
   ],
 };
 
+// ---------------------------------------------------------------------------
+// Live-mode mapping — Deal (src/lib/api.ts) -> Conversation (this file's
+// rendered shape). Fields with no DTO source are left in their honest "off"
+// default rather than fabricated:
+//   - creator.isOnline / creator.lastSeen: GET /deals carries no presence data
+//   - creator.handle: no DTO field (falls back to empty string)
+//   - lastMessage.isFromMe: GET /deals doesn't say who sent the last message
+//   - isPinned / isMuted / isArchived: no per-conversation preference endpoint yet
+// ---------------------------------------------------------------------------
+function mapDealToConversation(deal: Deal): Conversation {
+  return {
+    id: deal.id,
+    creator: {
+      id: deal.counterpartyId,
+      name: deal.counterpartyName,
+      avatar: deal.counterpartyAvatar || '',
+      handle: deal.counterpartyHandle || '',
+      isOnline: false,
+    },
+    campaign: { id: deal.campaignId, name: deal.campaignName },
+    lastMessage: {
+      content: deal.lastMessage || 'No messages yet',
+      timestamp: deal.lastMessageAt ? new Date(deal.lastMessageAt) : new Date(0),
+      isFromMe: false,
+    },
+    unreadCount: deal.unreadCount,
+    isPinned: false,
+    isMuted: false,
+    isArchived: false,
+  };
+}
+
 function formatTime(date: Date): string {
   const now = new Date();
   const diff = now.getTime() - date.getTime();
@@ -293,9 +333,22 @@ export default function BrandMessagesPage() {
     ? mockConversations.find(c => c.creator.id === creatorIdFromUrl) || mockConversations[0]
     : mockConversations[0];
 
-  const [selectedConversation, setSelectedConversation] = React.useState<Conversation | null>(initialConversation);
+  // Live mode (isApiLive()) state — mock rendering above stays untouched.
+  const [liveConversations, setLiveConversations] = React.useState<Conversation[]>([]);
+  const [conversationsLoading, setConversationsLoading] = React.useState(false);
+  const [conversationsError, setConversationsError] = React.useState<string | null>(null);
+  const [liveMessages, setLiveMessages] = React.useState<DealMessage[]>([]);
+  const [messagesLoading, setMessagesLoading] = React.useState(false);
+  const [messagesError, setMessagesError] = React.useState<string | null>(null);
+  const [sendingMessage, setSendingMessage] = React.useState(false);
+
+  const conversations = isApiLive() ? liveConversations : mockConversations;
+
+  const [selectedConversation, setSelectedConversation] = React.useState<Conversation | null>(
+    isApiLive() ? null : initialConversation
+  );
   const [messages, setMessages] = React.useState<Message[]>(
-    mockMessagesByConversation[initialConversation?.id ?? 'conv-1'] ?? []
+    isApiLive() ? [] : (mockMessagesByConversation[initialConversation?.id ?? 'conv-1'] ?? [])
   );
   const [newMessage, setNewMessage] = React.useState('');
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -308,10 +361,77 @@ export default function BrandMessagesPage() {
 
   React.useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, liveMessages]);
 
-  const handleSendMessage = () => {
-    if (!newMessage.trim()) return;
+  const loadConversations = React.useCallback(async () => {
+    setConversationsLoading(true);
+    setConversationsError(null);
+    try {
+      const remote = await dealsApi.list('brand');
+      setLiveConversations(Array.isArray(remote) ? remote.map(mapDealToConversation) : []);
+    } catch {
+      setLiveConversations([]);
+      setConversationsError('Could not load conversations. Check your connection and retry.');
+    } finally {
+      setConversationsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (isApiLive()) void loadConversations();
+  }, [loadConversations]);
+
+  // Auto-select a conversation once the live list arrives (mock mode selects synchronously above).
+  React.useEffect(() => {
+    if (!isApiLive() || selectedConversation || liveConversations.length === 0) return;
+    const match = creatorIdFromUrl
+      ? liveConversations.find((c) => c.creator.id === creatorIdFromUrl)
+      : undefined;
+    setSelectedConversation(match || liveConversations[0]);
+    if (creatorIdFromUrl) setIsMobileConversationOpen(true);
+  }, [liveConversations, selectedConversation, creatorIdFromUrl]);
+
+  const loadMessages = React.useCallback(async (dealId: string) => {
+    setMessagesLoading(true);
+    setMessagesError(null);
+    try {
+      const list = await messagesApi.list('brand', dealId);
+      setLiveMessages(list);
+      // fire-and-forget read receipt; failure here must not surface as a load error
+      void messagesApi.markRead('brand', dealId).catch(() => {});
+    } catch {
+      setLiveMessages([]); // clear stale rows from a previously-selected conversation
+      setMessagesError('Could not load messages. Check your connection and retry.');
+    } finally {
+      setMessagesLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (isApiLive() && selectedConversation) {
+      void loadMessages(selectedConversation.id);
+    }
+  }, [selectedConversation, loadMessages]);
+
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || !selectedConversation) return;
+    const content = newMessage.trim();
+
+    if (isApiLive()) {
+      setNewMessage('');
+      setMessagesError(null);
+      setSendingMessage(true);
+      try {
+        const sent = await messagesApi.send('brand', selectedConversation.id, content);
+        setLiveMessages((prev) => [...prev, sent]);
+      } catch {
+        setNewMessage(content); // restore so the user can retry — no silent loss
+        setMessagesError('Could not send message. Try again.');
+      } finally {
+        setSendingMessage(false);
+      }
+      return;
+    }
 
     const message: Message = {
       id: `m${Date.now()}`,
@@ -334,7 +454,7 @@ export default function BrandMessagesPage() {
     }, 500);
   };
 
-  const filteredConversations = mockConversations.filter(
+  const filteredConversations = conversations.filter(
     (conv) =>
       conv.creator.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       conv.creator.handle.toLowerCase().includes(searchQuery.toLowerCase())
@@ -372,7 +492,7 @@ export default function BrandMessagesPage() {
           <div className="flex items-center justify-between border-b border-border/50 p-4">
             <h2 className="text-lg font-semibold">Messages</h2>
             <Badge variant="secondary" className="font-medium">
-              {mockConversations.reduce((acc, c) => acc + c.unreadCount, 0)} unread
+              {conversations.reduce((acc, c) => acc + c.unreadCount, 0)} unread
             </Badge>
           </div>
 
@@ -391,43 +511,58 @@ export default function BrandMessagesPage() {
 
           {/* Conversations */}
           <ScrollArea className="flex-1">
-            {pinnedConversations.length > 0 && (
-              <div className="px-3 pb-2">
-                <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <Pin className="h-3 w-3" /> Pinned
-                </p>
-                {pinnedConversations.map((conv) => (
-                  <ConversationItem
-                    key={conv.id}
-                    conversation={conv}
-                    isSelected={selectedConversation?.id === conv.id}
-                    onClick={() => {
-                      setSelectedConversation(conv);
-                      setMessages(mockMessagesByConversation[conv.id] ?? []);
-                      setIsMobileConversationOpen(true);
-                    }}
-                  />
-                ))}
+            {isApiLive() && conversationsLoading && (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             )}
+            {isApiLive() && !conversationsLoading && conversationsError && (
+              <p className="px-3 py-8 text-center text-sm text-destructive">{conversationsError}</p>
+            )}
+            {isApiLive() && !conversationsLoading && !conversationsError && filteredConversations.length === 0 && (
+              <p className="px-3 py-8 text-center text-sm text-muted-foreground">No conversations yet.</p>
+            )}
+            {(!isApiLive() || (!conversationsLoading && !conversationsError)) && (
+              <>
+                {pinnedConversations.length > 0 && (
+                  <div className="px-3 pb-2">
+                    <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      <Pin className="h-3 w-3" /> Pinned
+                    </p>
+                    {pinnedConversations.map((conv) => (
+                      <ConversationItem
+                        key={conv.id}
+                        conversation={conv}
+                        isSelected={selectedConversation?.id === conv.id}
+                        onClick={() => {
+                          setSelectedConversation(conv);
+                          if (!isApiLive()) setMessages(mockMessagesByConversation[conv.id] ?? []);
+                          setIsMobileConversationOpen(true);
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
 
-            <div className="px-3 pb-3">
-              {pinnedConversations.length > 0 && (
-                <p className="mb-2 text-xs font-medium text-muted-foreground">All Messages</p>
-              )}
-              {regularConversations.map((conv) => (
-                <ConversationItem
-                  key={conv.id}
-                  conversation={conv}
-                  isSelected={selectedConversation?.id === conv.id}
-                  onClick={() => {
-                    setSelectedConversation(conv);
-                    setMessages(mockMessagesByConversation[conv.id] ?? []);
-                    setIsMobileConversationOpen(true);
-                  }}
-                />
-              ))}
-            </div>
+                <div className="px-3 pb-3">
+                  {pinnedConversations.length > 0 && (
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">All Messages</p>
+                  )}
+                  {regularConversations.map((conv) => (
+                    <ConversationItem
+                      key={conv.id}
+                      conversation={conv}
+                      isSelected={selectedConversation?.id === conv.id}
+                      onClick={() => {
+                        setSelectedConversation(conv);
+                        if (!isApiLive()) setMessages(mockMessagesByConversation[conv.id] ?? []);
+                        setIsMobileConversationOpen(true);
+                      }}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
           </ScrollArea>
         </div>
 
@@ -534,7 +669,68 @@ export default function BrandMessagesPage() {
               {/* Messages */}
               <ScrollArea className="flex-1 p-4">
                 <div className="space-y-4">
-                  {messages.map((message, index) => {
+                  {isApiLive() && (
+                    <>
+                      {messagesLoading && (
+                        <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading messages…
+                        </div>
+                      )}
+                      {!messagesLoading && messagesError && (
+                        <p className="text-sm text-destructive text-center py-8">{messagesError}</p>
+                      )}
+                      {!messagesLoading && !messagesError && liveMessages.length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-8">No messages yet.</p>
+                      )}
+                      {!messagesLoading && !messagesError && liveMessages.map((m, index) => {
+                        const isFromMe = m.senderType === 'brand';
+                        const showAvatar =
+                          index === 0 || liveMessages[index - 1].senderType !== m.senderType;
+                        return (
+                          <div key={m.id} className={cn('flex gap-2', isFromMe && 'flex-row-reverse')}>
+                            {!isFromMe && showAvatar ? (
+                              <Avatar className="h-8 w-8">
+                                <AvatarImage src={selectedConversation.creator.avatar} />
+                                <AvatarFallback>{selectedConversation.creator.name[0]}</AvatarFallback>
+                              </Avatar>
+                            ) : (
+                              !isFromMe && <div className="w-8" />
+                            )}
+                            <div className={cn('flex max-w-[70%] flex-col', isFromMe && 'items-end')}>
+                              <div
+                                className={cn(
+                                  'rounded-2xl px-4 py-2',
+                                  isFromMe ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                                )}
+                              >
+                                {/* DealMessage.content is optional for non-text kinds; the deals
+                                    API has no structured proposal/contract card payload yet, so
+                                    non-text kinds fall back to an honest label instead of the
+                                    fabricated card layouts used in demo mode below. */}
+                                <p className="text-sm">{m.content || `[${m.kind} update]`}</p>
+                              </div>
+                              <div
+                                className={cn(
+                                  'mt-1 flex items-center gap-1 text-xs text-muted-foreground',
+                                  isFromMe && 'flex-row-reverse'
+                                )}
+                              >
+                                <span>{formatTime(new Date(m.createdAt))}</span>
+                                {isFromMe && (
+                                  m.readBy?.includes(selectedConversation.creator.id) ? (
+                                    <CheckCheck className="h-3 w-3 text-primary" />
+                                  ) : (
+                                    <Check className="h-3 w-3 text-muted-foreground" />
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+                  {!isApiLive() && messages.map((message, index) => {
                     const isFromMe = message.senderType === 'brand';
                     const showAvatar =
                       index === 0 ||
@@ -678,6 +874,9 @@ export default function BrandMessagesPage() {
 
               {/* Input Area */}
               <div className="border-t border-border/50 p-4">
+                {isApiLive() && messagesError && (
+                  <p className="text-xs text-destructive mb-2">{messagesError}</p>
+                )}
                 <div className="flex items-end gap-2">
                   <div className="flex gap-1">
                     <Tooltip>
@@ -711,6 +910,7 @@ export default function BrandMessagesPage() {
                       }}
                       className="min-h-[44px] max-h-32 resize-none pr-20"
                       rows={1}
+                      disabled={sendingMessage}
                     />
                     <div className="absolute bottom-2 right-2 flex items-center gap-1">
                       <Button variant="ghost" size="icon" className="h-7 w-7">
@@ -719,8 +919,12 @@ export default function BrandMessagesPage() {
                     </div>
                   </div>
 
-                  <Button onClick={handleSendMessage} disabled={!newMessage.trim()}>
-                    <Send className="h-4 w-4" />
+                  <Button onClick={handleSendMessage} disabled={!newMessage.trim() || sendingMessage}>
+                    {sendingMessage ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
                   </Button>
                 </div>
               </div>

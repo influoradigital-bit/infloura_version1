@@ -9,6 +9,8 @@ import BrandDashboardPage from '@/pages/brand-dashboard';
 import BrandMeeraPage from '@/pages/brand-meera';
 import BrandOnboardingPage from '@/pages/brand-onboarding';
 import BrandCampaignsPage from '@/pages/brand-campaigns';
+import BrandDealsPage from '@/pages/brand-deals';
+import BrandPipelinePage from '@/pages/brand-pipeline';
 import BrandNewCampaignPage from '@/pages/brand-new-campaign';
 import BrandNewHypeCampaignPage from '@/pages/brand-new-hype-campaign';
 import BrandDiscoverPage from '@/pages/brand-discover';
@@ -107,8 +109,10 @@ const AdminProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return isAuthenticated ? <>{children}</> : <Navigate to="/admin/login" replace />;
 };
 
-// Deal Room was consolidated into the chat-first surface at /brand/chat.
-// Redirect the retired /brand/deals/:id URLs, preserving the deal id as ?deal=.
+// /brand/deals/:id had no deep-link support in the Deal Room dashboard (it
+// selects a deal via in-page state, not a route param), so single-deal URLs
+// still redirect into the chat-first surface, preserving the deal id as
+// ?deal=. The list view at /brand/deals itself is live — see the route below.
 const DealRedirect = () => {
   const { id } = useParams();
   return <Navigate to={id ? `/brand/chat?deal=${id}` : '/brand/chat'} replace />;
@@ -311,10 +315,24 @@ export default function App() {
           }
         />
 
-        {/* Retired surfaces — Deal Room + Pipeline now live at /brand/chat */}
-        <Route path="/brand/deals" element={<Navigate to="/brand/chat" replace />} />
+        <Route
+          path="/brand/deals"
+          element={
+            <BrandLayoutWrapper>
+              <BrandDealsPage />
+            </BrandLayoutWrapper>
+          }
+        />
+        {/* /brand/deals/:id has no deep-link support (see DealRedirect above) */}
         <Route path="/brand/deals/:id" element={<DealRedirect />} />
-        <Route path="/brand/pipeline" element={<Navigate to="/brand/chat" replace />} />
+        <Route
+          path="/brand/pipeline"
+          element={
+            <BrandLayoutWrapper>
+              <BrandPipelinePage />
+            </BrandLayoutWrapper>
+          }
+        />
 
         {/* ==================== CREATOR ROUTES ==================== */}
 

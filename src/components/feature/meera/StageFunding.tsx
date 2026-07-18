@@ -20,7 +20,7 @@ interface StageFundingProps {
   onGoLive: () => void
   /** Latest `request_payment` tool_result payload for this session, if any — the funding stage's own trigger. */
   paymentToolResult?: unknown
-  /** Latest `calculate_budget` tool_result payload, carried forward from the recommend stage for the pool/fee line items. */
+  /** Latest `calculate_budget` tool_result payload, carried forward from the recommend stage for display-only context (no fee split — see below). */
   budgetToolResult?: unknown
   className?: string
 }
@@ -44,14 +44,28 @@ export function StageFunding({ paid, onPay, onGoLive, paymentToolResult, budgetT
     totalLabel = formatINR(total)
     breakdown = <FeeBreakdown pool={pool} fee={fee} total={total} />
   } else if (isRequestPaymentPayload(paymentToolResult)) {
-    // `serverAmount` is server-confirmed (money safety — never trust a client-derived
-    // total); the pool/fee line items, if we still have them from the recommend stage,
-    // are display-only context and never override it.
+    // `RequestPaymentResult` (Spring DTO) only has `serverAmount` — no
+    // `escrowHoldId`/pool/fee split. It's server-confirmed (money safety —
+    // never trust a client-derived total), so it's the only number we render
+    // as authoritative. `calculate_budget`'s suggested figures, if we still
+    // have them from the recommend stage, are shown as display-only context
+    // above it — never a fabricated pool/fee breakdown of this DTO.
     totalLabel = formatINR(paymentToolResult.serverAmount)
-    breakdown = isCalculateBudgetPayload(budgetToolResult) ? (
-      <FeeBreakdown pool={budgetToolResult.pool} fee={budgetToolResult.platformFee} total={paymentToolResult.serverAmount} />
-    ) : (
+    const budget = isCalculateBudgetPayload(budgetToolResult) ? budgetToolResult : null
+    breakdown = (
       <div className="rounded-lg border border-meera-border bg-meera-surface-2 p-4 text-sm">
+        {budget && (
+          <dl className="mb-2 space-y-1 border-b border-meera-border pb-2 text-xs text-meera-text-muted">
+            <div className="flex items-center justify-between">
+              <dt>Suggested pool</dt>
+              <dd className="tabular-nums text-meera-text">{formatINR(budget.suggestedPoolTotal)}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt>Per creator</dt>
+              <dd className="tabular-nums text-meera-text">{formatINR(budget.suggestedPerCreatorRate)}</dd>
+            </div>
+          </dl>
+        )}
         <div className="flex items-center justify-between">
           <span className="font-semibold text-meera-text">Total to fund</span>
           <span className="font-semibold tabular-nums text-meera-text">{totalLabel}</span>

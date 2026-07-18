@@ -69,7 +69,15 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { api, isApiLive, ApiError, type WalletSummaryResponse, type WalletTransactionRow } from '@/lib/api';
+import {
+  api,
+  isApiLive,
+  ApiError,
+  type WalletSummaryResponse,
+  type WalletTransactionRow,
+  type WalletTopUpResponse,
+  type EscrowHoldRow,
+} from '@/lib/api';
 
 // Types
 interface Transaction {
@@ -295,6 +303,34 @@ function mapWalletTransaction(row: WalletTransactionRow): Transaction {
   };
 }
 
+/**
+ * `crypto.randomUUID` only exists in secure contexts (https / localhost) — an http:// staging
+ * host would throw. Idempotency keys just need per-submission uniqueness, not crypto strength,
+ * so fall back to a timestamp+random id (mirrors the guarded pattern in src/lib/meera-api.ts).
+ */
+function safeRandomUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `topup-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/** Badge styling + label for a real GET /wallet/escrow row's status. */
+function escrowStatusBadge(status: EscrowHoldRow['status']): { label: string; className: string } {
+  switch (status) {
+    case 'PENDING':
+      return { label: 'Pending', className: 'bg-amber-500/10 text-amber-500' };
+    case 'FUNDED':
+      return { label: 'Funded', className: 'bg-blue-500/10 text-blue-500' };
+    case 'RELEASED':
+      return { label: 'Released', className: 'bg-green-500/10 text-green-500' };
+    case 'CANCELLED':
+      return { label: 'Cancelled', className: 'bg-red-500/10 text-red-500' };
+    default:
+      return { label: status, className: 'bg-muted text-muted-foreground' };
+  }
+}
+
 const emptyWalletSummary: WalletSummaryResponse = {
   availableBalance: 0,
   escrowLocked: 0,
@@ -307,6 +343,18 @@ export default function BrandWalletPage() {
   const [isAddFundsOpen, setIsAddFundsOpen] = React.useState(false);
   const [addAmount, setAddAmount] = React.useState('');
   const [paymentMethod, setPaymentMethod] = React.useState('upi');
+  const [isAddingFunds, setIsAddingFunds] = React.useState(false);
+  const [addFundsError, setAddFundsError] = React.useState<string | null>(null);
+  // Minted once per logical top-up submission, reused across retries of that SAME submission
+  // (network failure) so the server's idempotency dedupe isn't bypassed by a fresh key each
+  // click. Reset to null on success, on dialog close, and whenever the amount changes (a changed
+  // amount is a new submission, not a retry).
+  const [topUpIdempotencyKey, setTopUpIdempotencyKey] = React.useState<string | null>(null);
+  // Honest post-submit state: the backend only returns a Razorpay ORDER — money is not credited
+  // until the webhook confirms it. No checkout launcher exists in this codebase yet (grepped for
+  // `window.Razorpay` / `new Razorpay` — only TODO comments in FundEscrowButton.tsx), so this page
+  // surfaces the order as-is instead of faking a completed payment.
+  const [topUpOrder, setTopUpOrder] = React.useState<WalletTopUpResponse | null>(null);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [filterType, setFilterType] = React.useState('all');
 
@@ -318,6 +366,12 @@ export default function BrandWalletPage() {
   );
   const [loading, setLoading] = React.useState(isApiLive());
   const [loadError, setLoadError] = React.useState<string | null>(null);
+
+  // H-20 applies equally here: live mode starts empty and fetches GET /wallet/escrow; mock mode
+  // keeps rendering the polished mockEscrowItems demo dataset (handled where escrowItems is read).
+  const [escrowRows, setEscrowRows] = React.useState<EscrowHoldRow[]>([]);
+  const [escrowLoading, setEscrowLoading] = React.useState(isApiLive());
+  const [escrowError, setEscrowError] = React.useState<string | null>(null);
 
   const loadWallet = React.useCallback(async () => {
     if (!isApiLive()) return;
@@ -337,16 +391,73 @@ export default function BrandWalletPage() {
     }
   }, []);
 
+  const loadEscrow = React.useCallback(async () => {
+    if (!isApiLive()) return;
+    setEscrowLoading(true);
+    setEscrowError(null);
+    try {
+      const rows = await api.wallet.escrowList();
+      setEscrowRows(Array.isArray(rows) ? rows : []);
+    } catch (err) {
+      setEscrowError(err instanceof ApiError ? err.message : 'Could not load escrow holdings.');
+    } finally {
+      setEscrowLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      await loadWallet();
+      await Promise.all([loadWallet(), loadEscrow()]);
       if (cancelled) return;
     })();
     return () => {
       cancelled = true;
     };
-  }, [loadWallet]);
+  }, [loadWallet, loadEscrow]);
+
+  // Changing the amount starts a new logical submission, not a retry of the last one — drop any
+  // held idempotency key so the next confirm mints a fresh one.
+  const changeAddAmount = (value: string) => {
+    setAddAmount(value);
+    setTopUpIdempotencyKey(null);
+  };
+
+  const handleAddFundsDialogChange = (open: boolean) => {
+    setIsAddFundsOpen(open);
+    if (!open) {
+      setAddAmount('');
+      setAddFundsError(null);
+      setTopUpIdempotencyKey(null);
+      setTopUpOrder(null);
+    }
+  };
+
+  // POST /wallet/topup, then refresh balances + escrow. The Idempotency-Key is minted once per
+  // logical submission (kept in topUpIdempotencyKey) and reused across retries of that same
+  // submission after a network failure — a fresh key per retry would let a client retry double-
+  // spend past the server's idempotency dedupe (this repo's QA flag, see state comment above).
+  // In mock mode api.wallet.topUp resolves to a stub.
+  const handleAddFunds = async () => {
+    const amount = parseInt(addAmount, 10);
+    if (!amount || amount < 1000) return;
+    setIsAddingFunds(true);
+    setAddFundsError(null);
+    const idempotencyKey = topUpIdempotencyKey ?? safeRandomUUID();
+    if (!topUpIdempotencyKey) setTopUpIdempotencyKey(idempotencyKey);
+    try {
+      const order = await api.wallet.topUp({ amount }, idempotencyKey);
+      // Success closes out this submission — the key must not be reused for a future one.
+      setTopUpIdempotencyKey(null);
+      setTopUpOrder(order);
+      await Promise.all([loadWallet(), loadEscrow()]);
+    } catch (e) {
+      // Keep the same idempotency key held so a user-initiated retry of this submission reuses it.
+      setAddFundsError(e instanceof ApiError ? e.message : 'Could not add funds. Please try again.');
+    } finally {
+      setIsAddingFunds(false);
+    }
+  };
 
   // Wallet card data: real numbers in live mode, polished demo numbers in mock mode.
   // Fields with no backend source yet (totalSpent, monthlySpend, projectedBurn30Days,
@@ -361,8 +472,9 @@ export default function BrandWalletPage() {
       }
     : mockWalletData;
 
-  // No GET /wallet/escrow endpoint yet — stays empty (not fabricated) in live mode.
-  const escrowItems = isApiLive() ? [] : mockEscrowItems;
+  // Live mode renders real GET /wallet/escrow rows (escrowRows); mock mode keeps the polished
+  // mockEscrowItems demo dataset. escrowActiveCount feeds the summary card above the tabs.
+  const escrowActiveCount = isApiLive() ? escrowRows.length : mockEscrowItems.length;
 
   // Use preset chips from PDF section 5.4
   const quickAmounts = RECHARGE_PRESETS;
@@ -450,7 +562,7 @@ export default function BrandWalletPage() {
               <Download className="h-4 w-4" />
               Export
             </Button>
-            <Dialog open={isAddFundsOpen} onOpenChange={setIsAddFundsOpen}>
+            <Dialog open={isAddFundsOpen} onOpenChange={handleAddFundsDialogChange}>
               <DialogTrigger asChild>
                 <Button className="gap-2">
                   <Plus className="h-4 w-4" />
@@ -464,131 +576,182 @@ export default function BrandWalletPage() {
                     Choose an amount and payment method to recharge your wallet.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="space-y-6 py-4">
-                  {/* Quick Amount Selection - Preset Chips */}
-                  <div className="space-y-3">
-                    <Label>Quick Select</Label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {quickAmounts.map((preset) => (
-                        <Button
-                          key={preset.amount}
-                          variant={addAmount === preset.amount.toString() ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setAddAmount(preset.amount.toString())}
-                        >
-                          {preset.label}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Suggested Recharge based on Pipeline Burn */}
-                  {wallet.runwayDays < 45 && (
-                    <div className="rounded-lg border border-stage-negotiating-border bg-amber-50 p-3">
-                      <div className="flex items-start gap-3">
-                        <AlertCircle className="h-5 w-5 text-stage-negotiating-fg flex-shrink-0 mt-0.5" />
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-amber-800">
-                            Based on your pipeline, we recommend recharging:
-                          </p>
-                          <button
-                            onClick={() => setAddAmount(wallet.suggestedRecharge.toString())}
-                            className="text-lg font-bold text-amber-700 hover:underline"
-                          >
-                            {formatCurrency(wallet.suggestedRecharge)}
-                          </button>
-                          <p className="text-xs text-stage-negotiating-fg">
-                            Current runway: {wallet.runwayDays} days | Projected burn: {formatCurrency(wallet.projectedBurn30Days)}/month
-                          </p>
-                        </div>
+                {topUpOrder ? (
+                  // Honest post-submit state: the backend only created a Razorpay ORDER — the
+                  // ledger is credited asynchronously off the payment webhook, never here. No
+                  // checkout launcher exists in this codebase yet, so we surface the order as-is
+                  // instead of pretending the balance already updated.
+                  <div className="space-y-4 py-4">
+                    <div className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+                      <AlertCircle className="h-5 w-5 flex-shrink-0 text-primary" />
+                      <div className="space-y-1">
+                        <p className="font-medium">Payment order created</p>
+                        <p className="text-sm text-muted-foreground">
+                          Complete the payment to add funds to your wallet. Your balance updates
+                          automatically once the payment is confirmed.
+                        </p>
                       </div>
                     </div>
-                  )}
-
-                  {/* Custom Amount */}
-                  <div className="space-y-2">
-                    <Label htmlFor="amount">Or Enter Amount</Label>
-                    <div className="relative">
-                      <IndianRupee className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="amount"
-                        type="number"
-                        placeholder="Enter amount"
-                        value={addAmount}
-                        onChange={(e) => setAddAmount(e.target.value)}
-                        className="pl-9"
-                      />
+                    <div className="space-y-2 rounded-lg border border-border/50 p-4 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Order ID</span>
+                        <span className="font-mono">{topUpOrder.razorpayOrderId}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Amount</span>
+                        <span>{formatCurrency(topUpOrder.amount, topUpOrder.currency)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Status</span>
+                        <span>{topUpOrder.status}</span>
+                      </div>
                     </div>
                   </div>
-
-                  {/* Payment Method */}
-                  <div className="space-y-3">
-                    <Label>Payment Method</Label>
-                    <div className="grid gap-2">
-                      <button
-                        onClick={() => setPaymentMethod('upi')}
-                        className={cn(
-                          'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
-                          paymentMethod === 'upi' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
-                        )}
-                      >
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
-                          <Banknote className="h-5 w-5 text-green-500" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium">UPI</p>
-                          <p className="text-sm text-muted-foreground">Instant transfer, no fees</p>
-                        </div>
-                        {paymentMethod === 'upi' && (
-                          <CheckCircle2 className="h-5 w-5 text-primary" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => setPaymentMethod('card')}
-                        className={cn(
-                          'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
-                          paymentMethod === 'card' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
-                        )}
-                      >
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
-                          <CreditCard className="h-5 w-5 text-blue-500" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium">Credit / Debit Card</p>
-                          <p className="text-sm text-muted-foreground">2% convenience fee</p>
-                        </div>
-                        {paymentMethod === 'card' && (
-                          <CheckCircle2 className="h-5 w-5 text-primary" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => setPaymentMethod('netbanking')}
-                        className={cn(
-                          'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
-                          paymentMethod === 'netbanking' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
-                        )}
-                      >
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10">
-                          <Building2 className="h-5 w-5 text-purple-500" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium">Net Banking</p>
-                          <p className="text-sm text-muted-foreground">Redirect to bank</p>
-                        </div>
-                        {paymentMethod === 'netbanking' && (
-                          <CheckCircle2 className="h-5 w-5 text-primary" />
-                        )}
-                      </button>
+                ) : (
+                  <div className="space-y-6 py-4">
+                    {/* Quick Amount Selection - Preset Chips */}
+                    <div className="space-y-3">
+                      <Label>Quick Select</Label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {quickAmounts.map((preset) => (
+                          <Button
+                            key={preset.amount}
+                            variant={addAmount === preset.amount.toString() ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => changeAddAmount(preset.amount.toString())}
+                          >
+                            {preset.label}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
+
+                    {/* Suggested Recharge based on Pipeline Burn */}
+                    {wallet.runwayDays < 45 && (
+                      <div className="rounded-lg border border-stage-negotiating-border bg-amber-50 p-3">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="h-5 w-5 text-stage-negotiating-fg flex-shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-amber-800">
+                              Based on your pipeline, we recommend recharging:
+                            </p>
+                            <button
+                              onClick={() => changeAddAmount(wallet.suggestedRecharge.toString())}
+                              className="text-lg font-bold text-amber-700 hover:underline"
+                            >
+                              {formatCurrency(wallet.suggestedRecharge)}
+                            </button>
+                            <p className="text-xs text-stage-negotiating-fg">
+                              Current runway: {wallet.runwayDays} days | Projected burn: {formatCurrency(wallet.projectedBurn30Days)}/month
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Custom Amount */}
+                    <div className="space-y-2">
+                      <Label htmlFor="amount">Or Enter Amount</Label>
+                      <div className="relative">
+                        <IndianRupee className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          id="amount"
+                          type="number"
+                          placeholder="Enter amount"
+                          value={addAmount}
+                          onChange={(e) => changeAddAmount(e.target.value)}
+                          className="pl-9"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Payment Method */}
+                    <div className="space-y-3">
+                      <Label>Payment Method</Label>
+                      <div className="grid gap-2">
+                        <button
+                          onClick={() => setPaymentMethod('upi')}
+                          className={cn(
+                            'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
+                            paymentMethod === 'upi' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+                          )}
+                        >
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
+                            <Banknote className="h-5 w-5 text-green-500" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium">UPI</p>
+                            <p className="text-sm text-muted-foreground">Instant transfer, no fees</p>
+                          </div>
+                          {paymentMethod === 'upi' && (
+                            <CheckCircle2 className="h-5 w-5 text-primary" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => setPaymentMethod('card')}
+                          className={cn(
+                            'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
+                            paymentMethod === 'card' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+                          )}
+                        >
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
+                            <CreditCard className="h-5 w-5 text-blue-500" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium">Credit / Debit Card</p>
+                            <p className="text-sm text-muted-foreground">2% convenience fee</p>
+                          </div>
+                          {paymentMethod === 'card' && (
+                            <CheckCircle2 className="h-5 w-5 text-primary" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => setPaymentMethod('netbanking')}
+                          className={cn(
+                            'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
+                            paymentMethod === 'netbanking' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+                          )}
+                        >
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10">
+                            <Building2 className="h-5 w-5 text-purple-500" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium">Net Banking</p>
+                            <p className="text-sm text-muted-foreground">Redirect to bank</p>
+                          </div>
+                          {paymentMethod === 'netbanking' && (
+                            <CheckCircle2 className="h-5 w-5 text-primary" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                    {addFundsError && (
+                      <p className="text-sm text-destructive">{addFundsError}</p>
+                    )}
                   </div>
-                </div>
+                )}
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsAddFundsOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button disabled={!addAmount || parseInt(addAmount) < 1000}>
-                    Add {addAmount ? formatCurrency(parseInt(addAmount)) : 'Funds'}
-                  </Button>
+                  {topUpOrder ? (
+                    <Button onClick={() => handleAddFundsDialogChange(false)}>Done</Button>
+                  ) : (
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleAddFundsDialogChange(false)}
+                        disabled={isAddingFunds}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleAddFunds}
+                        disabled={!addAmount || parseInt(addAmount) < 1000 || isAddingFunds}
+                      >
+                        {isAddingFunds
+                          ? 'Adding…'
+                          : `Add ${addAmount ? formatCurrency(parseInt(addAmount)) : 'Funds'}`}
+                      </Button>
+                    </>
+                  )}
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -641,7 +804,7 @@ export default function BrandWalletPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                {escrowItems.length} active campaigns
+                {escrowActiveCount} active campaigns
               </p>
             </CardContent>
           </Card>
@@ -909,52 +1072,110 @@ export default function BrandWalletPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {escrowItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-4 rounded-lg border border-border/50 p-4"
-                    >
-                      <Avatar className="h-12 w-12">
-                        <AvatarImage src={item.creatorAvatar} />
-                        <AvatarFallback>{item.creatorName[0]}</AvatarFallback>
-                      </Avatar>
+                {isApiLive() ? (
+                  <div className="space-y-4">
+                    {escrowLoading && (
+                      <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                        <RefreshCw className="h-4 w-4 animate-spin" /> Loading escrow holdings…
+                      </p>
+                    )}
+                    {!escrowLoading && escrowError && (
+                      <p className="flex items-center gap-2 py-6 text-sm text-stage-disputed-fg">
+                        <AlertCircle className="h-4 w-4" /> {escrowError}
+                      </p>
+                    )}
+                    {!escrowLoading && !escrowError && escrowRows.length === 0 && (
+                      <p className="py-6 text-sm text-muted-foreground">
+                        No escrow holdings yet. Funds locked for a campaign will show up here.
+                      </p>
+                    )}
+                    {!escrowLoading && !escrowError && escrowRows.length > 0 &&
+                      escrowRows.map((row) => {
+                        const badge = escrowStatusBadge(row.status);
+                        return (
+                          <div
+                            key={row.escrowHoldId}
+                            className="flex items-center gap-4 rounded-lg border border-border/50 p-4"
+                          >
+                            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/10">
+                              <Lock className="h-5 w-5 text-amber-500" />
+                            </div>
 
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium">{item.campaignName}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Creator: {item.creatorName}
-                        </p>
-                        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                          <Lock className="h-3 w-3" />
-                          Locked on {formatDate(item.lockedAt)}
-                          {item.releaseDate && (
-                            <>
-                              <span>•</span>
-                              <span>Est. release: {formatDate(item.releaseDate)}</span>
-                            </>
-                          )}
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium">Campaign {row.campaignId}</p>
+                              {row.milestoneId && (
+                                <p className="text-sm text-muted-foreground">
+                                  Milestone: {row.milestoneId}
+                                </p>
+                              )}
+                              <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                                <Lock className="h-3 w-3" />
+                                {row.fundedAt
+                                  ? `Funded on ${formatDate(new Date(row.fundedAt))}`
+                                  : 'Not yet funded'}
+                              </div>
+                            </div>
+
+                            <div className="text-right">
+                              <p className="text-lg font-semibold text-amber-500">
+                                {formatCurrency(row.amount, row.currency)}
+                              </p>
+                              <Badge variant="secondary" className={badge.className}>
+                                {badge.label}
+                              </Badge>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {mockEscrowItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-4 rounded-lg border border-border/50 p-4"
+                      >
+                        <Avatar className="h-12 w-12">
+                          <AvatarImage src={item.creatorAvatar} />
+                          <AvatarFallback>{item.creatorName[0]}</AvatarFallback>
+                        </Avatar>
+
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium">{item.campaignName}</p>
+                          <p className="text-sm text-muted-foreground">
+                            Creator: {item.creatorName}
+                          </p>
+                          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                            <Lock className="h-3 w-3" />
+                            Locked on {formatDate(item.lockedAt)}
+                            {item.releaseDate && (
+                              <>
+                                <span>•</span>
+                                <span>Est. release: {formatDate(item.releaseDate)}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <p className="text-lg font-semibold text-amber-500">
+                            {formatCurrency(item.amount)}
+                          </p>
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              item.status === 'locked' && 'bg-amber-500/10 text-amber-500',
+                              item.status === 'releasing' && 'bg-blue-500/10 text-blue-500',
+                              item.status === 'disputed' && 'bg-red-500/10 text-red-500'
+                            )}
+                          >
+                            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                          </Badge>
                         </div>
                       </div>
-
-                      <div className="text-right">
-                        <p className="text-lg font-semibold text-amber-500">
-                          {formatCurrency(item.amount)}
-                        </p>
-                        <Badge
-                          variant="secondary"
-                          className={cn(
-                            item.status === 'locked' && 'bg-amber-500/10 text-amber-500',
-                            item.status === 'releasing' && 'bg-blue-500/10 text-blue-500',
-                            item.status === 'disputed' && 'bg-red-500/10 text-red-500'
-                          )}
-                        >
-                          {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Escrow Summary */}
                 <Separator className="my-6" />

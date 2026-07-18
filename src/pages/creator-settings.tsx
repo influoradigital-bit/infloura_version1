@@ -53,10 +53,20 @@ export default function CreatorSettingsPage() {
   const { logout } = useAuthStore();
   const liveApi = isApiLive();
 
-  // NOTE: no notification-preferences endpoint exists in src/lib/api.ts (only
-  // notifications.list / notifications.markAllRead, which read/ack items —
-  // they don't persist per-user channel toggles). These switches stay UI-only
-  // local state until a PATCH /me/notification-prefs (or similar) route ships.
+  // UPDATE (2026-07-18): notifications.getPreferences/setPreference now hit a REAL route —
+  // GET/POST /notifications/preferences (NotificationController.java), auth-scoped server-side
+  // via AuthPrincipal (no IDOR). It's backed by the existing email_preferences table and covers
+  // exactly ONE thing meaningfully: the global email opt-out, eventType "*", which is the same
+  // flag NotificationService#isUnsubscribed already honors for every outbound email. That's
+  // wired to the "Email Notifications" switch below.
+  //
+  // The four category switches above it (New Proposals / Deadline Reminders / Payment Updates /
+  // Marketing & Tips) do NOT have a 1:1 backend concept to bind to — the 31 real NotificationEvent
+  // types (proposal.*, escrow.*, payout.*, kyc.*, ...) aren't grouped into these four buckets
+  // anywhere server-side, and there is no "deadline reminder" or "marketing" event at all today.
+  // Wiring them to fake eventType strings would silently do nothing (no email path checks a
+  // "marketing" or "deadlines" key), so they stay UI-only local state rather than pretend to
+  // persist. SMS is UI-only too — docs/features/notifications.md confirms there's no SMS channel.
   const [notifications, setNotifications] = React.useState({
     proposals: true,
     deadlines: true,
@@ -65,13 +75,66 @@ export default function CreatorSettingsPage() {
     sms: true,
     email: true,
   });
-  
+  const [emailPrefLoading, setEmailPrefLoading] = React.useState(false);
+  const [emailPrefSaving, setEmailPrefSaving] = React.useState(false);
+  const [emailPrefError, setEmailPrefError] = React.useState<string | null>(null);
+
   const [showTaxIdentityDialog, setShowTaxIdentityDialog] = React.useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = React.useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [showLogoutDialog, setShowLogoutDialog] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
+
+  // Load the real global email preference (eventType "*") on mount. Mock mode keeps the
+  // switch's initial local default (true) via mockOr([]) resolving to an empty list below.
+  React.useEffect(() => {
+    let cancelled = false;
+    setEmailPrefLoading(true);
+    api.notifications
+      .getPreferences('creator')
+      .then((prefs) => {
+        if (cancelled) return;
+        const globalPref = prefs.find((p) => p.eventType === '*');
+        // Absent row = implicitly subscribed (mirrors the backend's isUnsubscribed default).
+        setNotifications((prev) => ({ ...prev, email: !globalPref?.unsubscribed }));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Failed to load notification preferences', err);
+        setEmailPrefError('Could not load your email notification preference.');
+      })
+      .finally(() => {
+        if (!cancelled) setEmailPrefLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleEmailPrefChange = async (checked: boolean) => {
+    const previous = notifications.email;
+    setNotifications({ ...notifications, email: checked });
+    setEmailPrefError(null);
+
+    if (!liveApi) return; // mock mode: local state is the whole story
+
+    setEmailPrefSaving(true);
+    try {
+      await api.notifications.setPreference('creator', '*', checked);
+    } catch (err) {
+      console.error('Failed to save notification preference', err);
+      setNotifications((prev) => ({ ...prev, email: previous })); // revert on failure
+      setEmailPrefError('Could not save. Please try again.');
+      toast({
+        title: 'Save failed',
+        description: 'Could not update your email notification preference.',
+        variant: 'destructive',
+      });
+    } finally {
+      setEmailPrefSaving(false);
+    }
+  };
 
   // POST /auth/logout — real endpoint (api.auth.logout). Mock branch keeps the
   // prior local-only behavior; live branch also invalidates the server session.
@@ -98,15 +161,30 @@ export default function CreatorSettingsPage() {
     navigate('/creator/login');
   };
 
-  // NOTE: no account-deletion endpoint exists in src/lib/api.ts. This stays a
-  // UI-only simulated flow (matches prior behavior) until a DELETE /me (or
-  // similar) route ships — do not wire it to a guessed endpoint.
+  // DELETE /me/account — real, verified soft-delete endpoint (api.me.deleteAccount,
+  // AccountController.java). Server anonymizes PII, revokes refresh tokens, and
+  // scopes deletedAt-checks into every creator-gated route so it takes effect on
+  // the very next request. Mock mode keeps the prior simulated delay.
   const handleDeleteAccount = async () => {
     setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setIsLoading(false);
-    setShowDeleteDialog(false);
-    handleLogout();
+    try {
+      if (liveApi) {
+        await api.me.deleteAccount('creator');
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      setShowDeleteDialog(false);
+      await handleLogout();
+    } catch (err) {
+      console.error('Failed to delete account', err);
+      toast({
+        title: 'Could not delete account',
+        description: 'Please try again, or contact support if the problem continues.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const settingsGroups: {
@@ -194,6 +272,8 @@ export default function CreatorSettingsPage() {
                 <Switch
                   checked={notifications.proposals}
                   onCheckedChange={(checked) => setNotifications({ ...notifications, proposals: checked })}
+                  disabled
+                  title="Category preferences aren't available yet"
                 />
               </div>
               <Separator />
@@ -205,6 +285,8 @@ export default function CreatorSettingsPage() {
                 <Switch
                   checked={notifications.deadlines}
                   onCheckedChange={(checked) => setNotifications({ ...notifications, deadlines: checked })}
+                  disabled
+                  title="Category preferences aren't available yet"
                 />
               </div>
               <Separator />
@@ -216,6 +298,8 @@ export default function CreatorSettingsPage() {
                 <Switch
                   checked={notifications.payments}
                   onCheckedChange={(checked) => setNotifications({ ...notifications, payments: checked })}
+                  disabled
+                  title="Category preferences aren't available yet"
                 />
               </div>
               <Separator />
@@ -227,6 +311,8 @@ export default function CreatorSettingsPage() {
                 <Switch
                   checked={notifications.marketing}
                   onCheckedChange={(checked) => setNotifications({ ...notifications, marketing: checked })}
+                  disabled
+                  title="Category preferences aren't available yet"
                 />
               </div>
             </div>
@@ -240,20 +326,32 @@ export default function CreatorSettingsPage() {
                   <Smartphone className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm">SMS Notifications</span>
                 </div>
-                <Switch
-                  checked={notifications.sms}
-                  onCheckedChange={(checked) => setNotifications({ ...notifications, sms: checked })}
-                />
+                {/* No SMS channel exists server-side (docs/features/notifications.md) — disabled
+                    rather than a switch that silently does nothing. */}
+                <Switch checked={false} disabled title="SMS notifications are not available yet" />
               </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">Email Notifications</span>
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">Email Notifications</span>
+                  </div>
+                  <Switch
+                    checked={notifications.email}
+                    disabled={emailPrefLoading || emailPrefSaving}
+                    onCheckedChange={handleEmailPrefChange}
+                  />
                 </div>
-                <Switch
-                  checked={notifications.email}
-                  onCheckedChange={(checked) => setNotifications({ ...notifications, email: checked })}
-                />
+                {(emailPrefLoading || emailPrefSaving || emailPrefError) && (
+                  <p
+                    className={cn(
+                      'text-xs mt-1',
+                      emailPrefError ? 'text-destructive' : 'text-muted-foreground',
+                    )}
+                  >
+                    {emailPrefError ?? (emailPrefLoading ? 'Loading preference…' : 'Saving…')}
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>

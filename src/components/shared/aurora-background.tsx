@@ -2,7 +2,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 
 const blobs = [
   {
-    className: 'left-[-10%] top-[-15%] h-[55vh] w-[55vh] bg-[#9b8cf2]/45',
+    className: 'left-[-10%] top-[-15%] h-[55vh] w-[55vh] bg-[#7c6ae8]/45',
     animate: { x: [0, 80, 40, 0], y: [0, 50, 90, 0], scale: [1, 1.08, 0.95, 1] },
     duration: 22,
   },

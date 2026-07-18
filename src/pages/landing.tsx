@@ -32,6 +32,7 @@ import { FadeUp, StaggerContainer, StaggerItem, WordReveal, CountUp } from '@/co
 import { EscrowFlowAnimation } from '@/components/motion/EscrowFlowAnimation';
 import { HypeLiveIndicator } from '@/components/ui/hype-live-indicator';
 import { SlotProgressBar } from '@/components/ui/slot-progress-bar';
+import { MeeraOrb } from '@/components/feature/meera/MeeraOrb';
 import { demoHypeConfig } from '@/lib/demo-data';
 
 // ---------------------------------------------------------------------------
@@ -116,7 +117,33 @@ const TRACKING = {
     { icon: Ticket, label: 'Coupon redemptions', value: '187' },
     { icon: Wallet, label: 'Revenue attributed', value: '₹3.4L' },
   ],
+  // Per-creator breakdown — the answer to "which creator actually sold".
+  topCreators: [
+    { handle: '@ananya.creates', revenue: '₹1.2L' },
+    { handle: '@rohan.fits', revenue: '₹86K' },
+    { handle: '@meghna.eats', revenue: '₹54K' },
+  ],
 };
+
+// Creator income streams — all three verified as built (deal room, Hype slot
+// accept, affiliate earnings UI + settlement backend shipped 2026-07-17).
+const CREATOR_EARNINGS = [
+  {
+    icon: MessageSquareText,
+    title: 'Brand deals',
+    body: 'Negotiate your rate in the Deal Room. Escrow locks the full amount before you shoot a single frame.',
+  },
+  {
+    icon: Zap,
+    title: 'Hype slots',
+    body: 'One-tap accept on flat-rate remix campaigns. Post inside the window, payout auto-releases.',
+  },
+  {
+    icon: Ticket,
+    title: 'Affiliate commission',
+    body: 'Your coupon code and tracking link earn commission on every sale they drive — settled monthly.',
+  },
+];
 
 // Portfolio claims verified against PortfolioService: live stats + campaign
 // history are real; do NOT claim PDF media kit or page-view analytics yet.
@@ -136,7 +163,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="Influora — Escrow-protected influencer deals for India"
-        description="Discover verified creators, negotiate in one Deal Room, and pay through escrow. From a single reel to a 100-creator Hype campaign — contracts, TDS and payouts built in."
+        description="Discover verified creators, negotiate in one Deal Room, and pay through escrow — from one reel to a 100-creator Hype campaign, contracts and TDS built in."
         canonical="/"
       />
       <JsonLd data={getOrganizationSchema()} />
@@ -259,6 +286,13 @@ export default function LandingPage() {
             <FadeUp delay={0.15}>
               <Card>
                 <CardContent className="space-y-4 p-6" aria-hidden="true">
+                  <div className="flex items-center gap-3">
+                    <MeeraOrb state="idle" size={40} />
+                    <div>
+                      <p className="text-sm font-semibold">Meera</p>
+                      <p className="text-xs text-muted-foreground">AI campaign co-pilot · online</p>
+                    </div>
+                  </div>
                   <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-sm text-primary-foreground">
                     I'm launching a ₹799 face serum and want reels from skincare creators in Mumbai.
                   </div>
@@ -382,6 +416,17 @@ export default function LandingPage() {
                       );
                     })}
                   </ul>
+                  <div className="mt-4 rounded-lg bg-muted/60 p-3">
+                    <p className="text-xs font-semibold text-muted-foreground">Top creators by revenue</p>
+                    <ul className="mt-2 space-y-1.5">
+                      {TRACKING.topCreators.map((creator) => (
+                        <li key={creator.handle} className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">{creator.handle}</span>
+                          <span className="font-semibold tabular-nums">{creator.revenue}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                   <p className="mt-3 text-xs text-muted-foreground">
                     Illustrative numbers. Yours come from your own store's webhook.
                   </p>
@@ -449,6 +494,74 @@ export default function LandingPage() {
                   </div>
                 </CardContent>
               </Card>
+            </FadeUp>
+          </div>
+        </section>
+
+        {/* Creator earnings — three income streams, one escrow */}
+        <section className="border-t border-border/60 py-20" aria-label="How creators earn">
+          <div className="mx-auto max-w-6xl px-6">
+            <FadeUp className="mx-auto max-w-xl text-center">
+              <h2 className="text-3xl font-semibold">Creators earn three ways</h2>
+              <p className="mt-3 text-muted-foreground">
+                Every stream pays through the same escrow — funds lock before you start, payout lands
+                after approval, TDS invoice generated for you.
+              </p>
+            </FadeUp>
+            <StaggerContainer className="mt-12 grid gap-8 md:grid-cols-3 md:gap-0 md:divide-x md:divide-border/60">
+              {CREATOR_EARNINGS.map((stream) => {
+                const Icon = stream.icon;
+                return (
+                  <StaggerItem key={stream.title} className="md:px-8">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+                      <Icon className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <h3 className="mt-4 font-semibold">{stream.title}</h3>
+                    <p className="mt-1.5 text-sm text-muted-foreground">{stream.body}</p>
+                  </StaggerItem>
+                );
+              })}
+            </StaggerContainer>
+            <FadeUp delay={0.2} className="mt-10 text-center">
+              <Button size="lg" variant="outline" asChild>
+                <Link to="/creator/register">
+                  Start earning on Influora <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
+                </Link>
+              </Button>
+            </FadeUp>
+          </div>
+        </section>
+
+        {/* Pricing strip — teaser only; full detail lives at /pricing */}
+        <section className="border-t border-border/60 bg-card/50 py-16" aria-label="Pricing summary">
+          <div className="mx-auto max-w-4xl px-6 text-center">
+            <FadeUp>
+              <h2 className="text-2xl font-semibold">Free to start. Pay when deals close.</h2>
+              <div className="mt-8 grid gap-6 sm:grid-cols-3">
+                <div>
+                  <p className="text-2xl font-bold">₹0</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Brand Free tier — no subscription, escrow and contracts included
+                  </p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">₹4,999<span className="text-sm font-normal text-muted-foreground">/mo</span></p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Brand Pro — lower fees, 5 seats, unlimited creator analytics
+                  </p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">Free</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Creators always — commission only when a deal pays out
+                  </p>
+                </div>
+              </div>
+              <Button size="lg" variant="outline" className="mt-8" asChild>
+                <Link to="/pricing">
+                  See full pricing <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
+                </Link>
+              </Button>
             </FadeUp>
           </div>
         </section>

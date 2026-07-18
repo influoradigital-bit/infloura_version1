@@ -39,7 +39,7 @@ export function CanvasFallback({ variant = 'auth', className }: CanvasFallbackPr
       />
       {!reduceMotion && (
         <>
-          <div className="absolute -left-[10%] -top-[15%] h-[55%] w-[55%] rounded-full bg-[#9b8cf2]/35 blur-[100px]" />
+          <div className="absolute -left-[10%] -top-[15%] h-[55%] w-[55%] rounded-full bg-[#7c6ae8]/35 blur-[100px]" />
           <div className="absolute -right-[5%] top-[10%] h-[50%] w-[50%] rounded-full bg-[#c4b5fd]/30 blur-[100px]" />
           <div className="absolute bottom-[-20%] left-[20%] h-[60%] w-[60%] rounded-full bg-[#7ec8e8]/25 blur-[100px]" />
         </>

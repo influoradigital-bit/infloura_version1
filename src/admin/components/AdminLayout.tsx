@@ -24,6 +24,9 @@ import {
   ShieldAlert,
   Scale,
   CreditCard,
+  ScrollText,
+  AlertOctagon,
+  Mail,
   Menu,
   X,
   Bell,
@@ -61,6 +64,9 @@ const NAV_ITEMS: AdminNavItem[] = [
   { label: 'Moderation', to: '/admin/moderation', icon: ShieldAlert },
   { label: 'Disputes', to: '/admin/disputes', icon: Scale },
   { label: 'Billing', to: '/admin/billing', icon: CreditCard },
+  { label: 'Audit Log', to: '/admin/audit', icon: ScrollText },
+  { label: 'Error Log', to: '/admin/errors', icon: AlertOctagon },
+  { label: 'Email Queue', to: '/admin/emails', icon: Mail },
 ];
 
 // ============================================

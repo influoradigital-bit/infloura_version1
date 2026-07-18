@@ -35,17 +35,22 @@ function escrowStateForStage(stage: MeeraStageId, isPaid: boolean): EscrowPillSt
 }
 
 /** Best-effort total for the header EscrowPill in live mode — prefers the
- * server-confirmed `request_payment` amount, falls back to the earlier
- * `calculate_budget` total. `undefined` (never a mock number) if neither has
- * arrived yet; EscrowPill renders its label without an amount in that case. */
+ * server-confirmed `request_payment.serverAmount`, falls back to the earlier
+ * `calculate_budget.suggestedPoolTotal` (Spring DTOs — see lib/meera-api.ts).
+ * `undefined` (never a mock number) if neither has arrived yet; EscrowPill
+ * renders its label without an amount in that case. */
 function liveTotalLabel(stagePayloads: MeeraStagePayloads | undefined): string | undefined {
   const funding = stagePayloads?.funding
   if (funding && typeof funding === 'object' && typeof (funding as { serverAmount?: unknown }).serverAmount === 'number') {
     return formatINR((funding as { serverAmount: number }).serverAmount)
   }
   const recommend = stagePayloads?.recommend
-  if (recommend && typeof recommend === 'object' && typeof (recommend as { total?: unknown }).total === 'number') {
-    return formatINR((recommend as { total: number }).total)
+  if (
+    recommend &&
+    typeof recommend === 'object' &&
+    typeof (recommend as { suggestedPoolTotal?: unknown }).suggestedPoolTotal === 'number'
+  ) {
+    return formatINR((recommend as { suggestedPoolTotal: number }).suggestedPoolTotal)
   }
   return undefined
 }

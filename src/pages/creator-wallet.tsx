@@ -371,6 +371,28 @@ export default function CreatorWalletPage() {
   const [walletError, setWalletError] = React.useState<string | null>(null);
   const [transactions, setTransactions] = React.useState<WalletTransaction[]>(mockTransactions);
 
+  // GET /creator/platform-fee — global fee shown for transparency (wallet.platformFee).
+  // Unlike the balance/transaction effects, this runs in BOTH mock and live mode: the
+  // mock facade returns the GLOBAL_DEFAULT (15%), so a creator always sees the fee that
+  // will be deducted at escrow release, even in the demo build.
+  const [platformFeePercent, setPlatformFeePercent] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const fee = await api.wallet.platformFee();
+        if (!cancelled && fee) setPlatformFeePercent(fee.feePercent);
+      } catch (err) {
+        // Non-blocking transparency label — a fetch failure just hides it.
+        if (!cancelled) console.error('Failed to load platform fee', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // GET /wallet — availableBalance -> pendingPayout (available to withdraw), escrowLocked -> inEscrow.
   // totalEarned/thisMonth/lastMonth have no facade field yet, so they stay mock-derived.
   React.useEffect(() => {
@@ -526,6 +548,18 @@ export default function CreatorWalletPage() {
           <div className="flex items-center gap-2 rounded-lg border border-stage-disputed-border bg-red-50 px-3 py-2 text-sm text-stage-disputed-fg mb-4">
             <AlertCircle className="h-4 w-4 flex-shrink-0" />
             <span>{walletError}</span>
+          </div>
+        )}
+
+        {platformFeePercent !== null && (
+          <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm mb-4">
+            <Shield className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
+            <div>
+              <p className="font-medium">Platform fee: {platformFeePercent}%</p>
+              <p className="text-muted-foreground">
+                Deducted when campaign earnings are released from escrow.
+              </p>
+            </div>
           </div>
         )}
 

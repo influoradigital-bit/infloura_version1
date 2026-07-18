@@ -1,24 +1,32 @@
 /**
  * ToolResultRenderer - Inline tool result display in chat
  * ----------------------------------------------------------------------------
- * P13: Renders tool results (show_creators, calculate_budget, create_campaign)
- * inline in the chat message stream.
+ * P13: Renders tool results for all 5 real backend tools (influora-ai/app/
+ * tools/schemas.py:32-38) inline in the chat message stream: show_creators,
+ * calculate_budget, create_campaign, request_payment, confirm_launch.
  *
  * The full stage components (StageMatching, StageRecommend, etc.) render on
  * the Living Canvas. These are compact inline renderers for the chat panel.
  *
- * Data shapes match 02-API-CONTRACT-BRAND.md section 3:
- *   - show_creators: { creators: [...], matchedTotal: 38 }
- *   - calculate_budget: { pool, perCreator, platformFee, total }
+ * Data shapes match the real Spring DTOs (`MeeraToolDtos.java`), corrected
+ * 2026-07-17 (QA/Vikram) — 02-API-CONTRACT-BRAND.md was stale against them:
+ *   - show_creators: { creators: [{ creatorProfileId, displayName, city?, categories?, totalFollowers, engagementRate?, verified }] }
+ *   - calculate_budget: { suggestedPoolTotal, suggestedPerCreatorRate, suggestedCreatorCount, currency, rationale? }
  *   - create_campaign: { campaignId, status: 'DRAFT', serverBudget }
+ *   - request_payment: { status, campaignIntentId, serverAmount, currency, confirmActionUrl, replay }
+ *   - confirm_launch: { campaignId, status, creatorsInvited, replay }
  */
 
-import { Users, Calculator, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Users, Calculator, FileText, Wallet, Rocket, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
-import type {
-  ShowCreatorsPayload,
-  CalculateBudgetPayload,
-  CreateCampaignPayload,
+import {
+  isRequestPaymentPayload,
+  isConfirmLaunchPayload,
+  type ShowCreatorsPayload,
+  type CalculateBudgetPayload,
+  type CreateCampaignPayload,
+  type RequestPaymentPayload,
+  type ConfirmLaunchPayload,
 } from '@/lib/meera-api';
 import { formatINR, cn } from '@/lib/utils';
 
@@ -32,7 +40,7 @@ interface ShowCreatorsResultProps {
 }
 
 export function ShowCreatorsResult({ data, className }: ShowCreatorsResultProps) {
-  const { creators, matchedTotal } = data;
+  const { creators } = data;
   const displayCount = Math.min(creators.length, 3);
   const topCreators = creators.slice(0, displayCount);
 
@@ -45,20 +53,24 @@ export function ShowCreatorsResult({ data, className }: ShowCreatorsResultProps)
     >
       <div className="mb-2 flex items-center gap-2 text-xs font-medium text-meera-text">
         <Users className="h-3.5 w-3.5 text-meera-accent" />
-        <span>{matchedTotal} creators found</span>
+        <span>{creators.length} creators found</span>
       </div>
 
       <div className="space-y-1.5">
         {topCreators.map((creator) => (
           <div
-            key={creator.creatorId}
+            key={creator.creatorProfileId}
             className="flex items-center justify-between text-xs"
           >
             <span className="truncate text-meera-text">{creator.displayName}</span>
             <span className="shrink-0 text-meera-text-muted">
-              {(creator.followers / 1000).toFixed(0)}K
-              <span className="mx-1 text-meera-border-strong">|</span>
-              {creator.engagementRate.toFixed(1)}%
+              {(creator.totalFollowers / 1000).toFixed(0)}K
+              {creator.engagementRate !== undefined && (
+                <>
+                  <span className="mx-1 text-meera-border-strong">|</span>
+                  {creator.engagementRate.toFixed(1)}%
+                </>
+              )}
             </span>
           </div>
         ))}
@@ -82,7 +94,7 @@ interface CalculateBudgetResultProps {
 }
 
 export function CalculateBudgetResult({ data, className }: CalculateBudgetResultProps) {
-  const { pool, perCreator, platformFee, total } = data;
+  const { suggestedPoolTotal, suggestedPerCreatorRate, suggestedCreatorCount, rationale } = data;
 
   return (
     <div
@@ -93,26 +105,23 @@ export function CalculateBudgetResult({ data, className }: CalculateBudgetResult
     >
       <div className="mb-2 flex items-center gap-2 text-xs font-medium text-meera-text">
         <Calculator className="h-3.5 w-3.5 text-meera-accent" />
-        <span>Budget breakdown</span>
+        <span>Suggested budget</span>
       </div>
 
       <div className="space-y-1 text-xs">
         <div className="flex justify-between">
           <span className="text-meera-text-muted">Creator pool</span>
-          <span className="text-meera-text">{formatINR(pool)}</span>
+          <span className="text-meera-text">{formatINR(suggestedPoolTotal)}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-meera-text-muted">Per creator</span>
-          <span className="text-meera-text">{formatINR(perCreator)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-meera-text-muted">Platform fee (15%)</span>
-          <span className="text-meera-text">{formatINR(platformFee)}</span>
+          <span className="text-meera-text">{formatINR(suggestedPerCreatorRate)}</span>
         </div>
         <div className="mt-1.5 flex justify-between border-t border-meera-border pt-1.5 font-semibold">
-          <span className="text-meera-text">Total</span>
-          <span className="text-meera-accent">{formatINR(total)}</span>
+          <span className="text-meera-text">Creators</span>
+          <span className="text-meera-accent">{suggestedCreatorCount}</span>
         </div>
+        {rationale && <p className="pt-1 text-meera-text-muted">{rationale}</p>}
       </div>
     </div>
   );
@@ -149,6 +158,92 @@ export function CreateCampaignResult({ data, className }: CreateCampaignResultPr
           Draft
         </span>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Request Payment Result
+// ---------------------------------------------------------------------------
+
+interface RequestPaymentResultProps {
+  data: RequestPaymentPayload;
+  className?: string;
+}
+
+export function RequestPaymentResult({ data, className }: RequestPaymentResultProps) {
+  const { status, serverAmount, confirmActionUrl, replay } = data;
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border border-meera-border bg-meera-surface-2 p-3',
+        className
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <Wallet className="h-4 w-4 text-meera-accent" />
+        <div className="flex-1">
+          <p className="text-xs font-medium text-meera-text">Payment requested</p>
+          <p className="text-[10px] text-meera-text-muted">
+            {status} | {formatINR(serverAmount)}
+          </p>
+        </div>
+        <span className="rounded-full bg-meera-accent-soft px-2 py-0.5 text-[10px] font-medium text-meera-accent">
+          Pending
+        </span>
+      </div>
+      {confirmActionUrl && (
+        <a
+          href={confirmActionUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-block text-[10px] font-medium text-meera-accent underline underline-offset-2"
+        >
+          Confirm payment
+        </a>
+      )}
+      {replay && (
+        <p className="mt-1.5 text-[10px] italic text-meera-text-muted opacity-70">Already processed</p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Confirm Launch Result
+// ---------------------------------------------------------------------------
+
+interface ConfirmLaunchResultProps {
+  data: ConfirmLaunchPayload;
+  className?: string;
+}
+
+export function ConfirmLaunchResult({ data, className }: ConfirmLaunchResultProps) {
+  const { status, creatorsInvited, replay } = data;
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border border-meera-border bg-meera-surface-2 p-3',
+        className
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <Rocket className="h-4 w-4 text-meera-accent" />
+        <div className="flex-1">
+          <p className="text-xs font-medium text-meera-text">Campaign launched</p>
+          <p className="text-[10px] text-meera-text-muted">
+            {status} | {creatorsInvited} creator{creatorsInvited === 1 ? '' : 's'} invited
+          </p>
+        </div>
+        <span className="rounded-full bg-meera-accent-soft px-2 py-0.5 text-[10px] font-medium text-meera-accent">
+          Live
+        </span>
+      </div>
+      {replay && (
+        <p className="mt-1.5 text-[10px] italic text-meera-text-muted opacity-70">Already processed</p>
+      )}
     </div>
   );
 }
@@ -255,6 +350,12 @@ export function ToolResultRenderer({
           )}
           {toolName === 'create_campaign' && (
             <CreateCampaignResult data={data as CreateCampaignPayload} />
+          )}
+          {toolName === 'request_payment' && isRequestPaymentPayload(data) && (
+            <RequestPaymentResult data={data} />
+          )}
+          {toolName === 'confirm_launch' && isConfirmLaunchPayload(data) && (
+            <ConfirmLaunchResult data={data} />
           )}
         </>
       )}

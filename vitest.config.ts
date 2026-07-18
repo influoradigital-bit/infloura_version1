@@ -15,7 +15,10 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     // e2e/ holds Playwright specs — run via `playwright test`, never vitest.
-    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
+    // .claude/worktrees/* are sibling git worktrees with their own node_modules;
+    // vitest's default include would run those duplicate test copies too (they
+    // fail with dup-React "Invalid hook call"), so exclude the whole .claude tree.
+    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**', '**/.claude/**'],
     testTimeout: 15_000,
     env: {
       VITE_API_MODE: 'mock',
