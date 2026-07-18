@@ -1,0 +1,511 @@
+<meta charset="utf-8">
+<title>Influora — Model & Feature Alignment Audit</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#141922; --panel2:#1b212d; --line:#26303f;
+    --ink:#e8edf5; --muted:#9aa7ba; --faint:#6b7688;
+    --green:#22c55e; --amber:#f5a623; --red:#ef4444; --blue:#4f8cff;
+    --greenbg:rgba(34,197,94,.12); --amberbg:rgba(245,166,35,.13); --redbg:rgba(239,68,68,.13);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 22px 80px}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:-.4px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 26px}
+  .sub b{color:var(--ink)}
+
+  /* header hero */
+  .hero{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+    border-radius:16px;padding:26px 26px 22px;margin-bottom:26px}
+  .heroTop{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:18px}
+  .pct{font-size:58px;font-weight:750;line-height:1;letter-spacing:-2px}
+  .pct span{font-size:26px;color:var(--muted);font-weight:600;letter-spacing:0}
+  .pctlbl{color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:1.4px;margin-top:8px}
+  .counts{display:flex;gap:10px;flex-wrap:wrap}
+  .chip{border:1px solid var(--line);border-radius:10px;padding:9px 13px;min-width:88px;background:#0f141d}
+  .chip .n{font-size:22px;font-weight:700;line-height:1}
+  .chip .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-top:3px}
+  .chip.g .n{color:var(--green)} .chip.a .n{color:var(--amber)} .chip.r .n{color:var(--red)}
+  .bar{height:12px;border-radius:8px;background:#0f141d;border:1px solid var(--line);
+    overflow:hidden;display:flex;margin-top:22px}
+  .bar i{display:block;height:100%}
+  .bar .b-g{background:var(--green)} .bar .b-a{background:var(--amber)} .bar .b-r{background:var(--red)}
+  .barkey{display:flex;gap:18px;margin-top:9px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+  .barkey b{color:var(--ink)}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:baseline}
+
+  /* domain grid */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:30px}
+  .dcard{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:15px 16px}
+  .dcard h3{margin:0;font-size:14px;letter-spacing-.2px;display:flex;justify-content:space-between;align-items:baseline}
+  .dcard h3 .p{font-size:18px;font-weight:750}
+  .dcard .mini{height:6px;border-radius:5px;background:#0f141d;overflow:hidden;display:flex;margin:11px 0 9px}
+  .dcard .meta{font-size:12px;color:var(--muted)}
+  .p.good{color:var(--green)} .p.mid{color:var(--amber)} .p.bad{color:var(--red)}
+
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:1.6px;color:var(--faint);
+    margin:34px 0 14px;font-weight:650}
+
+  /* feature rows */
+  .feat{border:1px solid var(--line);border-radius:12px;margin-bottom:11px;overflow:hidden;background:var(--panel)}
+  .feat.aligned{opacity:.96}
+  .fhead{display:flex;align-items:center;gap:13px;padding:13px 16px;cursor:pointer;user-select:none}
+  .fhead:hover{background:#161c26}
+  .badge{flex:none;font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+    padding:4px 9px;border-radius:6px;border:1px solid transparent}
+  .b-aligned{color:var(--green);background:var(--greenbg);border-color:rgba(34,197,94,.3)}
+  .b-partial{color:var(--amber);background:var(--amberbg);border-color:rgba(245,166,35,.35)}
+  .b-broken,.b-missing{color:var(--red);background:var(--redbg);border-color:rgba(239,68,68,.35)}
+  .fname{font-weight:600;flex:1;min-width:0}
+  .fdom{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:1px;flex:none}
+  .fscore{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px;flex:none;width:34px;text-align:right}
+  .fnote{font-size:12.5px;color:var(--muted);padding:0 16px 6px 16px}
+  .fnote b{color:var(--amber)} .aligned .fnote b{color:var(--muted)}
+  .body{display:none;padding:4px 16px 16px}
+  .feat.open .body{display:block}
+  .feat.open .fhead .caret{transform:rotate(90deg)}
+  .caret{color:var(--faint);transition:transform .15s;flex:none}
+  .chain{list-style:none;margin:8px 0 0;padding:0;border-left:2px solid var(--line);margin-left:4px}
+  .chain li{position:relative;padding:4px 0 4px 18px;font-size:12.5px;color:var(--muted)}
+  .chain li:before{content:"";position:absolute;left:-6px;top:11px;width:9px;height:9px;border-radius:50%;
+    background:var(--green);border:2px solid var(--bg)}
+  .chain li.no:before{background:var(--red)}
+  .chain code{color:var(--blue);font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    background:#0f141d;padding:1px 5px;border-radius:4px}
+  .chain .step{color:var(--ink)}
+  footer{color:var(--faint);font-size:12px;margin-top:40px;border-top:1px solid var(--line);padding-top:16px}
+  .method{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:26px;font-size:13px;color:var(--muted)}
+  .method b{color:var(--ink)}
+  .toggle{font-size:12px;color:var(--blue);cursor:pointer;user-select:none;margin-bottom:14px;display:inline-block}
+</style>
+
+<div class="wrap">
+  <h1>Influora — Model &amp; Feature Alignment Audit</h1>
+  <p class="sub">Code-verified end-to-end tracing across <b>3 services</b> (Python AI edge, Java Spring API, React frontend) &middot; <b>58 features</b> in 5 domains &middot; Generated <b>2026-07-18</b> &middot; Branch <b>feat/portfolio-view-tracking</b></p>
+
+  <div class="hero">
+    <div class="heroTop">
+      <div>
+        <div class="pct">88.8<span>%</span></div>
+        <div class="pctlbl">Overall alignment &middot; 51.5 / 58 weighted</div>
+      </div>
+      <div class="counts">
+        <div class="chip g"><div class="n">47</div><div class="l">Aligned</div></div>
+        <div class="chip a"><div class="n">9</div><div class="l">Partial</div></div>
+        <div class="chip r"><div class="n">1</div><div class="l">Broken</div></div>
+        <div class="chip r"><div class="n">1</div><div class="l">Missing</div></div>
+      </div>
+    </div>
+    <div class="bar">
+      <i class="b-g" style="width:81.0%"></i>
+      <i class="b-a" style="width:15.5%"></i>
+      <i class="b-r" style="width:3.5%"></i>
+    </div>
+    <div class="barkey">
+      <span><span class="dot" style="background:var(--green)"></span><b>47</b> aligned (full chain)</span>
+      <span><span class="dot" style="background:var(--amber)"></span><b>9</b> partial (a link missing)</span>
+      <span><span class="dot" style="background:var(--red)"></span><b>2</b> broken/missing</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="dcard"><h3>Security <span class="p good">100%</span></h3>
+      <div class="mini"><i class="b-g" style="width:100%"></i></div>
+      <div class="meta">11 aligned &middot; 0 gaps</div></div>
+    <div class="dcard"><h3>AI / Models <span class="p good">100%</span></h3>
+      <div class="mini"><i class="b-g" style="width:100%"></i></div>
+      <div class="meta">9 aligned &middot; 0 gaps</div></div>
+    <div class="dcard"><h3>Creator <span class="p mid">88%</span></h3>
+      <div class="mini"><i class="b-g" style="width:77%"></i><i class="b-a" style="width:23%"></i></div>
+      <div class="meta">10 aligned &middot; 3 partial</div></div>
+    <div class="dcard"><h3>Admin <span class="p mid">81%</span></h3>
+      <div class="mini"><i class="b-g" style="width:69%"></i><i class="b-a" style="width:23%"></i><i class="b-r" style="width:8%"></i></div>
+      <div class="meta">9 aligned &middot; 3 partial &middot; 1 missing</div></div>
+    <div class="dcard"><h3>Brand <span class="p mid">79%</span></h3>
+      <div class="mini"><i class="b-g" style="width:67%"></i><i class="b-a" style="width:25%"></i><i class="b-r" style="width:8%"></i></div>
+      <div class="meta">8 aligned &middot; 3 partial &middot; 1 broken</div></div>
+  </div>
+
+  <div class="method">
+    <b>Method.</b> Code is the only source of truth — docs, comments and TODOs were ignored. Each feature is scored only if its chain traces in source: <b>declaration → import → invocation → result consumed → surfaced</b> (UI/API/job). <b>Aligned</b>=1.0, <b>partial</b>=0.5, <b>broken/missing</b>=0.0. A recurring pattern drives every gap: the frontend API client (<code>src/lib/api.ts:47</code>) defaults to <b>mock mode</b> (<code>VITE_API_MODE</code> must equal <code>live</code>), so a feature only counts as aligned when a real <code>fetch</code> to the backend exists alongside the mock. Backends are largely complete; the gaps are frontend pages that still render hardcoded mock arrays instead of calling the wired endpoint.
+  </div>
+
+  <span class="toggle" onclick="document.querySelectorAll('.feat').forEach(f=>f.classList.add('open'))">▸ expand all chains</span>
+
+  <h2>Problems first — 11 features with a broken link</h2>
+
+  <!-- BROKEN -->
+  <div class="feat open">
+    <div class="fhead" onclick="this.parentNode.classList.toggle('open')">
+      <span class="badge b-broken">Broken</span>
+      <span class="fname">Brand deals &amp; pipeline</span>
+      <span class="fdom">Brand</span><span class="fscore">0.0</span><span class="caret">▸</span>
+    </div>
+    <div class="fnote"><b>Backend + API client complete, but both frontend pages render hardcoded mock arrays and never call <code>api.deals.*</code>.</b></div>
+    <div class="body"><ul class="chain">
+      <li class="no"><span class="step">frontend</span> — <code>brand-deals.tsx → deal-room-dashboard.tsx:63</code> renders <code>mockDealRooms</code>; <code>brand-pipeline.tsx:66</code> renders <code>mockCollaborations</code>, 0 API calls</li>
+      <li><span class="step">api client</span> — <code>src/lib/api.ts:968</code> deals.list/accept/reject/counter/create</li>
+      <li><span class="step">controller</span> — <code>DealController.java:38</code> GET/POST /deals, :70 accept, :78 reject, :86 counter</li>
+      <li><span class="step">service</span> — <code>service/DealService.java</code></li>
+    </ul></div>
+  </div>
+
+  <!-- MISSING -->
+  <div class="feat open">
+    <div class="fhead" onclick="this.parentNode.classList.toggle('open')">
+      <span class="badge b-missing">Missing</span>
+      <span class="fname">Admin report export</span>
+      <span class="fdom">Admin</span><span class="fscore">0.0</span><span class="caret">▸</span>
+    </div>
+    <div class="fnote"><b>Not an admin feature in code — <code>ReportExportController</code> is a Pro-gated campaign-owner endpoint under <code>/campaigns</code>, with no admin UI and no client wiring at all.</b></div>
+    <div class="body"><ul class="chain">
+      <li class="no"><span class="step">frontend</span> — no caller anywhere in <code>src/</code>; no <code>reportApi</code> in admin api-contracts</li>
+      <li class="no"><span class="step">api client</span> — MISSING (no method)</li>
+      <li><span class="step">controller</span> — <code>ReportExportController.java:37</code> GET <code>/campaigns/{id}/export</code> (not <code>/admin</code>)</li>
+      <li><span class="step">service</span> — <code>service/ReportExportService.java:28</code> CSV/PDF export</li>
+    </ul></div>
+  </div>
+
+  <!-- PARTIALS -->
+  <div class="feat open">
+    <div class="fhead" onclick="this.parentNode.classList.toggle('open')">
+      <span class="badge b-partial">Partial</span>
+      <span class="fname">Admin campaign management</span>
+      <span class="fdom">Admin</span><span class="fscore">0.5</span><span class="caret">▸</span>
+    </div>
+    <div class="fnote"><b>Only a read-only list is backed; detail / at-risk / hype-ops endpoints are phantom; all filter/sort/pagination is client-side.</b></div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">frontend</span> — <code>CampaignTable.tsx → useCampaignList.ts</code> (campaignApi.listAll)</li>
+      <li><span class="step">api client</span> — <code>api-contracts.ts:311</code> listAll (but :313/:316/:319 getById/atRisk/hypeOps unbacked)</li>
+      <li><span class="step">controller</span> — <code>AdminCampaignController.java:51</code> list only</li>
+      <li class="no"><span class="step">management actions</span> — no detail view or mutations exist</li>
+    </ul></div>
+  </div>
+
+  <div class="feat open">
+    <div class="fhead" onclick="this.parentNode.classList.toggle('open')">
+      <span class="badge b-partial">Partial</span>
+      <span class="fname">Admin approval workflow</span>
+      <span class="fdom">Admin</span><span class="fscore">0.5</span><span class="caret">▸</span>
+    </div>
+    <div class="fnote"><b>Backend + api client fully built, but no frontend UI consumes it — chain broken at the frontend.</b></div>
+    <div class="body"><ul class="chain">
+      <li class="no"><span class="step">frontend</span> — zero live callers of getPendingApprovals/processApproval (<code>api-contract.test.ts:88</code>)</li>
+      <li><span class="step">api client</span> — <code>api-contracts.ts:558</code> getPendingApprovals, :563 processApproval</li>
+      <li><span class="step">controller</span> — <code>ApprovalWorkflowController.java:51</code> /approvals/pending, :58 /approvals/{id}</li>
+      <li><span class="step">service</span> — <code>service/admin/ApprovalWorkflowService.java:67</code></li>
+    </ul></div>
+  </div>
+
+  <div class="feat open">
+    <div class="fhead" onclick="this.parentNode.classList.toggle('open')">
+      <span class="badge b-partial">Partial</span>
+      <span class="fname">Admin audit log</span>
+      <span class="fdom">Admin</span><span class="fscore">0.5</span><span class="caret">▸</span>
+    </div>
+    <div class="fnote"><b>Server-side writes are real, but there is no frontend viewer and the client-side write path POSTs to a nonexistent endpoint (404s).</b></div>
+    <div class="body"><ul class="chain">
+      <li class="no"><span class="step">frontend</span> — <code>auditApi</code> has zero importers; <code>auditLogger.ts:187</code> POSTs to <code>/admin/audit</code> which has no POST route</li>
+      <li><span class="step">api client (read)</span> — <code>api-contracts.ts:634</code> list, :648 getByEntity (unused)</li>
+      <li><span class="step">controller (read)</span> — <code>AuditLogController.java:58</code> GET list, :72 GET entity (no POST)</li>
+      <li><span class="step">write persistence</span> — real, server-side inside <code>DisputeService</code>/<code>PlatformFeeAdminService</code></li>
+    </ul></div>
+  </div>
+
+  <div class="feat open">
+    <div class="fhead" onclick="this.parentNode.classList.toggle('open')">
+      <span class="badge b-partial">Partial</span>
+      <span class="fname">Brand disputes</span>
+      <span class="fdom">Brand</span><span class="fscore">0.5</span><span class="caret">▸</span>
+    </div>
+    <div class="fnote"><b>Dedicated <code>BrandDisputeController</code> exists but is bypassed — the client derives the list from <code>/deals</code>; brand has no open-dispute UI.</b></div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">frontend</span> — <code>brand-disputes.tsx:44</code> api.brandDisputes.list</li>
+      <li class="no"><span class="step">api client</span> — <code>src/lib/api.ts:2797</code> derives from api.deals.list, does not call BrandDisputeController</li>
+      <li class="no"><span class="step">controller (bypassed)</span> — <code>BrandDisputeController.java:25</code> GET /brand/disputes exists, unconsumed</li>
+      <li><span class="step">service</span> — <code>service/DisputeService.java</code></li>
+    </ul></div>
+  </div>
+
+  <div class="feat open">
+    <div class="fhead" onclick="this.parentNode.classList.toggle('open')">
+      <span class="badge b-partial">Partial</span>
+      <span class="fname">Brand analytics</span>
+      <span class="fdom">Brand</span><span class="fscore">0.5</span><span class="caret">▸</span>
+    </div>
+    <div class="fnote"><b>Overview page seeds its creator roster from <code>demoCreators</code>, so live mode queries non-existent demo IDs. The route-param page is fine.</b></div>
+    <div class="body"><ul class="chain">
+      <li class="no"><span class="step">frontend</span> — <code>brand-analytics.tsx:21</code> seeds selectedCreatorId from <code>demo-data.ts</code></li>
+      <li><span class="step">frontend (real)</span> — <code>brand-creator-analytics.tsx</code> uses real route-param creatorId ✓</li>
+      <li><span class="step">api client</span> — <code>src/lib/api.ts:2161</code> analytics.getCreatorMetrics/Scores/Demographics</li>
+      <li><span class="step">controller</span> — <code>AnalyticsController.java:59/72/82</code></li>
+    </ul></div>
+  </div>
+
+  <div class="feat open">
+    <div class="fhead" onclick="this.parentNode.classList.toggle('open')">
+      <span class="badge b-partial">Partial</span>
+      <span class="fname">Brand messages / chat</span>
+      <span class="fdom">Brand</span><span class="fscore">0.5</span><span class="caret">▸</span>
+    </div>
+    <div class="fnote"><b>Thread fetch is real, but the conversation/deal list is mock; <code>brand-messages.tsx</code> inbox is 100% mock.</b></div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">frontend (thread)</span> — <code>brand-chat.tsx:506</code> messagesApi.list('brand', dealId) real</li>
+      <li class="no"><span class="step">frontend (list)</span> — deal list <code>mockDealRooms:107</code>; <code>brand-messages.tsx:91</code> fully mock</li>
+      <li><span class="step">api client</span> — <code>src/lib/api.ts:1060</code> messages.list/send/markRead</li>
+      <li><span class="step">controller</span> — <code>DealController.java:96</code> GET /deals/:id/messages</li>
+    </ul></div>
+  </div>
+
+  <div class="feat open">
+    <div class="fhead" onclick="this.parentNode.classList.toggle('open')">
+      <span class="badge b-partial">Partial</span>
+      <span class="fname">Creator campaigns / active</span>
+      <span class="fdom">Creator</span><span class="fscore">0.5</span><span class="caret">▸</span>
+    </div>
+    <div class="fnote"><b>Browse/detail/apply wired, but <code>creator-active.tsx</code> (active collaborations + deliverables) is 100% hardcoded mock with no fetch.</b></div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">frontend (browse)</span> — <code>creator-campaigns.tsx:80</code>, <code>creator-campaign-detail.tsx:85</code></li>
+      <li class="no"><span class="step">frontend (active)</span> — <code>creator-active.tsx:70</code> renders mockCollaborations, 0 API calls</li>
+      <li><span class="step">api client</span> — <code>src/lib/api.ts:2627</code> creatorCampaigns.browse/get/apply</li>
+      <li><span class="step">controller</span> — <code>CreatorCampaignController.java:40</code></li>
+    </ul></div>
+  </div>
+
+  <div class="feat open">
+    <div class="fhead" onclick="this.parentNode.classList.toggle('open')">
+      <span class="badge b-partial">Partial</span>
+      <span class="fname">Creator disputes</span>
+      <span class="fdom">Creator</span><span class="fscore">0.5</span><span class="caret">▸</span>
+    </div>
+    <div class="fnote"><b>Open-dispute write is wired, but dedicated <code>GET /creator/disputes</code> is never called — list is derived client-side from <code>/deals</code>.</b></div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">frontend</span> — <code>creator-disputes.tsx:64</code></li>
+      <li class="no"><span class="step">api client (list)</span> — <code>src/lib/api.ts:2774</code> derives rows from /deals (:2737)</li>
+      <li><span class="step">api client (open)</span> — POST /deals/:id/disputes:2789 ✓</li>
+      <li class="no"><span class="step">controller (orphaned)</span> — <code>CreatorDisputeController.java:29</code> GET /creator/disputes unused</li>
+    </ul></div>
+  </div>
+
+  <div class="feat open">
+    <div class="fhead" onclick="this.parentNode.classList.toggle('open')">
+      <span class="badge b-partial">Partial</span>
+      <span class="fname">Creator profile / settings</span>
+      <span class="fdom">Creator</span><span class="fscore">0.5</span><span class="caret">▸</span>
+    </div>
+    <div class="fnote"><b>Full backend + <code>api.creatorProfile</code> exist, but <code>creator-profile.tsx</code> renders <code>mockProfile</code> and its "save" is a no-op local update.</b></div>
+    <div class="body"><ul class="chain">
+      <li class="no"><span class="step">frontend</span> — <code>creator-profile.tsx:43</code> mockProfile, save writes local state; <code>creator-settings.tsx:82</code> only wires logout</li>
+      <li><span class="step">api client</span> — <code>src/lib/api.ts:1453</code> creatorProfile.get/update</li>
+      <li><span class="step">controller</span> — <code>MeCreatorProfileController.java:27/33</code></li>
+      <li><span class="step">service</span> — <code>service/CreatorProfileService.java</code></li>
+    </ul></div>
+  </div>
+
+  <h2>Security — 11 / 11 aligned</h2>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">JWT auth</span><span class="fdom">Security</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">HS256 access tokens; filter registered before UsernamePasswordAuthenticationFilter; default-deny.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">sign/parse</span> — <code>JwtService.java:45-51,75</code></li>
+      <li><span class="step">filter sets context</span> — <code>JwtAuthenticationFilter.java:29-44</code></li>
+      <li><span class="step">registered</span> — <code>SecurityConfig.java:165</code>, anyRequest().authenticated() :158</li>
+      <li><span class="step">JWKS discovery</span> — <code>JwksController.java:37</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Admin auth separation</span><span class="fdom">Security</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Distinct admin_users store, MFA (AES-GCM), lockout, enforced at filter (ROLE_ADMIN) and service layers.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">distinct store</span> — <code>AdminAuthService.java:103,220</code></li>
+      <li><span class="step">UserType.ADMIN mint</span> — <code>AdminAuthService.java:255,313</code></li>
+      <li><span class="step">MFA + lockout</span> — <code>AdminAuthService.java:132-213</code></li>
+      <li><span class="step">/admin/** hasRole</span> — <code>SecurityConfig.java:156</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Auth rate limiting</span><span class="fdom">Security</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Registered first; sensitive/OTP/refresh buckets; anti-spoof XFF; 429 + Retry-After. Caveat: in-memory per-instance.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">registered first</span> — <code>SecurityConfig.java:160</code></li>
+      <li><span class="step">buckets</span> — <code>AuthRateLimitFilter.java:307-316</code></li>
+      <li><span class="step">anti-bypass XFF/decode</span> — <code>AuthRateLimitFilter.java:416-448</code></li>
+      <li><span class="step">429 emitted</span> — <code>AuthRateLimitFilter.java:222</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Service-to-service token (Python↔Java)</span><span class="fdom">Security</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Dual credential: short-TTL JWT + per-request HMAC with nonce/replay. Constants match byte-for-byte.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">Python mints</span> — <code>service_token_minter.py:51-76</code>, called <code>clients/spring.py:116</code></li>
+      <li><span class="step">Java verifies</span> — <code>InternalServiceTokenFilter.java:119-144</code></li>
+      <li><span class="step">constants match</span> — <code>InternalServiceTokenFilter.java:59</code> vs <code>service_token_minter.py:38</code></li>
+      <li><span class="step">request HMAC</span> — <code>InternalRequestVerifier.java:36-74</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">SSRF guard</span><span class="fdom">Security</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Scheme allow-list, DNS resolve + block private/metadata, IP pin, redirect cap; fail-closed; guards the only outbound brand-URL fetch.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">guarded_fetch</span> — <code>ssrf_guard.py:93-186</code></li>
+      <li><span class="step">fail-closed</span> — <code>ssrf_guard.py:66-80,113</code></li>
+      <li><span class="step">invoked pre-fetch</span> — <code>analyze_site.py:114</code> (after auth+gate :86,:96)</li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Secret / PII redaction</span><span class="fdom">Security</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">RedactionJsonFormatter installed on root at startup; shape-only log_event used across all routes.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">formatter</span> — <code>redaction.py:62-129</code></li>
+      <li><span class="step">installed</span> — <code>redaction.py:132</code>, invoked <code>main.py:32</code></li>
+      <li><span class="step">used in routes</span> — chat/voice/brand_safety/trendspark/analyze_site</li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Razorpay webhook signature</span><span class="fdom">Security</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Verified against raw body before parse; constant-time; fail-closed when secret unset. Escrow FUNDED only post-verify.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">verify before parse</span> — <code>RazorpayWebhookController.java:91-95</code></li>
+      <li><span class="step">constant-time / fail-closed</span> — <code>WebhookSignatureVerifier.java:26-64</code></li>
+      <li><span class="step">permitAll (HMAC boundary)</span> — <code>SecurityConfig.java:87</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Shopify / Woo / Conversion webhooks</span><span class="fdom">Security</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">All three families HMAC-verify raw body before dispatch; workspace-scoped redemption (cross-tenant gap closed).</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">Shopify HMAC</span> — <code>ShopifyWebhookController.java:122-144</code></li>
+      <li><span class="step">Woo HMAC</span> — <code>WooCommerceWebhookController.java:167-190</code></li>
+      <li><span class="step">Conversion HMAC</span> — <code>ConversionWebhookController.java:209,334</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">OAuth state / CSRF (Meta &amp; Shopify)</span><span class="fdom">Security</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">State issued on authorize, single-use consume + userId (and shopDomain) match on callback. TTL 10m.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">Meta state</span> — <code>MetaOAuthStateStore.java:25-47</code>, callback <code>MetaOAuthController.java:73</code></li>
+      <li><span class="step">Shopify state</span> — <code>ShopifyOAuthStateStore.java:32-53</code>, callback <code>ShopifyConnectController.java:88</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">On-behalf auth (service acting as user)</span><span class="fdom">Security</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Re-parses forwarded human JWT; workspaceId match enforced (403); money-tier requires OWNER/ADMIN.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">re-parse JWT</span> — <code>OnBehalfAuthResolver.java:104-115</code></li>
+      <li><span class="step">workspace match</span> — <code>OnBehalfAuthResolver.java:54-62</code></li>
+      <li><span class="step">invoked per endpoint</span> — <code>MeeraInternalController.java:104-180</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">SecurityConfig route protection</span><span class="fdom">Security</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Default-deny; limited permitAll (health/auth/webhooks/jwks/track/portfolio); HSTS/CSP/frame-deny; stateless.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">default deny</span> — <code>SecurityConfig.java:158</code></li>
+      <li><span class="step">scoped permitAll</span> — <code>SecurityConfig.java:72-146</code></li>
+      <li><span class="step">security headers</span> — <code>SecurityConfig.java:55-69</code></li>
+    </ul></div></div>
+
+  <h2>AI / Models — 9 / 9 aligned</h2>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Chat (Claude Sonnet 4.5)</span><span class="fdom">AI</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Pinned <code>claude-sonnet-4-5-20250929</code>; consumed by both Spring server-side turn and browser SSE.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">model pin</span> — <code>config.py:51</code></li>
+      <li><span class="step">provider</span> — <code>providers/claude.py:120,137</code></li>
+      <li><span class="step">route + tool loop</span> — <code>routes/chat.py:71,155</code> → <code>tools/loop.py:131</code></li>
+      <li><span class="step">consumers</span> — <code>MeeraChatAiClient.java:99</code> + <code>useMeeraStream.ts</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">TrendSpark nudge (Haiku 4.5)</span><span class="fdom">AI</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Cheap Haiku phrasing call, end-to-end into brand UI.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">model pin</span> — <code>config.py:57</code> claude-haiku-4-5</li>
+      <li><span class="step">route</span> — <code>routes/trendspark.py:178,262</code></li>
+      <li><span class="step">consumer</span> — <code>TrendSparkController.java:40</code> → <code>useTrendSparkNudge.ts</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Trend-Tag (Haiku)</span><span class="fdom">AI</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">n8n recovery pass via static-secret auth; closed-vocab validated. No FE/Java surface by design.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">model pin</span> — <code>config.py:62</code></li>
+      <li><span class="step">route</span> — <code>routes/trend_tag.py:126,205</code></li>
+      <li><span class="step">caller</span> — n8n static-secret (<code>trend_tag.py:11-36</code>)</li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Brand-safety GARM (Sonnet)</span><span class="fdom">AI</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Forced-tool classification, validated + consumed; driven by the score-calculation job.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">model pin</span> — <code>config.py:77</code></li>
+      <li><span class="step">route + schema</span> — <code>routes/brand_safety.py:260,315</code>, <code>tools/schemas.py:288</code></li>
+      <li><span class="step">job trigger</span> — <code>BrandSafetyAiClient.java:81</code> → <code>ScoreCalculationJob.scoreCreator:344</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Voice (Sarvam STT/TTS + spend gate)</span><span class="fdom">AI</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Both endpoints gate before Sarvam; Gemini transcript cleanup; silent text fallback on failure.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">routes</span> — <code>routes/voice.py:141,245</code></li>
+      <li><span class="step">provider</span> — <code>providers/sarvam.py:88,132</code></li>
+      <li><span class="step">gate before call</span> — <code>voice.py:165,265</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Gemini provider</span><span class="fdom">AI</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Not dead — invoked from analyze-site (classify) and voice (cleanup).</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">provider</span> — <code>providers/gemini.py:149</code> (gemini-2.5-flash-lite)</li>
+      <li><span class="step">wired #1</span> — <code>analyze_site.py:146,180</code></li>
+      <li><span class="step">wired #2</span> — <code>voice.py:208</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Cost / spend gate enforcement</span><span class="fdom">AI</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Gate precedes every provider call on all six AI routes; spend recorded after.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">pricing / tracker / gate</span> — <code>costs/pricing.py:48</code>, <code>spend_tracker.py</code>, <code>gate.py:33</code></li>
+      <li><span class="step">enforced before call</span> — chat:114, analyze_site:96, brand_safety:281, voice:165/265, trendspark:231, trend_tag:186</li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Agentic tool loop</span><span class="fdom">AI</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Iteration cap, idempotency keys, unknown-tool reject; forwards to Spring and surfaces results to canvas.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">loop</span> — <code>tools/loop.py:97</code>, schemas <code>tools/schemas.py:61</code></li>
+      <li><span class="step">invoked</span> — <code>routes/chat.py:155</code>, forwards <code>loop.py:212</code></li>
+    </ul></div></div>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Prompt-injection / untrusted handling</span><span class="fdom">AI</span><span class="fscore">1.0</span><span class="caret">▸</span></div>
+    <div class="fnote">Angle-bracket neutralization + delimiters before untrusted text reaches a prompt; SSRF + redaction in live path.</div>
+    <div class="body"><ul class="chain">
+      <li><span class="step">untrusted wrap</span> — <code>prompt/assembler.py:31,80,210</code>, brand_safety:122</li>
+      <li><span class="step">ssrf on fetch</span> — <code>analyze_site.py:114</code></li>
+    </ul></div></div>
+
+  <h2>Creator — 10 / 13 aligned</h2>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Creator deals</span><span class="fdom">Creator</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">list/accept/reject/counter wired to DealController.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>creator-deals.tsx:217</code></li><li><span class="step">api</span> — <code>api.ts:968</code></li><li><span class="step">controller</span> — <code>DealController.java</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Creator wallet</span><span class="fdom">Creator</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">get/transactions/withdraw/payout-methods wired.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>creator-wallet.tsx:384</code></li><li><span class="step">api</span> — <code>api.ts:1274</code></li><li><span class="step">controller</span> — <code>WalletController.java</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Creator affiliate earnings</span><span class="fdom">Creator</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">GET /creator/affiliate-earnings via useAffiliateEarnings hook.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>AffiliateEarningsView.tsx</code> (useAffiliateEarnings:42)</li><li><span class="step">api</span> — <code>api.ts:2616</code></li><li><span class="step">controller</span> — <code>CreatorAffiliateEarningController.java:28</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Creator coupons</span><span class="fdom">Creator</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">GET /creator/coupons via useCreatorCoupons hook.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>creator-coupons.tsx:17</code> → <code>useCreatorCoupons.ts:32</code></li><li><span class="step">api</span> — <code>api.ts:2608</code></li><li><span class="step">controller</span> — <code>CreatorCouponController.java:29</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Creator reviews</span><span class="fdom">Creator</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">create + listReceived wired.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>collaboration-reviews-panel.tsx:79,149</code></li><li><span class="step">api</span> — <code>api.ts:2421</code></li><li><span class="step">controller</span> — <code>CreatorReviewController.java:36</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Creator analytics</span><span class="fdom">Creator</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">getMyMetrics/Scores/Demographics via useCreatorMetrics.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>creator-analytics.tsx:42</code></li><li><span class="step">api</span> — <code>api.ts:2187</code></li><li><span class="step">controller</span> — <code>CreatorAnalyticsController.java:37</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Creator portfolio (editor + public)</span><span class="fdom">Creator</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">View-tracking is server-side: getPublic calls recordPublicView on every hit; analytics reads it back.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>creator-portfolio-editor.tsx:76</code>, <code>creator-portfolio-public.tsx:121</code></li><li><span class="step">api</span> — <code>api.ts:1988</code></li><li><span class="step">controller</span> — <code>PortfolioController.java:47</code> → recordPublicView (<code>PortfolioService.java:151</code>)</li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Creator onboarding</span><span class="fdom">Creator</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">connectSocial/saveProfile/complete/KYC/payout wired.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>creator-onboarding.tsx:93</code></li><li><span class="step">api</span> — <code>api.ts:620-676</code></li><li><span class="step">controller</span> — <code>CreatorOnboardingController.java:39</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Creator Meta OAuth connect</span><span class="fdom">Creator</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">authorize/callback → encrypted MetaTokenStorage with CSRF state.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>creator-meta-callback.tsx:54</code></li><li><span class="step">api</span> — <code>api.ts:2471</code></li><li><span class="step">controller</span> — <code>MetaOAuthController.java:54</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Creator invoicing</span><span class="fdom">Creator</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">Invoice lists + PDF download rendered in wallet's invoices tab.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>useServiceInvoices.ts:42</code> → <code>creator-wallet.tsx:241</code></li><li><span class="step">api</span> — <code>api.ts:1811</code></li><li><span class="step">controller</span> — <code>CreatorInvoicingController.java:49</code></li></ul></div></div>
+
+  <h2>Admin — 9 / 13 aligned</h2>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Admin auth / login</span><span class="fdom">Admin</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">login/me/mfa wired; admin_token store, MFA field.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>admin-login.tsx:53</code></li><li><span class="step">api</span> — <code>api-contracts.ts:99</code></li><li><span class="step">controller</span> — <code>AdminAuthController.java:68</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Admin dashboard</span><span class="fdom">Admin</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">Routed PulseDashboard is live (/pulse). Note: standalone <code>admin-dashboard.tsx</code> is dead demo-only, not routed.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>PulseDashboard.tsx</code> via <code>usePulseData.ts:43</code></li><li><span class="step">api</span> — <code>api-contracts.ts:133</code></li><li><span class="step">controller</span> — <code>AdminDashboardController.java:39</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Admin brand management</span><span class="fdom">Admin</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">list/detail/verify-kyc/suspend/reinstate wired.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>BrandProfile.tsx</code></li><li><span class="step">api</span> — <code>api-contracts.ts:174</code></li><li><span class="step">controller</span> — <code>AdminBrandController.java:54</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Admin creator management</span><span class="fdom">Admin</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">list/detail/review/force-reauth/suspend/reinstate wired.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>CreatorProfile.tsx</code></li><li><span class="step">api</span> — <code>api-contracts.ts:233</code></li><li><span class="step">controller</span> — <code>AdminCreatorController.java:55</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Admin billing</span><span class="fdom">Admin</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">metrics/subscriptions/comp/override wired (stale "mock" comment).</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>BillingPage.tsx</code> via <code>useBillingData.ts:56</code></li><li><span class="step">api</span> — <code>api-contracts.ts:753</code></li><li><span class="step">controller</span> — <code>AdminBillingController.java:104</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Admin disputes</span><span class="fdom">Admin</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">list + resolve; resolve settles escrow in one transaction.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>DisputesPage.tsx</code></li><li><span class="step">api</span> — <code>api-contracts.ts:598</code></li><li><span class="step">controller</span> — <code>AdminDisputeController.java:44</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Admin moderation</span><span class="fdom">Admin</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">flag queue + action wired.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>FlagQueue.tsx</code></li><li><span class="step">api</span> — <code>api-contracts.ts:543</code></li><li><span class="step">controller</span> — <code>AdminModerationController.java:56</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Admin support</span><span class="fdom">Admin</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">list/detail/reply/assign/escalate wired.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>TicketList.tsx</code></li><li><span class="step">api</span> — <code>api-contracts.ts:490</code></li><li><span class="step">controller</span> — <code>AdminSupportController.java:57</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Admin platform-fee config</span><span class="fdom">Admin</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">read + mutate, SUPER_ADMIN/MFA-gated, @Version optimistic lock. Caveat: expectedEffectiveDate token dropped server-side.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>FeeControlPanel.tsx</code> via <code>useFeeConfig.ts</code></li><li><span class="step">api</span> — <code>api-contracts.ts:376,409</code></li><li><span class="step">controller</span> — <code>PlatformFeeAdminController.java:53</code></li></ul></div></div>
+
+  <h2>Brand — 8 / 12 aligned</h2>
+
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Brand campaigns CRUD</span><span class="fdom">Brand</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">full CRUD + duplicate + analytics wired.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>campaigns-list.tsx:229</code>, <code>campaign-form.tsx:293</code></li><li><span class="step">api</span> — <code>api.ts:741</code></li><li><span class="step">controller</span> — <code>CampaignController.java:29</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Brand discover / creator search</span><span class="fdom">Brand</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">search/invite/save wired.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>creator-discovery.tsx:497</code></li><li><span class="step">api</span> — <code>api.ts:882</code></li><li><span class="step">controller</span> — <code>CreatorController.java:40,81</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Brand wallet &amp; billing</span><span class="fdom">Brand</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">wallet + billing plan/invoices/usage wired. Checkout/cancel are honest NOT_YET_IMPLEMENTED stubs.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>brand-wallet.tsx:328</code>, <code>brand-billing-settings.tsx:231</code></li><li><span class="step">api</span> — <code>api.ts:1274,1693</code></li><li><span class="step">controller</span> — <code>WalletController.java</code>, <code>BillingController.java:53</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Brand reviews</span><span class="fdom">Brand</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">create + received-list wired, gated on completed deals.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>collaboration-reviews-panel.tsx:149</code></li><li><span class="step">api</span> — <code>api.ts:2440</code></li><li><span class="step">controller</span> — <code>BrandReviewController.java:36</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Brand contracts</span><span class="fdom">Brand</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">list/detail/sign + deliverable approve/revise wired.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>contracts-and-deliverables.tsx:441</code></li><li><span class="step">api</span> — <code>api.ts:1108</code></li><li><span class="step">controller</span> — <code>ContractController.java:27</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Brand Meera (AI)</span><span class="fdom">Brand</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">Real SSE streaming to Python edge + MeeraController; only Living-Canvas seed is mock.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>MeeraChatPanel.tsx:114</code> useMeeraStream</li><li><span class="step">api</span> — <code>meera-api.ts:324</code></li><li><span class="step">controller</span> — <code>MeeraController.java:50</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Brand campaign tracking</span><span class="fdom">Brand</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">UTM links + coupons wired end-to-end.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>useCampaignTrackingLinks.ts:45</code></li><li><span class="step">api</span> — <code>api.ts:2284</code></li><li><span class="step">controller</span> — <code>CampaignTrackingController.java:56</code></li></ul></div></div>
+  <div class="feat"><div class="fhead" onclick="this.parentNode.classList.toggle('open')"><span class="badge b-aligned">Aligned</span><span class="fname">Brand invoicing</span><span class="fdom">Brand</span><span class="fscore">1.0</span><span class="caret">▸</span></div><div class="fnote">campaign + commission invoices with PDF download.</div><div class="body"><ul class="chain"><li><span class="step">frontend</span> — <code>brand-billing-settings.tsx:598</code> via <code>useBilling.ts:70</code></li><li><span class="step">api</span> — <code>api.ts:1784</code></li><li><span class="step">controller</span> — <code>BrandInvoicingController.java:48</code></li></ul></div></div>
+
+  <footer>
+    Influora model &amp; feature alignment audit &middot; 58 features traced in source across influora-ai (Python), influora-api (Java Spring), and the React frontend &middot; Scoring: aligned 1.0 / partial 0.5 / broken·missing 0.0 &middot; Overall 51.5 / 58 = 88.8%. Evidence is <code>file:line</code> from the working tree on branch feat/portfolio-view-tracking; docs and comments were not used to determine status.
+  </footer>
+</div>

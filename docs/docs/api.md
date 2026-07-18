@@ -34,6 +34,8 @@ Details: [authentication.md](authentication.md).
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/workspaces/slug-check` | Public | Slug availability |
+| GET | `/workspaces/me` | Brand (any active member) | Read own workspace settings (name/email/industry/companySize/websiteUrl/logoUrl/verificationStatus) |
+| PATCH | `/workspaces/me` | Brand (OWNER/ADMIN) | Update own workspace settings — name/email (`billing_email`)/industry/companySize/websiteUrl/description/logoUrl. No `phone` — no backing column |
 | GET | `/workspaces/members` | Brand | List members |
 | POST | `/workspaces/members/invite` | Brand (OWNER/ADMIN) | Invite member |
 | GET/POST | `/workspaces/invites` | Brand (OWNER/ADMIN) | List/revoke invites |

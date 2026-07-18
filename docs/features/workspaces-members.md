@@ -34,7 +34,7 @@ OWNER/ADMIN deactivates member → member inactive (guarded for sole owner)
 `workspaces` (V2, +V36 suspension/KYC/verification), `workspace_members` (V2), `workspace_member_invites` (V59), KYC docs (V3). See [../database.md](../database.md).
 
 ## APIs
-`GET /workspaces/slug-check` (public), `GET /workspaces/members`, `POST /workspaces/members/invite`, `GET/POST /workspaces/invites`, `POST /workspaces/members/{id}/deactivate`.
+`GET /workspaces/slug-check` (public), `GET /workspaces/me` (any active member), `PATCH /workspaces/me` (OWNER/ADMIN — brand Settings > General > Workspace Information: name/email/websiteUrl persist; no `phone` column exists anywhere, stays UI-only), `GET /workspaces/members`, `POST /workspaces/members/invite`, `GET/POST /workspaces/invites`, `POST /workspaces/members/{id}/deactivate`.
 
 ## AI
 Not involved (but Meera's on-behalf tool calls require the acting member to hold OWNER/ADMIN for money-adjacent tools).

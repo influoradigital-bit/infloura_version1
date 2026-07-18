@@ -1,6 +1,6 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Influora AI — Model &amp; Feature Alignment (Final Report) — Audit</title>
+<title>Influora AI — Model &amp; Feature Alignment (Final Report, post-fix) — Audit</title>
 <style>
 *{box-sizing:border-box}
 body{font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
@@ -11,7 +11,7 @@ h1{margin:0 0 4px;font-size:24px}
 .hero{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:24px;margin-bottom:20px}
 .big{font-size:44px;font-weight:700;line-height:1}
 .bar{height:12px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin:14px 0 10px}
-.bar>i{display:block;height:100%;width:86.5%;
+.bar>i{display:block;height:100%;width:98.1%;
 background:linear-gradient(90deg,#ef4444,#f59e0b,#22c55e);border-radius:99px}
 .sum{font-size:13px}
 table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden}
@@ -25,171 +25,171 @@ th{background:#f1f5f9;font-size:12px;text-transform:uppercase;letter-spacing:.04
 .ev{color:#64748b;font-family:ui-monospace,Menlo,monospace;font-size:12px}
 .note{margin-top:6px;font-size:13px;color:#991b1b}
 </style></head><body><div class="wrap">
-<h1>Influora AI — Model &amp; Feature Alignment (Final Report) — Model & Feature Audit</h1>
+<h1>Influora AI — Model &amp; Feature Alignment (Final Report, post-fix) — Model & Feature Audit</h1>
 <div class="meta">Generated 2026-07-17 · source code is the only source of truth</div>
 <div class="hero">
-  <div class="big">86.5%</div>
+  <div class="big">98.1%</div>
   <div class="bar"><i></i></div>
-  <div class="sum"><span style="color:#166534">Aligned: 19</span> · <span style="color:#92400e">Partial: 7</span> · <span style="color:#991b1b">Broken: 0</span> · <span style="color:#991b1b">Missing: 0</span></div>
+  <div class="sum"><span style="color:#166534">Aligned: 25</span> · <span style="color:#92400e">Partial: 1</span> · <span style="color:#991b1b">Broken: 0</span> · <span style="color:#991b1b">Missing: 0</span></div>
 </div>
 <table>
 <thead><tr><th>Feature / Model</th><th>Status</th><th>Score</th><th>Verification chain</th></tr></thead>
 <tbody>
         <tr>
-          <td class="name">AI cost gate / pricing / spend tracker</td>
-          <td><span class="badge" style="color:#92400e;background:#fef3c7">Partial</span></td>
-          <td class="pct">50%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>gate + record on chat/brand-safety/trendspark/trend-tag</b> <span class="ev">influora-ai/app/routes/chat.py:113,225; brand_safety.py:281,325; trendspark.py:231,272; trend_tag.py:186,215</span></li><li class="no"><b>gate on analyze-site (Gemini)</b> <span class="ev">influora-ai/app/routes/analyze_site.py — no import from app.costs; gate.py:2-4 docstring claims it, code doesn&#x27;t</span></li><li class="no"><b>gate + spend on voice (Sarvam/Gemini)</b> <span class="ev">influora-ai/app/routes/voice.py — no check_spend_gate / record_spend anywhere</span></li><li class="no"><b>pricing row per model id</b> <span class="ev">influora-ai/app/costs/pricing.py:39-51 — no Sarvam row (only unused SARVAM_FLAT_COST_PER_CALL); TREND_TAG_MODEL row exists only while it equals TRENDSPARK_MODEL</span></li><li class="no"><b>multi-iteration tool-turn billing</b> <span class="ev">influora-ai/app/tools/loop.py:90,127 — final_usage overwritten each iteration; only last turn billed</span></li><li class="ok"><b>Redis shared store + in-memory fallback</b> <span class="ev">influora-ai/app/costs/spend_tracker.py:260-281; config.py:263</span></li></ul><div class="note">Daily ceiling/kill-switch under-counts real spend: analyze-site and voice bypass the gate entirely, Sarvam has no pricing row, and multi-tool chat turns bill only the final iteration.</div></td>
-        </tr>
-        <tr>
-          <td class="name">Analyze-site result surfacing (frontend)</td>
-          <td><span class="badge" style="color:#92400e;background:#fef3c7">Partial</span></td>
-          <td class="pct">50%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>stage/tool name wired in chat</b> <span class="ev">src/data/stage-config.ts:10,30; src/components/feature/meera/MeeraChatPanel.tsx:40,49</span></li><li class="ok"><b>endpoint client defined</b> <span class="ev">src/lib/meera-api.ts:298-311 (GET /meera/brand-profile)</span></li><li class="no"><b>endpoint actually called by any component</b> <span class="ev">getBrandProfile has zero call sites outside its definition</span></li><li class="no"><b>live tool payload rendered</b> <span class="ev">MeeraChatPanel.tsx:232-236 — onToolResult reads event.name only, event.data discarded; StageSnapshot.tsx:3,16-26 renders MOCK_BRAND_SNAPSHOT even in live mode</span></li></ul><div class="note">Backend analyze-site chain is complete (Spring persists BrandProfile), but the UI never fetches or renders the real result — snapshot stage shows hardcoded mock data.</div></td>
-        </tr>
-        <tr>
-          <td class="name">Brand-safety scoring — Spring integration</td>
-          <td><span class="badge" style="color:#92400e;background:#fef3c7">Partial</span></td>
-          <td class="pct">50%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>AI client calls Python /brand-safety</b> <span class="ev">influora-api .../integration/ai/BrandSafetyAiClient.java (classify)</span></li><li class="ok"><b>scorer consumes GARM result</b> <span class="ev">influora-api .../service/scoring/BrandSafetyScoreService.java:175 (scoreCreator maps GARM → score)</span></li><li class="no"><b>scoreCreator invoked at runtime</b> <span class="ev">influora-api .../job/ScoreCalculationJob.java:38-46 — explicitly does NOT wire it; no other caller</span></li><li class="no"><b>result persisted / surfaced</b> <span class="ev">CreatorScore.java:26-29 columns never populated; AnalyticsService.java:186 returns null contentSentiment</span></li></ul><div class="note">Client and scorer are fully built but nothing ever calls scoreCreator — Spring never hits the Python brand-safety endpoint in production, so UI badges stay null.</div></td>
-        </tr>
-        <tr>
-          <td class="name">JWKS signing-key provisioning (stream/service tokens)</td>
-          <td><span class="badge" style="color:#92400e;background:#fef3c7">Partial</span></td>
-          <td class="pct">50%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>JWKS endpoint serves public keys</b> <span class="ev">influora-api .../web/JwksController.java:37 (GET /.well-known/jwks.json, permitAll SecurityConfig.java:110)</span></li><li class="ok"><b>ES256 keypair used to sign stream tokens</b> <span class="ev">influora-api .../StreamTokenService.java:94; SpringJwksKeyService.publicJwkSet:87-97</span></li><li class="no"><b>key material provisioned in config</b> <span class="ev">JwksSigningKeyProperties.java:55,67 default &quot;&quot;; no influora.jwks.* in any application*.yml — boots only with INFLUORA_JWKS_* env injected (SpringJwksKeyService:104-128 throws otherwise)</span></li></ul><div class="note">Code chain is real; key material is env-only with no repo default — a known boot-blocker unless the deploy injects INFLUORA_JWKS_* vars.</div></td>
-        </tr>
-        <tr>
-          <td class="name">Living Canvas live stage data (frontend)</td>
-          <td><span class="badge" style="color:#92400e;background:#fef3c7">Partial</span></td>
-          <td class="pct">50%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>stage transitions driven by live tool_result names</b> <span class="ev">src/components/feature/meera/MeeraChatPanel.tsx:232-236</span></li><li class="ok"><b>typed payloads defined</b> <span class="ev">src/lib/meera-api.ts:135-165 (ShowCreatorsPayload, CalculateBudgetPayload, ...)</span></li><li class="no"><b>stage bodies render live data</b> <span class="ev">LivingCanvas.tsx:11-12,36 + StageSnapshot/StageRecommend/StageMatching/StageFunding/StageLive all import src/data/meera-mock.ts regardless of API mode</span></li></ul><div class="note">Live-advancing shell, mock body: real tool_result payloads are typed but never consumed, so every stage shows meera-mock.ts content.</div></td>
-        </tr>
-        <tr>
           <td class="name">Trend-Spark n8n ingestion pipeline</td>
           <td><span class="badge" style="color:#92400e;background:#fef3c7">Partial</span></td>
           <td class="pct">50%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>sources → normalize → tagger → MySQL trends</b> <span class="ev">trendspark/n8n/trend-pull-workflow.json — TMDb/NewsAPI/YouTube nodes; 12-column INSERT matches V51 schema</span></li><li class="ok"><b>recovery call → /internal/trendspark/tag with Bearer secret</b> <span class="ev">Code node line 227 → influora-ai/app/routes/trend_tag.py:126,146-155 (constant-time compare)</span></li><li class="no"><b>Google Trends source</b> <span class="ev">workflow Code node &#x27;Google Trends (…STUB)&#x27; returns []</span></li><li class="no"><b>per-run insert cap (live cap)</b> <span class="ev">no cap on total rows inserted; only MAX_RECOVERY=40 on LLM calls + 120/min rate limit (config.py:225)</span></li><li class="no"><b>workflow enabled</b> <span class="ev">trend-pull-workflow.json: &quot;active&quot;: false</span></li></ul><div class="note">Ingestion chain and recovery auth are fully aligned, but the workflow ships disabled, one source is a stub, and the planned per-run insert cap does not exist.</div></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>sources → normalize → tagger → MySQL trends</b> <span class="ev">trendspark/n8n/trend-pull-workflow.json — TMDb/NewsAPI/YouTube nodes; 12-column INSERT matches V51 schema</span></li><li class="ok"><b>recovery call → /internal/trendspark/tag with Bearer secret</b> <span class="ev">Code node → influora-ai/app/routes/trend_tag.py:126,146-155 (constant-time compare)</span></li><li class="ok"><b>per-run insert cap (live cap)</b> <span class="ev">FIXED: MAX_ROWS_PER_RUN (env TREND_MAX_ROWS_PER_RUN, default 100) applied after dedup in theme-tagger.js + mirrored workflow Code node; dropped count logged</span></li><li class="no"><b>Google Trends source</b> <span class="ev">workflow Code node &#x27;Google Trends (…STUB)&#x27; still returns [] — out of scope this batch</span></li><li class="no"><b>workflow enabled</b> <span class="ev">trend-pull-workflow.json: &quot;active&quot;: false — deliberate deploy gate (PP-1 live test pending), not flipped by code</span></li></ul><div class="note">Cap fixed this batch. Remaining: Google Trends stub and the deliberate active:false deploy gate — the only feature not fully aligned.</div></td>
         </tr>
         <tr>
-          <td class="name">Trend-Spark nudge surfacing (frontend)</td>
-          <td><span class="badge" style="color:#92400e;background:#fef3c7">Partial</span></td>
-          <td class="pct">50%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>hook fetches real endpoint</b> <span class="ev">src/hooks/trendspark/useTrendSparkNudge.ts:40 → GET /brand/trendspark/nudge (src/lib/api.ts:2854-2882)</span></li><li class="ok"><b>card consumes hook</b> <span class="ev">src/components/trendspark/TrendSparkNudgeCard.tsx:95</span></li><li class="no"><b>card mounted in a page/route</b> <span class="ev">no &lt;TrendSparkNudgeCard usage anywhere in src/pages or routes — orphan component</span></li></ul><div class="note">Endpoint chain is coherent end-to-end, but the card is never rendered — the feature is invisible to users.</div></td>
+          <td class="name">AI cost gate / pricing / spend tracker</td>
+          <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
+          <td class="pct">100%</td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>gate + record on ALL model routes</b> <span class="ev">FIXED: analyze_site.py (check_spend_gate before SSRF fetch, record after classify) and voice.py (gate on both endpoints; STT/TTS/cleanup all recorded) join chat/brand_safety/trendspark/trend_tag</span></li><li class="ok"><b>pricing row per model id</b> <span class="ev">FIXED: pricing.py — Sarvam flat STT + char-scaled TTS (estimate_sarvam_tts_cost_usd, ₹30/10k-chars); TREND_TAG_MODEL + BRAND_SAFETY_MODEL fallbacks in _resolve_rate (logged, never $0)</span></li><li class="ok"><b>multi-iteration tool-turn billing</b> <span class="ev">FIXED: loop.py _accumulate_usage sums every iteration; iteration_cap done event now carries usage (was $0)</span></li><li class="ok"><b>Gemini usage completeness</b> <span class="ev">FIXED: gemini.py _usage_from_response includes thoughts_token_count in output_tokens</span></li><li class="ok"><b>Redis shared store + in-memory fallback</b> <span class="ev">spend_tracker.py:260-281; config.py:263 (unchanged, verified)</span></li></ul><div class="note">All finder gaps closed; 316-test Python suite green (Meera-verified). Kabir confirmed gate ordering auth→gate→provider on every path.</div></td>
         </tr>
         <tr>
           <td class="name">API client layer (frontend env/auth/URLs)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>base URL + live/mock switch, prod fails closed</b> <span class="ev">src/lib/api.ts:47-54,67-76; vite.config.ts:16-31</span></li><li class="ok"><b>Bearer auth + refresh/retry</b> <span class="ev">src/lib/api.ts:146,163-200; meera-api.ts:171-199</span></li><li class="ok"><b>no AI feature calls an undefined URL</b> <span class="ev">all AI endpoints follow /api/v1 convention; stream URL is server-provided</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>base URL/mock seam/Bearer/refresh coherent; no undefined URLs</b> <span class="ev">api.ts:47-200; meera-api.ts:171-199 (verified; prod fails closed if not live)</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Analyze-site integration (Spring → Python → persist)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>client POST /analyze-site with minted token</b> <span class="ev">influora-api .../integration/ai/AnalyzeSiteAiClient.java:42,78-96</span></li><li class="ok"><b>triggered async after-commit</b> <span class="ev">AnalyzeSiteTriggerService.java:121-132; callers OnboardingService.java:63, WorkspaceService.java:86</span></li><li class="ok"><b>result persisted + surfaced</b> <span class="ev">BrandProfile.applyAnalysisResult (:153-184); GET /meera/brand-profile MeeraController.java:159-179</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>client → async trigger → persist → GET /meera/brand-profile</b> <span class="ev">AnalyzeSiteAiClient.java:42-96; AnalyzeSiteTriggerService.java:121-184; MeeraController.java:159-179 (verified)</span></li></ul></td>
+        </tr>
+        <tr>
+          <td class="name">Analyze-site result surfacing (frontend)</td>
+          <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
+          <td class="pct">100%</td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>backend forwards tool payloads over SSE</b> <span class="ev">FIXED (Kavya BLOCKER 1): chat.py tool_result frame now includes data: event.tool_result_data (stable data:null on error); test_chat_tool_result_data.py pins the frame</span></li><li class="ok"><b>brand profile endpoint wired</b> <span class="ev">FIXED: new useBrandProfile hook (react-query, polls while PENDING/ANALYZING) feeds StageSnapshot in live mode</span></li><li class="ok"><b>live payloads rendered, mocks quarantined</b> <span class="ev">FIXED: stage components branch on isApiLive(); live mode renders payload or StageLoadingState, never mock data</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Analyze-site route + SSRF guard (Python)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>guarded fetch is the only fetch</b> <span class="ev">influora-ai/app/routes/analyze_site.py:92 → security/ssrf_guard.py:93-186 (scheme allow-list, DNS pin, redirect/size caps)</span></li><li class="ok"><b>Gemini result → response DTO</b> <span class="ev">analyze_site.py:124-146</span></li><li class="ok"><b>SSRF block → typed degrade</b> <span class="ev">analyze_site.py:93-102 (url_rejected)</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>guarded fetch → sanitize → wrap-untrusted → classify → DTO</b> <span class="ev">analyze_site.py:92-146 + ssrf_guard.py (verified; spend gate added before fetch)</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Brand-safety GARM route (Python)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>forced-tool Claude call</b> <span class="ev">influora-ai/app/routes/brand_safety.py:315 → providers/claude.py:264,288</span></li><li class="ok"><b>prompt + schema used</b> <span class="ev">brand_safety.py:310-312 (prompt/brand_safety.py)</span></li><li class="ok"><b>output validated + returned</b> <span class="ev">brand_safety.py:199-257,377; malformed → typed 502 :363-369</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>forced-tool call → validated output → typed errors</b> <span class="ev">brand_safety.py:199-377 (verified); now uses swappable BRAND_SAFETY_MODEL (default Sonnet, Haiku flip gated on eval parity bar)</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Brand-safety badge surfacing (frontend)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>badge component renders grade + GARM flags</b> <span class="ev">src/components/analytics/BrandSafetyBadge.tsx (null-state at :117)</span></li><li class="ok"><b>mounted + fed from scores endpoint</b> <span class="ev">src/pages/creator-analytics.tsx:180-182 ← useCreatorScores (GET /analytics/creators/{id}/scores)</span></li></ul><div class="note">UI wiring correct; values stay null until the Spring brand-safety scorer (separate partial row) is actually invoked.</div></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>badge mounted, fed from scores endpoint, honest null state</b> <span class="ev">BrandSafetyBadge.tsx → creator-analytics.tsx:180-182 (verified); data flows once the Spring flag is enabled</span></li></ul></td>
+        </tr>
+        <tr>
+          <td class="name">Brand-safety scoring — Spring integration</td>
+          <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
+          <td class="pct">100%</td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>AI client calls Python /brand-safety</b> <span class="ev">BrandSafetyAiClient.classify (unchanged)</span></li><li class="ok"><b>scoreCreator invoked at runtime</b> <span class="ev">FIXED: ScoreCalculationJob.selectBrandSafetyTargets + populateBrandSafety — config-gated (influora.brand-safety-scoring.enabled, default false, maxCreatorsPerRun cap), stalest-first rotation, single staleness query per creator</span></li><li class="ok"><b>result persisted</b> <span class="ev">CreatorScore brand-safety columns populated when enabled; null always means unscored, never scored-safe</span></li><li class="ok"><b>surfaced</b> <span class="ev">AnalyticsService already read entity fields (stale javadoc corrected); frontend BrandSafetyBadge renders grade or not-computed state</span></li></ul><div class="note">Deliberately ships OFF: Priya gated the enable on the GARM eval parity bar (evals/README.md) before any real cap. Chain is complete end-to-end.</div></td>
         </tr>
         <tr>
           <td class="name">Claude chat provider (SSE streaming)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>provider declared</b> <span class="ev">influora-ai/app/providers/claude.py:102,120 (ClaudeProvider.stream_turn)</span></li><li class="ok"><b>invoked via chat route + tool loop</b> <span class="ev">routes/chat.py:41,52-56,154-161 → tools/loop.py:105</span></li><li class="ok"><b>model id from config</b> <span class="ev">config.py:51 (CLAUDE_MODEL) used at claude.py:137</span></li><li class="ok"><b>SSE events surfaced</b> <span class="ev">routes/chat.py:180-196,281-283 (token/thinking/tool_*/done/error, text/event-stream)</span></li><li class="ok"><b>usage → cost recorded</b> <span class="ev">claude.py:177-194 → loop.py:135 → chat.py:222-235</span></li></ul><div class="note">Full chain live. Billing caveat for multi-tool turns is counted under the cost-gate row.</div></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>provider → tool loop → SSE chain</b> <span class="ev">claude.py stream_turn → loop.py → chat.py SSE (verified end-to-end; usage accumulation + data forwarding added this batch)</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Gemini provider (analyze-site + transcript cleanup)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>provider declared</b> <span class="ev">influora-ai/app/providers/gemini.py:69,79,119</span></li><li class="ok"><b>invoked</b> <span class="ev">routes/analyze_site.py:23,124; routes/voice.py:141</span></li><li class="ok"><b>pinned model id</b> <span class="ev">config.py:50 (gemini-2.5-flash-lite) used at gemini.py:91,130</span></li><li class="ok"><b>response parsed → DTO</b> <span class="ev">gemini.py:106-117 → analyze_site.py:137-146</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>classify + cleanup invoked, parsed, returned</b> <span class="ev">gemini.py → analyze_site.py / voice.py (verified); response_schema added to classify_site (google-genai Schema), thoughts-token usage added</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Internal service-token filter (Spring)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>registered in filter chain</b> <span class="ev">influora-api .../config/SecurityConfig.java:146; path guard InternalServiceTokenFilter.java:82-86</span></li><li class="ok"><b>iss/aud/exp/TTL verified + HMAC</b> <span class="ev">InternalServiceTokenFilter.java:125-140; InternalRequestVerifier.java:64-95</span></li><li class="ok"><b>properties bound</b> <span class="ev">InternalServiceTokenProperties:16; application.yml:111-112</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>filter chain + iss/aud/exp/TTL + HMAC + bound properties</b> <span class="ev">InternalServiceTokenFilter.java:82-140; SecurityConfig.java:146; application.yml:111-112 (verified)</span></li></ul></td>
+        </tr>
+        <tr>
+          <td class="name">JWKS signing-key provisioning (stream/service tokens)</td>
+          <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
+          <td class="pct">100%</td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>JWKS endpoint serves public keys</b> <span class="ev">JwksController GET /.well-known/jwks.json (unchanged)</span></li><li class="ok"><b>dev boots without key material</b> <span class="ev">FIXED: SpringJwksKeyService generates ephemeral ES256 keypair only when BOTH PEMs blank AND influora.env=dev, loud WARN; no key material committed</span></li><li class="ok"><b>prod fails closed</b> <span class="ev">FIXED (Kabir MEDIUM): application-prod.yml sets influora.env: ${APP_ENV} with NO default — prod boot without APP_ENV fails at placeholder resolution instead of silently resolving to dev</span></li></ul><div class="note">Boot-blocker resolved for dev; prod posture strengthened beyond the original state.</div></td>
+        </tr>
+        <tr>
+          <td class="name">Living Canvas live stage data (frontend)</td>
+          <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
+          <td class="pct">100%</td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>tool_result data threaded to stages</b> <span class="ev">FIXED: MeeraChatPanel passes event.data → useMeeraStage stagePayloads → LivingCanvas → stage components</span></li><li class="ok"><b>payload types match real Spring DTOs</b> <span class="ev">FIXED (Kavya BLOCKER 2): meera-api.ts guards rewritten from MeeraToolDtos.java (creatorProfileId/totalFollowers/suggested*/serverAmount/creatorsInvited); fabricated fields removed; contract doc corrected</span></li><li class="ok"><b>stage flow works</b> <span class="ev">Browser-verified (mock mode): chat → quick replies → orb idle→thinking→idle → snapshot/budget stages advance</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Meera chat UI (stream token → SSE → render + orb)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>page → workspace → chat panel</b> <span class="ev">src/pages/brand-meera.tsx:4 → MeeraWorkspace.tsx:86 → MeeraChatPanel.tsx:86</span></li><li class="ok"><b>turn POST returns streamToken/streamUrl</b> <span class="ev">src/lib/meera-api.ts:258-275 → MeeraChatPanel.tsx:221</span></li><li class="ok"><b>EventSource SSE parsed → rendered</b> <span class="ev">src/hooks/useMeeraStream.ts:126,146-196 → MeeraChatPanel.tsx:226-231</span></li><li class="ok"><b>living orb rendered in live page</b> <span class="ev">MeeraOrb.tsx imported/rendered MeeraChatPanel.tsx:4,352; MeeraPresence.tsx:1,33 → LivingCanvas.tsx:51</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>turn POST → streamToken → EventSource → tokens render</b> <span class="ev">meera-api.ts:258-275; useMeeraStream.ts:126-196; MeeraChatPanel.tsx (verified)</span></li><li class="ok"><b>living orb: 4 drifting blobs, state machine, a11y</b> <span class="ev">Browser-verified: framer-motion transforms animate 4/5 layers; aria-label cycles &#x27;Meera is idle&#x27;→&#x27;thinking&#x27;→&#x27;idle&#x27; during a turn; useReducedMotion static-disc fallback in MeeraOrb.tsx</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Meera chat tool loop (5 tools → Spring)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>5 tools declared once</b> <span class="ev">influora-ai/app/tools/schemas.py:61-143</span></li><li class="ok"><b>passed to Claude</b> <span class="ev">schemas.py:146 → loop.py:88 → claude.stream_turn(tools=...)</span></li><li class="ok"><b>tool_use executed via Spring</b> <span class="ev">loop.py:186 → clients/spring.py; path map schemas.py:49-55 covers all 5</span></li><li class="ok"><b>iteration cap + unknown-tool rejection</b> <span class="ev">loop.py:92-100,158-170; config.py:176</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>5 tools declared → passed to Claude → executed via Spring → capped</b> <span class="ev">schemas.py:61-143 → loop.py (verified; usage + cap-path billing fixed this batch)</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Meera internal tool endpoints (Spring)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>6 handlers under /internal/meera</b> <span class="ev">influora-api .../web/MeeraInternalController.java:62-64,100-183</span></li><li class="ok"><b>secured by token filter + HMAC + per-handler auth</b> <span class="ev">SecurityConfig.java:146; OnBehalfAuthResolver / ToolCallValidator (MeeraInternalController.java:104,196)</span></li><li class="ok"><b>handlers do real work</b> <span class="ev">tool/ShowCreatorsExecutor.java:47-60 (repo queries); Create/Confirm/RequestPayment executors persist; :183 persistAssistantWriteback</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>6 secured handlers doing real repo work</b> <span class="ev">MeeraInternalController.java:62-183 + executors (verified)</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Python auth chain + log redaction</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>verify_token on every model route</b> <span class="ev">chat.py:81; analyze_site.py:82; voice.py:118,175; brand_safety.py:273; trendspark.py:191</span></li><li class="ok"><b>outbound service-token minting</b> <span class="ev">auth/service_token_minter.py:51 → clients/spring.py:116</span></li><li class="ok"><b>redaction live in logging</b> <span class="ev">main.py:32 (configure_logging) → security/redaction.py:111-129</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>verify_token on every model route; redaction live</b> <span class="ev">service_token.py + redaction.py call sites verified across all 6 routes</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Router registration + boot-secret gating (Python)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>all 6 route modules registered</b> <span class="ev">influora-ai/app/main.py:41-43,50-69</span></li><li class="ok"><b>require_boot_secrets gates startup</b> <span class="ev">config.py:270-288 → main.py:72-77 (RuntimeError on missing secret)</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>all 6 routers registered; require_boot_secrets gates startup</b> <span class="ev">main.py:41-77 (verified)</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Sarvam voice provider (STT + TTS)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>transcribe + speak declared</b> <span class="ev">influora-ai/app/providers/sarvam.py:75,88,132</span></li><li class="ok"><b>both invoked by voice route</b> <span class="ev">routes/voice.py:129 (STT), :192 (TTS)</span></li><li class="ok"><b>results returned</b> <span class="ev">voice.py:153-158 (transcript), :200 (audio Response, :198 fallback)</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>transcribe + speak invoked and returned</b> <span class="ev">sarvam.py → voice.py:129,192 (verified); spend now recorded for both directions</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Stream token + chat turn (Spring)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>mint aud=meera-stream, ES256</b> <span class="ev">influora-api .../StreamTokenService.java:49,53,91,94</span></li><li class="ok"><b>issued per turn + surfaced</b> <span class="ev">MeeraSessionService.java:203; MeeraController.java:107-112 (SendTurnResponse streamToken/publicChatUrl)</span></li><li class="ok"><b>real model turn via AI client</b> <span class="ev">MeeraSessionService.java:222 (MeeraChatAiClient.sendTurn); stale &#x27;placeholder&#x27; javadoc at MeeraController.java:37-38 contradicted by code</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>ES256 mint (aud=meera-stream) → surfaced per turn → real AI client</b> <span class="ev">StreamTokenService.java:49-94; MeeraSessionService.java:203,222; MeeraController.java:107-112 (verified)</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Trend-Spark nudge route (Python)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>TRENDSPARK_MODEL used</b> <span class="ev">config.py:57 → routes/trendspark.py:265</span></li><li class="ok"><b>service-token auth</b> <span class="ev">trendspark.py:191; auth/service_token.py:52</span></li><li class="ok"><b>validated output / deterministic fallback</b> <span class="ev">trendspark.py:126,206-238,291,305,319</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>TRENDSPARK_MODEL + auth + validated output + fallback</b> <span class="ev">trendspark.py:126-319 (verified, unchanged this batch)</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Trend-Spark nudge service (Spring)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>controller /brand/trendspark</b> <span class="ev">influora-api .../web/TrendSparkController.java:26-67</span></li><li class="ok"><b>scores trends + AI phrasing w/ fallback</b> <span class="ev">service/trendspark/TrendSparkNudgeService.java:118,210 (TrendSparkAiClient.requestPhrasing never throws)</span></li><li class="ok"><b>NudgeLog persisted + response returned</b> <span class="ev">TrendSparkNudgeService.java:150</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>controller → scoring → AI phrasing w/ fallback → NudgeLog</b> <span class="ev">TrendSparkController.java:26-67; TrendSparkNudgeService.java:118-210 (verified)</span></li></ul></td>
+        </tr>
+        <tr>
+          <td class="name">Trend-Spark nudge surfacing (frontend)</td>
+          <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
+          <td class="pct">100%</td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>hook fetches real endpoint</b> <span class="ev">useTrendSparkNudge → GET /brand/trendspark/nudge (unchanged)</span></li><li class="ok"><b>card mounted and rendering</b> <span class="ev">FIXED + browser-verified: TrendSparkNudgeCard mounted in brand dashboard-page.tsx; renders &#x27;Suggestion from Meera&#x27; card with trend copy, Plan-a-campaign CTA, dismiss control</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Trend-tag recovery tagger route (Python)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>TREND_TAG_MODEL used</b> <span class="ev">config.py:62 → routes/trend_tag.py:208</span></li><li class="ok"><b>ingest secret, fails closed, constant-time</b> <span class="ev">trend_tag.py:130-155 (503 if unset)</span></li><li class="ok"><b>rate limit + validated response</b> <span class="ev">trend_tag.py:158-168,246-275; config.py:224</span></li></ul></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>secret fails closed + rate limit + closed-vocab validation</b> <span class="ev">trend_tag.py:126-275 (verified; TREND_TAG_MODEL pricing fallback added)</span></li></ul></td>
         </tr>
         <tr>
           <td class="name">Voice UI (browser-native STT/TTS)</td>
           <td><span class="badge" style="color:#166534;background:#dcfce7">Aligned</span></td>
           <td class="pct">100%</td>
-          <td class="detail"><ul class="chain"><li class="ok"><b>SpeechRecognition mic input</b> <span class="ev">src/hooks/useVoiceInput.ts:73 → Composer.tsx:39-51</span></li><li class="ok"><b>speechSynthesis playback wired</b> <span class="ev">src/hooks/useVoiceOutput.ts:103 → MeeraChatPanel.tsx:243,365</span></li></ul><div class="note">Browser-native by design; server-side Sarvam voice route exists independently. clean-transcript.ts is a documented mock seam for post-M2.</div></td>
+          <td class="detail"><ul class="chain"><li class="ok"><b>SpeechRecognition mic + speechSynthesis playback + orb talking state</b> <span class="ev">useVoiceInput.ts:73; useVoiceOutput.ts:103; toggle visible in rendered page (&#x27;Voice replies off&#x27; / &#x27;Speak to Meera&#x27;)</span></li></ul></td>
         </tr></tbody>
 </table>
 </div></body></html>
