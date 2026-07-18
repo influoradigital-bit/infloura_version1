@@ -1,0 +1,16 @@
+{
+  "case_id": "tt-007-hinglish-shaadi-season",
+  "input": {
+    "trend_text": "Shaadi season shuru! Lehenga aur sherwani ke trends, sangeet dance practice reels viral ho rahe hain",
+    "source": "instagram",
+    "category": "lifestyle"
+  },
+  "output": {
+    "themes": [
+      "celebration",
+      "tradition",
+      "elegance"
+    ],
+    "campaign_type": "SEASONAL"
+  }
+}

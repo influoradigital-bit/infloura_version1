@@ -93,7 +93,7 @@ async def analyze_site(request: Request, authorization: str | None = Header(defa
     # actually imported app.costs before, so the gate went unenforced here.
     # Placed after auth (same ordering as chat.py/brand_safety.py) but before
     # the scrape work, so a blocked request also skips the SSRF fetch.
-    gate = await check_spend_gate()
+    gate = await check_spend_gate(workspace_id=workspace_id)
     if not gate.allowed:
         log_event(
             logger, logging.WARNING, "analyze_site_blocked_spend_gate",

@@ -38,7 +38,11 @@ from fastapi.responses import Response
 from app.auth.service_token import AuthError, auth_error_to_http, verify_token
 from app.config import GEMINI_MODEL
 from app.costs.gate import check_spend_gate
-from app.costs.pricing import estimate_cost_usd, estimate_sarvam_flat_cost_usd
+from app.costs.pricing import (
+    estimate_cost_usd,
+    estimate_sarvam_flat_cost_usd,
+    estimate_sarvam_tts_cost_usd,
+)
 from app.costs.spend_tracker import record_spend
 from app.providers.gemini import GeminiProvider
 from app.providers.sarvam import SarvamProvider
@@ -158,7 +162,7 @@ async def voice_transcribe(request: Request, authorization: str | None = Header(
     # brand_safety.py / analyze_site.py. Degrades to the same silent
     # STT-failure fallback rather than a raw 5xx, per this route's own
     # "never a dead end" contract (see module docstring's failure table).
-    gate = await check_spend_gate()
+    gate = await check_spend_gate(workspace_id=str(workspace_id))
     if not gate.allowed:
         log_event(
             logger, logging.WARNING, "voice_transcribe_blocked_spend_gate",
@@ -258,7 +262,7 @@ async def voice_speak(request: Request, authorization: str | None = Header(defau
 
     # P2-17 spend gate: checked before the Sarvam TTS call below, same
     # ordering/degrade-not-500 rationale as voice_transcribe's gate above.
-    gate = await check_spend_gate()
+    gate = await check_spend_gate(workspace_id=workspace_id)
     if not gate.allowed:
         log_event(
             logger, logging.WARNING, "voice_speak_blocked_spend_gate",
@@ -288,8 +292,11 @@ async def voice_speak(request: Request, authorization: str | None = Header(defau
         # so the frontend can disable the voice-output UI without an error wall.
         return {"fallback": True, "message": "voice reply unavailable"}
 
+    # P2 (Ash AI review): TTS is char-scaled, not the flat STT estimate -- bill
+    # for `tts_text` (the truncated string actually sent to Sarvam), not the
+    # original untruncated reply length.
     await _record_ai_spend(
-        estimate_sarvam_flat_cost_usd(),
+        estimate_sarvam_tts_cost_usd(len(tts_text)),
         workspace_id=workspace_id,
         request_id=request_id,
         route="voice_speak_tts",

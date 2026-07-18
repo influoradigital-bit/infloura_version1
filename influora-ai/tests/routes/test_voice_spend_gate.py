@@ -30,7 +30,11 @@ from fastapi.testclient import TestClient
 from app.auth.service_token import reset_jwks_source, set_jwks_source_for_testing
 from app.config import GEMINI_MODEL, get_settings
 from app.costs import spend_tracker
-from app.costs.pricing import estimate_cost_usd, estimate_sarvam_flat_cost_usd
+from app.costs.pricing import (
+    estimate_cost_usd,
+    estimate_sarvam_flat_cost_usd,
+    estimate_sarvam_tts_cost_usd,
+)
 from app.providers.gemini import CleanupResult
 from app.providers.sarvam import SpeakResult, TranscribeResult
 
@@ -233,6 +237,11 @@ def test_speak_kill_switch_blocks_with_zero_provider_calls(monkeypatch):
 
 
 def test_speak_success_records_tts_spend():
+    # P2 (Ash AI review): TTS spend is now char-scaled, not the flat STT rate --
+    # "hello there" (11 chars, well under TTS_MAX_CHARS) is sent to Sarvam
+    # untruncated, so the expected cost is estimate_sarvam_tts_cost_usd(11),
+    # not estimate_sarvam_flat_cost_usd().
+    text = "hello there"
     mock_sarvam = AsyncMock()
     mock_sarvam.speak = AsyncMock(
         return_value=SpeakResult(ok=True, audio_bytes=b"RIFF....WAVEfmt ", content_type="audio/wav")
@@ -241,7 +250,7 @@ def test_speak_success_records_tts_spend():
     with patch("app.routes.voice._get_sarvam", return_value=mock_sarvam):
         resp = _client().post(
             SPEAK_PATH,
-            json={"workspace_id": WORKSPACE_ID, "text": "hello there"},
+            json={"workspace_id": WORKSPACE_ID, "text": text},
             headers=_auth(),
         )
 
@@ -249,7 +258,37 @@ def test_speak_success_records_tts_spend():
     assert resp.headers["content-type"] == "audio/wav"
     assert resp.content == b"RIFF....WAVEfmt "
 
-    expected_cost = estimate_sarvam_flat_cost_usd()
+    expected_cost = estimate_sarvam_tts_cost_usd(len(text))
+    assert expected_cost != estimate_sarvam_flat_cost_usd()  # guards against a stale flat-rate regression
+    assert asyncio_run_get_global_total() == expected_cost
+
+
+def test_speak_success_bills_the_truncated_text_length_not_the_original():
+    """A reply longer than TTS_MAX_CHARS (200) is truncated before being sent
+    to Sarvam (see voice.py's `_truncate_for_tts` / P18) -- the recorded spend
+    must reflect the truncated length actually billed, not the original reply
+    length."""
+    from app.routes.voice import TTS_MAX_CHARS, _truncate_for_tts
+
+    long_text = "This is a very long reply. " * 20  # well over 200 chars
+    assert len(long_text) > TTS_MAX_CHARS
+
+    mock_sarvam = AsyncMock()
+    mock_sarvam.speak = AsyncMock(
+        return_value=SpeakResult(ok=True, audio_bytes=b"RIFF....WAVEfmt ", content_type="audio/wav")
+    )
+
+    with patch("app.routes.voice._get_sarvam", return_value=mock_sarvam):
+        resp = _client().post(
+            SPEAK_PATH,
+            json={"workspace_id": WORKSPACE_ID, "text": long_text},
+            headers=_auth(),
+        )
+
+    assert resp.status_code == 200, resp.text
+
+    truncated_len = len(_truncate_for_tts(long_text))
+    expected_cost = estimate_sarvam_tts_cost_usd(truncated_len)
     assert asyncio_run_get_global_total() == expected_cost
 
 

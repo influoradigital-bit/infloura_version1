@@ -61,14 +61,14 @@ async def test_stream_token_conversation_mismatch_rejected_before_provider_call(
     body = {
         "workspace_id": "ws-victim",
         "conversation_id": "conv-B-other-conversation",
-        "stream_token": "irrelevant-because-verify_token-is-mocked",
+        "stream_token": "irrelevant-because-verify_token_async-is-mocked",
     }
     request = _make_request(body)
 
     with patch.object(
         chat_route,
-        "verify_token",
-        return_value=_verified_token(conversation_id="conv-A-original"),
+        "verify_token_async",
+        AsyncMock(return_value=_verified_token(conversation_id="conv-A-original")),
     ), patch.object(chat_route, "_get_claude") as mock_get_claude:
         with pytest.raises(Exception) as exc_info:
             await chat_route.chat(request, authorization="Bearer whatever")
@@ -87,15 +87,15 @@ async def test_stream_token_matching_conversation_id_is_allowed_through_the_gate
     body = {
         "workspace_id": "ws-victim",
         "conversation_id": "conv-A-original",
-        "stream_token": "irrelevant-because-verify_token-is-mocked",
+        "stream_token": "irrelevant-because-verify_token_async-is-mocked",
         "conversation": [],
     }
     request = _make_request(body)
 
     with patch.object(
         chat_route,
-        "verify_token",
-        return_value=_verified_token(conversation_id="conv-A-original"),
+        "verify_token_async",
+        AsyncMock(return_value=_verified_token(conversation_id="conv-A-original")),
     ):
         # Should not raise for conversation-id mismatch. It may proceed to
         # build a StreamingResponse (we don't drain the generator here -- that
@@ -112,15 +112,15 @@ async def test_service_token_with_no_conversation_binding_is_not_gated():
     body = {
         "workspace_id": "ws-victim",
         "conversation_id": "any-conversation-at-all",
-        "service_token": "irrelevant-because-verify_token-is-mocked",
+        "service_token": "irrelevant-because-verify_token_async-is-mocked",
         "conversation": [],
     }
     request = _make_request(body)
 
     with patch.object(
         chat_route,
-        "verify_token",
-        return_value=_verified_token(conversation_id=None),
+        "verify_token_async",
+        AsyncMock(return_value=_verified_token(conversation_id=None)),
     ):
         response = await chat_route.chat(request, authorization="Bearer whatever")
         assert response is not None

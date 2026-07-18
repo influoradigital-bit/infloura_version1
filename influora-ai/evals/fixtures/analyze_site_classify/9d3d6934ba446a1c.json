@@ -1,0 +1,22 @@
+{
+  "case_id": "as-007-fine-jewelry",
+  "input": {
+    "page_text": "Aurelia Fine Jewellery. Handcrafted 18k gold and certified lab-grown diamonds. The Solitaire Edit from Rs 24,999. Each piece hallmarked, insured shipping, lifetime exchange. Crafted in Jaipur by third-generation karigars. Book a private virtual consultation."
+  },
+  "output": {
+    "niche_tags": [
+      "jewelry",
+      "luxury",
+      "diamonds",
+      "gold"
+    ],
+    "tone_dial": {
+      "formality": 0.85,
+      "energy": 0.2,
+      "emoji_ok": false,
+      "cultural_context": "urban India, D2C e-commerce"
+    },
+    "brand_color": null,
+    "product_catalog": []
+  }
+}

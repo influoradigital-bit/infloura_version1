@@ -1,0 +1,22 @@
+{
+  "case_id": "as-010-pet-care",
+  "input": {
+    "page_text": "Furry & Co. Vet-formulated fresh meals for dogs, delivered weekly. Chicken & pumpkin bowl Rs 129/meal, lamb & rice bowl Rs 149/meal. Portioned to your dog's weight and age. AAFCO-compliant recipes, no preservatives. Over 1 million meals served. Your good boy deserves better."
+  },
+  "output": {
+    "niche_tags": [
+      "pet-care",
+      "pet-food",
+      "dogs",
+      "pets"
+    ],
+    "tone_dial": {
+      "formality": 0.5,
+      "energy": 0.5,
+      "emoji_ok": true,
+      "cultural_context": "urban India, D2C e-commerce"
+    },
+    "brand_color": null,
+    "product_catalog": []
+  }
+}

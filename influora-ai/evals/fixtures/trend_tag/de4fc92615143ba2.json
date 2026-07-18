@@ -1,0 +1,17 @@
+{
+  "case_id": "tt-005-stree2-box-office",
+  "input": {
+    "trend_text": "Stree 2 crosses 500cr at the box office, memes everywhere, houseful boards are back",
+    "source": "twitter-trends",
+    "category": "entertainment"
+  },
+  "output": {
+    "themes": [
+      "celebration",
+      "energy",
+      "joy",
+      "blockbuster"
+    ],
+    "campaign_type": "HYPE"
+  }
+}

@@ -32,6 +32,14 @@ _BANK_ACCOUNT_RE = re.compile(r"\b\d{9,18}\b")
 _SECRET_RE = re.compile(
     r"(?:sk-[A-Za-z0-9_-]{10,}|Bearer\s+[A-Za-z0-9\-_.]{20,}|[A-Za-z0-9+/]{40,}={0,2})"
 )
+# Bare three-segment JWT (no "Bearer " prefix) -- e.g. a stream_token/onbehalf_jwt
+# value logged directly from a request body rather than an Authorization header.
+# Each segment must be >=8 chars of the base64url alphabet (header/payload/
+# signature are all base64url, never plain base64 with +/) AND at least one
+# segment must be >=20 chars, so ordinary short dotted strings (version numbers,
+# hostnames, "a.b.c"-shaped identifiers) never match -- real JWT payload
+# segments are comfortably longer than 20 chars even for a minimal claim set.
+_JWT_SEGMENT_RE = re.compile(r"\b([A-Za-z0-9_-]{8,})\.([A-Za-z0-9_-]{8,})\.([A-Za-z0-9_-]{8,})\b")
 _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 
 _REDACT_KEYS = {
@@ -56,12 +64,34 @@ _REDACT_KEYS = {
     "conversation_history",
     "brand_catalog",
     "product_catalog",
+    # Kabir red-team FIX 2 — the stream-flow's actual secret field names
+    # (app/routes/chat.py's request body / headers) weren't in this set.
+    "onbehalf_jwt",
+    "stream_token",
+    "jwt",
+    "bearer",
+    "x-onbehalf-authorization",
 }
+
+
+def _scrub_bare_jwts(value: str) -> str:
+    """Backstop for a bare (no "Bearer " prefix) three-segment JWT reaching
+    the logger -- e.g. `stream_token`/`onbehalf_jwt` values, which are raw
+    JWTs, not Authorization-header-shaped strings, so `_SECRET_RE`'s
+    `Bearer\\s+...` branch never sees them."""
+
+    def _replace(match: re.Match[str]) -> str:
+        if any(len(segment) >= 20 for segment in match.groups()):
+            return "[REDACTED_SECRET]"
+        return match.group(0)
+
+    return _JWT_SEGMENT_RE.sub(_replace, value)
 
 
 def scrub_text(value: str) -> str:
     """Regex backstop scrub for any raw string that reaches the logger."""
     value = _SECRET_RE.sub("[REDACTED_SECRET]", value)
+    value = _scrub_bare_jwts(value)
     value = _PAN_RE.sub("[REDACTED_PAN]", value)
     value = _EMAIL_RE.sub("[REDACTED_EMAIL]", value)
     value = _PHONE_RE.sub("[REDACTED_PHONE]", value)

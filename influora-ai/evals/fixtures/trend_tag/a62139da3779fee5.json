@@ -1,0 +1,15 @@
+{
+  "case_id": "tt-004-yoga-day",
+  "input": {
+    "trend_text": "International Yoga Day: beginner-friendly 15-minute morning flows for desk workers trending",
+    "source": "youtube"
+  },
+  "output": {
+    "themes": [
+      "wellness",
+      "calm",
+      "health"
+    ],
+    "campaign_type": "EDUCATIONAL"
+  }
+}

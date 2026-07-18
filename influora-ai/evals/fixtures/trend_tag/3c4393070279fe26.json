@@ -1,0 +1,11 @@
+{
+  "case_id": "tt-010-expected-drop",
+  "input": {
+    "trend_text": "Quarterly GST filing deadline extended to the 24th for composition scheme taxpayers",
+    "source": "news"
+  },
+  "output": {
+    "themes": [],
+    "campaign_type": "EDUCATIONAL"
+  }
+}

@@ -43,6 +43,20 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
+def _get_optional_float(name: str) -> float | None:
+    """Like `_get_float`, but returns None (not a numeric default) when the
+    env var is unset/empty -- used for opt-in thresholds where "unset" and
+    "0" must be distinguishable (app.costs.gate's per-workspace hard cap,
+    Kabir red-team FIX 3)."""
+    val = os.getenv(name)
+    if val is None or val == "":
+        return None
+    try:
+        return float(val)
+    except ValueError:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Pinned model / prompt versions — this constant IS the P0 fix. Do not point
 # this at gemini-2.0-flash again; that model id is deprecated.
@@ -63,6 +77,18 @@ TREND_TAG_MODEL = os.getenv("TREND_TAG_MODEL", TRENDSPARK_MODEL)
 # Persona name injected into the Trend-Spark system prompt — a single config
 # constant (schema-lock §6) so it's never hardcoded in app/prompt/trendspark.py.
 TRENDSPARK_PERSONA_NAME = os.getenv("TRENDSPARK_PERSONA_NAME", "Meera")
+
+# Brand-safety GARM classification model (Wave C task C2) — pinned the same
+# way as TRENDSPARK_MODEL above. The default is DELIBERATELY Sonnet
+# (CLAUDE_MODEL), not a Haiku-class model: GARM labeling is bounded,
+# schema-locked classification and Ash's AI review (wiki/ai-review/
+# partial-fixes-batch-ai-review.md P1 #2) flags Sonnet as the biggest
+# avoidable cost once the brand-safety fan-out scales past its current
+# capped/disabled state -- but the flip to Haiku is gated on an A/B against
+# a GARM golden set (same doc, "Data & Training Roadmap") so quality is
+# proven, not assumed. Do not point this at a Haiku-class model without that
+# eval. Overridable via env for that future (evaluated) bump.
+BRAND_SAFETY_MODEL = os.getenv("BRAND_SAFETY_MODEL", CLAUDE_MODEL)
 
 # India / approved regions only (Kabir guardrail #3) — informational; enforced by
 # provider client base URLs / region config below.
@@ -251,6 +277,32 @@ class Settings:
     ai_workspace_daily_soft_cap_usd: float = field(
         default_factory=lambda: _get_float("AI_WORKSPACE_DAILY_SOFT_CAP_USD", 3.0)
     )
+    # Kabir red-team FIX 3 — opt-in, BLOCKING per-workspace daily cap enforced
+    # by app.costs.gate.check_spend_gate(). None (default/unset) preserves the
+    # pre-existing warning-only-only behavior above exactly; set this env var
+    # to actually block a workspace once it's spent this much today. Distinct
+    # from ai_workspace_daily_soft_cap_usd (which never blocks) — see
+    # app/costs/gate.py's module docstring.
+    ai_workspace_daily_hard_cap_usd: float | None = field(
+        default_factory=lambda: _get_optional_float("WORKSPACE_DAILY_HARD_CAP_USD")
+    )
+
+    # --- CORS (browser-direct Meera SSE stream) ---
+    # Comma-separated list of exact allowed origins for the browser's cross-origin
+    # POST /chat call (Authorization + Content-Type: application/json --
+    # src/hooks/useMeeraStream.ts). Empty (default) => CORSMiddleware is never
+    # installed at all: internal-only callers (Spring, n8n, tests, curl) are
+    # completely unaffected and no CORS headers are ever added -- closed by
+    # default. Set to the exact public origin(s) the SPA is served from in any
+    # deploy that streams Meera directly from the browser; never "*" (a bearer
+    # Authorization header requires an explicit origin echo, not a wildcard).
+    meera_allowed_origins: str = field(
+        default_factory=lambda: os.getenv("MEERA_ALLOWED_ORIGINS", "")
+    )
+
+    @property
+    def meera_allowed_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.meera_allowed_origins.split(",") if origin.strip()]
 
     # --- Shared spend-tracker store (H-25) ---
     # When unset, app.costs.spend_tracker stays on its per-process in-memory

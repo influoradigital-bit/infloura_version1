@@ -1,0 +1,14 @@
+{
+  "case_id": "tt-009-chandrayaan-anniversary",
+  "input": {
+    "trend_text": "Chandrayaan-3 landing anniversary: ISRO shares new lunar images, nation celebrates its space scientists",
+    "source": "twitter-trends"
+  },
+  "output": {
+    "themes": [
+      "pride",
+      "innovation"
+    ],
+    "campaign_type": "PRIDE"
+  }
+}

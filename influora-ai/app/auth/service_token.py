@@ -31,6 +31,7 @@ import jwt
 from fastapi import Header, HTTPException, Request, status
 from jwt import PyJWKClient
 
+from app.auth import replay_guard
 from app.config import get_settings
 
 ALLOWED_ALGS = ("RS256", "ES256")  # asymmetric only; never accept HS256 from JWKS path
@@ -272,6 +273,58 @@ def verify_token(
         conversation_id=claims.get("conversation_id") or claims.get("conversationId"),
         claims=claims,
     )
+
+
+async def verify_token_async(
+    token: str,
+    *,
+    endpoint: str,
+    body_workspace_id: str,
+) -> VerifiedToken:
+    """Async wrapper around `verify_token` that additionally enforces
+    single-use consumption of the `jti` claim for `chat:stream`-scoped
+    tokens (Kabir red-team FIX 1 -- see app/auth/replay_guard.py).
+
+    `verify_token` itself stays synchronous and completely unchanged so
+    every other caller (analyze_site.py, brand_safety.py, voice.py,
+    trendspark.py -- all service-scope-only endpoints per ENDPOINT_SCOPES --
+    plus their existing tests) is unaffected. `/chat` is the only endpoint
+    whose ENDPOINT_SCOPES entry ever allows `chat:stream`, so it's the only
+    caller of this wrapper.
+    """
+    verified = verify_token(token, endpoint=endpoint, body_workspace_id=body_workspace_id)
+
+    if verified.scope != SCOPE_CHAT_STREAM:
+        return verified
+
+    jti = verified.claims.get("jti")
+    if not jti:
+        raise AuthError(
+            status.HTTP_401_UNAUTHORIZED,
+            "missing_jti",
+            "chat:stream token has no jti claim -- cannot enforce single-use",
+        )
+
+    # TTL = the token's remaining lifetime, so a consumed-key entry never
+    # outlives the window in which the token itself could be replayed.
+    # `exp` is guaranteed present (jwt.decode's `options={"require": [...]}`
+    # includes it) by the time verify_token() returns successfully.
+    exp = verified.claims.get("exp")
+    now = time.time()
+    if isinstance(exp, (int, float)) and exp > now:
+        ttl_seconds = float(exp) - now
+    else:
+        ttl_seconds = 1.0  # defensive floor; expired tokens are already rejected above
+
+    first_use = await replay_guard.consume_once(str(jti), ttl_seconds)
+    if not first_use:
+        raise AuthError(
+            status.HTTP_409_CONFLICT,
+            "token_replayed",
+            "stream token has already been used",
+        )
+
+    return verified
 
 
 def auth_error_to_http(exc: AuthError) -> HTTPException:

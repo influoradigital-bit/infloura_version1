@@ -1,0 +1,22 @@
+{
+  "case_id": "as-004-ayurveda-wellness",
+  "input": {
+    "page_text": "Vedika Wellness. Ancient Ayurveda, modern science. Ashwagandha capsules for stress Rs 599, Triphala digestive tonic Rs 449, Brahmi focus drops Rs 699. Formulated by Ayurvedacharyas, validated in GMP-certified labs. Rooted in 5000 years of Indian tradition."
+  },
+  "output": {
+    "niche_tags": [
+      "ayurveda",
+      "wellness",
+      "health",
+      "supplements"
+    ],
+    "tone_dial": {
+      "formality": 0.85,
+      "energy": 0.2,
+      "emoji_ok": false,
+      "cultural_context": "urban India, D2C e-commerce"
+    },
+    "brand_color": null,
+    "product_catalog": []
+  }
+}

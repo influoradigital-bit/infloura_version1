@@ -1,0 +1,16 @@
+{
+  "case_id": "tt-008-monsoon-skincare",
+  "input": {
+    "trend_text": "Monsoon skincare routines trending: dermats share how to keep the glow without clogged pores",
+    "source": "youtube",
+    "category": "beauty"
+  },
+  "output": {
+    "themes": [
+      "glow",
+      "self-care",
+      "beauty"
+    ],
+    "campaign_type": "EDUCATIONAL"
+  }
+}

@@ -268,11 +268,18 @@ class ClaudeProvider:
         messages: list[dict[str, Any]],
         tool_schema: dict[str, Any],
         max_tokens: int = 1024,
+        model: str = CLAUDE_MODEL,
     ) -> ClaudeToolResult:
         """Single non-streaming turn, forced to answer via exactly one named
         tool (`tool_choice`) so the response is structured JSON, never prose.
         Used by internal/batch-analysis routes (e.g. /internal/brand-safety)
         that need one parseable result per call rather than a chat stream.
+
+        `model` defaults to `CLAUDE_MODEL` (Sonnet) but is overridable per
+        call site -- e.g. routes/brand_safety.py passes `BRAND_SAFETY_MODEL`
+        (app/config.py) so a future GARM model swap (Haiku-class, gated on
+        the GARM eval per that config constant's docstring) doesn't require
+        touching this provider method.
 
         Never raises — provider errors, timeouts, and unparseable tool input
         all come back as `ok=False` so callers can degrade (e.g. return a
@@ -285,7 +292,7 @@ class ClaudeProvider:
 
         try:
             response = await self._client.messages.create(
-                model=CLAUDE_MODEL,
+                model=model,
                 max_tokens=max_tokens,
                 system=system_blocks,
                 messages=messages,

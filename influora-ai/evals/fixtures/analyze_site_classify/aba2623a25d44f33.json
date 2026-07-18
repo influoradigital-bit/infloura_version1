@@ -1,0 +1,22 @@
+{
+  "case_id": "as-009-athleisure-fitness",
+  "input": {
+    "page_text": "SWEAT SOCIETY. Squat-proof leggings Rs 1599, quick-dry training tees Rs 799, seamless sports bras Rs 999. Tested by athletes, built for Indian summers. 4-way stretch, anti-chafe seams. Crush your PR. Join 50k+ members. Free returns, always."
+  },
+  "output": {
+    "niche_tags": [
+      "athleisure",
+      "fitness",
+      "activewear",
+      "sportswear"
+    ],
+    "tone_dial": {
+      "formality": 0.2,
+      "energy": 0.85,
+      "emoji_ok": true,
+      "cultural_context": "urban India, D2C e-commerce"
+    },
+    "brand_color": null,
+    "product_catalog": []
+  }
+}

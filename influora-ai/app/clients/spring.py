@@ -207,8 +207,13 @@ class SpringInternalClient:
         onbehalf_jwt: str,
     ) -> SpringResponse:
         """POST /internal/meera/messages — turn-completion write-back, idempotent
-        on turn_id. The service token is minted internally by
-        `call_tool_endpoint` — callers never supply one.
+        on turn_id. `turn_id` MUST be the stream token's own verified
+        `messageId` claim (see `app/routes/chat.py`) -- never a client-supplied
+        value; Spring's `AICreditService#wasCharged`/`#release` key off this
+        SAME value, so a client-controlled turn_id here would reopen Kabir
+        red-team FAIL 2 (constant turn_id across turns zero-charging
+        everything after the first). The service token is minted internally
+        by `call_tool_endpoint` — callers never supply one.
         """
         payload = {
             "conversationId": conversation_id,
@@ -222,5 +227,42 @@ class SpringInternalClient:
             payload=payload,
             onbehalf_jwt=onbehalf_jwt,
             idempotency_key=turn_id,
+            allow_retry=False,
+        )
+
+    async def release_turn_credit(
+        self,
+        *,
+        conversation_id: str,
+        turn_id: str,
+        onbehalf_jwt: str,
+    ) -> SpringResponse:
+        """POST /internal/meera/turns/release — refunds a turn's send-time
+        charge after a genuine PROVIDER failure (Kabir red-team FAILs #1/#2
+        fix; Wave 2 round 2). `chat.py` calls this ONLY on a real provider
+        failure / empty reply, NEVER on a plain client disconnect -- the
+        disconnect/provider-failure distinction lives entirely on the caller
+        side, this client has no opinion on it.
+
+        `turn_id` MUST be the same server-verified `messageId` claim used for
+        `persist_assistant_message` above -- Spring's `AICreditService#release`
+        is idempotent AND guarded keyed on exactly that value (won't refund a
+        turn that wasn't charged, won't refund one whose reply already
+        persisted). No `Idempotency-Key` header is sent: release is already
+        self-idempotent server-side on `turn_id`, so `allow_retry` stays False
+        purely to match the "no blind retries on money/state forwards"
+        invariant documented at the top of this module, not because a retry
+        here would be unsafe.
+        """
+        payload = {
+            "conversationId": conversation_id,
+            "turnId": turn_id,
+        }
+        return await self.call_tool_endpoint(
+            tool_name="_release_turn_credit",
+            path="/internal/meera/turns/release",
+            payload=payload,
+            onbehalf_jwt=onbehalf_jwt,
+            idempotency_key=None,
             allow_retry=False,
         )

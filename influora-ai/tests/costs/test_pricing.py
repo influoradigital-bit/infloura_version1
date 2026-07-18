@@ -7,9 +7,13 @@ from decimal import Decimal
 
 import pytest
 
-from app.config import CLAUDE_MODEL, GEMINI_MODEL, TRENDSPARK_MODEL
+from app.config import BRAND_SAFETY_MODEL, CLAUDE_MODEL, GEMINI_MODEL, TRENDSPARK_MODEL
 from app.costs import pricing
-from app.costs.pricing import estimate_cost_usd, estimate_sarvam_flat_cost_usd
+from app.costs.pricing import (
+    estimate_cost_usd,
+    estimate_sarvam_flat_cost_usd,
+    estimate_sarvam_tts_cost_usd,
+)
 
 
 def test_claude_cost_matches_3_and_15_per_mtok():
@@ -92,3 +96,87 @@ def test_trend_tag_model_default_already_shares_trendspark_row():
 
     assert TREND_TAG_MODEL == TRENDSPARK_MODEL
     assert TREND_TAG_MODEL in pricing.PRICING_TABLE
+
+
+# ---------------------------------------------------------------------------
+# BRAND_SAFETY_MODEL fallback (Ash AI review P1 #2 / P2 pricing fix): mirrors
+# the TREND_TAG_MODEL fallback above exactly. BRAND_SAFETY_MODEL defaults to
+# the exact CLAUDE_MODEL string in app/config.py, so ordinarily they share
+# CLAUDE_MODEL's PRICING_TABLE row and this fallback never triggers -- it
+# only matters once BRAND_SAFETY_MODEL is overridden (e.g. to a future
+# Haiku-class GARM model) to an id that doesn't have its own row yet.
+# ---------------------------------------------------------------------------
+
+
+def test_brand_safety_model_default_already_shares_claude_model_row():
+    """Sanity check on the DEFAULT (unoverridden) config: BRAND_SAFETY_MODEL
+    equals CLAUDE_MODEL out of the box (deliberately Sonnet, per
+    app/config.py's BRAND_SAFETY_MODEL docstring), so the normal path never
+    needs the fallback at all."""
+    assert BRAND_SAFETY_MODEL == CLAUDE_MODEL
+    assert BRAND_SAFETY_MODEL in pricing.PRICING_TABLE
+
+
+def test_brand_safety_model_override_falls_back_to_claude_model_rate(monkeypatch):
+    monkeypatch.setattr(pricing, "BRAND_SAFETY_MODEL", "some-distinct-brand-safety-model-id")
+    usage = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
+
+    cost = pricing.estimate_cost_usd("some-distinct-brand-safety-model-id", usage)
+
+    # CLAUDE_MODEL's rate ($3/$15 per MTok) applied to 1M/1M tokens = $18.00 --
+    # spend is recorded (at the Sonnet-class rate) instead of raising and
+    # being silently swallowed by brand_safety.py's bare `except ValueError`.
+    assert cost == Decimal("18.00")
+    assert cost == estimate_cost_usd(CLAUDE_MODEL, usage)
+
+
+def test_brand_safety_model_override_fallback_logs_a_warning(monkeypatch, caplog):
+    monkeypatch.setattr(pricing, "BRAND_SAFETY_MODEL", "some-distinct-brand-safety-model-id")
+    with caplog.at_level(logging.WARNING, logger="app.costs.pricing"):
+        pricing.estimate_cost_usd(
+            "some-distinct-brand-safety-model-id", {"input_tokens": 1, "output_tokens": 1}
+        )
+    assert any(
+        "some-distinct-brand-safety-model-id" in record.message for record in caplog.records
+    )
+
+
+def test_unrelated_unpriced_model_still_raises_even_with_brand_safety_override(monkeypatch):
+    """The fallback is scoped to BRAND_SAFETY_MODEL specifically -- a
+    genuinely unrelated unpriced model must still raise, even while
+    BRAND_SAFETY_MODEL is overridden to some other unpriced id."""
+    monkeypatch.setattr(pricing, "BRAND_SAFETY_MODEL", "some-distinct-brand-safety-model-id")
+    with pytest.raises(ValueError):
+        pricing.estimate_cost_usd("totally-different-unpriced-model", {"input_tokens": 1, "output_tokens": 1})
+
+
+# ---------------------------------------------------------------------------
+# Sarvam TTS char-scaled cost (Ash AI review P2): TTS is billed per-char at
+# the published Rs.30/10k-chars rate, unlike STT which stays flat (no length
+# signal). See app/costs/pricing.py's SARVAM_TTS_USD_PER_10K_CHARS docstring
+# for the Rs.-to-USD conversion this is built on.
+# ---------------------------------------------------------------------------
+
+
+def test_sarvam_tts_cost_scales_with_char_count():
+    # 10,000 chars should cost exactly one SARVAM_TTS_USD_PER_10K_CHARS unit.
+    assert estimate_sarvam_tts_cost_usd(10_000) == pricing.SARVAM_TTS_USD_PER_10K_CHARS
+    # Half the chars, half the cost.
+    assert estimate_sarvam_tts_cost_usd(5_000) == pricing.SARVAM_TTS_USD_PER_10K_CHARS / 2
+
+
+def test_sarvam_tts_cost_at_200_chars_matches_voice_py_docstrings_estimate():
+    # routes/voice.py's module docstring prices a max-length (TTS_MAX_CHARS=200)
+    # TTS call at ~Rs.0.60 =~ $0.0072 -- pin that this estimator lands there,
+    # not at the old flat $0.006 (a ~20% under-bill per Ash's AI review).
+    cost = estimate_sarvam_tts_cost_usd(200)
+    assert cost > pricing.SARVAM_FLAT_COST_PER_CALL
+    assert abs(cost - Decimal("0.0072")) < Decimal("0.0001")
+
+
+def test_sarvam_tts_cost_zero_chars_is_zero():
+    assert estimate_sarvam_tts_cost_usd(0) == Decimal("0")
+
+
+def test_sarvam_tts_cost_never_negative_for_bad_input():
+    assert estimate_sarvam_tts_cost_usd(-5) == Decimal("0")

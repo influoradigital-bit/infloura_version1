@@ -118,7 +118,11 @@ async def run_tool_loop(
                 type="token",
                 text="Let's confirm this step before we go further.",
             )
-            yield LoopEvent(type="done", finish_reason="iteration_cap")
+            # Carry the accumulated usage here too -- the normal-stop and
+            # pending-human-confirm "done" events both pass usage=final_usage;
+            # omitting it on this path meant a turn that hit the iteration cap
+            # (i.e. burned the MOST tokens of any turn shape) billed $0.
+            yield LoopEvent(type="done", finish_reason="iteration_cap", usage=final_usage)
             raise ToolLoopCapExceeded(f"exceeded {ctx.max_iterations} tool iterations")
 
         pending_tool_calls: list[dict[str, Any]] = []

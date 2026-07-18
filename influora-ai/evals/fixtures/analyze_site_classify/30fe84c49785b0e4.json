@@ -1,0 +1,23 @@
+{
+  "case_id": "as-002-streetwear-genz",
+  "input": {
+    "page_text": "DRIP CITY!!! Oversized tees, cargo joggers, bucket hats. New drop every Friday 6PM — sets sell out in minutes fr fr. Cop the NOISE tee Rs 1299 before it's gone. Free stickers with every order. Tag us or you didn't cop it."
+  },
+  "output": {
+    "niche_tags": [
+      "streetwear",
+      "fashion",
+      "apparel",
+      "clothing",
+      "gen-z"
+    ],
+    "tone_dial": {
+      "formality": 0.2,
+      "energy": 0.85,
+      "emoji_ok": true,
+      "cultural_context": "urban India, D2C e-commerce"
+    },
+    "brand_color": null,
+    "product_catalog": []
+  }
+}

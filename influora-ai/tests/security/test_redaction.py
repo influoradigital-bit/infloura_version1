@@ -181,6 +181,58 @@ def test_rt_pii_1_end_to_end_log_line_never_contains_pii(caplog):
     assert "prompt_version" in parsed
 
 
+FAKE_BARE_JWT = (
+    "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3Qta2lkIn0"
+    ".eyJzdWIiOiJ1c2VyLTEiLCJzY29wZSI6ImNoYXQ6c3RyZWFtIn0"
+    ".c29tZS1zaWduYXR1cmUtYnl0ZXMtaGVyZS1sb25nZW5vdWdo"
+)
+
+
+def test_kabir_fix2_scrub_text_removes_bare_jwt_without_bearer_prefix():
+    """FIX 2: a bare three-segment JWT (no 'Bearer ' prefix) -- e.g. a
+    stream_token/onbehalf_jwt value that reached the logger directly from a
+    request body -- must still be scrubbed by the regex backstop."""
+    raw = f"forwarding onbehalf_jwt={FAKE_BARE_JWT} to spring"
+    scrubbed = scrub_text(raw)
+    assert FAKE_BARE_JWT not in scrubbed
+    assert "[REDACTED_SECRET]" in scrubbed
+
+
+def test_kabir_fix2_scrub_text_does_not_over_match_ordinary_dotted_strings():
+    """Guard against the tightened bare-JWT regex over-matching short,
+    ordinary dotted strings (version numbers, hostnames) that happen to have
+    three dot-separated parts but no long enough segment."""
+    raw = "app running v1.2.3 on api.example.com, build 20260714.01.beta"
+    scrubbed = scrub_text(raw)
+    assert scrubbed == raw
+
+
+def test_kabir_fix2_known_sensitive_keys_include_stream_flow_secrets():
+    """FIX 2: onbehalf_jwt, stream_token, jwt, bearer, and
+    x-onbehalf-authorization -- the stream flow's actual secret field names
+    -- must be redacted-by-shape like every other known-sensitive key."""
+    from app.security.redaction import _redact_for_log
+
+    payload = {
+        "workspace_id": "ws-brand-a-001",
+        "onbehalf_jwt": FAKE_BARE_JWT,
+        "stream_token": FAKE_BARE_JWT,
+        "jwt": FAKE_BARE_JWT,
+        "bearer": "some-bearer-value",
+        "x-onbehalf-authorization": "some-header-value",
+    }
+    redacted = _redact_for_log(payload)
+    serialized = json.dumps(redacted, default=str)
+
+    assert FAKE_BARE_JWT not in serialized
+    assert redacted["onbehalf_jwt"] == shape_of(FAKE_BARE_JWT)
+    assert redacted["stream_token"] == shape_of(FAKE_BARE_JWT)
+    assert redacted["jwt"] == shape_of(FAKE_BARE_JWT)
+    assert redacted["bearer"] == shape_of("some-bearer-value")
+    assert redacted["x-onbehalf-authorization"] == shape_of("some-header-value")
+    assert redacted["workspace_id"] == "ws-brand-a-001"
+
+
 def test_rt_pii_1_exception_traceback_scrubbed_too():
     """If an exception's message happens to contain PII (e.g. a validation
     error echoing the offending value), the formatter must scrub exc_info

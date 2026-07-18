@@ -1,0 +1,22 @@
+{
+  "case_id": "as-001-skincare-clinical",
+  "input": {
+    "page_text": "Lumos Skincare. Dermatologist-tested serums and SPF formulated for Indian skin. Shop Retinal Night Serum Rs 899, Niacinamide 10% Moisturizer Rs 649, Vitamin C Brightening Cream Rs 749. Clinically proven actives. Cruelty-free, paraben-free, sulfate-free. Free shipping pan-India."
+  },
+  "output": {
+    "niche_tags": [
+      "skincare",
+      "beauty",
+      "dermatology",
+      "d2c"
+    ],
+    "tone_dial": {
+      "formality": 0.5,
+      "energy": 0.2,
+      "emoji_ok": false,
+      "cultural_context": "urban India, D2C e-commerce"
+    },
+    "brand_color": null,
+    "product_catalog": []
+  }
+}

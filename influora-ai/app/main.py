@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import CLAUDE_MODEL, GEMINI_MODEL, PROMPT_VERSION, get_settings
@@ -37,6 +38,23 @@ app = FastAPI(
     description="Stateless FastAPI service: chat orchestration, website analyzer, voice. No DB, no money.",
     version=PROMPT_VERSION,
 )
+
+# Browser-direct Meera SSE stream (deploy blocker 1) — the SPA POSTs to /chat
+# cross-origin with Authorization + Content-Type: application/json
+# (src/hooks/useMeeraStream.ts), which triggers a CORS preflight. Only
+# installed when MEERA_ALLOWED_ORIGINS is actually set (app/config.py):
+# internal-only callers (Spring, n8n, health checks) get no CORS headers and
+# no behavior change when it's unset. allow_credentials stays False -- the
+# stream token travels in the Authorization header, never a cookie.
+if settings.meera_allowed_origins_list:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.meera_allowed_origins_list,
+        allow_credentials=False,
+        allow_methods=["POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+        max_age=600,
+    )
 
 app.include_router(chat.router, tags=["chat"])
 app.include_router(analyze_site.router, tags=["analyze-site"])

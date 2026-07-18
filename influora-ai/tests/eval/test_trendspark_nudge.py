@@ -424,7 +424,7 @@ async def test_spend_gate_block_falls_back_no_provider_call():
     request = _make_request(BASE_SNAPSBY_BODY, authorization=f"Bearer {token}")
     ctx, mock_claude = _mock_claude("{}")
 
-    async def _blocked_gate():
+    async def _blocked_gate(workspace_id=None):
         from app.costs.gate import SpendGateResult
 
         return SpendGateResult(allowed=False, error_code="AI_KILL_SWITCH_ACTIVE", error_message="off")

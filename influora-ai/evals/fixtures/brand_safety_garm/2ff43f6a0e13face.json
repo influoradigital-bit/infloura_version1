@@ -1,0 +1,66 @@
+{
+  "case_id": "bs-001-benign-lifestyle",
+  "input": {
+    "caption": "Morning routine done right! Green smoothie, 20 min stretch, and my favourite linen shirt from the new drop. Link in bio for 10% off.",
+    "media_type": "IMAGE"
+  },
+  "output": {
+    "content_id": "eval-item-1",
+    "garm_flags": [
+      {
+        "category": "adult_explicit_sexual_content",
+        "risk": "floor",
+        "rationale": "No concern found in the caption."
+      },
+      {
+        "category": "arms_ammunition",
+        "risk": "floor",
+        "rationale": "No concern found in the caption."
+      },
+      {
+        "category": "crime_harmful_acts_to_individuals",
+        "risk": "floor",
+        "rationale": "No concern found in the caption."
+      },
+      {
+        "category": "death_injury_military_conflict",
+        "risk": "floor",
+        "rationale": "No concern found in the caption."
+      },
+      {
+        "category": "hate_speech_acts_of_aggression",
+        "risk": "floor",
+        "rationale": "No concern found in the caption."
+      },
+      {
+        "category": "illegal_drugs_tobacco_alcohol",
+        "risk": "floor",
+        "rationale": "No concern found in the caption."
+      },
+      {
+        "category": "obscenity_profanity",
+        "risk": "floor",
+        "rationale": "No concern found in the caption."
+      },
+      {
+        "category": "spam_or_harmful_content",
+        "risk": "floor",
+        "rationale": "No concern found in the caption."
+      },
+      {
+        "category": "terrorism",
+        "risk": "floor",
+        "rationale": "No concern found in the caption."
+      },
+      {
+        "category": "debated_sensitive_social_issues",
+        "risk": "floor",
+        "rationale": "No concern found in the caption."
+      }
+    ],
+    "content_sentiment": "positive",
+    "sentiment_score": 0.6,
+    "brand_safety_score": 100.0,
+    "overall_rationale": "Ordinary lifestyle/product content; no category concern found."
+  }
+}

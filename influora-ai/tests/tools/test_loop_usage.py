@@ -17,7 +17,7 @@ import pytest
 
 from app.clients.spring import SpringResponse
 from app.providers.claude import ClaudeStreamEvent
-from app.tools.loop import ToolLoopContext, _accumulate_usage, run_tool_loop
+from app.tools.loop import ToolLoopCapExceeded, ToolLoopContext, _accumulate_usage, run_tool_loop
 
 
 class _FakeClaude:
@@ -173,6 +173,57 @@ async def test_three_iteration_turn_sums_all_three():
     done_events = [e for e in events if e.type == "done"]
     assert done_events[0].usage["input_tokens"] == 10 + 20 + 15
     assert done_events[0].usage["output_tokens"] == 5 + 8 + 6
+
+
+@pytest.mark.asyncio
+async def test_iteration_cap_done_event_carries_accumulated_usage():
+    """Kabir (red-team, LOW): the iteration_cap "done" event used to omit
+    usage entirely -- a turn that burned every iteration up to the cap (the
+    MOST expensive turn shape) billed $0. Every iteration here makes a tool
+    call (never a plain-text final answer), so the loop runs until it exceeds
+    max_iterations and raises ToolLoopCapExceeded -- the "done" event yielded
+    just before that raise must still carry the summed usage from both
+    iterations that actually ran.
+    """
+    claude = _FakeClaude(
+        turns=[
+            [
+                ClaudeStreamEvent(
+                    type="tool_use", tool_name="show_creators", tool_input={"niche": "x", "count": 1}, tool_use_id="t1"
+                ),
+                ClaudeStreamEvent(type="usage", usage=_usage(10, 5)),
+            ],
+            [
+                ClaudeStreamEvent(
+                    type="tool_use", tool_name="show_creators", tool_input={"niche": "y", "count": 1}, tool_use_id="t2"
+                ),
+                ClaudeStreamEvent(type="usage", usage=_usage(7, 3)),
+            ],
+        ]
+    )
+    spring = _FakeSpring()
+    ctx = ToolLoopContext(workspace_id="ws-loop-usage-cap", onbehalf_jwt="fake-jwt", max_iterations=2)
+
+    events = []
+    with pytest.raises(ToolLoopCapExceeded):
+        async for event in run_tool_loop(
+            claude=claude, spring=spring, system_blocks=[], initial_messages=[], ctx=ctx
+        ):
+            events.append(event)
+
+    assert claude.call_count == 2  # both scripted iterations ran before the cap tripped
+    assert len(spring.calls) == 2
+
+    done_events = [e for e in events if e.type == "done"]
+    assert len(done_events) == 1
+    assert done_events[0].finish_reason == "iteration_cap"
+    # Under the pre-fix behavior this would be None -- a max-cost turn billed $0.
+    assert done_events[0].usage == {
+        "input_tokens": 17,
+        "output_tokens": 8,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+    }
 
 
 # ── _accumulate_usage unit coverage ─────────────────────────────────────────

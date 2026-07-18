@@ -1,0 +1,22 @@
+{
+  "case_id": "as-008-specialty-coffee",
+  "input": {
+    "page_text": "Half Light Coffee Roasters. Single-estate arabica from Chikmagalur and Coorg, roasted weekly in small batches. Attikan Estate washed Rs 549/250g, Ratnagiri natural Rs 649/250g. Grind-to-order. Subscribe and never run out. Brew guides for V60, Aeropress, and moka pot."
+  },
+  "output": {
+    "niche_tags": [
+      "coffee",
+      "beverages",
+      "specialty-coffee",
+      "roastery"
+    ],
+    "tone_dial": {
+      "formality": 0.5,
+      "energy": 0.5,
+      "emoji_ok": false,
+      "cultural_context": "urban India, D2C e-commerce"
+    },
+    "brand_color": null,
+    "product_catalog": []
+  }
+}

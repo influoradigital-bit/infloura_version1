@@ -1,0 +1,15 @@
+{
+  "case_id": "tt-001-coldplay-mumbai",
+  "input": {
+    "trend_text": "Coldplay Mumbai concert mania — fans camping overnight for tickets, resale prices through the roof",
+    "source": "twitter-trends"
+  },
+  "output": {
+    "themes": [
+      "energy",
+      "celebration",
+      "joy"
+    ],
+    "campaign_type": "HYPE"
+  }
+}

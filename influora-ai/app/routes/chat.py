@@ -8,7 +8,8 @@ Event protocol (SSE `event:` types):
     token        {"text": "..."}                          incremental assistant text
     thinking     {"step": "...", "done": false}            T3 log line
     tool_start   {"name": "...", "input": {...}}           canvas glue
-    tool_result  {"name": "...", "status": "ok"|"error"}   stage advance
+    tool_result  {"name": "...", "status": "ok"|"error",
+                  "data": {...}}                           stage advance + live-canvas payload
     prompt_meta  {"prompt_version": "..."}
     done         {"finish_reason": "stop"|"pending_human_confirm"|"iteration_cap"}
     error        {"code": "...", "fallback": "text"}
@@ -16,7 +17,18 @@ Event protocol (SSE `event:` types):
 Heartbeat `: ping` comment every ~15s keeps the connection warm through proxies.
 On client disconnect, in-flight provider calls are cancelled (no wasted tokens).
 On final assistant text, the turn is persisted back to Spring via the signed
-callback client (Idempotency-Key = turn_id).
+callback client (Idempotency-Key = turn_id, where turn_id is the stream
+token's own VERIFIED `messageId` claim -- never a client-supplied value, see
+Kabir red-team FAIL 2 fix below).
+
+Money-path (Wave 2 round 2, Kabir red-team FAILs #1/#2): influora-api now
+charges the AI credit at SEND time (before this route is ever reached), keyed
+on that same server-minted messageId/turn_id -- this route's job is only to
+tell Spring whether the turn's provider call actually SUCCEEDED (call
+persist_assistant_message, no charge) or FAILED (call release_turn_credit,
+refund the send-time charge). A plain CLIENT DISCONNECT is neither -- the
+client already received the streamed tokens, so the charge correctly stays
+and neither call is made.
 """
 
 from __future__ import annotations
@@ -31,7 +43,7 @@ from typing import Any
 from fastapi import APIRouter, Header, Request, status
 from fastapi.responses import StreamingResponse
 
-from app.auth.service_token import AuthError, auth_error_to_http, verify_token
+from app.auth.service_token import AuthError, auth_error_to_http, verify_token_async
 from app.clients.spring import SpringInternalClient
 from app.config import CLAUDE_MODEL, get_settings
 from app.costs.gate import check_spend_gate
@@ -78,7 +90,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         return _error_response(400, "missing_workspace_id", "workspace_id is required")
 
     try:
-        verified = verify_token(
+        verified = await verify_token_async(
             _bearer_from(authorization, body),
             endpoint="chat",
             body_workspace_id=workspace_id,
@@ -102,6 +114,19 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                 )
             )
 
+    # SECURITY FIX (Kabir red-team FAIL 2): the write-back/refund idempotency key is now the
+    # STREAM TOKEN'S OWN VERIFIED `messageId` claim -- server-minted by
+    # StreamTokenService.mint(...) at send-time (influora-api) -- never the client-supplied
+    # `body["turn_id"]`. The old code (`turn_id=body.get("turn_id", request_id)` below) let a
+    # client pin `turn_id` to a constant across many turns: turn 1 charged, turns 2..N replayed
+    # through Spring's `AlreadyCompletedException` short-circuit with `creditsCharged=0` --
+    # unlimited turns for one credit. A genuine `chat:stream` token always carries `messageId`
+    # (see verified.conversation_id's non-None check just above -- both claims are minted
+    # together); the service-token path (Spring-proxied /chat, no per-turn binding, no
+    # messageId) falls back to the body-supplied value, matching its pre-existing behavior --
+    # that path isn't reachable by an untrusted browser client at all.
+    turn_id = verified.claims.get("messageId") or body.get("turn_id", request_id)
+
     settings = get_settings()
 
     # P2-17 spend gate: checked before any provider call, mirrors the
@@ -110,7 +135,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
     # P2-17 call sites (H-25) — previously this route imported nothing from
     # app.costs, so the gate never actually enforced the ceiling/kill-switch
     # on the highest-traffic route.
-    gate = await check_spend_gate()
+    gate = await check_spend_gate(workspace_id=workspace_id)
     if not gate.allowed:
         log_event(
             logger, logging.WARNING, "chat_turn_blocked_spend_gate",
@@ -139,6 +164,21 @@ async def chat(request: Request, authorization: str | None = Header(default=None
 
     async def event_stream():
         disconnected = False
+        # SECURITY FIX (Kabir FAILs #1/#2): tracks a genuine PROVIDER failure, as opposed to a
+        # client disconnect -- the two are deliberately never conflated. Only `provider_failed`
+        # (or an empty final reply, checked further down) triggers `release_turn_credit`;
+        # `disconnected` NEVER does, since the client already received the tokens it read before
+        # hanging up (that's exactly what used to let a disconnect-farm dodge the charge).
+        provider_failed = False
+        # SECURITY FIX (Kabir red-team residual, LOW): the refund decision used to key
+        # ONLY on `final_text`, but a turn can run a data-returning tool (creator lists,
+        # budget calcs) whose `tool_result` payload IS streamed to the client below while
+        # Claude emits zero narration text -- that turn used to fall into the empty-reply
+        # refund path even though the client received real, usable output. Track whether
+        # any tool_result was actually DELIVERED (status "ok", data sent) this turn; a
+        # "error" tool_result (unknown tool / Spring call failure) carries nothing usable
+        # and must not suppress a refund on its own.
+        tool_result_delivered = False
 
         def is_cancelled() -> bool:
             return disconnected
@@ -149,6 +189,26 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         assistant_text_accum: list[str] = []
         final_usage: dict[str, Any] | None = None
         finish_reason = "stop"
+
+        async def release_charge(reason: str) -> None:
+            """Refunds this turn's send-time charge after a genuine provider FAILURE. Never
+            called on a client disconnect -- see `provider_failed` note above. Failure to reach
+            Spring here is logged, not raised -- a refund that never lands is a lost credit for
+            the brand (bad), not a security hole (release is idempotent + guarded server-side, so
+            there's nothing unsafe about retrying it later if this call is ever made retryable).
+            """
+            try:
+                await spring.release_turn_credit(
+                    conversation_id=body.get("conversation_id", ""),
+                    turn_id=turn_id,
+                    onbehalf_jwt=onbehalf_jwt,
+                )
+            except Exception as exc:
+                log_event(
+                    logger, logging.WARNING, "release_turn_credit_failed",
+                    workspace_id=workspace_id, request_id=request_id,
+                    fields={"error_type": type(exc).__name__, "reason": reason},
+                )
 
         try:
             loop_iter = run_tool_loop(
@@ -183,9 +243,23 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                 elif event.type == "tool_start":
                     yield sse_event("tool_start", {"name": event.tool_name, "input": event.tool_input})
                 elif event.type == "tool_result":
+                    # Live-canvas payload: tools/loop.py already carries the
+                    # Spring tool-result payload on event.tool_result_data --
+                    # this was dropped on the floor here, so the canvas never
+                    # got real data (creator lists, budget calcs, etc.), only
+                    # a name/status pair. Field name is "data" (not "payload"
+                    # or "result") because useMeeraStream.ts on the frontend
+                    # parses event.data specifically.
                     yield sse_event(
-                        "tool_result", {"name": event.tool_name, "status": event.tool_status}
+                        "tool_result",
+                        {
+                            "name": event.tool_name,
+                            "status": event.tool_status,
+                            "data": event.tool_result_data,
+                        },
                     )
+                    if event.tool_status == "ok":
+                        tool_result_delivered = True
                 elif event.type == "done":
                     finish_reason = event.finish_reason or "stop"
                     final_usage = event.usage
@@ -193,6 +267,16 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                     break
                 elif event.type == "error":
                     yield sse_event("error", {"code": event.error_code, "fallback": "text"})
+                    # SECURITY FIX (Kabir red-team follow-up, item 6 / MUST-FIX #2): a
+                    # "client_disconnected" error event (emitted by tools/loop.py's own
+                    # is_cancelled() check at loop.py:138) must never drive a refund -- that's
+                    # the `disconnected` path's job, and `disconnected` is only ever set by
+                    # this route's own `request.is_disconnected()` poll above, not by loop
+                    # events. Excluding it here is defense-in-depth for the FAIL-1 boundary: if
+                    # the loop is ever refactored to yield this error_code through a different
+                    # path, it still can't get conflated with a genuine provider failure.
+                    if event.error_code != "client_disconnected":
+                        provider_failed = True
                     break
 
                 now = time.monotonic()
@@ -202,6 +286,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
 
         except ToolLoopCapExceeded:
             yield sse_event("error", {"code": "tool_loop_cap", "fallback": "text"})
+            provider_failed = True
         except Exception as exc:  # provider timeout / circuit open / unexpected
             log_event(
                 logger,
@@ -212,7 +297,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                 fields={"error_type": type(exc).__name__},
             )
             yield sse_event("error", {"code": "provider_timeout", "fallback": "text"})
-            return
+            provider_failed = True
 
         # P2-17 §3.4: record real spend from this turn's usage, plus the
         # chat-only per-workspace $3/day soft cap (WARNING only, not
@@ -251,14 +336,33 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                 )
 
         if disconnected:
+            # Kabir FAIL 1 fix: the client already received every `token` event it read before
+            # disconnecting, so the send-time charge correctly STAYS -- deliberately no call to
+            # release_charge() on this path, ever. This is the entire fix for the disconnect-farm
+            # exploit (reading tokens then hanging up used to skip the write-back -- and with it
+            # the ONLY place credit used to be charged -- for a free turn).
             log_event(
                 logger, logging.INFO, "chat_turn_client_disconnected",
                 workspace_id=workspace_id, request_id=request_id,
             )
             return
 
+        # SECURITY FIX (Kabir red-team follow-up, item 6 / MUST-FIX #1, extended by the
+        # residual LOW fix above): `final_text` is computed BEFORE branching on
+        # `provider_failed`. The old code refunded on `provider_failed` unconditionally,
+        # without checking whether usable output had already reached the client -- Claude
+        # could stream a full answer (or deliver a tool_result payload with zero narration
+        # text), the provider could then throw on a later loop iteration (`except Exception`
+        # above sets `provider_failed = True`), and the client kept the output AND the turn
+        # got refunded (free turn + wasted credit). Net rule: refund iff NEITHER assistant
+        # text NOR a delivered tool_result reached the client, regardless of whether the
+        # failure was clean or came after partial/complete output.
         final_text = "".join(assistant_text_accum)
+
         if final_text:
+            # Usable text reached the client -- persist and keep the charge, exactly like the
+            # clean-success path, even when provider_failed is True (e.g. the stream completed
+            # but a later cleanup/usage-accounting step threw).
             try:
                 await spring.persist_assistant_message(
                     conversation_id=body.get("conversation_id", ""),
@@ -268,7 +372,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                         "token_usage": final_usage,
                         "request_id": request_id,
                     },
-                    turn_id=body.get("turn_id", request_id),
+                    turn_id=turn_id,
                     onbehalf_jwt=onbehalf_jwt,
                 )
             except Exception as exc:  # persistence failure shouldn't break the stream
@@ -277,6 +381,25 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                     workspace_id=workspace_id, request_id=request_id,
                     fields={"error_type": type(exc).__name__},
                 )
+            return
+
+        if tool_result_delivered:
+            # SECURITY FIX (Kabir red-team residual, LOW): no assistant text was produced,
+            # but a tool_result payload (creator list, budget calc, etc.) WAS streamed to the
+            # client this turn -- that's usable output the brand paid for, even with zero
+            # narration. There's no assistant text to persist, but the charge must not be
+            # refunded either: keep it, same as the text-delivered path above.
+            log_event(
+                logger, logging.INFO, "chat_turn_tool_result_only_charge_kept",
+                workspace_id=workspace_id, request_id=request_id,
+            )
+            return
+
+        # NOTHING usable reached the client -- neither assistant text nor a delivered
+        # tool_result: either a genuine provider failure with nothing streamed yet, or a
+        # "done" event that produced an empty reply. Both refund the send-time charge --
+        # there is nothing to persist either way.
+        await release_charge("provider_failure" if provider_failed else "empty_reply")
 
     return StreamingResponse(
         event_stream(),

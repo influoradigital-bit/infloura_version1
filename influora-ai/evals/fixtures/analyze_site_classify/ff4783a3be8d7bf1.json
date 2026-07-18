@@ -1,0 +1,22 @@
+{
+  "case_id": "as-006-kids-toys",
+  "input": {
+    "page_text": "TinkerTots! Screen-free STEM toys for curious kids aged 3-10. Build-a-Bot kit Rs 1499, Magnetic Tiles 60pc Rs 1999, Junior Chemistry Lab Rs 899. Non-toxic, BIS safety certified, designed by IIT alumni parents. Because playtime should build brains!"
+  },
+  "output": {
+    "niche_tags": [
+      "toys",
+      "kids",
+      "education",
+      "stem"
+    ],
+    "tone_dial": {
+      "formality": 0.2,
+      "energy": 0.85,
+      "emoji_ok": true,
+      "cultural_context": "urban India, D2C e-commerce"
+    },
+    "brand_color": null,
+    "product_catalog": []
+  }
+}

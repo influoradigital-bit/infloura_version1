@@ -228,7 +228,7 @@ async def trendspark_nudge(request: Request, authorization: str | None = Header(
     # Spend gate: on kill-switch / ceiling, skip the AI call and return the
     # deterministic fallback (still 200) — the user never sees an error and no
     # provider tokens are spent.
-    gate = await check_spend_gate()
+    gate = await check_spend_gate(workspace_id=workspace_id)
     if not gate.allowed:
         log_event(
             logger, logging.WARNING, "trendspark_nudge_blocked_spend_gate",

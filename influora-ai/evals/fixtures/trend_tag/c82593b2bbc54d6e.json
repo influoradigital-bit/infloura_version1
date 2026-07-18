@@ -1,0 +1,15 @@
+{
+  "case_id": "tt-011-republic-day",
+  "input": {
+    "trend_text": "Republic Day parade highlights: new indigenous defence tech on display, tricolour selfies trend",
+    "source": "google-trends",
+    "category": "national"
+  },
+  "output": {
+    "themes": [
+      "pride",
+      "tradition"
+    ],
+    "campaign_type": "PRIDE"
+  }
+}

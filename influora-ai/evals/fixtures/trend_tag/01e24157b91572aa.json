@@ -1,0 +1,17 @@
+{
+  "case_id": "tt-003-diwali-prep",
+  "input": {
+    "trend_text": "Diwali decor and diya shopping in full swing, rangoli tutorials trending across reels",
+    "source": "instagram",
+    "category": "festival"
+  },
+  "output": {
+    "themes": [
+      "festive",
+      "light",
+      "tradition",
+      "family"
+    ],
+    "campaign_type": "SEASONAL"
+  }
+}

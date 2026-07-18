@@ -1,0 +1,22 @@
+{
+  "case_id": "as-005-mobile-accessories",
+  "input": {
+    "page_text": "VoltEdge — chargers that keep up with you. 65W GaN fast charger Rs 1799, braided USB-C cable Rs 399, magnetic power bank 10000mAh Rs 2499. 18-month warranty. BIS certified. Trusted by 2 lakh+ customers. Same-day dispatch from Bangalore."
+  },
+  "output": {
+    "niche_tags": [
+      "electronics",
+      "mobile-accessories",
+      "gadgets",
+      "chargers"
+    ],
+    "tone_dial": {
+      "formality": 0.5,
+      "energy": 0.5,
+      "emoji_ok": false,
+      "cultural_context": "urban India, D2C e-commerce"
+    },
+    "brand_color": null,
+    "product_catalog": []
+  }
+}

@@ -41,6 +41,51 @@ _CLASSIFY_SYSTEM_INSTRUCTION = (
     "ONLY the JSON object, no prose, no markdown fences."
 )
 
+# P2 (Ash AI review): structural response_schema for classify_site, so the
+# genai SDK constrains the model's JSON output shape instead of relying
+# solely on `response_mime_type=application/json` + hand-rolled `json.loads`
+# + `.get(...) or []` defensive parsing below. google-genai==0.8.0 (pinned in
+# requirements.txt) supports `types.Schema` with nested `properties`/`items`
+# and a `nullable` flag (no dedicated NULL `Type` in this SDK version --
+# `nullable=True` alongside a concrete `type` is the documented way to allow
+# null, used here for `brand_color`). The `json.loads` fallback below is kept
+# regardless (belt-and-suspenders) -- a schema constrains a well-behaved
+# response, it doesn't guarantee the provider never returns something
+# malformed.
+_CLASSIFY_RESPONSE_SCHEMA = genai_types.Schema(
+    type=genai_types.Type.OBJECT,
+    properties={
+        "niche_tags": genai_types.Schema(
+            type=genai_types.Type.ARRAY,
+            items=genai_types.Schema(type=genai_types.Type.STRING),
+        ),
+        "tone_dial": genai_types.Schema(
+            type=genai_types.Type.OBJECT,
+            properties={
+                "formality": genai_types.Schema(type=genai_types.Type.NUMBER),
+                "energy": genai_types.Schema(type=genai_types.Type.NUMBER),
+                "emoji_ok": genai_types.Schema(type=genai_types.Type.BOOLEAN),
+                "cultural_context": genai_types.Schema(type=genai_types.Type.STRING),
+            },
+            required=["formality", "energy", "emoji_ok", "cultural_context"],
+        ),
+        "brand_color": genai_types.Schema(type=genai_types.Type.STRING, nullable=True),
+        "product_catalog": genai_types.Schema(
+            type=genai_types.Type.ARRAY,
+            items=genai_types.Schema(
+                type=genai_types.Type.OBJECT,
+                properties={
+                    "name": genai_types.Schema(type=genai_types.Type.STRING),
+                    "price": genai_types.Schema(type=genai_types.Type.NUMBER),
+                    "currency": genai_types.Schema(type=genai_types.Type.STRING),
+                },
+                required=["name", "price", "currency"],
+            ),
+        ),
+    },
+    required=["niche_tags", "tone_dial", "brand_color", "product_catalog"],
+)
+
 _CLEANUP_SYSTEM_INSTRUCTION = (
     "You fix grammar and clarity ONLY. Never reinterpret intent, never add or "
     "remove meaning, never answer the text — just rewrite it as clean, natural "
@@ -79,13 +124,25 @@ def _usage_from_response(response: Any) -> dict[str, Any] | None:
     translated here rather than returned raw. Returns None (never raises) if
     the response has no usage_metadata, matching the "usage may legitimately
     be absent" contract the pricing/spend-tracker call sites already expect.
+
+    P2 (Ash AI review, wiki/ai-review/partial-fixes-batch-ai-review.md):
+    `output_tokens` folds in `thoughts_token_count` when present. For 2.5-class
+    models (GEMINI_MODEL is `gemini-2.5-flash-lite`) Google separately bills
+    "thinking" tokens under `usage_metadata.thoughts_token_count`, distinct
+    from `candidates_token_count` (the visible output) -- reading only
+    `candidates_token_count` systematically UNDER-counts spend against the
+    P2-17 daily ceiling. `thoughts_token_count` is commonly small/absent for
+    this model, but it's still real billed spend when present, so it's added
+    in rather than ignored.
     """
     usage_metadata = getattr(response, "usage_metadata", None)
     if usage_metadata is None:
         return None
+    candidates_tokens = getattr(usage_metadata, "candidates_token_count", None) or 0
+    thoughts_tokens = getattr(usage_metadata, "thoughts_token_count", None) or 0
     return {
         "input_tokens": getattr(usage_metadata, "prompt_token_count", None),
-        "output_tokens": getattr(usage_metadata, "candidates_token_count", None),
+        "output_tokens": candidates_tokens + thoughts_tokens,
     }
 
 
@@ -118,6 +175,7 @@ class GeminiProvider:
                     temperature=0.2,
                     max_output_tokens=1024,
                     response_mime_type="application/json",
+                    response_schema=_CLASSIFY_RESPONSE_SCHEMA,
                 ),
             )
             self._breaker.on_success()

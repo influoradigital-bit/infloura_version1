@@ -1,0 +1,22 @@
+{
+  "case_id": "as-003-organic-food",
+  "input": {
+    "page_text": "Earthful Organics — certified organic staples from Indian farms. Cold-pressed groundnut oil Rs 550, stone-ground whole wheat atta Rs 320, forest honey Rs 480. FSSAI certified. We work directly with 400+ farmer families across Madhya Pradesh. Traceable from farm to your kitchen."
+  },
+  "output": {
+    "niche_tags": [
+      "organic",
+      "food",
+      "grocery",
+      "farm-to-table"
+    ],
+    "tone_dial": {
+      "formality": 0.5,
+      "energy": 0.2,
+      "emoji_ok": false,
+      "cultural_context": "urban India, D2C e-commerce"
+    },
+    "brand_color": null,
+    "product_catalog": []
+  }
+}

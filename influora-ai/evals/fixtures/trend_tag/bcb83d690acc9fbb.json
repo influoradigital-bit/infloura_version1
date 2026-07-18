@@ -1,0 +1,16 @@
+{
+  "case_id": "tt-006-navratri-garba",
+  "input": {
+    "trend_text": "Navratri garba nights sell out across Gujarat and Mumbai, chaniya choli rental searches spike",
+    "source": "google-trends"
+  },
+  "output": {
+    "themes": [
+      "festive",
+      "devotion",
+      "tradition",
+      "energy"
+    ],
+    "campaign_type": "SEASONAL"
+  }
+}

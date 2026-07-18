@@ -30,7 +30,7 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.auth.service_token import AuthError, auth_error_to_http, verify_token
-from app.config import CLAUDE_MODEL, get_settings
+from app.config import BRAND_SAFETY_MODEL, get_settings
 from app.costs.gate import check_spend_gate
 from app.costs.pricing import estimate_cost_usd
 from app.costs.spend_tracker import record_spend
@@ -278,7 +278,7 @@ async def brand_safety(request: Request, authorization: str | None = Header(defa
     # (Claude) call, zero provider calls made if blocked. Placed after the
     # workspace_id/auth checks above (same "auth first" ordering as chat.py
     # and analyze_site.py) but before the Claude call itself.
-    gate = await check_spend_gate()
+    gate = await check_spend_gate(workspace_id=workspace_id)
     if not gate.allowed:
         log_event(
             logger, logging.WARNING, "brand_safety_blocked_spend_gate",
@@ -317,18 +317,19 @@ async def brand_safety(request: Request, authorization: str | None = Header(defa
         messages=[user_message],
         tool_schema=tool_schema,
         max_tokens=settings.brand_safety_max_tokens,
+        model=BRAND_SAFETY_MODEL,
     )
 
     if result.usage:
         try:
-            cost_usd = estimate_cost_usd(CLAUDE_MODEL, result.usage)
+            cost_usd = estimate_cost_usd(BRAND_SAFETY_MODEL, result.usage)
             spend_today = await record_spend(cost_usd, workspace_id)
             log_event(
                 logger, logging.INFO, "ai_spend",
                 workspace_id=workspace_id, request_id=request_id,
                 fields={
                     "route": "brand_safety",
-                    "model": CLAUDE_MODEL,
+                    "model": BRAND_SAFETY_MODEL,
                     "cost_usd": str(cost_usd),
                     "spend_today_usd": str(spend_today),
                 },

@@ -1,0 +1,16 @@
+{
+  "case_id": "tt-002-t20-world-cup-win",
+  "input": {
+    "trend_text": "INDIA WINS THE T20 WORLD CUP! Streets flooded with fans, tricolour everywhere",
+    "source": "google-trends",
+    "category": "sports"
+  },
+  "output": {
+    "themes": [
+      "pride",
+      "victory",
+      "celebration"
+    ],
+    "campaign_type": "PRIDE"
+  }
+}
