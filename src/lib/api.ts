@@ -585,15 +585,15 @@ export const auth = {
 
 /**
  * L-9 — {@code GET /workspaces/me} response (WorkspaceMemberDtos.WorkspaceReadResponse). `email`
- * maps to `workspaces.billing_email` server-side. No `phone` field — no backing column exists
- * anywhere on `workspaces` or `users`, so it is never returned (TECH-STACK.md rule 7: no
- * fabricated backend contracts).
+ * maps to `workspaces.billing_email` server-side. `phone` shipped 2026-07-18 (migration +
+ * GET/PATCH, Vikram) — backed by a real column now, no longer fabricated.
  */
 export interface WorkspaceMeResponse {
   id: string;
   name: string;
   slug: string;
   email: string | null;
+  phone: string | null;
   industry: string | null;
   companySize: string | null;
   websiteUrl: string | null;
@@ -604,12 +604,13 @@ export interface WorkspaceMeResponse {
 /**
  * L-9 — {@code PATCH /workspaces/me} request body (WorkspaceMemberDtos.WorkspaceUpdateRequest).
  * Full-replace semantics for every included field (not a deep merge) — a field omitted here is
- * cleared server-side. `name` is the only required field. Deliberately no `phone` — never send
- * it, there is no column to persist it into.
+ * cleared server-side. `name` is the only required field. `phone` (2026-07-18): blank/omitted
+ * clears it server-side; when provided, backend validates `+ ( ) - space` + 7-15 digits.
  */
 export interface WorkspaceMeUpdatePayload {
   name: string;
   email?: string;
+  phone?: string;
   websiteUrl?: string;
   industry?: string;
   companySize?: string;
@@ -640,6 +641,7 @@ export const workspaces = {
           name: 'Tech Brands Co.',
           slug: 'tech-brands-co',
           email: 'admin@techbrands.in',
+          phone: '+91 98765 43210',
           industry: null,
           companySize: null,
           websiteUrl: 'www.techbrands.in',
@@ -649,7 +651,7 @@ export const workspaces = {
 
   /**
    * PATCH /workspaces/me — L-9, WorkspaceController.updateMyWorkspace. OWNER/ADMIN only —
-   * backend returns 403 for any other role. Never include `phone`; there is no column for it.
+   * backend returns 403 for any other role.
    */
   updateMe: (payload: WorkspaceMeUpdatePayload) =>
     isLive()
@@ -659,6 +661,7 @@ export const workspaces = {
           name: payload.name,
           slug: 'tech-brands-co',
           email: payload.email ?? null,
+          phone: payload.phone ?? null,
           industry: payload.industry ?? null,
           companySize: payload.companySize ?? null,
           websiteUrl: payload.websiteUrl ?? null,

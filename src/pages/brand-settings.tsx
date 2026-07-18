@@ -41,10 +41,11 @@ export default function BrandSettingsPage() {
     "Settings sync isn't available yet — changes apply to this session only.";
 
   // UPDATE (2026-07-18): GET/PATCH /workspaces/me now exist (WorkspaceController, L-9) and
-  // cover name/email(-> billing_email)/websiteUrl for this "Workspace Information" card.
-  // `email` is the workspace's billing/contact email server-side, not a login email.
-  // PHONE HAS NO BACKEND COLUMN (anywhere on workspaces or users) — never sent to PATCH, input
-  // stays disabled with an honest caption rather than pretending it persists.
+  // cover name/email(-> billing_email)/phone/websiteUrl for this "Workspace Information" card.
+  // `email` is the workspace's billing/contact email server-side, not a login email. `phone`
+  // shipped 2026-07-18 (migration + GET/PATCH, Vikram) — full-replace, blank clears it
+  // server-side; server validates `+ ( ) - space` + 7-15 digits, so we don't duplicate that
+  // validation client-side beyond a light hint.
   const [workspaceInfoLoading, setWorkspaceInfoLoading] = React.useState(false);
   const [workspaceInfoLoadError, setWorkspaceInfoLoadError] = React.useState<string | null>(null);
   const [workspaceInfoSaving, setWorkspaceInfoSaving] = React.useState(false);
@@ -63,6 +64,7 @@ export default function BrandSettingsPage() {
           ...prev,
           workspaceName: ws.name,
           email: ws.email ?? prev.email,
+          phone: ws.phone ?? prev.phone,
           website: ws.websiteUrl ?? prev.website,
         }));
       })
@@ -90,12 +92,14 @@ export default function BrandSettingsPage() {
       const updated = await api.workspaces.updateMe({
         name: settings.workspaceName,
         email: settings.email,
+        phone: settings.phone,
         websiteUrl: settings.website,
       });
       setSettings((prev) => ({
         ...prev,
         workspaceName: updated.name,
         email: updated.email ?? prev.email,
+        phone: updated.phone ?? prev.phone,
         website: updated.websiteUrl ?? prev.website,
       }));
       toast({ title: 'Workspace updated', description: 'Your workspace information has been saved.' });
@@ -239,13 +243,16 @@ export default function BrandSettingsPage() {
                   <Label htmlFor="phone">Phone</Label>
                   <Input
                     id="phone"
+                    type="tel"
                     value={settings.phone}
                     onChange={(e) => setSettings({ ...settings, phone: e.target.value })}
-                    disabled
-                    title="Phone isn't saved yet"
+                    disabled={workspaceInfoLoading}
+                    placeholder="+91 98765 43210"
                     className="mt-2"
                   />
-                  <p className="text-xs text-muted-foreground mt-1">Phone isn't saved yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Digits, spaces, and + ( ) - only. Leave blank to clear.
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="website">Website</Label>

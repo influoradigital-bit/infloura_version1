@@ -5,6 +5,28 @@
 
 ---
 
+## TASK: Brand Settings workspace-info (name/email/phone/website) — DUAL gate
+
+```
+FROM Kavya → Meera | Final DUAL gate (FE+BE+migration) | WorkspaceController.java, WorkspaceService.java, Workspace entity, WorkspaceMemberDtos.java, V20260718180000__workspace_phone.sql, WorkspaceServiceTest.java, WorkspaceControllerTest.java, src/lib/api.ts, src/pages/brand-settings.tsx | ✅ ALL PASS | cleared to score
+```
+
+**Meera Verification — 2026-07-18**
+
+| Check | Command | Result |
+|---|---|---|
+| FE build | `npm run build` (vite build + postbuild prerender) | ✅ PASS — built in 1m8s, 16/16 routes prerendered, exit 0. Only pre-existing >500kB chunk-size warning, no new errors. |
+| BE targeted | `mvn -o test -Dtest=WorkspaceServiceTest,WorkspaceControllerTest` | ✅ PASS — Tests run: 13 (11+2), Failures: 0, Errors: 0 |
+| BE full suite | `mvn -o -DskipITs test` | ✅ PASS — Tests run: 1345, Failures: 0, Errors: 0, Skipped: 3. BUILD SUCCESS |
+| Migration sanity | static read of `V20260718180000__workspace_phone.sql` | ✅ PASS — `ALTER TABLE workspaces ADD COLUMN phone VARCHAR(30) NULL AFTER billing_email;` — additive, nullable, no default needed, no backfill. Timestamp sorts after `V20260718170000__admin_error_log.sql` — Flyway ordering correct. |
+| FE mount spot-check | `npm run dev` + browser, `/brand/settings` (fake `brand_token`, no backend up) | ✅ PASS — General tab mounts, shows "Could not load workspace information." on fetch failure (caught cleanly, no crash), Save Changes button present+enabled, all 4 fields (Workspace Name/Email/Phone/Website) render. Console shows expected caught `TypeError: Failed to fetch` from `getMe`/`updateMe`/`getPreferences`, no uncaught exceptions. |
+
+**CANNOT-VERIFY:** live GET/PATCH round-trip against a real backend + DB — no DB-backed server was running in this environment; only the graceful-failure path was exercised.
+
+**VERDICT: ✅ ALL PASS — FE build + BE tests (targeted & full) + migration all clear. Settings workspace-info feature cleared to score. VETO not exercised.**
+
+---
+
 ## ⚠️ TASK: Portfolio view tracking + auth fix (PIPELINE CORRECTION)
 
 **Owner:** Arjun (re-routing) · **Issue:** Priya wrote the entire feature herself, bypassing Vikram/Kavya/Meera/Kabir. Routing through proper gates now.
@@ -842,5 +864,27 @@ FROM Priya (direct) → Vikram | I7 backend half — brand Settings > General > 
 **Docs written:** `wiki/processes/api-docs.md` (new), `docs/api.md`, `docs/docs/api.md`, `docs/features/workspaces-members.md`, `docs/docs/features/workspaces-members.md`.
 
 **For Ananya (once Kavya clears this):** wire `src/lib/api.ts`'s `workspaces` export with `getMe`/`updateMe` calls to `GET`/`PATCH /workspaces/me`, then replace the hardcoded `useState` seed + disabled Save button in `src/pages/brand-settings.tsx` (lines 20-48, 141-188) for `workspaceName`/`email`/`website`. Leave `phone` disabled/local-only with an honest caption — same discipline as the other UI-only toggles already on that page.
+
+---
+
+## Vikram → Kavya | I7 follow-up: phone now persists (Swapnil-approved) | 2026-07-18
+
+FROM Priya (direct) → Vikram | Add real `phone` column — closes the gap flagged in the I7 handoff above (was UI-only, no column) | migration `V20260718180000__workspace_phone.sql`; `domain/entity/Workspace.java`; `web/dto/workspace/WorkspaceMemberDtos.java`; `web/WorkspaceController.java`; `service/WorkspaceService.java`; `test/.../WorkspaceControllerTest.java`, `WorkspaceServiceTest.java`, `WorkspaceServiceAnalyzeSiteTest.java` | READY for QA | backend/Java only — did not touch `src/lib/api.ts` or any `.tsx` (Ananya's territory, she's wiring the frontend concurrently)
+
+**Migration:** `V20260718180000__workspace_phone.sql` — `ALTER TABLE workspaces ADD COLUMN phone VARCHAR(30) NULL AFTER billing_email;`. Additive + nullable, no default, no backfill. Logged in `wiki/processes/schema-changes.md`.
+
+**Updated GET/PATCH shape (for Ananya):**
+- `WorkspaceReadResponse`: `{id, name, slug, email, phone, industry, companySize, websiteUrl, logoUrl, verificationStatus}` — `phone` inserted right after `email`.
+- `WorkspaceUpdateRequest`: `{name*, email?, phone?, industry?, companySize?, websiteUrl?, description?, logoUrl?}` — `phone` inserted right after `email`, full-replace (blank/null clears it, same as `email`).
+
+**Persistence:** `workspace.getPhone()` on read; `WorkspaceService.updateMyWorkspace` calls the new `Workspace#updatePhone` mutator (same blank-clears-it semantics as `updateContactEmail`). Removed the now-stale "no phone column" javadocs on `Workspace#updateContactEmail`, `WorkspaceReadResponse`, `WorkspaceUpdateRequest`, and the controller.
+
+**Validation:** lenient/nullable — blank or null clears it. If non-blank: DTO `@Pattern` restricts to allowed characters (`+ ( ) - space`, digits) as a first-pass filter; `WorkspaceService` does the real check (`isValidPhone`) — strips to digits-only and requires 7-15 digits, same "DTO annotation + service-level belt-and-suspenders" precedent as the existing `email` field. No over-restriction on international formats.
+
+**Tests added:** `WorkspaceServiceTest` — happy path now asserts `phone` persists on save (`"+1 (415) 555-0100"`), new `updateMyWorkspace_blankPhone_clearsPhone` (blank string clears a previously-set phone), new `updateMyWorkspace_badPhone_rejected` (`"123"` → `VALIDATION_ERROR`, never saved). `WorkspaceControllerTest` — both existing tests extended to assert `phone` round-trips through GET and PATCH. `WorkspaceServiceAnalyzeSiteTest` — 5 pre-existing tests updated for the new parameter position only (no behavior change).
+
+**Test run:** `mvn -o test` (full suite, bundled `.tools/apache-maven-3.9.10`) → **1345 run, 0 failures, 0 errors, 3 skipped** (pre-existing/unrelated, same 3 as before). Targeted Workspace* run also green (18/18) before the full run.
+
+**Schema log:** `wiki/processes/schema-changes.md` updated with this migration's row + a notes entry.
 
 2026-07-18 16:43 | Meera -> Arjun | AdminBrandServiceBudgetOverrideTest verified | influora-api/src/test/java/com/influora/service/admin/AdminBrandServiceBudgetOverrideTest.java | PASS (8/8 tests, BUILD SUCCESS, ~35.7s) | partial-escrow scenario (testPartialEscrowFloorsAtAgreedRate: agreedRate 100k + FUNDED 30k -> floors at 100k) confirmed passing; no compile errors; ready for Swapnil review
