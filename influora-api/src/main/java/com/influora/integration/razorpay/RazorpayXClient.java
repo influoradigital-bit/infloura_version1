@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -49,6 +50,7 @@ public class RazorpayXClient {
     private volatile HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    @Autowired
     public RazorpayXClient(RazorpayProperties props, InfluoraEnvironment environment) {
         this(props, environment, null);
     }

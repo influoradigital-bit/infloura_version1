@@ -7,12 +7,16 @@
 Influora = **3 services in 3 languages** + Docker data services. You run each service in its own terminal.
 
 ```
-Frontend (TypeScript/Vite)  http://localhost:5173  ─► talks to ─┐
+Frontend (TypeScript/Vite)  http://localhost:3000  ─► talks to ─┐
 Core API (Java/Spring)      http://localhost:8080/api/v1  ◄──────┤
 AI service (Python/FastAPI) http://localhost:8000  ◄────────────┘
                                     │
 Data (Docker):  MySQL :3306   ClamAV :3310   (Redis :6379 optional)
 ```
+
+> `vite.config.ts` serves on **3000** by default, not Vite's own framework-default 5173 — this doc
+> previously said 5173 everywhere, which also meant `influora-api`'s default CORS/web-base-url
+> config (5173-only) silently rejected the real frontend. See step 2's `.env` for the fix.
 
 ---
 
@@ -56,7 +60,13 @@ cd influora-api
 # 1. Create your env file from the template
 cp .env.example .env        # Windows: copy .env.example .env
 
-# 2. Run it (dev profile). Maven downloads dependencies on first run.
+# 2. Load .env into the shell — there is no spring-dotenv/envFile wiring, so plain
+#    `mvn spring-boot:run` does NOT read .env on its own. Without this, SPRING_PROFILES_ACTIVE
+#    never reaches the JVM, the app boots with no active profile, and CompanyTaxStartupValidator/
+#    SecretsStartupValidator fail closed as if this were a real deploy.
+set -a && source .env && set +a   # Windows Git Bash; if .env has CRLF endings strip \r first
+
+# 3. Run it (dev profile). Maven downloads dependencies on first run.
 mvn spring-boot:run
 ```
 
@@ -94,7 +104,12 @@ python -m playwright install --with-deps chromium
 # 4. Create your env file
 cp .env.example .env               # Windows: copy .env.example .env
 
-# 5. Run it
+# 5. Load .env into the shell — app/config.py reads secrets via plain os.getenv() with no
+#    load_dotenv() call, so a bare `uvicorn` run hits a false "missing secrets" error even with
+#    a fully populated .env.
+set -a && source .env && set +a
+
+# 6. Run it
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -128,7 +143,7 @@ cp .env.local.example .env.local    # Windows: copy .env.local.example .env.loca
 npm run dev
 ```
 
-The dev server prints a local URL (Vite default **http://localhost:5173**). `.env.local` is preconfigured to point `VITE_API_BASE_URL` at `http://localhost:8080/api/v1`, so it talks to your local Java API.
+The dev server prints a local URL — **http://localhost:3000** (this project's `vite.config.ts` overrides Vite's own 5173 default). `.env.local` is preconfigured to point `VITE_API_BASE_URL` at `http://localhost:8080/api/v1`, so it talks to your local Java API.
 
 > Reminder: Vite bakes `VITE_*` values in at build/start time. If you change `.env.local`, **restart `npm run dev`** for it to take effect.
 
@@ -150,7 +165,7 @@ A quick end-to-end check: register → log in → send one Meera chat message. T
 
 | Service | Port | URL |
 |---|---|---|
-| Frontend (Vite dev) | 5173 | http://localhost:5173 |
+| Frontend (Vite dev) | 3000 | http://localhost:3000 |
 | Core API (Java) | 8080 | http://localhost:8080/api/v1 |
 | AI service (Python) | 8000 | http://localhost:8000 |
 | MySQL | 3306 | (internal) |

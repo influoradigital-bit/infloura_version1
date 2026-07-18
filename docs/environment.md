@@ -47,7 +47,7 @@ JPA: `open-in-view: false`, `ddl-auto: validate`. Flyway: `out-of-order: true`, 
 | `AUTH_REFRESH_COOKIE_PATH` | `/api/v1/auth` | |
 | `AUTH_RATE_LIMIT_ENABLED` | `true` | Rate limiting on auth surface |
 | `AUTH_RATE_LIMIT_WINDOW_SECONDS` | `60` | + `_SENSITIVE=10`, `_OTP=5`, `_REFRESH=30` |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Allowed SPA origins |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Allowed SPA origins — this default is stale, `vite.config.ts` actually serves on **3000**; local `.env` must override to `http://localhost:3000,http://127.0.0.1:3000` or the real dev frontend gets CORS-rejected |
 | `CONTENT_SECURITY_POLICY` | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` | API CSP |
 
 Admin MFA: `influora.admin.mfa-secret-encryption-key` (must decode to exactly 32 bytes), lockout tuning (attempts/cooldowns), `mfa-enforce-on-login` (default true).
