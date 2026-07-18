@@ -5,6 +5,71 @@
 
 ---
 
+## TASK: Campaign HYPE config persistence (hype_config JSON column) — local verification
+
+```
+FROM Kavya → Meera | Local run verification (BE+FE+migration+AI redis P1) | Campaign.java, CampaignMapper.java, CampaignService.java, CampaignValidator.java, CampaignDtos.java, CampaignServiceTest.java, V20260718190000__campaign_hype_config.sql, deliverable-review-panel.tsx | ✅ ALL PASS | see matrix below
+```
+
+**Meera Verification — 2026-07-18 (branch `feat/portfolio-view-tracking`)**
+
+| Stack | Command | Result |
+|---|---|---|
+| Backend full suite | `.tools/apache-maven-3.9.10/bin/mvn -o test` | ✅ BUILD SUCCESS — Tests run: 1349, Failures: 0, Errors: 0, Skipped: 3 (Docker unavailable, testcontainers-gated). Matches reported claim exactly. |
+| Backend targeted | grep for `CampaignServiceTest` in the run | ✅ Tests run: 15, Failures: 0, Errors: 0 |
+| Frontend typecheck | `npx tsc --noEmit` | ✅ exit 0, 0 errors, empty output |
+| Frontend build (1st run) | `npm run build` | ❌ exit 1 — `vite build` itself succeeded (48.38s, 4739 modules) but `postbuild` (`scripts/prerender.mjs`) failed 1/16 routes: `/blog: Waiting failed: 15000ms exceeded` |
+| Frontend build (retry, prerender only) | `node scripts/prerender.mjs` | ✅ exit 0 — 16/16 routes snapshotted on retry, including `/blog` |
+| AI service — redis P1 (Ash) | `grep -n redis influora-ai/requirements.txt influora-ai/requirements-dev.txt influora-ai/Dockerfile` | **CONFIRMED** — zero hits in all three; `redis.asyncio` imported in `app/auth/replay_guard.py` and `app/costs/spend_tracker.py` |
+| AI service — crash check | `.venv/Scripts/python.exe -c "import app.main"` | ✅ imports clean (only unrelated pydantic warning) — both redis imports are `try/except ImportError`-guarded with in-memory fallback, so this is a silent feature degradation, not a boot crash |
+
+**Migration verdict — `V20260718190000__campaign_hype_config.sql`: ✅ SOUND**
+- Naming/sequencing: timestamp `20260718190000` sorts immediately after `V20260718180000__workspace_phone.sql` (the current head) — correct Flyway order. `ls | sed -E 's/^(V[0-9]+)__.*/\1/' | sort | uniq -d` on all 88 migration files → zero duplicate version numbers, chain intact.
+- Content: `ALTER TABLE campaigns ADD COLUMN hype_config JSON NULL AFTER campaign_type;` — additive, nullable, no default, no backfill, no destructive ops.
+- Entity mapping consistent: `Campaign.java` adds `@JdbcTypeCode(SqlTypes.JSON) @Column(name = "hype_config", columnDefinition = "json") private String hypeConfigJson;` — column name/type/nullability match the DDL exactly.
+
+**Discrepancy flagged (not blocking, but real):** the "reportedly `npm run build` success" claim is only true on a retry. First invocation failed (exit 1) on a flaky 15s headless-Chrome timeout prerendering `/blog` — unrelated to this branch's diff (no blog/prerender files touched), reproduced clean on immediate retry (16/16). Recommend Vikram/whoever owns `scripts/prerender.mjs` bump the per-route timeout or add a retry-once, since CI will hard-fail on this flake with no code change required to "fix" it.
+
+**AI redis gap detail:** not a hard crash (both call sites degrade gracefully to in-memory), but `spend_tracker.py`'s own comment claims "redis is a pinned dep (requirements.txt)" — that's false in the current tree, so the cross-instance Redis-backed daily-spend ceiling (H-25) and the stream-token replay guard can never actually activate in the shipped Docker image; every worker silently runs a per-process-only fallback even if `REDIS_URL` is set. Matches Ash's P1 exactly.
+
+**VETO: not exercised for backend/migration (clean pass). Frontend build flake and AI redis gap are real but non-blocking per the graceful-degradation design — flagging both for Arjun to route (prerender flake → Vikram/build owner; redis → Ash's existing P1 ticket, add package to requirements.txt + Dockerfile if cross-instance spend ceiling / replay guard are meant to actually work in prod).**
+
+### Re-run — direct request from Priya (prior dual-gate run interrupted before verdict) — 2026-07-18 19:xx IST
+
+```
+FROM Priya → Meera | Re-run Hype dual gate cleanly (FE build + BE full suite + migration) | Campaign.java, CampaignMapper.java, CampaignService.java, CampaignValidator.java, CampaignDtos.java, CampaignServiceTest.java, V20260718190000__campaign_hype_config.sql, src/lib/api.ts | ✅ ALL PASS | cleared to score
+```
+
+| Check | Command | Result |
+|---|---|---|
+| Backend full suite | `.tools/apache-maven-3.9.9/bin/mvn -o test` (note: bundled dir is `3.9.9`, not `3.9.10` as previously logged) | ✅ BUILD SUCCESS — Tests run: 1353, Failures: 0, Errors: 0, Skipped: 3, total 1m12s |
+| Backend — CampaignServiceTest | grep in run | ✅ Tests run: 19, Failures: 0, Errors: 0 — includes all 4 requested Hype cases (`testHypeCampaignRoundTripsConfig`, `testStandardCampaignUnaffectedByHypeStorage`, `testMalformedHypeConfigRejected`, `testHypeCampaignMissingConfigRejected`) + 4 PATCH-path Hype tests (full patch, partial merge, malformed patch rejected, ignored-for-non-HYPE), all green |
+| Frontend build | `npm run build` (vite build + postbuild prerender) | ✅ exit 0 — built in 1m49s, 16/16 marketing routes prerendered, no errors (only pre-existing duplicate-`baseUrl` tsconfig warning) |
+| Migration | static read + ordering/dedup check | ✅ `ALTER TABLE campaigns ADD COLUMN hype_config JSON NULL AFTER campaign_type;` — additive, nullable, no default/backfill; sorts immediately after `V20260718180000__workspace_phone.sql`; zero duplicate version numbers across all migrations |
+
+**Note on the interrupted prior attempt:** stale logs from the interrupted run showed a broken `node_modules` (missing `@tailwindcss/node/dist/esm-cache.loader.mjs`) and `vite` not on PATH — both transient/mid-install artifacts, not real defects. Confirmed clean on this re-run with no code changes. Logs cleared (`.meera_*_clean.log` written this pass, temp files removed after).
+
+**VERDICT: ✅ FE build + BE full suite + migration all PASS. Hype dual gate cleared to score. VETO not exercised.**
+
+---
+
+## Meera Verification — deliverable-review-panel.tsx (direct request from Priya) — 2026-07-18
+
+```
+FROM Priya → Meera | Local verify: deliverable Approve/Request-Revision now call real deliverablesApi (no more mock setTimeout) | src/components/brand/timeline/panels/deliverable-review-panel.tsx | ✅ PASS | cleared to score
+```
+
+| Check | Command | Result |
+|---|---|---|
+| Typecheck | `npx tsc --noEmit` | ✅ exit 0, 0 errors |
+| Build | `npm run build` (vite build + postbuild prerender) | ✅ exit 0, built in 1m7s, 4739 modules, 16/16 routes prerendered. Only pre-existing >500kB chunk-size warning + pre-existing duplicate-`baseUrl` tsconfig warning — neither new. |
+| Wired into bundle (not dead code) | grep `DeliverableReviewPanel` | ✅ imported by `src/components/brand/timeline/event-cards/deliverable-card.tsx` — live in the timeline render tree |
+| Mount spot-check | `npm run dev` + browser → `/brand/campaigns/test-campaign-id` (no backend up) | ⚠️ PARTIAL — confirmed Ananya's note: the campaign-detail page's own parent data fetch (`GET/OPTIONS .../campaigns/:id`, `.../deals?status=all`, `.../campaigns/:id/analytics`) fails first with `net::ERR_CONNECTION_REFUSED` (network log confirms), so the deliverable-review-panel itself never mounts without live campaign/deal data — page falls through to a 404/error state before the panel's Approve/Request-Revision buttons are reachable. Could not directly exercise the panel's new network-call behavior in this environment. |
+
+**VERDICT: ✅ BUILD PASS (authoritative gate) — cleared to score.** Mount could not be fully exercised (pre-existing environment limitation, not a defect in this diff) — build + bundle-inclusion evidence stand in per Priya's guidance. VETO not exercised.
+
+---
+
 ## TASK: Brand Settings workspace-info (name/email/phone/website) — DUAL gate
 
 ```
@@ -172,6 +237,31 @@ FROM Meera → Priya | Wave 2 local verification (4 checks) | influora-api/src/t
 `npx tsc --noEmit -p tsconfig.json` → exit 0, zero errors.
 
 **VETO: not exercised — full PASS across all 4 checks.** Cleared to proceed to Kabir (I4 security) per the Wave 2 gate loop.
+
+---
+
+## TASK: Brand contracts partial integration fix — QA complete (Ananya → Kavya → Meera)
+
+```
+FROM Priya → Kavya | Verify Ananya's interrupted contract integration work (read CURRENT code, no git diff) | src/lib/contract-generator.ts, src/components/brand/deal-room/deal-contract-tab.tsx, src/components/brand/timeline/panels/contract-panel.tsx, src/components/creator/deal-room/creator-contract-panel.tsx, src/components/creator/deal-room/creator-deal-contract-tab.tsx, src/components/brand/contracts/contracts-and-deliverables.tsx, src/lib/api.ts | ✅ PASS | ready for Meera build verification
+```
+
+**Kavya QA Verdict — 2026-07-18 20:00 IST**
+
+| Check | Result | Evidence |
+|-------|--------|----------|
+| 1. signContract calls REAL api.contracts.sign | ✅ PASS | src/lib/contract-generator.ts:225 — calls `api.contracts.sign(signedBy, contractId, { name, agreedAt })` with real contractId, signerName, ISO timestamp; error handling present (lines 234-237); NO setTimeout/simulation |
+| 2. All callers pass real contract ID + signer name | ✅ PASS | 4 callers verified: (1) deal-contract-tab.tsx:79 — contractId from props, signerName trimmed (line 75); (2) contract-panel.tsx:69 — contractId from event.metadata, guarded (line 66), disabled if missing (line 216); (3) creator-contract-panel.tsx:84 — same guard pattern (lines 81,271,291); (4) creator-deal-contract-tab.tsx:71 — contractId from props. NO placeholders, NO fake IDs. |
+| 3. contracts-and-deliverables.tsx live mode | ✅ PASS | Line 416: `liveApi ? [] : mockContracts` — live starts EMPTY, not seeded. Line 447: fetchContracts early-returns if `!liveApi`. Comments 414-415, 332-333, 444-445 document NO mock merge in live mode. |
+| 4. Backend API chain exists | ✅ PASS | src/lib/api.ts:1389 → POST `/contracts/:id/sign` → influora-api/.../web/ContractController.java:78 (confirmed via grep) |
+| 5. Code quality | ✅ PASS | No `any` (grepped all 5 TS files, zero hits). No console.log (grepped contract-generator.ts, zero). All callers catch ApiError, surface to user via toast. |
+
+**Notes:**
+- Contracts page deliverables section may show empty in live mode if backend list endpoint doesn't return deliverables/clauses — ACCEPTABLE (honest empty, no mock leak).
+- All callers guard missing contractId (early return or button disable).
+- Full review report: `wiki/errors/contract-generator-review.md`
+
+**NEXT:** Meera runs `npm run build` to verify frontend builds cleanly with this integration.
 
 ---
 
@@ -888,3 +978,11 @@ FROM Priya (direct) → Vikram | Add real `phone` column — closes the gap flag
 **Schema log:** `wiki/processes/schema-changes.md` updated with this migration's row + a notes entry.
 
 2026-07-18 16:43 | Meera -> Arjun | AdminBrandServiceBudgetOverrideTest verified | influora-api/src/test/java/com/influora/service/admin/AdminBrandServiceBudgetOverrideTest.java | PASS (8/8 tests, BUILD SUCCESS, ~35.7s) | partial-escrow scenario (testPartialEscrowFloorsAtAgreedRate: agreedRate 100k + FUNDED 30k -> floors at 100k) confirmed passing; no compile errors; ready for Swapnil review
+
+---
+
+Ananya → Kavya | Fix mock-only Approve/Request Revision on brand timeline deliverable panel (Priya direct task) | src/components/brand/timeline/panels/deliverable-review-panel.tsx | READY for QA | replaced fake `setTimeout` in handleApprove/handleRequestRevision with real `deliverablesApi.approve`/`deliverablesApi.requestRevision` calls (src/lib/api.ts:1434-1446), same proven pattern as brand-chat.tsx handleApproveLive/handleReviseLive. Uses `event.metadata.deliverableId` (not `event.id`) as the backend id — was already present on TimelineEventMetadata, no new prop threading needed on deliverable-card.tsx. Added inline `submitError` state + banner on failure, guards on missing deliverableId. tsc --noEmit clean. Verified via temporary dev-only smoke route (created + fully removed after test): Approve/Request Revision now fire real POST /deliverables/:id/approve and /revise, confirmed ERR_CONNECTION_REFUSED in network log against live-mode backend (none running) — proves it's a real network attempt, not a fake resolve. Deal-Room surface (brand-chat.tsx) untouched.
+
+---
+
+Ananya → Kavya | Wire Hype campaign config into POST/PATCH /campaigns (Priya/coordinator direct task, depends on Vikram's HypeConfigDto backend) | src/lib/api.ts (campaignToPayload + mapCampaignFromApi) | READY for QA (needs Vikram's backend running for live verification) | campaignToPayload now forwards `campaignType` + full `hype` block (was dropping both). `liveUntil` converted Date→ISO string on write (fmtIso), ISO string→Date on read (mapCampaignFromApi), matching HypeConfigDto's raw-string contract (CampaignDtos.java:43-47). FE/BE enum mismatch handled: FE CampaignType has 'OPEN' which backend's CampaignIntentType (HYPE/DIRECT/REVIEW/STANDARD) rejects — only forward campaignType when it isn't 'OPEN'; omitting it for the generic (non-Hype) create/edit forms is unchanged behavior (backend defaults absent campaignType to STANDARD). Did NOT reconcile the full OPEN/STANDARD mismatch — flagging as a separate pre-existing item, not in scope. Read path: campaigns-list.tsx / HypeCampaignCard already consumed campaign.campaignType/campaign.hype correctly, no changes needed there. brand-edit-campaign.tsx has no Hype UI — confirmed backend silently ignores PATCH with hype:undefined for an existing HYPE campaign (CampaignService.java:201-210), so no regression from the generic edit form. tsc --noEmit clean. Verified via temporary dev-only smoke route (created + fully removed after test, git status confirms clean): captured actual POST /campaigns bodies — Hype create sent `campaignType:"HYPE"` + full `hype` block with `liveUntil` as ISO string (e.g. "2026-07-21T13:11:44.230Z"); standard create sent neither `campaignType` nor `hype` keys at all (no "OPEN" ever sent).
