@@ -1,6 +1,26 @@
 # Static-serving config for the Vite SPA build (see ../Dockerfile). Not a reverse proxy — the
 # browser talks to influora-api directly at the VITE_API_BASE_URL baked in at build time, so
 # nginx's only job here is serving the prebuilt dist/ bundle and handling client-side routing.
+#
+# TEMPLATE FILE (Wave 2, Priya): contains ${CSP_API_ORIGIN} / ${CSP_MEERA_ORIGIN} placeholders in
+# the CSP connect-src directive below. The Dockerfile runtime stage runs this through `envsubst`
+# at BUILD time — restricted to just those two var names — to produce the real
+# /etc/nginx/conf.d/default.conf that the stock nginx.conf `include`s from inside its top-level
+# `http {}` block, which is why the `map` directive below is valid here even though this file
+# itself contains no explicit `http {}` wrapper.
+
+# QA fix (Kavya): Cache-Control is now computed once per-request via this http-context `map`
+# instead of being set with per-location `add_header`/`expires`. Fingerprinted assets need the
+# `immutable` keyword (skips revalidation entirely, not just a long max-age), but `expires` has
+# no way to emit `immutable` — only a bare `add_header Cache-Control ...` can. Emitting that
+# add_header inside `location /assets/` would reset the location's inherited add_header list
+# (see I1 fix note below) and drop the 6 security headers again. Resolving the value here and
+# emitting it with ONE server-level add_header keeps every add_header directive in a single
+# context, so nothing ever resets.
+map $uri $influora_cache_control {
+    default        "no-cache";
+    ~^/assets/     "public, max-age=31536000, immutable";
+}
 
 server {
     listen 80;
@@ -9,8 +29,54 @@ server {
     index index.html;
 
     server_tokens off;
+
+    # I1 fix: `add_header` is inherited from a parent context ONLY when the current context
+    # defines zero `add_header` directives of its own — a single add_header in a location block
+    # resets the entire inherited list rather than merging with it. `location /assets/` and
+    # `location = /index.html` below each used to declare their own Cache-Control add_header,
+    # which silently dropped every header declared here (including on index.html itself), since
+    # this nginx server — not public/_headers, a Cloudflare Pages/Netlify-only file this build
+    # doesn't read — is what actually serves the SPA in production.
+    #
+    # Fix: declare every security header ONCE, here, plus a single Cache-Control add_header whose
+    # value comes from the $influora_cache_control map above (computed per-path: no-cache for
+    # index.html, "public, max-age=31536000, immutable" for /assets/). All add_header directives
+    # now live in this one server block with none in any location block, so nginx never resets
+    # the inherited list.
+    #
+    # CSP connect-src origins — templated, NOT hardcoded (Wave 2 fix, Priya):
+    #   - ${CSP_API_ORIGIN}    -> influora-api; derived from VITE_API_BASE_URL at Docker BUILD
+    #                             time (see ../Dockerfile runtime stage), the SAME build-arg baked
+    #                             into the JS bundle by the Vite build stage. Was previously a
+    #                             hardcoded literal (https://api.influora.com) that matched the
+    #                             build-arg default only by coincidence — if ops changed
+    #                             --build-arg VITE_API_BASE_URL without also editing this file, the
+    #                             CSP would silently block every API call in prod. Deriving both
+    #                             from one source makes that drift impossible.
+    #   - ${CSP_MEERA_ORIGIN}  -> influora-ai (Python) Meera turn stream; meera-api.ts /
+    #                             useMeeraStream.ts POST to `${MEERA_STREAM_BASE_URL}/stream` and
+    #                             read the reply via fetch() as text/event-stream (NOT a native
+    #                             WebSocket), so this belongs in connect-src, not a ws:/wss: scheme.
+    #                             Derived from VITE_MEERA_STREAM_URL, defaulting (both here and in
+    #                             src/lib/meera-api.ts:28) to https://ai.influora.internal when
+    #                             that build-arg is unset, as it is in .env.production today.
+    # This file is processed by `envsubst` in the Dockerfile runtime stage (BUILD time, not
+    # container start), restricted to ONLY these two var names so nginx's own runtime `$`-vars
+    # ($uri, $influora_cache_control, $host, etc.) above and below are left untouched.
+    #
+    # Deliberately narrower than public/_headers' bare `https:`: that file targets Cloudflare
+    # Pages/Netlify previews where the deployed origin isn't known ahead of time, but this nginx
+    # image always serves one fixed production build, so the explicit two-origin allowlist is
+    # tighter. `ws:`/`wss:` also deliberately left out: src/admin/services/websocket.ts exists but
+    # is gated OFF by default (VITE_ADMIN_WS_ENABLED unset) and has no backend endpoint yet per
+    # that file's own header comment — add the real wss:// origin here once that ships.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ${CSP_API_ORIGIN} ${CSP_MEERA_ORIGIN}; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+    add_header Cache-Control $influora_cache_control always;
 
     # react-router-dom v7 client-side routing (TECH-STACK.md) — any path not matching a real
     # static file falls back to index.html so a hard refresh on a deep link (e.g.
@@ -20,16 +86,17 @@ server {
     }
 
     # Vite fingerprints every file under /assets, so these are safe to cache aggressively —
-    # a new deploy ships new filenames, never mutates an existing one.
+    # a new deploy ships new filenames, never mutates an existing one. This location declares no
+    # add_header/expires of its own; Cache-Control is set once at server level from
+    # $influora_cache_control ("public, max-age=31536000, immutable" for this path), so the
+    # location keeps inheriting the security headers above with no reset risk.
     location /assets/ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
     }
 
     # index.html itself must never be cached — it's the one file that has to be re-fetched on
-    # every deploy for users to pick up the new asset filenames.
+    # every deploy for users to pick up the new asset filenames. No add_header/expires here either;
+    # $influora_cache_control falls through to its `default` value of "no-cache" for this path.
     location = /index.html {
-        add_header Cache-Control "no-cache";
     }
 
     gzip on;
