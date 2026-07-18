@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { TimelineEvent } from '@/lib/types';
+import { deliverables as deliverablesApi, ApiError } from '@/lib/api';
 import {
   Play, MessageSquare, CheckCircle2, AlertCircle, Upload,
   FileIcon, X,
@@ -49,6 +50,7 @@ export function DeliverableReviewPanel({
 
   const [feedback, setFeedback] = React.useState('');
   const [feedbackError, setFeedbackError] = React.useState('');
+  const [submitError, setSubmitError] = React.useState('');
   const [uploading, setUploading] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState(0);
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
@@ -57,6 +59,7 @@ export function DeliverableReviewPanel({
   const resetState = () => {
     setFeedback('');
     setFeedbackError('');
+    setSubmitError('');
     setSelectedFile(null);
     setUploadProgress(0);
   };
@@ -65,13 +68,29 @@ export function DeliverableReviewPanel({
     if (!open) resetState();
   }, [open]);
 
+  // Real deliverable id used by the backend (POST /deliverables/:id/approve|revise) —
+  // distinct from `event.id`, which is the timeline event's own id. See
+  // deliverablesApi.approve/requestRevision (src/lib/api.ts:1434-1446), the
+  // proven pattern already used by brand-chat.tsx's handleApproveLive/handleReviseLive.
+  const deliverableId = meta?.deliverableId;
+
   const handleApprove = async () => {
+    if (!deliverableId) {
+      setSubmitError('Missing deliverable reference — cannot approve.');
+      return;
+    }
+    setSubmitError('');
     setIsSubmitting(true);
-    await new Promise((r) => setTimeout(r, 600));
-    onApprove?.(event.id, feedback.trim());
-    onReviewSuccess?.({ deliverableId: event.id, status: 'approved', feedback: feedback.trim() || undefined });
-    setIsSubmitting(false);
-    onOpenChange(false);
+    try {
+      await deliverablesApi.approve(deliverableId);
+      onApprove?.(event.id, feedback.trim());
+      onReviewSuccess?.({ deliverableId, status: 'approved', feedback: feedback.trim() || undefined });
+      onOpenChange(false);
+    } catch (err) {
+      setSubmitError(err instanceof ApiError ? err.message : 'Could not approve. Try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleRequestRevision = async () => {
@@ -79,13 +98,23 @@ export function DeliverableReviewPanel({
       setFeedbackError('Please provide feedback so the creator knows what to change');
       return;
     }
+    if (!deliverableId) {
+      setSubmitError('Missing deliverable reference — cannot request revision.');
+      return;
+    }
     setFeedbackError('');
+    setSubmitError('');
     setIsSubmitting(true);
-    await new Promise((r) => setTimeout(r, 600));
-    onRequestRevision?.(event.id, feedback.trim());
-    onReviewSuccess?.({ deliverableId: event.id, status: 'revision_requested', feedback: feedback.trim() });
-    setIsSubmitting(false);
-    onOpenChange(false);
+    try {
+      await deliverablesApi.requestRevision(deliverableId, feedback.trim());
+      onRequestRevision?.(event.id, feedback.trim());
+      onReviewSuccess?.({ deliverableId, status: 'revision_requested', feedback: feedback.trim() });
+      onOpenChange(false);
+    } catch (err) {
+      setSubmitError(err instanceof ApiError ? err.message : 'Could not request revision. Try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleUpload = async () => {
@@ -296,6 +325,13 @@ export function DeliverableReviewPanel({
           )}
 
           <Separator />
+
+          {submitError && (
+            <div className="flex items-center gap-1.5 text-red-500 text-xs">
+              <AlertCircle className="h-3.5 w-3.5" />
+              {submitError}
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex gap-2">

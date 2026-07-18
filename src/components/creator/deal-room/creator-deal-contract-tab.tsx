@@ -9,7 +9,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
 import { downloadContractPDF, signContract } from '@/lib/contract-generator';
+import { ApiError } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatINR } from '@/lib/utils';
 import type { DealContractStatus } from '@/components/brand/deal-room/deal-contract-tab';
@@ -33,6 +35,7 @@ export function CreatorDealContractTab({
   onStatusChange,
 }: CreatorDealContractTabProps) {
   const [isSigning, setIsSigning] = React.useState(false);
+  const [signerName, setSignerName] = React.useState('');
   const { toast } = useToast();
   const canSign = status === 'brand_signed';
   const netEarnings = Math.round(amount * 0.79);
@@ -61,15 +64,22 @@ export function CreatorDealContractTab({
   };
 
   const handleSign = async () => {
+    const trimmedName = signerName.trim();
+    if (!trimmedName) return;
     setIsSigning(true);
     try {
-      const result = await signContract(contractId, 'creator');
+      const result = await signContract(contractId, 'creator', trimmedName);
       if (result.success) {
         onStatusChange(statusAfterCreatorSign());
         toast({ title: 'Contract signed', description: 'Escrow is funded. You can start deliverables.' });
+        setSignerName('');
       }
-    } catch {
-      toast({ title: 'Signing failed', variant: 'destructive' });
+    } catch (err) {
+      toast({
+        title: 'Signing failed',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setIsSigning(false);
     }
@@ -111,13 +121,32 @@ export function CreatorDealContractTab({
           </div>
         </div>
 
+        {canSign && (
+          <div className="space-y-2">
+            <label htmlFor="creator-signer-name" className="text-xs font-medium text-muted-foreground">
+              Type your full legal name to sign
+            </label>
+            <Input
+              id="creator-signer-name"
+              placeholder="Your legal name"
+              value={signerName}
+              onChange={(e) => setSignerName(e.target.value)}
+              disabled={isSigning}
+            />
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row gap-2">
           <Button variant="outline" className="flex-1 gap-2" onClick={handleDownload}>
             <Download className="h-4 w-4" />
             Download PDF
           </Button>
           {canSign && (
-            <Button className="flex-1 gap-2" onClick={handleSign} disabled={isSigning}>
+            <Button
+              className="flex-1 gap-2"
+              onClick={handleSign}
+              disabled={isSigning || !signerName.trim()}
+            >
               {isSigning ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />

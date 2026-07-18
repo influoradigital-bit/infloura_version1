@@ -6,10 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Input } from '@/components/ui/input';
 import { FileText, Download, PenTool, CheckCircle2, Lock, Loader2, AlertCircle } from 'lucide-react';
 import { TimelineEvent } from '@/lib/types';
 import type { DealContractStatus } from '@/components/brand/deal-room/deal-contract-tab';
 import { downloadContractPDF, signContract } from '@/lib/contract-generator';
+import { ApiError } from '@/lib/api';
 import { statusAfterCreatorSign } from '@/lib/creator-contract-store';
 import { useToast } from '@/hooks/use-toast';
 
@@ -28,7 +30,9 @@ export function CreatorContractPanel({
 }) {
   const meta = event.metadata;
   const [isSigning, setIsSigning] = React.useState(false);
+  const [signerName, setSignerName] = React.useState('');
   const { toast } = useToast();
+  const contractId = meta?.contractId;
 
   const statusSteps = [
     { key: 'generated', label: 'Generated', done: true },
@@ -73,9 +77,11 @@ export function CreatorContractPanel({
   };
 
   const handleSign = async () => {
+    const trimmedName = signerName.trim();
+    if (!contractId || !trimmedName) return;
     setIsSigning(true);
     try {
-      const result = await signContract(meta?.contractId || 'CONT-001', 'creator');
+      const result = await signContract(contractId, 'creator', trimmedName);
       if (result.success) {
         const next = statusAfterCreatorSign();
         onStatusChange(next);
@@ -83,12 +89,13 @@ export function CreatorContractPanel({
           title: 'Contract signed',
           description: 'Escrow is funded. You can start on deliverables.',
         });
+        setSignerName('');
         onOpenChange(false);
       }
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to sign contract. Please try again.',
+        description: error instanceof ApiError ? error.message : 'Failed to sign contract. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -251,6 +258,26 @@ export function CreatorContractPanel({
 
           <Separator />
 
+          {shouldShowSignButton && (
+            <div className="space-y-2">
+              <label htmlFor="creator-panel-signer-name" className="text-xs font-medium text-gray-600">
+                Type your full legal name to sign
+              </label>
+              <Input
+                id="creator-panel-signer-name"
+                placeholder="Your legal name"
+                value={signerName}
+                onChange={(e) => setSignerName(e.target.value)}
+                disabled={isSigning || !contractId}
+              />
+              {!contractId && (
+                <p className="text-xs text-destructive">
+                  No contract ID on this event — signing is unavailable.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex gap-2 pt-4">
             <Button variant="outline" className="flex-1 gap-2" onClick={handleDownloadPDF}>
@@ -258,7 +285,11 @@ export function CreatorContractPanel({
               Download PDF
             </Button>
             {shouldShowSignButton && (
-              <Button className="flex-1 gap-2 bg-stage-approved-fg hover:opacity-90 text-white" onClick={handleSign} disabled={isSigning}>
+              <Button
+                className="flex-1 gap-2 bg-stage-approved-fg hover:opacity-90 text-white"
+                onClick={handleSign}
+                disabled={isSigning || !contractId || !signerName.trim()}
+              >
                 {isSigning ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />

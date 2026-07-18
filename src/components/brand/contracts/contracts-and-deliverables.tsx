@@ -327,10 +327,15 @@ interface ApiContractRow {
 }
 
 /**
- * Merge a live contract row with its mock fixture (matched by id, when one
- * exists). `deliverables` and `clauses` are UI-only detail the `/contracts`
- * endpoint doesn't return yet, so they always come from the mock fallback
- * (or an empty array for contracts with no local fixture).
+ * Merge a live contract row with the previously-known REAL state for that
+ * same contract (e.g. the prior list row, or the contract as last rendered)
+ * — never with `mockContracts`. Mock fixtures are only used as the initial
+ * state in non-live/demo mode; live mode never falls back to them.
+ *
+ * `deliverables` and `clauses` are UI-only detail that `/contracts` and
+ * `/contracts/:id` don't return yet (no backend list endpoint for either).
+ * In live mode they are carried over from `fallback` (real prior state) if
+ * present, otherwise left as an honest empty array — never fabricated.
  */
 function mergeContractRow(row: ApiContractRow, fallback?: Contract): Contract {
   return {
@@ -406,10 +411,14 @@ export function ContractsAndDeliverables() {
   const liveApi = isApiLive();
   const { toast } = useToast();
 
-  const [contracts, setContracts] = useState<Contract[]>(mockContracts);
+  // Live mode never seeds from mockContracts — start empty and let
+  // fetchContracts populate real data, so the UI never flashes fixtures.
+  const [contracts, setContracts] = useState<Contract[]>(liveApi ? [] : mockContracts);
   const [contractsLoading, setContractsLoading] = useState(false);
   const [contractsError, setContractsError] = useState<string | null>(null);
-  const [selectedContractId, setSelectedContractId] = useState<string | null>(mockContracts[0]?.id ?? null);
+  const [selectedContractId, setSelectedContractId] = useState<string | null>(
+    liveApi ? null : mockContracts[0]?.id ?? null,
+  );
   const [activeTab, setActiveTab] = useState('overview');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -430,20 +439,21 @@ export function ContractsAndDeliverables() {
 
   const selectedContract = contracts.find((c) => c.id === selectedContractId) ?? null;
 
-  // GET /contracts (no dealId → all contracts for this brand). Falls back to
-  // the mock fixtures below whenever mock mode is on, the request fails, or
-  // live mode returns an empty list.
+  // GET /contracts (no dealId → all contracts for this brand). Live mode
+  // only — renders exactly what the backend returns, including an empty
+  // list; it never falls back to mockContracts. Mock fixtures are used
+  // solely in non-live/demo mode via the initial state above.
   const fetchContracts = useCallback(async () => {
     if (!liveApi) return;
     setContractsLoading(true);
     setContractsError(null);
     try {
       const rows = (await api.contracts.list('brand')) as ApiContractRow[];
-      if (Array.isArray(rows) && rows.length > 0) {
-        setContracts(
-          rows.map((row) => mergeContractRow(row, mockContracts.find((m) => m.id === row.id))),
-        );
-      }
+      setContracts((prev) =>
+        Array.isArray(rows)
+          ? rows.map((row) => mergeContractRow(row, prev.find((c) => c.id === row.id)))
+          : [],
+      );
     } catch (err) {
       setContractsError(err instanceof ApiError ? err.message : 'Could not load contracts.');
     } finally {
@@ -473,11 +483,7 @@ export function ContractsAndDeliverables() {
         const row = (await api.contracts.get('brand', selectedContractId)) as ApiContractRow | null;
         if (!cancelled && row) {
           setContracts((prev) =>
-            prev.map((c) =>
-              c.id === selectedContractId
-                ? mergeContractRow(row, mockContracts.find((m) => m.id === selectedContractId) ?? c)
-                : c,
-            ),
+            prev.map((c) => (c.id === selectedContractId ? mergeContractRow(row, c) : c)),
           );
         }
       } catch {
@@ -700,6 +706,13 @@ export function ContractsAndDeliverables() {
                 </div>
               )}
               <ScrollArea className="h-[calc(100vh-280px)]">
+                {!contractsLoading && filteredContracts.length === 0 && (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    {contracts.length === 0
+                      ? 'No contracts yet.'
+                      : 'No contracts match your search or filter.'}
+                  </div>
+                )}
                 <div className="p-2 space-y-2">
                   {filteredContracts.map((contract) => {
                     const StatusIcon = statusConfig[contract.status].icon;
@@ -931,6 +944,11 @@ export function ContractsAndDeliverables() {
                     {/* Deliverables Preview */}
                     <div>
                       <h3 className="font-semibold mb-3">Deliverables Status</h3>
+                      {liveApi && selectedContract.deliverables.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          Deliverable detail isn&apos;t available from the live contracts list yet.
+                        </p>
+                      ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {selectedContract.deliverables.map((deliverable) => {
                           const StatusIcon = deliverableStatusConfig[deliverable.status].icon;
@@ -955,6 +973,7 @@ export function ContractsAndDeliverables() {
                           );
                         })}
                       </div>
+                      )}
                     </div>
                   </TabsContent>
 
@@ -969,7 +988,13 @@ export function ContractsAndDeliverables() {
                           </Badge>
                         )}
                       </div>
-                      
+
+                      {liveApi && selectedContract.clauses.length === 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          Clause text isn&apos;t available from the live contracts list yet.
+                        </p>
+                      )}
+
                       {selectedContract.clauses.map((clause, index) => (
                         <Card key={clause.id} className="p-4 border-border">
                           <div className="flex items-start justify-between gap-4">
@@ -1029,6 +1054,11 @@ export function ContractsAndDeliverables() {
                   {/* Deliverables Tab */}
                   <TabsContent value="deliverables" className="p-6">
                     <div className="space-y-4">
+                      {liveApi && selectedContract.deliverables.length === 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          Deliverable detail isn&apos;t available from the live contracts list yet.
+                        </p>
+                      )}
                       {selectedContract.deliverables.map((deliverable) => {
                         const StatusIcon = deliverableStatusConfig[deliverable.status].icon;
                         return (
@@ -1188,7 +1218,13 @@ export function ContractsAndDeliverables() {
               <Card className="border-border flex items-center justify-center h-96">
                 <div className="text-center">
                   <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">Select a contract to view details</p>
+                  <p className="text-muted-foreground">
+                    {contractsLoading
+                      ? 'Loading contracts…'
+                      : contracts.length === 0
+                        ? 'No contracts yet.'
+                        : 'Select a contract to view details'}
+                  </p>
                 </div>
               </Card>
             )}

@@ -22,10 +22,11 @@ const LIFECYCLE_LABEL: Record<DisputeLifecycleStatus, string> = {
  * Brand disputes — F3 (BRAND_EXECUTION_PLAN.md).
  * Read-only tracking view. Opening a dispute stays in the deal room
  * (POST /deals/{dealId}/disputes); this page only lists what's already open
- * or resolved. See the gap note above `brandDisputes` in src/lib/api.ts —
- * there is no brand-scoped GET /brand/disputes yet, so live mode shows a
- * partial (deal-status-only) list plus an honest banner about the missing
- * endpoint.
+ * or resolved. Live mode calls the real GET /brand/disputes/list
+ * (BrandDisputeController, P2-14 — see src/lib/api.ts), which returns full
+ * display fields (status, opened date, reason), so the "partial data" banner
+ * below only fires if the backend ever omits `disputeStatus` (defensive, not
+ * expected in normal operation).
  *
  * No <BrandLayout> wrap here — the route (App.tsx) already applies it via
  * BrandLayoutWrapper. (brand-reviews.tsx self-wraps too, which double-nests

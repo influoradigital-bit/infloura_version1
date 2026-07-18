@@ -783,6 +783,14 @@ function mapCampaignFromApi(row: CampaignApiRow): Campaign {
       : undefined,
     createdAt: row.createdAt ? new Date(row.createdAt as unknown as string) : new Date(),
     updatedAt: row.updatedAt ? new Date(row.updatedAt as unknown as string) : new Date(),
+    // Backend keeps HypeConfigDto.liveUntil as a raw ISO-8601 string (see
+    // CampaignDtos.java:43-47), but HypeConfig.liveUntil is typed `Date`
+    // FE-side (src/lib/types.ts:225) — convert on read same as the other
+    // timestamp fields above. `hype` itself is entirely absent (NON_NULL) on
+    // non-Hype campaigns, so this only fires when there's a real block to fix up.
+    hype: row.hype
+      ? { ...row.hype, liveUntil: new Date(row.hype.liveUntil as unknown as string) }
+      : row.hype,
   };
 }
 
@@ -793,10 +801,41 @@ function campaignToPayload(payload: Partial<Campaign>) {
     const date = d instanceof Date ? d : new Date(d);
     return date.toISOString().slice(0, 10);
   };
+  // Full ISO-8601 timestamp (not the date-only `fmt` above) — matches
+  // HypeConfigDto.liveUntil on the backend, kept as a raw string there
+  // (CampaignDtos.java:43-47 — JsonLists' plain ObjectMapper has no
+  // jackson-datatype-jsr310, so a typed Instant would fail on persist).
+  const fmtIso = (d: Date | string) => (d instanceof Date ? d : new Date(d)).toISOString();
+
+  // FE CampaignType ('OPEN' | 'DIRECT' | 'HYPE' — src/lib/types.ts:15) does not
+  // match the backend's CampaignIntentType enum (HYPE | DIRECT | REVIEW |
+  // STANDARD). 'OPEN' has no backend equivalent and would 400, so only forward
+  // campaignType when it's a value the backend actually accepts; omitting it
+  // otherwise preserves today's behavior for non-Hype creates (backend
+  // defaults absent/null campaignType to STANDARD — CampaignService.java:115-116).
+  // Reconciling the full OPEN/STANDARD mismatch is a separate, pre-existing item.
+  const campaignType = payload.campaignType !== 'OPEN' ? payload.campaignType : undefined;
+
+  const hype = payload.hype
+    ? {
+        sourceReelUrl: payload.hype.sourceReelUrl,
+        audioTrack: payload.hype.audioTrack,
+        hashtag: payload.hype.hashtag,
+        formatLanes: payload.hype.formatLanes,
+        perReelRate: payload.hype.perReelRate,
+        currency: payload.hype.currency,
+        slotCap: payload.hype.slotCap,
+        slotsFilled: payload.hype.slotsFilled,
+        liveUntil: fmtIso(payload.hype.liveUntil),
+      }
+    : undefined;
+
   return {
     title: payload.title,
     description: payload.description,
     objectives: payload.objectives,
+    campaignType,
+    hype,
     status: payload.status,
     budget: payload.budget,
     timeline: timeline
@@ -2969,11 +3008,19 @@ export type DisputeLifecycleStatus =
   | 'RESOLVED_SPLIT';
 
 /**
- * Row rendered by the brand/creator dispute pages. In live mode the list is
- * derived from disputed deals (`Deal.status === 'DISPUTED'`), so the dispute-detail
- * fields are undefined and the page shows its "partial data" banner — no join data
- * is fabricated. A future GET /creator/disputes (+ enriched GET /brand/disputes)
- * would populate the optional fields.
+ * Row rendered by the brand/creator dispute pages.
+ *
+ * Brand side (P2-14): live mode calls the real `GET /brand/disputes/list`
+ * (BrandDisputeController → DisputeService#listDisplayForBrand), whose
+ * `DisputeListItemResponse` DTO matches this shape field-for-field —
+ * `disputeStatus`/`openedAt`/`reason` are always populated, so the page's
+ * "partial data" banner no longer fires in live mode.
+ *
+ * Creator side: still derived from disputed deals (`Deal.status === 'DISPUTED'`)
+ * via `disputedDealsAsRows`, so the dispute-detail fields stay undefined there
+ * and the page shows its "partial data" banner — no join data is fabricated.
+ * `GET /creator/disputes` (CreatorDisputeController) now exists with the same
+ * enriched shape as the brand endpoint; wiring it is a follow-up, not done here.
  */
 export interface DisputeRow {
   collaborationId: string;
@@ -3051,10 +3098,22 @@ export const creatorDisputes = {
 };
 
 export const brandDisputes = {
-  /** Live: derived from /deals (a real GET /brand/disputes exists but lacks deal display
-   *  fields, so deriving from deals avoids a fabricated join). Mock: demo rows. */
+  /**
+   * GET /brand/disputes/list (BrandDisputeController.java:38, P2-14) — real dispute list
+   * with display fields (campaign name, creator name, deal value), scoped to the brand's
+   * workspace server-side via DisputeService#listDisplayForBrand. Response shape
+   * (DisputeListItemResponse) matches BrandDisputeRow field-for-field, so no client-side
+   * mapping is needed. Mock: demo rows.
+   *
+   * Opening a dispute is intentionally NOT wired here: this page is read-only by design
+   * (see its header comment) — disputes are opened from the deal room via the shared
+   * POST /deals/:dealId/disputes ("either party may open", DealController.java:167), and
+   * BrandDisputeController exposes no separate open/raise-dispute endpoint of its own.
+   */
   list: (): Promise<BrandDisputeRow[]> =>
-    isLive() ? disputedDealsAsRows('brand') : mockOr(mockDisputeRows('brand')),
+    isLive()
+      ? http.request<BrandDisputeRow[]>('GET', '/brand/disputes/list', { role: 'brand' })
+      : mockOr(mockDisputeRows('brand')),
 };
 
 // ---------------------------------------------------------------------------

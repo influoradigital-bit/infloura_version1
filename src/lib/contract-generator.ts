@@ -3,6 +3,9 @@
  * Creates PDF contracts from accepted proposals
  */
 
+import { api, ApiError, type Role } from '@/lib/api';
+import type { ContractStatus } from '@/lib/types';
+
 export interface ContractData {
   contractId: string;
   brandName: string;
@@ -199,25 +202,37 @@ export function downloadContractPDF(data: ContractData, filename: string = 'cont
 }
 
 /**
- * Mock function to handle contract signing
- * In production, this would integrate with digital signature service
+ * Sign a contract via the real backend.
+ * Calls `api.contracts.sign` (POST /contracts/:id/sign — ContractController.java:78),
+ * which persists the signature and returns the contract's post-sign status.
+ * In demo/mock mode, `api.contracts.sign` internally falls back to a mocked
+ * response — this function does not simulate anything itself.
+ *
+ * Throws `ApiError` (or rethrows whatever `api.contracts.sign` throws) on
+ * failure; callers are expected to catch and surface the error.
  */
 export async function signContract(
   contractId: string,
-  signedBy: 'brand' | 'creator'
+  signedBy: Role,
+  signerName: string,
 ): Promise<{
   success: boolean;
-  signature: string;
+  status: ContractStatus;
   timestamp: Date;
 }> {
-  // Simulate signature generation and recording
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        success: true,
-        signature: `sig_${contractId}_${signedBy}_${Date.now()}`,
-        timestamp: new Date(),
-      })
-    }, 800)
-  })
+  const agreedAt = new Date();
+  try {
+    const result = await api.contracts.sign(signedBy, contractId, {
+      name: signerName,
+      agreedAt: agreedAt.toISOString(),
+    });
+    return {
+      success: true,
+      status: result.status,
+      timestamp: agreedAt,
+    };
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    throw new Error('Could not sign contract. Please try again.');
+  }
 }

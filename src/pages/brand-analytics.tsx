@@ -1,9 +1,11 @@
 import * as React from 'react';
 import { Link } from 'react-router-dom';
 import {
+  AlertTriangle,
   BarChart3,
   Eye,
   Heart,
+  Loader2,
   TrendingUp,
   Users,
   ChevronRight,
@@ -14,10 +16,12 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent } from '@/components/ui/empty';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 import { CreatorMetricsCard } from '@/components/analytics/CreatorMetricsCard';
 import { MetricsTrendChart } from '@/components/analytics/MetricsTrendChart';
 import { useCreatorMetrics } from '@/hooks/analytics/useCreatorMetrics';
+import { api, ApiError, isApiLive } from '@/lib/api';
 import { demoCreators } from '@/lib/demo-data';
 import type { AnalyticsDateRange } from '@/lib/types';
 
@@ -26,6 +30,45 @@ const DATE_PRESETS = [
   { value: '14', label: 'Last 14 days' },
   { value: '30', label: 'Last 30 days' },
 ];
+
+/**
+ * Roster entry rendered by this page. Demo mode supplies the full
+ * `CreatorProfile` shape (followers/engagement included); live mode derives
+ * only `id`/`displayName` from the brand's real deals (see
+ * `deriveRosterFromDeals` below) — the deals endpoint carries no follower or
+ * engagement data, so those fields stay undefined rather than fabricated.
+ */
+interface RosterCreator {
+  id: string;
+  displayName: string;
+  totalFollowers?: number;
+  engagementRate?: number;
+}
+
+function demoRoster(): RosterCreator[] {
+  return demoCreators.map((c) => ({
+    id: c.id,
+    displayName: c.displayName,
+    totalFollowers: c.totalFollowers,
+    engagementRate: c.engagementRate,
+  }));
+}
+
+/**
+ * Real roster (live mode) — distinct creators the brand has actual deals
+ * with, derived from GET /deals?role=brand (already used elsewhere; no new
+ * backend endpoint invented). Keeps first-seen counterparty name per id.
+ */
+async function deriveRosterFromDeals(): Promise<RosterCreator[]> {
+  const dealRows = await api.deals.list('brand', 'all');
+  const seen = new Map<string, RosterCreator>();
+  for (const deal of dealRows) {
+    if (!seen.has(deal.counterpartyId)) {
+      seen.set(deal.counterpartyId, { id: deal.counterpartyId, displayName: deal.counterpartyName });
+    }
+  }
+  return Array.from(seen.values());
+}
 
 /**
  * Main analytics overview — brand-facing dashboard summarizing performance
@@ -44,11 +87,41 @@ const DATE_PRESETS = [
  * of their roster's creators from a selector and shows that creator's real
  * metrics trend, with the full roster listed below for quick navigation to
  * each creator's individual analytics page.
+ *
+ * Roster source: live mode derives the roster from the brand's actual deals
+ * (GET /deals?role=brand — see `deriveRosterFromDeals`) instead of demo
+ * fixtures, so the creator selector and per-creator metrics below are always
+ * fed real creator IDs. Mock mode keeps `demoCreators`.
  */
 export default function BrandAnalyticsPage() {
-  const roster = demoCreators;
-  const [selectedCreatorId, setSelectedCreatorId] = React.useState<string | undefined>(roster[0]?.id);
+  const live = isApiLive();
+  const [roster, setRoster] = React.useState<RosterCreator[]>(() => (live ? [] : demoRoster()));
+  const [rosterLoading, setRosterLoading] = React.useState(live);
+  const [rosterError, setRosterError] = React.useState<string | null>(null);
+  const [selectedCreatorId, setSelectedCreatorId] = React.useState<string | undefined>(() =>
+    live ? undefined : demoRoster()[0]?.id,
+  );
   const [days, setDays] = React.useState('14');
+
+  const refreshRoster = React.useCallback(async () => {
+    if (!live) return;
+    setRosterLoading(true);
+    setRosterError(null);
+    try {
+      const derived = await deriveRosterFromDeals();
+      setRoster(derived);
+      setSelectedCreatorId((prev) => prev ?? derived[0]?.id);
+    } catch (err) {
+      setRoster([]);
+      setRosterError(err instanceof ApiError ? err.message : 'Could not load your creator roster.');
+    } finally {
+      setRosterLoading(false);
+    }
+  }, [live]);
+
+  React.useEffect(() => {
+    void refreshRoster();
+  }, [refreshRoster]);
 
   const dateRange: AnalyticsDateRange = React.useMemo(() => {
     const end = new Date();
@@ -56,17 +129,47 @@ export default function BrandAnalyticsPage() {
     return { start, end };
   }, [days]);
 
-  const { data: metrics, loading, error } = useCreatorMetrics(selectedCreatorId, dateRange);
+  const { data: metrics, loading: metricsLoading, error: metricsError } = useCreatorMetrics(
+    selectedCreatorId,
+    dateRange,
+  );
 
   const selectedCreator = roster.find((c) => c.id === selectedCreatorId);
+
+  if (rosterLoading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label="Loading your creator roster" />
+      </div>
+    );
+  }
+
+  if (rosterError) {
+    return (
+      <Alert variant="destructive">
+        <AlertTriangle className="h-4 w-4" />
+        <AlertTitle>Could not load your creator roster</AlertTitle>
+        <AlertDescription>
+          {rosterError}
+          <div className="mt-2">
+            <Button size="sm" variant="outline" onClick={() => void refreshRoster()}>
+              Try again
+            </Button>
+          </div>
+        </AlertDescription>
+      </Alert>
+    );
+  }
 
   if (roster.length === 0) {
     return (
       <Empty>
         <EmptyHeader>
-          <EmptyTitle>No creators yet</EmptyTitle>
+          <EmptyTitle>{live ? 'No creators to analyze yet' : 'No creators yet'}</EmptyTitle>
           <EmptyDescription>
-            Analytics will appear here once you have creators in your roster.
+            {live
+              ? "Analytics will appear here once you have a deal with a creator."
+              : 'Analytics will appear here once you have creators in your roster.'}
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
@@ -116,10 +219,10 @@ export default function BrandAnalyticsPage() {
         </div>
       </div>
 
-      {error && (
+      {metricsError && (
         <Card className="border-destructive-foreground/30">
           <CardContent className="py-6 text-center text-sm text-destructive-foreground">
-            Couldn't load metrics for this creator. {error}
+            Couldn't load metrics for this creator. {metricsError}
           </CardContent>
         </Card>
       )}
@@ -131,28 +234,28 @@ export default function BrandAnalyticsPage() {
           value={metrics?.totalReach ?? 0}
           format="compact"
           icon={Eye}
-          loading={loading}
+          loading={metricsLoading}
         />
         <CreatorMetricsCard
           title="Engagement Rate"
           value={metrics?.engagementRate ?? 0}
           format="percentage"
           icon={Heart}
-          loading={loading}
+          loading={metricsLoading}
         />
         <CreatorMetricsCard
           title="Total Engagements"
           value={metrics?.totalEngagements ?? 0}
           format="compact"
           icon={TrendingUp}
-          loading={loading}
+          loading={metricsLoading}
         />
         <CreatorMetricsCard
           title="Follower Growth"
           value={metrics?.followerGrowth ?? 0}
           format="compact"
           icon={Users}
-          loading={loading}
+          loading={metricsLoading}
         />
       </div>
 
@@ -165,7 +268,7 @@ export default function BrandAnalyticsPage() {
           { key: 'reach', label: 'Reach', color: 'var(--chart-1)' },
           { key: 'impressions', label: 'Impressions', color: 'var(--chart-2)' },
         ]}
-        loading={loading}
+        loading={metricsLoading}
       />
 
       {/* Roster list */}
@@ -190,8 +293,9 @@ export default function BrandAnalyticsPage() {
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{creator.displayName}</p>
                 <p className="text-sm text-muted-foreground">
-                  {creator.totalFollowers.toLocaleString('en-IN')} followers &middot;{' '}
-                  {creator.engagementRate.toFixed(1)}% engagement
+                  {creator.totalFollowers !== undefined && creator.engagementRate !== undefined
+                    ? `${creator.totalFollowers.toLocaleString('en-IN')} followers · ${creator.engagementRate.toFixed(1)}% engagement`
+                    : 'View full analytics'}
                 </p>
               </div>
               <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
