@@ -46,6 +46,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -349,6 +350,77 @@ class ConfirmLaunchExecutorTest {
         verify(brandCampaignFeeService, times(1)).chargeOnPublish(campaign, WORKSPACE_ID);
         // The launch must not appear partially completed: no credit reset past the failed invite.
         verify(aiCreditService, never()).applyEscrowFundedReset(anyString(), any(Instant.class));
+    }
+
+    @Test
+    @DisplayName(
+            "[SEC: Kabir red-team LOW fix] creator_count above MAX_INVITE_CREATOR_COUNT (50) is"
+                    + " clamped server-side — never trusts the AI/intent-supplied count outright —"
+                    + " and records an INVITE_COUNT_CLAMPED audit entry")
+    void testCreatorCountAboveCapIsClampedAndAudited() {
+        Campaign campaign = campaign(CampaignStatus.DRAFT);
+        CampaignIntent intent = confirmedIntent(500);
+        stubIntentAndCampaign(intent, campaign);
+        stubFundedHold();
+
+        when(creatorProfileRepository.findAll(any(Pageable.class))).thenReturn(pageOf());
+
+        executor.doExecute(
+                WORKSPACE_ID, CONVERSATION_ID, IDEMPOTENCY_KEY, Map.of("campaign_intent_id", INTENT_ID));
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(creatorProfileRepository).findAll(pageableCaptor.capture());
+        assertEquals(50, pageableCaptor.getValue().getPageSize());
+
+        verify(auditLogService)
+                .recordToolCall(
+                        eq(WORKSPACE_ID),
+                        eq("confirm_launch"),
+                        eq("C"),
+                        eq(AuditLogService.OUTCOME_ALLOWED),
+                        eq("INVITE_COUNT_CLAMPED"),
+                        eq(IDEMPOTENCY_KEY),
+                        eq(null),
+                        eq(Map.of("campaignId", CAMPAIGN_ID, "requestedCount", 500, "clampedTo", 50)));
+    }
+
+    @Test
+    @DisplayName(
+            "creator_count within the cap is used as-is — no clamp, no INVITE_COUNT_CLAMPED audit"
+                    + " entry")
+    void testCreatorCountWithinCapIsNotClamped() {
+        Campaign campaign = campaign(CampaignStatus.DRAFT);
+        CampaignIntent intent = confirmedIntent(2);
+        stubIntentAndCampaign(intent, campaign);
+        stubFundedHold();
+
+        CreatorProfile creator1 = mockDiscoverableCreator("creator-1");
+        CreatorProfile creator2 = mockDiscoverableCreator("creator-2");
+        when(creatorProfileRepository.findAll(any(Pageable.class)))
+                .thenReturn(pageOf(creator1, creator2));
+        when(collaborationRepository.existsByCampaignIdAndCreatorId(eq(CAMPAIGN_ID), anyString()))
+                .thenReturn(false);
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        ConfirmLaunchResult result =
+                executor.doExecute(
+                        WORKSPACE_ID, CONVERSATION_ID, IDEMPOTENCY_KEY, Map.of("campaign_intent_id", INTENT_ID));
+
+        assertEquals(2, result.creatorsInvited());
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(creatorProfileRepository).findAll(pageableCaptor.capture());
+        assertEquals(2, pageableCaptor.getValue().getPageSize());
+        verify(auditLogService, never())
+                .recordToolCall(
+                        anyString(),
+                        anyString(),
+                        anyString(),
+                        anyString(),
+                        eq("INVITE_COUNT_CLAMPED"),
+                        any(),
+                        any(),
+                        any());
     }
 
     @Test

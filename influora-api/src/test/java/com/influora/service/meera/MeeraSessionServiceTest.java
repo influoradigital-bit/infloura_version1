@@ -4,10 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -23,9 +25,7 @@ import com.influora.domain.entity.BrandProfile;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.ConversationStatus;
 import com.influora.domain.enums.MessageRole;
-import com.influora.integration.ai.MeeraChatAiClient;
-import com.influora.integration.ai.MeeraChatAiClient.ChatTurnResult;
-import com.influora.integration.ai.MeeraChatAiException;
+import com.influora.domain.enums.UserType;
 import com.influora.repository.AiConversationRepository;
 import com.influora.repository.AiMessageRepository;
 import com.influora.repository.BrandProfileRepository;
@@ -43,6 +43,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 
 /**
  * [E2 audit finding #16, MEDIUM -- fixed] Unit tests for {@link
@@ -67,8 +68,8 @@ class MeeraSessionServiceTest {
     @Mock private AICreditService creditService;
     @Mock private BrandContextAssembler contextAssembler;
     @Mock private StreamTokenService streamTokenService;
+    @Mock private OnBehalfTokenService onBehalfTokenService;
     @Mock private IdempotencyService idempotencyService;
-    @Mock private MeeraChatAiClient chatAiClient;
 
     private MeeraSessionService service;
 
@@ -83,8 +84,8 @@ class MeeraSessionServiceTest {
                         creditService,
                         contextAssembler,
                         streamTokenService,
-                        idempotencyService,
-                        chatAiClient);
+                        onBehalfTokenService,
+                        idempotencyService);
     }
 
     private BrandAiCredit creditStatus() {
@@ -163,6 +164,7 @@ class MeeraSessionServiceTest {
         AiConversation conversation = conversation();
         when(conversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.of(conversation));
         when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(creditService.wasCharged(WORKSPACE_ID, IDEMPOTENCY_KEY)).thenReturn(true);
         mockIdempotencyExecuteOnce();
 
         AiMessage result =
@@ -172,8 +174,62 @@ class MeeraSessionServiceTest {
         assertEquals(CONTENT, result.getContent());
         assertEquals(MessageRole.ASSISTANT, result.getRole());
         assertEquals(CONVERSATION_ID, result.getConversationId());
+        assertEquals(1, result.getCreditsCharged());
         verify(messageRepository, times(1)).save(any(AiMessage.class));
         verify(conversationRepository, times(1)).save(conversation);
+    }
+
+    @Test
+    @DisplayName(
+            "Money-path (Wave 2 round 2): persistAssistantWriteback NEVER charges -- it only reflects"
+                    + " creditService.wasCharged(workspaceId, turnId) on the persisted row. The actual"
+                    + " decrement already happened at send (doSendTurn); creditService.tryConsume must"
+                    + " never be invoked from the write-back path at all")
+    void testWritebackNeverChargesOnlyReflectsSendTimeCharge() {
+        AiConversation conversation = conversation();
+        when(conversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(creditService.wasCharged(WORKSPACE_ID, IDEMPOTENCY_KEY)).thenReturn(true);
+        mockIdempotencyExecuteOnce();
+
+        AiMessage result =
+                service.persistAssistantWriteback(
+                        WORKSPACE_ID, CONVERSATION_ID, CONTENT, Map.of(), IDEMPOTENCY_KEY);
+
+        verify(creditService, never()).tryConsume(any(), anyInt());
+        verify(creditService, times(1)).wasCharged(WORKSPACE_ID, IDEMPOTENCY_KEY);
+        assertEquals(1, result.getCreditsCharged());
+    }
+
+    @Test
+    @DisplayName(
+            "Money-path (Wave 2 round 2): if creditService.wasCharged(workspaceId, turnId) returns"
+                    + " false (turnId doesn't match any send-time charge), the ASSISTANT message IS"
+                    + " persisted anyway with creditsCharged=0 -- never dropped, never rejected -- and no"
+                    + " exception propagates, so the idempotency key is marked COMPLETED (a replay does"
+                    + " not re-persist)")
+    void testWritebackPersistsUnchargedWhenTurnWasNeverCharged() {
+        AiConversation conversation = conversation();
+        when(conversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(creditService.wasCharged(WORKSPACE_ID, IDEMPOTENCY_KEY)).thenReturn(false);
+        mockIdempotencyExecuteOnce();
+
+        AiMessage result =
+                service.persistAssistantWriteback(
+                        WORKSPACE_ID, CONVERSATION_ID, CONTENT, Map.of(), IDEMPOTENCY_KEY);
+
+        // (a) the ASSISTANT message IS persisted with creditsCharged=0.
+        assertEquals(MessageRole.ASSISTANT, result.getRole());
+        assertEquals(0, result.getCreditsCharged());
+        verify(messageRepository, times(1)).save(any(AiMessage.class));
+
+        // (b) no exception propagates / write-back returns normally -- proven simply by reaching
+        // here without assertThrows.
+        verify(conversationRepository, times(1)).save(conversation);
+        // (c) still never calls tryConsume -- this path persists uncharged, it does not attempt to
+        // charge and fail.
+        verify(creditService, never()).tryConsume(any(), anyInt());
     }
 
     @Test
@@ -226,6 +282,10 @@ class MeeraSessionServiceTest {
         // The replay path must NEVER call save -- that would be the double-insert this fix prevents.
         verify(messageRepository, never()).save(any());
         verify(conversationRepository, never()).save(any());
+        // Money-path: a replayed write-back must NEVER re-invoke tryConsume -- that would be a
+        // double-charge for the same turn. doPersistAssistantWriteback (where tryConsume lives) is
+        // never re-entered on this replay path.
+        verify(creditService, never()).tryConsume(any(), anyInt());
     }
 
     @Test
@@ -336,7 +396,7 @@ class MeeraSessionServiceTest {
         ApiException ex =
                 assertThrows(
                         ApiException.class,
-                        () -> service.sendTurn(WORKSPACE_ID, USER_ID, CONVERSATION_ID, CONTENT, null));
+                        () -> service.sendTurn(WORKSPACE_ID, USER_ID, UserType.BRAND, CONVERSATION_ID, CONTENT, null));
 
         assertEquals("IDEMPOTENCY_KEY_REQUIRED", ex.getCode());
         assertEquals(400, ex.getStatus().value());
@@ -349,95 +409,79 @@ class MeeraSessionServiceTest {
         ApiException ex =
                 assertThrows(
                         ApiException.class,
-                        () -> service.sendTurn(WORKSPACE_ID, USER_ID, CONVERSATION_ID, CONTENT, "   "));
+                        () -> service.sendTurn(WORKSPACE_ID, USER_ID, UserType.BRAND, CONVERSATION_ID, CONTENT, "   "));
 
         assertEquals("IDEMPOTENCY_KEY_REQUIRED", ex.getCode());
         verifyNoInteractions(conversationRepository, messageRepository, creditService, idempotencyService);
     }
 
     @Test
-    @DisplayName("sendTurn: first call consumes credit exactly once and persists USER+ASSISTANT rows")
-    void testSendTurnFirstCallConsumesCreditOnce() {
+    @DisplayName(
+            "SECURITY FIX (Wave 2 round 2, Kabir FAILs #1/#2): sendTurn charges via"
+                    + " tryConsumeForTurn (ACTUALLY decrements, keyed on the server-minted messageId)"
+                    + " BEFORE persisting the USER row (creditsCharged=0) or minting any token, and"
+                    + " that SAME messageId is threaded through to the USER message id, the stream"
+                    + " token, and the on-behalf token -- returns null assistantMessageId/reply since"
+                    + " the assistant turn is not generated here anymore")
+    void testSendTurnChargesAtSendKeyedOnServerMintedMessageIdAndPersistsUserRowOnly() {
         AiConversation conversation = conversation();
         when(conversationRepository.findByIdAndWorkspaceId(CONVERSATION_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(conversation));
         when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(messageRepository.findByConversationIdOrderByCreatedAtAsc(CONVERSATION_ID))
-                .thenReturn(List.of());
         when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(workspace()));
         when(brandProfileRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.empty());
         when(contextAssembler.assemble(any(), any())).thenReturn(Map.of());
         when(streamTokenService.mint(anyString(), anyString(), anyString(), anyString()))
                 .thenReturn("stream-token-1");
-        when(creditService.getStatus(WORKSPACE_ID)).thenReturn(creditStatus());
-        when(chatAiClient.sendTurn(eq(WORKSPACE_ID), any()))
-                .thenReturn(new ChatTurnResult("Here's what I'd suggest for your next campaign."));
+        when(onBehalfTokenService.mint(anyString(), anyString(), anyString(), anyString(), eq(UserType.BRAND)))
+                .thenReturn("onbehalf-token-1");
         mockIdempotencyExecuteOnceWithResultRef();
 
         MeeraSessionService.TurnResult result =
-                service.sendTurn(WORKSPACE_ID, USER_ID, CONVERSATION_ID, CONTENT, IDEMPOTENCY_KEY);
+                service.sendTurn(WORKSPACE_ID, USER_ID, UserType.BRAND, CONVERSATION_ID, CONTENT, IDEMPOTENCY_KEY);
 
         assertEquals("stream-token-1", result.streamToken());
-        assertEquals("Here's what I'd suggest for your next campaign.", result.placeholderReply());
-        verify(creditService, times(1)).tryConsume(WORKSPACE_ID, 1);
-        verify(messageRepository, times(2)).save(any(AiMessage.class));
-        verify(chatAiClient, times(1)).sendTurn(eq(WORKSPACE_ID), any());
+        // SECURITY FIX #1: sendTurn must also mint and return the dedicated per-turn on-behalf
+        // token alongside the stream token -- the caller (MeeraController) forwards this to the
+        // browser instead of the browser ever reading a full access token out of localStorage.
+        assertEquals("onbehalf-token-1", result.onBehalfToken());
+        assertEquals(null, result.assistantMessageId());
+        assertEquals(null, result.placeholderReply());
+
+        // Charge-on-send: tryConsumeForTurn must be called exactly once, for TURN_CREDIT_COST.
+        ArgumentCaptor<String> chargeTurnIdCaptor = ArgumentCaptor.forClass(String.class);
+        verify(creditService, times(1))
+                .tryConsumeForTurn(eq(WORKSPACE_ID), eq(1), chargeTurnIdCaptor.capture());
+        // sendTurn must NEVER call the bare tryConsume directly -- only via tryConsumeForTurn.
+        verify(creditService, never()).tryConsume(any(), anyInt());
+
+        ArgumentCaptor<AiMessage> messageCaptor = ArgumentCaptor.forClass(AiMessage.class);
+        verify(messageRepository, times(1)).save(messageCaptor.capture());
+        AiMessage saved = messageCaptor.getValue();
+        assertEquals(MessageRole.USER, saved.getRole());
+        assertEquals(0, saved.getCreditsCharged());
+
+        // The SAME server-minted messageId anchors the charge, the USER row's id, the stream
+        // token, and the on-behalf token -- never a client-supplied value (Kabir FAIL 2 fix).
+        String messageId = chargeTurnIdCaptor.getValue();
+        assertEquals(messageId, saved.getId());
+        verify(streamTokenService, times(1)).mint(WORKSPACE_ID, CONVERSATION_ID, messageId, USER_ID);
+        verify(onBehalfTokenService, times(1))
+                .mint(WORKSPACE_ID, CONVERSATION_ID, messageId, USER_ID, UserType.BRAND);
     }
 
     @Test
     @DisplayName(
-            "A4: doSendTurn persists exactly one ASSISTANT AiMessage carrying the REAL model text"
-                    + " returned by MeeraChatAiClient, not a placeholder string")
-    void testSendTurnPersistsRealModelReplyExactlyOnce() {
-        AiConversation conversation = conversation();
+            "Money-path: 0 credits -> tryConsumeForTurn rejects the turn BEFORE the USER message is"
+                    + " persisted or a stream token is minted -- no dangling-charged row, nothing"
+                    + " ever charged")
+    void testSendTurnZeroCreditsRejectedAndNothingPersistedOrCharged() {
         when(conversationRepository.findByIdAndWorkspaceId(CONVERSATION_ID, WORKSPACE_ID))
-                .thenReturn(Optional.of(conversation));
-        when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(messageRepository.findByConversationIdOrderByCreatedAtAsc(CONVERSATION_ID))
-                .thenReturn(List.of());
-        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(workspace()));
-        when(brandProfileRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.empty());
-        when(contextAssembler.assemble(any(), any())).thenReturn(Map.of());
-        when(streamTokenService.mint(anyString(), anyString(), anyString(), anyString()))
-                .thenReturn("stream-token-1");
-        when(creditService.getStatus(WORKSPACE_ID)).thenReturn(creditStatus());
-        when(chatAiClient.sendTurn(eq(WORKSPACE_ID), any()))
-                .thenReturn(new ChatTurnResult("Real Claude output, not a stub echo."));
-        mockIdempotencyExecuteOnceWithResultRef();
-
-        service.sendTurn(WORKSPACE_ID, USER_ID, CONVERSATION_ID, CONTENT, IDEMPOTENCY_KEY);
-
-        ArgumentCaptor<AiMessage> captor = ArgumentCaptor.forClass(AiMessage.class);
-        verify(messageRepository, times(2)).save(captor.capture());
-        List<AiMessage> saved = captor.getAllValues();
-        AiMessage assistantRow = saved.get(1);
-        assertEquals(MessageRole.ASSISTANT, assistantRow.getRole());
-        assertEquals("Real Claude output, not a stub echo.", assistantRow.getContent());
-        // Never persisted twice for a single doSendTurn invocation.
-        verify(messageRepository, times(1)).save(argThat(m -> m.getRole() == MessageRole.ASSISTANT));
-    }
-
-    @Test
-    @DisplayName(
-            "A4: a provider failure (MeeraChatAiException from /chat) surfaces as a 502 and does NOT"
-                    + " persist an ASSISTANT message -- no half-written turn, credit consumption still"
-                    + " happens (Guardrail 5 requires it before Python reachability) but the caller's"
-                    + " own @Transactional rollback undoes it since the exception propagates")
-    void testSendTurnProviderFailureDoesNotPersistAssistantMessage() {
-        AiConversation conversation = conversation();
-        when(conversationRepository.findByIdAndWorkspaceId(CONVERSATION_ID, WORKSPACE_ID))
-                .thenReturn(Optional.of(conversation));
-        when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(messageRepository.findByConversationIdOrderByCreatedAtAsc(CONVERSATION_ID))
-                .thenReturn(List.of());
-        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(workspace()));
-        when(brandProfileRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.empty());
-        when(contextAssembler.assemble(any(), any())).thenReturn(Map.of());
-        when(streamTokenService.mint(anyString(), anyString(), anyString(), anyString()))
-                .thenReturn("stream-token-1");
-        when(creditService.getStatus(WORKSPACE_ID)).thenReturn(creditStatus());
-        when(chatAiClient.sendTurn(eq(WORKSPACE_ID), any()))
-                .thenThrow(new MeeraChatAiException("influora-ai /chat call returned status 503"));
+                .thenReturn(Optional.of(conversation()));
+        doThrow(new ApiException(
+                        "CREDITS_EXHAUSTED", "AI credits exhausted for this workspace", HttpStatus.PAYMENT_REQUIRED))
+                .when(creditService)
+                .tryConsumeForTurn(eq(WORKSPACE_ID), anyInt(), anyString());
         mockIdempotencyExecuteOnceWithResultRef();
 
         ApiException ex =
@@ -445,19 +489,30 @@ class MeeraSessionServiceTest {
                         ApiException.class,
                         () ->
                                 service.sendTurn(
-                                        WORKSPACE_ID, USER_ID, CONVERSATION_ID, CONTENT, IDEMPOTENCY_KEY));
+                                        WORKSPACE_ID, USER_ID, UserType.BRAND, CONVERSATION_ID, CONTENT, IDEMPOTENCY_KEY));
 
-        assertEquals("MEERA_PROVIDER_UNAVAILABLE", ex.getCode());
-        assertEquals(502, ex.getStatus().value());
-        // Exactly the USER message was saved (pre-provider-call) -- never an ASSISTANT row.
-        verify(messageRepository, never()).save(argThat(m -> m.getRole() == MessageRole.ASSISTANT));
-        verify(messageRepository, times(1)).save(argThat(m -> m.getRole() == MessageRole.USER));
+        assertEquals("CREDITS_EXHAUSTED", ex.getCode());
+        assertEquals(402, ex.getStatus().value());
+        verify(messageRepository, never()).save(any());
+        verify(streamTokenService, never()).mint(any(), any(), any(), any());
+        verify(onBehalfTokenService, never()).mint(any(), any(), any(), any(), any());
+        verify(creditService, never()).tryConsume(any(), anyInt());
     }
 
     @Test
     @DisplayName(
-            "A4: a retry with the SAME Idempotency-Key after doSendTurn already threw is rejected"
-                    + " retry-safe (never re-runs doSendTurn/consumes credit again) -- proven at the"
+            "releaseTurnCredit: thin pass-through to creditService.release keyed on TURN_CREDIT_COST"
+                    + " and the given turnId")
+    void testReleaseTurnCreditDelegatesToCreditService() {
+        service.releaseTurnCredit(WORKSPACE_ID, "turn-server-minted-id");
+
+        verify(creditService, times(1)).release(WORKSPACE_ID, 1, "turn-server-minted-id");
+    }
+
+    @Test
+    @DisplayName(
+            "A retry with the SAME Idempotency-Key after doSendTurn already threw is rejected"
+                    + " retry-safe (never re-runs doSendTurn/checks credit again) -- proven at the"
                     + " sendTurn/IdempotencyService boundary, mirroring the existing concurrent-submit"
                     + " coverage below")
     void testSendTurnRetryAfterFailureDoesNotDoubleConsumeCredit() {
@@ -470,10 +525,10 @@ class MeeraSessionServiceTest {
                         ApiException.class,
                         () ->
                                 service.sendTurn(
-                                        WORKSPACE_ID, USER_ID, CONVERSATION_ID, CONTENT, IDEMPOTENCY_KEY));
+                                        WORKSPACE_ID, USER_ID, UserType.BRAND, CONVERSATION_ID, CONTENT, IDEMPOTENCY_KEY));
 
         assertEquals("IDEMPOTENCY_KEY_IN_PROGRESS", ex.getCode());
-        verifyNoInteractions(creditService, chatAiClient);
+        verifyNoInteractions(creditService);
         verify(messageRepository, never()).save(any());
     }
 
@@ -494,7 +549,7 @@ class MeeraSessionServiceTest {
                         ApiException.class,
                         () ->
                                 service.sendTurn(
-                                        WORKSPACE_ID, USER_ID, CONVERSATION_ID, CONTENT, IDEMPOTENCY_KEY));
+                                        WORKSPACE_ID, USER_ID, UserType.BRAND, CONVERSATION_ID, CONTENT, IDEMPOTENCY_KEY));
 
         assertEquals("IDEMPOTENCY_KEY_IN_PROGRESS", ex.getCode());
         assertEquals(409, ex.getStatus().value());

@@ -4,15 +4,20 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.admin.AdminBrandService;
 import com.influora.web.dto.admin.AdminBrandDtos.BrandDetailDto;
 import com.influora.web.dto.admin.AdminBrandDtos.BrandSummaryDto;
+import com.influora.web.dto.admin.AdminBrandDtos.BudgetOverrideRequest;
 import com.influora.web.dto.admin.AdminBrandDtos.PaginatedBrandResponse;
 import com.influora.web.dto.admin.AdminBrandDtos.ReinstateRequest;
 import com.influora.web.dto.admin.AdminBrandDtos.SuspendRequest;
+import com.influora.web.dto.admin.AdminBrandDtos.UpdateBrandRequest;
 import com.influora.web.dto.admin.AdminBrandDtos.VerifyKycRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.Map;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,7 +44,12 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>Task #2 (cycle 5): Added GET /brands list endpoint for admin Users page, with pagination,
  * search (companyName, email), and filters (kycStatus, suspended). Returns
  * {@code PaginatedBrandResponse} matching {@code brandApi.list} contract shape in api-contracts.ts.
- * {@code .update}/{@code .overrideBudget} remain unimplemented (no frontend caller yet).
+ *
+ * <p>Admin edit slice: {@code PUT /brands/{id}} ({@code brandApi.update}) edits a SAFE
+ * profile-field allow-list only (name/industry/size/email — never kycStatus/isSuspended/money
+ * fields), and {@code POST /brands/{id}/campaigns/{campaignId}/budget-override} ({@code
+ * brandApi.overrideBudget}) is the MONEY-PATH campaign budget override with a committed-spend
+ * guard. See {@code AdminBrandService} for the allow-list + money-path guard details.
  */
 @RestController
 @RequestMapping("/admin/brands")
@@ -66,6 +76,39 @@ public class AdminBrandController {
     public BrandDetailDto getById(
             @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String id) {
         return adminBrandService.getById(principal, id);
+    }
+
+    /**
+     * PUT /admin/brands/{id} ({@code brandApi.update}). Edits SAFE profile fields only
+     * (name/industry/size/email) — the request DTO shape is the allow-list; kycStatus/isSuspended/
+     * money fields are not bindable here and have dedicated endpoints. Returns the full {@code
+     * BrandDetailDto} (BrandDetail extends Brand, so it satisfies {@code apiRequest<Brand>}).
+     */
+    @PutMapping("/{id}")
+    public BrandDetailDto update(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            HttpServletRequest request,
+            @PathVariable String id,
+            @Valid @RequestBody UpdateBrandRequest body) {
+        return adminBrandService.update(principal, request, id, body);
+    }
+
+    /**
+     * POST /admin/brands/{id}/campaigns/{campaignId}/budget-override ({@code
+     * brandApi.overrideBudget}) — MONEY PATH. Returns a small JSON body (not 204/empty) even though
+     * the frontend types this {@code void}: {@code apiRequest()} (api-contracts.ts) always calls
+     * {@code response.json()} on success, which throws on a genuinely empty body — same precedent as
+     * {@code AdminCreatorController#forceInstagramReauth}.
+     */
+    @PostMapping("/{id}/campaigns/{campaignId}/budget-override")
+    public ResponseEntity<Map<String, Object>> overrideBudget(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            HttpServletRequest request,
+            @PathVariable String id,
+            @PathVariable String campaignId,
+            @Valid @RequestBody BudgetOverrideRequest body) {
+        adminBrandService.overrideCampaignBudget(principal, request, id, campaignId, body);
+        return ResponseEntity.ok(Map.of("success", true));
     }
 
     @PostMapping("/{id}/verify-kyc")

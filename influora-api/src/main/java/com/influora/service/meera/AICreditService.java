@@ -4,9 +4,12 @@ import com.influora.common.ApiException;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.BrandAiCredit;
 import com.influora.repository.BrandAiCreditRepository;
+import com.influora.service.IdempotencyService;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,9 +29,47 @@ import org.springframework.transaction.annotation.Transactional;
  * is provided as the seam Domain A's event publisher will call into; it is not itself an
  * {@code @EventListener} yet since {@code EscrowFundedEvent} is defined in the parallel
  * money-core build. Wiring the listener annotation is a follow-up once that event class exists.
+ *
+ * <p><b>SECURITY FIX (Wave 2, Kabir red-team, two HIGH exploits in the charge-on-success
+ * streaming model):</b>
+ *
+ * <ul>
+ *   <li><b>FAIL 1 (disconnect-farm):</b> the old model only decremented credit (and only bumped
+ *       the 500/day counter) in the end-of-stream write-back. A client that read every {@code
+ *       token} SSE event and then disconnected before {@code done} never triggered the
+ *       write-back at all — unlimited free metered turns, and the daily cap never engaged either
+ *       since it was bumped in the same place.
+ *   <li><b>FAIL 2 (client-supplied turn id):</b> the write-back's idempotency key was the
+ *       CLIENT-supplied {@code turn_id}, never cross-checked against anything server-minted. A
+ *       client pinning {@code turn_id} to a constant across N turns made turns 2..N hit {@code
+ *       AlreadyCompletedException} — {@code creditsCharged=0} — for turns that were never charged
+ *       at all.
+ * </ul>
+ *
+ * <p><b>The fix moves the charge to the SEND gate</b> ({@link #tryConsumeForTurn}, called from
+ * {@code MeeraSessionService#doSendTurn} BEFORE the USER message is persisted or any token is
+ * minted), keyed on the server-minted {@code messageId} (never a client-supplied value) — every
+ * send is charged exactly once, unconditionally, closing both FAILs at the root: there is no
+ * longer any code path that streams tokens to the browser without having already decremented
+ * credit and bumped the daily counter for that exact turn.
+ *
+ * <p>Charging up front means a genuine PROVIDER failure (not a client disconnect — the two are
+ * deliberately kept distinct, see {@code influora-ai/app/routes/chat.py}) must be able to give the
+ * money back: {@link #release} refunds a turn's charge, GUARDED so it can never fire for a turn
+ * that was never charged, and can never fire once that turn's assistant reply has successfully
+ * persisted (no refund-and-keep-the-reply). {@link #tryConsumeForTurn} and {@link #release} share
+ * a completion ledger built on the existing {@link IdempotencyService} (no new schema): a
+ * COMPLETED {@code CHARGE_SCOPE} row for a {@code turnId} means "this exact turn was charged at
+ * send"; a COMPLETED {@code MeeraSessionService#PERSIST_WRITEBACK_SCOPE} row for the SAME {@code
+ * turnId} means "this exact turn's reply already landed" — {@link #release} is a no-op unless the
+ * former is true and the latter is false. {@code turnId} is always {@code MeeraSessionService}'s
+ * server-minted {@code messageId}, both here and on the write-back (Kabir FAIL 2 fix), so the two
+ * ledgers are guaranteed to be talking about the same turn.
  */
 @Service
 public class AICreditService {
+
+    private static final Logger log = LoggerFactory.getLogger(AICreditService.class);
 
     private static final int DEFAULT_MONTHLY_ALLOTMENT = 100;
     private static final int LOYALTY_MONTHLY_ALLOTMENT = 150;
@@ -40,10 +81,18 @@ public class AICreditService {
      */
     private static final int DAILY_ACTION_HARD_CAP = 500;
 
-    private final BrandAiCreditRepository creditRepository;
+    /** Completion ledger scope: a COMPLETED row here means this {@code turnId} was charged at send. */
+    private static final String CHARGE_SCOPE = "meera.turn_charged";
 
-    public AICreditService(BrandAiCreditRepository creditRepository) {
+    /** Completion ledger scope for {@link #release} itself — makes a double/racing release a no-op. */
+    private static final String RELEASE_SCOPE = "meera.turn_released";
+
+    private final BrandAiCreditRepository creditRepository;
+    private final IdempotencyService idempotencyService;
+
+    public AICreditService(BrandAiCreditRepository creditRepository, IdempotencyService idempotencyService) {
         this.creditRepository = creditRepository;
+        this.idempotencyService = idempotencyService;
     }
 
     /** Ensures a credit row exists for the workspace, creating the default allotment if not. */
@@ -110,6 +159,112 @@ public class AICreditService {
     @Transactional(readOnly = true)
     public BrandAiCredit getStatus(String workspaceId) {
         return ensureInitialized(workspaceId);
+    }
+
+    /**
+     * SECURITY FIX (Wave 2, Kabir FAILs #1/#2 — see class javadoc): the SEND-gate charge, called
+     * from {@code MeeraSessionService#doSendTurn} BEFORE the USER message is persisted or any
+     * token is minted. Replaces the old non-decrementing {@code assertAvailable} pre-check —
+     * this one actually charges. Runs the same two gates {@link #tryConsume} always has
+     * (exhausted credits / 500-day cap); if either rejects, this throws and NOTHING below it in
+     * {@code doSendTurn} ever runs — no dangling charged state.
+     *
+     * <p>On success, in the SAME transaction, records a completion-ledger marker keyed on {@code
+     * turnId} (the server-minted {@code messageId}) under {@link #CHARGE_SCOPE} — this is the
+     * record {@link #release} consults to confirm a turn was actually charged before it will ever
+     * refund it. {@code turnId} must be freshly minted per send (a {@code Ulids.newUlid()} value,
+     * never reused) — a collision here would throw {@link IdempotencyService.AlreadyInProgressException}
+     * or {@link IdempotencyService.AlreadyCompletedException} out of this method after the credit
+     * was already decremented by {@link #tryConsume} in its own committed transaction, which would
+     * leave that credit decremented with no charge marker recorded; this is an accepted,
+     * vanishingly-unlikely risk (ULID collision), not a normal-path outcome.
+     */
+    @Transactional
+    public void tryConsumeForTurn(String workspaceId, int cost, String turnId) {
+        tryConsume(workspaceId, cost);
+        idempotencyService.executeOnce(turnId, workspaceId, CHARGE_SCOPE, () -> turnId);
+    }
+
+    /**
+     * True if {@code turnId} (the server-minted {@code messageId}) was actually charged via
+     * {@link #tryConsumeForTurn} — consulted by {@code MeeraSessionService#doPersistAssistantWriteback}
+     * to set the persisted ASSISTANT row's {@code creditsCharged} so it reflects the send-time
+     * charge (the decrement itself never happens again at write-back time).
+     */
+    @Transactional(readOnly = true)
+    public boolean wasCharged(String workspaceId, String turnId) {
+        return idempotencyService.isCompleted(turnId, workspaceId, CHARGE_SCOPE);
+    }
+
+    /**
+     * SECURITY FIX (Wave 2): refunds a turn's send-time charge after a genuine PROVIDER failure —
+     * called from the internal {@code /internal/meera/turns/release} route, which influora-ai
+     * hits when a turn's stream errors out (or ends with no assistant text) BEFORE {@code done}.
+     * Deliberately never called for a plain client disconnect (Kabir FAIL 1) — the browser already
+     * received the streamed tokens in that case, so the charge correctly stays; that distinction
+     * is enforced entirely on the influora-ai side (see {@code app/routes/chat.py}), this method
+     * has no way to tell the two apart and doesn't need to.
+     *
+     * <p>IDEMPOTENT: wrapped in its own {@link IdempotencyService#executeOnce} under {@link
+     * #RELEASE_SCOPE} keyed on {@code turnId} — a duplicate or racing release call for the same
+     * turn is a no-op ({@link IdempotencyService.AlreadyCompletedException} / {@code
+     * AlreadyInProgressException} are both swallowed here, not rethrown).
+     *
+     * <p>GUARDED: {@link #doRelease} only actually refunds if (a) {@link #wasCharged} is true for
+     * this {@code turnId}, and (b) {@code MeeraSessionService#PERSIST_WRITEBACK_SCOPE} has NOT
+     * already completed for the SAME {@code turnId} — i.e. no assistant reply has successfully
+     * persisted yet. (b) is what makes "refund after a successful write-back" structurally
+     * impossible: a client can never end up with both a refund AND the reply.
+     */
+    @Transactional
+    public void release(String workspaceId, int cost, String turnId) {
+        if (turnId == null || turnId.isBlank()) {
+            throw new ApiException(
+                    "RELEASE_TURN_ID_REQUIRED", "turnId is required to release a charge", HttpStatus.BAD_REQUEST);
+        }
+        try {
+            idempotencyService.executeOnce(
+                    turnId,
+                    workspaceId,
+                    RELEASE_SCOPE,
+                    () -> {
+                        doRelease(workspaceId, cost, turnId);
+                        return turnId;
+                    });
+        } catch (IdempotencyService.AlreadyCompletedException
+                | IdempotencyService.AlreadyInProgressException duplicate) {
+            log.info(
+                    "release: turnId={} workspaceId={} already released or in-flight -- no-op",
+                    turnId,
+                    workspaceId);
+        }
+    }
+
+    private void doRelease(String workspaceId, int cost, String turnId) {
+        if (!idempotencyService.isCompleted(turnId, workspaceId, CHARGE_SCOPE)) {
+            log.warn(
+                    "release: turnId={} workspaceId={} was never charged at send -- refusing to refund",
+                    turnId,
+                    workspaceId);
+            return;
+        }
+        if (idempotencyService.isCompleted(turnId, workspaceId, MeeraSessionService.PERSIST_WRITEBACK_SCOPE)) {
+            log.warn(
+                    "release: turnId={} workspaceId={} already has a persisted assistant reply --"
+                            + " refusing to refund-and-keep-reply",
+                    turnId,
+                    workspaceId);
+            return;
+        }
+
+        BrandAiCredit credit = ensureInitialized(workspaceId);
+        if (!credit.isUnlimited(Instant.now())) {
+            creditRepository.refundCredits(workspaceId, cost);
+        }
+        LocalDate todayUtc = LocalDate.now(ZoneOffset.UTC);
+        if (todayUtc.equals(credit.getDailyActionsDate())) {
+            creditRepository.refundDailyActions(workspaceId, cost, todayUtc);
+        }
     }
 
     /**

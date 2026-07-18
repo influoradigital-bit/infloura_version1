@@ -112,6 +112,17 @@ public class ConfirmLaunchExecutor {
     /** Funded-campaign unlimited-AI-usage window, mirroring the loyalty-reset seam's intent. */
     private static final int UNLIMITED_WINDOW_DAYS = 30;
 
+    /**
+     * [SEC: Kabir red-team LOW fix] Hard server-side ceiling on how many creators a single
+     * {@code confirm_launch} can invite, regardless of what {@code campaign_intents.creator_count}
+     * says. That column is itself populated by an earlier AI tool call reading the conversation —
+     * a prompt-injected or hallucinated {@code creator_count} could otherwise turn one launch into
+     * an unbounded mass-invite fan-out (every candidate is a real {@code Collaboration} row +
+     * outbound notification). Mirrors {@code ShowCreatorsExecutor.MAX_RESULTS}'s clamp-not-trust
+     * convention against the same repository.
+     */
+    private static final int MAX_INVITE_CREATOR_COUNT = 50;
+
     private final CampaignIntentRepository campaignIntentRepository;
     private final CampaignRepository campaignRepository;
     private final EscrowHoldRepository escrowHoldRepository;
@@ -332,7 +343,7 @@ public class ConfirmLaunchExecutor {
         // violation here is translated to a clean 409, never an unhandled 500.
         List<Collaboration> invited;
         try {
-            invited = inviteCreators(workspaceId, campaign, intent);
+            invited = inviteCreators(workspaceId, campaign, intent, idempotencyKey);
         } catch (DataIntegrityViolationException e) {
             throw new ApiException(
                     "COLLABORATION_EXISTS",
@@ -379,23 +390,54 @@ public class ConfirmLaunchExecutor {
     }
 
     /**
-     * Selects up to {@code campaign_intents.creator_count} discoverable creators not already
-     * collaborating on this campaign and writes {@code INVITED} {@link Collaboration} rows for
-     * them. Mirrors {@link ShowCreatorsExecutor}'s discoverable-pool read and
-     * {@code CreatorDiscoveryService.invite}'s per-creator dedupe
+     * Selects up to {@code min(campaign_intents.creator_count, MAX_INVITE_CREATOR_COUNT)}
+     * discoverable creators not already collaborating on this campaign and writes {@code INVITED}
+     * {@link Collaboration} rows for them. Mirrors {@link ShowCreatorsExecutor}'s
+     * discoverable-pool read and {@code CreatorDiscoveryService.invite}'s per-creator dedupe
      * ({@code existsByCampaignIdAndCreatorId}), inlined here because this internal path has no
      * {@code AuthPrincipal} to hand that service.
+     *
+     * <p><b>[SEC: Kabir red-team LOW fix] Residual: no workspace/campaign-relevant scoping beyond
+     * the cap.</b> Selection is still a GLOBAL top-N by {@code totalFollowers} — every launch
+     * across every workspace draws from the exact same ranked pool, just capped in size now.
+     * {@code CampaignIntent#locationFilterJson} ({@code location_filter} column) looked like a
+     * cheap scoping hook (a {@code cityIn}-style {@link org.springframework.data.jpa.domain.Specification}
+     * already exists on {@code CreatorProfileSpecifications} and would compose for free with
+     * {@code combine}), but it is dead end-to-end today — no code path in this service or in
+     * influora-ai's tool schemas ever writes it, so it is always {@code null}/blank in practice;
+     * wiring a filter against an always-empty column would be scoping theater, not a real fix.
+     * Neither {@code Campaign} nor {@code CampaignIntent} carries a category/niche field to scope
+     * by content relevance either. A real fix needs one of: (1) actually populating
+     * {@code location_filter} from the AI conversation before this executor runs, or (2) adding a
+     * campaign category/niche column — both are schema/AI-flow changes out of this fix's scope.
      */
-    private List<Collaboration> inviteCreators(String workspaceId, Campaign campaign, CampaignIntent intent) {
+    private List<Collaboration> inviteCreators(
+            String workspaceId, Campaign campaign, CampaignIntent intent, String idempotencyKey) {
         Integer requestedCount = intent.getCreatorCount();
         int targetCount = requestedCount != null && requestedCount > 0 ? requestedCount : 0;
         if (targetCount == 0) {
             return List.of();
         }
 
+        int cappedCount = Math.min(targetCount, MAX_INVITE_CREATOR_COUNT);
+        if (cappedCount < targetCount) {
+            auditLogService.recordToolCall(
+                    workspaceId,
+                    "confirm_launch",
+                    "C",
+                    AuditLogService.OUTCOME_ALLOWED,
+                    "INVITE_COUNT_CLAMPED",
+                    idempotencyKey,
+                    null,
+                    Map.of(
+                            "campaignId", campaign.getId(),
+                            "requestedCount", targetCount,
+                            "clampedTo", cappedCount));
+        }
+
         List<CreatorProfile> candidates =
                 creatorProfileRepository
-                        .findAll(PageRequest.of(0, targetCount, Sort.by(Sort.Direction.DESC, "totalFollowers")))
+                        .findAll(PageRequest.of(0, cappedCount, Sort.by(Sort.Direction.DESC, "totalFollowers")))
                         .getContent();
 
         return candidates.stream()
@@ -404,7 +446,7 @@ public class ConfirmLaunchExecutor {
                         c ->
                                 !collaborationRepository.existsByCampaignIdAndCreatorId(
                                         campaign.getId(), c.getUserId()))
-                .limit(targetCount)
+                .limit(cappedCount)
                 .map(
                         c ->
                                 collaborationRepository.save(

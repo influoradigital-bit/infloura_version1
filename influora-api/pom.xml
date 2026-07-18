@@ -27,6 +27,30 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        <!-- Preferred RestClient transport: with httpclient5 on the classpath, Spring's
+             ClientHttpRequestFactories picks Apache (blocking sockets, built lazily) over the
+             JDK HttpClient, whose construction spins an NIO selector + loopback pipe at
+             RestClient.build() time — a boot-time network dependency that has no business
+             existing and that fails outright on loopback-restricted/resource-starved hosts
+             (observed live 2026-07-18: every eager AI/Meta client failed boot with
+             "Unable to establish loopback connection"). -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+            <version>5.3.1</version>
+        </dependency>
+        <!-- Pinned to the same line as httpclient5 above: Boot 3.3.5's dependency management
+             resolves core5 to 5.2.5, which mismatches the 5.3.x client. -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.core5</groupId>
+            <artifactId>httpcore5</artifactId>
+            <version>5.3.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.httpcomponents.core5</groupId>
+            <artifactId>httpcore5-h2</artifactId>
+            <version>5.3.1</version>
+        </dependency>
         <!-- Meera I-1a: exposes /actuator/health for real DB/dependency health checks. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

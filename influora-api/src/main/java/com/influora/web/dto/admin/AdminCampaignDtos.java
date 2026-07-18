@@ -4,6 +4,7 @@ import com.influora.domain.enums.CampaignStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 
 public final class AdminCampaignDtos {
 
@@ -44,4 +45,49 @@ public final class AdminCampaignDtos {
             Double slaBreachRate,
             Instant createdAt,
             LocalDate endsAt) {}
+
+    /**
+     * Matches {@code CampaignDetail} in {@code src/admin/types/admin.types.ts} (extends {@code
+     * CampaignSummary} with {@code brief}/{@code deliverables}/{@code creators}/{@code
+     * escrowBalance}/{@code timelineStatus}). Backs {@code campaignApi.getById}
+     * (api-contracts.ts:313-314). Java records don't support interface-style extension, so every
+     * {@code CampaignSummaryDto} field is duplicated here flat, same shape the JSON serializes to.
+     *
+     * <p>{@code timelineStatus} is hardcoded {@code "ON_TRACK"} — the "at risk"/"delayed" SLA
+     * definition is explicitly deferred by product decision this pass (see {@code
+     * AdminCampaignService#getById} javadoc); NOT a computed field, so it is not held to H-22's
+     * "no fabricated aggregate" bar the same way spend/creatorCount/deliverable counts are.
+     */
+    public record CampaignDetailDto(
+            String id,
+            String name,
+            String brandName,
+            String type,
+            CampaignStatus status,
+            BigDecimal budget,
+            BigDecimal spent,
+            Integer creatorCount,
+            Integer deliverablesPending,
+            Integer deliverablesApproved,
+            Double slaBreachRate,
+            Instant createdAt,
+            LocalDate endsAt,
+            String brief,
+            List<DeliverableRequirementDto> deliverables,
+            List<CampaignCreatorDto> creators,
+            BigDecimal escrowBalance,
+            String timelineStatus) {}
+
+    /**
+     * Matches {@code DeliverableRequirement} in admin.types.ts. One row per {@code Deliverable}
+     * entity (lean per-slot row, see that entity's class javadoc) — {@code quantity} is always
+     * {@code 1} since the schema tracks individual deliverable slots, not grouped
+     * type+quantity requirements; an honest 1, not a fabricated aggregate count.
+     */
+    public record DeliverableRequirementDto(
+            String id, String type, String description, Integer quantity, LocalDate deadline) {}
+
+    /** Matches {@code CampaignCreator} in admin.types.ts. One row per {@code Collaboration}. */
+    public record CampaignCreatorDto(
+            String creatorId, String creatorName, String status, BigDecimal amount) {}
 }

@@ -148,6 +148,20 @@ public class EmailOutbox {
         return this.retryCount < MAX_RETRIES;
     }
 
+    /**
+     * Admin manual retry (admin email-queue console). Puts a {@link EmailOutboxStatus#FAILED} row
+     * back into the {@code PENDING} pool with a clean slate: {@code retryCount} reset to 0, {@code
+     * nextRetryAt}/{@code errorMessage} cleared so {@code EmailWorker}'s next poll picks it up
+     * immediately. Only sensible for a FAILED row — the caller ({@code AdminEmailService.retry})
+     * enforces that guard; this method itself is unconditional so it stays a pure state mutation.
+     */
+    public void requeue() {
+        this.status = EmailOutboxStatus.PENDING;
+        this.retryCount = 0;
+        this.nextRetryAt = null;
+        this.errorMessage = null;
+    }
+
     public static Builder builder() {
         return new Builder();
     }

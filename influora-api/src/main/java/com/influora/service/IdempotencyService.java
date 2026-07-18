@@ -142,6 +142,22 @@ public class IdempotencyService {
     }
 
     /**
+     * True if {@code idempotencyKey} (scoped to {@code workspaceId}/{@code scope}) has a COMPLETED
+     * row — i.e. {@link #executeOnce} already ran that effect to success for this exact key.
+     * Unlike {@link #findCompletedResultDigest}, this does NOT require a digest to have been
+     * captured, so it's the right check for a caller using {@code executeOnce} purely as a
+     * completion ledger with no result to replay (e.g. {@code AICreditService}'s per-turn
+     * charge/release markers — {@code findCompletedResultDigest} would incorrectly return {@code
+     * Optional.empty()} for those since they're written via the no-digest overload).
+     */
+    public boolean isCompleted(String idempotencyKey, String workspaceId, String scope) {
+        return repository
+                .findByIdempotencyKey(compositeKey(idempotencyKey, workspaceId, scope))
+                .map(record -> record.getStatus() == IdempotencyKeyRecord.Status.COMPLETED)
+                .orElse(false);
+    }
+
+    /**
      * [SEC: Vikram, P3(c)] Composes the ACTUAL reserved primary-key value — {@code scope} and
      * {@code workspaceId} are folded directly into the row identity rather than left as
      * non-participating metadata columns, so two callers can never collide across scopes or

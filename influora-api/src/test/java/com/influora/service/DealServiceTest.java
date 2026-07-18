@@ -73,6 +73,7 @@ class DealServiceTest {
     @Mock private BrandContextService brandContext;
     @Mock private IdempotencyService idempotencyService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private DealMessageStreamRegistry messageStreamRegistry;
     @Mock private AuthPrincipal creatorPrincipal;
     @Mock private AuthPrincipal brandPrincipal;
 
@@ -93,7 +94,8 @@ class DealServiceTest {
                         creatorContext,
                         brandContext,
                         idempotencyService,
-                        eventPublisher);
+                        eventPublisher,
+                        messageStreamRegistry);
     }
 
     private static Collaboration invitedDeal() {
@@ -455,6 +457,62 @@ class DealServiceTest {
 
         assertEquals("Hello", response.content());
         assertEquals(DealSenderType.creator, response.senderType());
+    }
+
+    @Test
+    @DisplayName("sendMessage: publishes the persisted DTO to the SSE registry after save")
+    void testSendMessagePublishesToStreamRegistry() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        var response =
+                service.sendMessage(
+                        creatorPrincipal, DEAL_ID, new SendMessageRequest("Hello", DealMessageKind.text));
+
+        var inOrder = org.mockito.Mockito.inOrder(dealMessageRepository, messageStreamRegistry);
+        inOrder.verify(dealMessageRepository).save(any(DealMessage.class));
+        inOrder.verify(messageStreamRegistry).publish(eq(DEAL_ID), eq(response));
+    }
+
+    // ------------------------------------------------------------------
+    // Realtime deal-message SSE stream — GET /deals/{dealId}/messages/stream.
+    // authorizeMessageStream is a thin wrapper around the SAME ownership check
+    // listMessages/sendMessage already use (requireOwnedCollaboration) — no new auth logic.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("authorizeMessageStream: creator may open a stream for their own deal (no throw)")
+    void testAuthorizeMessageStreamCreatorHappyPath() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+
+        service.authorizeMessageStream(creatorPrincipal, DEAL_ID);
+        // No exception — that's the pass condition. No emitter/registry interaction here; that's
+        // the controller's job, which only happens after this call returns cleanly.
+        org.mockito.Mockito.verifyNoInteractions(messageStreamRegistry);
+    }
+
+    @Test
+    @DisplayName("authorizeMessageStream: brand cannot open a stream for a deal outside their workspace")
+    void testAuthorizeMessageStreamRejectsForeignWorkspace() {
+        stubBrandWorkspace();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.empty());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.authorizeMessageStream(brandPrincipal, DEAL_ID));
+
+        assertEquals("DEAL_NOT_FOUND", ex.getCode());
+        assertEquals(404, ex.getStatus().value());
+        org.mockito.Mockito.verifyNoInteractions(messageStreamRegistry);
     }
 
     @Test

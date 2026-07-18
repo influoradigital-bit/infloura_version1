@@ -1,20 +1,26 @@
 package com.influora.service.admin;
 
+import com.influora.common.ApiException;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.AdminRole;
+import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.DeliverableRepository;
 import com.influora.repository.EscrowHoldRepository;
+import com.influora.repository.UserRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.web.dto.admin.AdminCampaignDtos.CampaignCreatorDto;
+import com.influora.web.dto.admin.AdminCampaignDtos.CampaignDetailDto;
 import com.influora.web.dto.admin.AdminCampaignDtos.CampaignSummaryDto;
+import com.influora.web.dto.admin.AdminCampaignDtos.DeliverableRequirementDto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -27,6 +33,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,6 +73,7 @@ public class AdminCampaignService {
     private final CollaborationRepository collaborationRepository;
     private final EscrowHoldRepository escrowHoldRepository;
     private final DeliverableRepository deliverableRepository;
+    private final UserRepository userRepository;
 
     public AdminCampaignService(
             AdminContextService adminContextService,
@@ -73,13 +81,15 @@ public class AdminCampaignService {
             WorkspaceRepository workspaceRepository,
             CollaborationRepository collaborationRepository,
             EscrowHoldRepository escrowHoldRepository,
-            DeliverableRepository deliverableRepository) {
+            DeliverableRepository deliverableRepository,
+            UserRepository userRepository) {
         this.adminContextService = adminContextService;
         this.campaignRepository = campaignRepository;
         this.workspaceRepository = workspaceRepository;
         this.collaborationRepository = collaborationRepository;
         this.escrowHoldRepository = escrowHoldRepository;
         this.deliverableRepository = deliverableRepository;
+        this.userRepository = userRepository;
     }
 
     /** {@code page}/{@code pageSize} default to the first {@link #DEFAULT_PAGE_SIZE}-row page. */
@@ -147,6 +157,159 @@ public class AdminCampaignService {
 
     public record PagedCampaignSummaries(
             List<CampaignSummaryDto> items, long totalElements, int page, int pageSize) {}
+
+    /**
+     * Single-campaign detail view backing {@code AdminCampaignController.getById} / {@code
+     * campaignApi.getById} (api-contracts.ts:313-314). Same role gate as {@link #list}
+     * (SUPPORT/ADMIN/SUPER_ADMIN, MFA satisfied for ADMIN+).
+     *
+     * <p>{@code brief} maps from {@code Campaign.description} — the only free-text campaign-intent
+     * field on the entity. {@code deliverables} is every {@link Deliverable} row across the
+     * campaign's collaborations (lean per-slot rows, not grouped by type — see {@code
+     * DeliverableRequirementDto} javadoc). {@code creators} is one row per {@link Collaboration},
+     * with {@code creatorName} resolved via {@link UserRepository} (collaborations.creator_id is a
+     * plain {@code users.id} FK, same resolution {@code AdminSupportService.resolveUserName} uses
+     * for ticket requesters) and {@code status} collapsed from {@link CollaborationStatus}'s 13
+     * values down to the frontend's 5-value union (see {@link #mapCollaborationStatus}).
+     * {@code escrowBalance} is FUNDED-only holds (money currently locked, not yet released) —
+     * deliberately a different definition than this class's own {@code spent} (FUNDED+RELEASED),
+     * matching the {@code escrowFloat} vs. {@code gmv} distinction {@code
+     * AdminDashboardStatsCache} already draws.
+     *
+     * <p><b>DEFERRED: needs at-risk SLA definition.</b> {@code timelineStatus} is hardcoded {@code
+     * "ON_TRACK"} — {@code getAtRisk}/{@code getHypeOps} and any real AT_RISK/DELAYED computation
+     * are out of scope this pass per product decision; not built here.
+     */
+    @Transactional(readOnly = true)
+    public CampaignDetailDto getById(AuthPrincipal principal, String campaignId) {
+        adminContextService.requireRoleWithMfaSatisfied(
+                principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.SUPPORT);
+
+        Campaign campaign =
+                campaignRepository
+                        .findById(campaignId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "CAMPAIGN_NOT_FOUND", "Campaign not found", HttpStatus.NOT_FOUND));
+
+        String brandName =
+                workspaceRepository.findById(campaign.getWorkspaceId()).map(Workspace::getName).orElse("Unknown");
+
+        List<Collaboration> collaborations = collaborationRepository.findByCampaignId(campaignId);
+        List<String> collaborationIds = collaborations.stream().map(Collaboration::getId).toList();
+        List<Deliverable> deliverables =
+                collaborationIds.isEmpty()
+                        ? List.of()
+                        : deliverableRepository.findByCollaborationIdIn(collaborationIds);
+        List<EscrowHold> escrowHolds = escrowHoldRepository.findByCampaignId(campaignId);
+
+        BigDecimal budgetMax = campaign.getBudgetMax() != null ? campaign.getBudgetMax() : BigDecimal.ZERO;
+
+        // Same FUNDED/RELEASED "committed campaign spend" definition used by list()/toSummaryDto.
+        BigDecimal spent =
+                escrowHolds.stream()
+                        .filter(h -> h.getStatus() == EscrowStatus.FUNDED || h.getStatus() == EscrowStatus.RELEASED)
+                        .map(EscrowHold::getAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Locked-only -- see method javadoc's escrowFloat/gmv distinction.
+        BigDecimal escrowBalance =
+                escrowHolds.stream()
+                        .filter(h -> h.getStatus() == EscrowStatus.FUNDED)
+                        .map(EscrowHold::getAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        int creatorCount = (int) collaborations.stream().map(Collaboration::getCreatorId).distinct().count();
+
+        int deliverablesPending =
+                (int) deliverables.stream().filter(d -> d.getStatus() == DeliverableStatus.PENDING).count();
+        int deliverablesApproved =
+                (int) deliverables.stream().filter(d -> d.getStatus() == DeliverableStatus.APPROVED).count();
+
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        long overdueCount =
+                deliverables.stream()
+                        .filter(d -> d.getDeadline() != null && d.getDeadline().isBefore(today))
+                        .filter(d -> !DONE_DELIVERABLE_STATUSES.contains(d.getStatus()))
+                        .count();
+        Double slaBreachRate = deliverables.isEmpty() ? 0.0 : (overdueCount * 100.0) / deliverables.size();
+
+        List<DeliverableRequirementDto> deliverableDtos =
+                deliverables.stream()
+                        .map(
+                                d ->
+                                        new DeliverableRequirementDto(
+                                                d.getId(),
+                                                d.getType().name(),
+                                                d.getDescription() != null ? d.getDescription() : d.getTitle(),
+                                                1,
+                                                d.getDeadline()))
+                        .toList();
+
+        List<CampaignCreatorDto> creatorDtos =
+                collaborations.stream()
+                        .map(
+                                c ->
+                                        new CampaignCreatorDto(
+                                                c.getCreatorId(),
+                                                resolveCreatorName(c.getCreatorId()),
+                                                mapCollaborationStatus(c.getStatus()),
+                                                c.getAgreedRate() != null ? c.getAgreedRate() : BigDecimal.ZERO))
+                        .toList();
+
+        // "type" hardcode -- same not-yet-ratified STANDARD/HYPE taxonomy note as toSummaryDto.
+        String type = "STANDARD";
+
+        return new CampaignDetailDto(
+                campaign.getId(),
+                campaign.getTitle(),
+                brandName,
+                type,
+                campaign.getStatus(),
+                budgetMax,
+                spent,
+                creatorCount,
+                deliverablesPending,
+                deliverablesApproved,
+                slaBreachRate,
+                campaign.getCreatedAt(),
+                campaign.getEndDate(),
+                campaign.getDescription(),
+                deliverableDtos,
+                creatorDtos,
+                escrowBalance,
+                // DEFERRED: needs at-risk SLA definition -- hardcoded until product ratifies it.
+                "ON_TRACK");
+    }
+
+    private String resolveCreatorName(String creatorUserId) {
+        if (creatorUserId == null) {
+            return null;
+        }
+        return userRepository
+                .findById(creatorUserId)
+                .map(u -> u.getDisplayName() != null ? u.getDisplayName() : u.getEmail())
+                .orElse(null);
+    }
+
+    /**
+     * Collapses {@link CollaborationStatus}'s 13 domain values down to {@code CampaignCreator}'s
+     * 5-value FE union (admin.types.ts) -- {@code CANCELLED}/{@code DISPUTED} have no matching
+     * bucket in that union at all (added before cancellation/dispute states existed here), mapped
+     * to {@code COMPLETED} as the closest "no longer active" bucket rather than inventing a 6th
+     * status value the FE doesn't expect. An honest approximation, not a fabricated value --
+     * flagged as a gap for product/Priya to resolve if it matters for the UI.
+     */
+    private static String mapCollaborationStatus(CollaborationStatus status) {
+        return switch (status) {
+            case INVITED, APPLIED, SHORTLISTED -> "INVITED";
+            case IN_NEGOTIATION, TERMS_AGREED -> "NEGOTIATING";
+            case CONTRACT_PENDING, CONTRACTED -> "CONTRACTED";
+            case IN_PROGRESS, REVIEW_PENDING, REVISION_REQUESTED -> "DELIVERING";
+            case COMPLETED, CANCELLED, DISPUTED -> "COMPLETED";
+        };
+    }
 
     private CampaignSummaryDto toSummaryDto(
             Campaign c,

@@ -92,6 +92,24 @@ public class PlatformFeeAdminService {
         AdminUser admin = adminContext.requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN);
         PlatformFeeConfig config = requireConfig();
 
+        // Optimistic-concurrency check against the client-observed baseline (admin.types.ts's
+        // PlatformFeeUpdateRequest.expectedEffectiveDate javadoc / Kabir 1.1 follow-up): Hibernate's
+        // @Version guard below only protects two PUTs racing inside the same load-then-save
+        // transaction window; it can't catch "two SUPER_ADMINs minutes apart" because this method
+        // always reloads the freshest row via requireConfig() first. The DTO field is now
+        // @NotNull (the only caller, FeeControlPanel.tsx, always sends it from a guaranteed
+        // non-null loaded config) so the check is unconditional here too — a missing or
+        // mismatched baseline always 409s rather than silently degrading to last-write-wins on
+        // this money path. Same code/status the @Version conflict already surfaces via
+        // ObjectOptimisticLockingFailureException in PlatformFeeAdminController#update, so the
+        // frontend's existing 409/FEE_CONFIG_CONFLICT handling (api-contracts.ts) fires either way.
+        if (!body.expectedEffectiveDate().equals(config.getEffectiveAt())) {
+            throw new ApiException(
+                    "FEE_CONFIG_CONFLICT",
+                    "Fee config was modified by another admin, refresh and retry",
+                    HttpStatus.CONFLICT);
+        }
+
         Map<String, Object> before = snapshot(config);
 
         int brandFeeBps = toBps(body.brandFeePercent(), "brandFeePercent");

@@ -5,25 +5,19 @@ import com.influora.common.JsonLists;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.AiConversation;
 import com.influora.domain.entity.AiMessage;
-import com.influora.domain.entity.BrandAiCredit;
 import com.influora.domain.entity.BrandProfile;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.ConversationStatus;
 import com.influora.domain.enums.MessageRole;
-import com.influora.integration.ai.MeeraChatAiClient;
-import com.influora.integration.ai.MeeraChatAiClient.ChatTurnResult;
-import com.influora.integration.ai.MeeraChatAiException;
+import com.influora.domain.enums.UserType;
 import com.influora.repository.AiConversationRepository;
 import com.influora.repository.AiMessageRepository;
 import com.influora.repository.BrandProfileRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.IdempotencyService;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -34,17 +28,48 @@ import org.springframework.transaction.annotation.Transactional;
  * Session bookkeeping for Meera conversations — start/resume a conversation, persist turns.
  * Every method is tenant-scoped off {@code workspaceId} (Guardrail 4).
  *
- * <p><b>Wave 3 task A4 fix — the KNOWN GAP below is closed.</b> {@link #sendTurn} used to persist a
- * hardcoded placeholder ASSISTANT echo with no real LLM call. It now routes through influora-ai's
- * existing {@code POST /chat} (Domain D, 04-AI-SERVICE-SPEC.md) via {@link MeeraChatAiClient} —
- * the same Java-&gt;Python service-token pattern every other client in {@code integration/ai/*}
- * already uses (e.g. {@code AnalyzeSiteAiClient}) — and persists the REAL model reply exactly
- * once. See {@link #doSendTurn} for the full flow and {@link MeeraChatAiClient}'s javadoc for why
- * {@code onbehalf_jwt} is deliberately omitted on this call path. The independently-minted {@link
- * StreamTokenService} token is unaffected — the browser still connects directly to {@code /chat}
- * for its own live SSE experience per Priya's locked streaming architecture; this class's own
- * Python call is Spring's separate, synchronous turn used only to obtain and persist the
- * authoritative reply.
+ * <p><b>Streaming-first refactor (Priya, Wave 2):</b> {@link #doSendTurn} previously called
+ * influora-ai's {@code POST /chat} synchronously (via the now-removed {@code MeeraChatAiClient})
+ * with an empty {@code onbehalf_jwt}, persisted the ASSISTANT reply itself, and charged the AI
+ * credit up front. That whole synchronous leg is gone: {@code doSendTurn} persists the USER
+ * message and mints the {@link StreamTokenService} token — the browser streams directly from
+ * influora-ai's {@code /chat} SSE endpoint with its OWN on-behalf JWT, so tool calls and Living
+ * Canvas stages work for real (no more degrading to plain text). {@link #persistAssistantWriteback}
+ * is the SOLE writer of the ASSISTANT turn (influora-ai's end-of-stream callback, which previously
+ * failed its on-behalf check and was silently dropped when the Java-side call sent {@code ""} —
+ * the real browser JWT satisfies it now).
+ *
+ * <p><b>SECURITY FIX (Wave 2 round 2, Kabir red-team — two HIGH exploits in the charge-on-success
+ * model this class originally shipped):</b> charge-on-success (decrementing credit only in {@link
+ * #persistAssistantWriteback}) let a client read every {@code token} SSE event and disconnect
+ * before {@code done} to dodge the charge AND the 500/day cap entirely (FAIL 1), and let a client
+ * pin the write-back's client-supplied {@code turn_id} to a constant across many turns so only the
+ * first was ever actually charged (FAIL 2 — the rest short-circuited through {@code
+ * AlreadyCompletedException} with {@code creditsCharged=0}). Both are closed by moving the charge
+ * back to the SEND gate, keyed on the server-minted {@code messageId}: {@link #doSendTurn} now
+ * calls {@link AICreditService#tryConsumeForTurn}, which actually decrements credit and bumps the
+ * daily counter, BEFORE the USER message is persisted or any token is minted — there is no longer
+ * any path that streams tokens to the browser without the turn already being charged. Because
+ * charging moved earlier, a genuine PROVIDER failure (never a plain client disconnect — see {@code
+ * app/routes/chat.py}'s explicit separation of those two cases) needs to be able to give the money
+ * back: {@link AICreditService#release} handles that, guarded so it can never refund a turn that
+ * was never charged or one whose reply already persisted (no refund-and-keep-the-reply). See {@link
+ * #releaseTurnCredit} and {@code MeeraInternalController}'s {@code /internal/meera/turns/release}
+ * route, which influora-ai calls on provider failure.
+ *
+ * <p>{@link #persistAssistantWriteback} no longer charges anything — it ONLY persists the
+ * ASSISTANT message, idempotently, and sets the persisted row's {@code creditsCharged} by asking
+ * {@link AICreditService#wasCharged} whether the SAME {@code turnId} (== its own idempotency key,
+ * which is now the write-back caller's SERVER-VERIFIED {@code messageId} claim, never a
+ * client-supplied {@code turn_id} — Kabir FAIL 2's other half, fixed on the influora-ai side in
+ * {@code app/routes/chat.py}) was actually charged at send. See {@link #doPersistAssistantWriteback}.
+ *
+ * <p><b>SECURITY FIX #1 ({@code docs/security/meera-onbehalf-auth-security-design.md} §2):</b>
+ * {@link #doSendTurn} now also mints a dedicated, per-turn, scoped {@link OnBehalfTokenService}
+ * token alongside the {@link StreamTokenService} token, at the same call site. The browser
+ * forwards THIS token as {@code onbehalf_jwt} instead of the user's full-lifetime public-API
+ * access token (which used to be read out of {@code localStorage.getItem('brand_token')} —
+ * {@code MeeraChatPanel.tsx}, pre-fix). See {@link TurnResult#onBehalfToken()}.
  */
 @Service
 public class MeeraSessionService {
@@ -53,7 +78,14 @@ public class MeeraSessionService {
 
     private static final int TURN_CREDIT_COST = 1;
     private static final String SEND_TURN_SCOPE = "meera.send_turn";
-    private static final String PERSIST_WRITEBACK_SCOPE = "meera.persist_writeback";
+
+    /**
+     * Package-visible (not {@code private}) so {@link AICreditService#release} can consult it via
+     * {@code IdempotencyService#isCompleted} — a COMPLETED row here for a given {@code turnId}
+     * means that turn's assistant reply already persisted, which is exactly the condition that
+     * must make a release a no-op (never refund a turn whose reply already landed).
+     */
+    static final String PERSIST_WRITEBACK_SCOPE = "meera.persist_writeback";
 
     private final AiConversationRepository conversationRepository;
     private final AiMessageRepository messageRepository;
@@ -62,8 +94,8 @@ public class MeeraSessionService {
     private final AICreditService creditService;
     private final BrandContextAssembler contextAssembler;
     private final StreamTokenService streamTokenService;
+    private final OnBehalfTokenService onBehalfTokenService;
     private final IdempotencyService idempotencyService;
-    private final MeeraChatAiClient chatAiClient;
 
     public MeeraSessionService(
             AiConversationRepository conversationRepository,
@@ -73,8 +105,8 @@ public class MeeraSessionService {
             AICreditService creditService,
             BrandContextAssembler contextAssembler,
             StreamTokenService streamTokenService,
-            IdempotencyService idempotencyService,
-            MeeraChatAiClient chatAiClient) {
+            OnBehalfTokenService onBehalfTokenService,
+            IdempotencyService idempotencyService) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.workspaceRepository = workspaceRepository;
@@ -82,8 +114,8 @@ public class MeeraSessionService {
         this.creditService = creditService;
         this.contextAssembler = contextAssembler;
         this.streamTokenService = streamTokenService;
+        this.onBehalfTokenService = onBehalfTokenService;
         this.idempotencyService = idempotencyService;
-        this.chatAiClient = chatAiClient;
     }
 
     /** Reuses the workspace's ACTIVE conversation, or opens a new one. Tenant-scoped. */
@@ -110,16 +142,18 @@ public class MeeraSessionService {
     }
 
     /**
-     * Send a turn: credit-gate + decrement (Guardrail 5, BEFORE anything else), persist the USER
-     * message, assemble the sanitized brand context (Guardrail 3), mint a scoped stream token
-     * (Guardrail 2), call influora-ai's {@code POST /chat} for the real model reply (A4, see
-     * {@link #doSendTurn}), and persist the ASSISTANT reply. Returns the persisted USER message
-     * id, the assistant message id, the stream token, and remaining credits.
+     * Send a turn: charge-gate (Guardrail 5, BEFORE anything else — see {@link
+     * AICreditService#tryConsumeForTurn}, which actually decrements credit and bumps the 500/day
+     * counter, keyed on the server-minted {@code messageId} — SECURITY FIX, Kabir FAILs #1/#2, see
+     * class javadoc), persist the USER message, assemble the sanitized brand context (Guardrail
+     * 3), and mint a scoped stream token (Guardrail 2). Returns immediately —
+     * {@code assistantMessageId} and the reply text are {@code null}; the browser streams the
+     * actual turn directly from influora-ai over SSE using the returned token, and the ASSISTANT
+     * message (plus the actual credit charge) lands later via {@link #persistAssistantWriteback}.
      *
      * <p>[E2 audit finding #2, MEDIUM — fixed] {@code idempotencyKey} is required. Without this
      * guard a client retry (double-click, network-timeout auto-retry, back-button resubmit)
-     * re-ran {@link AICreditService#tryConsume} against the workspace's capped AI-credit balance
-     * AND inserted duplicate {@link AiMessage} rows. Reserved through the shared {@link
+     * inserted duplicate {@link AiMessage} rows. Reserved through the shared {@link
      * IdempotencyService} FIRST (its own insert-first-wins table), same pattern as {@code
      * RedemptionService#redeem}. A concurrent double-submit (in-flight or already-completed) is
      * rejected with a retry-safe 409 — this human-facing send has no stored result reference to
@@ -134,6 +168,7 @@ public class MeeraSessionService {
     public TurnResult sendTurn(
             String workspaceId,
             String userId,
+            UserType userType,
             String conversationId,
             String content,
             String idempotencyKey) {
@@ -148,7 +183,7 @@ public class MeeraSessionService {
                     idempotencyKey,
                     workspaceId,
                     SEND_TURN_SCOPE,
-                    () -> doSendTurn(workspaceId, userId, conversationId, content));
+                    () -> doSendTurn(workspaceId, userId, userType, conversationId, content));
         } catch (IdempotencyService.AlreadyInProgressException
                 | IdempotencyService.AlreadyCompletedException raced) {
             throw new ApiException(
@@ -160,7 +195,7 @@ public class MeeraSessionService {
 
     @Transactional
     protected TurnResult doSendTurn(
-            String workspaceId, String userId, String conversationId, String content) {
+            String workspaceId, String userId, UserType userType, String conversationId, String content) {
         AiConversation conversation =
                 conversationRepository
                         .findByIdAndWorkspaceId(conversationId, workspaceId)
@@ -171,17 +206,31 @@ public class MeeraSessionService {
                                                 "Conversation not found",
                                                 HttpStatus.NOT_FOUND));
 
-        // Guardrail 5 — credit gate + atomic decrement BEFORE any Python/LLM reachability.
-        creditService.tryConsume(workspaceId, TURN_CREDIT_COST);
+        // Server-minted turn id — generated BEFORE the charge and before anything else is
+        // persisted or minted, so the charge (and every downstream token/message) is keyed on the
+        // SAME value, never a client-supplied one (Kabir FAIL 2 fix — see class javadoc).
+        String messageId = Ulids.newUlid();
+
+        // SECURITY FIX (Kabir FAILs #1/#2) — charge HERE, at send, keyed on messageId. Replaces
+        // the old non-decrementing assertAvailable pre-check: this ACTUALLY decrements credit and
+        // bumps the 500/day counter (same two gates as before — exhausted credits / daily cap —
+        // same error codes/statuses), and records the per-turn charge-ledger marker AICreditService
+        // #release later consults. If this throws, nothing below runs: no USER message, no stream
+        // token, nothing to ever appear "charged" and dangling.
+        creditService.tryConsumeForTurn(workspaceId, TURN_CREDIT_COST, messageId);
 
         AiMessage userMessage =
                 messageRepository.save(
                         AiMessage.builder()
-                                .id(Ulids.newUlid())
+                                .id(messageId)
                                 .conversationId(conversationId)
                                 .role(MessageRole.USER)
                                 .content(content)
-                                .creditsCharged(TURN_CREDIT_COST)
+                                // The USER row itself is still never charged — the charge is
+                                // attributed to the ASSISTANT write-back row instead (see
+                                // doPersistAssistantWriteback) purely for display/audit purposes;
+                                // the actual decrement already happened above, at send.
+                                .creditsCharged(0)
                                 .build());
 
         conversation.markMessageAt(Instant.now());
@@ -199,120 +248,16 @@ public class MeeraSessionService {
         BrandProfile brandProfile = brandProfileRepository.findByWorkspaceId(workspaceId).orElse(null);
         Map<String, Object> sanitizedContext = contextAssembler.assemble(workspace, brandProfile);
 
-        String messageId = userMessage.getId();
         String streamToken = streamTokenService.mint(workspaceId, conversationId, messageId, userId);
+        // SECURITY FIX #1: mint the dedicated per-turn on-behalf token here, alongside the stream
+        // token — the browser forwards THIS as onbehalf_jwt, never the full access token.
+        String onBehalfToken =
+                onBehalfTokenService.mint(workspaceId, conversationId, messageId, userId, userType);
 
-        // A4: real model turn via influora-ai's existing POST /chat (MeeraChatAiClient), replacing
-        // the old placeholder echo. Full turn history (including the USER message just persisted
-        // above) is replayed so Claude has the same conversation the browser's own SSE connection
-        // would see. Any provider failure (transport, non-200, an `error` SSE event, or a stream
-        // with no usable text) throws MeeraChatAiException, which propagates out of this
-        // @Transactional method — Spring rolls back the credit consumption and the USER message
-        // together with it, so no half-written turn (user message with no reply, credit already
-        // spent) is ever left behind, and IdempotencyService marks the outer SEND_TURN_SCOPE key
-        // FAILED, which is reclaimable by a genuine client retry of the same Idempotency-Key (see
-        // IdempotencyService#executeOnce's reclaim-on-FAILED path) — never a duplicate turn.
-        List<AiMessage> history = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
-        BrandAiCredit creditStatus = creditService.getStatus(workspaceId);
-        Map<String, Object> chatRequestBody =
-                buildChatRequestBody(workspaceId, conversationId, messageId, history, sanitizedContext, creditStatus);
-
-        String assistantText;
-        try {
-            ChatTurnResult chatResult = chatAiClient.sendTurn(workspaceId, chatRequestBody);
-            assistantText = chatResult.text();
-        } catch (MeeraChatAiException e) {
-            log.warn(
-                    "MeeraSessionService: /chat call failed for workspace={}, conversation={}: {}",
-                    workspaceId,
-                    conversationId,
-                    e.getMessage());
-            throw new ApiException(
-                    "MEERA_PROVIDER_UNAVAILABLE",
-                    "Meera could not generate a reply right now — please retry",
-                    HttpStatus.BAD_GATEWAY);
-        }
-
-        AiMessage assistantMessage =
-                messageRepository.save(
-                        AiMessage.builder()
-                                .id(Ulids.newUlid())
-                                .conversationId(conversationId)
-                                .role(MessageRole.ASSISTANT)
-                                .content(assistantText)
-                                .metadataJson(JsonLists.toJsonObject(Map.of("placeholder", false)))
-                                .creditsCharged(0)
-                                .build());
-
-        return new TurnResult(
-                userMessage.getId(),
-                assistantMessage.getId(),
-                streamToken,
-                sanitizedContext,
-                assistantText);
-    }
-
-    /**
-     * Adapts Java's sanitized brand context ({@link BrandContextAssembler}, camelCase/flat) and
-     * turn history into the shape influora-ai's {@code app/prompt/assembler.py::assemble_prompt} /
-     * {@code build_block_b} actually read (snake_case top-level {@code workspace_id}, a nested
-     * {@code brand}/{@code credit_state} object) — a deliberate adaptation, not a fabricated
-     * contract, mirroring {@code AnalyzeSiteTriggerService#applySuccess}'s "Contract mismatch,
-     * handled deliberately" pattern for the same reason: the two sides' shapes are documented
-     * independently and were never byte-identical.
-     *
-     * <p>{@code onbehalf_jwt} is deliberately {@code ""} — see {@link MeeraChatAiClient}'s javadoc.
-     * Message roles are lowercased ({@code MessageRole.name()} is uppercase) because {@code
-     * build_block_c_messages} matches literal {@code "user"}/{@code "assistant"}/{@code "tool"} —
-     * anything else (including the uppercase enum name) falls into its untrusted "unknown_role"
-     * branch, which would wrongly wrap every replayed assistant turn as untrusted user data.
-     */
-    private Map<String, Object> buildChatRequestBody(
-            String workspaceId,
-            String conversationId,
-            String turnId,
-            List<AiMessage> history,
-            Map<String, Object> sanitizedContext,
-            BrandAiCredit creditStatus) {
-        List<Map<String, Object>> conversation =
-                history.stream()
-                        .map(
-                                m ->
-                                        Map.<String, Object>of(
-                                                "role", m.getRole().name().toLowerCase(Locale.ROOT),
-                                                "content", m.getContent() == null ? "" : m.getContent()))
-                        .collect(Collectors.toList());
-
-        Map<String, Object> brand = new LinkedHashMap<>();
-        putIfPresent(brand, "display_name", sanitizedContext.get("brandName"));
-        putIfPresent(brand, "niche_tags", sanitizedContext.get("nicheTags"));
-        putIfPresent(brand, "tone_dial", sanitizedContext.get("toneProfile"));
-        Object brandAesthetic = sanitizedContext.get("brandAesthetic");
-        if (brandAesthetic instanceof Map<?, ?> aestheticMap) {
-            putIfPresent(brand, "brand_color", aestheticMap.get("accent_color"));
-        }
-        putIfPresent(brand, "product_catalog", sanitizedContext.get("productCatalog"));
-
-        Map<String, Object> creditState = new LinkedHashMap<>();
-        boolean unlimited = creditStatus.isUnlimited(Instant.now());
-        creditState.put("mode", unlimited ? "unlimited" : "metered");
-        creditState.put("credits_remaining", creditStatus.getCreditsRemaining());
-
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("workspace_id", workspaceId);
-        body.put("conversation_id", conversationId);
-        body.put("turn_id", turnId);
-        body.put("onbehalf_jwt", "");
-        body.put("conversation", conversation);
-        body.put("brand", brand);
-        body.put("credit_state", creditState);
-        return body;
-    }
-
-    private void putIfPresent(Map<String, Object> target, String key, Object value) {
-        if (value != null) {
-            target.put(key, value);
-        }
+        // Streaming-first: no synchronous Python call here anymore. The browser opens its own SSE
+        // connection to influora-ai's /chat using this token (Priya's locked architecture) and
+        // influora-ai posts the finished turn back via persistAssistantWriteback.
+        return new TurnResult(userMessage.getId(), null, streamToken, onBehalfToken, sanitizedContext, null);
     }
 
     /**
@@ -334,14 +279,41 @@ public class MeeraSessionService {
     }
 
     /**
-     * Persists the real assistant turn Python posts back via the signed
-     * {@code POST /internal/meera/messages} callback (11-AI-FLOW-DETAILED.md Flow 2 step 6). This
-     * is the write-back that eventually retires the {@link #sendTurn} placeholder-echo path once
-     * the browser talks to Python directly over SSE for the reasoning itself — Spring's role here
-     * is solely to persist the audit trail (ai_messages). Callers must have already resolved and
-     * authorized {@code conversationId} via {@link #resolveConversation} before calling this, and
-     * pass that SAME resolved {@code workspaceId} here (see {@code MeeraInternalController
-     * #persistTurnWriteback}, which cross-checks it against the on-behalf JWT before either call).
+     * Persists the real assistant turn influora-ai posts back via the signed
+     * {@code POST /internal/meera/messages} callback (11-AI-FLOW-DETAILED.md Flow 2 step 6) — now
+     * the SOLE writer of the ASSISTANT turn, since {@link #doSendTurn} no longer calls Python
+     * synchronously. Callers must have already resolved and authorized {@code conversationId} via
+     * {@link #resolveConversation} before calling this, and pass that SAME resolved {@code
+     * workspaceId} here (see {@code MeeraInternalController#persistTurnWriteback}, which
+     * cross-checks it against the on-behalf JWT before either call).
+     *
+     * <p><b>SECURITY FIX (Wave 2 round 2, Kabir FAILs #1/#2 — see class javadoc): this method no
+     * longer charges anything.</b> The charge now happens once, at send, in {@link #doSendTurn}
+     * via {@link AICreditService#tryConsumeForTurn}. This method ONLY persists the audit trail
+     * (ai_messages), idempotently, and sets the persisted row's {@code creditsCharged} by asking
+     * {@link AICreditService#wasCharged} whether {@code idempotencyKey} (== {@code turnId}) was
+     * actually charged at send — see {@link #doPersistAssistantWriteback}.
+     *
+     * <p><b>{@code idempotencyKey} MUST be the server-minted {@code messageId}, never a
+     * client-supplied value.</b> This is what Kabir FAIL 2 exploited: the old write-back used the
+     * browser's own {@code turn_id} field as this key, so pinning it to a constant across many
+     * turns made every turn after the first replay through {@link
+     * IdempotencyService.AlreadyCompletedException} uncharged. The fix is enforced on the
+     * influora-ai side ({@code app/routes/chat.py} now reads the stream token's VERIFIED {@code
+     * messageId} claim instead of {@code body.turn_id}) — this method's contract is simply that
+     * whatever {@code idempotencyKey} it's given IS the turn's identity for both the persistence
+     * ledger ({@link #PERSIST_WRITEBACK_SCOPE}) and, transitively via {@link
+     * AICreditService#wasCharged} / {@link AICreditService#release}, the charge ledger. A stale or
+     * unrecognized {@code idempotencyKey} (one {@link AICreditService#wasCharged} doesn't
+     * recognize) is not hard-rejected — matching this codebase's existing "never drop a turn the
+     * user already watched stream" posture — it is persisted anyway with {@code creditsCharged =
+     * 0} and a {@code WARN} log, same as the credit-race case below used to be handled.
+     *
+     * <p>Idempotent by construction: {@link IdempotencyService#executeOnce} only ever invokes the
+     * supplier on the FIRST successful attempt for a given {@code idempotencyKey} — a
+     * replayed/duplicate write-back short-circuits through the {@code AlreadyCompletedException}
+     * branch below (returning the already-persisted message via {@link #replayPersistedMessage})
+     * and never re-enters {@link #doPersistAssistantWriteback}.
      *
      * <p>[E2 audit finding #16, MEDIUM — fixed] {@code idempotencyKey} is required.
      *
@@ -382,7 +354,7 @@ public class MeeraSessionService {
                     idempotencyKey,
                     workspaceId,
                     PERSIST_WRITEBACK_SCOPE,
-                    () -> doPersistAssistantWriteback(conversationId, content, metadata),
+                    () -> doPersistAssistantWriteback(workspaceId, conversationId, content, metadata, idempotencyKey),
                     AiMessage::getId);
         } catch (IdempotencyService.AlreadyCompletedException replay) {
             AiMessage previous = replayPersistedMessage(workspaceId, conversationId, idempotencyKey);
@@ -422,8 +394,25 @@ public class MeeraSessionService {
 
     @Transactional
     protected AiMessage doPersistAssistantWriteback(
-            String conversationId, String content, Map<String, Object> metadata) {
+            String workspaceId, String conversationId, String content, Map<String, Object> metadata, String turnId) {
         AiConversation conversation = resolveConversation(conversationId);
+
+        // SECURITY FIX (Wave 2 round 2): the charge already happened at send (doSendTurn ->
+        // AICreditService#tryConsumeForTurn) — this method never charges. It only reflects that
+        // charge on the persisted row by checking the SAME turnId (== idempotencyKey, the
+        // server-verified messageId per the class javadoc) against AICreditService's charge
+        // ledger. An unrecognized turnId (should not happen when influora-ai behaves per contract)
+        // is persisted uncharged with a WARN, not hard-rejected — same "never drop a turn the user
+        // already watched stream" posture this codebase already applied to the old credit race.
+        int creditsCharged = creditService.wasCharged(workspaceId, turnId) ? TURN_CREDIT_COST : 0;
+        if (creditsCharged == 0) {
+            log.warn(
+                    "write-back turnId={} workspaceId={} conversationId={} has no matching send-time"
+                            + " charge -- persisting uncharged",
+                    turnId,
+                    workspaceId,
+                    conversationId);
+        }
 
         AiMessage assistantMessage =
                 messageRepository.save(
@@ -433,13 +422,33 @@ public class MeeraSessionService {
                                 .role(MessageRole.ASSISTANT)
                                 .content(content)
                                 .metadataJson(metadata == null ? null : JsonLists.toJsonObject(metadata))
-                                .creditsCharged(0)
+                                .creditsCharged(creditsCharged)
                                 .build());
 
         conversation.markMessageAt(Instant.now());
         conversationRepository.save(conversation);
 
         return assistantMessage;
+    }
+
+    /**
+     * SECURITY FIX (Wave 2 round 2, Kabir FAILs #1/#2 — see class javadoc): refunds a turn's
+     * send-time charge after a genuine PROVIDER failure on the influora-ai side. Called from
+     * {@code MeeraInternalController}'s {@code POST /internal/meera/turns/release}, which is
+     * gated by the exact same dual-credential mesh auth as {@link #persistAssistantWriteback}'s
+     * {@code /internal/meera/messages} route (service-token + HMAC + on-behalf JWT, tenant
+     * cross-checked via {@code resolveConversation} + {@code OnBehalfAuthResolver} at the
+     * controller, same pattern). Deliberately never called for a plain client disconnect — that
+     * distinction is enforced entirely on the influora-ai side ({@code app/routes/chat.py}); this
+     * method has no way to tell a disconnect from a provider failure and doesn't need to.
+     *
+     * <p>All of the actual idempotency/guard logic (double-release no-op, refuse to refund a turn
+     * that was never charged, refuse to refund a turn whose reply already persisted) lives in
+     * {@link AICreditService#release} — this is a thin pass-through so the controller doesn't need
+     * to know {@link #TURN_CREDIT_COST} or reach into {@link AICreditService} directly.
+     */
+    public void releaseTurnCredit(String workspaceId, String turnId) {
+        creditService.release(workspaceId, TURN_CREDIT_COST, turnId);
     }
 
     /** Tenant-scoped full turn history for a conversation. */
@@ -480,11 +489,17 @@ public class MeeraSessionService {
         return messageRepository.findByConversationIdAndIdGreaterThanOrderByIdAsc(conversationId, afterMessageId);
     }
 
-    /** Result of a sendTurn call — internal to the service layer, mapped to a DTO by the controller. */
+    /**
+     * Result of a sendTurn call — internal to the service layer, mapped to a DTO by the
+     * controller. {@code onBehalfToken} is the SECURITY FIX #1 per-turn credential (see class
+     * javadoc) — the controller must return it to the browser, and the browser must forward it
+     * as {@code onbehalf_jwt} in place of the old full-access-token read.
+     */
     public record TurnResult(
             String userMessageId,
             String assistantMessageId,
             String streamToken,
+            String onBehalfToken,
             Map<String, Object> sanitizedContext,
             String placeholderReply) {}
 }

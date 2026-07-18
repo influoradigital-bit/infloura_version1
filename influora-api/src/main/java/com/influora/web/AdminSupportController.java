@@ -36,9 +36,9 @@ import org.springframework.web.bind.annotation.RestController;
  * /support/tickets/{id}/assign}, {@code escalate} -> {@code POST /support/tickets/{id}/escalate}
  * (built once {@code src/admin/components/support/TicketList.tsx}'s escalate mutation/dialog gave
  * it a live caller — see {@link AdminSupportService#escalate}). {@code supportApi.getStats} is
- * still NOT built — no frontend caller needs it yet, flagged as follow-up scope, not silently
- * forgotten, same pattern {@code AdminBrandController}/{@code AdminCreatorController} document for
- * their own unimplemented endpoints.
+ * now built too, but NOT on this controller — see {@code AdminSupportStatsController} (mounted at
+ * {@code /admin/support}, not {@code /admin/support/tickets}) and its class javadoc for why it
+ * lives on a sibling class instead of a {@code @GetMapping("/stats")} added here.
  *
  * <p>Returns raw DTOs (unwrapped, no {@link com.influora.common.ApiResponse} envelope) — same
  * deliberate deviation as every other {@code Admin*Controller}, to match {@code apiRequest()}'s

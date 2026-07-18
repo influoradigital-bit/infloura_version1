@@ -10,6 +10,7 @@ import com.influora.domain.entity.WalletTransaction;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.AdminRole;
+import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.KycStatusView;
 import com.influora.domain.enums.MemberRole;
@@ -33,6 +34,9 @@ import com.influora.web.dto.admin.AdminBrandDtos.TeamMemberDto;
 import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -77,6 +81,31 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class AdminBrandService {
+
+    /**
+     * Sane upper bound for an admin campaign budget override (MONEY PATH). Well within the {@code
+     * campaigns.budget_max DECIMAL(12,2)} column capacity (max ~9,999,999,999.99), chosen as a
+     * defensive guardrail against a fat-fingered/hostile huge value, not a business rule. Kabir/
+     * Rohan: adjust to the real per-campaign ceiling once product defines one.
+     */
+    private static final BigDecimal MAX_CAMPAIGN_BUDGET = new BigDecimal("100000000.00");
+
+    /**
+     * Collaboration statuses that represent a REAL agreed financial obligation on a campaign (M-2,
+     * Kabir): terms are agreed and work is contracted/in-flight, so {@code agreedRate} is a
+     * committed amount even before it is moved into an escrow hold. Deliberately EXCLUDES:
+     * pre-agreement states (INVITED/APPLIED/SHORTLISTED/IN_NEGOTIATION — rate not final), COMPLETED
+     * (payout already realized as a RELEASED escrow hold, counted via escrow), and
+     * CANCELLED/DISPUTED (no live obligation / already frozen in escrow).
+     */
+    private static final Set<CollaborationStatus> COMMITTED_COLLAB_STATUSES =
+            EnumSet.of(
+                    CollaborationStatus.TERMS_AGREED,
+                    CollaborationStatus.CONTRACT_PENDING,
+                    CollaborationStatus.CONTRACTED,
+                    CollaborationStatus.IN_PROGRESS,
+                    CollaborationStatus.REVIEW_PENDING,
+                    CollaborationStatus.REVISION_REQUESTED);
 
     private final AdminContextService adminContext;
     private final AdminAuditLogService adminAuditLogService;
@@ -316,6 +345,285 @@ public class AdminBrandService {
                 reason);
 
         return toDetailDto(workspace);
+    }
+
+    /**
+     * Brand profile edit — PUT /admin/brands/{id} ({@code brandApi.update}). SUPER_ADMIN/ADMIN
+     * (MFA-gated), same as every other mutation on this controller (verifyKyc/suspend/reinstate).
+     * Writes ONLY the SAFE allow-listed profile fields (name/industry/size/email), never a blind
+     * copy of the request — the {@link com.influora.web.dto.admin.AdminBrandDtos.UpdateBrandRequest}
+     * record shape is the allow-list, and {@link Workspace#applyAdminProfileEdit} is null-guarded.
+     * Audit-logs old->new for each field that actually changed.
+     */
+    @Transactional
+    public BrandDetailDto update(
+            AuthPrincipal principal,
+            HttpServletRequest request,
+            String brandId,
+            com.influora.web.dto.admin.AdminBrandDtos.UpdateBrandRequest body) {
+        adminContext.requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN);
+        Workspace workspace = requireBrandWorkspace(brandId);
+
+        // Validate size against the closed STARTUP/SMB/ENTERPRISE union before writing — the DB
+        // column is free-text, but Brand.size in admin.types.ts is a closed union; reject anything
+        // outside it rather than persisting a value the frontend can't render as a badge.
+        String normalizedSize = null;
+        if (body.size() != null && !body.size().isBlank()) {
+            normalizedSize = body.size().trim().toUpperCase();
+            if (!KNOWN_SIZES.contains(normalizedSize)) {
+                throw new ApiException(
+                        "INVALID_BRAND_SIZE",
+                        "size must be one of STARTUP, SMB, ENTERPRISE",
+                        HttpStatus.BAD_REQUEST);
+            }
+        }
+
+        // Build old->new snapshots for ONLY the fields that actually change. Keys match the BRAND
+        // FIELD_ALLOWLIST in AdminAuditLogService (id/name/industry/size/email).
+        Map<String, Object> oldValues = new LinkedHashMap<>();
+        Map<String, Object> newValues = new LinkedHashMap<>();
+        oldValues.put("id", workspace.getId());
+        newValues.put("id", workspace.getId());
+
+        if (body.name() != null && !body.name().equals(workspace.getName())) {
+            oldValues.put("name", workspace.getName());
+            newValues.put("name", body.name());
+        }
+        if (body.industry() != null && !body.industry().equals(workspace.getIndustry())) {
+            oldValues.put("industry", workspace.getIndustry());
+            newValues.put("industry", body.industry());
+        }
+        if (normalizedSize != null && !normalizedSize.equals(workspace.getCompanySize())) {
+            oldValues.put("size", workspace.getCompanySize());
+            newValues.put("size", normalizedSize);
+        }
+        if (body.email() != null && !body.email().equals(workspace.getBillingEmail())) {
+            oldValues.put("email", workspace.getBillingEmail());
+            newValues.put("email", body.email());
+        }
+
+        workspace.applyAdminProfileEdit(
+                body.name(), body.industry(), normalizedSize, body.email());
+        workspaceRepository.save(workspace);
+
+        // Only write an audit row when something beyond the id anchor actually changed.
+        if (newValues.size() > 1) {
+            adminAuditLogService.record(
+                    principal,
+                    request,
+                    "UPDATE",
+                    "BRAND",
+                    workspace.getId(),
+                    oldValues,
+                    newValues,
+                    "Admin brand profile edit");
+        }
+
+        return toDetailDto(workspace);
+    }
+
+    /**
+     * Campaign budget override — POST /admin/brands/{id}/campaigns/{campaignId}/budget-override
+     * ({@code brandApi.overrideBudget}). <b>MONEY PATH — highest-risk endpoint in this controller.</b>
+     * SUPER_ADMIN only (MFA-gated) — Kabir L-1: this money mutation is tightened one step above the
+     * other brand mutations (which are SUPER_ADMIN/ADMIN) so the write path is no less strict than the
+     * SUPER_ADMIN-only read consoles (error/email) that surface the same financial data.
+     *
+     * <p>Guards, in order:
+     * <ol>
+     *   <li>Brand must exist and be a BRAND workspace (reuses {@link #requireBrandWorkspace}).
+     *   <li>Campaign must exist AND belong to THIS brand — IDOR guard: {@code campaignId} is
+     *       caller-supplied and is re-checked against the path {@code brandId}, never trusted on its
+     *       own (a 404 either way, so we don't leak whether a foreign campaignId exists).
+     *   <li>{@code newBudget > 0} (also {@code @Positive} on the DTO) and {@code <= MAX_CAMPAIGN_BUDGET}.
+     *   <li><b>Scale (Kabir L-4):</b> {@code campaigns.budget_max} is {@code DECIMAL(12,2)}. Reject
+     *       (400 INVALID_BUDGET_SCALE) any {@code newBudget} carrying more than 2 fractional digits
+     *       rather than silently rounding it — matches this codebase's canonical money-input
+     *       validation ({@code MoneyDtos.WalletTopUpRequest}'s {@code @Digits(fraction = 2)}), which
+     *       rejects excess precision at the edge instead of mutating the caller's value.
+     *   <li><b>Committed-spend floor:</b> {@code newBudget} must NOT be below funds already committed
+     *       for this campaign. Lowering the recorded budget under money the platform has already
+     *       committed is unsafe, so we REJECT (409 BUDGET_BELOW_COMMITTED) rather than allow it.
+     *       COUNTED escrow = holds in {FUNDED (locked), RELEASED (paid out), FROZEN (disputed but
+     *       still owed/refundable — Kabir L-3)}. The floor is computed in two non-overlapping passes:
+     *       <ol type="a">
+     *         <li>Per committed collaboration ({@link #COMMITTED_COLLAB_STATUSES}): contribution =
+     *             {@code max(agreedRate, sum of THAT collaboration's counted holds)}. Partially
+     *             escrowed → floors at the full {@code agreedRate}; over-escrowed → floors at the
+     *             higher hold sum.
+     *         <li>Plus every counted hold NOT attributable to a committed collaboration — holds with
+     *             {@code collaboration_id == null} (unbound campaign-scoped) or bound to a
+     *             non-committed collaboration (e.g. DISPUTED/CANCELLED/COMPLETED).
+     *       </ol>
+     * </ol>
+     *
+     * <p><b>Kabir M-2 (partial-escrow remainder no longer dropped):</b> the floor takes {@code
+     * max(agreedRate, escrowedForThatCollab)} per committed collaboration, so an {@code agreedRate}
+     * of 100k with only a 30k FUNDED hold floors at 100k (not 30k). <b>No double-counting:</b> a hold
+     * bound to a committed collaboration is consumed ONLY inside that collaboration's {@code max(...)}
+     * (pass a) — pass (b) skips any hold whose {@code collaboration_id} is a committed collaboration.
+     * Every counted hold is therefore added exactly once, whether FUNDED, RELEASED, or FROZEN.
+     *
+     * <p><b>Kabir L-3 (FROZEN / disputed):</b> a DISPUTED collaboration is intentionally NOT in
+     * {@link #COMMITTED_COLLAB_STATUSES} — once disputed its {@code agreedRate} is no longer a clean
+     * live commitment — but any real money frozen for it is still an obligation the platform must
+     * honour or refund, so its FROZEN holds still floor the budget conservatively via pass (b). A
+     * FROZEN hold on a still-committed collaboration is counted once inside that collaboration's
+     * {@code max(...)} in pass (a). All amounts are null-guarded to ZERO (null {@code agreedRate} /
+     * null hold amount), and a null {@code collaboration_id} never dereferences.
+     */
+    @Transactional
+    public void overrideCampaignBudget(
+            AuthPrincipal principal,
+            HttpServletRequest request,
+            String brandId,
+            String campaignId,
+            com.influora.web.dto.admin.AdminBrandDtos.BudgetOverrideRequest body) {
+        // Kabir L-1 — money mutation is SUPER_ADMIN only (MFA still enforced by this call), one step
+        // stricter than the SUPER_ADMIN/ADMIN gate on the other brand mutations.
+        adminContext.requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN);
+        Workspace workspace = requireBrandWorkspace(brandId);
+
+        Campaign campaign =
+                campaignRepository
+                        .findById(campaignId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "CAMPAIGN_NOT_FOUND",
+                                                "Campaign not found",
+                                                HttpStatus.NOT_FOUND));
+
+        // IDOR guard: the campaign must belong to the brand named in the path. 404 (not 403) so a
+        // foreign campaignId is indistinguishable from a non-existent one.
+        if (!workspace.getId().equals(campaign.getWorkspaceId())) {
+            throw new ApiException(
+                    "CAMPAIGN_NOT_FOUND", "Campaign not found", HttpStatus.NOT_FOUND);
+        }
+
+        BigDecimal newBudget = body.newBudget();
+        // @Positive on the DTO already excludes zero/negatives — re-assert defensively for any
+        // other future caller path, then enforce the sane upper bound.
+        if (newBudget == null || newBudget.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(
+                    "INVALID_BUDGET", "newBudget must be greater than zero", HttpStatus.BAD_REQUEST);
+        }
+        // Kabir L-4 — scale. campaigns.budget_max is DECIMAL(12,2). Reject >2 fractional digits (400)
+        // rather than silently rounding, matching MoneyDtos.WalletTopUpRequest's @Digits(fraction=2)
+        // edge validation (this codebase rejects excess money precision, it does not mutate the input
+        // on a money path). scale() <= 0 (integers / positive-exponent forms) trivially passes.
+        if (newBudget.scale() > 2) {
+            throw new ApiException(
+                    "INVALID_BUDGET_SCALE",
+                    "newBudget must have at most 2 decimal places",
+                    HttpStatus.BAD_REQUEST);
+        }
+        if (newBudget.compareTo(MAX_CAMPAIGN_BUDGET) > 0) {
+            throw new ApiException(
+                    "BUDGET_EXCEEDS_LIMIT",
+                    "newBudget exceeds the maximum allowed override bound",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        // Committed-spend floor (Kabir M-2 / L-3). COUNTED escrow = holds in {FUNDED, RELEASED,
+        // FROZEN}. Load holds once and identify which collaborations are a live committed obligation.
+        List<EscrowHold> holds = escrowHoldRepository.findByCampaignId(campaignId);
+
+        Set<String> committedCollaborationIds = new HashSet<>();
+        Map<String, BigDecimal> agreedRateByCommittedCollab = new HashMap<>();
+        for (Collaboration collab : collaborationRepository.findByCampaignId(campaignId)) {
+            if (COMMITTED_COLLAB_STATUSES.contains(collab.getStatus())) {
+                committedCollaborationIds.add(collab.getId());
+                // Null agreedRate -> ZERO so max(...) below still floors at the escrowed amount.
+                agreedRateByCommittedCollab.put(collab.getId(), nz(collab.getAgreedRate()));
+            }
+        }
+
+        // Sum each committed collaboration's OWN counted holds (by collaboration id). A hold counted
+        // here is consumed by pass (a) and is deliberately excluded from pass (b) below.
+        Map<String, BigDecimal> countedHoldSumByCommittedCollab = new HashMap<>();
+        for (EscrowHold hold : holds) {
+            if (!isCountedHold(hold)) {
+                continue;
+            }
+            String collabId = hold.getCollaborationId();
+            if (collabId != null && committedCollaborationIds.contains(collabId)) {
+                countedHoldSumByCommittedCollab.merge(collabId, nz(hold.getAmount()), BigDecimal::add);
+            }
+        }
+
+        BigDecimal committed = BigDecimal.ZERO;
+        // Pass (a) — per committed collaboration: max(agreedRate, its counted-hold sum). Fixes M-2's
+        // dropped partial-escrow remainder (agreedRate 100k + FUNDED 30k -> floors at 100k, not 30k).
+        for (String collabId : committedCollaborationIds) {
+            BigDecimal agreed = agreedRateByCommittedCollab.get(collabId);
+            BigDecimal escrowed = countedHoldSumByCommittedCollab.getOrDefault(collabId, BigDecimal.ZERO);
+            committed = committed.add(agreed.max(escrowed));
+        }
+        // Pass (b) — every counted hold NOT attributable to a committed collaboration: unbound
+        // campaign-scoped (collaboration_id == null) or bound to a non-committed collab (e.g.
+        // DISPUTED/CANCELLED/COMPLETED — L-3: disputed FROZEN money is still owed/refundable, floor
+        // it here). Skips holds already consumed in pass (a), so nothing is double-counted.
+        for (EscrowHold hold : holds) {
+            if (!isCountedHold(hold)) {
+                continue;
+            }
+            String collabId = hold.getCollaborationId();
+            if (collabId == null || !committedCollaborationIds.contains(collabId)) {
+                committed = committed.add(nz(hold.getAmount()));
+            }
+        }
+        if (newBudget.compareTo(committed) < 0) {
+            throw new ApiException(
+                    "BUDGET_BELOW_COMMITTED",
+                    "newBudget ("
+                            + newBudget.toPlainString()
+                            + ") is below already-committed spend ("
+                            + committed.toPlainString()
+                            + ")",
+                    HttpStatus.CONFLICT);
+        }
+
+        BigDecimal oldBudget =
+                campaign.getBudgetMax() != null ? campaign.getBudgetMax() : campaign.getBudgetMin();
+
+        campaign.applyAdminBudgetOverride(newBudget);
+        campaignRepository.save(campaign);
+
+        // Build snapshots by hand (not Map.of) — oldBudget may be null and Map.of rejects nulls.
+        Map<String, Object> oldValues = new LinkedHashMap<>();
+        oldValues.put("id", campaign.getId());
+        oldValues.put("budget", oldBudget);
+        Map<String, Object> newValues = new LinkedHashMap<>();
+        newValues.put("id", campaign.getId());
+        newValues.put("budget", newBudget);
+
+        adminAuditLogService.record(
+                principal,
+                request,
+                "BUDGET_OVERRIDE",
+                "CAMPAIGN",
+                campaign.getId(),
+                oldValues,
+                newValues,
+                body.reason());
+    }
+
+    /** Null-guard a money amount to ZERO — null agreedRate / null hold amount must never add null. */
+    private static BigDecimal nz(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
+    }
+
+    /**
+     * Escrow money that floors a budget cut: FUNDED (locked), RELEASED (paid out), or FROZEN
+     * (disputed but still owed/refundable — Kabir L-3). Excludes PENDING (not yet funded) and
+     * REFUNDED (money already returned to the brand wallet, no longer an obligation).
+     */
+    private static boolean isCountedHold(EscrowHold hold) {
+        EscrowStatus status = hold.getStatus();
+        return status == EscrowStatus.FUNDED
+                || status == EscrowStatus.RELEASED
+                || status == EscrowStatus.FROZEN;
     }
 
     private Workspace requireBrandWorkspace(String brandId) {

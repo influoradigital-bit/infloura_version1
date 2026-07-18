@@ -188,6 +188,16 @@ public class ScoreCalculationJob {
      *
      * <p>The per-creator "latest score" lookups only happen when the feature is enabled, so the
      * default (off) path adds zero extra queries and leaves the job's behaviour unchanged.
+     *
+     * <p><b>Materialize-then-sort (Kavya/Kabir QA finding):</b> the priority key is computed ONCE
+     * per creator, in a single pass, before sorting. An earlier version instead did {@code
+     * byStaleness.sort(Comparator.comparing(this::lastBrandSafetyScoredAt))} — since {@code
+     * Comparator.comparing} re-invokes the key extractor on every comparison (and a merge sort over
+     * N creators performs O(N log N) comparisons, each one re-extracting the key for both operands),
+     * that ran a {@code creatorScoreRepository.findFirstByCreatorProfileIdOrderByTimeDesc} DB query
+     * per comparison — O(N log N) round-trips across the ENTIRE discoverable pool, even when {@code
+     * maxCreatorsPerRun=1}. Precomputing each creator's key exactly once bounds this to one query
+     * per creator, period, independent of the sort algorithm's comparison count.
      */
     private Set<String> selectBrandSafetyTargets(List<CreatorProfile> creators) {
         if (!brandSafetyScoringProperties.isEnabled()) {
@@ -202,26 +212,37 @@ public class ScoreCalculationJob {
             return Set.of();
         }
 
+        // One findFirstByCreatorProfileIdOrderByTimeDesc query per creator, exactly once each —
+        // never re-queried during the sort below.
+        List<CreatorStaleness> byStaleness = new ArrayList<>(creators.size());
+        for (CreatorProfile creator : creators) {
+            byStaleness.add(new CreatorStaleness(creator.getId(), lastBrandSafetyScoredAt(creator)));
+        }
         // Priority key: creators never brand-safety scored sort first (Instant.EPOCH), then by
-        // ascending last brand-safety computedAt (oldest/stalest first).
-        List<CreatorProfile> byStaleness = new ArrayList<>(creators);
-        byStaleness.sort(Comparator.comparing(this::lastBrandSafetyScoredAt));
+        // ascending last brand-safety computedAt (oldest/stalest first). Sorting the precomputed
+        // pairs never re-invokes lastBrandSafetyScoredAt.
+        byStaleness.sort(Comparator.comparing(CreatorStaleness::lastScoredAt));
 
         Set<String> targets = new LinkedHashSet<>();
-        for (CreatorProfile creator : byStaleness) {
+        for (CreatorStaleness entry : byStaleness) {
             if (targets.size() >= cap) {
                 break;
             }
-            targets.add(creator.getId());
+            targets.add(entry.creatorProfileId());
         }
         return targets;
     }
+
+    /** Precomputed (creatorProfileId, priority-key) pair — see {@link #selectBrandSafetyTargets}. */
+    private record CreatorStaleness(String creatorProfileId, Instant lastScoredAt) {}
 
     /**
      * Timestamp used to prioritise brand-safety scoring: the {@code computedAt} of the creator's
      * most recent {@link CreatorScore} that actually carries a brand-safety score, or {@link
      * Instant#EPOCH} when they have no score row yet or their latest row's brand-safety column is
      * still {@code null} — so "never brand-safety scored" always sorts ahead of "scored a while ago".
+     * Called exactly once per creator by {@link #selectBrandSafetyTargets} (see that method's
+     * javadoc) — never call this from inside a {@link Comparator}.
      */
     private Instant lastBrandSafetyScoredAt(CreatorProfile creator) {
         return creatorScoreRepository

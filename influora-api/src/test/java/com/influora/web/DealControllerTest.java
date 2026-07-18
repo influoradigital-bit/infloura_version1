@@ -2,14 +2,21 @@ package com.influora.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DealSenderType;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.DealMessageStreamRegistry;
 import com.influora.service.DealService;
 import com.influora.web.dto.deal.DealDtos.CounterRequest;
 import com.influora.web.dto.deal.DealDtos.DealMessageResponse;
@@ -27,6 +34,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /** Task #9 — pure delegation tests for {@link DealController}. */
 @ExtendWith(MockitoExtension.class)
@@ -34,13 +42,14 @@ class DealControllerTest {
 
     @Mock private DealService dealService;
     @Mock private com.influora.service.DisputeService disputeService;
+    @Mock private DealMessageStreamRegistry messageStreamRegistry;
     @Mock private AuthPrincipal principal;
 
     private DealController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new DealController(dealService, disputeService);
+        controller = new DealController(dealService, disputeService, messageStreamRegistry);
     }
 
     @Test
@@ -205,5 +214,32 @@ class DealControllerTest {
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         assertEquals("Ping", response.getBody().data().content());
         verify(dealService).sendMessage(principal, "deal1", body);
+    }
+
+    // ------------------------------------------------------------------
+    // Realtime deal-message SSE stream — GET /deals/{dealId}/messages/stream.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("GET /deals/{dealId}/messages/stream authorizes THEN registers an emitter")
+    void testStreamMessagesRegistersEmitterOnAuthorizedOpen() {
+        SseEmitter emitter = controller.streamMessages(principal, "deal1");
+
+        assertNotNull(emitter);
+        var inOrder = org.mockito.Mockito.inOrder(dealService, messageStreamRegistry);
+        inOrder.verify(dealService).authorizeMessageStream(principal, "deal1");
+        inOrder.verify(messageStreamRegistry).register(eq("deal1"), any(SseEmitter.class));
+    }
+
+    @Test
+    @DisplayName("GET /deals/{dealId}/messages/stream: caller not a party to the deal is rejected — no emitter created")
+    void testStreamMessagesRejectsUnauthorizedCallerBeforeEmitterCreated() {
+        doThrow(new ApiException("DEAL_NOT_FOUND", "Deal not found", HttpStatus.NOT_FOUND))
+                .when(dealService)
+                .authorizeMessageStream(principal, "deal1");
+
+        assertThrows(ApiException.class, () -> controller.streamMessages(principal, "deal1"));
+
+        verifyNoInteractions(messageStreamRegistry);
     }
 }

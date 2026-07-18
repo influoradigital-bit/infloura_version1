@@ -17,6 +17,7 @@ import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ContentFlagStatus;
 import com.influora.domain.enums.ContentFlagType;
 import com.influora.domain.enums.CreatorApplicationStatus;
+import com.influora.domain.enums.CreatorTier;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.ContentFlagRepository;
@@ -84,12 +85,10 @@ import org.springframework.transaction.annotation.Transactional;
  * spec anticipated this controller: {@code Set.of("id", "isSuspended", "applicationStatus",
  * "tier")}).
  *
- * <p><b>Scope, cycle 5:</b> only the 5 endpoints {@code useCreatorDetail.ts}/{@code
- * CreatorProfile.tsx} actually call are implemented — detail read, review-application,
- * force-Instagram-reauth, suspend, reinstate. {@code creatorApi.list}/{@code .update}/{@code
- * .adjustTier}/{@code .getPendingApplications} (also declared in api-contracts.ts) are NOT built —
- * no frontend caller needs them yet, same "flagged as follow-up, not silently forgotten" pattern
- * {@code AdminBrandController}'s javadoc uses for its own unimplemented list/update/overrideBudget.
+ * <p><b>Scope:</b> detail read, review-application, force-Instagram-reauth, suspend, reinstate
+ * (cycle 5), plus the admin-edit slice — {@code list}, {@code update} (SAFE name/niche allow-list),
+ * {@code adjustTier} (CreatorTier override, V20260718160000), and {@code listPendingApplications} —
+ * now implemented against {@code creatorApi} in api-contracts.ts.
  */
 @Service
 public class AdminCreatorService {
@@ -363,6 +362,119 @@ public class AdminCreatorService {
         return toDetailDto(profile);
     }
 
+    /**
+     * Creator profile edit — PUT /admin/creators/{id} ({@code creatorApi.update}). SUPER_ADMIN/
+     * ADMIN (MFA-gated), same as the other mutations on this controller. Writes ONLY the SAFE
+     * allow-listed profile fields (name/niche) via the null-guarded {@link
+     * CreatorProfile#applyAdminProfileEdit} — never a blind copy of the request. Audit-logs
+     * old->new for each field that actually changed.
+     */
+    @Transactional
+    public CreatorDetailDto update(
+            AuthPrincipal principal,
+            HttpServletRequest request,
+            String creatorProfileId,
+            com.influora.web.dto.admin.AdminCreatorDtos.UpdateCreatorRequest body) {
+        adminContext.requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN);
+        CreatorProfile profile = requireCreatorProfile(creatorProfileId);
+
+        String newCategoriesJson = body.niche() != null ? JsonLists.toJson(body.niche()) : null;
+
+        // old->new snapshots for ONLY the fields that change. Keys match the CREATOR
+        // FIELD_ALLOWLIST in AdminAuditLogService (id/name/niche).
+        Map<String, Object> oldValues = new LinkedHashMap<>();
+        Map<String, Object> newValues = new LinkedHashMap<>();
+        oldValues.put("id", profile.getId());
+        newValues.put("id", profile.getId());
+
+        if (body.name() != null && !body.name().equals(profile.getDisplayName())) {
+            oldValues.put("name", profile.getDisplayName());
+            newValues.put("name", body.name());
+        }
+        if (body.niche() != null) {
+            List<String> oldNiche = JsonLists.stringListFromJson(profile.getCategoriesJson());
+            if (!oldNiche.equals(body.niche())) {
+                oldValues.put("niche", oldNiche);
+                newValues.put("niche", body.niche());
+            }
+        }
+
+        profile.applyAdminProfileEdit(body.name(), newCategoriesJson);
+        creatorProfileRepository.save(profile);
+
+        if (newValues.size() > 1) {
+            adminAuditLogService.record(
+                    principal,
+                    request,
+                    "UPDATE",
+                    "CREATOR",
+                    profile.getId(),
+                    oldValues,
+                    newValues,
+                    "Admin creator profile edit");
+        }
+
+        return toDetailDto(profile);
+    }
+
+    /**
+     * Creator tier adjustment — PUT /admin/creators/{id}/tier ({@code creatorApi.adjustTier}).
+     * SUPER_ADMIN/ADMIN (MFA-gated). Validates {@code newTier} against the {@link CreatorTier} enum
+     * (400 on anything else), persists it as an override that wins over the follower-derived tier,
+     * and audit-logs old->new tier + reason. {@code newQualityScore} on the request is intentionally
+     * ignored (qualityScore is a computed metric — see the DTO javadoc).
+     */
+    @Transactional
+    public CreatorDetailDto adjustTier(
+            AuthPrincipal principal,
+            HttpServletRequest request,
+            String creatorProfileId,
+            com.influora.web.dto.admin.AdminCreatorDtos.AdjustTierRequest body) {
+        var admin =
+                adminContext.requireRoleWithMfaSatisfied(
+                        principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN);
+        CreatorProfile profile = requireCreatorProfile(creatorProfileId);
+
+        CreatorTier newTier;
+        try {
+            newTier = CreatorTier.valueOf(body.newTier().trim().toUpperCase());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new ApiException(
+                    "INVALID_TIER",
+                    "newTier must be one of NANO, MICRO, MID, MACRO",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        String fromTier = resolveTier(profile); // effective tier before (override or derived)
+        profile.applyTierAdjustment(newTier, admin.getId());
+        creatorProfileRepository.save(profile);
+
+        adminAuditLogService.record(
+                principal,
+                request,
+                "TIER_ADJUST",
+                "CREATOR",
+                profile.getId(),
+                Map.of("id", profile.getId(), "tier", fromTier),
+                Map.of("id", profile.getId(), "tier", newTier.name()),
+                body.reason());
+
+        return toDetailDto(profile);
+    }
+
+    /**
+     * Pending creator applications — GET /admin/creators/applications/pending ({@code
+     * creatorApi.getPendingApplications}). Paginated list of creators whose applicationStatus is
+     * PENDING. Reuses {@link #list}'s RBAC (SUPER_ADMIN/ADMIN/SUPPORT view), pagination envelope
+     * ({@code PagedCreatorsDto}), and CreatorApplicationStatus enum — just forces the PENDING
+     * filter, so there is exactly one implementation of the summary mapping/pagination logic.
+     */
+    @Transactional(readOnly = true)
+    public PagedCreatorsDto listPendingApplications(
+            AuthPrincipal principal, int page, int pageSize) {
+        return list(principal, CreatorApplicationStatus.PENDING.name(), null, null, page, pageSize);
+    }
+
     private CreatorProfile requireCreatorProfile(String creatorProfileId) {
         return creatorProfileRepository
                 .findById(creatorProfileId)
@@ -390,7 +502,7 @@ public class AdminCreatorService {
                 instagram != null ? instagram.getHandle() : null,
                 profile.getTotalFollowers(),
                 profile.getApplicationStatus().name(),
-                deriveTier(profile.getTotalFollowers()),
+                resolveTier(profile),
                 profile.isSuspended(),
                 profile.getCreatedAt());
     }
@@ -432,7 +544,7 @@ public class AdminCreatorService {
                 profile.getApplicationStatus().name(),
                 instagram != null && instagram.isVerified(),
                 latestQualityScore(profile.getId()),
-                deriveTier(profile.getTotalFollowers()),
+                resolveTier(profile),
                 profile.isSuspended(),
                 profile.getCreatedAt(),
                 profile.getBio(),
@@ -476,6 +588,19 @@ public class AdminCreatorService {
         if (followers >= 50_000) return "MID";
         if (followers >= 10_000) return "MICRO";
         return "NANO";
+    }
+
+    /**
+     * Effective admin-surface tier: the explicit admin {@code tier_override} when set (via {@code
+     * adjustTier}), otherwise the follower-count-derived default ({@link #deriveTier}). Keeps a
+     * single source of truth for "what tier does this creator show as" across summary/detail DTOs
+     * and the TIER_ADJUST audit diff.
+     */
+    private static String resolveTier(CreatorProfile profile) {
+        if (profile.getTierOverride() != null) {
+            return profile.getTierOverride().name();
+        }
+        return deriveTier(profile.getTotalFollowers());
     }
 
     private PlatformStatsDto platformStats(String creatorProfileId) {

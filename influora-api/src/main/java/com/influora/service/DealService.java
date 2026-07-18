@@ -83,6 +83,7 @@ public class DealService {
     private final BrandContextService brandContext;
     private final IdempotencyService idempotencyService;
     private final ApplicationEventPublisher eventPublisher;
+    private final DealMessageStreamRegistry messageStreamRegistry;
 
     public DealService(
             CollaborationRepository collaborationRepository,
@@ -96,7 +97,8 @@ public class DealService {
             CreatorContextService creatorContext,
             BrandContextService brandContext,
             IdempotencyService idempotencyService,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            DealMessageStreamRegistry messageStreamRegistry) {
         this.collaborationRepository = collaborationRepository;
         this.dealMessageRepository = dealMessageRepository;
         this.campaignRepository = campaignRepository;
@@ -109,6 +111,7 @@ public class DealService {
         this.brandContext = brandContext;
         this.idempotencyService = idempotencyService;
         this.eventPublisher = eventPublisher;
+        this.messageStreamRegistry = messageStreamRegistry;
     }
 
     @Transactional(readOnly = true)
@@ -358,7 +361,34 @@ public class DealService {
             }
         }
 
-        return toMessageResponse(message);
+        DealMessageResponse response = toMessageResponse(message);
+        // Realtime fan-out (SSE) — same DTO shape as the response returned to the sender, so
+        // both parties' open GET /deals/{dealId}/messages/stream connections render it
+        // identically. Best-effort: a registry publish failure must never fail the send itself,
+        // which has already fully succeeded above (message is persisted regardless).
+        try {
+            messageStreamRegistry.publish(collaboration.getId(), response);
+        } catch (RuntimeException e) {
+            log.error(
+                    "SSE publish failed for collaboration {} — message itself already persisted",
+                    collaboration.getId(),
+                    e);
+        }
+
+        return response;
+    }
+
+    /**
+     * Authorization gate for {@code GET /deals/{dealId}/messages/stream}. Reuses the exact same
+     * ownership check {@link #listMessages}/{@link #sendMessage} rely on — never invent a
+     * separate one for the SSE path. Throws {@link ApiException} (propagates as the normal 404/
+     * 403 JSON error response) if the caller is not a party to this deal; the controller MUST
+     * call this and let it throw BEFORE creating or registering an SseEmitter, so an unauthorized
+     * caller never gets a live connection.
+     */
+    @Transactional(readOnly = true)
+    public void authorizeMessageStream(AuthPrincipal principal, String dealId) {
+        requireOwnedCollaboration(principal, dealId);
     }
 
     private void notifyFirstMessage(Collaboration collaboration, DealSenderType senderType) {

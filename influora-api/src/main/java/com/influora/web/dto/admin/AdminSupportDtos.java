@@ -71,6 +71,16 @@ public final class AdminSupportDtos {
     public record AssignRequest(String assignedTo) {}
 
     /**
+     * Matches {@code supportApi.getStats()}'s return shape exactly (api-contracts.ts lines
+     * 526-533). See {@code AdminSupportService#getStats} javadoc: {@code open}/{@code
+     * inProgress}/{@code waitingUser}/{@code avgResolutionTime} are real; {@code avgResponseTime}
+     * is an honest {@code 0} — {@link com.influora.domain.entity.SupportTicket} has no
+     * first-admin-reply timestamp column to average.
+     */
+    public record SupportStatsDto(
+            long open, long inProgress, long waitingUser, double avgResponseTime, double avgResolutionTime) {}
+
+    /**
      * {@code reason} is mandatory (unlike {@link UpdateStatusRequest#reason}) — escalation is a
      * priority-raising action that needs a documented justification in the audit trail. Enforced
      * again in {@code AdminSupportService.escalate} via {@code ApiException} so the rule holds

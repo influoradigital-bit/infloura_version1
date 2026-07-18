@@ -3,11 +3,13 @@ package com.influora.web;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.admin.AdminCampaignService;
 import com.influora.service.admin.AdminCampaignService.PagedCampaignSummaries;
+import com.influora.web.dto.admin.AdminCampaignDtos.CampaignDetailDto;
 import com.influora.web.dto.admin.AdminCampaignDtos.CampaignSummaryDto;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -59,5 +61,16 @@ public class AdminCampaignController {
                 .header("X-Page", String.valueOf(result.page()))
                 .header("X-Page-Size", String.valueOf(result.pageSize()))
                 .body(result.items());
+    }
+
+    /**
+     * Single-campaign detail, backing {@code campaignApi.getById} (api-contracts.ts:313-314).
+     * Same role gate as {@link #list}. Returns a raw {@code CampaignDetailDto} (unwrapped), same
+     * convention as {@link #list} and every other {@code Admin*Controller}.
+     */
+    @GetMapping("/{id}")
+    public CampaignDetailDto getById(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String id) {
+        return adminCampaignService.getById(principal, id);
     }
 }

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
+import org.springframework.mock.env.MockEnvironment;
 
 /**
  * Wave E task E-JWKS: proves the ADR's binding condition #2 ("key gets boot-time protection ...
@@ -17,6 +18,13 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
  * influora.jwks.private-key-pem} — missing, still-the-committed-dev-default, and structurally
  * malformed private keys all fail closed in non-dev, exactly like every other secret this
  * validator already covers. "dev" env only warns (existing behavior, unchanged).
+ *
+ * <p><b>I8 (APP_ENV production footgun):</b> {@code buildValidator} now wires an {@link
+ * InfluoraEnvironment} backed by a {@link MockEnvironment} with the "dev" Spring profile active
+ * whenever the test's {@code env} string is {@code "dev"} (and no profile active otherwise) — this
+ * keeps every existing test's "dev warns / non-dev throws" behavior intact (profile and
+ * influora.env agree in all of them) while letting the new tests at the bottom of this file
+ * exercise the case that used to slip through: profile says non-dev, influora.env still says dev.
  */
 class SecretsStartupValidatorTest {
 
@@ -41,6 +49,9 @@ class SecretsStartupValidatorTest {
 
         meeraStreamProperties = new MeeraStreamProperties();
         meeraStreamProperties.setSigningSecret("real-meera-stream-secret-at-least-32-bytes-long!!!!");
+        // The Java default is http://localhost:8000/chat, which now fails closed in non-dev —
+        // the "everything is fine" baseline needs a real browser-reachable HTTPS URL.
+        meeraStreamProperties.setPublicChatUrl("https://ai.influora.example/chat");
 
         internalServiceTokenProperties = new InternalServiceTokenProperties();
         internalServiceTokenProperties.setSigningSecret("real-internal-service-token-secret-32-bytes-min!!!!");
@@ -84,8 +95,29 @@ class SecretsStartupValidatorTest {
         return buildValidator(env, true, true);
     }
 
+    /**
+     * Keeps the active Spring profile in agreement with {@code env} ("dev" profile active iff
+     * {@code env} is "dev") — every pre-I8 test cares only about the influora.env/warn-vs-throw
+     * behavior, not the new profile cross-check, so this preserves their original semantics exactly.
+     * Use {@link #buildValidator(String, boolean, boolean, boolean)} to control the profile
+     * independently (the I8 mismatch tests below).
+     */
     private SecretsStartupValidator buildValidator(
             String env, boolean refreshCookieSecure, boolean adminRefreshCookieSecure) throws Exception {
+        return buildValidator(
+                env, refreshCookieSecure, adminRefreshCookieSecure, "dev".equalsIgnoreCase(env));
+    }
+
+    private SecretsStartupValidator buildValidator(
+            String env,
+            boolean refreshCookieSecure,
+            boolean adminRefreshCookieSecure,
+            boolean devProfileActive)
+            throws Exception {
+        MockEnvironment mockEnvironment = new MockEnvironment();
+        if (devProfileActive) {
+            mockEnvironment.setActiveProfiles("dev");
+        }
         SecretsStartupValidator validator =
                 new SecretsStartupValidator(
                         jwtProperties,
@@ -99,7 +131,8 @@ class SecretsStartupValidatorTest {
                         brandSafetyAiProperties,
                         trendSparkAiProperties,
                         meeraChatAiProperties,
-                        analyzeSiteAiProperties);
+                        analyzeSiteAiProperties,
+                        new InfluoraEnvironment(mockEnvironment));
         setField(validator, "env", env);
         setField(validator, "refreshCookieSecure", refreshCookieSecure);
         setField(validator, "adminRefreshCookieSecure", adminRefreshCookieSecure);
@@ -405,6 +438,110 @@ class SecretsStartupValidatorTest {
         brandSafetyAiProperties.setBaseUrl("http://localhost:8000");
         trendSparkAiProperties.setBaseUrl("http://localhost:8000");
         meeraChatAiProperties.setBaseUrl("http://localhost:8000");
+        SecretsStartupValidator validator = buildValidator("dev");
+        assertDoesNotThrow(validator::validate);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // I8: APP_ENV production footgun. influora.env (APP_ENV) defaults to "dev" whenever
+    // SPRING_PROFILES_ACTIVE=prod was never actually set (application-prod.yml is the only place
+    // influora.env gets bound to APP_ENV at all) — so a deploy that forgot the Spring profile used
+    // to sail through with every secret check in warn-only mode. All real secrets from setUp() are
+    // used here on purpose: the point is that the profile/env mismatch alone must abort startup,
+    // independent of whether the individual secrets already happen to be fine.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("validate: influora.env='dev' but no Spring profile active fails closed even with real secrets")
+    void testDevEnvWithNoActiveProfileFailsClosedEvenWithRealSecrets() throws Exception {
+        // devProfileActive=false: simulates SPRING_PROFILES_ACTIVE left unset entirely, while
+        // influora.env still resolves "dev" (its @Value default) because application-prod.yml
+        // never activated to override it.
+        SecretsStartupValidator validator = buildValidator("dev", true, true, false);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("active Spring profile is not 'dev'"));
+        assertTrue(ex.getMessage().contains("influora.env"));
+    }
+
+    @Test
+    @DisplayName("validate: influora.env='dev' but 'prod' Spring profile active fails closed even with real secrets")
+    void testDevEnvWithProdProfileActiveFailsClosedEvenWithRealSecrets() throws Exception {
+        // A real APP_ENV=dev mis-set on an actual prod box (prod profile active) — not just the
+        // unset-profile case above.
+        SecretsStartupValidator validator = buildValidator("dev", true, true, false);
+        MockEnvironment prodProfile = new MockEnvironment();
+        prodProfile.setActiveProfiles("prod");
+        setField(validator, "influoraEnvironment", new InfluoraEnvironment(prodProfile));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("active Spring profile is not 'dev'"));
+    }
+
+    @Test
+    @DisplayName("validate: influora.env='prod' with 'dev' Spring profile active still fails closed on dev-default secrets (profile alone doesn't launder bad secrets)")
+    void testProdEnvWithDevProfileActiveStillFailsOnDevDefaults() throws Exception {
+        dataSourceProperties.setUsername("root");
+        dataSourceProperties.setPassword("root");
+        // devProfileActive=true but env="prod": isDev requires BOTH to agree, so this still throws
+        // on the real dev-default DB creds below (env alone doesn't get a free pass either).
+        SecretsStartupValidator validator = buildValidator("prod", true, true, true);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("spring.datasource.username"));
+    }
+
+    @Test
+    @DisplayName("validate: influora.env='dev' with 'dev' Spring profile active (both agree) only WARNS, unchanged")
+    void testDevEnvWithDevProfileActiveOnlyWarns() throws Exception {
+        SecretsStartupValidator validator = buildValidator("dev", true, true, true);
+        assertDoesNotThrow(validator::validate);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Meera public stream URL (browser-facing SendTurnResponse.streamUrl): the Java default is
+    // http://localhost:8000/chat, so a non-dev boot that never overrode it would hand browsers a
+    // localhost URL — and an http:// override would send the stream token in cleartext / trip
+    // mixed-content. Same fail-closed-in-non-dev, warn-only-in-dev treatment as everything above.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("validate: default localhost public-chat-url fails closed in prod")
+    void testDefaultLocalhostPublicChatUrlFailsClosedInProd() throws Exception {
+        // Restore the class default (setUp overrides it for the clean-boot baseline).
+        meeraStreamProperties.setPublicChatUrl("http://localhost:8000/chat");
+        SecretsStartupValidator validator = buildValidator("prod");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.meera.stream.public-chat-url"));
+        assertTrue(ex.getMessage().contains("localhost"));
+    }
+
+    @Test
+    @DisplayName("validate: 127.0.0.1 public-chat-url fails closed in prod")
+    void testLoopbackIpPublicChatUrlFailsClosedInProd() throws Exception {
+        meeraStreamProperties.setPublicChatUrl("https://127.0.0.1/chat");
+        SecretsStartupValidator validator = buildValidator("staging");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.meera.stream.public-chat-url"));
+    }
+
+    @Test
+    @DisplayName("validate: plain-http public-chat-url on a real host fails closed in prod")
+    void testHttpPublicChatUrlFailsClosedInProd() throws Exception {
+        meeraStreamProperties.setPublicChatUrl("http://ai.influora.example/chat");
+        SecretsStartupValidator validator = buildValidator("prod");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.meera.stream.public-chat-url"));
+        assertTrue(ex.getMessage().contains("HTTPS"));
+    }
+
+    @Test
+    @DisplayName("validate: default localhost public-chat-url only WARNS (does not throw) in env=dev")
+    void testDefaultLocalhostPublicChatUrlOnlyWarnsInDev() throws Exception {
+        meeraStreamProperties.setPublicChatUrl("http://localhost:8000/chat");
         SecretsStartupValidator validator = buildValidator("dev");
         assertDoesNotThrow(validator::validate);
     }

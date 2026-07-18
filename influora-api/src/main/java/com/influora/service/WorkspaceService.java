@@ -53,13 +53,41 @@ public class WorkspaceService {
         return brandContext.requireBrandWorkspace(principal);
     }
 
-    /** L-9 — {@code PATCH /workspaces/me}. OWNER/ADMIN only. See {@link
-     * com.influora.web.dto.workspace.WorkspaceDtos.UpdateWorkspaceRequest} for the fields
-     * deliberately excluded (slug, type). */
+    /** Loose sanity check for {@code email} — belt-and-suspenders alongside the DTO's {@code
+     * @Email} annotation (see {@link com.influora.web.dto.workspace.WorkspaceMemberDtos.WorkspaceUpdateRequest}),
+     * kept here so it is exercised by a plain service-level unit test without standing up a
+     * MockMvc/bean-validation harness (this codebase has none — see {@code AuthControllerTest}). */
+    private static final java.util.regex.Pattern EMAIL_PATTERN =
+            java.util.regex.Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+
+    /**
+     * Loose sanity check for {@code phone} — belt-and-suspenders alongside the DTO's {@code
+     * @Pattern} annotation (see {@link
+     * com.influora.web.dto.workspace.WorkspaceMemberDtos.WorkspaceUpdateRequest}), same precedent
+     * as {@link #EMAIL_PATTERN}. Only checks the allowed character set; digit-count range is
+     * enforced separately in {@link #isValidPhoneDigitCount} so international numbers with
+     * formatting punctuation aren't over-restricted.
+     */
+    private static final java.util.regex.Pattern PHONE_CHARS_PATTERN =
+            java.util.regex.Pattern.compile("^[+]?[0-9()\\-\\s]+$");
+
+    private static boolean isValidPhone(String phone) {
+        if (!PHONE_CHARS_PATTERN.matcher(phone).matches()) {
+            return false;
+        }
+        int digitCount = (int) phone.chars().filter(Character::isDigit).count();
+        return digitCount >= 7 && digitCount <= 15;
+    }
+
+    /** L-9 — {@code GET /workspaces/me}/{@code PATCH /workspaces/me} request/response DTOs, see
+     * {@link com.influora.web.dto.workspace.WorkspaceMemberDtos.WorkspaceReadResponse}/{@code
+     * WorkspaceUpdateRequest} for the fields deliberately excluded (slug, type). */
     @Transactional
     public Workspace updateMyWorkspace(
             AuthPrincipal principal,
             String name,
+            String email,
+            String phone,
             String industry,
             String companySize,
             String websiteUrl,
@@ -68,6 +96,17 @@ public class WorkspaceService {
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
         WorkspaceMember actingMember = brandContext.requireMember(principal, workspace.getId());
         brandContext.requireRole(actingMember, MemberRole.OWNER, MemberRole.ADMIN);
+
+        if (name == null || name.isBlank()) {
+            throw new ApiException(
+                    "VALIDATION_ERROR", "Workspace name cannot be blank", HttpStatus.BAD_REQUEST);
+        }
+        if (email != null && !email.isBlank() && !EMAIL_PATTERN.matcher(email).matches()) {
+            throw new ApiException("VALIDATION_ERROR", "Invalid email format", HttpStatus.BAD_REQUEST);
+        }
+        if (phone != null && !phone.isBlank() && !isValidPhone(phone)) {
+            throw new ApiException("VALIDATION_ERROR", "Invalid phone format", HttpStatus.BAD_REQUEST);
+        }
 
         String oldWebsiteUrl = workspace.getWebsiteUrl();
         workspace.applyCompanyDetails(
@@ -79,6 +118,8 @@ public class WorkspaceService {
                 websiteUrl,
                 description,
                 logoUrl);
+        workspace.updateContactEmail(email);
+        workspace.updatePhone(phone);
         Workspace saved = workspaceRepository.save(workspace);
 
         // W4-2 / A10 / TrendSpark — re-trigger analysis when website URL changes

@@ -395,6 +395,27 @@ public class Campaign {
         touch();
     }
 
+    /**
+     * Admin-panel campaign budget override (AdminBrandController budget-override — MONEY PATH,
+     * POST /admin/brands/{id}/campaigns/{campaignId}/budget-override). Sets the effective budget
+     * cap ({@code budgetMax} — the value the admin DTOs surface as {@code budget}). If the existing
+     * {@code budgetMin} exceeds the new budget it is clamped down to match, so the {@code
+     * budgetMin <= budgetMax} invariant is never left broken by an override.
+     *
+     * <p><b>Committed-spend safety is enforced in the service BEFORE this is called</b> —
+     * {@code AdminBrandService.overrideCampaignBudget} rejects any newBudget below already-escrowed
+     * funds. This entity method is a pure state mutation and intentionally does not re-check money
+     * invariants (it has no access to the escrow ledger); do NOT call it from any path that has not
+     * run that guard first.
+     */
+    public void applyAdminBudgetOverride(BigDecimal newBudget) {
+        this.budgetMax = newBudget;
+        if (this.budgetMin != null && this.budgetMin.compareTo(newBudget) > 0) {
+            this.budgetMin = newBudget;
+        }
+        touch();
+    }
+
     public Campaign duplicateCopy(String newId, String newTitle, String createdBy) {
         return Campaign.builder()
                 .id(newId)

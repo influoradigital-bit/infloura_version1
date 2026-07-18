@@ -36,7 +36,11 @@ public class Msg91EmailClient {
     private final String fromEmail;
     private final String fromName;
     private final InfluoraEnvironment environment;
-    private final HttpClient httpClient;
+    // Built on first use, not in the constructor: HttpClient.build() spins up the underlying
+    // selector thread + NIO loopback pipe, and doing that at bean-construction time makes
+    // application BOOT depend on outbound-HTTP plumbing this class may never use in a given
+    // deployment.
+    private volatile HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
     // D4 — this previously read `${msg91.auth-key:}` / `${msg91.from-email:...}` /
@@ -57,7 +61,19 @@ public class Msg91EmailClient {
         this.fromName = fromName;
         this.environment = environment;
         this.objectMapper = objectMapper;
-        this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+    }
+
+    private HttpClient httpClient() {
+        HttpClient client = httpClient;
+        if (client == null) {
+            synchronized (this) {
+                if (httpClient == null) {
+                    httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+                }
+                client = httpClient;
+            }
+        }
+        return client;
     }
 
     /**
@@ -120,7 +136,7 @@ public class Msg91EmailClient {
                             .build();
 
             HttpResponse<String> response =
-                    httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                    httpClient().send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 log.debug("MSG91 email sent successfully: to={}, templateKey={}", toEmail, templateKey);

@@ -34,17 +34,37 @@ public class MetaOAuthService {
                     );
 
     private final MetaApiProperties props;
-    private final RestClient restClient;
 
+    // Nullable until first use (or injected by the test constructor). Built lazily rather than
+    // in the container constructor for the same reason as MetaGraphApiClient: RestClient.build()
+    // spins up the JDK HttpClient (selector thread + NIO pipe), and application boot must not
+    // depend on outbound-HTTP plumbing that only OAuth flows ever exercise.
+    private volatile RestClient restClient;
+
+    // @Autowired is required, not decorative: with the test constructor below also present,
+    // Spring has two candidates and refuses to guess ("No default constructor found" at boot).
+    @org.springframework.beans.factory.annotation.Autowired
     public MetaOAuthService(MetaApiProperties props) {
         this.props = props;
-        this.restClient = RestClient.builder().build();
     }
 
     /** Package-private test constructor for injecting mocked RestClient. */
     MetaOAuthService(MetaApiProperties props, RestClient restClient) {
         this.props = props;
         this.restClient = restClient;
+    }
+
+    private RestClient restClient() {
+        RestClient client = restClient;
+        if (client == null) {
+            synchronized (this) {
+                if (restClient == null) {
+                    restClient = RestClient.builder().build();
+                }
+                client = restClient;
+            }
+        }
+        return client;
     }
 
     /** Builds the Meta OAuth dialog URL the brand/creator is redirected to. */
@@ -111,7 +131,7 @@ public class MetaOAuthService {
 
     private MetaTokenResponse fetchToken(String url, String opName) {
         try {
-            return restClient.get().uri(url).retrieve().body(MetaTokenResponse.class);
+            return restClient().get().uri(url).retrieve().body(MetaTokenResponse.class);
         } catch (RestClientResponseException e) {
             log.error(
                     "Meta OAuth {} failed: status={}, body={}",

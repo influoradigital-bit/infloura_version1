@@ -31,6 +31,21 @@ public final class MeeraDtos {
     /** Body for {@code POST /meera/sessions/{conversationId}/messages}. */
     public record SendTurnRequest(@NotBlank @Size(max = 8000) String content) {}
 
+    /**
+     * {@code messageId} is the persisted USER message id — the {@code turn_id} the browser passes
+     * on its own direct SSE connection to influora-ai (Priya's streaming-first architecture; see
+     * {@code src/components/feature/meera/MeeraChatPanel.tsx}'s {@code handleLiveSend}).
+     * {@code assistantMessageId} and {@code reply} are always {@code null} now that the assistant
+     * turn is written back asynchronously by influora-ai's end-of-stream callback ({@link
+     * com.influora.service.meera.MeeraSessionService#persistAssistantWriteback}) rather than
+     * synchronously by this call — {@code @JsonInclude(NON_NULL)} omits both from the wire response
+     * rather than sending literal JSON nulls. {@code workspaceId} is required by the browser to
+     * build the SSE stream body ({@code chat.py} requires {@code workspace_id} and 403s a
+     * token/body mismatch). {@code onBehalfToken} is the SECURITY FIX #1 per-turn on-behalf
+     * credential ({@code docs/security/meera-onbehalf-auth-security-design.md} §2) — the browser
+     * MUST forward this exact value as {@code onbehalf_jwt} in its SSE stream body instead of
+     * reading a full access token out of {@code localStorage}.
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record SendTurnResponse(
             String messageId,
@@ -38,7 +53,9 @@ public final class MeeraDtos {
             String streamToken,
             String streamUrl,
             int creditsRemaining,
-            String reply) {}
+            String reply,
+            String workspaceId,
+            String onBehalfToken) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record StreamTokenResponse(String streamToken, String streamUrl, long expiresInSeconds) {}

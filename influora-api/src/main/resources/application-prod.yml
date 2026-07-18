@@ -46,6 +46,18 @@ spring:
 # client's PATH constant). SecretsStartupValidator#validateAiServiceUrls additionally fails closed
 # outside dev if any of these three still resolves to a localhost/loopback host.
 influora:
+  # [SEC: Kabir MED finding] SecretsStartupValidator (and now SpringJwksKeyService's ephemeral-JWKS
+  # dev fallback) both gate on influora.env, deliberately NOT spring.profiles.active, because profile
+  # activation is too easy to leave unset (see SecretsStartupValidator's class javadoc). But that
+  # only holds if influora.env can never silently resolve to "dev" itself: both classes bind it as
+  # @Value("${influora.env:dev}"), and with no prod override, a prod deploy that forgot to set
+  # APP_ENV would resolve influora.env to its "dev" default too — SecretsStartupValidator would only
+  # warn instead of failing closed, and SpringJwksKeyService would mint a throwaway ephemeral
+  # signing keypair instead of the old fail-closed throw. Overriding with NO default here — same
+  # PlaceholderResolutionException-on-missing-env pattern as spring.datasource.* above — makes a
+  # spring.profiles.active=prod boot without APP_ENV fail loudly at startup instead of silently
+  # behaving like dev.
+  env: ${APP_ENV}
   brand-safety-ai:
     base-url: ${BRAND_SAFETY_AI_BASE_URL:https://ai.influora.internal}
   trendspark-ai:
@@ -54,6 +66,24 @@ influora:
     base-url: ${MEERA_CHAT_AI_BASE_URL:https://ai.influora.internal}
   analyze-site-ai:
     base-url: ${ANALYZE_SITE_AI_BASE_URL:https://ai.influora.internal}
+  # Deploy blocker 2 — MeeraStreamProperties#publicChatUrl (Java field default) is
+  # http://localhost:8000/chat and no profile previously overrode it, so a prod boot
+  # would hand browsers a localhost URL for the browser-direct Meera SSE connection
+  # (BLUEPRINT/06-DEPLOYMENT-AND-API-KEYS.md:300). NO default here -- same
+  # PlaceholderResolutionException-on-missing-env pattern as spring.datasource.* above
+  # -- prod fails to boot instead of silently serving localhost to real browsers.
+  meera:
+    stream:
+      public-chat-url: ${MEERA_PUBLIC_CHAT_URL}
+  # [SEC: Kabir red-team LOW fix] MeeraVoiceAiClient#baseUrl (Java @Value default) is
+  # http://localhost:8000 and no profile previously overrode influora.voice-ai.base-url, so a prod
+  # boot would silently try every Meera TTS call against localhost -- every voice reply would
+  # degrade to SpeakResult.fallback() (see that class's "never throws" contract) instead of ever
+  # reaching the real Sarvam provider. NO default here -- same PlaceholderResolutionException-on-
+  # missing-env pattern as influora.meera.stream.public-chat-url above -- prod fails to boot instead
+  # of silently serving a dead voice feature.
+  voice-ai:
+    base-url: ${VOICE_AI_BASE_URL}
   # Brand-safety scoring is OFF by default (application.yml). Turning it on in prod means every
   # scored creator, up to the cap below, fans out to influora-ai's LLM classifier on each daily run
   # — a real, recurring cost. Leave it commented until that cost has been signed off; enable via the

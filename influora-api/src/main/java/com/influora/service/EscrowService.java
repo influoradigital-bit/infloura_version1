@@ -1,6 +1,7 @@
 package com.influora.service;
 
 import com.influora.common.ApiException;
+import com.influora.common.PageMeta;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
@@ -42,6 +43,9 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -121,6 +125,9 @@ public class EscrowService {
         this.eventPublisher = eventPublisher;
         this.collaborationLifecycleService = collaborationLifecycleService;
     }
+
+    /** Paged brand-scoped escrow hold list — GET /wallet/escrow (mirrors {@code WalletService.PagedWalletTransactions}). */
+    public record PagedEscrowHolds(List<EscrowStatusResponse> items, PageMeta meta) {}
 
     /**
      * Creates (or replays, if {@code idempotencyKey} was already used) a PENDING escrow hold and
@@ -541,6 +548,31 @@ public class EscrowService {
         brandContext.requireMember(principal, workspaceId);
         EscrowHold hold = requireHoldForWorkspace(escrowHoldId, workspaceId);
         return toStatusResponse(hold);
+    }
+
+    /**
+     * Brand-scoped, paginated escrow hold list — GET /wallet/escrow (backs the brand-wallet page's
+     * escrow-items panel, which previously had no live endpoint and rendered mock data). Any member
+     * of the workspace may read it (same access level as {@link #getStatus}, no OWNER/ADMIN role
+     * gate — this is a read, not a money movement). Each item carries exactly the fields
+     * {@link #getStatus} returns for a single hold ({@link EscrowStatusResponse}), same clamped
+     * page/limit discipline as {@code WalletService#getTransactionsForUser}.
+     */
+    @Transactional(readOnly = true)
+    public PagedEscrowHolds listForWorkspace(AuthPrincipal principal, String workspaceId, int page, int limit) {
+        brandContext.requireMember(principal, workspaceId);
+
+        int safePage = Math.max(page, 1);
+        int safeLimit = Math.min(Math.max(limit, 1), 100);
+
+        Page<EscrowHold> result =
+                escrowHoldRepository.findByWorkspaceIdOrderByCreatedAtDesc(
+                        workspaceId,
+                        PageRequest.of(safePage - 1, safeLimit, Sort.by(Sort.Direction.DESC, "createdAt")));
+        List<EscrowStatusResponse> items =
+                result.getContent().stream().map(EscrowService::toStatusResponse).toList();
+        return new PagedEscrowHolds(
+                items, new PageMeta(safePage, safeLimit, result.getTotalElements(), result.hasNext()));
     }
 
     /**

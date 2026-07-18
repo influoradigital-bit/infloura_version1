@@ -16,7 +16,9 @@ import com.influora.web.dto.money.MoneyDtos.PayoutRequest;
 import com.influora.web.dto.money.MoneyDtos.PayoutResponse;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
+import java.util.List;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -44,6 +47,22 @@ public class EscrowController {
         this.escrowService = escrowService;
         this.payoutService = payoutService;
         this.brandContext = brandContext;
+    }
+
+    /**
+     * Brand-scoped, paginated escrow hold list — GET /wallet/escrow. Backs the brand-wallet page's
+     * escrow-items panel, which previously had no live endpoint and rendered mock data (see
+     * src/pages/brand-wallet.tsx's "No GET /wallet/escrow endpoint yet" comment). Each item is the
+     * exact same shape {@link #status} returns for a single hold — {@link EscrowStatusResponse}.
+     */
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<EscrowStatusResponse>>> list(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int limit) {
+        var workspace = brandContext.requireBrandWorkspace(principal);
+        var result = escrowService.listForWorkspace(principal, workspace.getId(), page, limit);
+        return ResponseEntity.ok(ApiResponse.ok(result.items(), result.meta()));
     }
 
     @PostMapping("/fund")

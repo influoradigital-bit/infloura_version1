@@ -45,10 +45,16 @@ import org.springframework.web.util.UriUtils;
  *   <li><b>{@code meta-oauth}</b> extended to also cover {@code GET /shopify/oauth/authorize}/
  *       {@code /callback} and {@code POST /woocommerce/connect} — same OAuth-connect abuse/cost
  *       shape as the existing Meta surface.
+ *   <li><b>{@code meera-turn}</b> ({@code POST /meera/sessions/{id}/messages}) and {@code
+ *       meera-voice} ({@code POST /meera/voice/speak} TTS and {@code POST /meera/voice/transcribe}
+ *       STT, sharing the bucket) — Kabir red-team MEDIUM: all are per-call LLM/voice cost surfaces
+ *       that were credit-gated but had no throttle, letting a single authenticated user hammer any
+ *       of them with no cost ceiling beyond the (non-decrementing) credit check itself.
  *   <li><b>User-keyed buckets</b> ({@code creator-deliverable-write}, {@code
  *       brand-deliverable-review}, {@code contract-sign}, {@code review-write}, {@code
  *       review-flag}, {@code dispute-open}, {@code discovery-invite}, {@code discovery-search},
- *       {@code campaign-apply}, {@code creator-withdraw}) — keyed by the JWT {@code sub} claim
+ *       {@code campaign-apply}, {@code creator-withdraw}, {@code meera-turn}, {@code
+ *       meera-voice}) — keyed by the JWT {@code sub} claim
  *       parsed from the {@code Authorization: Bearer} header (this filter runs BEFORE the real auth
  *       filter in the chain, so it parses the token itself via the injected {@link JwtService}
  *       rather than reading an already-resolved principal), falling back to per-IP keying when no
@@ -89,6 +95,8 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private static final Pattern DISCOVERY_INVITE = Pattern.compile("^/creators/[^/]+/invite$");
     private static final Pattern CAMPAIGN_APPLY =
             Pattern.compile("^/creator/campaigns/[^/]+/apply$");
+    private static final Pattern MEERA_TURN =
+            Pattern.compile("^/meera/sessions/[^/]+/messages$");
 
     private final JwtService jwtService;
 
@@ -154,6 +162,23 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     /** Requests per window, per user, for campaign apply. */
     @Value("${influora.campaign.apply-rate-limit-per-window:20}")
     private int campaignApplyLimit;
+
+    /**
+     * Requests per window, per user, for a Meera chat turn ({@code POST
+     * /meera/sessions/{id}/messages}) — Kabir red-team MEDIUM: this is a real per-call LLM-cost
+     * surface (credit-gated but not rate-limited) with no throttle before this fix.
+     */
+    @Value("${influora.meera.turn-rate-limit-per-window:20}")
+    private int meeraTurnLimit;
+
+    /**
+     * Requests per window, per user, for the Meera voice surface — both TTS ({@code POST
+     * /meera/voice/speak}) and STT ({@code POST /meera/voice/transcribe}) share this bucket: each
+     * call is a real Sarvam provider cost regardless of the 200-with-fallback response contract, and
+     * had no throttle. Same Kabir finding, extended to the voice-INPUT leg.
+     */
+    @Value("${influora.meera.voice-rate-limit-per-window:30}")
+    private int meeraVoiceLimit;
 
     /** Requests per {@link #withdrawWindowSeconds}, per creator, for wallet withdrawal (M-K6-4). */
     @Value("${influora.wallet.withdraw-rate-limit-per-window:5}")
@@ -303,6 +328,12 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         if (path.equals("/wallet/withdraw")) {
             return "creator-withdraw";
         }
+        if (path.equals("/meera/voice/speak") || path.equals("/meera/voice/transcribe")) {
+            return "meera-voice";
+        }
+        if (MEERA_TURN.matcher(path).matches()) {
+            return "meera-turn";
+        }
 
         if (path.equals("/auth/brand/send-email-otp") || path.equals("/auth/brand/verify-email")) {
             return "otp";
@@ -333,6 +364,8 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             case "discovery-search" -> discoverySearchLimit;
             case "campaign-apply" -> campaignApplyLimit;
             case "creator-withdraw" -> creatorWithdrawLimit;
+            case "meera-turn" -> meeraTurnLimit;
+            case "meera-voice" -> meeraVoiceLimit;
             default -> sensitiveLimit;
         };
     }
@@ -368,7 +401,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                     "discovery-invite",
                     "discovery-search",
                     "campaign-apply",
-                    "creator-withdraw" ->
+                    "creator-withdraw",
+                    "meera-turn",
+                    "meera-voice" ->
                     true;
             default -> false;
         };

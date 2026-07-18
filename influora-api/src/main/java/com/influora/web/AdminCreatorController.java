@@ -2,11 +2,13 @@ package com.influora.web;
 
 import com.influora.security.AuthPrincipal;
 import com.influora.service.admin.AdminCreatorService;
+import com.influora.web.dto.admin.AdminCreatorDtos.AdjustTierRequest;
 import com.influora.web.dto.admin.AdminCreatorDtos.CreatorDetailDto;
 import com.influora.web.dto.admin.AdminCreatorDtos.PagedCreatorsDto;
 import com.influora.web.dto.admin.AdminCreatorDtos.ReinstateRequest;
 import com.influora.web.dto.admin.AdminCreatorDtos.ReviewApplicationRequest;
 import com.influora.web.dto.admin.AdminCreatorDtos.SuspendRequest;
+import com.influora.web.dto.admin.AdminCreatorDtos.UpdateCreatorRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
@@ -15,6 +17,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -63,10 +66,52 @@ public class AdminCreatorController {
         return adminCreatorService.list(principal, applicationStatus, suspended, search, page, pageSize);
     }
 
+    /**
+     * GET /admin/creators/applications/pending ({@code creatorApi.getPendingApplications}).
+     * Paginated list of creators whose application status is PENDING. Declared BEFORE {@code
+     * /{id}} in source order for clarity; the two never collide anyway — this is a 2-segment path
+     * ({@code applications/pending}) and {@code /{id}} matches only a single segment.
+     */
+    @GetMapping("/applications/pending")
+    public PagedCreatorsDto getPendingApplications(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        return adminCreatorService.listPendingApplications(principal, page, pageSize);
+    }
+
     @GetMapping("/{id}")
     public CreatorDetailDto getById(
             @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String id) {
         return adminCreatorService.getById(principal, id);
+    }
+
+    /**
+     * PUT /admin/creators/{id} ({@code creatorApi.update}). Edits SAFE profile fields only
+     * (name/niche) — the request DTO shape is the allow-list. applicationStatus/isSuspended/tier/
+     * money fields are not bindable here and have dedicated endpoints. Returns the full {@code
+     * CreatorDetailDto} (CreatorDetail extends Creator, satisfying {@code apiRequest<Creator>}).
+     */
+    @PutMapping("/{id}")
+    public CreatorDetailDto update(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            HttpServletRequest request,
+            @PathVariable String id,
+            @Valid @RequestBody UpdateCreatorRequest body) {
+        return adminCreatorService.update(principal, request, id, body);
+    }
+
+    /**
+     * PUT /admin/creators/{id}/tier ({@code creatorApi.adjustTier}). Sets the admin tier override
+     * (validated against the CreatorTier enum) and audit-logs old->new tier + reason.
+     */
+    @PutMapping("/{id}/tier")
+    public CreatorDetailDto adjustTier(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            HttpServletRequest request,
+            @PathVariable String id,
+            @Valid @RequestBody AdjustTierRequest body) {
+        return adminCreatorService.adjustTier(principal, request, id, body);
     }
 
     @PostMapping("/{id}/review-application")

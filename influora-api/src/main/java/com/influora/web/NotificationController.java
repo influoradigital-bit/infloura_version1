@@ -10,7 +10,11 @@ import com.influora.security.AuthPrincipal;
 import com.influora.web.dto.notification.NotificationDtos.MarkReadRequest;
 import com.influora.web.dto.notification.NotificationDtos.MarkReadResponse;
 import com.influora.web.dto.notification.NotificationDtos.NotificationListResponse;
+import com.influora.web.dto.notification.NotificationDtos.NotificationPreferenceItem;
 import com.influora.web.dto.notification.NotificationDtos.NotificationResponse;
+import com.influora.web.dto.notification.NotificationDtos.PreferencesResponse;
+import com.influora.web.dto.notification.NotificationDtos.SetPreferenceRequest;
+import com.influora.web.dto.notification.NotificationDtos.SetPreferenceResponse;
 import com.influora.web.dto.notification.NotificationDtos.UnsubscribeRequest;
 import com.influora.web.dto.notification.NotificationDtos.UnsubscribeResponse;
 import jakarta.validation.Valid;
@@ -115,5 +119,52 @@ public class NotificationController {
         emailPreferenceRepository.save(preference);
 
         return ResponseEntity.ok(new UnsubscribeResponse(true, request.eventType()));
+    }
+
+    /**
+     * GET /notifications/preferences - the authenticated user's per-event-type email preferences
+     * (Domain B EmailPreference model; matches NotificationPreference in src/lib/api.ts). Only
+     * rows the user has explicitly touched are returned; any event type absent from the list is
+     * implicitly subscribed (mirrors NotificationService#isUnsubscribed's default).
+     */
+    @GetMapping("/preferences")
+    public ResponseEntity<PreferencesResponse> getPreferences(
+            @AuthenticationPrincipal AuthPrincipal user) {
+
+        List<NotificationPreferenceItem> preferences =
+                emailPreferenceRepository.findByUserId(user.getUserId()).stream()
+                        .map(p -> new NotificationPreferenceItem(p.getEventType(), p.isUnsubscribed()))
+                        .toList();
+
+        return ResponseEntity.ok(new PreferencesResponse(preferences));
+    }
+
+    /**
+     * POST /notifications/preferences - set the authenticated user's email subscription state for
+     * a single event type (or "*" for the global opt-out already honored by
+     * NotificationService#isUnsubscribed). Upserts on (userId, eventType).
+     */
+    @PostMapping("/preferences")
+    public ResponseEntity<SetPreferenceResponse> setPreference(
+            @AuthenticationPrincipal AuthPrincipal user,
+            @Valid @RequestBody SetPreferenceRequest request) {
+
+        EmailPreference preference =
+                emailPreferenceRepository
+                        .findByUserIdAndEventType(user.getUserId(), request.eventType())
+                        .orElseGet(
+                                () ->
+                                        EmailPreference.builder()
+                                                .id(Ulids.newUlid())
+                                                .userId(user.getUserId())
+                                                .eventType(request.eventType())
+                                                .unsubscribed(false)
+                                                .build());
+
+        boolean unsubscribed = !request.subscribed();
+        preference.setUnsubscribed(unsubscribed);
+        emailPreferenceRepository.save(preference);
+
+        return ResponseEntity.ok(new SetPreferenceResponse(true, request.eventType(), unsubscribed));
     }
 }

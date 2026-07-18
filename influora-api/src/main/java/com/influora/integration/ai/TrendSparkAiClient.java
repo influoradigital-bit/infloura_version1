@@ -50,17 +50,16 @@ public class TrendSparkAiClient {
 
     private final TrendSparkAiProperties props;
     private final BrandSafetyServiceTokenService tokenService;
-    private final HttpClient httpClient;
+    // Built on first use, not in the constructor: HttpClient.build() spins up the underlying
+    // selector thread + NIO loopback pipe, and doing that at bean-construction time makes
+    // application BOOT depend on outbound-HTTP plumbing this class may never use in a given
+    // deployment.
+    private volatile HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
     public TrendSparkAiClient(TrendSparkAiProperties props, BrandSafetyServiceTokenService tokenService) {
-        this(
-                props,
-                tokenService,
-                HttpClient.newBuilder()
-                        .connectTimeout(Duration.ofSeconds(props.getConnectTimeoutSeconds()))
-                        .build());
+        this(props, tokenService, null);
     }
 
     /** Package-visible constructor for tests to inject a mocked {@link HttpClient}. */
@@ -71,6 +70,22 @@ public class TrendSparkAiClient {
         this.props = props;
         this.tokenService = tokenService;
         this.httpClient = httpClient;
+    }
+
+    private HttpClient httpClient() {
+        HttpClient client = httpClient;
+        if (client == null) {
+            synchronized (this) {
+                if (httpClient == null) {
+                    httpClient =
+                            HttpClient.newBuilder()
+                                    .connectTimeout(Duration.ofSeconds(props.getConnectTimeoutSeconds()))
+                                    .build();
+                }
+                client = httpClient;
+            }
+        }
+        return client;
     }
 
     /** Result of a successful, re-validated AI phrasing call. */
@@ -125,7 +140,7 @@ public class TrendSparkAiClient {
 
         HttpResponse<String> response;
         try {
-            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            response = httpClient().send(request, HttpResponse.BodyHandlers.ofString());
         } catch (Exception e) {
             log.warn(
                     "TrendSparkAiClient: transport failure calling {} for workspace={}: {}",

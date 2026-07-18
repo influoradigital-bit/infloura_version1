@@ -7,6 +7,7 @@ import jakarta.persistence.QueryHint;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -43,4 +44,36 @@ public interface EmailOutboxRepository extends JpaRepository<EmailOutbox, String
 
     /** Find by userId for admin/debugging purposes. */
     List<EmailOutbox> findByUserIdOrderByCreatedAtDesc(String userId, Pageable pageable);
+
+    // ---- Admin email-queue console (emailApi, api-contracts.ts 677-706) ----
+
+    /** Queue listing, newest first, no status filter. */
+    Page<EmailOutbox> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    /** Queue listing filtered to a single status, newest first. */
+    Page<EmailOutbox> findByStatusOrderByCreatedAtDesc(EmailOutboxStatus status, Pageable pageable);
+
+    /** {@code stats.pending}. */
+    long countByStatus(EmailOutboxStatus status);
+
+    /** {@code stats.sent24h} — real: rows actually sent within the window. */
+    long countByStatusAndSentAtAfter(EmailOutboxStatus status, Instant since);
+
+    /**
+     * {@code stats.failed24h} — approximate: outbox has no {@code failed_at} column, so this counts
+     * FAILED rows *created* within the window, not failed within it. See {@code
+     * AdminEmailService.getStats}.
+     */
+    long countByStatusAndCreatedAtAfter(EmailOutboxStatus status, Instant since);
+
+    /** {@code stats.avgDeliveryTime} basis — SENT rows in the window, to average sentAt-createdAt. */
+    List<EmailOutbox> findByStatusAndSentAtAfter(EmailOutboxStatus status, Instant since);
+
+    /**
+     * {@code getTemplates} — distinct template keys actually present in the outbox. There is no
+     * server-side template registry (MSG91 owns names/subjects), so this is the only real,
+     * non-fabricated template list available. See {@code AdminEmailService.getTemplates}.
+     */
+    @Query("SELECT DISTINCT e.templateKey FROM EmailOutbox e ORDER BY e.templateKey ASC")
+    List<String> findDistinctTemplateKeys();
 }

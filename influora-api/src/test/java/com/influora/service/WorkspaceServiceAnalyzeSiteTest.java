@@ -62,6 +62,8 @@ class WorkspaceServiceAnalyzeSiteTest {
                 service.updateMyWorkspace(
                         principal,
                         "Acme Inc",
+                        null,
+                        null,
                         "Technology",
                         "10-50",
                         "https://new.example.com",
@@ -86,6 +88,8 @@ class WorkspaceServiceAnalyzeSiteTest {
         service.updateMyWorkspace(
                 principal,
                 "Acme Inc",
+                null,
+                null,
                 "Technology",
                 "10-50",
                 "https://acme.example.com",
@@ -109,6 +113,8 @@ class WorkspaceServiceAnalyzeSiteTest {
         service.updateMyWorkspace(
                 principal,
                 "Acme Inc",
+                null,
+                null,
                 "Technology",
                 "10-50",
                 "https://acme.example.com",
@@ -129,7 +135,7 @@ class WorkspaceServiceAnalyzeSiteTest {
         when(workspaceRepository.save(any(Workspace.class))).thenReturn(workspace);
 
         service.updateMyWorkspace(
-                principal, "Acme Inc", "Technology", "10-50", "", null, null);
+                principal, "Acme Inc", null, null, "Technology", "10-50", "", null, null);
 
         verify(analyzeSiteTrigger, never()).trigger(anyString(), anyString());
     }
@@ -145,7 +151,7 @@ class WorkspaceServiceAnalyzeSiteTest {
         when(workspaceRepository.save(any(Workspace.class))).thenReturn(workspace);
 
         service.updateMyWorkspace(
-                principal, "Acme Inc", "Technology", "10-50", null, null, null);
+                principal, "Acme Inc", null, null, "Technology", "10-50", null, null, null);
 
         verify(analyzeSiteTrigger, never()).trigger(anyString(), anyString());
     }

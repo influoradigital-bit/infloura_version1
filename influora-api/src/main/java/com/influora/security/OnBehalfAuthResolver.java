@@ -5,6 +5,7 @@ import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.UserType;
 import com.influora.repository.WorkspaceMemberRepository;
+import com.influora.service.meera.OnBehalfTokenService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import org.springframework.http.HttpStatus;
@@ -14,11 +15,14 @@ import org.springframework.stereotype.Component;
  * Second half of the dual-credential gate on {@code /internal/meera/*} ([SEC: 2.3, G1]).
  * {@link InternalServiceTokenFilter} only proves "this call came from the Python mesh service" —
  * it says nothing about which human/workspace the call is acting on behalf of. This resolver
- * re-validates the forwarded human access JWT (same {@link com.influora.security.JwtService}
- * token shape/signature as the public API) and enforces:
+ * re-validates the forwarded on-behalf JWT and enforces:
  * <ul>
- *   <li>the JWT is well-formed, unexpired, correctly signed — reusing the exact same parser as
- *       the public {@code JwtAuthenticationFilter} so there is no second, weaker JWT path;</li>
+ *   <li>the JWT is well-formed, unexpired, correctly signed, {@code iss}/{@code aud}-checked —
+ *       via {@link OnBehalfTokenService#verify}, i.e. the DEDICATED per-turn on-behalf token
+ *       contract, never the public-API access-token parser (SECURITY FIX #1, {@code
+ *       docs/security/meera-onbehalf-auth-security-design.md} §2/§3 — a full public-API access
+ *       token is now structurally rejected here: it is signed with a different key/algorithm
+ *       entirely and carries no {@code aud} claim, see {@link OnBehalfTokenService#verify});</li>
  *   <li>{@code token.workspaceId == body.workspaceId} — a stolen/forged service token cannot pick
  *       an arbitrary victim workspace merely by putting a different id in the request body;</li>
  *   <li>for money-tier (C) actions, the on-behalf user's workspace role is OWNER or ADMIN.</li>
@@ -27,15 +31,32 @@ import org.springframework.stereotype.Component;
  * <p>Even read-tier (R) executors call {@link #resolveForWorkspace} — the matrix requires every
  * tool tier to re-validate the on-behalf JWT, not just commit-tier ones (T4.1 in
  * 16-VIKRAM-REMAINING-TASKS.md), so a service token alone can never read an arbitrary workspace.
+ *
+ * <p><b>SECURITY FIX (Kabir's SECURITY FIX #1 follow-up #1 — scope enforcement):</b> {@link
+ * #resolveForWorkspaceRequiringScope} and {@link #resolveForWorkspaceRequiringElevatedRoleAndScope}
+ * additionally assert the on-behalf token's {@code scope} claim (space-delimited tool names,
+ * {@link com.influora.service.meera.OnBehalfTokenService#SCOPE_READ_ONLY}) actually authorizes the
+ * tool being called. Before this fix, a read-scoped token was accepted by every {@code
+ * /internal/meera/*} tool route regardless of tier — "read-only" was only a deploy convention
+ * (nothing minted a write-scoped token yet, but nothing would have REJECTED one being presented
+ * to a write route either). Every tool route in {@code MeeraInternalController} now passes its own
+ * tool name, so a read-only-scoped token is structurally rejected by {@code create_campaign}/
+ * {@code request_payment}/{@code confirm_launch} regardless of what Python offers to call or what
+ * an injected model attempts.
+ *
+ * <p><b>Deliberately NOT in this pass</b> (design doc checklist items 8/10 — separate queued
+ * fixes): {@code conversationId} is not yet cross-checked against the tenant in tool executors,
+ * and {@code jti} single-use/replay is not yet enforced. See the design doc §3 for the exact gap.
  */
 @Component
 public class OnBehalfAuthResolver {
 
-    private final JwtService jwtService;
+    private final OnBehalfTokenService onBehalfTokenService;
     private final WorkspaceMemberRepository workspaceMemberRepository;
 
-    public OnBehalfAuthResolver(JwtService jwtService, WorkspaceMemberRepository workspaceMemberRepository) {
-        this.jwtService = jwtService;
+    public OnBehalfAuthResolver(
+            OnBehalfTokenService onBehalfTokenService, WorkspaceMemberRepository workspaceMemberRepository) {
+        this.onBehalfTokenService = onBehalfTokenService;
         this.workspaceMemberRepository = workspaceMemberRepository;
     }
 
@@ -101,13 +122,63 @@ public class OnBehalfAuthResolver {
         return context;
     }
 
+    /**
+     * Same as {@link #resolveForWorkspace} but additionally asserts {@code requiredTool} is
+     * present in the token's space-delimited {@code scope} claim — SECURITY FIX (Kabir's
+     * SECURITY FIX #1 follow-up #1, see class javadoc). Used by the R-tier ({@code show_creators},
+     * {@code calculate_budget}) and D-tier ({@code create_campaign}) tool routes in {@code
+     * MeeraInternalController}. Throws {@code 403 ON_BEHALF_SCOPE_INSUFFICIENT} if the token's
+     * scope does not cover {@code requiredTool} — a read-scoped token calling a write route is
+     * rejected here, structurally, before any executor runs.
+     */
+    public OnBehalfContext resolveForWorkspaceRequiringScope(
+            String onBehalfJwt, String bodyWorkspaceId, String requiredTool) {
+        OnBehalfContext context = resolveForWorkspace(onBehalfJwt, bodyWorkspaceId);
+        requireScope(onBehalfJwt, requiredTool);
+        return context;
+    }
+
+    /**
+     * Same as {@link #resolveForWorkspaceRequiringElevatedRole} but additionally asserts {@code
+     * requiredTool} is present in the token's {@code scope} claim — the C-tier ({@code
+     * request_payment}, {@code confirm_launch}) counterpart to {@link
+     * #resolveForWorkspaceRequiringScope}. Both the elevated-role check AND the scope check must
+     * pass; either failure rejects before any executor runs.
+     */
+    public OnBehalfContext resolveForWorkspaceRequiringElevatedRoleAndScope(
+            String onBehalfJwt, String bodyWorkspaceId, String requiredTool) {
+        OnBehalfContext context = resolveForWorkspaceRequiringElevatedRole(onBehalfJwt, bodyWorkspaceId);
+        requireScope(onBehalfJwt, requiredTool);
+        return context;
+    }
+
+    /**
+     * Re-parses the token (cheap, stateless in-memory EC signature verification — no I/O, no
+     * caching needed) purely to read the {@code scope} claim; {@link #resolveForWorkspace} already
+     * validated signature/iss/aud/exp/workspaceId by the time this runs. Rejects with {@code 403
+     * ON_BEHALF_SCOPE_INSUFFICIENT} if {@code scope} is missing or does not list {@code
+     * requiredTool} as one of its space-delimited entries.
+     */
+    private void requireScope(String onBehalfJwt, String requiredTool) {
+        Claims claims = parseOrReject(onBehalfJwt);
+        String scope = claims.get("scope", String.class);
+        boolean allowed =
+                scope != null && java.util.List.of(scope.trim().split("\\s+")).contains(requiredTool);
+        if (!allowed) {
+            throw new ApiException(
+                    "ON_BEHALF_SCOPE_INSUFFICIENT",
+                    "On-behalf token scope does not authorize tool: " + requiredTool,
+                    HttpStatus.FORBIDDEN);
+        }
+    }
+
     private Claims parseOrReject(String onBehalfJwt) {
         if (onBehalfJwt == null || onBehalfJwt.isBlank()) {
             throw new ApiException(
                     "ON_BEHALF_JWT_MISSING", "No on-behalf user JWT forwarded", HttpStatus.UNAUTHORIZED);
         }
         try {
-            return jwtService.parseAccessToken(onBehalfJwt);
+            return onBehalfTokenService.verify(onBehalfJwt);
         } catch (JwtException | IllegalArgumentException e) {
             throw new ApiException(
                     "ON_BEHALF_JWT_INVALID", "On-behalf user JWT invalid or expired", HttpStatus.UNAUTHORIZED);

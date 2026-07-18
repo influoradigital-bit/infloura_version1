@@ -19,6 +19,7 @@ import com.influora.web.dto.meera.MeeraToolDtos.ConfirmLaunchResult;
 import com.influora.web.dto.meera.MeeraToolDtos.CreateCampaignResult;
 import com.influora.web.dto.meera.MeeraToolDtos.MessageWriteback;
 import com.influora.web.dto.meera.MeeraToolDtos.MessageWritebackResult;
+import com.influora.web.dto.meera.MeeraToolDtos.ReleaseTurnRequest;
 import com.influora.web.dto.meera.MeeraToolDtos.RequestPaymentResult;
 import com.influora.web.dto.meera.MeeraToolDtos.ShowCreatorsResult;
 import jakarta.validation.Valid;
@@ -101,7 +102,12 @@ public class MeeraInternalController {
     public ResponseEntity<ApiResponse<ShowCreatorsResult>> showCreators(
             @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt, @RequestBody Map<String, Object> body) {
         String workspaceId = requireWorkspaceId(body);
-        OnBehalfContext ctx = onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, workspaceId);
+        // SECURITY FIX (Kabir's SECURITY FIX #1 follow-up #1 — scope enforcement, see
+        // OnBehalfAuthResolver class javadoc): asserts the on-behalf token's scope claim actually
+        // authorizes THIS tool, not just that the token is valid for the workspace.
+        OnBehalfContext ctx =
+                onBehalfAuthResolver.resolveForWorkspaceRequiringScope(
+                        onBehalfJwt, workspaceId, MeeraToolName.show_creators.name());
         requireTool(MeeraToolName.show_creators, workspaceId);
         var result = showCreatorsExecutor.execute(ctx.workspaceId(), body);
         return ResponseEntity.ok(ApiResponse.ok(result));
@@ -111,7 +117,9 @@ public class MeeraInternalController {
     public ResponseEntity<ApiResponse<CalculateBudgetResult>> calculateBudget(
             @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt, @RequestBody Map<String, Object> body) {
         String workspaceId = requireWorkspaceId(body);
-        OnBehalfContext ctx = onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, workspaceId);
+        OnBehalfContext ctx =
+                onBehalfAuthResolver.resolveForWorkspaceRequiringScope(
+                        onBehalfJwt, workspaceId, MeeraToolName.calculate_budget.name());
         requireTool(MeeraToolName.calculate_budget, workspaceId);
         var result = calculateBudgetExecutor.execute(ctx.workspaceId(), body);
         return ResponseEntity.ok(ApiResponse.ok(result));
@@ -123,7 +131,9 @@ public class MeeraInternalController {
             @RequestHeader(IDEMPOTENCY_HEADER) String idempotencyKey,
             @RequestBody Map<String, Object> body) {
         String workspaceId = requireWorkspaceId(body);
-        OnBehalfContext ctx = onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, workspaceId);
+        OnBehalfContext ctx =
+                onBehalfAuthResolver.resolveForWorkspaceRequiringScope(
+                        onBehalfJwt, workspaceId, MeeraToolName.create_campaign.name());
         requireTool(MeeraToolName.create_campaign, workspaceId);
         var result =
                 createCampaignExecutor.execute(
@@ -139,9 +149,11 @@ public class MeeraInternalController {
         String workspaceId = requireWorkspaceId(body);
         // C-tier: on-behalf resolution requires OWNER/ADMIN even though this only STAGES a
         // PENDING_CONFIRM action — the human-confirm click still belongs to a workspace member
-        // who can act on money, matching the matrix's "human confirms" model.
+        // who can act on money, matching the matrix's "human confirms" model. Also now scope-gated
+        // (see OnBehalfAuthResolver class javadoc) — both checks must pass.
         OnBehalfContext ctx =
-                onBehalfAuthResolver.resolveForWorkspaceRequiringElevatedRole(onBehalfJwt, workspaceId);
+                onBehalfAuthResolver.resolveForWorkspaceRequiringElevatedRoleAndScope(
+                        onBehalfJwt, workspaceId, MeeraToolName.request_payment.name());
         requireTool(MeeraToolName.request_payment, workspaceId);
         var result =
                 requestPaymentExecutor.execute(
@@ -156,7 +168,8 @@ public class MeeraInternalController {
             @RequestBody Map<String, Object> body) {
         String workspaceId = requireWorkspaceId(body);
         OnBehalfContext ctx =
-                onBehalfAuthResolver.resolveForWorkspaceRequiringElevatedRole(onBehalfJwt, workspaceId);
+                onBehalfAuthResolver.resolveForWorkspaceRequiringElevatedRoleAndScope(
+                        onBehalfJwt, workspaceId, MeeraToolName.confirm_launch.name());
         requireTool(MeeraToolName.confirm_launch, workspaceId);
         var result =
                 confirmLaunchExecutor.execute(
@@ -187,6 +200,29 @@ public class MeeraInternalController {
                         body.metadata(),
                         idempotencyKey);
         return ResponseEntity.ok(ApiResponse.ok(new MessageWritebackResult(message.getId())));
+    }
+
+    /**
+     * SECURITY FIX (Wave 2 round 2, Kabir FAILs #1/#2): refund route influora-ai calls on a
+     * genuine PROVIDER failure (an {@code error} SSE event, or the stream ending with no assistant
+     * text / before {@code done}) — NEVER for a plain client disconnect, which stays charged (see
+     * {@code app/routes/chat.py}'s explicit separation of the two cases). Same dual-credential mesh
+     * gate and same tenant-resolution pattern as {@link #persistTurnWriteback} above: no {@code
+     * workspaceId} in the body (Python doesn't have one to send here either), tenant resolved from
+     * {@code conversationId} and cross-checked against the on-behalf JWT before anything is
+     * mutated. No {@code Idempotency-Key} header here — {@link MeeraSessionService#releaseTurnCredit}
+     * / {@link com.influora.service.meera.AICreditService#release} are already self-idempotent,
+     * keyed on {@code body.turnId()} (the server-verified {@code messageId}), so a duplicate or
+     * racing call is a no-op there.
+     */
+    @PostMapping("/turns/release")
+    public ResponseEntity<ApiResponse<Void>> releaseTurnCredit(
+            @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt, @Valid @RequestBody ReleaseTurnRequest body) {
+        AiConversation conversation = sessionService.resolveConversation(body.conversationId());
+        onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, conversation.getWorkspaceId());
+
+        sessionService.releaseTurnCredit(conversation.getWorkspaceId(), body.turnId());
+        return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
     /** Throws (mapped to 4xx by {@code GlobalExceptionHandler}) if the tool fails the whitelist/tier gate. */

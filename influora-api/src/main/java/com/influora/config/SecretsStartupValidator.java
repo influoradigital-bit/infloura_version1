@@ -21,9 +21,26 @@ import org.springframework.context.annotation.Configuration;
  * separation (JWT access/refresh, Meera stream, internal service-token, internal HMAC)
  * only holds if every secret is actually distinct and non-default in real environments.
  *
- * <p>Gated on {@code influora.env} (APP_ENV), not {@code spring.profiles.active} — profile
- * activation is too easy to leave unset by accident. Any non-"dev" env throws and aborts
- * startup; "dev" only warns, so committed defaults still boot locally.
+ * <p>Gated on {@code influora.env} (APP_ENV) cross-checked against the active Spring profile via
+ * {@link InfluoraEnvironment} (see its javadoc — {@code environment.matchesProfiles("dev")}). Any
+ * non-"dev" env throws and aborts startup; "dev" only warns, so committed defaults still boot
+ * locally.
+ *
+ * <p><b>I8 fix (2026-07-18, APP_ENV production footgun):</b> previously {@code isDev} here was
+ * derived from {@code influora.env} alone, which defaults to {@code "dev"} when {@code APP_ENV} is
+ * unset ({@code @Value("${influora.env:dev}")} below). {@code application-prod.yml} binds {@code
+ * influora.env: ${APP_ENV}} with NO default, so a deploy that correctly sets {@code
+ * SPRING_PROFILES_ACTIVE=prod} but forgets {@code APP_ENV} already fails hard at context refresh
+ * (unresolved placeholder) — that part was already fail-closed. The gap was the OTHER, easier
+ * mistake: forgetting {@code SPRING_PROFILES_ACTIVE=prod} entirely. Then {@code
+ * application-prod.yml} never activates, {@code influora.env} is never bound to {@code APP_ENV} by
+ * anything (no relaxed-binding relationship between the two names), and {@code influora.env} quietly
+ * falls back to its {@code "dev"} default regardless of what the box's real active profile is or
+ * what {@code APP_ENV} was independently set to — every check below would then only WARN on a real,
+ * possibly internet-facing box. {@link #validateEnvConsistency} closes this by requiring the {@code
+ * dev} Spring profile to ALSO be active (via {@link InfluoraEnvironment}, which is itself keyed on
+ * {@code spring.profiles.active}, not a hand-set var) before this validator treats itself as running
+ * in dev — deriving from the profile instead of trusting {@code influora.env} in isolation.
  *
  * <p><b>Wave E task E-JWKS addition:</b> {@link JwksSigningKeyProperties#getPrivateKeyPem()} gets
  * the same fail-closed-in-non-dev treatment as every symmetric secret above — the ADR's binding
@@ -62,9 +79,11 @@ import org.springframework.context.annotation.Configuration;
  * the URL defaults to {@code useSSL=false} (application.yml; a zero-config convenience for the
  * local docker-compose MySQL only). {@code application-prod.yml} now overrides all three with NO
  * default so a real {@code spring.profiles.active=prod} boot fails outright without real env vars
- * — this check is the independent, {@code influora.env}-gated belt-and-suspenders layer for the
- * case where {@code spring.profiles.active} itself was left unset (same rationale as every check
- * above: profile activation is too easy to forget, {@code influora.env}/{@code APP_ENV} is not).
+ * — this check is the independent belt-and-suspenders layer for the case where {@code
+ * spring.profiles.active} itself was left unset. (Before the I8 fix above, this belt-and-suspenders
+ * claim didn't actually hold: the layer was gated on {@code influora.env} alone, which silently
+ * defaults to {@code "dev"} precisely when {@code spring.profiles.active} is left unset — the one
+ * case it was supposed to catch. {@link #validateEnvConsistency} is what makes this true now.)
  *
  * <p><b>W0-5 addition:</b> {@link #validateAiServiceUrls} — {@link BrandSafetyAiProperties},
  * {@link TrendSparkAiProperties}, and {@link MeeraChatAiProperties} all default {@code base-url}
@@ -129,6 +148,7 @@ public class SecretsStartupValidator {
     private final TrendSparkAiProperties trendSparkAiProperties;
     private final MeeraChatAiProperties meeraChatAiProperties;
     private final AnalyzeSiteAiProperties analyzeSiteAiProperties;
+    private final InfluoraEnvironment influoraEnvironment;
 
     @Value("${influora.env:dev}")
     private String env;
@@ -154,7 +174,8 @@ public class SecretsStartupValidator {
             BrandSafetyAiProperties brandSafetyAiProperties,
             TrendSparkAiProperties trendSparkAiProperties,
             MeeraChatAiProperties meeraChatAiProperties,
-            AnalyzeSiteAiProperties analyzeSiteAiProperties) {
+            AnalyzeSiteAiProperties analyzeSiteAiProperties,
+            InfluoraEnvironment influoraEnvironment) {
         this.jwtProperties = jwtProperties;
         this.meeraStreamProperties = meeraStreamProperties;
         this.internalServiceTokenProperties = internalServiceTokenProperties;
@@ -167,6 +188,7 @@ public class SecretsStartupValidator {
         this.trendSparkAiProperties = trendSparkAiProperties;
         this.meeraChatAiProperties = meeraChatAiProperties;
         this.analyzeSiteAiProperties = analyzeSiteAiProperties;
+        this.influoraEnvironment = influoraEnvironment;
     }
 
     @PostConstruct
@@ -185,8 +207,14 @@ public class SecretsStartupValidator {
                 "influora.brand-safety-service-token.signing-secret",
                 brandSafetyServiceTokenProperties.getSigningSecret());
 
-        boolean isDev = "dev".equalsIgnoreCase(env);
+        // [I8] isDev now requires the 'dev' Spring profile to ALSO be active (InfluoraEnvironment,
+        // profile-keyed), not just influora.env in isolation — see class javadoc "I8 fix".
+        boolean envPropertySaysDev = "dev".equalsIgnoreCase(env);
+        boolean profileSaysDev = influoraEnvironment.isDev();
+        boolean isDev = envPropertySaysDev && profileSaysDev;
         StringBuilder problems = new StringBuilder();
+
+        validateEnvConsistency(problems, profileSaysDev, envPropertySaysDev);
 
         secrets.forEach(
                 (name, value) -> {
@@ -213,6 +241,7 @@ public class SecretsStartupValidator {
         validateRefreshCookieSecureFlags(problems);
         validateDatabaseCredentials(problems);
         validateAiServiceUrls(problems);
+        validateMeeraPublicStreamUrl(problems);
 
         if (problems.length() == 0) {
             return;
@@ -224,6 +253,32 @@ public class SecretsStartupValidator {
             log.warn(message);
         } else {
             throw new IllegalStateException(message);
+        }
+    }
+
+    /**
+     * [I8] Fails closed whenever the active Spring profile is NOT {@code dev} (prod, staging, or —
+     * critically — no profile activated at all, i.e. {@code SPRING_PROFILES_ACTIVE} was left unset)
+     * while {@code influora.env} (APP_ENV) resolves to {@code "dev"}. This is the exact
+     * "APP_ENV production footgun": {@code influora.env} only ever gets bound to {@code APP_ENV} via
+     * {@code application-prod.yml}'s {@code env: ${APP_ENV}}, which requires the {@code prod} profile
+     * to be active in the first place. Forget {@code SPRING_PROFILES_ACTIVE=prod} and {@code
+     * influora.env} silently falls back to its {@code "dev"} default (see the {@code @Value} below)
+     * no matter what {@code APP_ENV} was independently set to — so a real, possibly internet-facing
+     * deploy would otherwise sail through every check above in warn-only mode. This check appends a
+     * problem (and therefore always aborts startup via the throw above, since {@code isDev} is also
+     * false in this branch) purely on the mismatch itself, independent of whether any individual
+     * secret happens to already be a real value — the inconsistency is the signal.
+     */
+    private void validateEnvConsistency(
+            StringBuilder problems, boolean profileSaysDev, boolean envPropertySaysDev) {
+        if (!profileSaysDev && envPropertySaysDev) {
+            problems
+                    .append("  - active Spring profile is not 'dev' but influora.env (APP_ENV) resolved to '")
+                    .append(env)
+                    .append("' — refusing to start. Either APP_ENV was left unset (it defaults to \"dev\")")
+                    .append(" or was mis-set on a non-dev box. Set APP_ENV to the real environment name, or")
+                    .append(" activate the 'dev' Spring profile if this really is a dev box.\n");
         }
     }
 
@@ -400,6 +455,39 @@ public class SecretsStartupValidator {
         // http://localhost:8000 exactly like its three siblings, so leaving it out would let a prod
         // deploy silently point site analysis at localhost — the precise failure W0-5 exists to stop.
         checkNotLocalhost(problems, "influora.analyze-site-ai.base-url", analyzeSiteAiProperties.getBaseUrl());
+    }
+
+    /**
+     * Fails closed (non-dev) if {@code influora.meera.stream.public-chat-url} still resolves to a
+     * loopback host or is not HTTPS. Unlike the {@link #validateAiServiceUrls} URLs — which are
+     * Spring→Python calls on a private network where plain HTTP can be a legitimate choice — this
+     * URL is handed to the BROWSER ({@code SendTurnResponse.streamUrl}): the SPA is served over
+     * HTTPS, so an {@code http://} value would be blocked as mixed content at best, and at worst
+     * would send the scoped stream token in cleartext. {@code application-prod.yml} already binds
+     * it to the required {@code ${MEERA_PUBLIC_CHAT_URL}} placeholder (fails loud if unset); this
+     * is the belt-and-suspenders layer for a boot where the prod profile was never activated (the
+     * Java default is {@code http://localhost:8000/chat}) or where the env var was set to a
+     * localhost/http value.
+     */
+    private void validateMeeraPublicStreamUrl(StringBuilder problems) {
+        String name = "influora.meera.stream.public-chat-url";
+        String url = meeraStreamProperties.getPublicChatUrl();
+
+        int before = problems.length();
+        checkNotLocalhost(problems, name, url);
+        if (problems.length() > before) {
+            // Missing/invalid/loopback already reported — the scheme check below would be noise.
+            return;
+        }
+        String scheme = java.net.URI.create(url).getScheme();
+        if (scheme == null || !scheme.equalsIgnoreCase("https")) {
+            problems
+                    .append("  - ")
+                    .append(name)
+                    .append(" must be HTTPS (the browser connects here with the stream token): ")
+                    .append(url)
+                    .append("\n");
+        }
     }
 
     private void checkNotLocalhost(StringBuilder problems, String name, String url) {

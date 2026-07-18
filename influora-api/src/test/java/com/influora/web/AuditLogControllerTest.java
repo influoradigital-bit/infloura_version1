@@ -75,6 +75,7 @@ class AuditLogControllerTest {
             null,
             "Approved KYC",
             "192.168.1.100",
+            "SERVER_INTERNAL",
             Instant.parse("2026-07-09T10:00:00Z"));
     PagedAuditLogDto paged = new PagedAuditLogDto(List.of(entry), 1, 1, 50, 1);
 
@@ -195,6 +196,7 @@ class AuditLogControllerTest {
             null,
             "Created brand",
             "192.168.1.1",
+            "SERVER_INTERNAL",
             Instant.parse("2026-07-01T10:00:00Z"));
     AuditLogEntryDto entry2 =
         new AuditLogEntryDto(
@@ -208,6 +210,7 @@ class AuditLogControllerTest {
             null,
             "Approved KYC",
             "192.168.1.2",
+            "SERVER_INTERNAL",
             Instant.parse("2026-07-09T12:00:00Z"));
 
     when(adminAuditLogService.getByEntity(superAdminPrincipal, "BRAND", "brand-abc"))

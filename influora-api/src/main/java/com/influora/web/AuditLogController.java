@@ -3,29 +3,41 @@ package com.influora.web;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.admin.AdminAuditLogService;
 import com.influora.web.dto.admin.AdminAuditLogDtos.AuditLogEntryDto;
+import com.influora.web.dto.admin.AdminAuditLogDtos.CreateAuditLogEntryRequest;
 import com.influora.web.dto.admin.AdminAuditLogDtos.PagedAuditLogDto;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.util.List;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Audit trail read API (src/admin/TASK_ASSIGNMENTS.md P2: "Audit log API" — Vikram, cycle 7, the
- * last controller on his TASK_ASSIGNMENTS.md list). This is the READ side only — every write to
- * {@code admin_audit_log} already goes through {@code AdminAuditLogService#record}, called
- * server-internally from {@code AdminBrandController}/{@code AdminCreatorController}/{@code
- * AdminSupportController} (cycle 4 onward); this controller adds no new writer. Mounted at {@code
- * /admin/audit} (full path {@code /api/v1/admin/audit/...} given {@code
+ * Audit trail API (src/admin/TASK_ASSIGNMENTS.md P2: "Audit log API" — Vikram, cycle 7, the last
+ * controller on his TASK_ASSIGNMENTS.md list). The GET endpoints are the compliance-critical read
+ * side — every server-internal mutation already writes to {@code admin_audit_log} via {@code
+ * AdminAuditLogService#record}, called from {@code AdminBrandController}/{@code
+ * AdminCreatorController}/{@code AdminSupportController}/{@code PlatformFeeAdminService} (cycle 4
+ * onward). {@link #create} (added later, per Priya's admin-panel audit routing) is a second,
+ * client-facing write path backing {@code src/admin/utils/auditLogger.ts} — that utility's own
+ * header comment marks it a best-effort "convenience/queue trail," NOT a replacement for the
+ * server-internal writes above; see {@code AdminAuditLogService#recordClientEntry} javadoc.
+ * Mounted at {@code /admin/audit} (full path {@code /api/v1/admin/audit/...} given {@code
  * server.servlet.context-path=/api/v1} — same convention/caveat as every other {@code
  * Admin*Controller}, see {@code AdminBrandController}'s class javadoc for the path-mismatch note
  * that still applies here unchanged).
  *
  * <p>Path/verb shape matches {@code auditApi} in {@code src/admin/services/api-contracts.ts}
  * (Priya) exactly: {@code list} -> {@code GET /audit?adminId&entityType&action&startDate&endDate
- * &page&pageSize}, {@code getByEntity} -> {@code GET /audit/entity/{entityType}/{entityId}}.
+ * &page&pageSize}, {@code getByEntity} -> {@code GET /audit/entity/{entityType}/{entityId}}; {@code
+ * create} -> {@code POST /audit}, matching {@code auditLogger.ts}'s {@code AUDIT_ENDPOINT}.
  *
  * <p><b>Role-gating (the one decision this controller pins down):</b> audit logs are gated to
  * {@code SUPER_ADMIN} ONLY — NOT {@code SUPER_ADMIN}+{@code ADMIN} like most of the rest of the
@@ -75,5 +87,30 @@ public class AuditLogController {
             @PathVariable String entityType,
             @PathVariable String entityId) {
         return adminAuditLogService.getByEntity(principal, entityType, entityId);
+    }
+
+    /**
+     * {@code POST /admin/audit} — client-submitted audit entry, backs {@code
+     * src/admin/utils/auditLogger.ts}'s {@code logAdminAction}/{@code auditAction}. See {@code
+     * AdminAuditLogService#recordClientEntry} for why {@code body.adminId()} is accepted (matches
+     * the client's payload shape) but never trusted, and why this never surfaces a write failure
+     * as anything other than the SUPER_ADMIN role-gate 403. No response body — same "fire and
+     * forget" contract the client already expects.
+     */
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public void create(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            HttpServletRequest request,
+            @Valid @RequestBody CreateAuditLogEntryRequest body) {
+        adminAuditLogService.recordClientEntry(
+                principal,
+                request,
+                body.action(),
+                body.entityType(),
+                body.entityId(),
+                body.oldValue(),
+                body.newValue(),
+                body.reason());
     }
 }

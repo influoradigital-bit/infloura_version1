@@ -42,11 +42,15 @@ public class RazorpayXClient {
 
     private final RazorpayProperties props;
     private final InfluoraEnvironment environment;
-    private final HttpClient httpClient;
+    // Built on first use, not in the constructor: HttpClient.build() spins up the underlying
+    // selector thread + NIO loopback pipe, and doing that at bean-construction time makes
+    // application BOOT depend on outbound-HTTP plumbing this class may never use in a given
+    // deployment.
+    private volatile HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public RazorpayXClient(RazorpayProperties props, InfluoraEnvironment environment) {
-        this(props, environment, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
+        this(props, environment, null);
     }
 
     /**
@@ -60,6 +64,19 @@ public class RazorpayXClient {
         this.props = props;
         this.environment = environment;
         this.httpClient = httpClient;
+    }
+
+    private HttpClient httpClient() {
+        HttpClient client = httpClient;
+        if (client == null) {
+            synchronized (this) {
+                if (httpClient == null) {
+                    httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+                }
+                client = httpClient;
+            }
+        }
+        return client;
     }
 
     /**
@@ -117,7 +134,7 @@ public class RazorpayXClient {
 
         try {
             HttpResponse<String> response =
-                    httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                    httpClient().send(request, HttpResponse.BodyHandlers.ofString());
             requireSuccessStatus(response, "payout initiation");
 
             String payoutId = extractPayoutId(response.body());
@@ -166,7 +183,7 @@ public class RazorpayXClient {
 
         try {
             HttpResponse<String> response =
-                    httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                    httpClient().send(request, HttpResponse.BodyHandlers.ofString());
             requireSuccessStatus(response, "contact creation");
             String contactId = extractPayoutId(response.body());
             log.debug("RazorpayX contact created: contactId={}", contactId);
@@ -224,7 +241,7 @@ public class RazorpayXClient {
 
         try {
             HttpResponse<String> response =
-                    httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                    httpClient().send(request, HttpResponse.BodyHandlers.ofString());
             requireSuccessStatus(response, "fund account creation");
             String fundAccountId = extractPayoutId(response.body());
             log.debug("RazorpayX fund account created: fundAccountId={}", fundAccountId);
@@ -255,7 +272,7 @@ public class RazorpayXClient {
 
         try {
             HttpResponse<String> response =
-                    httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                    httpClient().send(request, HttpResponse.BodyHandlers.ofString());
             requireSuccessStatus(response, "payout fetch");
             return new PayoutResult(payoutId, extractStatus(response.body()), response.body());
         } catch (RazorpayIntegrationException e) {

@@ -3,6 +3,8 @@ package com.influora.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -21,6 +23,7 @@ import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.EscrowService.PagedEscrowHolds;
 import com.influora.web.dto.money.MoneyDtos.EscrowStatusResponse;
 import java.math.BigDecimal;
 import java.util.List;
@@ -32,6 +35,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 /** Task #10 — creator-scoped escrow read isolation (deal room payments tab). */
 @ExtendWith(MockitoExtension.class)
@@ -132,6 +139,48 @@ class EscrowServiceTest {
 
         assertEquals("ESCROW_NOT_FOUND", ex.getCode());
         assertEquals(404, ex.getStatus().value());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // listForWorkspace — GET /wallet/escrow (Vikram, N4)
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("listForWorkspace: returns brand-scoped escrow holds with the status-response shape and page meta")
+    void listForWorkspaceReturnsPagedHolds() {
+        EscrowHold hold = fundedHold();
+        Page<EscrowHold> page =
+                new PageImpl<>(
+                        List.of(hold),
+                        PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt")),
+                        1);
+        when(escrowHoldRepository.findByWorkspaceIdOrderByCreatedAtDesc(eq(WORKSPACE_ID), any()))
+                .thenReturn(page);
+
+        PagedEscrowHolds result = service.listForWorkspace(principal, WORKSPACE_ID, 1, 20);
+
+        assertEquals(1, result.items().size());
+        assertEquals(ESCROW_HOLD_ID, result.items().get(0).escrowHoldId());
+        assertEquals(EscrowStatus.FUNDED, result.items().get(0).status());
+        assertEquals(1, result.meta().page());
+        assertEquals(20, result.meta().limit());
+        assertEquals(1, result.meta().total());
+        assertEquals(false, result.meta().hasMore());
+        verify(brandContext).requireMember(principal, WORKSPACE_ID);
+    }
+
+    @Test
+    @DisplayName("listForWorkspace: clamps page < 1 and limit > 100 before querying")
+    void listForWorkspaceClampsPageAndLimit() {
+        Page<EscrowHold> emptyPage =
+                new PageImpl<>(List.of(), PageRequest.of(0, 100), 0);
+        when(escrowHoldRepository.findByWorkspaceIdOrderByCreatedAtDesc(eq(WORKSPACE_ID), any()))
+                .thenReturn(emptyPage);
+
+        PagedEscrowHolds result = service.listForWorkspace(principal, WORKSPACE_ID, 0, 500);
+
+        assertEquals(1, result.meta().page());
+        assertEquals(100, result.meta().limit());
     }
 
     @Test

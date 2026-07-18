@@ -50,6 +50,15 @@ public class Workspace {
     @Column(name = "billing_email")
     private String billingEmail;
 
+    /**
+     * Brand self-service Settings &gt; General &gt; Workspace Information ({@code
+     * WorkspaceService#updateMyWorkspace}, {@code PATCH /workspaces/me}). Added by
+     * V20260718180000__workspace_phone.sql — the Settings page's phone input had no backing column
+     * until this migration.
+     */
+    @Column(length = 30)
+    private String phone;
+
     @Column(name = "billing_address", length = 500)
     private String billingAddress;
 
@@ -171,6 +180,10 @@ public class Workspace {
         return billingEmail;
     }
 
+    public String getPhone() {
+        return phone;
+    }
+
     public String getBillingAddress() {
         return billingAddress;
     }
@@ -248,6 +261,54 @@ public class Workspace {
         this.websiteUrl = websiteUrl;
         this.description = description;
         this.logoUrl = logoUrl;
+        touch();
+    }
+
+    /**
+     * Admin-panel brand profile edit (AdminBrandController.update — PUT /admin/brands/{id}).
+     * Null-guarded partial update restricted to SAFE, non-money profile/contact fields ONLY:
+     * name (companyName), industry, companySize, and billingEmail (the contact/billing email).
+     * Deliberately CANNOT touch verificationStatus/suspended/gstin/pan or any balance/spend/fee
+     * field — those are out of the admin-editable allow-list and have dedicated flows
+     * ({@link #applyKycDecision}/{@link #suspend}/{@link #reinstate}/{@link #applyKyc}). Same
+     * null-guarded discipline as {@link #applyCompanyDetails}, but scoped to the admin allow-list
+     * (does not touch slug/type/websiteUrl/description/logoUrl). Callers (AdminBrandService)
+     * validate {@code companySize} against the closed STARTUP/SMB/ENTERPRISE union before passing
+     * it here.
+     */
+    public void applyAdminProfileEdit(
+            String name, String industry, String companySize, String billingEmail) {
+        if (name != null) this.name = name;
+        if (industry != null) this.industry = industry;
+        if (companySize != null) this.companySize = companySize;
+        if (billingEmail != null) this.billingEmail = billingEmail;
+        touch();
+    }
+
+    /**
+     * Brand self-service Settings &gt; General &gt; Workspace Information ({@code WorkspaceService
+     * #updateMyWorkspace}, {@code PATCH /workspaces/me}). Reuses the existing {@code billing_email}
+     * column as the workspace's general contact email — same email -&gt; billingEmail mapping
+     * precedent already established by {@link #applyAdminProfileEdit} (admin panel's {@code email}
+     * field). There is no separate "contact email" column; adding one is out of scope here (no
+     * fabricated columns per TECH-STACK.md rule 7). Full-replace, same semantics as {@link
+     * #applyCompanyDetails}: a blank/null value clears the stored email.
+     */
+    public void updateContactEmail(String billingEmail) {
+        this.billingEmail = (billingEmail == null || billingEmail.isBlank()) ? null : billingEmail;
+        touch();
+    }
+
+    /**
+     * Brand self-service Settings &gt; General &gt; Workspace Information ({@code WorkspaceService
+     * #updateMyWorkspace}, {@code PATCH /workspaces/me}). Backed by the {@code phone} column added in
+     * V20260718180000__workspace_phone.sql. Full-replace, same semantics as {@link
+     * #updateContactEmail}: a blank/null value clears the stored phone number. Format validation
+     * (allowed characters, digit-count range) happens in {@code WorkspaceService} before this is
+     * called — this setter does not validate.
+     */
+    public void updatePhone(String phone) {
+        this.phone = (phone == null || phone.isBlank()) ? null : phone;
         touch();
     }
 

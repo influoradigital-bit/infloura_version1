@@ -1,7 +1,10 @@
 package com.influora.domain.entity;
 
+import com.influora.domain.enums.AdminAuditLogSource;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -59,6 +62,12 @@ public class AdminAuditLog {
     @Column(name = "ip_address", nullable = false, length = 45)
     private String ipAddress;
 
+    /** Provenance discriminator (V20260718140000__admin_audit_log_source.sql) — see
+     * {@link AdminAuditLogSource} javadoc for why this exists. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = false, length = 20)
+    private AdminAuditLogSource source;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -102,6 +111,10 @@ public class AdminAuditLog {
 
     public String getIpAddress() {
         return ipAddress;
+    }
+
+    public AdminAuditLogSource getSource() {
+        return source;
     }
 
     public Instant getCreatedAt() {
@@ -162,6 +175,11 @@ public class AdminAuditLog {
 
         public Builder ipAddress(String ipAddress) {
             e.ipAddress = ipAddress;
+            return this;
+        }
+
+        public Builder source(AdminAuditLogSource source) {
+            e.source = source;
             return this;
         }
 

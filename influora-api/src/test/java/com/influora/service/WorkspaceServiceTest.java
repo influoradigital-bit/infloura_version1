@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -130,7 +131,7 @@ class WorkspaceServiceTest {
     }
 
     @Test
-    @DisplayName("updateMyWorkspace: OWNER/ADMIN required, applies details and saves")
+    @DisplayName("updateMyWorkspace: OWNER/ADMIN required, applies details + email and saves")
     void updateMyWorkspace_appliesAndSaves() {
         Workspace workspace = Workspace.newBrand(WORKSPACE_ID, "Old Name", "acme-co", "Retail", "1-10");
         WorkspaceMember actingMember =
@@ -141,10 +142,171 @@ class WorkspaceServiceTest {
 
         Workspace result =
                 service.updateMyWorkspace(
-                        principal, "New Name", "Fashion", "11-50", "https://acme.example", "desc", "https://logo");
+                        principal,
+                        "New Name",
+                        "contact@acme.example",
+                        "+1 (415) 555-0100",
+                        "Fashion",
+                        "11-50",
+                        "https://acme.example",
+                        "desc",
+                        "https://logo");
 
         assertEquals("New Name", result.getName());
         assertEquals("Fashion", result.getIndustry());
+        assertEquals("contact@acme.example", result.getBillingEmail());
+        assertEquals("+1 (415) 555-0100", result.getPhone());
         assertTrue(result.getUpdatedAt() != null);
+    }
+
+    @Test
+    @DisplayName("updateMyWorkspace: null/blank phone is accepted and clears the stored phone")
+    void updateMyWorkspace_blankPhone_clearsPhone() {
+        Workspace workspace = Workspace.newBrand(WORKSPACE_ID, "Old Name", "acme-co", "Retail", "1-10");
+        workspace.updatePhone("+1 415 555 0100");
+        WorkspaceMember actingMember =
+                WorkspaceMember.owner("01HMEMBEROWNER0000000", WORKSPACE_ID, USER_ID);
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(actingMember);
+        when(workspaceRepository.save(workspace)).thenReturn(workspace);
+
+        Workspace result =
+                service.updateMyWorkspace(
+                        principal, "New Name", "contact@acme.example", "  ", null, null, null, null, null);
+
+        assertEquals(null, result.getPhone());
+    }
+
+    @Test
+    @DisplayName("updateMyWorkspace: obviously malformed phone -> VALIDATION_ERROR, never saved")
+    void updateMyWorkspace_badPhone_rejected() {
+        Workspace workspace = Workspace.newBrand(WORKSPACE_ID, "Old Name", "acme-co", "Retail", "1-10");
+        WorkspaceMember actingMember =
+                WorkspaceMember.owner("01HMEMBEROWNER0000000", WORKSPACE_ID, USER_ID);
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(actingMember);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.updateMyWorkspace(
+                                        principal,
+                                        "New Name",
+                                        "contact@acme.example",
+                                        "123",
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null));
+
+        assertEquals("VALIDATION_ERROR", ex.getCode());
+        verify(workspaceRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateMyWorkspace: blank name -> VALIDATION_ERROR, never saved")
+    void updateMyWorkspace_blankName_rejected() {
+        Workspace workspace = Workspace.newBrand(WORKSPACE_ID, "Old Name", "acme-co", "Retail", "1-10");
+        WorkspaceMember actingMember =
+                WorkspaceMember.owner("01HMEMBEROWNER0000000", WORKSPACE_ID, USER_ID);
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(actingMember);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.updateMyWorkspace(
+                                        principal,
+                                        "   ",
+                                        "contact@acme.example",
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null));
+
+        assertEquals("VALIDATION_ERROR", ex.getCode());
+        verify(workspaceRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateMyWorkspace: malformed email -> VALIDATION_ERROR, never saved")
+    void updateMyWorkspace_badEmail_rejected() {
+        Workspace workspace = Workspace.newBrand(WORKSPACE_ID, "Old Name", "acme-co", "Retail", "1-10");
+        WorkspaceMember actingMember =
+                WorkspaceMember.owner("01HMEMBEROWNER0000000", WORKSPACE_ID, USER_ID);
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(actingMember);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.updateMyWorkspace(
+                                        principal,
+                                        "New Name",
+                                        "not-an-email",
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null));
+
+        assertEquals("VALIDATION_ERROR", ex.getCode());
+        verify(workspaceRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateMyWorkspace: non-OWNER/ADMIN member -> FORBIDDEN, never saved")
+    void updateMyWorkspace_insufficientRole_rejected() {
+        Workspace workspace = Workspace.newBrand(WORKSPACE_ID, "Old Name", "acme-co", "Retail", "1-10");
+        WorkspaceMember actingMember =
+                WorkspaceMember.fromInvite("01HMEMBERPLAIN000000", WORKSPACE_ID, USER_ID, MemberRole.MEMBER);
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(actingMember);
+        doThrow(new ApiException("FORBIDDEN", "Insufficient workspace permissions", org.springframework.http.HttpStatus.FORBIDDEN))
+                .when(brandContext)
+                .requireRole(actingMember, MemberRole.OWNER, MemberRole.ADMIN);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.updateMyWorkspace(
+                                        principal, "New Name", "contact@acme.example", null, null, null, null, null));
+
+        assertEquals("FORBIDDEN", ex.getCode());
+        verify(workspaceRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateMyWorkspace: caller has no active membership in their own workspace -> FORBIDDEN, never saved")
+    void updateMyWorkspace_notAMember_rejected() {
+        // Simulates a race/edge case where requireBrandWorkspace resolves a workspace (e.g. from a
+        // JWT-stamped workspaceId) but the caller's membership row is no longer active — requireMember
+        // is the actual gate that confirms current membership before any mutation is allowed.
+        Workspace workspace = Workspace.newBrand(WORKSPACE_ID, "Old Name", "acme-co", "Retail", "1-10");
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID))
+                .thenThrow(
+                        new ApiException(
+                                "FORBIDDEN",
+                                "You are not a member of this workspace",
+                                org.springframework.http.HttpStatus.FORBIDDEN));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.updateMyWorkspace(
+                                        principal, "New Name", "contact@acme.example", null, null, null, null, null));
+
+        assertEquals("FORBIDDEN", ex.getCode());
+        verify(workspaceRepository, never()).save(any());
     }
 }

@@ -2,6 +2,7 @@ package com.influora.domain.entity;
 
 import com.influora.domain.enums.CreatorApplicationStatus;
 import com.influora.domain.enums.CreatorTaxRegistrationStatus;
+import com.influora.domain.enums.CreatorTier;
 import com.influora.domain.enums.VerificationStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -118,6 +119,22 @@ public class CreatorProfile {
 
     @Column(name = "application_rejection_reason", length = 1000)
     private String applicationRejectionReason;
+
+    /**
+     * Admin-panel tier override (V20260718160000). NULL = "no override — fall back to the
+     * follower-count-derived tier" (see {@code AdminCreatorService.deriveTier}). {@code
+     * tier_adjusted_by} is an {@code admin_users.id} FK, never {@code users.id} — mirrors the
+     * suspended_by/reviewed_by admin-attribution convention on this entity.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tier_override", length = 20)
+    private CreatorTier tierOverride;
+
+    @Column(name = "tier_adjusted_by", length = 26)
+    private String tierAdjustedBy;
+
+    @Column(name = "tier_adjusted_at")
+    private Instant tierAdjustedAt;
 
     /**
      * D14 (2026-07-15) creator tax identity — V20260715120000__creator_tax_identity.sql.
@@ -317,6 +334,18 @@ public class CreatorProfile {
         return applicationRejectionReason;
     }
 
+    public CreatorTier getTierOverride() {
+        return tierOverride;
+    }
+
+    public String getTierAdjustedBy() {
+        return tierAdjustedBy;
+    }
+
+    public Instant getTierAdjustedAt() {
+        return tierAdjustedAt;
+    }
+
     public String getGstin() {
         return gstin;
     }
@@ -464,6 +493,36 @@ public class CreatorProfile {
         this.applicationReviewedAt = Instant.now();
         this.applicationRejectionReason =
                 toStatus == CreatorApplicationStatus.REJECTED ? reason : null;
+        touch();
+    }
+
+    /**
+     * Admin-panel creator profile edit (AdminCreatorController.update — PUT /admin/creators/{id}).
+     * Null-guarded partial update restricted to SAFE profile fields ONLY: displayName (name) and
+     * categoriesJson (niche). Deliberately CANNOT touch applicationStatus/suspended/tierOverride/
+     * rate/currency/verified/engagementRate/totalFollowers or any money/computed-metric field —
+     * application review, suspension and tier have dedicated flows, and follower/engagement/quality
+     * numbers are aggregated from real metrics, never admin free-set. Narrower than {@link
+     * #applySelfEdit} (creator self-service) by design — this is the admin allow-list.
+     */
+    public void applyAdminProfileEdit(String displayName, String categoriesJson) {
+        if (displayName != null) this.displayName = displayName;
+        if (categoriesJson != null) this.categoriesJson = categoriesJson;
+        touch();
+    }
+
+    /**
+     * Admin-panel creator tier override (AdminCreatorController tier-adjust — PUT
+     * /admin/creators/{id}/tier). Persists an explicit admin-chosen tier that wins over the
+     * follower-count-derived default at read time. {@code adminId} is always server-derived from
+     * the caller's {@code AuthPrincipal}, never client-supplied (mirrors {@link
+     * #applyApplicationDecision}'s attribution rule). The service validates {@code newTier} against
+     * the {@link CreatorTier} enum before calling this.
+     */
+    public void applyTierAdjustment(CreatorTier newTier, String adminId) {
+        this.tierOverride = newTier;
+        this.tierAdjustedBy = adminId;
+        this.tierAdjustedAt = Instant.now();
         touch();
     }
 

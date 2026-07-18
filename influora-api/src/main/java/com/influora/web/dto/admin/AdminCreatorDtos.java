@@ -92,4 +92,35 @@ public final class AdminCreatorDtos {
     public record SuspendRequest(@NotBlank @Size(max = 500) String reason) {}
 
     public record ReinstateRequest(@NotBlank @Size(max = 500) String reason) {}
+
+    /**
+     * PUT /admin/creators/{id} ({@code creatorApi.update} — api-contracts.ts:244-248). SAFE profile
+     * fields ONLY: {@code name} (creator_profiles.display_name) and {@code niche}
+     * (creator_profiles.categories). Both optional ({@code Partial<Creator>} — absent/null means
+     * "leave unchanged", enforced by the null-guarded {@code CreatorProfile.applyAdminProfileEdit}).
+     * Deliberately excludes applicationStatus/isSuspended/tier/followers/engagementRate/qualityScore/
+     * instagramVerified/email — application review, suspension and tier have dedicated flows; the
+     * rest are computed metrics (aggregated from real platform stats / scoring jobs) or auth
+     * identity (email lives on {@code users}, not this profile), never free-form admin-editable.
+     * Any out-of-allow-list JSON property is dropped by Jackson — the record shape IS the
+     * allow-list, never a blind copy onto the entity.
+     */
+    public record UpdateCreatorRequest(@Size(max = 100) String name, List<String> niche) {}
+
+    /**
+     * PUT /admin/creators/{id}/tier ({@code creatorApi.adjustTier} — api-contracts.ts:256-260).
+     * {@code newTier} is validated against the {@code CreatorTier} enum server-side (NANO/MICRO/MID/
+     * MACRO); {@code reason} mandatory, min 10 chars (same money/identity-path convention as the
+     * billing DTOs). {@code creatorId} mirrors {@code CreatorTierAdjustment}'s shape but is
+     * IGNORED server-side — the path variable is the only trusted id source (same discipline as
+     * {@code ReviewApplicationRequest.creatorId}). {@code newQualityScore} is accepted for wire
+     * compatibility with the frontend type but intentionally NOT persisted — qualityScore is a
+     * computed metric ({@code CreatorScore}/{@code ScoreCalculationJob}), never an admin free-set
+     * value.
+     */
+    public record AdjustTierRequest(
+            String creatorId,
+            @NotBlank String newTier,
+            Double newQualityScore,
+            @NotBlank @Size(min = 10, max = 500) String reason) {}
 }

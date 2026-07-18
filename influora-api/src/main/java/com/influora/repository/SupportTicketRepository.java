@@ -28,4 +28,11 @@ public interface SupportTicketRepository
      * ops, not tickets resolved a year ago.
      */
     List<SupportTicket> findByResolvedAtIsNotNullAndResolvedAtAfter(Instant since);
+
+    /**
+     * All-time resolved-ticket set for {@code AdminSupportService.getStats}'s {@code
+     * avgResolutionTime} figure — unlike {@link #findByResolvedAtIsNotNullAndResolvedAtAfter}'s
+     * 30-day dashboard-KPI window, the support-stats endpoint reports an all-time average.
+     */
+    List<SupportTicket> findByResolvedAtIsNotNull();
 }

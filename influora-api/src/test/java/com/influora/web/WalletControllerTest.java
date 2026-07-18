@@ -2,9 +2,12 @@ package com.influora.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
 import com.influora.common.PageMeta;
 import com.influora.security.AuthPrincipal;
@@ -15,6 +18,8 @@ import com.influora.service.WalletTopUpService;
 import com.influora.service.WalletService.PagedWalletTransactions;
 import com.influora.web.dto.money.MoneyDtos.CreatorWithdrawRequest;
 import com.influora.web.dto.money.MoneyDtos.CreatorWithdrawResponse;
+import com.influora.web.dto.money.MoneyDtos.WalletTopUpRequest;
+import com.influora.web.dto.money.MoneyDtos.WalletTopUpResponse;
 import com.influora.web.dto.money.MoneyDtos.WalletTransactionRowResponse;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -48,12 +53,12 @@ class WalletControllerTest {
     controller =
         new WalletController(
             walletService, walletTopUpService, brandContext, creatorContext, creatorBankAccountService);
-    when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
   }
 
   @Test
   @DisplayName("POST /wallet/withdraw delegates to service with principal userId and returns 201")
   void testWithdrawDelegatesToService() {
+    when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
     CreatorWithdrawRequest body = new CreatorWithdrawRequest(new BigDecimal("2000.00"));
     CreatorWithdrawResponse serviceResponse = new CreatorWithdrawResponse("payout-abc");
     when(walletService.requestCreatorWithdrawal(CREATOR_USER_ID, body.amount(), "idem-1"))
@@ -72,6 +77,7 @@ class WalletControllerTest {
   @Test
   @DisplayName("GET /wallet/transactions delegates to service with paging params")
   void testTransactionsDelegatesToService() {
+    when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
     WalletTransactionRowResponse row =
         new WalletTransactionRowResponse(
             "txn-1",
@@ -97,5 +103,49 @@ class WalletControllerTest {
     assertEquals(1, response.getBody().meta().page());
     verify(creatorContext).requireCreator(principal);
     verify(walletService).getTransactionsForUser(CREATOR_USER_ID, 1, 20);
+  }
+
+  @Test
+  @DisplayName("POST /wallet/topup delegates to WalletTopUpService with the Idempotency-Key header")
+  void testTopUpDelegatesToService() {
+    WalletTopUpRequest body = new WalletTopUpRequest(new BigDecimal("1000.00"), null, null);
+    WalletTopUpResponse serviceResponse =
+        new WalletTopUpResponse("tu-1", body.amount(), "INR", "order_abc", "PENDING");
+    when(walletTopUpService.initiateTopUp(principal, body.amount(), null, null, "idem-1"))
+        .thenReturn(serviceResponse);
+
+    ApiResponse<WalletTopUpResponse> response = controller.topUp(principal, "idem-1", body);
+
+    assertNotNull(response);
+    assertEquals("tu-1", response.data().topUpId());
+    assertEquals("order_abc", response.data().razorpayOrderId());
+    verify(walletTopUpService).initiateTopUp(principal, body.amount(), null, null, "idem-1");
+  }
+
+  @Test
+  @DisplayName("POST /wallet/topup rejects a missing Idempotency-Key header before calling the service")
+  void testTopUpRejectsMissingIdempotencyKey() {
+    WalletTopUpRequest body = new WalletTopUpRequest(new BigDecimal("1000.00"), null, null);
+
+    ApiException ex =
+        assertThrows(ApiException.class, () -> controller.topUp(principal, null, body));
+
+    assertEquals("IDEMPOTENCY_KEY_REQUIRED", ex.getCode());
+    assertEquals(400, ex.getStatus().value());
+    verify(walletTopUpService, never())
+        .initiateTopUp(principal, body.amount(), body.pan(), body.gstin(), null);
+  }
+
+  @Test
+  @DisplayName("POST /wallet/topup rejects a blank Idempotency-Key header before calling the service")
+  void testTopUpRejectsBlankIdempotencyKey() {
+    WalletTopUpRequest body = new WalletTopUpRequest(new BigDecimal("1000.00"), null, null);
+
+    ApiException ex =
+        assertThrows(ApiException.class, () -> controller.topUp(principal, "  ", body));
+
+    assertEquals("IDEMPOTENCY_KEY_REQUIRED", ex.getCode());
+    verify(walletTopUpService, never())
+        .initiateTopUp(principal, body.amount(), body.pan(), body.gstin(), "  ");
   }
 }

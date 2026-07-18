@@ -1,5 +1,9 @@
 package com.influora.common;
 
+import com.influora.domain.enums.ErrorLogSeverity;
+import com.influora.security.AuthPrincipal;
+import com.influora.service.ErrorLogService;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +14,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -20,6 +26,12 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    private final ErrorLogService errorLogService;
+
+    public GlobalExceptionHandler(ErrorLogService errorLogService) {
+        this.errorLogService = errorLogService;
+    }
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiResponse<Void>> handleApi(ApiException ex) {
@@ -81,10 +93,45 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<Void>> handleGeneric(Exception ex) {
+    public ResponseEntity<ApiResponse<Void>> handleGeneric(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception", ex);
+        // Best-effort persist for the admin error-log console. Runs in its own REQUIRES_NEW
+        // transaction and never throws internally — see ErrorLogService. Only this catch-all 500 path
+        // is captured; the 4xx/409 handlers above are expected/validation outcomes, not server faults.
+        // Kabir L-2 — ErrorLogService.record swallows its own body exceptions, but the REQUIRES_NEW
+        // transaction COMMITS at the proxy boundary as this call returns; a commit-time failure there
+        // would escape the @ExceptionHandler and degrade our clean JSON 500 into a raw container 500.
+        // Wrap it (log-and-swallow) so the handler ALWAYS returns its envelope below.
+        try {
+            errorLogService.record(
+                    ErrorLogSeverity.ERROR,
+                    ex,
+                    request != null ? request.getRequestURI() : null,
+                    request != null ? request.getMethod() : null,
+                    HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                    currentUserId());
+        } catch (Exception logFailure) {
+            log.warn("error_log persist failed at commit boundary (swallowed): {}", logFailure.toString());
+        }
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.fail(ApiErrorBody.of("INTERNAL_ERROR", "An unexpected error occurred")));
+    }
+
+    /**
+     * Best-effort principal id for the error-log row. Returns {@code null} for anonymous/unauthenticated
+     * requests or if the security context is unavailable — never throws, since it runs on an
+     * already-failing request path.
+     */
+    private String currentUserId() {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof AuthPrincipal principal) {
+                return principal.getUserId();
+            }
+        } catch (Exception ignored) {
+            // fall through to null
+        }
+        return null;
     }
 
     private ApiErrorBody.FieldError toFieldError(FieldError fe) {

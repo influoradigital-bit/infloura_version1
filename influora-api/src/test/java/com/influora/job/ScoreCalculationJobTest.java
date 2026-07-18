@@ -239,9 +239,11 @@ class ScoreCalculationJobTest {
 
         CreatorProfile creator = createTestProfile(CREATOR_ID, "[\"FASHION\"]");
         when(creatorProfileRepository.findAll(any(Specification.class))).thenReturn(List.of(creator));
-        // (With a single discoverable creator the staleness sort short-circuits, so no
-        // findFirstByCreatorProfileIdOrderByTimeDesc lookup is issued — the creator is targeted
-        // directly; see testBrandSafetyPrioritisesStalest for the multi-creator ordering path.)
+        // Selection materializes the staleness key once per creator up front (see
+        // selectBrandSafetyTargets javadoc) — never scored yet, so this sorts first regardless of
+        // pool size.
+        when(creatorScoreRepository.findFirstByCreatorProfileIdOrderByTimeDesc(CREATOR_ID))
+                .thenReturn(Optional.empty());
 
         CreatorMetric metric = createTestMetric(CREATOR_ID);
         when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
@@ -279,6 +281,10 @@ class ScoreCalculationJobTest {
         assertEquals(BigDecimal.valueOf(88.00).setScale(2), saved.getBrandSafetyScore());
         assertEquals("[\"Debated Sensitive Social Issue\"]", saved.getGarmFlagsJson());
         assertEquals(BigDecimal.valueOf(0.25).setScale(2), saved.getContentSentiment());
+        // Regression guard (Kavya/Kabir finding): the staleness key must be queried exactly once per
+        // creator, never re-queried per comparator invocation during the sort.
+        verify(creatorScoreRepository, times(1))
+                .findFirstByCreatorProfileIdOrderByTimeDesc(CREATOR_ID);
     }
 
     @Test
@@ -381,6 +387,13 @@ class ScoreCalculationJobTest {
         verify(brandSafetyScoreService).scoreCreator(eq(neverScored), any());
         verify(brandSafetyScoreService, never()).scoreCreator(eq(recent), any());
         verify(brandSafetyScoreService, never()).scoreCreator(eq(stale), any());
+        // Regression guard (Kavya/Kabir finding): each creator's staleness key is queried EXACTLY
+        // once, regardless of how many pairwise comparisons the sort performs over the 3-creator
+        // pool — proves selection no longer re-queries the DB per comparator invocation.
+        verify(creatorScoreRepository, times(1)).findFirstByCreatorProfileIdOrderByTimeDesc(recent);
+        verify(creatorScoreRepository, times(1)).findFirstByCreatorProfileIdOrderByTimeDesc(stale);
+        verify(creatorScoreRepository, times(1))
+                .findFirstByCreatorProfileIdOrderByTimeDesc(neverScored);
     }
 
     private CreatorScore scoreWithBrandSafety(String creatorProfileId, Instant computedAt) {

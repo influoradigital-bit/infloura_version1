@@ -39,7 +39,11 @@ import org.springframework.scheduling.annotation.EnableScheduling;
     CompanyTaxProperties.class,
     AnalyzeSiteAiProperties.class,
     ClamAvProperties.class,
-    // Wave 3 task A4 -- Meera's real model turn (MeeraChatAiClient -> influora-ai POST /chat).
+    // Streaming-first refactor (Priya, Wave 2): MeeraChatAiClient (the synchronous Java->Python
+    // /chat caller this property class configured) was retired -- the browser now streams
+    // directly from influora-ai's /chat with its own on-behalf JWT. This properties class is
+    // kept registered only because SecretsStartupValidator#validateAiServiceUrls still checks
+    // its base-url isn't a prod-unsafe localhost default; no runtime code reads it anymore.
     MeeraChatAiProperties.class,
     // Brand-safety scoring feature flag + per-run cap (Priya ruling) — gates whether
     // ScoreCalculationJob calls BrandSafetyScoreService. Injected by @Component

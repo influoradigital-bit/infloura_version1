@@ -33,16 +33,34 @@ public class MetaGraphApiClient {
 
     private final MetaApiProperties props;
     private final MetaRateLimitTracker rateLimitTracker;
-    private final RestClient restClient;
+
+    // Built on first use, not in the constructor: RestClient.build() spins up the underlying
+    // JDK HttpClient (selector thread + NIO pipe), and doing that at bean-construction time
+    // makes application BOOT depend on outbound-HTTP plumbing this class may never use in a
+    // given deployment. Meta calls only happen after a user connects an account, so the first
+    // caller pays the (tiny) construction cost instead of every startup risking it.
+    private volatile RestClient restClient;
 
     public MetaGraphApiClient(MetaApiProperties props, MetaRateLimitTracker rateLimitTracker) {
         this.props = props;
         this.rateLimitTracker = rateLimitTracker;
-        this.restClient =
-                RestClient.builder()
-                        .baseUrl(BASE_URL + "/" + props.getGraphApiVersion())
-                        .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-                        .build();
+    }
+
+    private RestClient restClient() {
+        RestClient client = restClient;
+        if (client == null) {
+            synchronized (this) {
+                if (restClient == null) {
+                    restClient =
+                            RestClient.builder()
+                                    .baseUrl(BASE_URL + "/" + props.getGraphApiVersion())
+                                    .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+                                    .build();
+                }
+                client = restClient;
+            }
+        }
+        return client;
     }
 
     /**
@@ -68,7 +86,7 @@ public class MetaGraphApiClient {
 
         try {
             ResponseEntity<T> response =
-                    restClient
+                    restClient()
                             .get()
                             .uri(
                                     uriBuilder ->

@@ -2,6 +2,7 @@ package com.influora.web;
 
 import com.influora.common.ApiResponse;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.DealMessageStreamRegistry;
 import com.influora.service.DealService;
 import com.influora.service.DisputeService;
 import com.influora.web.dto.dispute.DisputeDtos.DisputeResponse;
@@ -15,6 +16,7 @@ import com.influora.web.dto.deal.DealDtos.RejectRequest;
 import com.influora.web.dto.deal.DealDtos.SendMessageRequest;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.DeliverableListItem;
 import jakarta.validation.Valid;
+import java.io.IOException;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * Task #9 — unified deal room for brand + creator. Backed by {@link
@@ -40,10 +43,15 @@ public class DealController {
 
     private final DealService dealService;
     private final DisputeService disputeService;
+    private final DealMessageStreamRegistry messageStreamRegistry;
 
-    public DealController(DealService dealService, DisputeService disputeService) {
+    public DealController(
+            DealService dealService,
+            DisputeService disputeService,
+            DealMessageStreamRegistry messageStreamRegistry) {
         this.dealService = dealService;
         this.disputeService = disputeService;
+        this.messageStreamRegistry = messageStreamRegistry;
     }
 
     @GetMapping
@@ -99,6 +107,35 @@ public class DealController {
             @PathVariable String dealId,
             @RequestParam(required = false) String before) {
         return ResponseEntity.ok(ApiResponse.ok(dealService.listMessages(principal, dealId, before)));
+    }
+
+    /**
+     * Realtime deal-message stream (SSE, consistent with the existing Meera {@code /chat}
+     * stream — Priya's architecture call, not WebSocket). Frontend contract: consumed via
+     * fetch-based SSE with a standard {@code Authorization: Bearer <token>} header (like {@code
+     * useMeeraStream}), NOT raw {@code EventSource} — so the token is never required in the query
+     * string. Emits the SAME {@link DealMessageResponse} shape {@code GET /{dealId}/messages}
+     * already returns, as named SSE events ({@code event: deal-message}). Authorization runs
+     * FIRST and reuses {@link DealService#authorizeMessageStream}, itself a thin wrapper around
+     * the exact ownership check {@link DealService#listMessages}/{@link DealService#sendMessage}
+     * use — an unauthorized caller gets the normal 404/403 JSON error and no emitter is ever
+     * created or registered.
+     */
+    @GetMapping("/{dealId}/messages/stream")
+    public SseEmitter streamMessages(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String dealId) {
+        dealService.authorizeMessageStream(principal, dealId);
+
+        SseEmitter emitter = new SseEmitter(DealMessageStreamRegistry.EMITTER_TIMEOUT_MS);
+        messageStreamRegistry.register(dealId, emitter);
+        try {
+            // Heartbeat comment (":...") so the connection opens cleanly — a bare comment line
+            // is valid SSE and doesn't fire the client's onmessage handler.
+            emitter.send(SseEmitter.event().comment("connected"));
+        } catch (IOException ex) {
+            emitter.completeWithError(ex);
+        }
+        return emitter;
     }
 
     @PostMapping("/{dealId}/messages")

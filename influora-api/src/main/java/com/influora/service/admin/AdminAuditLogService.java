@@ -5,6 +5,7 @@ import com.influora.common.ApiException;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.AdminAuditLog;
 import com.influora.domain.entity.AdminUser;
+import com.influora.domain.enums.AdminAuditLogSource;
 import com.influora.domain.enums.AdminRole;
 import com.influora.repository.AdminAuditLogRepository;
 import com.influora.repository.AdminAuditLogSpecs;
@@ -88,6 +89,10 @@ public class AdminAuditLogService {
 
     private static final int MAX_REASON_LENGTH = 2000;
 
+    /** Length cap for client-submitted {@code oldValue}/{@code newValue} strings — see {@link
+     * #recordClientEntry}'s javadoc for why these aren't run through {@link #allowlistedJson}. */
+    private static final int MAX_CLIENT_VALUE_LENGTH = 4000;
+
     /** Mirrors {@code AuditAction} in src/admin/utils/auditLogger.ts. */
     private static final Set<String> ALLOWED_ACTIONS =
             Set.of(
@@ -149,6 +154,15 @@ public class AdminAuditLogService {
                             Set.of(
                                     "id",
                                     "name",
+                                    // Vikram, brand profile-edit path (PUT /admin/brands/{id}):
+                                    // industry/size/email are non-secret contact/profile fields
+                                    // deliberately added to log old->new on an admin profile edit.
+                                    // Kabir: confirm these three are safe to persist in the audit
+                                    // trail (they are plain contact/profile values already returned
+                                    // in BrandDetailDto — no PII beyond the billing email).
+                                    "industry",
+                                    "size",
+                                    "email",
                                     "verificationStatus",
                                     "isSuspended",
                                     "suspendedReason",
@@ -157,7 +171,17 @@ public class AdminAuditLogService {
                     "SUPPORT_TICKET", Set.of("id", "status", "priority", "assignedTo", "category"),
                     "CONTENT_FLAG",
                             Set.of("id", "status", "actionTaken", "contentType", "contentId"),
-                    "CREATOR", Set.of("id", "isSuspended", "applicationStatus", "tier"),
+                    // "tier" backs the TIER_ADJUST action (PUT /admin/creators/{id}/tier);
+                    // "name"/"niche" back the creator profile-edit path (PUT /admin/creators/{id})
+                    // — Vikram. Both are non-secret profile fields already returned in
+                    // CreatorDetailDto. Kabir: confirm safe to persist in the audit trail.
+                    "CREATOR", Set.of("id", "isSuspended", "applicationStatus", "tier", "name", "niche"),
+                    // Vikram, campaign budget-override path (POST /admin/brands/{id}/campaigns/
+                    // {campaignId}/budget-override) — MONEY PATH. No secrets on the campaign budget
+                    // fields; explicit allow-list per Rule 2 rather than a raw entity dump. The
+                    // override writes "budget" (== budgetMax); budgetMin/budgetMax/status are listed
+                    // for any future campaign audit writer. Kabir: money-path — verify.
+                    "CAMPAIGN", Set.of("id", "budget", "budgetMin", "budgetMax", "status"),
                     // PlatformFeeAdminService (wiki/decisions/admin-pending-tasks-directive.md
                     // item #5) — no secrets on this entity, but still explicit allow-list per
                     // Rule 2 discipline rather than a raw entity dump.
@@ -240,6 +264,123 @@ public class AdminAuditLogService {
     }
 
     /**
+     * {@code POST /admin/audit} write path (backs {@code AuditLogController#create} and the
+     * client-side best-effort logger {@code src/admin/utils/auditLogger.ts}). That utility's own
+     * header comment marks this as a "convenience/queue trail," explicitly NOT the
+     * compliance-critical path — the source-of-truth writes are {@link #record}, called
+     * server-internally right after each real mutation (e.g. {@code PlatformFeeAdminService
+     * #update}). So this method mirrors {@link #record}'s Rule 5 ("never throws for a write
+     * problem, log and drop instead") for everything EXCEPT the role gate below — a lost
+     * convenience-trail row is not a compliance gap, but an unauthorized caller still gets a
+     * clean 403, same as {@link #list}/{@link #getByEntity}.
+     *
+     * <p><b>Role-gating:</b> SUPER_ADMIN only — same gate as the read side on this controller
+     * (see class javadoc "Read side" note), not the broader SUPER_ADMIN+ADMIN allow-list used
+     * elsewhere in the admin surface.
+     *
+     * <p><b>Rule 1 (server-derived identity) still applies in full:</b> the caller-supplied
+     * {@code adminId} on {@code CreateAuditLogEntryRequest} is never read here — {@code id}/
+     * {@code adminEmail}/{@code ipAddress}/{@code timestamp} are always re-derived from {@code
+     * actingAdmin} and {@code request}, exactly like {@link #doRecord}, so a compromised or
+     * careless client can't forge attribution on its own audit rows.
+     *
+     * <p>Unlike {@link #record}, {@code oldValue}/{@code newValue} here are the client's own
+     * pre-serialized strings ({@code AuditLogEntry.oldValue}/{@code .newValue}: {@code string},
+     * not a structured diff — see {@code auditLogger.ts}'s {@code serializeAuditValue}). Rule 2's
+     * per-entity-type field allow-list is a map-shaped filter that doesn't apply to an opaque
+     * client string, so instead of routing through {@link #allowlistedJson}, this just
+     * length-caps both fields defensively via {@link #truncate}.
+     */
+    public void recordClientEntry(
+            AuthPrincipal actingAdmin,
+            HttpServletRequest request,
+            String action,
+            String entityType,
+            String entityId,
+            String oldValue,
+            String newValue,
+            String reason) {
+        adminContext.requireRoleWithMfaSatisfied(actingAdmin, AdminRole.SUPER_ADMIN);
+
+        try {
+            // Kabir 2.3 (log injection): action/entityType are rejected/unrecognized-input values
+            // (the very case where a client is most likely to be probing), so strip CR/LF before
+            // they ever reach a log line — otherwise an attacker can forge fake log entries by
+            // embedding newlines in either field.
+            if (!ALLOWED_ACTIONS.contains(action)) {
+                log.warn(
+                        "admin_audit_log (client POST) dropped — unrecognized action: {}",
+                        sanitizeForLog(action));
+                return;
+            }
+            if (!ALLOWED_ENTITY_TYPES.contains(entityType)) {
+                log.warn(
+                        "admin_audit_log (client POST) dropped — unrecognized entityType: {}",
+                        sanitizeForLog(entityType));
+                return;
+            }
+
+            AdminUser admin =
+                    adminUserRepository
+                            .findById(actingAdmin.getUserId())
+                            .orElseThrow(
+                                    () ->
+                                            new IllegalStateException(
+                                                    "admin_audit_log: acting admin not found: "
+                                                            + actingAdmin.getUserId()));
+
+            // Kabir 2.2 (defense-in-depth): strip raw ASCII control chars from the client-supplied
+            // free-text fields before persisting, in addition to the existing length caps — these
+            // render back out in the admin audit viewer, and a control char (e.g. a terminal
+            // escape sequence) has no legitimate reason to be in an audit note.
+            AdminAuditLog entry =
+                    AdminAuditLog.builder()
+                            .id(Ulids.newUlid())
+                            .adminId(admin.getId())
+                            .adminEmail(admin.getEmail())
+                            .action(action)
+                            .entityType(entityType)
+                            .entityId(entityId)
+                            .oldValueJson(truncate(stripControlChars(oldValue), MAX_CLIENT_VALUE_LENGTH))
+                            .newValueJson(truncate(stripControlChars(newValue), MAX_CLIENT_VALUE_LENGTH))
+                            .reason(truncate(stripControlChars(reason), MAX_REASON_LENGTH))
+                            .ipAddress(clientIp(request))
+                            // Kabir 2.1: this is the client-submitted POST /admin/audit path — the
+                            // row is NOT proof a mutation actually happened, unlike #record below.
+                            .source(AdminAuditLogSource.CLIENT_REPORTED)
+                            .build();
+
+            adminAuditLogRepository.save(entry);
+        } catch (Exception e) {
+            // Rule 5: same never-propagate contract as record() — see javadoc above for why this
+            // convenience trail's write failures don't need to be compliance-critical.
+            log.error(
+                    "admin_audit_log (client POST) write FAILED — action={} entityType={} entityId={} adminUserId={}",
+                    action,
+                    entityType,
+                    entityId,
+                    actingAdmin != null ? actingAdmin.getUserId() : null,
+                    e);
+        }
+    }
+
+    private static String truncate(String value, int maxLength) {
+        return value != null && value.length() > maxLength ? value.substring(0, maxLength) : value;
+    }
+
+    /** Kabir 2.3: replaces CR/LF with '_' so a client-supplied value can never forge a fake log line. */
+    private static String sanitizeForLog(String value) {
+        return value == null ? null : value.replaceAll("[\\r\\n]", "_");
+    }
+
+    /** Kabir 2.2: strips raw ASCII control chars (0x00-0x1F, 0x7F, includes CR/LF) — audit
+     * free-text fields have no legitimate reason to carry them. Applied on top of, not instead
+     * of, the existing length caps. */
+    private static String stripControlChars(String value) {
+        return value == null ? null : value.replaceAll("[\\x00-\\x1F\\x7F]", "");
+    }
+
+    /**
      * {@code GET /admin/audit} — filtered, paginated audit trail. SUPER_ADMIN only (see class
      * javadoc "Read side" note). {@code startDate}/{@code endDate} are ISO-8601 instants, same
      * parse convention as {@code AnalyticsController#parseInstant} (400 {@code
@@ -305,6 +446,7 @@ public class AdminAuditLogService {
                 entry.getNewValueJson(),
                 entry.getReason(),
                 entry.getIpAddress(),
+                entry.getSource() != null ? entry.getSource().name() : null,
                 entry.getCreatedAt());
     }
 
@@ -371,6 +513,10 @@ public class AdminAuditLogService {
                         .newValueJson(allowlistedJson(entityType, newValueAllowed))
                         .reason(reasonTruncated)
                         .ipAddress(ipAddress)
+                        // Kabir 2.1: this is the server-internal path, always called right after
+                        // the real mutation it documents has already been persisted — the
+                        // authoritative source, as opposed to recordClientEntry's CLIENT_REPORTED.
+                        .source(AdminAuditLogSource.SERVER_INTERNAL)
                         .build();
 
         adminAuditLogRepository.save(entry);

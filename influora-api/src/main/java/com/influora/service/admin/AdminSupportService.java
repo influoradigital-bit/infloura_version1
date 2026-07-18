@@ -17,10 +17,12 @@ import com.influora.repository.SupportTicketSpecs;
 import com.influora.repository.UserRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.web.dto.admin.AdminSupportDtos.PagedTicketsDto;
+import com.influora.web.dto.admin.AdminSupportDtos.SupportStatsDto;
 import com.influora.web.dto.admin.AdminSupportDtos.TicketDetailDto;
 import com.influora.web.dto.admin.AdminSupportDtos.TicketMessageDto;
 import com.influora.web.dto.admin.AdminSupportDtos.TicketSummaryDto;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import org.springframework.data.domain.Page;
@@ -41,9 +43,8 @@ import org.springframework.transaction.annotation.Transactional;
  * TicketDetail}/{@code TicketMessage}/{@code TicketFilters} in {@code admin.types.ts} rather than
  * a specific component's stubbed handlers. {@code supportApi.escalate} is now built (a live caller
  * — {@code src/admin/components/support/TicketList.tsx}'s escalate mutation/dialog — showed up in
- * a later cycle, see {@link #escalate}). {@code supportApi.getStats} remains NOT built — still no
- * frontend caller needs it, same "flagged as follow-up, not silently forgotten" pattern used by
- * every other {@code Admin*Service}.
+ * a later cycle, see {@link #escalate}). {@code supportApi.getStats} is now built too — see
+ * {@link #getStats}.
  *
  * <p><b>Entity reuse:</b> {@link SupportTicket} (read-only until this cycle, see its class
  * javadoc) and the new {@link SupportTicketMessage} map directly onto {@code support_tickets}/
@@ -255,6 +256,50 @@ public class AdminSupportService {
                 reason);
 
         return toDetailDto(ticket);
+    }
+
+    /**
+     * Backs {@code supportApi.getStats()} (api-contracts.ts lines 526-533) via {@code
+     * AdminSupportStatsController}, mounted at {@code /admin/support} (not this class's
+     * {@code /admin/support/tickets} controller) purely so the route resolves to the frontend's
+     * expected {@code /admin/support/stats} rather than {@code /admin/support/tickets/stats} —
+     * see that controller's class javadoc. Same role gate as {@link #list}/{@link #getById}.
+     *
+     * <p>{@code open}/{@code inProgress}/{@code waitingUser} are real counts (one {@code
+     * countByStatusIn} call per status). {@code avgResolutionTime} (hours) is a real mean of
+     * {@code resolvedAt - createdAt} across every resolved ticket, all-time — same duration
+     * definition {@code AdminDashboardService.avgReviewTimeHours} uses, just unwindowed (this is
+     * a support-team stats snapshot, not a rolling 30-day dashboard KPI).
+     *
+     * <p>{@code avgResponseTime} is an honest {@code 0}, not fabricated: {@link SupportTicket} has
+     * no first-admin-reply timestamp column (only {@code resolvedAt}). Deriving "time to first
+     * admin reply" would mean scanning every ticket's message thread via {@link
+     * SupportTicketMessageRepository} per ticket — real but out of this cycle's scope. Follow-up:
+     * stamp a {@code first_responded_at} column in {@link #reply}, same pattern {@code resolvedAt}
+     * uses in {@link SupportTicket#updateStatus}.
+     */
+    @Transactional(readOnly = true)
+    public SupportStatsDto getStats(AuthPrincipal principal) {
+        adminContext.requireRoleWithMfaSatisfied(
+                principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.SUPPORT);
+
+        long open = supportTicketRepository.countByStatusIn(List.of(TicketStatus.OPEN));
+        long inProgress = supportTicketRepository.countByStatusIn(List.of(TicketStatus.IN_PROGRESS));
+        long waitingUser = supportTicketRepository.countByStatusIn(List.of(TicketStatus.WAITING_USER));
+
+        List<SupportTicket> resolved = supportTicketRepository.findByResolvedAtIsNotNull();
+        double avgResolutionTime =
+                resolved.isEmpty()
+                        ? 0.0
+                        : resolved.stream()
+                                        .mapToLong(t -> ChronoUnit.HOURS.between(t.getCreatedAt(), t.getResolvedAt()))
+                                        .sum()
+                                / (double) resolved.size();
+
+        // Honest 0 -- see javadoc above, no first-response timestamp exists to average.
+        double avgResponseTime = 0.0;
+
+        return new SupportStatsDto(open, inProgress, waitingUser, avgResponseTime, avgResolutionTime);
     }
 
     private SupportTicket requireTicket(String ticketId) {

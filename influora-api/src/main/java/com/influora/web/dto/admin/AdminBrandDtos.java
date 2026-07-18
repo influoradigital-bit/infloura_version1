@@ -1,6 +1,9 @@
 package com.influora.web.dto.admin;
 
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -110,4 +113,37 @@ public final class AdminBrandDtos {
     public record SuspendRequest(@NotBlank @Size(max = 500) String reason) {}
 
     public record ReinstateRequest(@NotBlank @Size(max = 500) String reason) {}
+
+    /**
+     * PUT /admin/brands/{id} ({@code brandApi.update} — api-contracts.ts:185-189). SAFE, non-money
+     * profile fields ONLY. All fields optional ({@code Partial<Brand>} semantics — an absent/null
+     * field means "leave unchanged", enforced by the null-guarded {@link
+     * com.influora.domain.entity.Workspace#applyAdminProfileEdit}). Deliberately carries NO
+     * kycStatus/isSuspended/gstNumber/panNumber/totalSpend/campaignCount field — those are outside
+     * the admin-editable allow-list and have dedicated flows (verify-kyc/suspend/reinstate). {@code
+     * email} maps to {@code workspaces.billing_email} server-side; {@code size} is validated against
+     * the closed STARTUP/SMB/ENTERPRISE union in {@code AdminBrandService.update} before it is
+     * written (the DB column is free-text, but {@code Brand.size} in admin.types.ts is a closed
+     * union). Any field the client sends outside this record (e.g. isSuspended, totalSpend) is
+     * simply never bound — Jackson drops unknown JSON properties, so the allow-list is the DTO shape
+     * itself, not a blind copy of the request onto the entity.
+     */
+    public record UpdateBrandRequest(
+            @Size(max = 200) String name,
+            @Size(max = 100) String industry,
+            @Size(max = 50) String size,
+            @Email @Size(max = 255) String email) {}
+
+    /**
+     * POST /admin/brands/{id}/campaigns/{campaignId}/budget-override ({@code
+     * brandApi.overrideBudget} — api-contracts.ts:209-213). <b>MONEY PATH.</b> {@code newBudget}
+     * must be present and strictly positive ({@link Positive} excludes zero and negatives); the
+     * sane upper bound and the committed-spend floor are enforced in {@code
+     * AdminBrandService.overrideCampaignBudget}. {@code reason} is mandatory, min 10 chars —
+     * matching the billing money-path {@code @Size(min = 10)} convention (CompSubscriptionRequest/
+     * OverrideSubscriptionRequest) so an auditable justification is always captured.
+     */
+    public record BudgetOverrideRequest(
+            @NotNull @Positive BigDecimal newBudget,
+            @NotBlank @Size(min = 10, max = 500) String reason) {}
 }

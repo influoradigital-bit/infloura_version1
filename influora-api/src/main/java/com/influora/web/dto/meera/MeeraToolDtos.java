@@ -92,4 +92,19 @@ public final class MeeraToolDtos {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record MessageWritebackResult(String messageId) {}
+
+    /**
+     * Body for {@code POST /internal/meera/turns/release} — the Wave 2 round 2 refund route
+     * (Kabir FAILs #1/#2 fix). Matches {@code SpringInternalClient.release_turn_credit} exactly:
+     * {@code {conversationId, turnId}}. {@code turnId} MUST be the stream token's server-verified
+     * {@code messageId} claim (influora-ai reads this from {@code verified.claims}, never from a
+     * client-supplied {@code turn_id} body field — see {@code app/routes/chat.py}), since that is
+     * the SAME value {@link AICreditService#tryConsumeForTurn} charged against at send and the
+     * SAME value {@link MessageWriteback}'s {@code Idempotency-Key} uses — {@link
+     * AICreditService#release}'s guard logic depends on all three referring to the same turn.
+     * Deliberately no {@code workspaceId} field, same reasoning as {@link MessageWriteback}: the
+     * tenant is resolved from {@code conversationId} and cross-checked against the on-behalf JWT
+     * at the controller before this ever reaches the service layer.
+     */
+    public record ReleaseTurnRequest(@NotBlank String conversationId, @NotBlank String turnId) {}
 }

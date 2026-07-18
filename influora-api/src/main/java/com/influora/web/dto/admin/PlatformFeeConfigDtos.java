@@ -47,12 +47,26 @@ public final class PlatformFeeConfigDtos {
      * the audit-log entry's {@code reason} AND becomes the new {@code approved_by}/attribution
      * value stored on the config row — see {@code PlatformFeeAdminService} for why one string
      * serves both purposes.
+     *
+     * <p>{@code expectedEffectiveDate} closes the lost-update gap {@code
+     * PlatformFeeUpdateRequest.expectedEffectiveDate}'s admin.types.ts javadoc flagged: the
+     * optimistic-concurrency token (the config's {@code effectiveDate} the admin last observed).
+     * {@code @NotNull} (Kabir 1.1 follow-up): the only caller, {@code FeeControlPanel.tsx}'s
+     * {@code handleConfirmSubmit}, always populates this from the currently-loaded, guaranteed
+     * non-null {@code feeConfig.effectiveDate} — there is no legitimate client path that omits
+     * it — so allowing a null here would let a client silently degrade to last-write-wins on a
+     * money path. {@code PlatformFeeAdminService#update} enforces the equality check
+     * unconditionally to match. Hibernate {@code @Version} on {@code PlatformFeeConfig} remains
+     * as a second, defense-in-depth guard for the genuinely-concurrent-transaction case; this
+     * field covers the realistic "two admins minutes apart" case that {@code @Version} alone
+     * (freshly reloaded inside {@code update()}'s own transaction) cannot catch.
      */
     public record UpdatePlatformFeeConfigRequest(
             @NotNull @DecimalMin("0.00") @DecimalMax("100.00") BigDecimal brandFeePercent,
             @NotNull @DecimalMin("0.00") @DecimalMax("100.00") BigDecimal creatorFeePercent,
             @NotNull Boolean razorpayAbsorbedByPlatform,
-            @NotBlank @Size(min = 10, max = 2000) String reason) {}
+            @NotBlank @Size(min = 10, max = 2000) String reason,
+            @NotNull Instant expectedEffectiveDate) {}
 
     public record PlatformFeeHistoryEntryDto(
             String id,
