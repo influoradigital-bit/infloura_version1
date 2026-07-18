@@ -38,7 +38,13 @@ logger = logging.getLogger(__name__)
 
 try:  # pragma: no cover - import shape, not logic
     import redis.asyncio as redis_asyncio
-except ImportError:  # pragma: no cover - degrades straight to the in-memory path
+except ImportError:  # pragma: no cover
+    # `redis[hiredis]` is declared in requirements.txt, so a correctly built
+    # image enforces the replay guard cross-instance. This guard only keeps the
+    # module importable if the package is absent, degrading to the per-process
+    # in-memory store. If REDIS_URL is set while this branch is taken, /readyz
+    # reports NOT ready rather than silently narrowing the replay window to one
+    # process.
     redis_asyncio = None  # type: ignore[assignment]
 
 

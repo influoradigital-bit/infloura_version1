@@ -33,6 +33,16 @@ settings = get_settings()
 configure_logging(settings.log_level)
 logger = logging.getLogger("influora_ai.main")
 
+# Same import shape as app.costs.spend_tracker / app.auth.replay_guard: redis is
+# optional, so importing it must never take the service down. But /readyz treats a
+# set-but-unimportable/unreachable REDIS_URL as NOT ready (see _redis_ready below) —
+# otherwise the daily-spend ceiling and stream-token replay guard silently fall back
+# to per-process memory while the pod reports healthy.
+try:  # pragma: no cover - import shape, not logic
+    import redis.asyncio as redis_asyncio
+except ImportError:  # pragma: no cover - redis not installed -> readyz will flag it when REDIS_URL is set
+    redis_asyncio = None  # type: ignore[assignment]
+
 app = FastAPI(
     title="Influora AI Service (Meera Reasoner)",
     description="Stateless FastAPI service: chat orchestration, website analyzer, voice. No DB, no money.",
@@ -108,10 +118,60 @@ async def healthz():
     return {"status": "ok"}
 
 
+async def _redis_ready() -> tuple[str, bool]:
+    """Probe the shared Redis store used by the daily-spend ceiling and the
+    stream-token replay guard.
+
+    Fail-SAFE when REDIS_URL is unset: that's the legitimate single-instance /
+    dev mode where both safeguards run per-process on purpose — reports
+    ``not_configured`` and stays ready.
+
+    Fail-CLOSED when REDIS_URL IS set but Redis can't actually back those
+    safeguards — the package isn't importable, or a real PING fails. Returning
+    not-ready here is the whole point: a set-but-broken REDIS_URL must never
+    report ready, because it would mean the ceiling and replay guard have
+    silently degraded to per-process memory (per-worker ceiling, per-process
+    replay window) without anyone noticing.
+    """
+    if not settings.redis_url:
+        return "not_configured", True
+    if redis_asyncio is None:
+        logger.error(
+            "readyz: REDIS_URL is set but the `redis` package is not importable — "
+            "the daily-spend ceiling and stream-token replay guard have silently "
+            "fallen back to per-process memory. Reporting NOT ready."
+        )
+        return "package_unavailable", False
+    client = None
+    try:
+        client = redis_asyncio.from_url(
+            settings.redis_url,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+        await client.ping()
+        return "ok", True
+    except Exception:  # noqa: BLE001 - any failure means Redis can't back the safeguards
+        logger.warning(
+            "readyz: REDIS_URL is set but PING failed — the daily-spend ceiling and "
+            "stream-token replay guard are running on per-process memory. Reporting NOT ready.",
+            exc_info=True,
+        )
+        return "ping_failed", False
+    finally:
+        if client is not None:
+            try:
+                await client.aclose()
+            except Exception:  # noqa: BLE001 - best-effort cleanup, never fail readiness on close
+                logger.debug("readyz: error closing probe Redis client", exc_info=True)
+
+
 @app.get("/readyz")
 async def readyz():
     """Readiness — no auth. Reports provider reachability + keys loaded (shape
-    only, never the key values themselves).
+    only, never the key values themselves) and, when REDIS_URL is set, whether
+    the shared Redis store backing the spend ceiling / replay guard is actually
+    reachable.
     """
     keys_loaded = {
         "anthropic": bool(settings.anthropic_api_key),
@@ -121,12 +181,14 @@ async def readyz():
         "service_token_signing_key": bool(settings.service_token_signing_key),
         "jwks_or_dev_secret": bool(settings.spring_jwks_url or settings.dev_shared_jwt_secret),
     }
-    ready = all(keys_loaded.values())
+    redis_status, redis_ok = await _redis_ready()
+    ready = all(keys_loaded.values()) and redis_ok
     return JSONResponse(
         status_code=200 if ready else 503,
         content={
             "status": "ready" if ready else "not_ready",
             "keys_loaded": keys_loaded,
+            "redis": redis_status,
             "prompt_version": PROMPT_VERSION,
             "claude_model": CLAUDE_MODEL,
             "gemini_model": GEMINI_MODEL,

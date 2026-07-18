@@ -9,6 +9,13 @@ google-genai==0.8.0
 playwright==1.49.1
 pyjwt[crypto]==2.10.1
 
+# Shared cross-instance store for the daily-spend ceiling (app/costs/spend_tracker.py,
+# H-25) and the stream-token replay guard (app/auth/replay_guard.py). Both import
+# `redis.asyncio` under a try/except and degrade to per-process memory when it's
+# absent — so this MUST be installed for those safeguards to actually be shared
+# across workers/instances when REDIS_URL is set. hiredis is the C parser (perf).
+redis[hiredis]==5.2.1
+
 # Transitive-but-explicit pins used directly in app code.
 pydantic==2.10.4
 python-multipart==0.0.20

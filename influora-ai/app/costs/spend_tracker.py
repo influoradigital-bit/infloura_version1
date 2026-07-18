@@ -51,9 +51,14 @@ logger = logging.getLogger(__name__)
 
 try:  # pragma: no cover - import shape, not logic
     import redis.asyncio as redis_asyncio
-except ImportError:  # pragma: no cover - redis is a pinned dep (requirements.txt);
-    # this guard keeps the module importable even in an environment where it
-    # hasn't been installed yet, degrading straight to the in-memory path.
+except ImportError:  # pragma: no cover
+    # `redis[hiredis]` is declared in requirements.txt, so in a correctly built
+    # image this import succeeds and the ceiling is enforced cross-instance.
+    # This guard only keeps the module importable if the package is somehow
+    # absent (e.g. a stripped/partial env), degrading straight to the
+    # per-process in-memory path. If REDIS_URL is set while this branch is
+    # taken, /readyz reports NOT ready so the misconfiguration is surfaced
+    # rather than silently downgrading the ceiling to per-worker.
     redis_asyncio = None  # type: ignore[assignment]
 
 
