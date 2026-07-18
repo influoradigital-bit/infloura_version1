@@ -278,7 +278,15 @@ class WorkspaceServiceTest {
                         ApiException.class,
                         () ->
                                 service.updateMyWorkspace(
-                                        principal, "New Name", "contact@acme.example", null, null, null, null, null));
+                                        principal,
+                                        "New Name",
+                                        "contact@acme.example",
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null));
 
         assertEquals("FORBIDDEN", ex.getCode());
         verify(workspaceRepository, never()).save(any());
@@ -304,7 +312,15 @@ class WorkspaceServiceTest {
                         ApiException.class,
                         () ->
                                 service.updateMyWorkspace(
-                                        principal, "New Name", "contact@acme.example", null, null, null, null, null));
+                                        principal,
+                                        "New Name",
+                                        "contact@acme.example",
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null));
 
         assertEquals("FORBIDDEN", ex.getCode());
         verify(workspaceRepository, never()).save(any());

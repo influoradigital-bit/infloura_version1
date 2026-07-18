@@ -53,6 +53,7 @@ class WorkspaceControllerTest {
         Workspace workspace = Workspace.newBrand(WORKSPACE_ID, "Acme Co", "acme-co", "Retail", "1-10");
         workspace.setVerificationStatus(VerificationStatus.VERIFIED);
         workspace.updateContactEmail("contact@acme.example");
+        workspace.updatePhone("+1 415 555 0100");
         when(workspaceService.getMyWorkspace(principal)).thenReturn(workspace);
 
         ResponseEntity<ApiResponse<com.influora.web.dto.workspace.WorkspaceMemberDtos.WorkspaceReadResponse>>
@@ -63,6 +64,7 @@ class WorkspaceControllerTest {
         assertEquals(WORKSPACE_ID, body.id());
         assertEquals("Acme Co", body.name());
         assertEquals("contact@acme.example", body.email());
+        assertEquals("+1 415 555 0100", body.phone());
         assertEquals("VERIFIED", body.verificationStatus());
     }
 
@@ -71,10 +73,12 @@ class WorkspaceControllerTest {
     void updateMyWorkspace_delegatesAllFields() {
         Workspace saved = Workspace.newBrand(WORKSPACE_ID, "New Name", "acme-co", "Fashion", "11-50");
         saved.updateContactEmail("new@acme.example");
+        saved.updatePhone("+1 415 555 0100");
         when(workspaceService.updateMyWorkspace(
                         eq(principal),
                         eq("New Name"),
                         eq("new@acme.example"),
+                        eq("+1 415 555 0100"),
                         eq("Fashion"),
                         eq("11-50"),
                         eq("https://acme.example"),
@@ -86,6 +90,7 @@ class WorkspaceControllerTest {
                 new WorkspaceUpdateRequest(
                         "New Name",
                         "new@acme.example",
+                        "+1 415 555 0100",
                         "Fashion",
                         "11-50",
                         "https://acme.example",
@@ -98,11 +103,13 @@ class WorkspaceControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("New Name", response.getBody().data().name());
         assertEquals("new@acme.example", response.getBody().data().email());
+        assertEquals("+1 415 555 0100", response.getBody().data().phone());
         verify(workspaceService)
                 .updateMyWorkspace(
                         principal,
                         "New Name",
                         "new@acme.example",
+                        "+1 415 555 0100",
                         "Fashion",
                         "11-50",
                         "https://acme.example",
