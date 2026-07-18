@@ -52,3 +52,5 @@ _export/
 
 # Agent run logs
 .claude/scratchpad-*.log
+# Agent git worktrees (throwaway parallel checkouts — never commit)
+.claude/worktrees/
