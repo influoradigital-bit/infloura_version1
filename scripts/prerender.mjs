@@ -180,7 +180,16 @@ function distPathFor(route) {
 async function snapshotRoute(page, route, rawTitle) {
   const url = `${ORIGIN}${route}`;
 
-  await page.goto(url, { waitUntil: 'networkidle0', timeout: 30_000 });
+  // G1 fix: was `waitUntil: 'networkidle0'`, which requires ZERO open
+  // connections for 500ms straight. That's structurally unreliable for
+  // routes with any continuous background activity — e.g. "/" lazy-loads
+  // Three.js/WebGL scenes (HeroGlobe, PortfolioCanvas, DiscoverCanvas) that
+  // stream textures/models and can keep a connection open past any fixed
+  // timeout, independent of whether the page is actually ready. We don't
+  // need network.js to go quiet anyway: the two waitForFunction calls below
+  // already gate on the real readiness signal (title hoisted, #root has
+  // real content), so `domcontentloaded` is enough here.
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
 
   // React 19 hoists <title>/<meta> from the Seo component into <head> once
   // the page component has rendered. Wait for the title to diverge from the
@@ -198,12 +207,19 @@ async function snapshotRoute(page, route, rawTitle) {
 
   // Make sure real body text landed (h1/p/etc, not just the empty root or
   // the static <noscript>-era fallback).
+  //
+  // G1 fix (was 15_000): 15s is tight for headless-Chrome cold start on
+  // heavier pages (e.g. /blog, whose listing view does more DOM/hydration
+  // work than a static marketing page), especially when this box is also
+  // running ci/lighthouse-meera.mjs concurrently and CPU is contended.
+  // 15s -> 30s removes the false-negative window; a genuinely broken route
+  // (root never renders) still fails, just after a more realistic wait.
   await page.waitForFunction(
     () => {
       const root = document.getElementById('root');
       return !!root && root.textContent && root.textContent.trim().length > 40;
     },
-    { timeout: 15_000 },
+    { timeout: 30_000 },
   );
 
   const html = await page.evaluate(() => '<!doctype html>\n' + document.documentElement.outerHTML);
@@ -334,14 +350,31 @@ async function main() {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (compatible; InfluoraPrerender/1.0)');
 
+    // G1 fix: retry a route once before treating it as a real failure. A
+    // slow-but-healthy route (cold-start CPU contention, GC pause, etc.)
+    // should not fail the whole deploy; a genuinely broken route will still
+    // fail on the retry and gets reported below.
     for (const route of MARKETING_ROUTES) {
-      try {
-        const html = await snapshotRoute(page, route, rawTitle);
-        captured.push({ route, html });
-        console.log(`  captured ${route}`);
-      } catch (err) {
-        failures.push({ route, error: err instanceof Error ? err.message : String(err) });
-        console.error(`  FAIL ${route.padEnd(45)} -> ${err instanceof Error ? err.message : err}`);
+      const ATTEMPTS = 2;
+      let lastErr;
+      let ok = false;
+      for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+        try {
+          const html = await snapshotRoute(page, route, rawTitle);
+          captured.push({ route, html });
+          console.log(`  captured ${route}${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
+          ok = true;
+          break;
+        } catch (err) {
+          lastErr = err;
+          console.error(
+            `  attempt ${attempt}/${ATTEMPTS} FAIL ${route.padEnd(35)} -> ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
+      if (!ok) {
+        failures.push({ route, error: lastErr instanceof Error ? lastErr.message : String(lastErr) });
+        console.error(`  FAIL ${route.padEnd(45)} -> gave up after ${ATTEMPTS} attempts`);
       }
     }
   } finally {
