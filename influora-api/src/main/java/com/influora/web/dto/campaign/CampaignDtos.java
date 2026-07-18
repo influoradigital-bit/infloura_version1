@@ -33,6 +33,30 @@ public final class CampaignDtos {
 
     public record AgeRangeDto(Integer min, Integer max) {}
 
+    /**
+     * Hype campaign's defining config block (docs/FRONTEND-DESIGN-TASK.md; sent by
+     * brand-new-hype-campaign.tsx as the {@code hype} key alongside {@code campaignType: 'HYPE'}).
+     * Required only when {@code campaignType == HYPE} — {@link CampaignValidator#validateHypeConfig}
+     * enforces that conditionally rather than via bean-validation annotations here, so a STANDARD
+     * request that happens to omit or send a partial {@code hype} block is never rejected.
+     * {@code currency} and {@code slotsFilled} are optional/lenient and default to "INR"/0 in
+     * {@code CampaignService#normalizeHype}. {@code liveUntil} is kept as a raw ISO-8601 string
+     * (not {@code Instant}) because the storage round-trip uses {@code JsonLists}'s plain,
+     * un-configured {@code ObjectMapper} (no jackson-datatype-jsr310 module registered) — a typed
+     * {@code Instant} would (de)serialize fine at the HTTP boundary but fail when persisted via
+     * {@code JsonLists.toJsonObject}/{@code objectFromJson}.
+     */
+    public record HypeConfigDto(
+            String sourceReelUrl,
+            String audioTrack,
+            String hashtag,
+            List<String> formatLanes,
+            BigDecimal perReelRate,
+            String currency,
+            Integer slotCap,
+            Integer slotsFilled,
+            String liveUntil) {}
+
     public record CampaignWriteRequest(
             @NotBlank @Size(min = 5, max = 300) String title,
             String description,
@@ -46,6 +70,8 @@ public final class CampaignDtos {
              * as the AI-drafted path so both share one shared store-integration-required predicate.
              */
             CampaignIntentType campaignType,
+            /** Only persisted/validated when {@code campaignType == HYPE}; ignored otherwise. */
+            HypeConfigDto hype,
             @Valid @NotNull BudgetDto budget,
             @NotNull TimelineDto timeline,
             LocalDate applicationDeadline,
@@ -64,6 +90,19 @@ public final class CampaignDtos {
             String description,
             List<String> objectives,
             CampaignStatus status,
+            /**
+             * {@code campaignType} itself is immutable after creation (not part of this DTO) — only
+             * the HYPE config block can be revised post-creation, and only for a campaign that was
+             * already created as HYPE (see {@code CampaignService.update}).
+             *
+             * <p><b>[G3 fix]</b> Unlike the list fields below (platforms/hashtags/targetAudience,
+             * full-replace-if-present), this is merged field-by-field onto the currently-stored
+             * config ({@code CampaignService#mergeHype}) — a caller only needs to send the
+             * sub-fields it's actually changing; any field left {@code null} here keeps its
+             * previously-stored value instead of being wiped. Send {@code null} for a whole {@code
+             * hype} block to leave the entire config untouched.
+             */
+            HypeConfigDto hype,
             @Valid BudgetDto budget,
             @Valid TimelineDto timeline,
             LocalDate applicationDeadline,
@@ -84,6 +123,8 @@ public final class CampaignDtos {
             String description,
             List<String> objectives,
             CampaignStatus status,
+            CampaignIntentType campaignType,
+            HypeConfigDto hype,
             BudgetDto budget,
             TimelineDto timeline,
             LocalDate applicationDeadline,

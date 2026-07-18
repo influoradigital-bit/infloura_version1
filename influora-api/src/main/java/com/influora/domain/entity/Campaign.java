@@ -94,6 +94,18 @@ public class Campaign {
     private CampaignIntentType campaignType;
 
     /**
+     * Hype campaign's defining config block (source reel, format lanes, flat per-reel rate,
+     * slot cap/fill, 72h live-until) — see {@code CampaignDtos.HypeConfigDto}. Single JSON column,
+     * same precedent as {@code targetAudienceJson} below and {@code BrandProfile#nicheTagsJson}:
+     * the block mixes scalars with a list field and is exclusive to {@code CampaignIntentType.HYPE}
+     * rows, so normalizing it into flat columns would leave dead columns on every other row. Only
+     * ever populated when {@code campaignType == HYPE}; NULL for STANDARD/DIRECT/REVIEW.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "hype_config", columnDefinition = "json")
+    private String hypeConfigJson;
+
+    /**
      * NULL means "unset -> platform default 10%", never 0 (V50). {@link
      * com.influora.service.AffiliateEarningsService} falls back to {@code DEFAULT_COMMISSION_RATE}
      * when this is null — must stay nullable.
@@ -200,6 +212,10 @@ public class Campaign {
 
     public CampaignIntentType getCampaignType() {
         return campaignType;
+    }
+
+    public String getHypeConfigJson() {
+        return hypeConfigJson;
     }
 
     public BigDecimal getCommissionRate() {
@@ -341,6 +357,12 @@ public class Campaign {
             return this;
         }
 
+        /** Only set when {@code campaignType == HYPE}; leave unset (null) for every other type. */
+        public Builder hypeConfigJson(String hypeConfigJson) {
+            c.hypeConfigJson = hypeConfigJson;
+            return this;
+        }
+
         public Campaign build() {
             Instant now = Instant.now();
             c.createdAt = now;
@@ -373,7 +395,8 @@ public class Campaign {
             String targetAudienceJson,
             String brandGuidelines,
             Boolean isPrivate,
-            Integer maxCollaborators) {
+            Integer maxCollaborators,
+            String hypeConfigJson) {
         if (title != null) this.title = title;
         if (description != null) this.description = description;
         if (status != null) this.status = status;
@@ -392,6 +415,7 @@ public class Campaign {
         if (brandGuidelines != null) this.brandGuidelines = brandGuidelines;
         if (isPrivate != null) this.isPrivate = isPrivate;
         if (maxCollaborators != null) this.maxCollaborators = maxCollaborators;
+        if (hypeConfigJson != null) this.hypeConfigJson = hypeConfigJson;
         touch();
     }
 
@@ -440,6 +464,7 @@ public class Campaign {
                 .maxCollaborators(maxCollaborators)
                 .createdBy(createdBy)
                 .campaignType(campaignType)
+                .hypeConfigJson(hypeConfigJson)
                 .commissionRate(commissionRate)
                 .build();
     }

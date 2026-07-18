@@ -2,9 +2,11 @@ package com.influora.service;
 
 import com.influora.common.ApiException;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.enums.CampaignIntentType;
 import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.VerificationStatus;
 import com.influora.web.dto.campaign.CampaignDtos.BudgetDto;
+import com.influora.web.dto.campaign.CampaignDtos.HypeConfigDto;
 import com.influora.web.dto.campaign.CampaignDtos.TimelineDto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -74,6 +76,42 @@ public class CampaignValidator {
     public void validateResumeActive(CampaignStatus newStatus, Workspace workspace) {
         if (newStatus == CampaignStatus.ACTIVE) {
             validateStatusForWorkspace(CampaignStatus.ACTIVE, workspace);
+        }
+    }
+
+    /**
+     * Conditional on {@code campaignType} rather than a bean-validation {@code @Valid} cascade so a
+     * STANDARD/DIRECT/REVIEW request that omits (or sends a partial) {@code hype} block is never
+     * rejected — only a HYPE campaign must carry a well-formed config. Lenient on
+     * {@code audioTrack}/{@code currency}/{@code slotsFilled}/{@code liveUntil}, matching the
+     * optional sub-fields the brand-new-hype-campaign.tsx form itself treats as optional.
+     */
+    public void validateHypeConfig(CampaignIntentType campaignType, HypeConfigDto hype) {
+        if (campaignType != CampaignIntentType.HYPE) {
+            return;
+        }
+        if (hype == null) {
+            throw new ApiException(
+                    "VALIDATION_ERROR", "hype config is required for a HYPE campaign", HttpStatus.BAD_REQUEST);
+        }
+        if (hype.sourceReelUrl() == null || hype.sourceReelUrl().isBlank()) {
+            throw new ApiException(
+                    "VALIDATION_ERROR", "hype.sourceReelUrl is required", HttpStatus.BAD_REQUEST);
+        }
+        if (hype.hashtag() == null || hype.hashtag().isBlank()) {
+            throw new ApiException("VALIDATION_ERROR", "hype.hashtag is required", HttpStatus.BAD_REQUEST);
+        }
+        if (hype.formatLanes() == null || hype.formatLanes().isEmpty()) {
+            throw new ApiException(
+                    "VALIDATION_ERROR", "hype.formatLanes must include at least one lane", HttpStatus.BAD_REQUEST);
+        }
+        if (hype.perReelRate() == null || hype.perReelRate().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(
+                    "VALIDATION_ERROR", "hype.perReelRate must be greater than 0", HttpStatus.BAD_REQUEST);
+        }
+        if (hype.slotCap() == null || hype.slotCap() <= 0) {
+            throw new ApiException(
+                    "VALIDATION_ERROR", "hype.slotCap must be greater than 0", HttpStatus.BAD_REQUEST);
         }
     }
 }

@@ -4,6 +4,7 @@ import com.influora.common.JsonLists;
 import com.influora.domain.entity.Campaign;
 import com.influora.web.dto.campaign.CampaignDtos.BudgetDto;
 import com.influora.web.dto.campaign.CampaignDtos.CampaignResponse;
+import com.influora.web.dto.campaign.CampaignDtos.HypeConfigDto;
 import com.influora.web.dto.campaign.CampaignDtos.TargetAudienceDto;
 import com.influora.web.dto.campaign.CampaignDtos.TimelineDto;
 import java.math.BigDecimal;
@@ -23,6 +24,7 @@ public final class CampaignMapper {
         }
         TargetAudienceDto audience =
                 JsonLists.objectFromJson(c.getTargetAudienceJson(), TargetAudienceDto.class);
+        HypeConfigDto hype = JsonLists.objectFromJson(c.getHypeConfigJson(), HypeConfigDto.class);
 
         return new CampaignResponse(
                 c.getId(),
@@ -31,6 +33,8 @@ public final class CampaignMapper {
                 c.getDescription(),
                 JsonLists.stringListFromJson(c.getObjectivesJson()),
                 c.getStatus(),
+                c.getCampaignType(),
+                hype,
                 budget,
                 timeline,
                 c.getApplicationDeadline(),

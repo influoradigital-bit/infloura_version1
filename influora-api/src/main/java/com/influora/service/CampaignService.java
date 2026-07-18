@@ -18,6 +18,7 @@ import com.influora.web.dto.campaign.CampaignDtos.CampaignResponse;
 import com.influora.web.dto.campaign.CampaignDtos.CampaignWriteRequest;
 import com.influora.web.dto.campaign.CampaignDtos.DeleteResponse;
 import com.influora.web.dto.campaign.CampaignDtos.DuplicateResponse;
+import com.influora.web.dto.campaign.CampaignDtos.HypeConfigDto;
 import com.influora.web.dto.campaign.CampaignDtos.TimelineDto;
 import java.util.ArrayList;
 import java.util.List;
@@ -107,7 +108,12 @@ public class CampaignService {
         CampaignStatus status = req.status() != null ? req.status() : CampaignStatus.DRAFT;
         validator.validateStatusForWorkspace(status, workspace);
 
-        CampaignIntentType campaignType = req.campaignType();
+        // Wave D task D3 default: null/unspecified campaignType is treated as STANDARD from here on
+        // (matches CreateCampaignExecutor#parseCampaignType, the AI-drafted path's existing
+        // default, and AdminBrandService's existing "STANDARD" display fallback for a null type).
+        // requiresStoreIntegration only gates DIRECT, so this default changes no gating behavior.
+        CampaignIntentType campaignType =
+                req.campaignType() != null ? req.campaignType() : CampaignIntentType.STANDARD;
         if (IntegrationHealthService.requiresStoreIntegration(campaignType)
                 && !integrationHealthService.hasActiveStoreIntegration(workspace.getId())) {
             throw new ApiException(
@@ -117,6 +123,12 @@ public class CampaignService {
                     HttpStatus.CONFLICT);
         }
 
+        validator.validateHypeConfig(campaignType, req.hype());
+        String hypeConfigJson =
+                campaignType == CampaignIntentType.HYPE
+                        ? JsonLists.toJsonObject(normalizeHype(req.hype()))
+                        : null;
+
         Campaign campaign =
                 Campaign.builder()
                         .id(Ulids.newUlid())
@@ -125,6 +137,7 @@ public class CampaignService {
                         .description(req.description())
                         .status(status)
                         .campaignType(campaignType)
+                        .hypeConfigJson(hypeConfigJson)
                         .budgetMin(req.budget().min())
                         .budgetMax(req.budget().max())
                         .currency(req.budget().currency())
@@ -185,6 +198,39 @@ public class CampaignService {
         boolean transitioningToActive =
                 campaign.getStatus() != CampaignStatus.ACTIVE && newStatus == CampaignStatus.ACTIVE;
 
+        // campaignType is immutable post-creation (not part of CampaignPatchRequest) — only a
+        // campaign already created as HYPE can have its hype config revised here; a PATCH that
+        // sends `hype` for any other (or untyped/legacy-null) campaign is silently ignored, same as
+        // STANDARD ignores it on create.
+        //
+        // [G3 fix] hype is a *nested named-field record*, not a top-level scalar or a homogeneous
+        // list — a caller that wants to bump one sub-field (e.g. slotsFilled after a deliverable
+        // is approved, or slotCap alone) must not be forced to resend the other 8 just to avoid
+        // silently wiping them. Merge field-by-field against the currently-stored config using the
+        // exact same null-check-per-field convention Campaign.applyPatch already uses for every
+        // top-level scalar (title/description/budget/...): null in the incoming DTO means "leave
+        // this sub-field alone," non-null means "overwrite it." This is deliberately NOT a
+        // full-replace like platforms/hashtags/targetAudience — those are homogeneous lists where
+        // "PATCH one element" isn't a coherent operation and the FE always resends the whole list;
+        // hype instead mirrors Campaign's own record-of-named-fields shape, so it gets Campaign's
+        // own merge convention one level down.
+        //
+        // Validate the MERGED result (not the raw patch) so: (a) a partial patch can never leave
+        // the 5 required fields (sourceReelUrl/hashtag/formatLanes/perReelRate/slotCap) missing —
+        // they're always backed by the existing stored value unless explicitly overwritten; and
+        // (b) a patch that explicitly blanks/invalidates a field (empty sourceReelUrl, perReelRate
+        // <= 0, etc.) is still rejected with 400, whether that field was required or merely
+        // optional (audioTrack/currency/slotsFilled/liveUntil) — malformed input on those optional
+        // fields no longer sails through silently either.
+        String hypeConfigJson = null;
+        if (req.hype() != null && campaign.getCampaignType() == CampaignIntentType.HYPE) {
+            HypeConfigDto existingHype =
+                    JsonLists.objectFromJson(campaign.getHypeConfigJson(), HypeConfigDto.class);
+            HypeConfigDto mergedHype = mergeHype(existingHype, req.hype());
+            validator.validateHypeConfig(campaign.getCampaignType(), mergedHype);
+            hypeConfigJson = JsonLists.toJsonObject(normalizeHype(mergedHype));
+        }
+
         campaign.applyPatch(
                 req.title(),
                 req.description(),
@@ -203,7 +249,8 @@ public class CampaignService {
                 req.targetAudience() != null ? JsonLists.toJsonObject(req.targetAudience()) : null,
                 req.brandGuidelines(),
                 req.isPrivate(),
-                req.maxCollaborators());
+                req.maxCollaborators(),
+                hypeConfigJson);
 
         // [B1] Same @Transactional method as the status flip above — if this throws (insufficient
         // wallet balance, missing fee config), the whole PATCH rolls back and the campaign never
@@ -287,6 +334,50 @@ public class CampaignService {
             throw new ApiException("CAMPAIGN_NOT_FOUND", "Campaign not found", HttpStatus.NOT_FOUND);
         }
         return campaign;
+    }
+
+    /**
+     * Fills the {@code hype} block's lenient/optional sub-fields with the same defaults the
+     * frontend form applies (currency "INR", slotsFilled 0) before it is persisted, so a HYPE
+     * campaign's stored config never has to null-check them on read.
+     */
+    private static HypeConfigDto normalizeHype(HypeConfigDto hype) {
+        if (hype == null) {
+            return null;
+        }
+        return new HypeConfigDto(
+                hype.sourceReelUrl(),
+                hype.audioTrack(),
+                hype.hashtag(),
+                hype.formatLanes(),
+                hype.perReelRate(),
+                hype.currency() != null && !hype.currency().isBlank() ? hype.currency() : "INR",
+                hype.slotCap(),
+                hype.slotsFilled() != null ? hype.slotsFilled() : 0,
+                hype.liveUntil());
+    }
+
+    /**
+     * Field-by-field PATCH merge for the hype config sub-object — see the [G3 fix] comment in
+     * {@link #update}. {@code existing} is only ever null defensively: a HYPE campaign should
+     * always have a stored config after {@link #create} (validateHypeConfig blocks a HYPE create
+     * without one), but if it somehow doesn't, falling back to the raw patch keeps this a clean
+     * {@code validateHypeConfig}-driven 400 for missing required fields instead of an NPE.
+     */
+    private static HypeConfigDto mergeHype(HypeConfigDto existing, HypeConfigDto patch) {
+        if (existing == null) {
+            return patch;
+        }
+        return new HypeConfigDto(
+                patch.sourceReelUrl() != null ? patch.sourceReelUrl() : existing.sourceReelUrl(),
+                patch.audioTrack() != null ? patch.audioTrack() : existing.audioTrack(),
+                patch.hashtag() != null ? patch.hashtag() : existing.hashtag(),
+                patch.formatLanes() != null ? patch.formatLanes() : existing.formatLanes(),
+                patch.perReelRate() != null ? patch.perReelRate() : existing.perReelRate(),
+                patch.currency() != null ? patch.currency() : existing.currency(),
+                patch.slotCap() != null ? patch.slotCap() : existing.slotCap(),
+                patch.slotsFilled() != null ? patch.slotsFilled() : existing.slotsFilled(),
+                patch.liveUntil() != null ? patch.liveUntil() : existing.liveUntil());
     }
 
     private static List<CampaignStatus> parseStatuses(String statusParam) {
