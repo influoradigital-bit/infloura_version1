@@ -209,7 +209,7 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
                   Help & Support
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setShowLogoutDialog(true)} className="text-destructive focus:text-destructive">
+                <DropdownMenuItem onClick={() => setShowLogoutDialog(true)} className="text-destructive-foreground focus:text-destructive-foreground">
                   <LogOut className="mr-2 h-4 w-4" />
                   Log out
                 </DropdownMenuItem>
@@ -284,7 +284,7 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
                   <DropdownMenuItem onClick={() => handleNavigate('/creator/settings')}>
                     <Settings className="mr-2 h-4 w-4" /> Settings
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowLogoutDialog(true)} className="text-destructive focus:text-destructive">
+                  <DropdownMenuItem onClick={() => setShowLogoutDialog(true)} className="text-destructive-foreground focus:text-destructive-foreground">
                     <LogOut className="mr-2 h-4 w-4" /> Log out
                   </DropdownMenuItem>
                 </DropdownMenuContent>

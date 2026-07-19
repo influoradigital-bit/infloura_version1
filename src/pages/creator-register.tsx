@@ -12,7 +12,7 @@ import { api, ApiError, isApiLive } from '@/lib/api';
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
-  return <p className="mt-1 text-xs text-destructive">{message}</p>;
+  return <p className="mt-1 text-xs text-destructive-foreground">{message}</p>;
 }
 
 export default function CreatorRegisterPage() {
@@ -102,8 +102,8 @@ export default function CreatorRegisterPage() {
       </div>
 
       {errors.form && (
-        <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-          <p className="text-sm text-destructive">{errors.form}</p>
+        <div className="mb-6 rounded-lg border border-destructive-foreground/30 bg-destructive/10 p-4">
+          <p className="text-sm text-destructive-foreground">{errors.form}</p>
         </div>
       )}
 

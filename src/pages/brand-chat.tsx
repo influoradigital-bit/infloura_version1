@@ -853,8 +853,8 @@ export default function BrandChatPage() {
             )}
             {isApiLive() && !dealsLoading && dealsError && (
               <div className="p-6 text-center">
-                <AlertCircle className="h-8 w-8 text-destructive mx-auto mb-2" />
-                <p className="text-sm text-destructive">{dealsError}</p>
+                <AlertCircle className="h-8 w-8 text-destructive-foreground mx-auto mb-2" />
+                <p className="text-sm text-destructive-foreground">{dealsError}</p>
               </div>
             )}
             {isApiLive() && !dealsLoading && !dealsError && filteredDeals.length === 0 && (
@@ -1061,8 +1061,8 @@ export default function BrandChatPage() {
                     </div>
                   )}
                   {messagesError && !messagesLoading && (
-                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center">
-                      <AlertCircle className="h-5 w-5 mx-auto mb-2 text-destructive" />
+                    <div className="rounded-lg border border-destructive-foreground/30 bg-destructive/5 p-4 text-center">
+                      <AlertCircle className="h-5 w-5 mx-auto mb-2 text-destructive-foreground" />
                       <p className="text-sm text-foreground">{messagesError}</p>
                       {selectedDeal && (
                         <Button
@@ -1516,7 +1516,7 @@ export default function BrandChatPage() {
                     ) : deliverablesError ? (
                       <div className="flex items-center justify-center h-full p-8 text-center">
                         <div>
-                          <AlertCircle className="h-8 w-8 mx-auto mb-3 text-destructive" />
+                          <AlertCircle className="h-8 w-8 mx-auto mb-3 text-destructive-foreground" />
                           <p className="text-sm text-foreground">{deliverablesError}</p>
                           {selectedDeal && (
                             <Button

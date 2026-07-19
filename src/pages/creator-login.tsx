@@ -68,8 +68,8 @@ export default function CreatorLoginPage() {
       </div>
 
       {error && (
-        <div className="mb-6 p-4 bg-destructive/10 border border-destructive/30 rounded-lg">
-          <p className="text-destructive text-sm">{error}</p>
+        <div className="mb-6 p-4 bg-destructive/10 border border-destructive-foreground/30 rounded-lg">
+          <p className="text-destructive-foreground text-sm">{error}</p>
         </div>
       )}
 

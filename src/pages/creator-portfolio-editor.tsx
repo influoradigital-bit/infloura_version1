@@ -273,7 +273,7 @@ export default function CreatorPortfolioEditorPage() {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-7 text-xs gap-1.5 text-destructive"
+                    className="h-7 text-xs gap-1.5 text-destructive-foreground"
                     onClick={() => update({ coverUrl: '' })}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -542,7 +542,7 @@ function Stat({ label, value, delta }: { label: string; value: number; delta?: n
         {typeof delta === 'number' && (
           <span className={cn(
             'text-[10px] font-medium',
-            delta > 0 ? 'text-emerald-600' : 'text-destructive',
+            delta > 0 ? 'text-emerald-600' : 'text-destructive-foreground',
           )}>
             {delta > 0 ? '+' : ''}{delta}%
           </span>
@@ -685,7 +685,7 @@ function CustomLinksEditor({
                     size="icon"
                     onClick={() => remove(link.id)}
                     aria-label="Remove link"
-                    className="h-9 w-9 text-muted-foreground hover:text-destructive"
+                    className="h-9 w-9 text-muted-foreground hover:text-destructive-foreground"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

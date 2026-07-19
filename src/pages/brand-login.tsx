@@ -61,10 +61,10 @@ export default function BrandLoginPage() {
 
       {error && (
         <div
-          className="mb-5 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3"
+          className="mb-5 rounded-lg border border-destructive-foreground/30 bg-destructive/10 px-4 py-3"
           role="alert"
         >
-          <p className="text-sm text-destructive">{error}</p>
+          <p className="text-sm text-destructive-foreground">{error}</p>
         </div>
       )}
 

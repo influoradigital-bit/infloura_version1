@@ -725,8 +725,8 @@ export default function BrandPipelinePage() {
           </div>
         ) : isApiLive() && collabsError ? (
           <Card className="p-6 text-center">
-            <AlertCircle className="h-10 w-10 text-destructive mx-auto mb-2" />
-            <p className="text-sm text-destructive">{collabsError}</p>
+            <AlertCircle className="h-10 w-10 text-destructive-foreground mx-auto mb-2" />
+            <p className="text-sm text-destructive-foreground">{collabsError}</p>
           </Card>
         ) : filteredCollabs.length === 0 ? (
           <Card className="p-6 text-center">

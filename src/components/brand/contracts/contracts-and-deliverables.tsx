@@ -676,7 +676,7 @@ export function ContractsAndDeliverables() {
       </div>
 
       {contractsError && (
-        <div className="mx-4 sm:mx-6 mt-4 flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className="mx-4 sm:mx-6 mt-4 flex items-center justify-between gap-3 rounded-lg border border-destructive-foreground/30 bg-destructive/10 px-4 py-3 text-sm text-destructive-foreground">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>{contractsError}</span>

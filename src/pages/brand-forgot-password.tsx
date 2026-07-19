@@ -61,7 +61,7 @@ export default function BrandForgotPasswordPage() {
                 />
               </div>
               {error && (
-                <p role="alert" className="text-sm text-destructive">
+                <p role="alert" className="text-sm text-destructive-foreground">
                   {error}
                 </p>
               )}

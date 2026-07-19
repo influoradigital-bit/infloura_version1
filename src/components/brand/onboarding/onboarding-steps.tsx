@@ -351,7 +351,7 @@ function FileDropZone({
           Drag & drop or click to browse. Max {maxSizeMB}MB.
         </p>
       </div>
-      {error && <p className="text-xs text-destructive mt-1.5">{error}</p>}
+      {error && <p className="text-xs text-destructive-foreground mt-1.5">{error}</p>}
       <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={onChange} />
     </div>
   );
@@ -426,14 +426,14 @@ function OtpInput({
             className={cn(
               'h-12 w-11 rounded-lg border-2 bg-background text-center text-lg font-semibold text-foreground outline-none transition-all',
               'focus:border-primary focus:ring-2 focus:ring-primary/20',
-              error ? 'border-destructive' : value[idx] ? 'border-primary/50' : 'border-border',
+              error ? 'border-destructive-foreground' : value[idx] ? 'border-primary/50' : 'border-border',
             )}
             autoFocus={idx === 0}
           />
         ))}
       </div>
       {error && (
-        <p className="text-xs text-destructive text-center mt-2">{error}</p>
+        <p className="text-xs text-destructive-foreground text-center mt-2">{error}</p>
       )}
     </div>
   );
@@ -683,9 +683,9 @@ export function AccountSetupStep({
               placeholder="Rahul"
               value={data.firstName}
               onChange={(e) => onUpdate({ firstName: e.target.value })}
-              className={cn(errors.firstName && 'border-destructive')}
+              className={cn(errors.firstName && 'border-destructive-foreground')}
             />
-            {errors.firstName && <p className="text-xs text-destructive">{errors.firstName}</p>}
+            {errors.firstName && <p className="text-xs text-destructive-foreground">{errors.firstName}</p>}
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="lastName">Last name</Label>
@@ -694,9 +694,9 @@ export function AccountSetupStep({
               placeholder="Sharma"
               value={data.lastName}
               onChange={(e) => onUpdate({ lastName: e.target.value })}
-              className={cn(errors.lastName && 'border-destructive')}
+              className={cn(errors.lastName && 'border-destructive-foreground')}
             />
-            {errors.lastName && <p className="text-xs text-destructive">{errors.lastName}</p>}
+            {errors.lastName && <p className="text-xs text-destructive-foreground">{errors.lastName}</p>}
           </div>
         </div>
 
@@ -708,9 +708,9 @@ export function AccountSetupStep({
             placeholder="rahul@company.com"
             value={data.email}
             onChange={(e) => onUpdate({ email: e.target.value })}
-            className={cn(errors.email && 'border-destructive')}
+            className={cn(errors.email && 'border-destructive-foreground')}
           />
-          {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
+          {errors.email && <p className="text-xs text-destructive-foreground">{errors.email}</p>}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -724,11 +724,11 @@ export function AccountSetupStep({
               placeholder="98765 43210"
               value={data.phone}
               onChange={(e) => onUpdate({ phone: e.target.value.replace(/[^0-9\s]/g, '') })}
-              className={cn('flex-1', errors.phone && 'border-destructive')}
+              className={cn('flex-1', errors.phone && 'border-destructive-foreground')}
               maxLength={12}
             />
           </div>
-          {errors.phone && <p className="text-xs text-destructive">{errors.phone}</p>}
+          {errors.phone && <p className="text-xs text-destructive-foreground">{errors.phone}</p>}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -740,7 +740,7 @@ export function AccountSetupStep({
               placeholder="Min 8 characters"
               value={data.password}
               onChange={(e) => onUpdate({ password: e.target.value })}
-              className={cn('pr-10', errors.password && 'border-destructive')}
+              className={cn('pr-10', errors.password && 'border-destructive-foreground')}
             />
             <Button
               type="button"
@@ -752,7 +752,7 @@ export function AccountSetupStep({
               {showPassword ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
             </Button>
           </div>
-          {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
+          {errors.password && <p className="text-xs text-destructive-foreground">{errors.password}</p>}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -763,9 +763,9 @@ export function AccountSetupStep({
             placeholder="Re-enter password"
             value={data.confirmPassword}
             onChange={(e) => onUpdate({ confirmPassword: e.target.value })}
-            className={cn(errors.confirmPassword && 'border-destructive')}
+            className={cn(errors.confirmPassword && 'border-destructive-foreground')}
           />
-          {errors.confirmPassword && <p className="text-xs text-destructive">{errors.confirmPassword}</p>}
+          {errors.confirmPassword && <p className="text-xs text-destructive-foreground">{errors.confirmPassword}</p>}
         </div>
       </div>
 
@@ -900,9 +900,9 @@ export function CompanyDetailsStep({
             placeholder="Acme India Pvt Ltd"
             value={data.companyName}
             onChange={(e) => handleCompanyNameChange(e.target.value)}
-            className={cn(errors.companyName && 'border-destructive')}
+            className={cn(errors.companyName && 'border-destructive-foreground')}
           />
-          {errors.companyName && <p className="text-xs text-destructive">{errors.companyName}</p>}
+          {errors.companyName && <p className="text-xs text-destructive-foreground">{errors.companyName}</p>}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -916,10 +916,10 @@ export function CompanyDetailsStep({
               placeholder="acme-india"
               value={data.companySlug}
               onChange={(e) => onUpdate({ companySlug: e.target.value.toLowerCase() })}
-              className={cn('rounded-l-none', errors.companySlug && 'border-destructive')}
+              className={cn('rounded-l-none', errors.companySlug && 'border-destructive-foreground')}
             />
           </div>
-          {errors.companySlug && <p className="text-xs text-destructive">{errors.companySlug}</p>}
+          {errors.companySlug && <p className="text-xs text-destructive-foreground">{errors.companySlug}</p>}
         </div>
 
         {/* Workspace type */}
@@ -960,7 +960,7 @@ export function CompanyDetailsStep({
           <div className="flex flex-col gap-1.5">
             <Label>Industry</Label>
             <Select value={data.industry} onValueChange={(v) => onUpdate({ industry: v })}>
-              <SelectTrigger className={cn(errors.industry && 'border-destructive')}>
+              <SelectTrigger className={cn(errors.industry && 'border-destructive-foreground')}>
                 <SelectValue placeholder="Select" />
               </SelectTrigger>
               <SelectContent>
@@ -969,12 +969,12 @@ export function CompanyDetailsStep({
                 ))}
               </SelectContent>
             </Select>
-            {errors.industry && <p className="text-xs text-destructive">{errors.industry}</p>}
+            {errors.industry && <p className="text-xs text-destructive-foreground">{errors.industry}</p>}
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Company size</Label>
             <Select value={data.companySize} onValueChange={(v) => onUpdate({ companySize: v })}>
-              <SelectTrigger className={cn(errors.companySize && 'border-destructive')}>
+              <SelectTrigger className={cn(errors.companySize && 'border-destructive-foreground')}>
                 <SelectValue placeholder="Select" />
               </SelectTrigger>
               <SelectContent>
@@ -983,7 +983,7 @@ export function CompanyDetailsStep({
                 ))}
               </SelectContent>
             </Select>
-            {errors.companySize && <p className="text-xs text-destructive">{errors.companySize}</p>}
+            {errors.companySize && <p className="text-xs text-destructive-foreground">{errors.companySize}</p>}
           </div>
         </div>
 
@@ -1122,10 +1122,10 @@ export function VerificationDocsStep({
               placeholder="22AAAAA0000A1Z5"
               value={data.gstin}
               onChange={(e) => onUpdate({ gstin: e.target.value.toUpperCase() })}
-              className={cn('font-mono text-sm', errors.gstin && 'border-destructive')}
+              className={cn('font-mono text-sm', errors.gstin && 'border-destructive-foreground')}
               maxLength={15}
             />
-            {errors.gstin && <p className="text-xs text-destructive">{errors.gstin}</p>}
+            {errors.gstin && <p className="text-xs text-destructive-foreground">{errors.gstin}</p>}
           </div>
           <FileDropZone
             label="Upload GSTIN certificate"
@@ -1150,10 +1150,10 @@ export function VerificationDocsStep({
               placeholder="AAAAA1234A"
               value={data.pan}
               onChange={(e) => onUpdate({ pan: e.target.value.toUpperCase() })}
-              className={cn('font-mono text-sm', errors.pan && 'border-destructive')}
+              className={cn('font-mono text-sm', errors.pan && 'border-destructive-foreground')}
               maxLength={10}
             />
-            {errors.pan && <p className="text-xs text-destructive">{errors.pan}</p>}
+            {errors.pan && <p className="text-xs text-destructive-foreground">{errors.pan}</p>}
           </div>
           <FileDropZone
             label="Upload PAN card"
@@ -1274,10 +1274,10 @@ export function TeamSetupStep({
               placeholder="colleague@company.com"
               value={email}
               onChange={(e) => { setEmail(e.target.value); setError(''); }}
-              className={cn(error && 'border-destructive')}
+              className={cn(error && 'border-destructive-foreground')}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addMember())}
             />
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && <p className="text-xs text-destructive-foreground">{error}</p>}
           </div>
           <Select value={role} onValueChange={(v) => setRole(v as MemberRole)}>
             <SelectTrigger className="w-full sm:w-32">

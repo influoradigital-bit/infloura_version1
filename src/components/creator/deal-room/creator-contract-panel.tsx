@@ -271,7 +271,7 @@ export function CreatorContractPanel({
                 disabled={isSigning || !contractId}
               />
               {!contractId && (
-                <p className="text-xs text-destructive">
+                <p className="text-xs text-destructive-foreground">
                   No contract ID on this event — signing is unavailable.
                 </p>
               )}

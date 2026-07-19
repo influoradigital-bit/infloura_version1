@@ -726,7 +726,7 @@ export default function BrandWalletPage() {
                       </div>
                     </div>
                     {addFundsError && (
-                      <p className="text-sm text-destructive">{addFundsError}</p>
+                      <p className="text-sm text-destructive-foreground">{addFundsError}</p>
                     )}
                   </div>
                 )}

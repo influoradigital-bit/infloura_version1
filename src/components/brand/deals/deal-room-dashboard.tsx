@@ -469,8 +469,8 @@ export function DealRoomDashboard() {
                 </div>
               ) : isApiLive() && dealsError ? (
                 <Card className="p-6 text-center">
-                  <AlertCircle className="h-10 w-10 text-destructive mx-auto mb-2" />
-                  <p className="text-sm text-destructive">{dealsError}</p>
+                  <AlertCircle className="h-10 w-10 text-destructive-foreground mx-auto mb-2" />
+                  <p className="text-sm text-destructive-foreground">{dealsError}</p>
                 </Card>
               ) : filteredDeals.length === 0 ? (
                 <Card className="p-6 text-center">
@@ -627,7 +627,7 @@ export function DealRoomDashboard() {
                     </Card>
 
                     {isApiLive() && actionError && (
-                      <p className="text-sm text-destructive mb-3">{actionError}</p>
+                      <p className="text-sm text-destructive-foreground mb-3">{actionError}</p>
                     )}
 
                     <div className="flex gap-3">
@@ -647,7 +647,7 @@ export function DealRoomDashboard() {
                           </Button>
                           <Button
                             variant="outline"
-                            className="flex-1 text-destructive hover:text-destructive"
+                            className="flex-1 text-destructive-foreground hover:text-destructive-foreground"
                             onClick={() => setShowRejectDialog(true)}
                             disabled={actionLoading}
                           >
@@ -689,7 +689,7 @@ export function DealRoomDashboard() {
                               </div>
                             )}
                             {!messagesLoading && messagesError && (
-                              <p className="text-sm text-destructive text-center py-8">{messagesError}</p>
+                              <p className="text-sm text-destructive-foreground text-center py-8">{messagesError}</p>
                             )}
                             {!messagesLoading && !messagesError && liveMessages.length === 0 && (
                               <p className="text-sm text-muted-foreground text-center py-8">No messages yet.</p>
@@ -748,7 +748,7 @@ export function DealRoomDashboard() {
                     </ScrollArea>
                     <div className="p-4 border-t">
                       {isApiLive() && messagesError && (
-                        <p className="text-xs text-destructive mb-2">{messagesError}</p>
+                        <p className="text-xs text-destructive-foreground mb-2">{messagesError}</p>
                       )}
                       <div className="flex gap-2">
                         <Button variant="outline" size="icon">
@@ -882,7 +882,7 @@ export function DealRoomDashboard() {
               </>
             )}
             {isApiLive() && actionError && (
-              <p className="text-sm text-destructive">{actionError}</p>
+              <p className="text-sm text-destructive-foreground">{actionError}</p>
             )}
           </div>
           <DialogFooter>
@@ -893,7 +893,7 @@ export function DealRoomDashboard() {
               <>
                 <Button
                   variant="ghost"
-                  className="text-destructive hover:text-destructive"
+                  className="text-destructive-foreground hover:text-destructive-foreground"
                   onClick={() => { setShowProposalDialog(false); setShowRejectDialog(true); }}
                   disabled={actionLoading}
                 >
@@ -952,7 +952,7 @@ export function DealRoomDashboard() {
               />
             </div>
             {isApiLive() && actionError && (
-              <p className="text-sm text-destructive">{actionError}</p>
+              <p className="text-sm text-destructive-foreground">{actionError}</p>
             )}
           </div>
           <DialogFooter>
@@ -972,7 +972,7 @@ export function DealRoomDashboard() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <XCircle className="h-5 w-5 text-destructive" />
+              <XCircle className="h-5 w-5 text-destructive-foreground" />
               Reject Proposal
             </DialogTitle>
             <DialogDescription>
@@ -991,7 +991,7 @@ export function DealRoomDashboard() {
               />
             </div>
             {isApiLive() && actionError && (
-              <p className="text-sm text-destructive">{actionError}</p>
+              <p className="text-sm text-destructive-foreground">{actionError}</p>
             )}
           </div>
           <DialogFooter>

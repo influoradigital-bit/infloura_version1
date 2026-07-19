@@ -1083,7 +1083,7 @@ export default function CreatorChatPage() {
               </div>
             )}
             {liveApi && messagesError && !messagesLoading && (
-              <div className="text-center py-8 text-sm text-destructive">{messagesError}</div>
+              <div className="text-center py-8 text-sm text-destructive-foreground">{messagesError}</div>
             )}
             {liveApi && !messagesLoading && !messagesError && events.length === 0 && (
               <div className="text-center py-12 text-sm text-muted-foreground">

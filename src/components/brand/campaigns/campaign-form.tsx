@@ -359,7 +359,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 p-6 text-center">
         {loadError ? (
           <>
-            <p className="text-sm font-medium text-destructive">Could not load this campaign</p>
+            <p className="text-sm font-medium text-destructive-foreground">Could not load this campaign</p>
             <p className="text-sm text-muted-foreground">{loadError}</p>
             <Button variant="outline" asChild>
               <Link to="/brand/campaigns">
@@ -476,10 +476,10 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                         placeholder="e.g., Summer Collection Launch 2024"
                         value={formData.title}
                         onChange={(e) => updateFormData({ title: e.target.value })}
-                        className={cn(errors.title && 'border-destructive')}
+                        className={cn(errors.title && 'border-destructive-foreground')}
                       />
                       {errors.title && (
-                        <p className="text-xs text-destructive">{errors.title}</p>
+                        <p className="text-xs text-destructive-foreground">{errors.title}</p>
                       )}
                     </div>
 
@@ -491,10 +491,10 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                         value={formData.description}
                         onChange={(e) => updateFormData({ description: e.target.value })}
                         rows={4}
-                        className={cn(errors.description && 'border-destructive')}
+                        className={cn(errors.description && 'border-destructive-foreground')}
                       />
                       {errors.description && (
-                        <p className="text-xs text-destructive">{errors.description}</p>
+                        <p className="text-xs text-destructive-foreground">{errors.description}</p>
                       )}
                     </div>
 
@@ -531,7 +531,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                         ))}
                       </div>
                       {errors.objectives && (
-                        <p className="text-xs text-destructive">{errors.objectives}</p>
+                        <p className="text-xs text-destructive-foreground">{errors.objectives}</p>
                       )}
                     </div>
 
@@ -596,7 +596,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                         ))}
                       </div>
                       {errors.platforms && (
-                        <p className="text-xs text-destructive">{errors.platforms}</p>
+                        <p className="text-xs text-destructive-foreground">{errors.platforms}</p>
                       )}
                     </div>
 
@@ -636,7 +636,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                         ))}
                       </div>
                       {errors.contentTypes && (
-                        <p className="text-xs text-destructive">{errors.contentTypes}</p>
+                        <p className="text-xs text-destructive-foreground">{errors.contentTypes}</p>
                       )}
                     </div>
                   </div>
@@ -664,7 +664,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                               className={cn(
                                 'w-full justify-start text-left font-normal',
                                 !formData.startDate && 'text-muted-foreground',
-                                errors.startDate && 'border-destructive'
+                                errors.startDate && 'border-destructive-foreground'
                               )}
                             >
                               <Calendar className="mr-2 h-4 w-4" />
@@ -684,7 +684,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                           </PopoverContent>
                         </Popover>
                         {errors.startDate && (
-                          <p className="text-xs text-destructive">{errors.startDate}</p>
+                          <p className="text-xs text-destructive-foreground">{errors.startDate}</p>
                         )}
                       </div>
 
@@ -697,7 +697,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                               className={cn(
                                 'w-full justify-start text-left font-normal',
                                 !formData.endDate && 'text-muted-foreground',
-                                errors.endDate && 'border-destructive'
+                                errors.endDate && 'border-destructive-foreground'
                               )}
                             >
                               <Calendar className="mr-2 h-4 w-4" />
@@ -719,7 +719,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                           </PopoverContent>
                         </Popover>
                         {errors.endDate && (
-                          <p className="text-xs text-destructive">{errors.endDate}</p>
+                          <p className="text-xs text-destructive-foreground">{errors.endDate}</p>
                         )}
                       </div>
                     </div>
@@ -772,7 +772,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                         </div>
                       </div>
                       {errors.budget && (
-                        <p className="text-xs text-destructive">{errors.budget}</p>
+                        <p className="text-xs text-destructive-foreground">{errors.budget}</p>
                       )}
                     </div>
 

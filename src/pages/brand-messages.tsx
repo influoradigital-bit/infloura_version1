@@ -517,7 +517,7 @@ export default function BrandMessagesPage() {
               </div>
             )}
             {isApiLive() && !conversationsLoading && conversationsError && (
-              <p className="px-3 py-8 text-center text-sm text-destructive">{conversationsError}</p>
+              <p className="px-3 py-8 text-center text-sm text-destructive-foreground">{conversationsError}</p>
             )}
             {isApiLive() && !conversationsLoading && !conversationsError && filteredConversations.length === 0 && (
               <p className="px-3 py-8 text-center text-sm text-muted-foreground">No conversations yet.</p>
@@ -644,7 +644,7 @@ export default function BrandMessagesPage() {
                       <DropdownMenuItem>
                         <Flag className="mr-2 h-4 w-4" /> Report
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive">
+                      <DropdownMenuItem className="text-destructive-foreground">
                         <Trash2 className="mr-2 h-4 w-4" /> Delete conversation
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -677,7 +677,7 @@ export default function BrandMessagesPage() {
                         </div>
                       )}
                       {!messagesLoading && messagesError && (
-                        <p className="text-sm text-destructive text-center py-8">{messagesError}</p>
+                        <p className="text-sm text-destructive-foreground text-center py-8">{messagesError}</p>
                       )}
                       {!messagesLoading && !messagesError && liveMessages.length === 0 && (
                         <p className="text-sm text-muted-foreground text-center py-8">No messages yet.</p>
@@ -875,7 +875,7 @@ export default function BrandMessagesPage() {
               {/* Input Area */}
               <div className="border-t border-border/50 p-4">
                 {isApiLive() && messagesError && (
-                  <p className="text-xs text-destructive mb-2">{messagesError}</p>
+                  <p className="text-xs text-destructive-foreground mb-2">{messagesError}</p>
                 )}
                 <div className="flex items-end gap-2">
                   <div className="flex gap-1">

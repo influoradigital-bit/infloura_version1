@@ -820,7 +820,7 @@ export default function BrandCampaignDetailPage() {
                       </>
                     )}
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-destructive">
+                    <DropdownMenuItem className="text-destructive-foreground">
                       <Trash2 className="mr-2 h-4 w-4" />Delete Campaign
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -1032,7 +1032,7 @@ export default function BrandCampaignDetailPage() {
                                       onClick={() => { setSelectedBid(bid); setCounterAmount(String(bid.amount)); setIsCounterOpen(true); }}>
                                       Counter
                                     </Button>
-                                    <Button size="sm" variant="ghost" className="h-8 text-destructive hover:text-destructive"
+                                    <Button size="sm" variant="ghost" className="h-8 text-destructive-foreground hover:text-destructive-foreground"
                                       disabled={mutatingId === bid.id}
                                       onClick={() => { setSelectedBid(bid); setIsRejectOpen(true); }}>
                                       <XCircle className="h-3.5 w-3.5" />
@@ -1769,7 +1769,7 @@ export default function BrandCampaignDetailPage() {
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <XCircle className="h-5 w-5 text-destructive" />Decline Bid
+                <XCircle className="h-5 w-5 text-destructive-foreground" />Decline Bid
               </DialogTitle>
               <DialogDescription>
                 Decline {selectedBid?.creator.name}&apos;s bid. This action cannot be undone.

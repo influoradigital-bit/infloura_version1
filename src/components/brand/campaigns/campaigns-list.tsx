@@ -671,7 +671,7 @@ export function CampaignsList() {
                       ) : null}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        className="text-destructive"
+                        className="text-destructive-foreground"
                         disabled={pendingActionId === campaign.id}
                         onClick={() => handleDelete(campaign)}
                       >
@@ -832,7 +832,7 @@ export function CampaignsList() {
                       ) : null}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        className="text-destructive"
+                        className="text-destructive-foreground"
                         disabled={pendingActionId === campaign.id}
                         onClick={() => handleDelete(campaign)}
                       >

@@ -214,7 +214,7 @@ export default function BrandSettingsPage() {
                 <p className="text-xs text-muted-foreground mb-4">Loading workspace information…</p>
               )}
               {workspaceInfoLoadError && (
-                <p className="text-xs text-destructive mb-4">{workspaceInfoLoadError}</p>
+                <p className="text-xs text-destructive-foreground mb-4">{workspaceInfoLoadError}</p>
               )}
               <div className="space-y-4">
                 <div>
@@ -273,7 +273,7 @@ export default function BrandSettingsPage() {
                   {workspaceInfoSaving ? 'Saving…' : 'Save Changes'}
                 </Button>
                 {workspaceInfoSaveError && (
-                  <p className="text-xs text-destructive">{workspaceInfoSaveError}</p>
+                  <p className="text-xs text-destructive-foreground">{workspaceInfoSaveError}</p>
                 )}
               </div>
             </Card>
@@ -327,7 +327,7 @@ export default function BrandSettingsPage() {
                     <p
                       className={cn(
                         'text-xs mt-1',
-                        emailPrefError ? 'text-destructive' : 'text-muted-foreground',
+                        emailPrefError ? 'text-destructive-foreground' : 'text-muted-foreground',
                       )}
                     >
                       {emailPrefError ?? (emailPrefLoading ? 'Loading preference…' : 'Saving…')}
@@ -512,7 +512,7 @@ export default function BrandSettingsPage() {
                   <LogOut className="h-4 w-4" />
                   Logout from All Devices
                 </Button>
-                <Button variant="outline" className="w-full text-destructive hover:text-destructive">
+                <Button variant="outline" className="w-full text-destructive-foreground hover:text-destructive-foreground">
                   Delete Workspace
                 </Button>
               </div>

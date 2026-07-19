@@ -128,7 +128,7 @@ const getActionIcon = (type: ActionItem['type']) => {
 
 const getPriorityBadge = (priority: ActionItem['priority']) => {
   switch (priority) {
-    case 'urgent': return 'bg-destructive/15 text-destructive border-destructive/30';
+    case 'urgent': return 'bg-destructive/15 text-destructive-foreground border-destructive-foreground/30';
     case 'high': return 'bg-warning/15 text-warning border-warning/30';
     default: return 'bg-primary/15 text-primary border-primary/30';
   }
@@ -233,13 +233,13 @@ export function DashboardPage() {
                 onClick={() => navigate(item.link)}
                 className={cn(
                   'flex w-full items-center gap-4 p-4 rounded-lg border text-left transition-all hover:shadow-sm',
-                  isUrgent ? 'bg-destructive/10 border-destructive/30' : 'bg-card',
+                  isUrgent ? 'bg-destructive/10 border-destructive-foreground/30' : 'bg-card',
                 )}
               >
                 <div
                   className={cn(
                     'h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0',
-                    isUrgent ? 'bg-destructive/15 text-destructive' : 'bg-muted text-muted-foreground',
+                    isUrgent ? 'bg-destructive/15 text-destructive-foreground' : 'bg-muted text-muted-foreground',
                   )}
                 >
                   <Icon className="h-5 w-5" />
@@ -253,7 +253,7 @@ export function DashboardPage() {
                   <p
                     className={cn(
                       'text-xs',
-                      isOverdue ? 'text-destructive' : isUrgent ? 'text-warning' : 'text-muted-foreground',
+                      isOverdue ? 'text-destructive-foreground' : isUrgent ? 'text-warning' : 'text-muted-foreground',
                     )}
                   >
                     {isOverdue ? 'Overdue' : timeLeft}
@@ -387,7 +387,7 @@ function WalletCard({ balance, escrow, runwayDays, health, healthLabel, onManage
   return (
     <Card
       className={cn(
-        health === 'critical' && 'border-destructive/30',
+        health === 'critical' && 'border-destructive-foreground/30',
         health === 'warning' && 'border-warning/30',
       )}
     >
@@ -417,7 +417,7 @@ function WalletCard({ balance, escrow, runwayDays, health, healthLabel, onManage
                 'text-sm font-semibold',
                 health === 'healthy' && 'text-success',
                 health === 'warning' && 'text-warning',
-                health === 'critical' && 'text-destructive',
+                health === 'critical' && 'text-destructive-foreground',
               )}
             >
               {runwayDays}d runway

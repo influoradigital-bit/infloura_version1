@@ -130,7 +130,7 @@ export default function BrandOnboardingPage() {
   return (
     <OnboardingLayout currentStep={currentStep} totalSteps={TOTAL_STEPS}>
       {error && (
-        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className="mb-4 rounded-lg border border-destructive-foreground/30 bg-destructive/10 px-4 py-3 text-sm text-destructive-foreground">
           {error}
         </div>
       )}

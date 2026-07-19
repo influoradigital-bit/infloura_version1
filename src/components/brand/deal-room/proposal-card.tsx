@@ -56,7 +56,7 @@ export function ProposalCard({
     <Card
       className={cn(
         'border-primary/20 bg-gradient-to-r from-primary/5 to-transparent mb-4',
-        isDeclined && 'opacity-60 border-destructive/20 from-destructive/5'
+        isDeclined && 'opacity-60 border-destructive-foreground/20 from-destructive/5'
       )}
     >
       <CardHeader className="pb-3">
@@ -219,7 +219,7 @@ export function ProposalCard({
         )}
 
         {isDeclined && (
-          <div className="pt-2 text-sm text-destructive font-medium">
+          <div className="pt-2 text-sm text-destructive-foreground font-medium">
             This proposal was declined
           </div>
         )}

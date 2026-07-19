@@ -445,7 +445,7 @@ export default function BrandCreatorProfilePage() {
     if (loadError) {
       return (
         <div className="mx-auto max-w-md px-4 py-16 text-center">
-          <p className="text-sm font-medium text-destructive">Could not load creator</p>
+          <p className="text-sm font-medium text-destructive-foreground">Could not load creator</p>
           <p className="mt-1 text-sm text-muted-foreground">{loadError}</p>
           <Button variant="outline" className="mt-4" onClick={() => setReloadToken((k) => k + 1)}>
             Try again
@@ -959,7 +959,7 @@ export default function BrandCreatorProfilePage() {
               </div>
             )}
             {inviteError && (
-              <p className="text-sm text-destructive">{inviteError}</p>
+              <p className="text-sm text-destructive-foreground">{inviteError}</p>
             )}
           </div>
           <DialogFooter>

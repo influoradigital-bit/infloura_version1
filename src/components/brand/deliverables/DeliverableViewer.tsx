@@ -26,7 +26,7 @@ const statusConfig: Record<DeliverableStatus, { label: string; className: string
   REVISION_REQUESTED: { label: 'Revision Requested', className: 'bg-orange-100 text-orange-700' },
   RESUBMITTED: { label: 'Resubmitted', className: 'bg-warning/15 text-warning' },
   APPROVED: { label: 'Approved', className: 'bg-success/15 text-success' },
-  REJECTED: { label: 'Rejected', className: 'bg-destructive/15 text-destructive' },
+  REJECTED: { label: 'Rejected', className: 'bg-destructive/15 text-destructive-foreground' },
   POSTED: { label: 'Posted', className: 'bg-blue-100 text-blue-700' },
   METRICS_REPORTED: { label: 'Metrics Reported', className: 'bg-blue-100 text-blue-700' },
   VERIFIED: { label: 'Verified', className: 'bg-success/15 text-success' },
@@ -227,7 +227,7 @@ export function DeliverableViewer({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-md">
           <div className="flex flex-col items-center justify-center py-8 gap-4">
-            <AlertCircle className="h-12 w-12 text-destructive" />
+            <AlertCircle className="h-12 w-12 text-destructive-foreground" />
             <div className="text-center space-y-2">
               <p className="font-medium">Could not load deliverable</p>
               <p className="text-sm text-muted-foreground">{error || 'Unknown error'}</p>

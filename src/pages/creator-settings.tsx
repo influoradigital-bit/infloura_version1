@@ -346,7 +346,7 @@ export default function CreatorSettingsPage() {
                   <p
                     className={cn(
                       'text-xs mt-1',
-                      emailPrefError ? 'text-destructive' : 'text-muted-foreground',
+                      emailPrefError ? 'text-destructive-foreground' : 'text-muted-foreground',
                     )}
                   >
                     {emailPrefError ?? (emailPrefLoading ? 'Loading preference…' : 'Saving…')}

@@ -65,7 +65,7 @@ export default function CreatorForgotPasswordPage() {
                 />
               </div>
               {error && (
-                <p role="alert" className="text-sm text-destructive">
+                <p role="alert" className="text-sm text-destructive-foreground">
                   {error}
                 </p>
               )}
