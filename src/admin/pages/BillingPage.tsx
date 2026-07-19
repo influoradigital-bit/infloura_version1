@@ -7,8 +7,8 @@
  * Thin page shell (header + description) around `BillingConsole.tsx`
  * (src/admin/components/billing/BillingConsole.tsx), same split as
  * `DisputesPage.tsx` around `DisputeList`. BillingConsole owns all the data
- * (currently mock — see its file header) and the Comp Pro / Override modals;
- * this page owns no state itself.
+ * (live via AdminBillingController — see its file header) and the Comp Pro /
+ * Override modals; this page owns no state itself.
  */
 
 import { CreditCard } from 'lucide-react';
@@ -24,8 +24,7 @@ export default function BillingPage() {
         </h2>
         <p className="text-sm text-muted-foreground">
           MRR/ARR/churn overview, workspace subscriptions, and comp/override actions for
-          subscription billing. Backend (`AdminBillingController`) is pending — data below is
-          demo/mock until live wiring lands.
+          subscription billing. Live via the `AdminBillingController` backend.
         </p>
       </div>
 

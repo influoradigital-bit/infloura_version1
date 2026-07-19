@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import BrandLoginPage from '@/pages/brand-login';
@@ -109,14 +109,10 @@ const AdminProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return isAuthenticated ? <>{children}</> : <Navigate to="/admin/login" replace />;
 };
 
-// /brand/deals/:id had no deep-link support in the Deal Room dashboard (it
-// selects a deal via in-page state, not a route param), so single-deal URLs
-// still redirect into the chat-first surface, preserving the deal id as
-// ?deal=. The list view at /brand/deals itself is live — see the route below.
-const DealRedirect = () => {
-  const { id } = useParams();
-  return <Navigate to={id ? `/brand/chat?deal=${id}` : '/brand/chat'} replace />;
-};
+// /brand/deals/:id now deep-links directly into the Deal Room dashboard, which
+// reads the :id route param (and legacy ?deal= query) via useParams/
+// useSearchParams and auto-selects the matching deal once the list loads.
+// See src/components/brand/deals/deal-room-dashboard.tsx.
 
 // Single shared client for every `useQuery`/`useMutation` call in the app
 // (admin console hooks + brand billing settings) — previously missing entirely,
@@ -323,8 +319,15 @@ export default function App() {
             </BrandLayoutWrapper>
           }
         />
-        {/* /brand/deals/:id has no deep-link support (see DealRedirect above) */}
-        <Route path="/brand/deals/:id" element={<DealRedirect />} />
+        {/* Deep-link to a single deal — same dashboard, auto-selects :id */}
+        <Route
+          path="/brand/deals/:id"
+          element={
+            <BrandLayoutWrapper>
+              <BrandDealsPage />
+            </BrandLayoutWrapper>
+          }
+        />
         <Route
           path="/brand/pipeline"
           element={

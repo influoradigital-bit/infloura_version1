@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -212,6 +212,12 @@ const formatBudget = (amount: number): string => {
 
 export function DealRoomDashboard() {
   const navigate = useNavigate();
+  // Deep-link support: /brand/deals/:id selects that deal in-page; the legacy
+  // ?deal= query (previously emitted by the DealRedirect shim) is still honored
+  // as a fallback so old chat links keep resolving.
+  const { id: routeDealId } = useParams<{ id?: string }>();
+  const [searchParams] = useSearchParams();
+  const deepLinkDealId = routeDealId ?? searchParams.get('deal') ?? undefined;
   const [searchTerm, setSearchTerm] = React.useState('');
   const [filterStatus, setFilterStatus] = React.useState<string>('all');
   const [selectedDeal, setSelectedDeal] = React.useState<DealRoom | null>(null);
@@ -256,6 +262,16 @@ export function DealRoomDashboard() {
   React.useEffect(() => {
     if (isApiLive()) void loadDeals();
   }, [loadDeals]);
+
+  // Resolve a deep-linked deal (/brand/deals/:id or ?deal=) once the list is
+  // available. Works in both mock and live mode because `dealRooms` switches
+  // sources; in live mode this re-runs when `liveDeals` populates after fetch.
+  React.useEffect(() => {
+    if (!deepLinkDealId) return;
+    if (selectedDeal?.id === deepLinkDealId) return;
+    const match = dealRooms.find((deal) => deal.id === deepLinkDealId);
+    if (match) setSelectedDeal(match);
+  }, [deepLinkDealId, dealRooms, selectedDeal]);
 
   const loadMessages = React.useCallback(async (dealId: string) => {
     setMessagesLoading(true);
@@ -484,7 +500,12 @@ export function DealRoomDashboard() {
                   return (
                     <button
                       key={deal.id}
-                      onClick={() => setSelectedDeal(deal)}
+                      onClick={() => {
+                        setSelectedDeal(deal);
+                        // Keep the URL shareable/bookmarkable without adding a
+                        // history entry per click.
+                        navigate(`/brand/deals/${deal.id}`, { replace: true });
+                      }}
                       className={`w-full text-left p-3 rounded-lg border transition-all ${
                         isSelected
                           ? 'bg-background border-primary shadow-sm'
