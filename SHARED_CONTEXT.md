@@ -985,4 +985,26 @@ Ananya → Kavya | Fix mock-only Approve/Request Revision on brand timeline deli
 
 ---
 
+## Meera Verification — Contracts/Disputes/Analytics batch (3 FE-only partial-fixes, single build gate) — 2026-07-18
+
+```
+FROM Kavya → Meera | Local build verification (FE-only, backends pre-existing) | src/lib/contract-generator.ts, deal-contract-tab.tsx, contract-panel.tsx, creator-contract-panel.tsx, creator-deal-contract-tab.tsx, contracts-and-deliverables.tsx, src/lib/api.ts (brandDisputes.list), src/pages/brand-disputes.tsx, src/pages/brand-analytics.tsx | ✅ ALL PASS | cleared to score
+```
+
+| Check | Command | Result |
+|---|---|---|
+| Typecheck | `npx tsc --noEmit` | ✅ exit 0, 0 errors, empty output |
+| Build (authoritative gate) | `npm run build` (vite build + postbuild prerender) | ✅ exit 0 — 4739 modules transformed, built in 1m35s, 16/16 marketing routes prerendered. Only pre-existing >500kB chunk-size warning, no new errors. `package.json`/`package-lock.json` changes from the other in-flight session did **not** break this build — no missing-dep failure to flag. |
+| Contracts wiring | grep `api.contracts.sign` | ✅ live in `contract-generator.ts:225` and `contracts-and-deliverables.tsx:579`; 4 panel files present in module graph (see mount check below) |
+| Brand disputes wiring | grep `brand/disputes/list` | ✅ `src/lib/api.ts:3115` — `http.request<BrandDisputeRow[]>('GET', '/brand/disputes/list', ...)` in live mode; `brand-disputes.tsx` doc comment updated to match |
+| Brand analytics wiring | grep `deals.list`/`demoCreators` in `brand-analytics.tsx` | ✅ live roster derives from `api.deals.list('brand', 'all')` (line 63); `demoCreators` correctly retained only for the `!live` branch (mock mode) |
+| Mount spot-check | `npm run dev` + browser → `/brand/disputes`, `/brand/analytics` | ⚠️ PARTIAL — both routes redirect to the brand sign-in gate (no test credentials in this environment, expected auth-gated behavior, not a bug). Could not directly observe the live `GET /brand/disputes/list` call or the analytics roster fetch. No console errors, no failed/500 network requests, no crash — Vite dev server served every requested module cleanly. |
+| Bundle-inclusion proxy | network log during mount attempt | ✅ `contract-panel.tsx` and `deliverable-review-panel.tsx` both loaded as 200 OK modules mid-render, confirming the contract panels compile and are reachable in the live module graph even though the authenticated view itself couldn't be reached |
+
+**CANNOT-VERIFY:** authenticated live round-trip of `/brand/disputes` and `/brand/analytics` against a running backend — no test credentials/session available in this environment; only the pre-auth redirect and clean module load were exercised.
+
+**VERDICT: ✅ BUILD PASS (authoritative gate) — all three fixes cleared to score.** tsc clean, build clean, all three changes confirmed present and wired via grep. Mount check partial due to auth gate (environment limitation, not a defect). VETO not exercised.
+
+---
+
 Ananya → Kavya | Wire Hype campaign config into POST/PATCH /campaigns (Priya/coordinator direct task, depends on Vikram's HypeConfigDto backend) | src/lib/api.ts (campaignToPayload + mapCampaignFromApi) | READY for QA (needs Vikram's backend running for live verification) | campaignToPayload now forwards `campaignType` + full `hype` block (was dropping both). `liveUntil` converted Date→ISO string on write (fmtIso), ISO string→Date on read (mapCampaignFromApi), matching HypeConfigDto's raw-string contract (CampaignDtos.java:43-47). FE/BE enum mismatch handled: FE CampaignType has 'OPEN' which backend's CampaignIntentType (HYPE/DIRECT/REVIEW/STANDARD) rejects — only forward campaignType when it isn't 'OPEN'; omitting it for the generic (non-Hype) create/edit forms is unchanged behavior (backend defaults absent campaignType to STANDARD). Did NOT reconcile the full OPEN/STANDARD mismatch — flagging as a separate pre-existing item, not in scope. Read path: campaigns-list.tsx / HypeCampaignCard already consumed campaign.campaignType/campaign.hype correctly, no changes needed there. brand-edit-campaign.tsx has no Hype UI — confirmed backend silently ignores PATCH with hype:undefined for an existing HYPE campaign (CampaignService.java:201-210), so no regression from the generic edit form. tsc --noEmit clean. Verified via temporary dev-only smoke route (created + fully removed after test, git status confirms clean): captured actual POST /campaigns bodies — Hype create sent `campaignType:"HYPE"` + full `hype` block with `liveUntil` as ISO string (e.g. "2026-07-21T13:11:44.230Z"); standard create sent neither `campaignType` nor `hype` keys at all (no "OPEN" ever sent).
