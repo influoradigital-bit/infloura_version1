@@ -23,10 +23,15 @@ shown in the chat panel; this only limits what gets vocalized.
 
 from __future__ import annotations
 
-# P18: Maximum characters to send to TTS. At the high Sarvam rate (Rs.30/10k chars),
-# 200 chars costs Rs.0.60 — within the 4-credit allowance (~Rs.0.88). Longer replies
-# would push margins negative (see 20-ROHAN-COST-REVIEW.md §3).
-TTS_MAX_CHARS = 200
+# P18: Maximum characters to send to TTS. Raised 200 -> 500 so a normal Meera
+# reply (the intro is ~270 chars) is spoken in FULL instead of being cut off
+# mid-thought after the first sentence or two — the 200-char cap was a
+# cost-margin guard (20-ROHAN-COST-REVIEW.md §3) but made the voice feel broken.
+# 500 chars is ~Rs.1.50/call at the high Sarvam rate and is Sarvam bulbul:v3's
+# comfortable single-input length (verified accepted); genuinely long replies
+# still truncate gracefully at a sentence boundary below. Revisit if voice-TTS
+# spend becomes a real cost line.
+TTS_MAX_CHARS = 500
 
 import logging
 import uuid
