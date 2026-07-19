@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useReducedMotion } from 'framer-motion'
+import { AudioLines } from 'lucide-react'
 
 import { VoiceToggle } from '@/components/ui/voice-toggle'
 import { MeeraOrb } from '@/components/feature/meera/MeeraOrb'
+import { VoiceMode } from '@/components/feature/meera/VoiceMode'
 import { MessageBubble } from '@/components/feature/meera/MessageBubble'
 import { ThinkingState } from '@/components/feature/meera/ThinkingState'
 import { Composer } from '@/components/feature/meera/Composer'
@@ -137,13 +139,17 @@ export function MeeraChatPanel({
   const [awaitingFirstToken, setAwaitingFirstToken] = useState(live)
   const [liveThinkingSteps, setLiveThinkingSteps] = useState<string[]>(live ? ['Connecting to Meera'] : [])
   const [creditsExhausted, setCreditsExhausted] = useState(false)
+  // Hands-free voice conversation overlay (the "Claude mobile voice" mode).
+  // LIVE-only: it drives the real send/stream/speak pipeline, which the mock
+  // scripted path doesn't expose in a turn-agnostic way.
+  const [voiceModeOpen, setVoiceModeOpen] = useState(false)
   const stream = useMeeraStream()
 
   // Voice output (spec §5A.B) — additive only. Text renders unconditionally;
   // speak() is called AFTER a Meera line is already in `messages`, so audio
   // never gates the reply. Default OFF, persisted, cancel-on-unmount handled
   // inside the hook.
-  const { supported: voiceOutputSupported, enabled: voiceEnabled, setEnabled: setVoiceEnabled, isSpeaking, speak } =
+  const { supported: voiceOutputSupported, enabled: voiceEnabled, setEnabled: setVoiceEnabled, isSpeaking, speak, stop: stopSpeaking } =
     useVoiceOutput()
 
   const turn = MEERA_CONVERSATION_SCRIPT[turnIndex]
@@ -501,6 +507,19 @@ export function MeeraChatPanel({
             {MEERA_IDENTITY.firstInIndiaBadge}
           </p>
         </div>
+        {/* Hands-free voice conversation entry (LIVE only — drives the real
+            turn pipeline). Opens the full-screen VoiceMode loop. */}
+        {live && (
+          <button
+            type="button"
+            onClick={() => setVoiceModeOpen(true)}
+            aria-label="Start voice conversation"
+            title="Talk to Meera"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-meera-border bg-meera-surface text-meera-text-muted transition-colors hover:text-meera-text"
+          >
+            <AudioLines className="h-4 w-4" />
+          </button>
+        )}
         {/* Voice output toggle — only rendered when TTS is actually supported
             (Priya's voice handoff §2): an unsupported browser never sees a
             control that does nothing. */}
@@ -531,10 +550,26 @@ export function MeeraChatPanel({
         {live && awaitingFirstToken && <ThinkingState steps={liveThinkingDisplaySteps} />}
       </div>
 
-      {/* Composer / paywall */}
+      {/* Composer / paywall / voice-mode bar. Voice mode replaces the text
+          composer in-place (bottom of the LEFT chat column) instead of taking
+          over the whole screen — the message list above stays visible, so the
+          spoken conversation is recorded and read back as text bubbles in real
+          time (the "like Claude" transcript). Only mounted while open so its
+          mic loop + Web Audio graph don't run in the background. */}
       <div className="shrink-0 border-t border-meera-border bg-meera-surface p-4">
         {showPaywall ? (
           <CreditPaywall onFund={() => onFunctionCall('request_payment')} />
+        ) : live && voiceModeOpen ? (
+          <VoiceMode
+            open={voiceModeOpen}
+            onExit={() => setVoiceModeOpen(false)}
+            onSend={handleSend}
+            phase={phase}
+            isSpeaking={isSpeaking}
+            voiceOutputEnabled={voiceEnabled}
+            setVoiceOutputEnabled={setVoiceEnabled}
+            stopSpeaking={stopSpeaking}
+          />
         ) : (
           <Composer
             onSend={handleSend}

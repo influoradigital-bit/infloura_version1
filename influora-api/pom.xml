@@ -64,6 +64,14 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
+        <!-- MSG91 Email API v5 rejects both the SMS auth-key and the email token-auth (401,
+             live-verified against control.msg91.com). MSG91 also runs an SMTP relay
+             (smtp.mailer91.com) under separate credentials that do authenticate;
+             Msg91EmailClient sends through this instead of the HTTP API. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>

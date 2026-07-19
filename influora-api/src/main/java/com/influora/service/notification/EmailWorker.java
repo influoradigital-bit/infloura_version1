@@ -99,7 +99,12 @@ public class EmailWorker {
             // Read everything needed for the send BEFORE the transaction that claimed it closed
             // (already committed by now) — these are plain field reads off a detached instance,
             // never reused for a later save.
-            processOne(outbox.getId(), outbox.getToEmail(), outbox.getTemplateKey(), outbox.getTemplateData());
+            processOne(
+                    outbox.getId(),
+                    outbox.getToEmail(),
+                    outbox.getTemplateKey(),
+                    outbox.getTemplateData(),
+                    outbox.getUserId());
         }
     }
 
@@ -129,11 +134,12 @@ public class EmailWorker {
      * any failure (including a thrown exception from the client) is captured and handed to the
      * mark phase as a failure result.
      */
-    private void processOne(String id, String toEmail, String templateKey, String templateData) {
+    private void processOne(
+            String id, String toEmail, String templateKey, String templateData, String userId) {
         boolean success;
         String errorMessage = null;
         try {
-            success = msg91Client.sendTemplateEmail(toEmail, templateKey, templateData);
+            success = msg91Client.sendTemplateEmail(toEmail, templateKey, templateData, userId);
             if (!success) {
                 errorMessage = "MSG91 returned failure";
             }

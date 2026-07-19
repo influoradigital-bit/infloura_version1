@@ -7,7 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.influora.config.JwksSigningKeyProperties;
 import com.influora.security.SpringJwksKeyService;
 import com.influora.testsupport.TestEcKeys;
-import io.jsonwebtoken.security.JwkSet;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,22 +31,26 @@ class JwksControllerTest {
         controller = new JwksController(new SpringJwksKeyService(props));
     }
 
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> keysOf(Map<String, Object> response) {
+        return (List<Map<String, Object>>) response.get("keys");
+    }
+
     @Test
     @DisplayName("jwks: returns exactly one EC public key with the configured kid")
     void testJwksReturnsExpectedShape() {
-        JwkSet jwkSet = controller.jwks();
+        List<Map<String, Object>> keys = keysOf(controller.jwks());
 
-        assertEquals(1, jwkSet.getKeys().size());
-        var jwk = jwkSet.getKeys().iterator().next();
-        assertEquals("EC", jwk.getType());
-        assertEquals("test-kid-controller", jwk.getId());
+        assertEquals(1, keys.size());
+        Map<String, Object> jwk = keys.get(0);
+        assertEquals("EC", jwk.get("kty"));
+        assertEquals("test-kid-controller", jwk.get("kid"));
     }
 
     @Test
     @DisplayName("jwks: response contains only public-key fields, never a private/secret parameter")
     void testJwksNeverExposesPrivateKeyMaterial() {
-        JwkSet jwkSet = controller.jwks();
-        var jwk = jwkSet.getKeys().iterator().next();
+        Map<String, Object> jwk = keysOf(controller.jwks()).get(0);
 
         // RFC 7518 §6.2.2: 'd' is the EC private key parameter. Its absence is exactly what
         // distinguishes an EcPublicJwk from an EcPrivateJwk.

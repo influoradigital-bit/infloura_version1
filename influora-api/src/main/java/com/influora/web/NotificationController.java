@@ -7,6 +7,7 @@ import com.influora.domain.entity.Notification;
 import com.influora.repository.EmailPreferenceRepository;
 import com.influora.repository.NotificationRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.notification.UnsubscribeTokenService;
 import com.influora.web.dto.notification.NotificationDtos.MarkReadRequest;
 import com.influora.web.dto.notification.NotificationDtos.MarkReadResponse;
 import com.influora.web.dto.notification.NotificationDtos.NotificationListResponse;
@@ -22,6 +23,7 @@ import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,7 +35,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Public endpoints for in-app notifications (Domain B, 07-NOTIFICATION-SYSTEM-SPEC.md).
- * All queries are scoped to the authenticated user.
+ * Most queries are scoped to the authenticated user — the exception is {@link
+ * #unsubscribeViaLink}, which a recipient reaches straight from an email with no session at all
+ * (see {@code SecurityConfig}'s {@code permitAll} for this exact path).
  */
 @RestController
 @RequestMapping("/notifications")
@@ -41,12 +45,15 @@ public class NotificationController {
 
     private final NotificationRepository notificationRepository;
     private final EmailPreferenceRepository emailPreferenceRepository;
+    private final UnsubscribeTokenService unsubscribeTokenService;
 
     public NotificationController(
             NotificationRepository notificationRepository,
-            EmailPreferenceRepository emailPreferenceRepository) {
+            EmailPreferenceRepository emailPreferenceRepository,
+            UnsubscribeTokenService unsubscribeTokenService) {
         this.notificationRepository = notificationRepository;
         this.emailPreferenceRepository = emailPreferenceRepository;
+        this.unsubscribeTokenService = unsubscribeTokenService;
     }
 
     /**
@@ -119,6 +126,54 @@ public class NotificationController {
         emailPreferenceRepository.save(preference);
 
         return ResponseEntity.ok(new UnsubscribeResponse(true, request.eventType()));
+    }
+
+    /**
+     * GET /notifications/unsubscribe-link?token=... - one-click unsubscribe from the link in an
+     * email footer ({@code EmailTemplateRegistry}). Deliberately unauthenticated: the recipient is
+     * reading their inbox, not a logged-in session — {@link UnsubscribeTokenService}'s HMAC
+     * signature is what proves the (userId, eventType) pair wasn't tampered with, not a JWT.
+     * Returns a plain confirmation page rather than JSON since this is a browser-clicked link, not
+     * an API call.
+     */
+    @GetMapping(value = "/unsubscribe-link", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> unsubscribeViaLink(@RequestParam("token") String token) {
+        return unsubscribeTokenService
+                .verify(token)
+                .map(
+                        parsed -> {
+                            EmailPreference preference =
+                                    emailPreferenceRepository
+                                            .findByUserIdAndEventType(parsed.userId(), parsed.eventType())
+                                            .orElseGet(
+                                                    () ->
+                                                            EmailPreference.builder()
+                                                                    .id(Ulids.newUlid())
+                                                                    .userId(parsed.userId())
+                                                                    .eventType(parsed.eventType())
+                                                                    .unsubscribed(false)
+                                                                    .build());
+                            preference.setUnsubscribed(true);
+                            emailPreferenceRepository.save(preference);
+                            return ResponseEntity.ok(confirmationPage(true));
+                        })
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.BAD_REQUEST).body(confirmationPage(false)));
+    }
+
+    private static String confirmationPage(boolean success) {
+        String heading = success ? "You've been unsubscribed" : "This link is invalid or expired";
+        String body =
+                success
+                        ? "You will no longer receive this type of email from Influora."
+                        : "Please request a new email from Influora, or manage your preferences from"
+                                + " your account settings.";
+        return "<!doctype html><html><body style=\"font-family:-apple-system,Segoe UI,Roboto,"
+                + "Helvetica,Arial,sans-serif;padding:48px;text-align:center;color:#221e35;\">"
+                + "<h2 style=\"margin:0 0 12px;\">"
+                + heading
+                + "</h2><p style=\"color:#3d3852;\">"
+                + body
+                + "</p></body></html>";
     }
 
     /**

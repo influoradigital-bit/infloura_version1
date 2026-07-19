@@ -54,6 +54,14 @@ export interface UseVoiceInputOptions {
   /** Called on any failure path with the fallback copy to show the user. */
   onError?: (message: string) => void
   lang?: string
+  /**
+   * Hands-free mode: when set (>0), the Sarvam recording path auto-stops after
+   * this many ms of trailing silence (once speech has actually been detected),
+   * instead of waiting for a manual `stop()`. Opt-in — the default composer mic
+   * passes nothing here, so its manual tap-to-stop behavior is completely
+   * unchanged. Only the {@code VoiceMode} conversation loop sets this.
+   */
+  autoStopSilenceMs?: number
 }
 
 export interface UseVoiceInputResult {
@@ -85,7 +93,12 @@ function detectBrowserSttSupport(): boolean {
   return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
 }
 
-export function useVoiceInput({ onResult, onError, lang = 'en-IN' }: UseVoiceInputOptions): UseVoiceInputResult {
+export function useVoiceInput({
+  onResult,
+  onError,
+  lang = 'en-IN',
+  autoStopSilenceMs,
+}: UseVoiceInputOptions): UseVoiceInputResult {
   // Detected once — capability doesn't change over the hook's lifetime.
   const recorderSupportedRef = useRef(detectRecorderSupport())
   const browserSttSupportedRef = useRef(detectBrowserSttSupport())
@@ -96,6 +109,12 @@ export function useVoiceInput({ onResult, onError, lang = 'en-IN' }: UseVoiceInp
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
+
+  // Hands-free silence detection (only used when autoStopSilenceMs is set).
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const vadRafRef = useRef<number | null>(null)
+  const vadSilenceStartRef = useRef<number | null>(null)
+  const vadSpeechDetectedRef = useRef(false)
 
   const fail = useCallback(
     (message: string) => {
@@ -108,12 +127,99 @@ export function useVoiceInput({ onResult, onError, lang = 'en-IN' }: UseVoiceInp
     [onError],
   )
 
+  // Tear down the Web Audio silence-detection graph. Safe to call when it was
+  // never started (autoStopSilenceMs unset) — every ref is null in that case.
+  const stopSilenceDetection = useCallback(() => {
+    if (vadRafRef.current !== null) {
+      cancelAnimationFrame(vadRafRef.current)
+      vadRafRef.current = null
+    }
+    const ctx = audioContextRef.current
+    audioContextRef.current = null
+    vadSilenceStartRef.current = null
+    vadSpeechDetectedRef.current = false
+    if (ctx && ctx.state !== 'closed') {
+      // close() returns a promise; we don't await it — the graph is detached
+      // from the (already-stopped) stream by the time this runs.
+      void ctx.close().catch(() => {})
+    }
+  }, [])
+
   const releaseRecordingResources = useCallback(() => {
+    stopSilenceDetection()
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
     mediaStreamRef.current = null
     mediaRecorderRef.current = null
     chunksRef.current = []
-  }, [])
+  }, [stopSilenceDetection])
+
+  /**
+   * Hands-free auto-stop: watches the live mic level and calls {@code onSilence}
+   * once the user has spoken and then gone quiet for {@code autoStopSilenceMs}.
+   * Uses a time-domain RMS from an AnalyserNode — no external VAD model, works
+   * offline. Threshold/min-speech are conservative so background hiss doesn't
+   * trip it and a half-second pause mid-sentence doesn't cut the user off.
+   */
+  const startSilenceDetection = useCallback(
+    (stream: MediaStream, silenceMs: number, onSilence: () => void) => {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      if (!AudioCtx) return // no Web Audio — hands-free just relies on manual/other stop
+
+      let ctx: AudioContext
+      try {
+        ctx = new AudioCtx()
+      } catch {
+        return
+      }
+      audioContextRef.current = ctx
+      const source = ctx.createMediaStreamSource(stream)
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 2048
+      source.connect(analyser)
+
+      const buffer = new Uint8Array(analyser.fftSize)
+      // RMS threshold on the 0..1-centered-at-0.5 time-domain signal. ~0.015 is
+      // a quiet room's noise floor; speech sits well above it.
+      const SPEECH_RMS = 0.02
+      const MIN_SPEECH_MS = 300 // must hear this much speech before arming auto-stop
+      let speechStartAt = 0
+
+      const tick = () => {
+        const now = performance.now()
+        analyser.getByteTimeDomainData(buffer)
+        let sumSquares = 0
+        for (let i = 0; i < buffer.length; i++) {
+          const centered = (buffer[i] - 128) / 128
+          sumSquares += centered * centered
+        }
+        const rms = Math.sqrt(sumSquares / buffer.length)
+
+        if (rms >= SPEECH_RMS) {
+          // Speaking. Mark speech detected once it's sustained past MIN_SPEECH_MS.
+          if (speechStartAt === 0) speechStartAt = now
+          if (!vadSpeechDetectedRef.current && now - speechStartAt >= MIN_SPEECH_MS) {
+            vadSpeechDetectedRef.current = true
+          }
+          vadSilenceStartRef.current = null
+        } else {
+          // Silence. Only counts once real speech has been heard.
+          speechStartAt = 0
+          if (vadSpeechDetectedRef.current) {
+            if (vadSilenceStartRef.current === null) vadSilenceStartRef.current = now
+            else if (now - vadSilenceStartRef.current >= silenceMs) {
+              onSilence()
+              return // stop the loop; onSilence triggers recorder.stop() -> teardown
+            }
+          }
+        }
+
+        vadRafRef.current = requestAnimationFrame(tick)
+      }
+
+      vadRafRef.current = requestAnimationFrame(tick)
+    },
+    [],
+  )
 
   // ---- Browser SpeechRecognition path -----------------------------------
   // Used both as the sole path when Sarvam recording isn't available at
@@ -253,13 +359,28 @@ export function useVoiceInput({ onResult, onError, lang = 'en-IN' }: UseVoiceInp
 
       recorder.start()
       setPhase('listening')
+
+      // Hands-free: auto-stop after trailing silence. onSilence stops the
+      // recorder, which fires onstop -> handleRecordingStopped -> transcribe.
+      if (autoStopSilenceMs && autoStopSilenceMs > 0) {
+        startSilenceDetection(stream, autoStopSilenceMs, () => {
+          const rec = mediaRecorderRef.current
+          if (rec && rec.state !== 'inactive') rec.stop()
+        })
+      }
     } catch {
       // getUserMedia permission denied/unavailable at call time — fall back
       // to browser recognition rather than a dead end.
       releaseRecordingResources()
       startBrowserRecognition()
     }
-  }, [handleRecordingStopped, releaseRecordingResources, startBrowserRecognition])
+  }, [
+    handleRecordingStopped,
+    releaseRecordingResources,
+    startBrowserRecognition,
+    autoStopSilenceMs,
+    startSilenceDetection,
+  ])
 
   const start = useCallback(() => {
     if (!supported || phase === 'listening' || phase === 'transcribing') return
@@ -289,6 +410,9 @@ export function useVoiceInput({ onResult, onError, lang = 'en-IN' }: UseVoiceInp
       const recorder = mediaRecorderRef.current
       if (recorder && recorder.state !== 'inactive') recorder.stop()
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+      if (vadRafRef.current !== null) cancelAnimationFrame(vadRafRef.current)
+      const ctx = audioContextRef.current
+      if (ctx && ctx.state !== 'closed') void ctx.close().catch(() => {})
     }
   }, [])
 

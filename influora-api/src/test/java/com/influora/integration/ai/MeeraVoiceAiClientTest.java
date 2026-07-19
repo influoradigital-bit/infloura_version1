@@ -14,12 +14,15 @@ import com.influora.config.JwksSigningKeyProperties;
 import com.influora.security.SpringJwksKeyService;
 import com.influora.service.integration.BrandSafetyServiceTokenService;
 import com.influora.testsupport.TestEcKeys;
-import java.net.http.HttpClient;
-import java.net.http.HttpHeaders;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.ClassicHttpResponse;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.core5.http.io.HttpClientResponseHandler;
+import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
+import org.apache.hc.core5.http.message.BasicClassicHttpResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,17 +33,19 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Unit tests for {@link MeeraVoiceAiClient} (voice proxy, influora-ai {@code POST /voice/speak}).
- * Mocks the underlying {@link HttpClient} (injected via the package-visible constructor) rather
- * than standing up a real server — same "mock the transport" spirit as {@code
- * BrandSafetyAiClientTest}/{@code TrendSparkAiClientTest}.
+ * Mocks the underlying {@link CloseableHttpClient} (injected via the package-visible constructor)
+ * rather than standing up a real server — same "mock the transport" spirit as {@code
+ * BrandSafetyAiClientTest}/{@code TrendSparkAiClientTest}. Responses are real {@link
+ * BasicClassicHttpResponse} instances (not mocks) so the client's own {@code
+ * HttpClientResponseHandler} runs unmodified against them, exactly as it would against a real
+ * Apache HttpClient5 response.
  */
 @ExtendWith(MockitoExtension.class)
 class MeeraVoiceAiClientTest {
 
     private static final String WORKSPACE_ID = "01HWXYZWORKSPACE123456789";
 
-    @Mock private HttpClient httpClient;
-    @Mock private HttpResponse<byte[]> httpResponse;
+    @Mock private CloseableHttpClient httpClient;
 
     private BrandSafetyServiceTokenService tokenService;
     private MeeraVoiceAiClient client;
@@ -59,16 +64,30 @@ class MeeraVoiceAiClientTest {
         client = new MeeraVoiceAiClient("http://localhost:8000", 10, tokenService, httpClient);
     }
 
+    private static ClassicHttpResponse fakeResponse(int status, byte[] body, String contentType) {
+        BasicClassicHttpResponse response = new BasicClassicHttpResponse(status);
+        if (body != null) {
+            response.setEntity(
+                    new ByteArrayEntity(body, contentType == null ? null : ContentType.parse(contentType)));
+        }
+        return response;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void mockExecuteReturning(ClassicHttpResponse response) throws Exception {
+        when(httpClient.execute(any(HttpPost.class), any(HttpClientResponseHandler.class)))
+                .thenAnswer(
+                        invocation -> {
+                            HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
+                            return handler.handleResponse(response);
+                        });
+    }
+
     @Test
     @DisplayName("speak: 200 audio/wav response passes bytes + content type through")
     void testSpeakSuccessPassthrough() throws Exception {
         byte[] audioBytes = "RIFF-fake-wav-bytes".getBytes(StandardCharsets.UTF_8);
-        when(httpResponse.statusCode()).thenReturn(200);
-        when(httpResponse.body()).thenReturn(audioBytes);
-        when(httpResponse.headers())
-                .thenReturn(HttpHeaders.of(Map.of("Content-Type", java.util.List.of("audio/wav")), (a, b) -> true));
-        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenReturn(httpResponse);
+        mockExecuteReturning(fakeResponse(200, audioBytes, "audio/wav"));
 
         MeeraVoiceAiClient.SpeakResult result = client.speak(WORKSPACE_ID, "hello there");
 
@@ -80,34 +99,24 @@ class MeeraVoiceAiClientTest {
     @Test
     @DisplayName("speak: sends Authorization Bearer header and workspace_id/text body to the exact path")
     void testSpeakSendsBearerTokenAndBody() throws Exception {
-        when(httpResponse.statusCode()).thenReturn(200);
-        when(httpResponse.body()).thenReturn(new byte[0]);
-        when(httpResponse.headers())
-                .thenReturn(HttpHeaders.of(Map.of("Content-Type", java.util.List.of("audio/wav")), (a, b) -> true));
+        mockExecuteReturning(fakeResponse(200, new byte[0], "audio/wav"));
 
-        ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
-        when(httpClient.send(requestCaptor.capture(), any(HttpResponse.BodyHandler.class)))
-                .thenReturn(httpResponse);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<HttpPost> requestCaptor = ArgumentCaptor.forClass(HttpPost.class);
 
         client.speak(WORKSPACE_ID, "hello there");
 
-        HttpRequest sentRequest = requestCaptor.getValue();
-        java.util.List<String> authHeaders = sentRequest.headers().allValues("Authorization");
-        assertEquals(1, authHeaders.size());
-        assertTrue(authHeaders.get(0).startsWith("Bearer "));
-        assertEquals("http://localhost:8000/voice/speak", sentRequest.uri().toString());
+        verify(httpClient).execute(requestCaptor.capture(), any(HttpClientResponseHandler.class));
+        HttpPost sentRequest = requestCaptor.getValue();
+        String authHeader = sentRequest.getFirstHeader("Authorization").getValue();
+        assertTrue(authHeader.startsWith("Bearer "));
+        assertEquals("http://localhost:8000/voice/speak", sentRequest.getRequestUri());
     }
 
     @Test
     @DisplayName("speak: Python fallback JSON (200, non-audio content type) returns SpeakResult.fallback()")
     void testSpeakFallbackJsonReturnsFallback() throws Exception {
-        when(httpResponse.statusCode()).thenReturn(200);
-        when(httpResponse.headers())
-                .thenReturn(
-                        HttpHeaders.of(
-                                Map.of("Content-Type", java.util.List.of("application/json")), (a, b) -> true));
-        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenReturn(httpResponse);
+        mockExecuteReturning(fakeResponse(200, "{\"fallback\":true}".getBytes(StandardCharsets.UTF_8), "application/json"));
 
         MeeraVoiceAiClient.SpeakResult result = client.speak(WORKSPACE_ID, "hello there");
 
@@ -118,9 +127,7 @@ class MeeraVoiceAiClientTest {
     @Test
     @DisplayName("speak: non-200 response returns fallback, never throws")
     void testSpeakNon200ReturnsFallback() throws Exception {
-        when(httpResponse.statusCode()).thenReturn(500);
-        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenReturn(httpResponse);
+        mockExecuteReturning(fakeResponse(500, null, null));
 
         MeeraVoiceAiClient.SpeakResult result = client.speak(WORKSPACE_ID, "hello there");
 
@@ -128,10 +135,10 @@ class MeeraVoiceAiClientTest {
     }
 
     @Test
-    @DisplayName("speak: transport failure (exception from HttpClient.send) returns fallback, never throws")
+    @DisplayName("speak: transport failure (exception from HttpClient.execute) returns fallback, never throws")
     void testSpeakTransportFailureReturnsFallback() throws Exception {
-        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenThrow(new java.io.IOException("connection refused"));
+        when(httpClient.execute(any(HttpPost.class), any(HttpClientResponseHandler.class)))
+                .thenThrow(new IOException("connection refused"));
 
         MeeraVoiceAiClient.SpeakResult result = client.speak(WORKSPACE_ID, "hello there");
 
@@ -144,7 +151,7 @@ class MeeraVoiceAiClientTest {
         MeeraVoiceAiClient.SpeakResult result = client.speak(WORKSPACE_ID, "  ");
 
         assertFalse(result.ok());
-        verify(httpClient, never()).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
+        verify(httpClient, never()).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
     }
 
     @Test
@@ -152,6 +159,6 @@ class MeeraVoiceAiClientTest {
     void testSpeakMissingWorkspaceIdReturnsFallbackWithoutHttpCall() throws Exception {
         assertFalse(client.speak(null, "hello").ok());
         assertFalse(client.speak("", "hello").ok());
-        verify(httpClient, never()).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
+        verify(httpClient, never()).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
     }
 }

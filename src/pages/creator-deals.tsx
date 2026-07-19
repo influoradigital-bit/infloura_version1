@@ -215,7 +215,12 @@ export default function CreatorDealsPage() {
       setLoading(true);
       try {
         const remote = await api.deals.list('creator', activeFilter);
-        if (!cancelled && Array.isArray(remote) && remote.length > 0) {
+        // Array.isArray alone, deliberately no `.length > 0` -- a creator with genuinely zero
+        // deals gets back a real empty array, which EmptyState already renders correctly.
+        // Requiring non-empty treated that correct empty response the same as "API call didn't
+        // return usable data," so it silently kept the mock deals forever instead (same bug
+        // fixed in dashboard-page.tsx's action items/pipeline).
+        if (!cancelled && Array.isArray(remote)) {
           setDeals(remote as unknown as DealRoom[]);
         }
       } catch (err) {

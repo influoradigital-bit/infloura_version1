@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { logVoiceUsage } from '@/lib/voice-usage'
 import { meeraApi } from '@/lib/meera-api'
+import { stripMarkdownForSpeech } from '@/lib/strip-markdown-for-speech'
 
 const STORAGE_KEY = 'meera:voice-output'
 const RATE_STORAGE_KEY = 'meera:voice-rate'
@@ -176,10 +177,18 @@ export function useVoiceOutput(): UseVoiceOutputResult {
   }, [supported, releaseAudio])
 
   const speak = useCallback(
-    (text: string) => {
+    (rawText: string) => {
       // Text has already rendered by the time this is ever called — speaking
       // is purely additive from here. If unsupported or disabled, no-op.
-      if (!supported || !enabled || !text) return
+      if (!supported || !enabled || !rawText) return
+
+      // Strip Markdown so TTS speaks the words, not "asterisk asterisk"/"dash
+      // dash dash" — the chat bubble still renders the full Markdown visually,
+      // this only affects what's spoken. Single chokepoint: covers the Sarvam
+      // path AND the browser-voice fallback below. If stripping leaves nothing
+      // (e.g. a reply that was only a divider), there's nothing to speak.
+      const text = stripMarkdownForSpeech(rawText)
+      if (!text) return
 
       // New utterance supersedes anything in flight — same "cancel before
       // you start" rule as before, now covering the Sarvam attempt too.

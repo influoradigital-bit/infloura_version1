@@ -152,7 +152,12 @@ export function DashboardPage() {
           api.dashboard.pipeline('brand'),
         ]);
         if (cancelled) return;
-        if (Array.isArray(actions) && actions.length > 0) {
+        // Array.isArray alone, deliberately no `.length > 0` -- a brand-new account's real
+        // answer is a legitimately empty array (no actions pending, no pipeline yet), and both
+        // render a proper empty state below. Requiring non-empty treated that correct empty
+        // response the same as "API call didn't return usable data," so it silently kept the
+        // mock/demo rows forever instead of ever showing the account's real (empty) state.
+        if (Array.isArray(actions)) {
           setActionItems(
             actions.map((a) => ({ ...a, deadline: new Date(a.deadline) })) as ActionItem[],
           );
@@ -164,7 +169,7 @@ export function DashboardPage() {
             runwayDays: walletData.runwayDays ?? mockWallet.runwayDays,
           });
         }
-        if (Array.isArray(pipelineData) && pipelineData.length > 0) {
+        if (Array.isArray(pipelineData)) {
           setPipeline(pipelineData);
         }
       } catch (err) {

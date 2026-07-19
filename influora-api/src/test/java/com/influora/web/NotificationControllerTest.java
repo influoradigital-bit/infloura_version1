@@ -13,6 +13,7 @@ import com.influora.domain.enums.UserType;
 import com.influora.repository.EmailPreferenceRepository;
 import com.influora.repository.NotificationRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.notification.UnsubscribeTokenService;
 import com.influora.web.dto.notification.NotificationDtos.PreferencesResponse;
 import com.influora.web.dto.notification.NotificationDtos.SetPreferenceRequest;
 import com.influora.web.dto.notification.NotificationDtos.SetPreferenceResponse;
@@ -41,6 +42,7 @@ class NotificationControllerTest {
 
     @Mock private NotificationRepository notificationRepository;
     @Mock private EmailPreferenceRepository emailPreferenceRepository;
+    @Mock private UnsubscribeTokenService unsubscribeTokenService;
 
     private NotificationController controller;
 
@@ -50,7 +52,9 @@ class NotificationControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new NotificationController(notificationRepository, emailPreferenceRepository);
+        controller =
+                new NotificationController(
+                        notificationRepository, emailPreferenceRepository, unsubscribeTokenService);
     }
 
     @Test

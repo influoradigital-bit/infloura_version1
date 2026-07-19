@@ -5,14 +5,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.service.integration.BrandSafetyServiceTokenService;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.Locale;
 import java.util.UUID;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.io.HttpClientResponseHandler;
+import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.apache.hc.core5.util.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,13 +29,27 @@ import org.springframework.stereotype.Component;
  * HTTP client for influora-ai's {@code POST /voice/speak} (Meera voice-output proxy) and {@code
  * POST /voice/transcribe} (Meera voice-INPUT proxy — {@link #transcribe}, the mirror-image leg:
  * Sarvam STT + Gemini cleanup, same {@code scope=service} token, same never-throw discipline).
- * Mirrors
- * {@link BrandSafetyAiClient}/{@link TrendSparkAiClient}'s conventions: plain {@code
- * java.net.http.HttpClient}, Jackson {@code ObjectMapper}, and reuses {@link
- * BrandSafetyServiceTokenService} for the signed service token (same Spring -&gt; influora-ai
- * direction, same JWKS-verified {@code scope=service} mechanism the Python side's {@code
- * ENDPOINT_SCOPES["voice_speak"]} already accepts — no new signing secret needed for this third
- * outbound leg).
+ *
+ * <p><b>Apache HttpClient5 (classic/blocking), NOT {@code java.net.http.HttpClient}</b> — live-
+ * verified this matters, not just style: with the Java backend running in Docker and influora-ai
+ * on the host, every {@code java.net.http.HttpClient} call to the host (via {@code
+ * host.docker.internal} or even its bare resolved IP) failed with {@code
+ * java.net.ConnectException} — while {@code wget} to the exact same address from inside the same
+ * container succeeded immediately. Forcing IPv4 ({@code -Djava.net.preferIPv4Stack=true}) and
+ * eliminating DNS entirely (literal IP, no hostname) both made no difference, which rules out a
+ * DNS/dual-stack explanation and points at the JDK client's own NIO-based connection path — the
+ * exact subsystem {@code pom.xml}'s own httpclient5 dependency comment already documents as
+ * failing "outright on loopback-restricted/resource-starved hosts" (that comment previously
+ * covered Spring's {@code RestClient} auto-preferring httpclient5 for the same reason; this class
+ * was the one AI-integration client that still used the raw JDK client directly instead).
+ * Apache's classic API uses plain blocking sockets with no NIO {@code Selector}/loopback-pipe
+ * involved at all, and resolved the failure outright.
+ *
+ * <p>Mirrors {@link BrandSafetyAiClient}/{@link TrendSparkAiClient}'s conventions: Jackson {@code
+ * ObjectMapper}, and reuses {@link BrandSafetyServiceTokenService} for the signed service token
+ * (same Spring -&gt; influora-ai direction, same JWKS-verified {@code scope=service} mechanism the
+ * Python side's {@code ENDPOINT_SCOPES["voice_speak"]} already accepts — no new signing secret
+ * needed for this third outbound leg).
  *
  * <p><b>Config is deliberately {@code @Value}-based, not a new {@code @ConfigurationProperties}
  * class</b>: every existing sibling ({@link BrandSafetyAiProperties}/{@code TrendSparkAiProperties})
@@ -66,11 +85,10 @@ public class MeeraVoiceAiClient {
     // once non-null.
     private volatile int connectTimeoutSeconds = 5;
     private final BrandSafetyServiceTokenService tokenService;
-    // Built on first use, not in the constructor: HttpClient.build() spins up the underlying
-    // selector thread + NIO loopback pipe, and doing that at bean-construction time makes
-    // application BOOT depend on outbound-HTTP plumbing this class may never use in a given
-    // deployment.
-    private volatile HttpClient httpClient;
+    // Built on first use, not in the constructor: same lazy-construction discipline as before,
+    // now for a plain blocking-socket client rather than an NIO one — still no reason to make
+    // application BOOT depend on outbound-HTTP plumbing this class may never use.
+    private volatile CloseableHttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
@@ -83,27 +101,29 @@ public class MeeraVoiceAiClient {
         this.connectTimeoutSeconds = connectTimeoutSeconds <= 0 ? 5 : connectTimeoutSeconds;
     }
 
-    /** Package-visible constructor for tests to inject a mocked {@link HttpClient}. */
+    /** Package-visible constructor for tests to inject a mocked {@link CloseableHttpClient}. */
     MeeraVoiceAiClient(
             String baseUrl,
             int requestTimeoutSeconds,
             BrandSafetyServiceTokenService tokenService,
-            HttpClient httpClient) {
+            CloseableHttpClient httpClient) {
         this.baseUrl = (baseUrl == null || baseUrl.isBlank()) ? "http://localhost:8000" : baseUrl;
         this.requestTimeoutSeconds = requestTimeoutSeconds <= 0 ? 10 : requestTimeoutSeconds;
         this.tokenService = tokenService;
         this.httpClient = httpClient;
     }
 
-    private HttpClient httpClient() {
-        HttpClient client = httpClient;
+    private CloseableHttpClient httpClient() {
+        CloseableHttpClient client = httpClient;
         if (client == null) {
             synchronized (this) {
                 if (httpClient == null) {
-                    httpClient =
-                            HttpClient.newBuilder()
-                                    .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
+                    RequestConfig requestConfig =
+                            RequestConfig.custom()
+                                    .setConnectTimeout(Timeout.ofSeconds(connectTimeoutSeconds))
+                                    .setResponseTimeout(Timeout.ofSeconds(requestTimeoutSeconds))
                                     .build();
+                    httpClient = HttpClients.custom().setDefaultRequestConfig(requestConfig).build();
                 }
                 client = httpClient;
             }
@@ -125,6 +145,26 @@ public class MeeraVoiceAiClient {
         public static SpeakResult audio(byte[] bytes, String contentType) {
             return new SpeakResult(true, bytes, contentType);
         }
+    }
+
+    /** Plain internal transfer object — the one shape both {@link #speak}/{@link #transcribe} need out of a response. */
+    private record RawResponse(int statusCode, byte[] body, String contentType) {}
+
+    /**
+     * Executes {@code request} and drains the response body into a {@link RawResponse} before
+     * returning — {@link CloseableHttpClient#execute(org.apache.hc.core5.http.ClassicHttpRequest,
+     * HttpClientResponseHandler)} guarantees the underlying connection/response is released back
+     * to the pool once the handler returns, so no caller here needs its own try-with-resources.
+     */
+    private RawResponse execute(HttpPost request) throws IOException {
+        HttpClientResponseHandler<RawResponse> handler =
+                response -> {
+                    HttpEntity entity = response.getEntity();
+                    byte[] body = entity != null ? EntityUtils.toByteArray(entity) : new byte[0];
+                    String contentType = entity != null && entity.getContentType() != null ? entity.getContentType() : "";
+                    return new RawResponse(response.getCode(), body, contentType);
+                };
+        return httpClient().execute(request, handler);
     }
 
     /**
@@ -154,26 +194,27 @@ public class MeeraVoiceAiClient {
             return SpeakResult.fallback();
         }
 
-        HttpRequest request =
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + PATH))
-                        .timeout(Duration.ofSeconds(requestTimeoutSeconds))
-                        .header("Authorization", "Bearer " + token)
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
-                        .build();
+        HttpPost request = new HttpPost(baseUrl + PATH);
+        request.setHeader("Authorization", "Bearer " + token);
+        request.setEntity(
+                new ByteArrayEntity(requestBody.getBytes(StandardCharsets.UTF_8), ContentType.APPLICATION_JSON));
 
-        HttpResponse<byte[]> response;
+        RawResponse response;
         try {
-            response = httpClient().send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = execute(request);
         } catch (Exception e) {
             // Deliberately no text-content logging here — only workspace + failure reason,
-            // mirroring BrandSafetyAiClient's "never log the payload" discipline.
+            // mirroring BrandSafetyAiClient's "never log the payload" discipline. Exception class
+            // + cause logged (not just getMessage(), which is frequently null for this call's
+            // actual failures) so a real transport bug is diagnosable instead of reading "null".
+            Throwable cause = e.getCause();
             log.warn(
-                    "MeeraVoiceAiClient: transport failure calling {} for workspace={}: {}",
+                    "MeeraVoiceAiClient: transport failure calling {} for workspace={}: {}: {} (cause: {})",
                     PATH,
                     workspaceId,
-                    e.getMessage());
+                    e.getClass().getName(),
+                    e.getMessage(),
+                    cause == null ? "none" : cause.getClass().getName() + ": " + cause.getMessage());
             return SpeakResult.fallback();
         }
 
@@ -190,7 +231,7 @@ public class MeeraVoiceAiClient {
             return SpeakResult.fallback();
         }
 
-        String contentType = response.headers().firstValue("Content-Type").orElse("");
+        String contentType = response.contentType() == null ? "" : response.contentType();
         if (contentType.toLowerCase(Locale.ROOT).startsWith("audio/")) {
             return SpeakResult.audio(response.body(), contentType);
         }
@@ -234,10 +275,11 @@ public class MeeraVoiceAiClient {
      * native recognizer, exactly the "never a dead end" contract voice.py documents for this route.
      *
      * <p>The Python endpoint reads {@code multipart/form-data} ({@code await request.form()}): a
-     * {@code workspace_id} text part and an {@code audio} file part ({@code voice.py:144-146}). {@code
-     * java.net.http} has no multipart body publisher, so the body is assembled by hand ({@link
-     * #buildMultipartBody}) with a generated boundary — the one deliberate shape difference from
-     * {@link #speak}'s JSON body, dictated by the Python side's request contract.
+     * {@code workspace_id} text part and an {@code audio} file part ({@code voice.py:144-146}).
+     * Apache HttpClient5's classic API has no built-in multipart body builder on this project's
+     * classpath (that needs a separate {@code httpmime}/fluent dependency, not added here), so the
+     * body is still assembled by hand ({@link #buildMultipartBody}) exactly as before — that part
+     * of this class is HTTP-client-agnostic, just raw bytes over a {@link ByteArrayEntity}.
      */
     public TranscribeResult transcribe(String workspaceId, byte[] audioBytes, String contentType) {
         if (workspaceId == null || workspaceId.isBlank() || audioBytes == null || audioBytes.length == 0) {
@@ -259,18 +301,13 @@ public class MeeraVoiceAiClient {
             return TranscribeResult.fallback();
         }
 
-        HttpRequest request =
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + TRANSCRIBE_PATH))
-                        .timeout(Duration.ofSeconds(requestTimeoutSeconds))
-                        .header("Authorization", "Bearer " + token)
-                        .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                        .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                        .build();
+        HttpPost request = new HttpPost(baseUrl + TRANSCRIBE_PATH);
+        request.setHeader("Authorization", "Bearer " + token);
+        request.setEntity(new ByteArrayEntity(body, ContentType.parse("multipart/form-data; boundary=" + boundary)));
 
-        HttpResponse<byte[]> response;
+        RawResponse response;
         try {
-            response = httpClient().send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = execute(request);
         } catch (Exception e) {
             // No payload logging — only workspace + reason, same discipline as speak().
             log.warn(
@@ -297,7 +334,9 @@ public class MeeraVoiceAiClient {
         // both are the JSON shape the frontend already parses, and Python's envelope preserves its
         // "type it instead?" message. The Spring layer only synthesizes a fallback on transport /
         // non-200 failures above.
-        String responseType = response.headers().firstValue("Content-Type").orElse("application/json");
+        String responseType = response.contentType() == null || response.contentType().isBlank()
+                ? "application/json"
+                : response.contentType();
         return TranscribeResult.json(response.body(), responseType);
     }
 

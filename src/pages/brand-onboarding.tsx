@@ -28,7 +28,11 @@ const TOTAL_STEPS = 3;
  */
 export default function BrandOnboardingPage() {
   const navigate = useNavigate();
-  const [currentStep, setCurrentStep] = React.useState(1);
+  // Step 1 collects registration credentials (email/password) -- only relevant to a brand-new
+  // signup landing here mid-wizard. A user who arrives already authenticated (e.g. logged into an
+  // existing account whose onboarding was never finished) has no reason to re-enter a password,
+  // so start them straight at step 2 instead of re-showing the account-creation form.
+  const [currentStep, setCurrentStep] = React.useState(() => (hasBrandToken() ? 2 : 1));
   const [data, setData] = React.useState<OnboardingData>(initialData);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState('');

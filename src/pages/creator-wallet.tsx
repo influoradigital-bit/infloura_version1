@@ -431,7 +431,12 @@ export default function CreatorWalletPage() {
     (async () => {
       try {
         const remote = await api.wallet.transactions('creator');
-        if (!cancelled && Array.isArray(remote) && remote.length > 0) {
+        // Array.isArray alone, deliberately no `.length > 0` -- a creator with genuinely zero
+        // transactions gets back a real empty array; requiring non-empty treated that correct
+        // empty response the same as "API call didn't return usable data," so it silently kept
+        // the mock transactions forever instead (same bug fixed in dashboard-page.tsx and
+        // creator-deals.tsx).
+        if (!cancelled && Array.isArray(remote)) {
           setTransactions(remote.map(mapWalletTransactionRow));
         }
       } catch (err) {
@@ -717,6 +722,11 @@ export default function CreatorWalletPage() {
             </div>
 
             <div className="space-y-2">
+              {transactions.length === 0 && (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  No transactions yet.
+                </p>
+              )}
               {transactions.map((tx) => (
                 <Card key={tx.id}>
                   <CardContent className="p-4">

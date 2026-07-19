@@ -109,6 +109,12 @@ public class SecurityConfig {
                                         // design, RFC 7517-adjacent convention). See JwksController.
                                         .requestMatchers(HttpMethod.GET, "/.well-known/jwks.json")
                                         .permitAll()
+                                        // One-click email unsubscribe link — the recipient is reading
+                                        // their inbox, not a logged-in session; NotificationController
+                                        // #unsubscribeViaLink authenticates the (userId, eventType) pair
+                                        // via UnsubscribeTokenService's HMAC signature instead of a JWT.
+                                        .requestMatchers(HttpMethod.GET, "/notifications/unsubscribe-link")
+                                        .permitAll()
                                         // Tracking-link click redirect — hit by an anonymous visitor's
                                         // browser following a creator's posted link; a visitor cannot
                                         // sign a request. Increments a click counter and 302-redirects.

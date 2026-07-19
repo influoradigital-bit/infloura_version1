@@ -2,27 +2,50 @@ package com.influora.integration.msg91;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.config.InfluoraEnvironment;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import com.influora.service.notification.UnsubscribeTokenService;
+import jakarta.mail.internet.MimeMessage;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
 
 /**
- * MSG91 Email API client (Domain B, 07-NOTIFICATION-SYSTEM-SPEC.md). Sends templated emails
- * via MSG91's Email API v5.
+ * MSG91 email client (Domain B, 07-NOTIFICATION-SYSTEM-SPEC.md). Sends templated emails via
+ * MSG91's SMTP relay ({@code smtp.mailer91.com}), not MSG91's Email API v5.
  *
- * <p><b>Placeholder implementation:</b> In dev/test environments without MSG91 credentials, this
- * logs the email details and returns success. Non-dev environments without credentials now FAIL
- * (see {@link #sendTemplateEmail}, D4) — outside dev, a silently-unconfigured mailer must never
- * be indistinguishable from real delivery.
+ * <p><b>Why SMTP, not the v5 HTTP API this class used to call:</b> live-tested directly against
+ * {@code control.msg91.com/api/v5/email/send} with both {@code MSG91_AUTH_KEY} (SMS auth-key) and
+ * {@code MSG91_TOKEN_AUTH} (the credential the project's own MSG91-EMAIL-OTP.md docs say the v5
+ * API actually wants) — both came back {@code 401 Unauthorized} with different {@code apiError}
+ * subcodes (418 vs 201), meaning MSG91 evaluates them via genuinely separate logic and neither
+ * currently authenticates. MSG91's SMTP relay under separate {@code SMTP_*} credentials does
+ * authenticate, so sending goes through {@link JavaMailSender} (Spring Boot's mail starter,
+ * auto-configured from {@code spring.mail.*}) instead.
+ *
+ * <p>{@code JavaMailSender} is obtained via {@link ObjectProvider}, not constructor-injected
+ * directly: {@code MailSenderAutoConfiguration} only creates the bean when {@code spring.mail.host}
+ * is set, so a deployment with no SMTP host configured (e.g. dev-mock, or before SMTP creds exist)
+ * must still boot — a direct dependency would throw {@code NoSuchBeanDefinitionException}.
+ *
+ * <p><b>Sender domain constraint:</b> the SMTP relay account only accepts its own authenticated
+ * domain as the envelope sender — live-tested {@code MAIL FROM:<...@influora.com>} under these
+ * credentials and got {@code 550 5.7.1 Invalid Mail From address received}. {@code fromEmail}
+ * therefore stays on the relay account's domain until that domain is verified with MSG91
+ * separately; only the display name ({@code fromName}) is Influora-branded.
+ *
+ * <p>SMTP has no MSG91 dashboard templates to render server-side, so the previous
+ * {@code template_id} handling is gone — subject/HTML body/plain-text fallback are rendered from
+ * the same {@code templateKey}/variables every caller already passes, via {@link
+ * EmailTemplateRegistry}'s per-key copy inside a shared branded shell, plus a one-click
+ * unsubscribe link ({@link UnsubscribeTokenService}) for the callers that know a {@code userId}.
  *
  * <p>No PII beyond name in email bodies per Kabir's security constraints (§7).
  */
@@ -30,82 +53,78 @@ import org.springframework.stereotype.Component;
 public class Msg91EmailClient {
 
     private static final Logger log = LoggerFactory.getLogger(Msg91EmailClient.class);
-    private static final String MSG91_API_URL = "https://control.msg91.com/api/v5/email/send";
 
-    private final String authKey;
+    private final ObjectProvider<JavaMailSender> mailSenderProvider;
     private final String fromEmail;
     private final String fromName;
+    private final String apiPublicUrl;
+    private final String contextPath;
     private final InfluoraEnvironment environment;
-    // Built on first use, not in the constructor: HttpClient.build() spins up the underlying
-    // selector thread + NIO loopback pipe, and doing that at bean-construction time makes
-    // application BOOT depend on outbound-HTTP plumbing this class may never use in a given
-    // deployment.
-    private volatile HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final UnsubscribeTokenService unsubscribeTokenService;
 
-    // D4 — this previously read `${msg91.auth-key:}` / `${msg91.from-email:...}` /
-    // `${msg91.from-name:...}`, but application.yml only ever defines `influora.msg91.auth-key`
-    // / `influora.msg91.email.from-email` / `influora.msg91.email.from-name` (see
-    // `influora.msg91.*` in application.yml). The prefix mismatch meant this bean's @Value
-    // defaults ALWAYS won — a real MSG91_AUTH_KEY set via env var was silently ignored, and
-    // isConfigured() was always false regardless of what was actually configured. Aligned to the
-    // one prefix application.yml already uses.
     public Msg91EmailClient(
-            @Value("${influora.msg91.auth-key:}") String authKey,
+            ObjectProvider<JavaMailSender> mailSenderProvider,
             @Value("${influora.msg91.email.from-email:noreply@influora.com}") String fromEmail,
             @Value("${influora.msg91.email.from-name:Influora}") String fromName,
+            @Value("${influora.api.public-url}") String apiPublicUrl,
+            @Value("${server.servlet.context-path:}") String contextPath,
             InfluoraEnvironment environment,
-            ObjectMapper objectMapper) {
-        this.authKey = authKey;
+            ObjectMapper objectMapper,
+            UnsubscribeTokenService unsubscribeTokenService) {
+        this.mailSenderProvider = mailSenderProvider;
         this.fromEmail = fromEmail;
         this.fromName = fromName;
+        this.apiPublicUrl = apiPublicUrl;
+        this.contextPath = contextPath;
         this.environment = environment;
         this.objectMapper = objectMapper;
-    }
-
-    private HttpClient httpClient() {
-        HttpClient client = httpClient;
-        if (client == null) {
-            synchronized (this) {
-                if (httpClient == null) {
-                    httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-                }
-                client = httpClient;
-            }
-        }
-        return client;
+        this.unsubscribeTokenService = unsubscribeTokenService;
     }
 
     /**
-     * Returns true if MSG91 credentials are configured (non-empty auth key).
+     * Returns true if SMTP is configured (a {@link JavaMailSender} bean exists, i.e.
+     * {@code spring.mail.host} / {@code SMTP_HOST} is set).
      */
     public boolean isConfigured() {
-        return authKey != null && !authKey.isBlank();
+        return mailSenderProvider.getIfAvailable() != null;
     }
 
     /**
-     * Sends a templated email via MSG91. Returns true on success, false on failure.
-     *
-     * <p>In dev, an unconfigured client logs and returns true (mock success) — unchanged local-dev
-     * convenience so email-dependent flows don't need real MSG91 credentials to exercise locally.
-     *
-     * <p><b>D4 — in every other environment, an unconfigured client now returns false</b>
-     * instead of silently pretending to succeed. Previously this returned {@code true}
-     * unconditionally whenever {@code !isConfigured()}, in ANY environment — so a staging/prod
-     * deploy with a missing/placeholder MSG91_AUTH_KEY (the exact state {@code
-     * application.yml}'s {@code REPLACE_WITH_YOUR_MSG91_AUTH_KEY} default ships with) would have
-     * every {@code EmailWorker.processOne} call {@link com.influora.domain.entity.EmailOutbox
-     * #markSent()} — password resets, contract-signed notices, etc. all reported as delivered
-     * while nothing was ever actually sent. {@link EmailWorker} already does the right thing on
-     * {@code false} (retry with backoff, then {@code FAILED} after 5 attempts) — no caller-side
-     * change needed.
-     *
-     * @param toEmail recipient email address
-     * @param templateKey MSG91 template slug (e.g., "creator.proposal_received")
-     * @param templateDataJson JSON string of merge fields for the template
+     * Convenience overload for callers with no {@code userId} to unsubscribe by — pre-account
+     * flows like {@code BrandEmailOtpService}'s OTP delivery and {@code
+     * WorkspaceMemberService#sendInviteEmailDirect}'s not-yet-registered invitee, where there is no
+     * {@code EmailPreference} row to link an unsubscribe link to anyway.
      */
     public boolean sendTemplateEmail(String toEmail, String templateKey, String templateDataJson) {
-        if (!isConfigured()) {
+        return sendTemplateEmail(toEmail, templateKey, templateDataJson, null);
+    }
+
+    /**
+     * Sends an email via MSG91's SMTP relay. Returns true on success, false on failure.
+     *
+     * <p>In dev, an unconfigured client logs and returns true (mock success) — unchanged local-dev
+     * convenience so email-dependent flows don't need real SMTP credentials to exercise locally.
+     *
+     * <p>In every other environment, an unconfigured client returns false instead of silently
+     * pretending to succeed (D4) — {@link EmailWorker} already does the right thing on {@code
+     * false} (retry with backoff, then {@code FAILED} after 5 attempts) — no caller-side change
+     * needed.
+     *
+     * @param toEmail recipient email address
+     * @param templateKey notification template slug (e.g., "creator.proposal_received") — looked
+     *     up in {@link EmailTemplateRegistry}; an unrecognized key still sends, falling back to a
+     *     generic rendering of the raw key/variables
+     * @param templateDataJson JSON string of merge fields substituted into the template copy
+     * @param userId the recipient's account id ({@code EmailOutbox.userId}), or {@code null} for a
+     *     pre-account recipient — controls whether an unsubscribe link is included at all (see
+     *     {@link EmailTemplateRegistry}'s {@code NO_UNSUBSCRIBE_FOOTER} for the further,
+     *     per-template-key exclusion of OTP/password-reset)
+     */
+    public boolean sendTemplateEmail(
+            String toEmail, String templateKey, String templateDataJson, String userId) {
+        JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
+        if (mailSender == null) {
             if (environment.isDev()) {
                 // Dev/test mode - log and mock success
                 log.info(
@@ -116,59 +135,47 @@ public class Msg91EmailClient {
                 return true;
             }
             log.error(
-                    "MSG91 is not configured (influora.msg91.auth-key unset/placeholder) outside dev —"
-                            + " refusing to report success for: to={}, templateKey={}",
+                    "SMTP is not configured (SMTP_HOST unset) outside dev — refusing to report success"
+                            + " for: to={}, templateKey={}",
                     toEmail,
                     templateKey);
             return false;
         }
 
         try {
-            Map<String, Object> payload = buildPayload(toEmail, templateKey, templateDataJson);
-            String body = objectMapper.writeValueAsString(payload);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> templateData =
+                    objectMapper.readValue(templateDataJson, LinkedHashMap.class);
+            String unsubscribeUrl = userId != null ? buildUnsubscribeUrl(userId, templateKey) : null;
+            EmailTemplateRegistry.Rendered rendered =
+                    EmailTemplateRegistry.render(templateKey, templateData, unsubscribeUrl);
 
-            HttpRequest request =
-                    HttpRequest.newBuilder()
-                            .uri(URI.create(MSG91_API_URL))
-                            .header("authkey", authKey)
-                            .header("Content-Type", "application/json")
-                            .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                            .build();
-
-            HttpResponse<String> response =
-                    httpClient().send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                log.debug("MSG91 email sent successfully: to={}, templateKey={}", toEmail, templateKey);
-                return true;
-            } else {
-                log.error(
-                        "MSG91 email failed: to={}, templateKey={}, status={}, body={}",
-                        toEmail,
-                        templateKey,
-                        response.statusCode(),
-                        response.body());
-                return false;
-            }
+            MimeMessage message = mailSender.createMimeMessage();
+            // multipart=true is required for the setText(plain, html) overload below (renders a
+            // multipart/alternative message) -- the 2-arg constructor throws
+            // "Not in multipart mode" the moment an HTML alternative is set.
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom(fromEmail, fromName);
+            helper.setTo(toEmail);
+            helper.setSubject(rendered.subject());
+            helper.setText(rendered.plainText(), rendered.html());
+            mailSender.send(message);
+            log.debug("SMTP email sent successfully: to={}, templateKey={}", toEmail, templateKey);
+            return true;
         } catch (Exception e) {
-            log.error(
-                    "MSG91 email error: to={}, templateKey={}, error={}", toEmail, templateKey, e.getMessage());
+            log.error("SMTP email error: to={}, templateKey={}, error={}", toEmail, templateKey, e.getMessage());
             return false;
         }
     }
 
-    private Map<String, Object> buildPayload(
-            String toEmail, String templateKey, String templateDataJson) throws Exception {
-        @SuppressWarnings("unchecked")
-        Map<String, Object> templateData =
-                objectMapper.readValue(templateDataJson, LinkedHashMap.class);
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("to", toEmail);
-        payload.put("from", Map.of("email", fromEmail, "name", fromName));
-        payload.put("template_id", templateKey);
-        payload.put("variables", templateData);
-
-        return payload;
+    private String buildUnsubscribeUrl(String userId, String templateKey) {
+        String token = unsubscribeTokenService.generateToken(userId, templateKey);
+        String encodedToken;
+        try {
+            encodedToken = URLEncoder.encode(token, StandardCharsets.UTF_8.name());
+        } catch (UnsupportedEncodingException e) {
+            throw new IllegalStateException("UTF-8 unavailable", e);
+        }
+        return apiPublicUrl + contextPath + "/notifications/unsubscribe-link?token=" + encodedToken;
     }
 }

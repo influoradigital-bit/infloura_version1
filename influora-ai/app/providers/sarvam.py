@@ -153,7 +153,24 @@ class SarvamProvider:
                 response = await client.post(
                     "/text-to-speech",
                     headers={"api-subscription-key": settings.sarvam_api_key},
-                    json={"inputs": [text], "target_language_code": lang, "speaker": "meera"},
+                    # Voice tuning (all live-verified against api.sarvam.ai):
+                    #  - model bulbul:v3 — required for the "priya" speaker; v2 only exposes
+                    #    anushka/abhilash/manisha/vidya/arya/karun/hitesh (400s on "priya"), and
+                    #    the older v1 is retired ("Input should be 'bulbul:v2'/'bulbul:v3-beta'/
+                    #    'bulbul:v3'").
+                    #  - speaker "priya" — the chosen female voice for Meera.
+                    #  - pace 1.2 — slightly faster than default (1.0) for a more natural, less
+                    #    plodding delivery.
+                    #  - pause 0.95 — trims inter-sentence silence just under default so it doesn't
+                    #    drag between sentences.
+                    json={
+                        "inputs": [text],
+                        "target_language_code": lang,
+                        "speaker": "priya",
+                        "model": "bulbul:v3",
+                        "pace": 1.2,
+                        "pause": 0.95,
+                    },
                 )
                 response.raise_for_status()
                 # Sarvam's TTS endpoint returns JSON, NOT a raw audio body:

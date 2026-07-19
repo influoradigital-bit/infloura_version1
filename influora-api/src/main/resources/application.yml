@@ -14,6 +14,26 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:root}
     hikari:
       maximum-pool-size: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:10}
+  # MSG91's SMTP relay — Msg91EmailClient sends through this JavaMailSender bean rather than
+  # MSG91's Email API v5 (both v5 credentials returned 401 when live-tested against
+  # control.msg91.com; SMTP is the working alternative MSG91 also runs, under separate
+  # credentials). No default host: leaving SMTP_HOST unset means Spring Boot's
+  # MailSenderAutoConfiguration never creates a JavaMailSender bean at all, which
+  # Msg91EmailClient's ObjectProvider<JavaMailSender> handles the same way as "not configured".
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
   jpa:
     open-in-view: false
     hibernate:
@@ -149,6 +169,11 @@ influora:
     template:
       otp: ${MSG91_OTP_TEMPLATE_ID:REPLACE_WITH_OTP_TEMPLATE_ID}
       welcome: ${MSG91_WELCOME_TEMPLATE_ID:REPLACE_WITH_WELCOME_TEMPLATE_ID}
+  notification:
+    # Signs the one-click unsubscribe link embedded in outbound emails (UnsubscribeTokenService).
+    # Distinct from every other secret in the system, same blast-radius-isolation convention as
+    # influora.internal-service-token.* below.
+    unsubscribe-signing-secret: ${UNSUBSCRIBE_SIGNING_SECRET:change-me-unsubscribe-signing-secret-min-32-chars}
   r2:
     account-id: ${R2_ACCOUNT_ID:REPLACE_WITH_YOUR_R2_ACCOUNT_ID}
     access-key-id: ${R2_ACCESS_KEY_ID:REPLACE_WITH_YOUR_R2_ACCESS_KEY}
@@ -173,7 +198,7 @@ influora:
     # still-placeholder, or malformed GSTIN -- non-prod only warns. (No state-code key: it had zero
     # callers -- GstSplitUtil always derives state from the GSTIN itself -- and was deleted as a
     # trap, INV-2.)
-    legal-name: ${INFLUORA_LEGAL_NAME:Influora Technologies Pvt. Ltd.}
+    legal-name: ${INFLUORA_LEGAL_NAME:Influora Digital Private Limited}
     gstin: ${INFLUORA_COMPANY_GSTIN:REPLACE_WITH_REAL_GSTIN}
     registered-address: ${INFLUORA_COMPANY_ADDRESS:REPLACE_WITH_REGISTERED_ADDRESS}
   razorpay:

@@ -1,7 +1,11 @@
 package com.influora.web;
 
 import com.influora.security.SpringJwksKeyService;
-import io.jsonwebtoken.security.JwkSet;
+import io.jsonwebtoken.security.Jwk;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,6 +28,20 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>{@link SpringJwksKeyService#publicJwkSet()} is built exclusively from the public key — this
  * controller has no access to the private key at all (it only depends on the key service, and the
  * key service never exposes the private key through any JSON-serializable method).
+ *
+ * <p><b>Never return the {@code JwkSet}/{@code Jwk} objects themselves from this endpoint.</b>
+ * Live-verified: Spring's default Jackson converter throws {@code HttpMessageConversionException:
+ * Type definition error: [simple type, class io.jsonwebtoken.impl.lang.RedactedSupplier]} when
+ * asked to serialize jjwt's concrete {@code Jwk} implementation directly — some internal field
+ * jjwt uses for its own redaction-on-{@code toString()} safeguard isn't a type Jackson's generic
+ * bean introspection can handle, independent of the actual (public, safe-to-serve) key values it
+ * wraps. This 500'd {@code GET /.well-known/jwks.json} entirely, which cascades into every
+ * consumer that resolves a signing key from it — influora-ai's {@code PyJWKClient} verifying a
+ * Meera stream token, in particular, fails closed with {@code jwks_lookup_failed} on every real
+ * chat turn. {@link Jwk} implements {@code Map<String, Object>}, so copying each entry into a
+ * plain {@link LinkedHashMap} (guaranteed to resolve to plain values via the {@code Map} contract,
+ * not whatever hidden fields Jackson's reflection found) produces the identical JSON shape the
+ * JWKS spec expects, serializable with zero special-casing.
  */
 @RestController
 public class JwksController {
@@ -35,7 +53,15 @@ public class JwksController {
     }
 
     @GetMapping("/.well-known/jwks.json")
-    public JwkSet jwks() {
-        return jwksKeyService.publicJwkSet();
+    public Map<String, Object> jwks() {
+        List<Map<String, Object>> keys =
+                jwksKeyService.publicJwkSet().getKeys().stream()
+                        .map(this::toPlainMap)
+                        .collect(Collectors.toList());
+        return Map.of("keys", keys);
+    }
+
+    private Map<String, Object> toPlainMap(Jwk<?> jwk) {
+        return new LinkedHashMap<>(jwk);
     }
 }
