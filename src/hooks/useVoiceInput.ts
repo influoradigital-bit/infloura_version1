@@ -48,6 +48,13 @@ export type VoiceInputPhase = 'idle' | 'listening' | 'transcribing' | 'error'
  */
 export const MAX_TRANSCRIPT_LENGTH = 4000
 
+/**
+ * Hard backstop (ms) for a single hands-free utterance. The VAD normally ends an
+ * utterance on trailing silence; this only fires if the VAD never does (e.g. Web
+ * Audio unavailable), so the mic can never hang on "Listening…" indefinitely.
+ */
+const MAX_UTTERANCE_MS = 20000
+
 export interface UseVoiceInputOptions {
   /** Called with the cleaned (but still editable) transcript. Never auto-sends. */
   onResult: (cleanedText: string) => void
@@ -115,6 +122,8 @@ export function useVoiceInput({
   const vadRafRef = useRef<number | null>(null)
   const vadSilenceStartRef = useRef<number | null>(null)
   const vadSpeechDetectedRef = useRef(false)
+  // Hands-free hard backstop timer (fires only if the VAD never stops us).
+  const maxDurationTimerRef = useRef<number | null>(null)
 
   const fail = useCallback(
     (message: string) => {
@@ -147,6 +156,10 @@ export function useVoiceInput({
 
   const releaseRecordingResources = useCallback(() => {
     stopSilenceDetection()
+    if (maxDurationTimerRef.current !== null) {
+      clearTimeout(maxDurationTimerRef.current)
+      maxDurationTimerRef.current = null
+    }
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
     mediaStreamRef.current = null
     mediaRecorderRef.current = null
@@ -172,6 +185,11 @@ export function useVoiceInput({
         return
       }
       audioContextRef.current = ctx
+      // Chrome starts an AudioContext created after an await (past the click
+      // gesture) in "suspended" state — a suspended context feeds the analyser
+      // flat silence, so speech is NEVER detected and the mic never auto-stops
+      // (the "stuck on Listening" bug). Resume it so the VAD sees real levels.
+      if (ctx.state === 'suspended') void ctx.resume().catch(() => {})
       const source = ctx.createMediaStreamSource(stream)
       const analyser = ctx.createAnalyser()
       analyser.fftSize = 2048
@@ -363,10 +381,13 @@ export function useVoiceInput({
       // Hands-free: auto-stop after trailing silence. onSilence stops the
       // recorder, which fires onstop -> handleRecordingStopped -> transcribe.
       if (autoStopSilenceMs && autoStopSilenceMs > 0) {
-        startSilenceDetection(stream, autoStopSilenceMs, () => {
+        const stopRecorder = () => {
           const rec = mediaRecorderRef.current
           if (rec && rec.state !== 'inactive') rec.stop()
-        })
+        }
+        startSilenceDetection(stream, autoStopSilenceMs, stopRecorder)
+        // Hard backstop so a VAD that never fires can't hang on "Listening…".
+        maxDurationTimerRef.current = window.setTimeout(stopRecorder, MAX_UTTERANCE_MS)
       }
     } catch {
       // getUserMedia permission denied/unavailable at call time — fall back
@@ -410,6 +431,7 @@ export function useVoiceInput({
       const recorder = mediaRecorderRef.current
       if (recorder && recorder.state !== 'inactive') recorder.stop()
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+      if (maxDurationTimerRef.current !== null) clearTimeout(maxDurationTimerRef.current)
       if (vadRafRef.current !== null) cancelAnimationFrame(vadRafRef.current)
       const ctx = audioContextRef.current
       if (ctx && ctx.state !== 'closed') void ctx.close().catch(() => {})
