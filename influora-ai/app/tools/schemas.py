@@ -37,6 +37,20 @@ TOOL_NAMES: tuple[str, ...] = (
     CONFIRM_LAUNCH,
 )
 
+# analyze_site — a LOCAL tool, deliberately NOT in TOOL_NAMES/TOOL_TO_SPRING_PATH
+# above. Those 5 are the Meera<->Spring function-calling contract the CI
+# shared-schema diff-check compares against Spring's `/internal/meera/*`
+# executor DTOs. analyze_site has NO Spring executor: it's a Python-native
+# capability (SSRF-guarded page fetch + Gemini classify, app/routes/
+# analyze_site.py::perform_site_analysis) run in-process by the tool loop, so
+# it must stay out of the Spring-contract structures or it would break that
+# diff-check. It IS offered to Claude during chat (see get_tool_schemas) and IS
+# accepted by the loop (see is_known_tool) — the loop routes it locally, not to
+# Spring (see is_local_tool). This is why a brand can paste a product URL and
+# Meera reads the real page instead of guessing the product/price.
+ANALYZE_SITE = "analyze_site"
+LOCAL_TOOL_NAMES: tuple[str, ...] = (ANALYZE_SITE,)
+
 TOOL_TIERS: dict[str, ToolTier] = {
     SHOW_CREATORS: "read",
     CALCULATE_BUDGET: "read",
@@ -143,15 +157,43 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 ]
 
 
+ANALYZE_SITE_SCHEMA: dict[str, Any] = {
+    "name": ANALYZE_SITE,
+    "description": (
+        "Read a brand's product page from a URL and return its real product "
+        "catalog, prices, niche, and tone. Call this the moment the brand gives "
+        "you a product/store link — never guess or invent product names or "
+        "prices, fetch them. Returns {success, data:{source_url, niche_tags, "
+        "tone_dial, brand_color, product_catalog}} or {success:false, error} if "
+        "the page can't be read (then ask the brand to describe the product)."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string", "description": "the product or store page URL the brand pasted"},
+        },
+        "required": ["url"],
+    },
+}
+
+
 def get_tool_schemas() -> list[dict[str, Any]]:
     """Returns the tool schemas in the exact shape the Claude Messages API expects
-    (`tools=[...]`). This is Block A content — identical for every brand.
+    (`tools=[...]`). This is Block A content — identical for every brand. Includes
+    the 5 Spring-contract tools PLUS the local analyze_site tool (see its note
+    above for why it's tracked separately from the Spring structures).
     """
-    return TOOL_SCHEMAS
+    return [*TOOL_SCHEMAS, ANALYZE_SITE_SCHEMA]
 
 
 def is_known_tool(name: str) -> bool:
-    return name in TOOL_NAMES
+    return name in TOOL_NAMES or name in LOCAL_TOOL_NAMES
+
+
+def is_local_tool(name: str) -> bool:
+    """True for tools the loop runs in-process (Python-native) instead of
+    forwarding to Spring's `/internal/meera/*`."""
+    return name in LOCAL_TOOL_NAMES
 
 
 def is_money_tool(name: str) -> bool:

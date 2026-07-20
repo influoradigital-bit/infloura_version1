@@ -23,11 +23,13 @@ from typing import Any
 
 from app.clients.spring import SpringCallError, SpringInternalClient, idempotency_key_for
 from app.providers.claude import ClaudeProvider, ClaudeStreamEvent
+from app.routes.analyze_site import perform_site_analysis
 from app.tools.schemas import (
     IDEMPOTENT_REQUIRED_TOOLS,
     TOOL_TO_SPRING_PATH,
     get_tool_schemas,
     is_known_tool,
+    is_local_tool,
 )
 
 logger = logging.getLogger(__name__)
@@ -193,6 +195,44 @@ async def run_tool_loop(
                     }
                 )
                 yield LoopEvent(type="tool_result", tool_name=tool_name, tool_status="error", tool_result_data=result_payload)
+                continue
+
+            # Local (Python-native) tools run in-process, NOT forwarded to Spring.
+            # analyze_site: SSRF-guarded page fetch + Gemini classify so Meera
+            # reads the brand's REAL product/price from a pasted URL instead of
+            # guessing. Never raises — any failure comes back as a success:false
+            # tool_result the model can react to ("couldn't read that page —
+            # tell me the product and price?").
+            if is_local_tool(tool_name):
+                url = tool_input.get("url") if isinstance(tool_input, dict) else None
+                if not url:
+                    result_payload = {
+                        "success": False,
+                        "error": {"code": "missing_url", "message": "no url provided"},
+                    }
+                    tool_result_blocks.append(
+                        {"type": "tool_result", "tool_use_id": tool_use_id, "content": _safe_json(result_payload), "is_error": True}
+                    )
+                    yield LoopEvent(type="tool_result", tool_name=tool_name, tool_status="error", tool_result_data=result_payload)
+                    continue
+                try:
+                    result_payload = await perform_site_analysis(url=url, workspace_id=ctx.workspace_id)
+                except Exception as exc:  # never let a fetch/classify error break the turn
+                    logger.warning("local tool %s failed: %s", tool_name, type(exc).__name__)
+                    result_payload = {
+                        "success": False,
+                        "error": {"code": "analyze_failed", "message": "could not read that page"},
+                    }
+                is_err = not (isinstance(result_payload, dict) and result_payload.get("success"))
+                tool_result_blocks.append(
+                    {"type": "tool_result", "tool_use_id": tool_use_id, "content": _safe_json(result_payload), "is_error": is_err}
+                )
+                yield LoopEvent(
+                    type="tool_result",
+                    tool_name=tool_name,
+                    tool_status="error" if is_err else "ok",
+                    tool_result_data=result_payload,
+                )
                 continue
 
             path = TOOL_TO_SPRING_PATH[tool_name]

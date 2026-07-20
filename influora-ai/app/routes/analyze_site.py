@@ -71,28 +71,24 @@ def strip_active_content(html: str) -> str:
     return re.sub(r"\s+", " ", text_only).strip()
 
 
-@router.post("/analyze-site")
-async def analyze_site(request: Request, authorization: str | None = Header(default=None)):
-    request_id = str(uuid.uuid4())
-    body = await request.json()
-    workspace_id = body.get("workspace_id")
-    url = body.get("url")
+async def perform_site_analysis(
+    url: str, workspace_id: str, request_id: str | None = None
+) -> dict:
+    """Core scrape+classify pipeline, callable outside the HTTP route.
 
-    if not workspace_id or not url:
-        raise HTTPException(status_code=400, detail={"code": "missing_fields", "message": "workspace_id and url are required"})
-
-    token = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
-    try:
-        verify_token(token, endpoint="analyze_site", body_workspace_id=workspace_id)
-    except AuthError as exc:
-        raise auth_error_to_http(exc) from exc
+    Used by BOTH the POST /analyze-site route (Spring's onboarding job) AND the
+    Meera chat tool loop (`analyze_site` is a local, Python-native chat tool —
+    when the brand pastes a product URL, Meera calls this to read the REAL page
+    instead of guessing/hallucinating the product and price). NEVER raises for a
+    provider/fetch failure — always returns a dict; the caller decides how to
+    surface it (the route maps a spend-block to 503; the tool loop hands the
+    dict back to Claude as a tool_result). Auth/gate ordering is unchanged from
+    the original route.
+    """
+    request_id = request_id or str(uuid.uuid4())
 
     # P2-17: kill-switch / daily ceiling gate -- checked before any provider
-    # (Gemini) call, zero provider calls made if blocked. gate.py's docstring
-    # already lists analyze_site as an in-scope call site; this route never
-    # actually imported app.costs before, so the gate went unenforced here.
-    # Placed after auth (same ordering as chat.py/brand_safety.py) but before
-    # the scrape work, so a blocked request also skips the SSRF fetch.
+    # (Gemini) call, zero provider calls made if blocked.
     gate = await check_spend_gate(workspace_id=workspace_id)
     if not gate.allowed:
         log_event(
@@ -100,10 +96,11 @@ async def analyze_site(request: Request, authorization: str | None = Header(defa
             workspace_id=workspace_id, request_id=request_id,
             fields={"error_code": gate.error_code},
         )
-        raise HTTPException(
-            status_code=503,
-            detail={"code": gate.error_code, "message": gate.error_message},
-        )
+        return {
+            "success": False,
+            "error": {"code": gate.error_code, "message": gate.error_message},
+            "spend_blocked": True,
+        }
 
     log_event(
         logger, logging.INFO, "analyze_site_started",
@@ -187,3 +184,28 @@ async def analyze_site(request: Request, authorization: str | None = Header(defa
             "product_catalog": result.product_catalog,
         },
     }
+
+
+@router.post("/analyze-site")
+async def analyze_site(request: Request, authorization: str | None = Header(default=None)):
+    """POST /analyze-site — auth, then run the shared scrape+classify pipeline.
+    Preserves the original external contract: 400 on missing fields, 401/403 on
+    bad token, 503 on spend-gate block, otherwise the success/degraded dict.
+    """
+    body = await request.json()
+    workspace_id = body.get("workspace_id")
+    url = body.get("url")
+
+    if not workspace_id or not url:
+        raise HTTPException(status_code=400, detail={"code": "missing_fields", "message": "workspace_id and url are required"})
+
+    token = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
+    try:
+        verify_token(token, endpoint="analyze_site", body_workspace_id=workspace_id)
+    except AuthError as exc:
+        raise auth_error_to_http(exc) from exc
+
+    result = await perform_site_analysis(url=url, workspace_id=workspace_id)
+    if result.get("spend_blocked"):
+        raise HTTPException(status_code=503, detail=result["error"])
+    return result

@@ -61,9 +61,12 @@ def _get_optional_float(name: str) -> float | None:
 # Pinned model / prompt versions — this constant IS the P0 fix. Do not point
 # this at gemini-2.0-flash again; that model id is deprecated.
 # ---------------------------------------------------------------------------
-GEMINI_MODEL = "gemini-2.5-flash-lite"
+# gemini-2.5-flash-lite was retired by Google ("no longer available", 404), which
+# broke every Gemini call (analyze_site classify, trendspark, brand-safety). Moved
+# to the current stable gemini-2.5-flash (verified 200 against the live API).
+GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.07.05"
+PROMPT_VERSION = "meera-2026.07.21"
 
 # Trend-Spark (T8) — cheap Haiku-class model for the ONE phrasing call. Never
 # Opus/Sonnet (schema-lock §4 / cost §1). Pinned the same way as CLAUDE_MODEL

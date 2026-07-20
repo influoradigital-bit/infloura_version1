@@ -47,7 +47,7 @@ def _per_mtok(input_usd: str, output_usd: str) -> ModelRate:
 # estimate_cost_usd's ValueError below) instead of silently under-billing.
 PRICING_TABLE: dict[str, ModelRate] = {
     CLAUDE_MODEL: _per_mtok("3.00", "15.00"),
-    GEMINI_MODEL: _per_mtok("0.10", "0.40"),
+    GEMINI_MODEL: _per_mtok("0.30", "2.50"),  # gemini-2.5-flash rates (was flash-lite 0.10/0.40)
     # Claude Haiku 4.5 — the cheap Trend-Spark nudge model (T8). $1/$5 per MTok.
     TRENDSPARK_MODEL: _per_mtok("1.00", "5.00"),
 }

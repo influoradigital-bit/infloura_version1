@@ -73,6 +73,18 @@ export function stripMarkdownForSpeech(input: string): string {
 
   text = lines.join('\n')
 
+  // Strip emojis + pictographs so TTS never tries to pronounce them ("raising
+  // hands", "rocket") or chokes. Belt-and-suspenders: the persona prompt also
+  // tells Meera not to use emojis, but a stray one must never reach the voice —
+  // the chat BUBBLE still shows the original text, this only affects speech.
+  // Covers the main emoji blocks + variation selector + ZWJ + regional flags.
+  text = text.replace(
+    /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}]/gu,
+    '',
+  )
+  // Collapse any double spaces an emoji removal left behind.
+  text = text.replace(/[ \t]{2,}/g, ' ')
+
   // Collapse 3+ newlines to a paragraph break; trim.
   text = text.replace(/\n{3,}/g, '\n\n').trim()
 

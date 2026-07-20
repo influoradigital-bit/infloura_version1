@@ -159,17 +159,18 @@ class SarvamProvider:
                     #    the older v1 is retired ("Input should be 'bulbul:v2'/'bulbul:v3-beta'/
                     #    'bulbul:v3'").
                     #  - speaker "priya" — the chosen female voice for Meera.
-                    #  - pace 1.15 — slightly faster than default (1.0) for a natural, unhurried
-                    #    delivery.
-                    #  - pause 1.2 — a touch more inter-sentence breathing room so it reads as
-                    #    conversational rather than rushed.
+                    #  Tuned for a "sharp + trustworthy expert" tone (not chirpy, not rushed):
+                    #  - pace 1.1 — confident and clear, just above natural. Higher (1.15+) starts
+                    #    to read as hurried/salesy and costs credibility.
+                    #  - pause 1.0 — crisp, natural inter-sentence spacing. Longer (1.2) dragged and
+                    #    made replies feel slow, blunting the sharpness.
                     json={
                         "inputs": [text],
                         "target_language_code": lang,
                         "speaker": "priya",
                         "model": "bulbul:v3",
-                        "pace": 1.15,
-                        "pause": 1.2,
+                        "pace": 1.1,
+                        "pause": 1.0,
                     },
                 )
                 response.raise_for_status()
