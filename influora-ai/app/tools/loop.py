@@ -270,7 +270,11 @@ async def run_tool_loop(
                         )
                     except Exception as exc:  # write-back is best-effort, never breaks the turn
                         logger.warning(
-                            "analyze_site_result write-back failed: %s", type(exc).__name__
+                            "analyze_site_result write-back failed for workspace_id=%s url=%s: %s: %s",
+                            ctx.workspace_id,
+                            url,
+                            type(exc).__name__,
+                            exc,
                         )
 
                 is_err = not (isinstance(result_payload, dict) and result_payload.get("success"))

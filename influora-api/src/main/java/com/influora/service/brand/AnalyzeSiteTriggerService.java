@@ -185,25 +185,37 @@ public class AnalyzeSiteTriggerService {
         if (workspaceId == null || workspaceId.isBlank()) {
             return;
         }
-        transactionTemplate.executeWithoutResult(
-                status -> {
-                    BrandProfile profile =
-                            brandProfileRepository
-                                    .findByWorkspaceId(workspaceId)
-                                    .orElseGet(
-                                            () ->
-                                                    BrandProfile.builder()
-                                                            .id(Ulids.newUlid())
-                                                            .workspaceId(workspaceId)
-                                                            .build());
-                    if (websiteUrl != null && !websiteUrl.isBlank()) {
-                        profile.setWebsiteUrl(websiteUrl);
-                    }
-                    brandProfileRepository.save(profile);
-                });
+        AnalysisStatus statusBeforeUpdate =
+                transactionTemplate.execute(
+                        status -> {
+                            BrandProfile profile =
+                                    brandProfileRepository
+                                            .findByWorkspaceId(workspaceId)
+                                            .orElseGet(
+                                                    () ->
+                                                            BrandProfile.builder()
+                                                                    .id(Ulids.newUlid())
+                                                                    .workspaceId(workspaceId)
+                                                                    .build());
+                            AnalysisStatus currentStatus = profile.getAnalysisStatus();
+                            if (websiteUrl != null && !websiteUrl.isBlank()) {
+                                profile.setWebsiteUrl(websiteUrl);
+                            }
+                            brandProfileRepository.save(profile);
+                            return currentStatus;
+                        });
 
         if (success && data != null) {
             applySuccess(workspaceId, data);
+        } else if (statusBeforeUpdate == AnalysisStatus.READY) {
+            // A brand with an already-READY profile pasted a broken/unreachable URL in chat —
+            // the chat reply already told them the page couldn't be read, so don't clobber the
+            // prior successful snapshot. Only the chat path (this method) skips markFailed here;
+            // FORM/onboarding failures via runAnalysis() still call markFailed unconditionally.
+            log.info(
+                    "AnalyzeSiteTriggerService: ignoring transient chat analysis failure for"
+                            + " workspace={} — profile is already READY",
+                    workspaceId);
         } else {
             markFailed(workspaceId, errorMessage != null ? errorMessage : "chat analysis failed");
         }
