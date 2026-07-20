@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import { StaggerContainer, StaggerItem } from '@/components/motion/StaggerContainer'
 import { StageLoadingState } from '@/components/feature/meera/StageLoadingState'
@@ -6,7 +6,40 @@ import { formatINR } from '@/lib/utils'
 import { isApiLive } from '@/lib/api'
 import { useBrandProfile } from '@/hooks/useBrandProfile'
 import { MOCK_BRAND_SNAPSHOT } from '@/data/meera-mock'
+import { MEERA_SNAPSHOT_IDLE } from '@/data/meera-copy'
 import { cn } from '@/lib/utils'
+
+/**
+ * How long the live snapshot shows an active "Reading your site…" spinner
+ * before degrading to the idle placeholder. `analyze_site` targets <=45s, but
+ * a spinner is only honest while something is actually running — past this we
+ * stop implying progress. The brand-profile poll keeps refreshing underneath,
+ * so a late READY still flips the idle card to the real snapshot.
+ */
+const SNAPSHOT_LOADER_TIMEOUT_MS = 30000
+
+/**
+ * Live-mode IDLE placeholder — the snapshot stage's landing state when nothing
+ * is being analysed. Deliberately NOT a spinner (that was the perpetual-loader
+ * bug): the canvas reads as ready-and-waiting rather than stuck, whether the
+ * brand simply hasn't shared a site yet or a tool call failed so the stage
+ * never advanced.
+ */
+function SnapshotIdle({ stalled = false, className }: { stalled?: boolean; className?: string }) {
+  return (
+    <div
+      className={cn(
+        'flex min-h-[8rem] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-meera-border bg-meera-surface-2 p-8 text-center',
+        className,
+      )}
+    >
+      <p className="text-sm font-medium text-meera-text">{MEERA_SNAPSHOT_IDLE.title}</p>
+      <p className="max-w-xs text-xs text-meera-text-muted">
+        {stalled ? MEERA_SNAPSHOT_IDLE.stalledBody : MEERA_SNAPSHOT_IDLE.body}
+      </p>
+    </div>
+  )
+}
 
 interface StageSnapshotProps {
   /**
@@ -56,6 +89,27 @@ export function StageSnapshot({ toolResult, className }: StageSnapshotProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, toolResult])
 
+  // Is the backend genuinely (or about to be) analysing THIS brand's site?
+  // Everything else — no profile yet, PENDING with no URL on file, a settled
+  // profile with nothing to show — is an IDLE canvas, not a loader. This is
+  // what stops the snapshot spinning forever when nothing has started or when
+  // every tool call fails ("internal call failed") so the stage never advances.
+  const analysisInFlight =
+    (isLoading && !brandProfile) ||
+    brandProfile?.analysisStatus === 'ANALYZING' ||
+    (brandProfile?.analysisStatus === 'PENDING' && !!brandProfile.websiteUrl)
+
+  // Bound the spinner: after SNAPSHOT_LOADER_TIMEOUT_MS we stop implying
+  // progress and degrade to the idle placeholder. Reset whenever the in-flight
+  // signal toggles so a fresh analysis gets its own full window.
+  const [loaderExpired, setLoaderExpired] = useState(false)
+  useEffect(() => {
+    setLoaderExpired(false)
+    if (!analysisInFlight) return
+    const timer = window.setTimeout(() => setLoaderExpired(true), SNAPSHOT_LOADER_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [analysisInFlight])
+
   if (!live) {
     return (
       <div className={cn('space-y-4', className)}>
@@ -89,9 +143,11 @@ export function StageSnapshot({ toolResult, className }: StageSnapshotProps) {
     )
   }
 
-  // Live mode — no fabricated data. Loading covers both the initial fetch and
-  // the backend still analyzing the site (READY is the only render-ready state).
-  if ((isLoading && !brandProfile) || (brandProfile && brandProfile.analysisStatus !== 'READY' && brandProfile.analysisStatus !== 'ERROR')) {
+  // Live mode — no fabricated data. The spinner shows ONLY while analysis is
+  // genuinely in flight and within the bounded window; every other state
+  // resolves to a stable idle / error / ready render, so the snapshot can
+  // never hang on a perpetual "Reading your site…" loader.
+  if (analysisInFlight && !loaderExpired) {
     return <StageLoadingState label="Reading your site…" className={className} />
   }
 
@@ -108,11 +164,7 @@ export function StageSnapshot({ toolResult, className }: StageSnapshotProps) {
     )
   }
 
-  if (!brandProfile) {
-    return <StageLoadingState label="Reading your site…" className={className} />
-  }
-
-  if (brandProfile.analysisStatus === 'ERROR') {
+  if (brandProfile?.analysisStatus === 'ERROR') {
     return (
       <div
         className={cn(
@@ -124,6 +176,13 @@ export function StageSnapshot({ toolResult, className }: StageSnapshotProps) {
         {brandProfile.analysisError || "Couldn't analyze your site."}
       </div>
     )
+  }
+
+  // Nothing analysing and no READY profile → idle landing state. Also the
+  // fallback when the loader times out or every tool call fails so the stage
+  // never advances past snapshot. Never a spinner.
+  if (!brandProfile || brandProfile.analysisStatus !== 'READY') {
+    return <SnapshotIdle stalled={loaderExpired} className={className} />
   }
 
   const products = extractCatalogProducts(brandProfile.productCatalog)

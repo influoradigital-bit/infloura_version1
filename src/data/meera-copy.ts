@@ -78,6 +78,19 @@ export const MEERA_STAGE_SUBTITLES: Record<string, string> = {
   live: 'Watch invites turn into acceptances',
 }
 
+/**
+ * Live-mode snapshot IDLE copy. The snapshot stage is the Living Canvas's
+ * LANDING stage — it only leaves once a later stage tool succeeds. So when
+ * nothing is being analysed (brand hasn't shared a site) or every tool call
+ * fails, the canvas must READ as ready-and-waiting, not as a stuck spinner.
+ * This replaces the old perpetual "Reading your site…" loader in those cases.
+ */
+export const MEERA_SNAPSHOT_IDLE = {
+  title: 'Your snapshot will appear here',
+  body: 'Share your website link in the chat and I’ll pull your brand, products and colours into this space.',
+  stalledBody: 'This is taking longer than usual — I’ll fill in your brand, products and colours here as soon as your site’s ready.',
+} as const
+
 /** Chat composer + empty/paused states */
 export const MEERA_COMPOSER = {
   placeholder: 'Tell Meera what you want to promote…',
