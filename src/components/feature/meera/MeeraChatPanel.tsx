@@ -124,6 +124,19 @@ function looksLikeSite(text: string) {
   return /\.[a-z]{2,}/i.test(text.trim()) || /^https?:\/\//i.test(text.trim())
 }
 
+/**
+ * Split a reply into sentences (incl. the Hindi danda ।) for sentence-by-sentence
+ * voice + text sync (Option A). Whitespace is normalized here for display pacing;
+ * the reveal always settles on the exact original text at the end, so nothing is
+ * lost.
+ */
+function splitIntoSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?।])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
+}
+
 // R3b — transcript persistence. The live chat lived only in React state, so a
 // tab switch/reload wiped it. We cache it in localStorage keyed by
 // conversationId for an instant repaint, and rehydrate the authoritative copy
@@ -200,7 +213,7 @@ export function MeeraChatPanel({
   // speak() is called AFTER a Meera line is already in `messages`, so audio
   // never gates the reply. Default OFF, persisted, cancel-on-unmount handled
   // inside the hook.
-  const { supported: voiceOutputSupported, enabled: voiceEnabled, setEnabled: setVoiceEnabled, isSpeaking, speak, stop: stopSpeaking } =
+  const { supported: voiceOutputSupported, enabled: voiceEnabled, setEnabled: setVoiceEnabled, isSpeaking, speak, speakSequence, stop: stopSpeaking } =
     useVoiceOutput()
 
   const turn = MEERA_CONVERSATION_SCRIPT[turnIndex]
@@ -337,12 +350,43 @@ export function MeeraChatPanel({
   const revealReply = (assistantMessageId: string, fullText: string) => {
     setAwaitingFirstToken(false)
 
-    const finish = () => {
+    const settle = () => {
       setMessages((prev) => prev.map((m) => (m.id === assistantMessageId ? { ...m, text: fullText } : m)))
       setLiveThinkingSteps([])
       setPhase('awaiting-input')
-      // Voice is additive only — the bubble is fully rendered before we speak
-      // it (Priya's voice handoff §5A.B).
+    }
+
+    // Voice ON → text + audio TOGETHER (Option A): each sentence's text is
+    // revealed at the moment its audio starts, so Priya's voice and the words
+    // land in lockstep instead of "full text, pause, then the whole reply read
+    // aloud". speakSequence prefetches the next sentence while the current one
+    // plays, so playback is gap-free.
+    if (voiceEnabled && voiceOutputSupported) {
+      const sentences = splitIntoSentences(fullText)
+      if (sentences.length > 0) {
+        if (reduceMotion) {
+          // Reduced motion: show the whole reply at once, but still stream the
+          // audio sentence-by-sentence (audio pacing isn't "motion").
+          setMessages((prev) => prev.map((m) => (m.id === assistantMessageId ? { ...m, text: fullText } : m)))
+          speakSequence(sentences, { onAllDone: settle })
+        } else {
+          speakSequence(sentences, {
+            onSentenceStart: (i) => {
+              const partial = sentences.slice(0, i + 1).join(' ')
+              setMessages((prev) => prev.map((m) => (m.id === assistantMessageId ? { ...m, text: partial } : m)))
+            },
+            onAllDone: settle,
+          })
+        }
+        return
+      }
+    }
+
+    // Voice OFF (default) → the existing local word-by-word reveal, no audio.
+    const finish = () => {
+      settle()
+      // No-op while voice is disabled; kept so enabling voice mid-reveal still
+      // gets the reply spoken (as a single clip on this legacy path).
       speak(fullText)
     }
 
@@ -445,7 +489,11 @@ export function MeeraChatPanel({
             setMessages((prev) => prev.map((m) => (m.id === assistantMessageId ? { ...m, text: renderedText } : m)))
           },
           onToolResult: (event) => {
-            if (!isMeeraFunctionCall(event.name)) return
+            // Render the 5 stage tools AND the display-only present_options
+            // pattern (tappable choice cards); anything else off the wire is
+            // ignored. present_options drives NO Living Canvas stage.
+            const isStageCall = isMeeraFunctionCall(event.name)
+            if (!isStageCall && event.name !== 'present_options') return
 
             // Attach the result to the assistant turn it belongs to so it
             // renders inline right after that message (create_campaign sits
@@ -474,7 +522,9 @@ export function MeeraChatPanel({
               ),
             )
 
-            if (event.status === 'ok') {
+            // Only the stage tools advance the Living Canvas; present_options is
+            // display-only. Re-narrow inline so the type guard applies.
+            if (event.status === 'ok' && isMeeraFunctionCall(event.name)) {
               onFunctionCall(event.name, event.data)
             }
           },
@@ -635,6 +685,7 @@ export function MeeraChatPanel({
                   status={tr.status}
                   data={tr.data}
                   errorMessage={tr.errorMessage}
+                  onOptionPick={(opt) => handleSend(opt.label)}
                   className="ml-9 mt-1.5"
                 />
               ))}
@@ -672,7 +723,11 @@ export function MeeraChatPanel({
             onSend={handleSend}
             initialDraft={initialDraft}
             suggestedReplies={!live && !conversationDone && phase === 'awaiting-input' ? turn.suggestedReplies : []}
-            templates={live && messages.length === 0 && phase === 'awaiting-input' ? MEERA_STARTER_TEMPLATES : []}
+            templates={
+              live && phase === 'awaiting-input' && !messages.some((m) => m.role === 'brand')
+                ? MEERA_STARTER_TEMPLATES
+                : []
+            }
             sendLocked={live ? !conversationId || phase !== 'awaiting-input' : conversationDone || phase !== 'awaiting-input'}
           />
         )}

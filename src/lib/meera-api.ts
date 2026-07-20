@@ -274,6 +274,29 @@ export function isConfirmLaunchPayload(data: unknown): data is ConfirmLaunchPayl
   return typeof d.campaignId === 'string' && typeof d.status === 'string';
 }
 
+/**
+ * `present_options` — a DISPLAY-only response pattern (not a Spring tool): Meera
+ * calls it to render a small set of choices as tappable cards in chat instead of
+ * listing them in prose. The loop echoes the options straight back (loop.py's
+ * local branch), so this is the exact shape Meera supplied.
+ */
+export interface OptionsPayload {
+  title: string;
+  options: Array<{
+    key: string;
+    label: string;
+    why: string;
+    budget_hint?: string;
+    recommended?: boolean;
+  }>;
+}
+
+export function isOptionsPayload(data: unknown): data is OptionsPayload {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Partial<OptionsPayload>;
+  return typeof d.title === 'string' && Array.isArray(d.options);
+}
+
 // ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------

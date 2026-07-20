@@ -26,6 +26,7 @@ from app.providers.claude import ClaudeProvider, ClaudeStreamEvent
 from app.routes.analyze_site import perform_site_analysis
 from app.tools.schemas import (
     IDEMPOTENT_REQUIRED_TOOLS,
+    PRESENT_OPTIONS,
     TOOL_TO_SPRING_PATH,
     get_tool_schemas,
     is_known_tool,
@@ -88,6 +89,10 @@ class ToolLoopContext:
     workspace_id: str
     onbehalf_jwt: str
     max_iterations: int = DEFAULT_MAX_ITERATIONS
+    # Output-token ceiling per Claude turn in this loop. Kept small for Meera
+    # chat (short, spoken replies) — see settings.meera_chat_max_tokens. A hard
+    # backstop; the persona does the primary length shaping.
+    max_tokens: int = 1024
     # NOTE: no service_token field here by design. The X-Meera-Service-Token
     # is minted fresh per outbound call inside SpringInternalClient
     # (app/auth/service_token_minter.py) — it is never threaded through from
@@ -134,6 +139,7 @@ async def run_tool_loop(
             system_blocks=system_blocks,
             messages=messages,
             tools=tools,
+            max_tokens=ctx.max_tokens,
             is_cancelled=is_cancelled,
         ):
             if is_cancelled and is_cancelled():
@@ -204,6 +210,28 @@ async def run_tool_loop(
             # tool_result the model can react to ("couldn't read that page —
             # tell me the product and price?").
             if is_local_tool(tool_name):
+                # present_options — display-only pattern: no fetch, no server
+                # action. Echo the options straight back so the browser can
+                # render tappable cards; the tool_result handed to Claude is a
+                # minimal ack so the loop continues to her one-line reply.
+                if tool_name == PRESENT_OPTIONS:
+                    options_payload = dict(tool_input) if isinstance(tool_input, dict) else {}
+                    result_payload = {"success": True, **options_payload}
+                    tool_result_blocks.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_use_id,
+                            "content": _safe_json({"success": True}),
+                        }
+                    )
+                    yield LoopEvent(
+                        type="tool_result",
+                        tool_name=tool_name,
+                        tool_status="ok",
+                        tool_result_data=result_payload,
+                    )
+                    continue
+
                 url = tool_input.get("url") if isinstance(tool_input, dict) else None
                 if not url:
                     result_payload = {

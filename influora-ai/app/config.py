@@ -66,7 +66,7 @@ def _get_optional_float(name: str) -> float | None:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.07.21.1"
+PROMPT_VERSION = "meera-2026.07.21.3"
 
 # Trend-Spark (T8) — cheap Haiku-class model for the ONE phrasing call. Never
 # Opus/Sonnet (schema-lock §4 / cost §1). Pinned the same way as CLAUDE_MODEL
@@ -212,6 +212,14 @@ class Settings:
     # --- Tool loop ---
     tool_loop_max_iterations: int = field(
         default_factory=lambda: _get_int("TOOL_LOOP_MAX_ITERATIONS", 6)
+    )
+    # Output-token ceiling per Meera chat turn. Meera's persona wants ONE-to-TWO
+    # short sentences (spoken back-and-forth); the old default of 1024 left room
+    # for ~750-word essays, which is why replies ran long and the voice read
+    # forever. 384 is a hard backstop that still fits narration + a tool_use
+    # block, while the persona does the primary shaping. Env-overridable.
+    meera_chat_max_tokens: int = field(
+        default_factory=lambda: _get_int("MEERA_CHAT_MAX_TOKENS", 384)
     )
 
     # --- SSE ---

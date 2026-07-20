@@ -160,6 +160,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         workspace_id=workspace_id,
         onbehalf_jwt=onbehalf_jwt,
         max_iterations=settings.tool_loop_max_iterations,
+        max_tokens=settings.meera_chat_max_tokens,
     )
 
     async def event_stream():

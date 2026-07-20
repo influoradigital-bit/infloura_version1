@@ -22,11 +22,13 @@ import { Users, Calculator, FileText, Wallet, Rocket, CheckCircle, AlertCircle, 
 import {
   isRequestPaymentPayload,
   isConfirmLaunchPayload,
+  isOptionsPayload,
   type ShowCreatorsPayload,
   type CalculateBudgetPayload,
   type CreateCampaignPayload,
   type RequestPaymentPayload,
   type ConfirmLaunchPayload,
+  type OptionsPayload,
 } from '@/lib/meera-api';
 import { formatINR, cn } from '@/lib/utils';
 
@@ -249,6 +251,55 @@ export function ConfirmLaunchResult({ data, className }: ConfirmLaunchResultProp
 }
 
 // ---------------------------------------------------------------------------
+// Options (present_options pattern) — tappable choice cards
+// ---------------------------------------------------------------------------
+
+interface OptionsCardsProps {
+  data: OptionsPayload;
+  /** Tapping a card sends that choice as the brand's next turn. */
+  onPick?: (option: { key: string; label: string }) => void;
+  className?: string;
+}
+
+export function OptionsCards({ data, onPick, className }: OptionsCardsProps) {
+  const { title, options } = data;
+
+  return (
+    <div className={cn('space-y-2', className)}>
+      {title && <p className="text-xs font-medium text-meera-text">{title}</p>}
+      <div className="grid gap-2">
+        {options.map((opt) => (
+          <button
+            key={opt.key}
+            type="button"
+            onClick={() => onPick?.({ key: opt.key, label: opt.label })}
+            className={cn(
+              'flex flex-col items-start gap-0.5 rounded-lg border p-3 text-left transition-colors',
+              opt.recommended
+                ? 'border-meera-accent bg-meera-accent-soft'
+                : 'border-meera-border bg-meera-surface-2 hover:border-meera-border-strong'
+            )}
+          >
+            <div className="flex w-full items-center justify-between gap-2">
+              <span className="text-sm font-semibold text-meera-text">{opt.label}</span>
+              {opt.recommended && (
+                <span className="shrink-0 rounded-full bg-meera-accent px-2 py-0.5 text-[10px] font-medium text-white">
+                  Recommended
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-meera-text-muted">{opt.why}</span>
+            {opt.budget_hint && (
+              <span className="text-[10px] text-meera-text-muted opacity-80">{opt.budget_hint}</span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Generic Tool Result Wrapper
 // ---------------------------------------------------------------------------
 
@@ -323,6 +374,8 @@ interface ToolResultRendererProps {
   status: ToolResultStatus;
   data?: unknown;
   errorMessage?: string;
+  /** For the `present_options` pattern: tapping a card sends that choice as the next turn. */
+  onOptionPick?: (option: { key: string; label: string }) => void;
   className?: string;
 }
 
@@ -331,6 +384,7 @@ export function ToolResultRenderer({
   status,
   data,
   errorMessage,
+  onOptionPick,
   className,
 }: ToolResultRendererProps) {
   return (
@@ -356,6 +410,9 @@ export function ToolResultRenderer({
           )}
           {toolName === 'confirm_launch' && isConfirmLaunchPayload(data) && (
             <ConfirmLaunchResult data={data} />
+          )}
+          {toolName === 'present_options' && isOptionsPayload(data) && (
+            <OptionsCards data={data} onPick={onOptionPick} />
           )}
         </>
       )}

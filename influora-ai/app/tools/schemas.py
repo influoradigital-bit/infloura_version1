@@ -49,7 +49,14 @@ TOOL_NAMES: tuple[str, ...] = (
 # Spring (see is_local_tool). This is why a brand can paste a product URL and
 # Meera reads the real page instead of guessing the product/price.
 ANALYZE_SITE = "analyze_site"
-LOCAL_TOOL_NAMES: tuple[str, ...] = (ANALYZE_SITE,)
+# present_options — a DISPLAY-only local pattern (Ash's response-patterns
+# proposal, wiki/ai-review/meera-response-patterns-proposal.md). Like
+# analyze_site it is Python-native and NOT in the Spring contract: Meera calls it
+# to render a small set of choices as tappable cards instead of listing them in
+# prose. It writes nothing and has no Spring executor — the loop just echoes the
+# options straight back for the browser to render (see loop.py's local branch).
+PRESENT_OPTIONS = "present_options"
+LOCAL_TOOL_NAMES: tuple[str, ...] = (ANALYZE_SITE, PRESENT_OPTIONS)
 
 TOOL_TIERS: dict[str, ToolTier] = {
     SHOW_CREATORS: "read",
@@ -177,13 +184,60 @@ ANALYZE_SITE_SCHEMA: dict[str, Any] = {
 }
 
 
+PRESENT_OPTIONS_SCHEMA: dict[str, Any] = {
+    "name": PRESENT_OPTIONS,
+    "description": (
+        "Render a small set of choices as tappable cards in the chat when the "
+        "brand must pick between real alternatives (e.g. review vs hype vs direct "
+        "campaign). Call this INSTEAD of listing the options in prose. Mark "
+        "exactly one option as recommended. Keep your spoken reply to ONE short "
+        "sentence that names your pick and asks if they want it — the cards carry "
+        "the detail, so never repeat them in text. Use only when there is a "
+        "genuine choice; for a normal reply just talk."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "one short heading for the choice, e.g. 'Campaign type'",
+            },
+            "options": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 4,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string", "description": "stable id, e.g. 'review'"},
+                        "label": {"type": "string", "description": "short card title, e.g. 'Review'"},
+                        "why": {"type": "string", "description": "one clause on why/when this fits"},
+                        "budget_hint": {
+                            "type": "string",
+                            "description": "optional short cost/creator hint",
+                        },
+                        "recommended": {
+                            "type": "boolean",
+                            "description": "exactly one option should be true",
+                        },
+                    },
+                    "required": ["key", "label", "why"],
+                },
+            },
+        },
+        "required": ["title", "options"],
+    },
+}
+
+
 def get_tool_schemas() -> list[dict[str, Any]]:
     """Returns the tool schemas in the exact shape the Claude Messages API expects
     (`tools=[...]`). This is Block A content — identical for every brand. Includes
-    the 5 Spring-contract tools PLUS the local analyze_site tool (see its note
-    above for why it's tracked separately from the Spring structures).
+    the 5 Spring-contract tools PLUS the local analyze_site and present_options
+    tools (see their notes above for why they're tracked separately from the
+    Spring structures).
     """
-    return [*TOOL_SCHEMAS, ANALYZE_SITE_SCHEMA]
+    return [*TOOL_SCHEMAS, ANALYZE_SITE_SCHEMA, PRESENT_OPTIONS_SCHEMA]
 
 
 def is_known_tool(name: str) -> bool:
