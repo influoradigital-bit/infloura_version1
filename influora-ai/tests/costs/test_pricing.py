@@ -22,9 +22,13 @@ def test_claude_cost_matches_3_and_15_per_mtok():
     assert estimate_cost_usd(CLAUDE_MODEL, usage) == Decimal("18.00")
 
 
-def test_gemini_cost_matches_point10_and_point40_per_mtok():
+def test_gemini_cost_matches_point30_and_2point50_per_mtok():
+    # gemini-2.5-flash official rate: $0.30/MTok input + $2.50/MTok output
+    # (verified against ai.google.dev pricing, 2026-07). 1M in + 1M out = $2.80.
+    # Was $0.10/$0.40 = $0.50 under the retired gemini-2.5-flash-lite; the
+    # PRICING_TABLE moved to the flash rate but this assertion lagged behind.
     usage = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
-    assert estimate_cost_usd(GEMINI_MODEL, usage) == Decimal("0.50")
+    assert estimate_cost_usd(GEMINI_MODEL, usage) == Decimal("2.80")
 
 
 def test_small_token_counts_are_not_rounded_to_zero():
