@@ -99,6 +99,19 @@ export const MEERA_PAYWALL = {
  */
 export const MEERA_QUICK_REPLIES: string[] = []
 
+/**
+ * R6 — tap-to-fill starter templates shown in LIVE mode when the chat is empty.
+ * Unlike quick-reply chips (which send instantly), tapping one of these only
+ * PRE-FILLS the composer — the brand edits the [bracketed] blanks with their own
+ * details, then sends. `[…]` marks the parts the user swaps in.
+ */
+export const MEERA_STARTER_TEMPLATES: string[] = [
+  'My store is [paste your product link] — build me a plan',
+  'Set up a review campaign for [product] priced at ₹[price] with [5] creators',
+  'Find [kitchen and home] creators in [Mumbai] for a launch',
+  "What budget do I need to promote [product] at ₹[price]?",
+]
+
 /** Fee breakdown labels (T5) */
 export const MEERA_FEE_LABELS = {
   pool: 'Creator pool',

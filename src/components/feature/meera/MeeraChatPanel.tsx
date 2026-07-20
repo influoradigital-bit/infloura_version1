@@ -12,7 +12,7 @@ import { CreditPaywall } from '@/components/feature/meera/CreditPaywall'
 import { ToolResultRenderer } from '@/components/feature/meera/ToolResultRenderer'
 import { useVoiceOutput } from '@/hooks/useVoiceOutput'
 import { useMeeraStream } from '@/hooks/useMeeraStream'
-import { MEERA_IDENTITY, MEERA_THINKING_STEPS } from '@/data/meera-copy'
+import { MEERA_IDENTITY, MEERA_THINKING_STEPS, MEERA_STARTER_TEMPLATES } from '@/data/meera-copy'
 import { MEERA_CONVERSATION_SCRIPT } from '@/data/meera-mock'
 import type { MeeraFunctionCall } from '@/data/stage-config'
 import { ApiError, isApiLive } from '@/lib/api'
@@ -53,6 +53,23 @@ interface LiveToolResult {
   name: string
   status: 'ok' | 'error'
   data?: unknown
+  /** The real backend reason (e.g. "Internal request rejected: BAD_SERVICE_TOKEN") for an error result. */
+  errorMessage?: string
+}
+
+/**
+ * Pull the human-readable reason out of an error `tool_result` payload — the
+ * loop yields `{error: <code>, message: <text>}` on a Spring/mesh failure
+ * (influora-ai/app/tools/loop.py). Without this the chat only ever showed a
+ * generic "Failed to run <Tool>", masking the actual cause (auth/mesh/scope).
+ */
+function toolErrorMessage(data: unknown): string | undefined {
+  if (data && typeof data === 'object') {
+    const d = data as { message?: unknown; error?: unknown }
+    if (typeof d.message === 'string' && d.message) return d.message
+    if (typeof d.error === 'string' && d.error) return d.error
+  }
+  return undefined
 }
 
 interface RenderedMessage {
@@ -105,6 +122,40 @@ export type Phase = 'revealing' | 'awaiting-input' | 'thinking'
 /** Loose "looks like a website" check for the turn-0 URL gate (mock only). Deterministic, not NLP. */
 function looksLikeSite(text: string) {
   return /\.[a-z]{2,}/i.test(text.trim()) || /^https?:\/\//i.test(text.trim())
+}
+
+// R3b — transcript persistence. The live chat lived only in React state, so a
+// tab switch/reload wiped it. We cache it in localStorage keyed by
+// conversationId for an instant repaint, and rehydrate the authoritative copy
+// from Spring on mount (getHistory).
+const TRANSCRIPT_CACHE_PREFIX = 'meera:transcript:'
+/** Cap cached turns so a very long chat can't overflow the localStorage quota. */
+const TRANSCRIPT_CACHE_MAX = 60
+
+function transcriptCacheKey(conversationId: string) {
+  return `${TRANSCRIPT_CACHE_PREFIX}${conversationId}`
+}
+
+function readCachedTranscript(conversationId: string): RenderedMessage[] | null {
+  try {
+    const raw = window.localStorage.getItem(transcriptCacheKey(conversationId))
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as RenderedMessage[]) : null
+  } catch {
+    return null
+  }
+}
+
+function writeCachedTranscript(conversationId: string, messages: RenderedMessage[]) {
+  try {
+    window.localStorage.setItem(
+      transcriptCacheKey(conversationId),
+      JSON.stringify(messages.slice(-TRANSCRIPT_CACHE_MAX)),
+    )
+  } catch {
+    // Quota exceeded / private mode — non-fatal; server history is the backstop.
+  }
 }
 
 /** Left panel: sticky header + turn-driven conversation (live AI stream, or the scripted mock fallback) + composer. */
@@ -181,9 +232,39 @@ export function MeeraChatPanel({
       .then((session) => {
         if (cancelled) return
         setConversationId(session.conversationId)
-        setAwaitingFirstToken(false)
-        setLiveThinkingSteps([])
-        setPhase('awaiting-input')
+
+        // Instant repaint from the local cache so a tab switch / reload doesn't
+        // flash an empty chat while the server request is in flight (R3b).
+        const cached = readCachedTranscript(session.conversationId)
+        if (cached && cached.length) setMessages(cached)
+
+        // Authoritative backfill from Spring. Text-only (server history carries
+        // no inline tool cards), so we only replace the cached copy when the
+        // server has at least as many turns — otherwise a still-catching-up
+        // backend can't wipe a richer local transcript.
+        return meeraApi
+          .getHistory(session.conversationId)
+          .then((history) => {
+            if (cancelled || history.length === 0) return
+            const mapped: RenderedMessage[] = history.map((m) => ({
+              id: m.id,
+              role: m.role === 'ASSISTANT' ? 'meera' : 'brand',
+              text: m.content,
+            }))
+            // The `cancelled` check above already covers today's synchronous
+            // path (nothing awaits between it and here), but guard the update
+            // itself too so this stays correct if an await is ever added.
+            setMessages((prev) => (cancelled ? prev : mapped.length >= prev.length ? mapped : prev))
+          })
+          .catch(() => {
+            // History fetch failed — keep whatever the cache painted.
+          })
+          .finally(() => {
+            if (cancelled) return
+            setAwaitingFirstToken(false)
+            setLiveThinkingSteps([])
+            setPhase('awaiting-input')
+          })
       })
       .catch(() => {
         if (cancelled) return
@@ -201,6 +282,14 @@ export function MeeraChatPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live])
+
+  // R3b — persist the transcript whenever a turn settles (phase back to
+  // awaiting-input), not on every streamed token. Keyed by conversationId so
+  // the next mount can repaint it instantly before the server backfill lands.
+  useEffect(() => {
+    if (!live || !conversationId || phase !== 'awaiting-input' || messages.length === 0) return
+    writeCachedTranscript(conversationId, messages)
+  }, [live, conversationId, phase, messages])
 
   // MOCK ONLY — reveal the active turn's Meera lines one at a time, then open the composer for input.
   useEffect(() => {
@@ -371,7 +460,14 @@ export function MeeraChatPanel({
                       ...m,
                       toolResults: [
                         ...(m.toolResults ?? []),
-                        { id: makeId('tool'), name: event.name, status: event.status, data: event.data },
+                        {
+                          id: makeId('tool'),
+                          name: event.name,
+                          status: event.status,
+                          data: event.data,
+                          errorMessage:
+                            event.status === 'error' ? toolErrorMessage(event.data) : undefined,
+                        },
                       ],
                     }
                   : m,
@@ -538,6 +634,7 @@ export function MeeraChatPanel({
                   toolName={tr.name}
                   status={tr.status}
                   data={tr.data}
+                  errorMessage={tr.errorMessage}
                   className="ml-9 mt-1.5"
                 />
               ))}
@@ -575,6 +672,7 @@ export function MeeraChatPanel({
             onSend={handleSend}
             initialDraft={initialDraft}
             suggestedReplies={!live && !conversationDone && phase === 'awaiting-input' ? turn.suggestedReplies : []}
+            templates={live && messages.length === 0 && phase === 'awaiting-input' ? MEERA_STARTER_TEMPLATES : []}
             sendLocked={live ? !conversationId || phase !== 'awaiting-input' : conversationDone || phase !== 'awaiting-input'}
           />
         )}

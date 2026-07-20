@@ -66,7 +66,7 @@ def _get_optional_float(name: str) -> float | None:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.07.21"
+PROMPT_VERSION = "meera-2026.07.21.1"
 
 # Trend-Spark (T8) — cheap Haiku-class model for the ONE phrasing call. Never
 # Opus/Sonnet (schema-lock §4 / cost §1). Pinned the same way as CLAUDE_MODEL

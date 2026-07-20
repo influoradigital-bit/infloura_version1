@@ -486,6 +486,24 @@ export const meeraApi = {
   },
 
   /**
+   * GET /meera/sessions/{conversationId}/messages (no `after`) — full turn
+   * history for a conversation, oldest first. Used to rehydrate the chat panel
+   * on mount so the transcript survives a tab switch / reload (R3b). The
+   * backend returns the full history when `after` is omitted
+   * (MeeraController#messages). Returns [] in mock mode (the scripted panel
+   * owns its own transcript there).
+   */
+  getHistory: async (
+    conversationId: string
+  ): Promise<Array<{ id: string; role: 'USER' | 'ASSISTANT'; content: string }>> => {
+    if (!isApiLive()) return [];
+    return request<Array<{ id: string; role: 'USER' | 'ASSISTANT'; content: string }>>(
+      'GET',
+      `/meera/sessions/${conversationId}/messages`
+    );
+  },
+
+  /**
    * GET /meera/sessions/{conversationId}/messages?after={messageId}
    * Non-streaming fallback for fetching finalized turn
    */

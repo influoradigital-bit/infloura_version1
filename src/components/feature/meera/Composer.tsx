@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ArrowUp } from 'lucide-react'
 
 import { QuickReplyChip } from '@/components/ui/quick-reply-chip'
@@ -11,6 +11,12 @@ interface ComposerProps {
   onSend: (text: string) => void
   /** Contextual chips for the CURRENT turn — sourced from `MeeraTurn.suggestedReplies`, never static. */
   suggestedReplies?: string[]
+  /**
+   * R6 — starter templates (shown when the chat is empty). Tapping one PRE-FILLS
+   * the composer with the template's text for the user to edit the [blanks] and
+   * send themselves — it never sends on tap, unlike `suggestedReplies`.
+   */
+  templates?: string[]
   /** Paywall-style lock (credit-gated). Shows `disabledHint` + paused placeholder. */
   disabled?: boolean
   /**
@@ -35,12 +41,30 @@ interface ComposerProps {
  * calls `onSend`. If STT is unsupported, the mic simply isn't rendered and
  * the text path is unaffected.
  */
-export function Composer({ onSend, suggestedReplies = [], disabled, sendLocked, initialDraft, className }: ComposerProps) {
+export function Composer({ onSend, suggestedReplies = [], templates = [], disabled, sendLocked, initialDraft, className }: ComposerProps) {
   const [value, setValue] = useState(() => initialDraft ?? '')
   const [voiceFallback, setVoiceFallback] = useState<string | null>(null)
   /** Announced via aria-live so screen-reader users hear what Meera transcribed. */
   const [transcriptionAnnouncement, setTranscriptionAnnouncement] = useState<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const locked = disabled || sendLocked
+
+  /** Tap a starter template → drop it in the input for editing (never sends). */
+  const handleTemplatePick = (template: string) => {
+    if (locked) return
+    setValue(template)
+    // Focus so the user can immediately edit the [blanks]; runs after the
+    // value lands so the caret sits at the end of the seeded text.
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    })
+  }
+
+  /** Starter templates only make sense on a blank composer at the start of a chat. */
+  const showTemplates = templates.length > 0 && !locked && value.trim() === ''
 
   const { supported: voiceInputSupported, phase, start, stop } = useVoiceInput({
     onResult: (cleanedText) => {
@@ -74,8 +98,16 @@ export function Composer({ onSend, suggestedReplies = [], disabled, sendLocked, 
           ))}
         </div>
       )}
+      {showTemplates && (
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin" role="group" aria-label="Starter templates">
+          {templates.map((template) => (
+            <QuickReplyChip key={template} label={template} onClick={() => handleTemplatePick(template)} />
+          ))}
+        </div>
+      )}
       <div className="flex items-end gap-2 rounded-xl border border-meera-border bg-meera-surface p-2">
         <textarea
+          ref={textareaRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
