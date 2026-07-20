@@ -292,10 +292,19 @@ export function useVoiceOutput(): UseVoiceOutputResult {
       window.speechSynthesis.cancel()
       releaseAudio()
 
+      // onAllDone must fire at most once — guard against any double-advance
+      // (e.g. a browser firing both onended and onerror) reaching the end twice.
+      let allDoneFired = false
+      const fireAllDone = () => {
+        if (allDoneFired) return
+        allDoneFired = true
+        opts?.onAllDone?.()
+      }
+
       if (!supported || !enabled || sentences.length === 0) {
         // Voice off/unsupported: nothing to play. The caller still needs to
         // finish, so resolve immediately and let it reveal text on its own.
-        opts?.onAllDone?.()
+        fireAllDone()
         return
       }
 
@@ -315,6 +324,9 @@ export function useVoiceOutput(): UseVoiceOutputResult {
 
       // Fall back to the browser voice for ONE sentence, keeping the sequence going.
       const speakSentenceWithBrowser = (i: number, text: string, advance: () => void) => {
+        // Browser voice doesn't use the shared <audio> element — clear it so a
+        // later releaseAudio() doesn't touch a stale clip from a prior sentence.
+        audioRef.current = null
         const utterance = new SpeechSynthesisUtterance(text)
         const voice = pickMeeraVoice()
         if (voice) utterance.voice = voice
@@ -337,7 +349,7 @@ export function useVoiceOutput(): UseVoiceOutputResult {
         if (speakTokenRef.current !== token) return // superseded
         if (i >= sentences.length) {
           setIsSpeaking(false)
-          opts?.onAllDone?.()
+          fireAllDone()
           return
         }
 
