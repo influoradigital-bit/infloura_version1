@@ -151,17 +151,62 @@ public class AnalyzeSiteTriggerService {
     }
 
     private void applySuccess(String workspaceId, Data data) {
-        AnalyzeSiteCallback callback =
-                new AnalyzeSiteCallback(
-                        workspaceId,
-                        "READY",
-                        data.productCatalog() != null ? data.productCatalog() : List.of(),
-                        data.brandColor() != null ? Map.of("accent_color", data.brandColor()) : Map.of(),
-                        data.toneDial() != null ? data.toneDial() : Map.of(),
-                        data.nicheTags() != null ? data.nicheTags() : List.of(),
-                        List.of(),
-                        null);
+        AnalyzeSiteCallback callback = toCallback(workspaceId, data);
         transactionTemplate.executeWithoutResult(status -> applyCallback(workspaceId, callback));
+    }
+
+    private AnalyzeSiteCallback toCallback(String workspaceId, Data data) {
+        return new AnalyzeSiteCallback(
+                workspaceId,
+                "READY",
+                data.productCatalog() != null ? data.productCatalog() : List.of(),
+                data.brandColor() != null ? Map.of("accent_color", data.brandColor()) : Map.of(),
+                data.toneDial() != null ? data.toneDial() : Map.of(),
+                data.nicheTags() != null ? data.nicheTags() : List.of(),
+                List.of(),
+                null);
+    }
+
+    /**
+     * Write-back path for the Meera CHAT tool loop's LOCAL {@code analyze_site} tool (H-23
+     * follow-up). {@code trigger()}/{@code runAnalysis()} above are the FORM/onboarding path —
+     * Spring calls influora-ai itself via {@link AnalyzeSiteAiClient}. The chat path is the
+     * opposite direction: influora-ai already ran {@code perform_site_analysis} locally (for a fast
+     * in-turn reply) and forwards the same-shaped result here, behind the {@code
+     * /internal/meera/analyze_site_result} mesh-authenticated endpoint ({@code
+     * MeeraInternalController#analyzeSiteResult}). Reuses {@link #toCallback}/{@link
+     * #applyCallback}/{@link #markFailed} exactly as the onboarding path does — the only new
+     * behavior is creating the {@code BrandProfile} row here if one doesn't exist yet (the
+     * onboarding path's {@link #markAnalyzing} does this too; chat has no equivalent "mark
+     * ANALYZING" step since the analysis already completed by the time this is called).
+     */
+    public void applyChatResult(
+            String workspaceId, String websiteUrl, boolean success, Data data, String errorMessage) {
+        if (workspaceId == null || workspaceId.isBlank()) {
+            return;
+        }
+        transactionTemplate.executeWithoutResult(
+                status -> {
+                    BrandProfile profile =
+                            brandProfileRepository
+                                    .findByWorkspaceId(workspaceId)
+                                    .orElseGet(
+                                            () ->
+                                                    BrandProfile.builder()
+                                                            .id(Ulids.newUlid())
+                                                            .workspaceId(workspaceId)
+                                                            .build());
+                    if (websiteUrl != null && !websiteUrl.isBlank()) {
+                        profile.setWebsiteUrl(websiteUrl);
+                    }
+                    brandProfileRepository.save(profile);
+                });
+
+        if (success && data != null) {
+            applySuccess(workspaceId, data);
+        } else {
+            markFailed(workspaceId, errorMessage != null ? errorMessage : "chat analysis failed");
+        }
     }
 
     /**

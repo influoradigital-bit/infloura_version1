@@ -55,6 +55,7 @@ import {
   type PayoutMethod,
 } from '@/lib/api';
 import { useServiceInvoices } from '@/hooks/creator/useServiceInvoices';
+import { useToast } from '@/hooks/use-toast';
 
 // ---------------------------------------------------------------------------
 // Live-wiring notes (ported from claude/api-connection-workflow-b62285):
@@ -189,6 +190,7 @@ function formatInvoiceDate(iso: string): string {
 
 /** D14 — PDF download trigger shared by both invoice lists on this page. */
 function InvoicePdfButton({ onDownload, filename }: { onDownload: () => Promise<Blob>; filename: string }) {
+  const { toast } = useToast();
   const [downloading, setDownloading] = React.useState(false);
 
   const handleDownload = async () => {
@@ -203,8 +205,12 @@ function InvoicePdfButton({ onDownload, filename }: { onDownload: () => Promise<
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-    } catch {
-      // Swallowed — button just stops spinning, no destructive fallout from a failed download.
+    } catch (err) {
+      toast({
+        title: 'Couldn’t download invoice',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setDownloading(false);
     }
@@ -344,6 +350,7 @@ function InvoicesTabContent() {
 
 export default function CreatorWalletPage() {
   const liveApi = isApiLive();
+  const { toast } = useToast();
 
   const [selectedPayout, setSelectedPayout] = React.useState<typeof mockPayouts[0] | null>(null);
   const [showPayoutSettings, setShowPayoutSettings] = React.useState(false);
@@ -440,7 +447,13 @@ export default function CreatorWalletPage() {
           setTransactions(remote.map(mapWalletTransactionRow));
         }
       } catch (err) {
-        console.error('Failed to load transaction history', err);
+        if (!cancelled) {
+          toast({
+            title: 'Couldn’t refresh transaction history',
+            description: err instanceof ApiError ? err.message : 'Showing your last known activity.',
+            variant: 'destructive',
+          });
+        }
       }
     })();
     return () => {
@@ -522,7 +535,11 @@ export default function CreatorWalletPage() {
       await api.wallet.setPrimaryPayoutMethod('creator', id);
       await loadPayoutMethods();
     } catch (err) {
-      console.error('[creator-wallet] failed to set primary payout method', err);
+      toast({
+        title: 'Couldn’t set primary payout method',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setSettingPrimaryId(null);
     }

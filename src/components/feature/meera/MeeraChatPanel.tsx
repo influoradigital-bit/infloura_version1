@@ -17,6 +17,7 @@ import { MEERA_CONVERSATION_SCRIPT } from '@/data/meera-mock'
 import type { MeeraFunctionCall } from '@/data/stage-config'
 import { ApiError, isApiLive } from '@/lib/api'
 import { meeraApi } from '@/lib/meera-api'
+import { uniqueId } from '@/lib/unique-id'
 import { cn } from '@/lib/utils'
 
 interface MeeraChatPanelProps {
@@ -193,7 +194,6 @@ export function MeeraChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null)
   const timerRef = useRef<number | null>(null)
   const revealTimerRef = useRef<number | null>(null)
-  const nextIdRef = useRef(0)
   const reduceMotion = useReducedMotion()
 
   // Live-mode-only state — session handle, in-flight stream bookkeeping, and
@@ -219,10 +219,11 @@ export function MeeraChatPanel({
   const turn = MEERA_CONVERSATION_SCRIPT[turnIndex]
   const conversationDone = turnIndex >= MEERA_CONVERSATION_SCRIPT.length
 
-  const makeId = (prefix: string) => {
-    nextIdRef.current += 1
-    return `${prefix}-${nextIdRef.current}`
-  }
+  // Collision-proof message ids. The previous `${prefix}-${counter}` reset to 0
+  // on every remount, so the first sends after a cache/backfill restore collided
+  // with restored ids (brand-1, meera-2, tool-7) → React duplicate-key warnings
+  // and dropped bubbles. uniqueId() is globally unique regardless of remount.
+  const makeId = (prefix: string) => uniqueId(prefix)
 
   // Report phase + speaking state up to the caller so MeeraPresence (hosted
   // in LivingCanvas) can derive idle/thinking/talking without a new global.

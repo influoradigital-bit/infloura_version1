@@ -969,6 +969,35 @@ FROM Priya (direct) → Vikram | Add real `phone` column — closes the gap flag
 
 **Persistence:** `workspace.getPhone()` on read; `WorkspaceService.updateMyWorkspace` calls the new `Workspace#updatePhone` mutator (same blank-clears-it semantics as `updateContactEmail`). Removed the now-stale "no phone column" javadocs on `Workspace#updateContactEmail`, `WorkspaceReadResponse`, `WorkspaceUpdateRequest`, and the controller.
 
+---
+
+## Meera Verification — Meera chat R2/R3b/R6 + Sarvam voice R5 + R1 secret alignment — 2026-07-20
+
+```
+FROM Kavya → Meera | Local verification (FE+AI svc+config) | src/components/feature/meera/MeeraChatPanel.tsx, src/lib/meera-api.ts, src/components/feature/meera/Composer.tsx, src/data/meera-copy.ts, influora-ai/app/providers/sarvam.py, influora-ai/app/prompt/persona.py, influora-ai/app/config.py, influora-ai/tests/providers/test_sarvam_tts.py, influora-api/.env (lines 34-35) | ✅ ALL PASS | restarts required before activation (see below)
+```
+
+| Check | Command | Result |
+|---|---|---|
+| Frontend typecheck | `npx tsc --noEmit -p tsconfig.json` | ✅ exit 0, 0 errors, empty output |
+| Frontend build | `npm run build` (vite build + postbuild prerender) | ✅ exit 0 — 4745 modules transformed, built in 28.0s, 16/16 marketing routes prerendered. Only pre-existing >500kB chunk-size warning, no new errors. |
+| AI svc — sarvam tests | `python -m pytest tests/providers/test_sarvam_tts.py -q` (influora-ai) | ✅ 31 passed in 1.38s (10 new regression tests included) |
+| AI svc — money-path route | `python -m pytest tests/routes/test_chat_money_path.py -q` | ✅ included in combined run below |
+| AI svc — tool-result-data route | `python -m pytest tests/routes/test_chat_tool_result_data.py -q` | ✅ combined: 12 passed, 1 warning (pre-existing pydantic `SkipValidation` UserWarning in a third-party dep, unrelated to this diff) in 3.40s |
+| Python compile check | `python -m py_compile app/providers/sarvam.py app/prompt/persona.py app/config.py` | ✅ exit 0, no syntax errors |
+| Python lint | `python -m ruff check ...` | ⚠️ SKIPPED — `ruff` not installed in this environment (`No module named ruff`), not part of `requirements.txt`/`requirements-dev.txt`. Not a regression; not blocking. |
+
+**R1 secret alignment — CONFIRMED MATCH.** Real key/value lines (not the comment block the task pointed at):
+- `influora-api/.env:34` `INTERNAL_SERVICE_TOKEN_SECRET=dev-internal-service-token-secret-change-in-production-min-32-chars` ↔ `influora-ai/.env:57` `SERVICE_TOKEN_SIGNING_KEY=dev-internal-service-token-secret-change-in-production-min-32-chars` — **byte-for-byte identical**
+- `influora-api/.env:35` `INTERNAL_REQUEST_HMAC_SECRET=dev-internal-request-hmac-secret-change-in-production-min-32-chars` ↔ `influora-ai/.env:46` `INTERNAL_HMAC_KEY=dev-internal-request-hmac-secret-change-in-production-min-32-chars` — **byte-for-byte identical**
+- Note: the task's cited `influora-api/.env` lines 29-30 are the explanatory comment block, not the values — actual values sit at lines 34-35 in the current file. `influora-ai/.env` line numbers (46, 57) were accurate.
+
+**Required restarts (NOT performed — another chat's dev server is live in this folder):**
+- `influora-api` Docker backend needs a restart to pick up the (already-matching) env-file secrets at container start — only matters if this pair was just edited; values already agree so this is a no-op restart unless the container is running stale values.
+- `influora-ai` Python service needs a restart (module re-import) to activate R5 (`app/prompt/persona.py` + `PROMPT_VERSION` bump in `app/config.py`) and the Sarvam voice tuning/chunking changes in `app/providers/sarvam.py`.
+
+**VERDICT: ✅ GREEN — all build/typecheck/test gates pass.** VETO not exercised. Cleared pending the two restarts above to actually activate R1/R5/voice changes in the running services.
+
 **Validation:** lenient/nullable — blank or null clears it. If non-blank: DTO `@Pattern` restricts to allowed characters (`+ ( ) - space`, digits) as a first-pass filter; `WorkspaceService` does the real check (`isValidPhone`) — strips to digits-only and requires 7-15 digits, same "DTO annotation + service-level belt-and-suspenders" precedent as the existing `email` field. No over-restriction on international formats.
 
 **Tests added:** `WorkspaceServiceTest` — happy path now asserts `phone` persists on save (`"+1 (415) 555-0100"`), new `updateMyWorkspace_blankPhone_clearsPhone` (blank string clears a previously-set phone), new `updateMyWorkspace_badPhone_rejected` (`"123"` → `VALIDATION_ERROR`, never saved). `WorkspaceControllerTest` — both existing tests extended to assert `phone` round-trips through GET and PATCH. `WorkspaceServiceAnalyzeSiteTest` — 5 pre-existing tests updated for the new parameter position only (no behavior change).
@@ -1008,3 +1037,50 @@ FROM Kavya → Meera | Local build verification (FE-only, backends pre-existing)
 ---
 
 Ananya → Kavya | Wire Hype campaign config into POST/PATCH /campaigns (Priya/coordinator direct task, depends on Vikram's HypeConfigDto backend) | src/lib/api.ts (campaignToPayload + mapCampaignFromApi) | READY for QA (needs Vikram's backend running for live verification) | campaignToPayload now forwards `campaignType` + full `hype` block (was dropping both). `liveUntil` converted Date→ISO string on write (fmtIso), ISO string→Date on read (mapCampaignFromApi), matching HypeConfigDto's raw-string contract (CampaignDtos.java:43-47). FE/BE enum mismatch handled: FE CampaignType has 'OPEN' which backend's CampaignIntentType (HYPE/DIRECT/REVIEW/STANDARD) rejects — only forward campaignType when it isn't 'OPEN'; omitting it for the generic (non-Hype) create/edit forms is unchanged behavior (backend defaults absent campaignType to STANDARD). Did NOT reconcile the full OPEN/STANDARD mismatch — flagging as a separate pre-existing item, not in scope. Read path: campaigns-list.tsx / HypeCampaignCard already consumed campaign.campaignType/campaign.hype correctly, no changes needed there. brand-edit-campaign.tsx has no Hype UI — confirmed backend silently ignores PATCH with hype:undefined for an existing HYPE campaign (CampaignService.java:201-210), so no regression from the generic edit form. tsc --noEmit clean. Verified via temporary dev-only smoke route (created + fully removed after test, git status confirms clean): captured actual POST /campaigns bodies — Hype create sent `campaignType:"HYPE"` + full `hype` block with `liveUntil` as ISO string (e.g. "2026-07-21T13:11:44.230Z"); standard create sent neither `campaignType` nor `hype` keys at all (no "OPEN" ever sent).
+
+---
+
+## Meera Verification — Sarvam TTS ReadTimeout follow-up fix (24kHz + 15s read) — 2026-07-20
+
+```
+FROM (direct request) → Meera | Re-verify commit 5350af2 (python-only, no FE files) | influora-ai/app/providers/sarvam.py, influora-ai/app/config.py, influora-ai/tests/providers/test_sarvam_tts.py | ✅ ALL PASS (1 pre-existing unrelated FAIL flagged) | needs influora-ai service restart to take effect
+```
+
+| Check | Command | Result |
+|---|---|---|
+| Compile | `python -m py_compile influora-ai/app/providers/sarvam.py influora-ai/app/config.py` | ✅ exit 0 |
+| Config sanity-grep | `grep sarvam_tts_read app/config.py` / `grep speech_sample_rate app/providers/sarvam.py` | ✅ `sarvam_tts_read: float = 15.0` (config.py:122); `"speech_sample_rate": 24000` (sarvam.py:300, not 44100) |
+| Sarvam TTS regression suite | `python -m pytest tests/providers/test_sarvam_tts.py -q` | ✅ **31 passed** in 0.87s (matches expected count exactly) |
+| Cost/voice-adjacent suite | `python -m pytest tests/costs/test_pricing.py tests/routes/test_voice_spend_gate.py -q` | ⚠️ **25 passed, 1 failed** — `test_gemini_cost_matches_point10_and_point40_per_mtok` asserts `Decimal('0.50')` but got `Decimal('2.8000000')`. **Pre-existing, unrelated to this commit** — confirmed via `git show 5350af2 -- influora-ai/app/config.py`: diff only touches `sarvam_tts_read`, zero touches to any Gemini pricing constant. Gemini pricing-table bug, not a Sarvam-fix regression. Flagging for Arjun to route separately. |
+| Lint | `ruff check ...` | ⏭️ SKIPPED — `ruff` not installed in this environment (`command not found`) |
+| FE regression (cheap check, full build not required — commit is Python-only) | `npx tsc --noEmit -p tsconfig.json` (repo root) | ✅ exit 0, 0 errors (node v22.15.0, tsc 5.7.3) |
+
+**VERDICT: 🟢 GREEN — cleared.** Both landed values confirmed exactly as specified (15.0s read timeout, 24000Hz sample rate), compile clean, the targeted Sarvam regression test (31/31) passes, and the frontend is unaffected (tsc clean, no FE files in this diff). The one test failure found is a pre-existing, unrelated Gemini cost-pricing bug — not a blocker for this fix, flagging separately.
+
+**ACTION REQUIRED (not yet done — do NOT restart, another dev server is live in this folder):** the `influora-ai` Python service must be restarted to pick up the module re-import of `sarvam.py`/`config.py`. After restart, confirm via `ai_dev.log` that a `voice_speak_started` entry is no longer followed by `sarvam speak failed: ReadTimeout`.
+
+---
+
+## Meera Verification — commits 07f67c6 + e20dd98 (pricing fix + Meera chat batch) — 2026-07-20
+
+```
+FROM (direct request) → Meera | Verify 07f67c6 (pricing test fix) + e20dd98 (short replies/options/voice-sync/templates) | src/hooks/useVoiceOutput.ts, MeeraChatPanel.tsx, ToolResultRenderer.tsx, src/lib/meera-api.ts, influora-ai/app/config.py, app/tools/loop.py, app/tools/schemas.py, app/routes/chat.py, app/prompt/persona.py, tests/costs/test_pricing.py | ✅ ALL PASS | needs influora-ai restart + FE rebuild to activate
+```
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `npx tsc --noEmit -p tsconfig.json` (repo root) | ✅ exit 0, 0 errors |
+| 2 | `npm run build` (repo root) | ✅ exit 0 — vite build 32.46s, 4745 modules; postbuild prerender 16/16 routes captured clean (no flake this run) |
+| 3 | `python -m pytest tests/costs/test_pricing.py tests/tools/ tests/routes/test_chat_money_path.py tests/routes/test_chat_tool_result_data.py tests/eval/test_prompt_injection.py tests/providers/test_sarvam_tts.py -q` (influora-ai/) | ✅ **106 passed**, 1 unrelated pydantic deprecation warning, 0 failures — this run also confirms the previously-flagged Gemini pricing failure (`test_gemini_cost_matches_point10_and_point40_per_mtok`) is now gone, i.e. 07f67c6 actually fixed it |
+| 4 | `python -m py_compile app/config.py app/tools/loop.py app/tools/schemas.py app/routes/chat.py app/prompt/persona.py` (influora-ai/) | ✅ exit 0 |
+| 5 | Config confirmations (grep) | ✅ `PROMPT_VERSION = "meera-2026.07.21.3"` (config.py:69); ✅ `meera_chat_max_tokens` default_factory `_get_int("MEERA_CHAT_MAX_TOKENS", 384)` (config.py:221-223); ✅ `PRESENT_OPTIONS = "present_options"` and `LOCAL_TOOL_NAMES = (ANALYZE_SITE, PRESENT_OPTIONS)` (schemas.py:58-59) |
+
+**VERDICT: 🟢 GREEN — cleared.** Both commits build and test clean. tsc clean, vite build + prerender clean (16/16, no flake), 106/106 targeted Python tests pass, py_compile clean on all 5 touched modules, all 3 landed config values confirmed exactly as claimed in the commit message.
+
+**RESTARTS REQUIRED TO ACTIVATE (none performed — live dev server in this folder, per instruction):**
+- `influora-ai` Python service — must restart to pick up persona.py/schemas.py/config.py/loop.py re-imports (PROMPT_VERSION bump, 384-token cap, `present_options` tool registration all inert until reload).
+- Frontend rebuild/reload — needed to activate voice Option A (speakSequence), the options-cards UI (ToolResultRenderer), and the templates-until-first-message gate in MeeraChatPanel.tsx.
+
+**Not verified here (per commit's own caveat):** runtime behavior — whether the model actually calls `present_options`, voice playback sequencing, template-gate UX — needs the live stack after both restarts. Static/build/test verification only.
+
+VETO not exercised — code passes local verification.

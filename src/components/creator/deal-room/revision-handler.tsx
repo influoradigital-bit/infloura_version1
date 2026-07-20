@@ -7,6 +7,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { ApiError } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 interface RevisionHandlerProps {
   open: boolean;
@@ -29,6 +31,7 @@ export function RevisionHandler({
   onStartRevision,
   isProcessing = false,
 }: RevisionHandlerProps) {
+  const { toast } = useToast();
   const [revisionNotes, setRevisionNotes] = React.useState('');
   const isLastRevision = currentRevision === maxRevisions - 1;
 
@@ -39,7 +42,11 @@ export function RevisionHandler({
         setRevisionNotes('');
         onOpenChange(false);
       } catch (error) {
-        console.error('Error starting revision:', error);
+        toast({
+          title: 'Could not start revision',
+          description: error instanceof ApiError ? error.message : 'Please try again.',
+          variant: 'destructive',
+        });
       }
     }
   };

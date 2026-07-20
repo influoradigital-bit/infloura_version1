@@ -2,6 +2,8 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { Toaster } from '@/components/ui/toaster';
+import { DemoModeBanner } from '@/components/DemoModeBanner';
 import BrandLoginPage from '@/pages/brand-login';
 import BrandRegisterPage from '@/pages/brand-register';
 import BrandForgotPasswordPage from '@/pages/brand-forgot-password';
@@ -562,6 +564,11 @@ export default function App() {
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </BrowserRouter>
+    {/* App-wide toast outlet — previously the <Toaster> was never mounted, so
+        every toast({variant:'destructive'}) call across ~17 components silently
+        rendered nothing. Mounted once here, all of them now surface. */}
+    <Toaster />
+    <DemoModeBanner />
     </ErrorBoundary>
     </QueryClientProvider>
   );

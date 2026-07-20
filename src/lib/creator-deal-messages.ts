@@ -1,4 +1,5 @@
 /** Session-persisted creator deal messages (demo until API is wired). */
+import { uniqueId } from '@/lib/unique-id';
 
 export interface PersistedDealMessage {
   id: string;
@@ -44,7 +45,7 @@ export function addPersistedMessage(
   sender: 'brand' | 'creator' = 'creator',
 ): PersistedDealMessage {
   const message: PersistedDealMessage = {
-    id: `msg-${Date.now()}`,
+    id: uniqueId('msg'),
     dealId,
     sender,
     content: content.trim(),

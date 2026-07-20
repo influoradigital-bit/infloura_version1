@@ -798,8 +798,21 @@ function campaignToPayload(payload: Partial<Campaign>) {
   const timeline = payload.timeline as { startDate?: Date | string; endDate?: Date | string } | undefined;
   const fmt = (d?: Date | string) => {
     if (!d) return undefined;
+    // A date-only string is already LocalDate-shaped — pass it through untouched.
+    if (typeof d === 'string') {
+      const m = /^(\d{4}-\d{2}-\d{2})/.exec(d);
+      if (m) return m[1];
+    }
     const date = d instanceof Date ? d : new Date(d);
-    return date.toISOString().slice(0, 10);
+    if (Number.isNaN(date.getTime())) return undefined;
+    // Build yyyy-MM-dd from LOCAL calendar components, NOT toISOString() — the
+    // date picker constructs Dates at local midnight, and toISOString() shifts
+    // to UTC first, rolling the date back a day for any UTC+ timezone (e.g. IST
+    // 00:00 → 18:30 prior UTC day). That silently stored the wrong LocalDate.
+    const y = date.getFullYear();
+    const mo = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${y}-${mo}-${day}`;
   };
   // Full ISO-8601 timestamp (not the date-only `fmt` above) — matches
   // HypeConfigDto.liveUntil on the backend, kept as a raw string there

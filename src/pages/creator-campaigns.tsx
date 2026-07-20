@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/sheet';
 import type { CreatorCampaignListItem } from '@/lib/api';
 import { api, ApiError } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 import type { Platform } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -45,6 +46,7 @@ const BUDGET_MIN = 10_000;
 const BUDGET_MAX = 1_000_000;
 
 export default function CreatorCampaignsPage() {
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = React.useState('');
   const [selectedNiche, setSelectedNiche] = React.useState<string | null>(null);
   const [selectedPlatform, setSelectedPlatform] = React.useState<Platform | null>(null);
@@ -97,6 +99,10 @@ export default function CreatorCampaignsPage() {
         if (!append) {
           setCampaigns([]);
           setError(message);
+        } else {
+          // Load-more failure previously did nothing — the list just stopped growing
+          // with no explanation. Keep the already-loaded page, surface a toast.
+          toast({ title: 'Couldn’t load more campaigns', description: message, variant: 'destructive' });
         }
       } finally {
         setLoading(false);

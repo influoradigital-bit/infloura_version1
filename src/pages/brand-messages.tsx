@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { uniqueId } from '@/lib/unique-id';
 import {
   deals as dealsApi,
   messages as messagesApi,
@@ -434,7 +435,7 @@ export default function BrandMessagesPage() {
     }
 
     const message: Message = {
-      id: `m${Date.now()}`,
+      id: uniqueId('m'),
       senderId: 'brand',
       senderType: 'brand',
       content: newMessage,

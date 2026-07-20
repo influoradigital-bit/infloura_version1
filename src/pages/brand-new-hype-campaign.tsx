@@ -2,8 +2,10 @@ import * as React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Hash, IndianRupee, Link2, Loader2, Music2, Plus, Users, X, Zap } from 'lucide-react';
 
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { cn, formatINR } from '@/lib/utils';
+import { validateCampaignTitle } from '@/lib/campaign-validation';
+import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -48,6 +50,7 @@ const initialForm: HypeFormState = {
 
 export default function BrandNewHypeCampaignPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [form, setForm] = React.useState<HypeFormState>(initialForm);
   const [errors, setErrors] = React.useState<Partial<Record<keyof HypeFormState, string>>>({});
   const [submitting, setSubmitting] = React.useState(false);
@@ -84,13 +87,20 @@ export default function BrandNewHypeCampaignPage() {
 
   const validate = (): boolean => {
     const next: Partial<Record<keyof HypeFormState, string>> = {};
-    if (!form.title.trim()) next.title = 'Give your Hype campaign a name';
+    // Mirror the backend @Size(5,300) contract — a 1–4 char title passes a bare
+    // non-empty check here but 400s at the server (shared with the standard form).
+    const titleError = validateCampaignTitle(form.title);
+    if (titleError) next.title = titleError;
     if (!form.sourceReelUrl.trim()) next.sourceReelUrl = 'The source reel is what creators remix';
     else if (!/^https?:\/\/\S+$/i.test(form.sourceReelUrl.trim())) next.sourceReelUrl = 'Enter a valid URL';
     if (!form.hashtag.trim()) next.hashtag = 'Campaign hashtag is required';
     if (form.formatLanes.length === 0) next.formatLanes = 'Pick at least one format lane';
     if (rate <= 0) next.perReelRate = 'Set the flat rate creators earn per reel';
     if (slots <= 0) next.slotCap = 'Set how many creator slots are available';
+    // Backend budget.min is @DecimalMin("0.01"); guard the computed rate × slots
+    // product so a fractional rate can't yield 0 < total < 0.01 and 400. Independent
+    // `if` (not chained off the slots check) so it always runs when rate > 0.
+    if (rate > 0 && totalBudget < 0.01) next.perReelRate = 'Rate × slots must be at least ₹0.01';
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -129,6 +139,18 @@ export default function BrandNewHypeCampaignPage() {
         },
       });
       navigate('/brand/campaigns');
+    } catch (err) {
+      // Previously the failure was swallowed — the button just re-enabled with no
+      // feedback. The most common failure is launching (status ACTIVE) from an
+      // unverified workspace: the backend returns 403 WORKSPACE_NOT_VERIFIED
+      // (CampaignValidator.validateStatusForWorkspace), whose message we surface.
+      const description =
+        err instanceof ApiError && err.code === 'WORKSPACE_NOT_VERIFIED'
+          ? 'Your workspace must be verified before launching a live Hype campaign.'
+          : err instanceof ApiError
+            ? err.message
+            : 'Failed to launch campaign. Please try again.';
+      toast({ title: 'Could not launch Hype campaign', description, variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }

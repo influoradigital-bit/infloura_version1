@@ -6,16 +6,30 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: influora
+      MYSQL_DATABASE: influora_local
       MYSQL_USER: influora
       MYSQL_PASSWORD: influora
     ports:
-      - "3306:3306"
+      - "3307:3306"
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     volumes:
       - influora_mysql_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.2
+    container_name: influora-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - influora_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -41,6 +55,48 @@ services:
       retries: 5
       start_period: 90s # freshclam's first virus-database download takes a while on cold start
 
+  # TrendSpark scheduler (Task 3, Dev). Hosts the daily trend-pull workflow
+  # (trendspark/n8n/trend-pull-workflow.json). This container is the runtime the
+  # committed workflow JSON was always meant to run on — before this it was a
+  # portable artifact with nowhere to execute. After `docker compose up`, import
+  # the workflow at http://localhost:5678, create the 4 credentials
+  # (TMDb / NewsAPI / YouTube query-auth + MySQL), fill their IDs into the nodes,
+  # and flip the workflow active (it ships "active": false).
+  #
+  # The workflow's Code node reads these via $env — they are injected here so the
+  # LLM Recovery Tagger call is wired without editing the JSON:
+  #   INFLUORA_AI_INTERNAL_URL -> the FastAPI recovery endpoint's base URL
+  #   TREND_TAG_INGEST_SECRET  -> MUST match influora-ai's TREND_TAG_INGEST_SECRET
+  # influora-ai runs on the HOST (not in this compose), so reach it via
+  # host.docker.internal; the MySQL credential inside n8n should use host
+  # "mysql" (this compose network) with the influora/influora creds above.
+  n8n:
+    image: n8nio/n8n:1.62.1
+    container_name: influora-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      GENERIC_TIMEZONE: Asia/Kolkata
+      TZ: Asia/Kolkata
+      N8N_PORT: "5678"
+      # Trend-tagger recovery wiring ($env in the workflow Code node).
+      INFLUORA_AI_INTERNAL_URL: http://host.docker.internal:8000
+      TREND_TAG_INGEST_SECRET: ${TREND_TAG_INGEST_SECRET:-dev-trend-tag-ingest-secret-change-in-production-min-32-chars}
+      # Per-run caps (defaults mirror the code; override here if needed).
+      TREND_TAG_MAX_RECOVERY_PER_RUN: "40"
+      TREND_MAX_ROWS_PER_RUN: "100"
+    extra_hosts:
+      # Lets the container resolve host.docker.internal on Linux (no-op on Win/Mac).
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - influora_n8n_data:/home/node/.n8n
+
 volumes:
   influora_mysql_data:
   influora_clamav_data:
+  influora_redis_data:
+  influora_n8n_data:

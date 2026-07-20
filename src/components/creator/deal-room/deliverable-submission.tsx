@@ -11,6 +11,8 @@ import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { ApiError } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 interface Deliverable {
   id: string;
@@ -42,6 +44,7 @@ export function DeliverableSubmission({
   onSubmit,
   isSubmitting = false,
 }: DeliverableSubmissionProps) {
+  const { toast } = useToast();
   const [selectedDeliverable, setSelectedDeliverable] = React.useState<string>('');
   const [file, setFile] = React.useState<File | null>(null);
   const [caption, setCaption] = React.useState('');
@@ -119,7 +122,11 @@ export function DeliverableSubmission({
       setSelectedDeliverable(deliverables[0]?.id || '');
       onOpenChange(false);
     } catch (error) {
-      console.error('Error submitting deliverable:', error);
+      toast({
+        title: 'Could not submit deliverable',
+        description: error instanceof ApiError ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
     }
   };
 

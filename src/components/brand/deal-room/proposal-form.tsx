@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { ChevronRight, X, Plus, Minus, IndianRupee, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { uniqueId } from '@/lib/unique-id';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,7 +21,7 @@ import {
 
 export interface ProposalFormData {
   // Step 1: Deliverables
-  deliverables: Array<{ type: string; count: number }>;
+  deliverables: Array<{ id: string; type: string; count: number }>;
   // Step 2: Budget
   budget: number;
   // Step 3: Timeline
@@ -72,7 +73,7 @@ const addOnOptions = [
 export function ProposalForm({ creatorName, onSubmit, onClose, isSubmitting = false }: ProposalFormProps) {
   const [step, setStep] = React.useState(1);
   const [formData, setFormData] = React.useState<ProposalFormData>({
-    deliverables: [{ type: 'Instagram Reel', count: 1 }],
+    deliverables: [{ id: uniqueId('del'), type: 'Instagram Reel', count: 1 }],
     budget: 50000,
     deadline: '',
     usageRightsDuration: '6-months',
@@ -172,7 +173,7 @@ export function ProposalForm({ creatorName, onSubmit, onClose, isSubmitting = fa
 
               <div className="space-y-3">
                 {formData.deliverables.map((del, idx) => (
-                  <div key={idx} className="flex items-end gap-2 p-3 rounded-lg border border-border bg-muted/30">
+                  <div key={del.id} className="flex items-end gap-2 p-3 rounded-lg border border-border bg-muted/30">
                     <div className="flex-1">
                       <Label className="text-xs mb-1.5 block">Deliverable Type</Label>
                       <Select
@@ -235,7 +236,7 @@ export function ProposalForm({ creatorName, onSubmit, onClose, isSubmitting = fa
                 onClick={() => {
                   setFormData({
                     ...formData,
-                    deliverables: [...formData.deliverables, { type: 'Instagram Reel', count: 1 }],
+                    deliverables: [...formData.deliverables, { id: uniqueId('del'), type: 'Instagram Reel', count: 1 }],
                   });
                 }}
                 className="w-full gap-2"

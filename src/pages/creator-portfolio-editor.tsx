@@ -41,6 +41,7 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
   api,
+  ApiError,
   type PortfolioAnalytics,
   type PortfolioCustomLink,
   type PortfolioPage,
@@ -65,6 +66,7 @@ export default function CreatorPortfolioEditorPage() {
   const [page, setPage] = React.useState<PortfolioPage | null>(null);
   const [analytics, setAnalytics] = React.useState<PortfolioAnalytics | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [syncing, setSyncing] = React.useState(false);
   const [coverUploading, setCoverUploading] = React.useState(false);
@@ -73,13 +75,18 @@ export default function CreatorPortfolioEditorPage() {
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadError(null);
     Promise.all([api.portfolio.getMine(), api.portfolio.analytics()])
       .then(([p, a]) => {
         if (cancelled) return;
         setPage(p as PortfolioPage);
         setAnalytics(a as PortfolioAnalytics);
       })
-      .catch((err) => console.error(err))
+      .catch((err) => {
+        // Was console.error only — `page` stayed null and the render guard
+        // (loading || !page) left the whole editor stuck on an infinite spinner.
+        if (!cancelled) setLoadError(err instanceof ApiError ? err.message : 'Could not load your portfolio.');
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
@@ -88,11 +95,25 @@ export default function CreatorPortfolioEditorPage() {
     };
   }, []);
 
-  if (loading || !page) {
+  if (loading) {
     return (
       <CreatorLayout>
         <div className="flex items-center justify-center py-24">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </CreatorLayout>
+    );
+  }
+
+  if (!page) {
+    return (
+      <CreatorLayout>
+        <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
+          <p className="text-sm font-medium text-destructive-foreground">Could not load your portfolio</p>
+          <p className="text-sm text-muted-foreground">{loadError ?? 'Something went wrong.'}</p>
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            Try again
+          </Button>
         </div>
       </CreatorLayout>
     );
@@ -137,7 +158,11 @@ export default function CreatorPortfolioEditorPage() {
       await navigator.clipboard.writeText(publicUrl);
       toast({ title: 'Link copied', description: 'Paste it in your Instagram bio.' });
     } catch {
-      // ignore
+      toast({
+        title: 'Couldn’t copy link',
+        description: `Copy it manually: ${publicUrl}`,
+        variant: 'destructive',
+      });
     }
   };
 

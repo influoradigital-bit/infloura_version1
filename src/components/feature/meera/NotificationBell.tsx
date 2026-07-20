@@ -112,7 +112,7 @@ function NotificationItem({
 
 export function NotificationBell({ className }: NotificationBellProps) {
   const [open, setOpen] = useState(false);
-  const { notifications, unreadCount, loading, markRead, markAllRead } = useNotifications();
+  const { notifications, unreadCount, loading, error, markRead, markAllRead } = useNotifications();
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -159,6 +159,12 @@ export function NotificationBell({ className }: NotificationBellProps) {
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-meera-border border-t-meera-accent" />
+            </div>
+          ) : error && notifications.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <Bell className="mb-2 h-8 w-8 text-meera-border-strong" />
+              <p className="text-sm text-meera-text-muted">Couldn’t load notifications</p>
+              <p className="mt-0.5 text-xs text-meera-text-muted/80">Please try again shortly.</p>
             </div>
           ) : notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">

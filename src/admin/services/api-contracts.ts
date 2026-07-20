@@ -88,7 +88,12 @@ async function apiRequest<T>(
     return { success: false, error: error.message };
   }
 
-  const data = await response.json();
+  let data: T;
+  try {
+    data = await response.json();
+  } catch {
+    return { success: false, error: 'Malformed response from server' };
+  }
   return { success: true, data };
 }
 
@@ -426,7 +431,12 @@ export const financeApi = {
     });
 
     if (response.ok) {
-      const data = (await response.json()) as PlatformFeeConfigWire;
+      let data: PlatformFeeConfigWire;
+      try {
+        data = (await response.json()) as PlatformFeeConfigWire;
+      } catch {
+        return { success: false, error: 'Malformed response from server' };
+      }
       return { success: true, data };
     }
 

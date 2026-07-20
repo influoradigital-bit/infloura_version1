@@ -230,6 +230,43 @@ class SpringInternalClient:
             allow_retry=False,
         )
 
+    async def persist_analyze_site_result(
+        self,
+        *,
+        workspace_id: str,
+        url: str,
+        success: bool,
+        data: dict[str, Any] | None,
+        error: dict[str, Any] | None,
+        onbehalf_jwt: str,
+    ) -> SpringResponse:
+        """POST /internal/meera/analyze_site_result -- write-back for the Meera CHAT tool loop's
+        LOCAL `analyze_site` tool (see app/tools/loop.py -- `is_local_tool` runs
+        `perform_site_analysis` in-process for a fast reply and, unlike every other tool, never
+        forwards the result to Spring, so a chat-pasted URL never updated `BrandProfile` the way
+        the form/onboarding path already does). `data`/`error` are passed straight through from
+        `perform_site_analysis`'s own return shape -- Spring's `AnalyzeSiteAiDtos.Data` already
+        deserializes that exact snake_case shape (source_url/niche_tags/tone_dial/brand_color/
+        product_catalog), since it is the SAME function backing both call sites. No
+        `Idempotency-Key` -- like `release_turn_credit`, this is a full-state upsert onto
+        `BrandProfile`, naturally idempotent on repeat delivery, not an append.
+        """
+        payload = {
+            "workspaceId": workspace_id,
+            "url": url,
+            "success": success,
+            "data": data,
+            "error": error,
+        }
+        return await self.call_tool_endpoint(
+            tool_name="_analyze_site_result",
+            path="/internal/meera/analyze_site_result",
+            payload=payload,
+            onbehalf_jwt=onbehalf_jwt,
+            idempotency_key=None,
+            allow_retry=False,
+        )
+
     async def release_turn_credit(
         self,
         *,

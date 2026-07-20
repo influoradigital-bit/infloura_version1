@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 
 import { cn, formatINR } from '@/lib/utils';
+import { uniqueId } from '@/lib/unique-id';
 import {
   messages as messagesApi,
   deliverables as deliverablesApi,
@@ -776,7 +777,7 @@ export default function BrandChatPage() {
 
     // Demo mode: local-only append (unchanged behavior).
     const newMsg = {
-      id: `msg-${Date.now()}`,
+      id: uniqueId('msg'),
       sender: 'brand' as const,
       content,
       timestamp: new Date(),

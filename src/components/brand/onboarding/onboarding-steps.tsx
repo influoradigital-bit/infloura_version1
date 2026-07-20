@@ -49,6 +49,7 @@ import {
   type UploadResult,
 } from '@/lib/upload';
 import { api, ApiError } from '@/lib/api';
+import { toast } from '@/hooks/use-toast';
 
 // ===========================
 // Shared types & data
@@ -839,8 +840,12 @@ export function CompanyDetailsStep({
     try {
       const result = await uploadToR2(file, 'brand-logos', (p) => setLogoProgress(p.percentage));
       onUpdate({ logoUpload: result });
-    } catch {
-      // Upload failed -- file is still selected locally
+    } catch (err) {
+      toast({
+        title: 'Logo upload failed',
+        description: err instanceof ApiError ? err.message : 'Please try selecting the file again.',
+        variant: 'destructive',
+      });
     } finally {
       setIsUploadingLogo(false);
     }
@@ -1045,7 +1050,13 @@ export function VerificationDocsStep({
     try {
       const result = await uploadToR2(file, 'verification/gstin', (p) => setGstinProgress(p.percentage));
       onUpdate({ gstinDocUpload: result });
-    } catch { /* noop */ } finally {
+    } catch (err) {
+      toast({
+        title: 'GSTIN document upload failed',
+        description: err instanceof ApiError ? err.message : 'Please try uploading again.',
+        variant: 'destructive',
+      });
+    } finally {
       setIsUploadingGstin(false);
     }
   };
@@ -1058,7 +1069,13 @@ export function VerificationDocsStep({
     try {
       const result = await uploadToR2(file, 'verification/pan', (p) => setPanProgress(p.percentage));
       onUpdate({ panDocUpload: result });
-    } catch { /* noop */ } finally {
+    } catch (err) {
+      toast({
+        title: 'PAN document upload failed',
+        description: err instanceof ApiError ? err.message : 'Please try uploading again.',
+        variant: 'destructive',
+      });
+    } finally {
       setIsUploadingPan(false);
     }
   };

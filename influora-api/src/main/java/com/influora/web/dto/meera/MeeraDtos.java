@@ -1,6 +1,7 @@
 package com.influora.web.dto.meera;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.influora.integration.ai.dto.AnalyzeSiteAiDtos;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
@@ -101,4 +102,20 @@ public final class MeeraDtos {
             List<String> nicheTags,
             List<String> competitorUrls,
             String error) {}
+
+    /**
+     * Write-back for the Meera CHAT tool loop's LOCAL {@code analyze_site} tool (influora-ai's
+     * {@code app/tools/loop.py} runs {@code perform_site_analysis} in-process for a fast reply and
+     * never forwards it to Spring like every other tool — see {@code AnalyzeSiteTriggerService}
+     * class javadoc). {@code data}/{@code error} deliberately reuse influora-ai's real {@code
+     * /analyze-site} response shape ({@link AnalyzeSiteAiDtos}) rather than re-declaring it, since
+     * {@code perform_site_analysis} is the SAME function backing both call sites — the shapes are
+     * identical by construction.
+     */
+    public record AnalyzeSiteChatResult(
+            @NotBlank String workspaceId,
+            String url,
+            boolean success,
+            AnalyzeSiteAiDtos.Data data,
+            AnalyzeSiteAiDtos.ErrorDetail error) {}
 }

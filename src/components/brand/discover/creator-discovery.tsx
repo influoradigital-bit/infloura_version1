@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { lazy, Suspense } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
   Search,
   Filter,
@@ -76,11 +76,69 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CanvasFallback } from '@/components/3d';
+// Platform pills shown in the discover hero — brand colors from the 2026-07-17 palette.
+const HERO_PILLS = [
+  { label: 'Instagram', color: '#E1306C', className: 'left-[8%] top-[22%]', delay: 0 },
+  { label: 'YouTube', color: '#FF4444', className: 'left-[30%] top-[58%]', delay: 0.6 },
+  { label: 'LinkedIn', color: '#0A66C2', className: 'right-[26%] top-[18%]', delay: 1.1 },
+  { label: 'Creators', color: '#7ec8e8', className: 'right-[8%] top-[52%]', delay: 0.3 },
+] as const;
 
-const DiscoverCanvasGate = lazy(() =>
-  import('@/components/3d/DiscoverCanvas').then((m) => ({ default: m.DiscoverCanvasGate })),
-);
+/** Lightweight 2D discover hero — soft gradient, pulsing glow, gently drifting platform
+    pills. Replaces the WebGL orbit with simple framer-motion; respects reduced-motion. */
+function DiscoverHero() {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-[#ddd6fe]/85 via-[#f0ebfa] to-[#c4b5fd]/60">
+      {/* Soft blurred glow blobs */}
+      <motion.div
+        aria-hidden
+        className="absolute -left-[8%] -top-[20%] h-[70%] w-[45%] rounded-full bg-[#7c6ae8]/35 blur-[90px]"
+        animate={reduceMotion ? undefined : { scale: [1, 1.12, 1], opacity: [0.7, 1, 0.7] }}
+        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.div
+        aria-hidden
+        className="absolute -right-[6%] top-[8%] h-[60%] w-[45%] rounded-full bg-[#7ec8e8]/30 blur-[90px]"
+        animate={reduceMotion ? undefined : { scale: [1.1, 1, 1.1], opacity: [0.6, 0.9, 0.6] }}
+        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+      />
+
+      {/* Central pulsing hub */}
+      <motion.div
+        aria-hidden
+        className="absolute left-1/2 top-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-br from-[#7c6ae8] to-[#c4b5fd] shadow-[0_0_60px_-10px_rgba(124,106,232,0.7)]"
+        animate={reduceMotion ? undefined : { scale: [1, 1.06, 1] }}
+        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+      />
+
+      {/* Floating platform pills */}
+      {HERO_PILLS.map((pill) => (
+        <motion.div
+          key={pill.label}
+          className={cn('absolute flex items-center gap-1.5', pill.className)}
+          initial={{ opacity: 0, y: 8 }}
+          animate={
+            reduceMotion
+              ? { opacity: 1, y: 0 }
+              : { opacity: 1, y: [0, -10, 0] }
+          }
+          transition={
+            reduceMotion
+              ? { duration: 0.4 }
+              : { duration: 5, repeat: Infinity, ease: 'easeInOut', delay: pill.delay }
+          }
+        >
+          <span className="flex items-center gap-1.5 rounded-full bg-card/90 px-3 py-1 text-xs font-medium text-foreground shadow-sm backdrop-blur-sm">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pill.color }} />
+            {pill.label}
+          </span>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
 
 // Indian cities for filter
 const INDIAN_CITIES = [
@@ -515,8 +573,15 @@ export function CreatorDiscovery() {
           .filter((c) => (c as CreatorProfile & { saved?: boolean }).saved)
           .map((c) => c.id);
         if (saved.length) setSavedCreators((prev) => [...new Set([...prev, ...saved])]);
-      } catch {
+      } catch (err) {
+        // Was a silent empty-grid — a failed search looked identical to "no
+        // creators match." Surface it and keep the current page on load-more.
         if (!append) setApiCreators([]);
+        toast({
+          title: append ? 'Couldn’t load more creators' : 'Couldn’t load creators',
+          description: err instanceof ApiError ? err.message : 'Please adjust your filters or try again.',
+          variant: 'destructive',
+        });
       } finally {
         setApiLoading(false);
         setApiLoadingMore(false);
@@ -672,11 +737,9 @@ export function CreatorDiscovery() {
   return (
     <TooltipProvider>
       <div className="flex flex-col gap-6 p-4 md:p-6">
-        {/* 3D hero — desktop only */}
+        {/* Discover hero — desktop only */}
         <div className="hidden lg:block -mx-4 md:-mx-6 overflow-hidden rounded-2xl border border-border h-[320px]">
-          <Suspense fallback={<CanvasFallback variant="discover" className="min-h-0 h-full" />}>
-            <DiscoverCanvasGate />
-          </Suspense>
+          <DiscoverHero />
         </div>
 
         {/* Header */}

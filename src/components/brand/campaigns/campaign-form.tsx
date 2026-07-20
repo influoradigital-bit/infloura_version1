@@ -22,6 +22,8 @@ import { cn } from '@/lib/utils';
 import type { Platform, ContentType, CampaignStatus } from '@/lib/types';
 import { useCampaignStore } from '@/lib/store';
 import { api, ApiError } from '@/lib/api';
+import { validateCampaignTitle } from '@/lib/campaign-validation';
+import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -137,6 +139,7 @@ const steps: { id: Step; label: string; description: string }[] = [
 
 export function CampaignForm({ campaignId }: { campaignId?: string }) {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const { addCampaign } = useCampaignStore();
   const [currentStep, setCurrentStep] = React.useState<Step>('basics');
   const [formData, setFormData] = React.useState<CampaignFormData>(initialFormData);
@@ -217,9 +220,10 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
     const newErrors: Record<string, string> = {};
 
     switch (step) {
-      case 'basics':
-        if (!formData.title.trim()) {
-          newErrors.title = 'Campaign title is required';
+      case 'basics': {
+        const titleError = validateCampaignTitle(formData.title);
+        if (titleError) {
+          newErrors.title = titleError;
         }
         if (!formData.description.trim()) {
           newErrors.description = 'Description is required';
@@ -228,6 +232,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
           newErrors.objectives = 'Select at least one objective';
         }
         break;
+      }
 
       case 'content':
         if (formData.platforms.length === 0) {
@@ -281,7 +286,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
     setErrors({});
 
     const payload = {
-      title: formData.title,
+      title: formData.title.trim(),
       description: formData.description,
       objectives: formData.objectives,
       status,
@@ -313,7 +318,11 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : 'Failed to save campaign';
-      setErrors({ submit: message });
+      toast({
+        title: status === 'ACTIVE' ? 'Could not publish campaign' : 'Could not save draft',
+        description: message,
+        variant: 'destructive',
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -833,7 +842,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                         <div className="space-y-2 mt-3">
                           {formData.requirements.map((req, index) => (
                             <div
-                              key={index}
+                              key={`${req}-${index}`}
                               className="flex items-center justify-between rounded-lg border border-border p-3"
                             >
                               <span className="text-sm">{req}</span>
@@ -876,7 +885,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                         <div className="flex flex-wrap gap-2 mt-3">
                           {formData.hashtags.map((tag, index) => (
                             <Badge
-                              key={index}
+                              key={`${tag}-${index}`}
                               variant="secondary"
                               className="gap-1 pl-3 pr-1"
                             >

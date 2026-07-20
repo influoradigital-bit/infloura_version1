@@ -6,6 +6,7 @@ import com.influora.domain.entity.AiConversation;
 import com.influora.domain.enums.MeeraToolName;
 import com.influora.security.OnBehalfAuthResolver;
 import com.influora.security.OnBehalfAuthResolver.OnBehalfContext;
+import com.influora.service.brand.AnalyzeSiteTriggerService;
 import com.influora.service.meera.MeeraSessionService;
 import com.influora.service.meera.tool.CalculateBudgetExecutor;
 import com.influora.service.meera.tool.ConfirmLaunchExecutor;
@@ -14,6 +15,7 @@ import com.influora.service.meera.tool.RequestPaymentExecutor;
 import com.influora.service.meera.tool.ShowCreatorsExecutor;
 import com.influora.service.meera.tool.ToolCallValidator;
 import com.influora.service.meera.tool.ToolCallValidator.ToolCallRejectedException;
+import com.influora.web.dto.meera.MeeraDtos.AnalyzeSiteChatResult;
 import com.influora.web.dto.meera.MeeraToolDtos.CalculateBudgetResult;
 import com.influora.web.dto.meera.MeeraToolDtos.ConfirmLaunchResult;
 import com.influora.web.dto.meera.MeeraToolDtos.CreateCampaignResult;
@@ -78,6 +80,7 @@ public class MeeraInternalController {
     private final RequestPaymentExecutor requestPaymentExecutor;
     private final ConfirmLaunchExecutor confirmLaunchExecutor;
     private final MeeraSessionService sessionService;
+    private final AnalyzeSiteTriggerService analyzeSiteTriggerService;
 
     public MeeraInternalController(
             OnBehalfAuthResolver onBehalfAuthResolver,
@@ -87,7 +90,8 @@ public class MeeraInternalController {
             CreateCampaignExecutor createCampaignExecutor,
             RequestPaymentExecutor requestPaymentExecutor,
             ConfirmLaunchExecutor confirmLaunchExecutor,
-            MeeraSessionService sessionService) {
+            MeeraSessionService sessionService,
+            AnalyzeSiteTriggerService analyzeSiteTriggerService) {
         this.onBehalfAuthResolver = onBehalfAuthResolver;
         this.toolCallValidator = toolCallValidator;
         this.showCreatorsExecutor = showCreatorsExecutor;
@@ -96,6 +100,7 @@ public class MeeraInternalController {
         this.requestPaymentExecutor = requestPaymentExecutor;
         this.confirmLaunchExecutor = confirmLaunchExecutor;
         this.sessionService = sessionService;
+        this.analyzeSiteTriggerService = analyzeSiteTriggerService;
     }
 
     @PostMapping("/show_creators")
@@ -222,6 +227,35 @@ public class MeeraInternalController {
         onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, conversation.getWorkspaceId());
 
         sessionService.releaseTurnCredit(conversation.getWorkspaceId(), body.turnId());
+        return ResponseEntity.ok(ApiResponse.ok(null));
+    }
+
+    /**
+     * Write-back for the Meera CHAT tool loop's LOCAL {@code analyze_site} tool (root cause:
+     * {@code influora-ai/app/tools/loop.py} runs {@code perform_site_analysis} in-process for a
+     * fast reply — see {@code is_local_tool} — so the result only ever fed back into that turn's
+     * Claude reply and was never persisted; {@code BrandProfile.analysisStatus} stayed {@code
+     * PENDING} forever for a chat-pasted URL, even though the FORM/onboarding path already wired
+     * this via {@link AnalyzeSiteTriggerService#trigger}). Same dual-credential mesh gate as every
+     * other {@code /internal/meera/*} route; same tenant-resolution pattern as {@link
+     * #persistTurnWriteback}/{@link #releaseTurnCredit} — unlike those two, {@code workspaceId} IS
+     * present in the body here (Python's local-tool path already has one), so it's cross-checked
+     * directly against the on-behalf JWT before anything is persisted. Not a {@link
+     * ToolCallValidator}-gated tool call — {@code analyze_site} never reaches Spring as a proposed
+     * tool at all; this is a pure persistence callback, same reasoning as {@link
+     * #persistTurnWriteback}.
+     */
+    @PostMapping("/analyze_site_result")
+    public ResponseEntity<ApiResponse<Void>> analyzeSiteResult(
+            @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt,
+            @Valid @RequestBody AnalyzeSiteChatResult body) {
+        onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, body.workspaceId());
+        analyzeSiteTriggerService.applyChatResult(
+                body.workspaceId(),
+                body.url(),
+                body.success(),
+                body.data(),
+                body.error() != null ? body.error().message() : null);
         return ResponseEntity.ok(ApiResponse.ok(null));
     }
 

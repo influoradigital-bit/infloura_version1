@@ -21,9 +21,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { cn, formatINR } from '@/lib/utils';
-import { api, type DealStatusFilter } from '@/lib/api';
+import { api, ApiError, type DealStatusFilter } from '@/lib/api';
 import { demoHypeInvite, type HypeInvite } from '@/lib/demo-data';
 import { HypeInboxCard } from '@/components/creator/hype-inbox-card';
+import { useToast } from '@/hooks/use-toast';
 
 /**
  * Unified Creator Deals page.
@@ -200,6 +201,7 @@ export const mockDeals: DealRoom[] = [
 
 export default function CreatorDealsPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [deals, setDeals] = React.useState<DealRoom[]>(mockDeals);
   const [activeFilter, setActiveFilter] = React.useState<DealStatusFilter>('all');
   const [search, setSearch] = React.useState('');
@@ -224,7 +226,13 @@ export default function CreatorDealsPage() {
           setDeals(remote as unknown as DealRoom[]);
         }
       } catch (err) {
-        console.error('Failed to load deals', err);
+        if (!cancelled) {
+          toast({
+            title: 'Couldn’t load your deals',
+            description: err instanceof ApiError ? err.message : 'Please check your connection and try again.',
+            variant: 'destructive',
+          });
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -278,7 +286,17 @@ export default function CreatorDealsPage() {
 
   const handleHypeAccept = async (invite: HypeInvite) => {
     // Hype invites are flat-rate, first-come: accepting locks a slot, no negotiation.
-    await api.deals.accept(invite.id);
+    try {
+      await api.deals.accept(invite.id);
+    } catch (err) {
+      toast({
+        title: 'Couldn’t accept this Hype invite',
+        description:
+          err instanceof ApiError ? err.message : 'The slot may already be filled. Try again.',
+        variant: 'destructive',
+      });
+      throw err; // let HypeInboxCard restore its own optimistic state
+    }
   };
 
   const handleAccept = async (deal: DealRoom, e: React.MouseEvent) => {
@@ -290,6 +308,14 @@ export default function CreatorDealsPage() {
         prev.map((d) => (d.id === deal.id ? { ...d, status: 'negotiating' } : d)),
       );
       openDeal(deal.id);
+    } catch (err) {
+      // Previously a try/finally with NO catch — an accept failure was an unhandled
+      // rejection and the button just stopped spinning with zero feedback.
+      toast({
+        title: 'Couldn’t accept this deal',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setActionLoading(null);
     }
@@ -307,6 +333,13 @@ export default function CreatorDealsPage() {
     try {
       await api.deals.reject(deal.id);
       setDeals((prev) => prev.filter((d) => d.id !== deal.id));
+    } catch (err) {
+      // Was try/finally with no catch — a decline failure vanished silently.
+      toast({
+        title: 'Couldn’t decline this deal',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setActionLoading(null);
     }

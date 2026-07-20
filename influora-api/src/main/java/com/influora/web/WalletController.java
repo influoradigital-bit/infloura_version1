@@ -125,16 +125,28 @@ public class WalletController {
     }
 
     /**
-     * Creator-scoped ledger history — GET /wallet/transactions. Paginated; wallet is resolved from
-     * {@code principal.getUserId()} only.
+     * Ledger history — GET /wallet/transactions. Paginated. Branches on {@code
+     * principal.getUserType()} same as {@link #getBalance} / {@link #getSummary}: a creator's
+     * wallet is resolved from {@code principal.getUserId()}, a brand's from its workspace id.
+     * {@code Wallet.ownerId} is a generic owner column (already shared by {@code
+     * WalletService#requireWorkspaceWallet} and {@code #getTransactionsForUser}), so the brand
+     * branch reuses the same service method with the workspace id in place of a user id.
      */
     @GetMapping("/transactions")
     public ResponseEntity<ApiResponse<List<WalletTransactionRowResponse>>> transactions(
             @AuthenticationPrincipal AuthPrincipal principal,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int limit) {
-        creatorContext.requireCreator(principal);
-        var result = walletService.getTransactionsForUser(principal.getUserId(), page, limit);
+        String ownerId;
+        if (principal.getUserType() == UserType.CREATOR) {
+            creatorContext.requireCreator(principal);
+            ownerId = principal.getUserId();
+        } else {
+            var workspace = brandContext.requireBrandWorkspace(principal);
+            brandContext.requireMember(principal, workspace.getId());
+            ownerId = workspace.getId();
+        }
+        var result = walletService.getTransactionsForUser(ownerId, page, limit);
         return ResponseEntity.ok(ApiResponse.ok(result.items(), result.meta()));
     }
 

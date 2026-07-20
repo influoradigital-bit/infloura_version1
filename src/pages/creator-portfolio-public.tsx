@@ -55,11 +55,13 @@ import { cn, formatINR } from '@/lib/utils';
 import { CanvasFallback } from '@/components/3d';
 import {
   api,
+  ApiError,
   type PortfolioPage,
   type PortfolioBadge,
   type PortfolioCustomLink,
   type PortfolioPlatformStats,
 } from '@/lib/api';
+import { toast } from '@/hooks/use-toast';
 
 /**
  * Public Creator Portfolio Page  —  influora.com/@:username
@@ -803,7 +805,11 @@ function ContactDialog({ open, onOpenChange, username, displayName }: ContactDia
       await api.portfolio.contact(username, { name, email, message });
       setSent(true);
     } catch (e) {
-      console.error(e);
+      toast({
+        title: 'Message not sent',
+        description: e instanceof ApiError ? e.message : 'Please try again in a moment.',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }

@@ -251,6 +251,28 @@ async def run_tool_loop(
                         "success": False,
                         "error": {"code": "analyze_failed", "message": "could not read that page"},
                     }
+
+                # H-23 follow-up: analyze_site is local (never forwarded to Spring like every
+                # other tool), so its result previously only ever fed back into this turn's
+                # Claude reply -- BrandProfile.analysisStatus stayed PENDING forever for a
+                # chat-pasted URL. Best-effort write-back onto the SAME persistence path the
+                # form/onboarding flow uses (AnalyzeSiteTriggerService#applyChatResult); never
+                # lets a callback failure break the chat reply that already happened.
+                if isinstance(result_payload, dict) and not result_payload.get("spend_blocked"):
+                    try:
+                        await spring.persist_analyze_site_result(
+                            workspace_id=ctx.workspace_id,
+                            url=url,
+                            success=bool(result_payload.get("success")),
+                            data=result_payload.get("data"),
+                            error=result_payload.get("error"),
+                            onbehalf_jwt=ctx.onbehalf_jwt,
+                        )
+                    except Exception as exc:  # write-back is best-effort, never breaks the turn
+                        logger.warning(
+                            "analyze_site_result write-back failed: %s", type(exc).__name__
+                        )
+
                 is_err = not (isinstance(result_payload, dict) and result_payload.get("success"))
                 tool_result_blocks.append(
                     {"type": "tool_result", "tool_use_id": tool_use_id, "content": _safe_json(result_payload), "is_error": is_err}

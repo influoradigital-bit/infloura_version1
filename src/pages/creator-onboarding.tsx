@@ -23,7 +23,8 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 /**
  * Creator onboarding — reduced from 5 steps to 3.
@@ -66,6 +67,7 @@ type Social = 'instagram' | 'youtube';
 
 export default function CreatorOnboardingPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [currentStep, setCurrentStep] = React.useState(1);
   const [isLoading, setIsLoading] = React.useState(false);
 
@@ -98,7 +100,11 @@ export default function CreatorOnboardingPage() {
         prev.includes(platform) ? prev : [...prev, platform],
       );
     } catch (err) {
-      console.error('Social connect failed', err);
+      toast({
+        title: `Couldn’t connect ${platform === 'instagram' ? 'Instagram' : 'YouTube'}`,
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setConnectingPlatform(null);
     }
@@ -153,6 +159,14 @@ export default function CreatorOnboardingPage() {
       });
       setCurrentStep(3);
       window.scrollTo(0, 0);
+    } catch (err) {
+      // Was try/finally with NO catch — a save failure was an unhandled rejection
+      // and the user stayed on step 2 with no explanation.
+      toast({
+        title: 'Couldn’t save your profile',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -182,6 +196,13 @@ export default function CreatorOnboardingPage() {
       await api.onboarding.completeCreator();
       localStorage.setItem('creator_onboarding_completed', 'true');
       navigate('/creator/deals');
+    } catch (err) {
+      // Was try/finally with NO catch — the final "Go to Deals" step failed silently.
+      toast({
+        title: 'Couldn’t finish setting up your account',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setIsLoading(false);
     }

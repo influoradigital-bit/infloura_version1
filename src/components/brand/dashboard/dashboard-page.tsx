@@ -15,7 +15,8 @@ import {
 } from 'lucide-react';
 
 import { useAuthStore } from '@/lib/store';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -173,7 +174,16 @@ export function DashboardPage() {
           setPipeline(pipelineData);
         }
       } catch (err) {
-        console.error('Dashboard data load failed', err);
+        // Was console.error only — on failure the dashboard kept showing mock
+        // wallet/actions/pipeline as if they were the brand's real data.
+        if (!cancelled) {
+          toast({
+            title: 'Couldn’t load your dashboard',
+            description:
+              err instanceof ApiError ? err.message : 'Some figures may be out of date — refresh to retry.',
+            variant: 'destructive',
+          });
+        }
       }
     })();
     return () => {

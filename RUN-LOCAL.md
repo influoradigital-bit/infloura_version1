@@ -1,41 +1,45 @@
-# Influora — Run Locally (All Three Languages)
+# Influora — Run Locally
 
-> Generated 2026-07-16. How to install and run the full stack on your own machine for development.
-> For **production/server** deploy, use `BLUEPRINT/10-RUN-ON-SERVER-UTHO.md` instead.
-> For the library list, see `DEPENDENCIES.md`.
+> Updated 2026-07-20. The steps below are the ones **verified working on a Windows + Docker Desktop
+> dev machine** this session. Where the old `mvn spring-boot:run` path fails on Windows (JDK 21
+> loopback bug — see §3), the Docker path is the reliable one and is what's documented here.
+> For production/server deploy use `BLUEPRINT/10-RUN-ON-SERVER-UTHO.md`. Library list: `DEPENDENCIES.md`.
 
-Influora = **3 services in 3 languages** + Docker data services. You run each service in its own terminal.
+Influora = **3 services in 3 languages** + Docker data services. Each runs in its own terminal.
 
 ```
-Frontend (TypeScript/Vite)  http://localhost:3000  ─► talks to ─┐
-Core API (Java/Spring)      http://localhost:8080/api/v1  ◄──────┤
-AI service (Python/FastAPI) http://localhost:8000  ◄────────────┘
-                                    │
-Data (Docker):  MySQL :3306   ClamAV :3310   (Redis :6379 optional)
+Frontend (TypeScript/Vite)   http://localhost:3000
+Core API (Java/Spring Boot)  http://localhost:8080/api/v1      ← run via Docker on Windows
+AI service (Python/FastAPI)  http://localhost:8000             ← bind 0.0.0.0 so Docker can reach it
+Data (Docker):  MySQL :3307   Redis :6379   ClamAV :3310 (prod only)
 ```
-
-> `vite.config.ts` serves on **3000** by default, not Vite's own framework-default 5173 — this doc
-> previously said 5173 everywhere, which also meant `influora-api`'s default CORS/web-base-url
-> config (5173-only) silently rejected the real frontend. See step 2's `.env` for the fix.
 
 ---
 
-## 0. Prerequisites — install these first
+## 0. Prerequisites
 
-| Tool | Version | Check | Get it |
-|---|---|---|---|
-| **Docker Desktop** | latest, with Compose v2 | `docker compose version` | docker.com |
-| **Node.js** | 20+ | `node -v` | nodejs.org |
-| **Java (JDK)** | **21** (Temurin) | `java -version` | adoptium.net |
-| **Maven** | 3.9+ | `mvn -v` | maven.apache.org — **required, there is no `mvnw` wrapper in this repo** |
-| **Python** | **3.13** | `python --version` | python.org |
-| **Git** | any | `git --version` | git-scm.com |
+| Tool | Version | Notes |
+|---|---|---|
+| **Docker Desktop** | latest, Compose v2 | Backend + data services run here |
+| **Node.js** | 20+ | Frontend |
+| **Java (JDK)** | **21** (Temurin) | Only needed if you build the backend image / run tests locally |
+| **Maven** | 3.9+ | **No `mvnw` wrapper in this repo.** Only needed for local Java builds/tests |
+| **Python** | **3.13** | AI service |
 
-> Windows users: run the commands below in **PowerShell** or **Git Bash**. Where a step says `source .venv/bin/activate`, use `.venv\Scripts\activate` instead.
+Windows: run commands in **PowerShell** or **Git Bash**. Where a step says `source .venv/bin/activate`,
+use `.venv\Scripts\activate`.
+
+> **JDK 21 / Maven aren't on PATH by default on this machine.** JDK 21 is at
+> `C:\Program Files\Eclipse Adoptium\jdk-21.0.9.10-hotspot` and Maven at `~/tools/apache-maven-3.9.6`.
+> The system PATH may resolve an old Java 8 first — before any `mvn` command, set them explicitly:
+> ```bash
+> export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.9.10-hotspot"
+> export PATH="$JAVA_HOME/bin:/c/Users/$USER/tools/apache-maven-3.9.6/bin:$PATH"
+> ```
 
 ---
 
-## 1. Start the data services (Docker)
+## 1. Data services (Docker)
 
 From the repo root:
 
@@ -44,133 +48,140 @@ docker compose up -d
 docker compose ps          # wait until mysql shows "healthy"
 ```
 
-This starts **MySQL 8** (port 3306) and **ClamAV** (port 3310). MySQL is created with database `influora`, user `influora` / password `influora` (dev only — see `docker-compose.yml`).
-
-> ClamAV downloads its virus database on first start and can take ~90s to become healthy. You don't need it for most local work — the Java service uses a **no-op** malware scanner unless you run the `prod` profile.
-
----
-
-## 2. Core API — Java / Spring Boot (`influora-api/`)
-
-**Terminal 1.** This must be up before the frontend can log in.
-
-```bash
-cd influora-api
-
-# 1. Create your env file from the template
-cp .env.example .env        # Windows: copy .env.example .env
-
-# 2. Load .env into the shell — there is no spring-dotenv/envFile wiring, so plain
-#    `mvn spring-boot:run` does NOT read .env on its own. Without this, SPRING_PROFILES_ACTIVE
-#    never reaches the JVM, the app boots with no active profile, and CompanyTaxStartupValidator/
-#    SecretsStartupValidator fail closed as if this were a real deploy.
-set -a && source .env && set +a   # Windows Git Bash; if .env has CRLF endings strip \r first
-
-# 3. Run it (dev profile). Maven downloads dependencies on first run.
-mvn spring-boot:run
-```
-
-What happens on boot:
-- Flyway applies **56 migrations** to the MySQL database (first boot only — be patient).
-- The dev profile uses safe dev-default secrets, so it starts without you generating anything.
-- Serves on **http://localhost:8080**, context path **`/api/v1`** (so health is at `/api/v1/health`).
-
-Verify:
-```bash
-curl http://localhost:8080/api/v1/health
-```
-
-> If `mvn` is "not found": Maven isn't installed (this repo has no wrapper). Install it, or run the service via Docker: `docker build -t influora-api ./influora-api && docker run --env-file influora-api/.env -p 8080:8080 influora-api`.
+Starts **MySQL 8** on host port **3307** (container 3306), **Redis 7** on 6379, and **ClamAV** on 3310
+(prod profile only — not needed for normal local work). MySQL is created with database
+`influora_local`, root password `root` (dev only). Flyway runs its migrations on first backend boot.
 
 ---
 
-## 3. AI service — Python / FastAPI (`influora-ai/`)
+## 2. AI service — Python / FastAPI (`influora-ai/`)
 
-**Terminal 2.**
+**Terminal 1.**
 
 ```bash
 cd influora-ai
 
-# 1. Create an isolated environment
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-
-# 2. Install libraries
+source .venv/Scripts/activate        # Windows; macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
+python -m playwright install --with-deps chromium   # ~1 GB, one time
 
-# 3. Install the Chromium browser Playwright needs (~1 GB, one time)
-python -m playwright install --with-deps chromium
+# .env already has working dev keys locally. If starting fresh: copy env.example -> .env
+# and fill ANTHROPIC_API_KEY / GEMINI_API_KEY / SARVAM_API_KEY.
+# Load .env into the shell (config.py reads os.getenv with no load_dotenv):
+set -a && source <(tr -d '\r' < .env) && set +a
 
-# 4. Create your env file
-cp .env.example .env               # Windows: copy .env.example .env
-
-# 5. Load .env into the shell — app/config.py reads secrets via plain os.getenv() with no
-#    load_dotenv() call, so a bare `uvicorn` run hits a false "missing secrets" error even with
-#    a fully populated .env.
-set -a && source .env && set +a
-
-# 6. Run it
-uvicorn app.main:app --reload --port 8000
+# BIND 0.0.0.0 — not just localhost. The Dockerized backend calls this service via
+# host.docker.internal, which does NOT reach a 127.0.0.1-only bind.
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-**Before it will boot**, `app/main.py` requires these to be present in `.env` (any non-empty value passes the presence check, but the AI features only actually work with real keys):
+Required in `.env` before it boots: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `SARVAM_API_KEY`
+(presence-checked; features need real keys). The shared-secret defaults already match the Java dev
+defaults — leave them as-is for local dev. Also set `MEERA_ALLOWED_ORIGINS=http://localhost:3000`
+so the browser's direct SSE call to `/chat` isn't CORS-blocked.
 
-- `ANTHROPIC_API_KEY` — from https://console.anthropic.com/settings/keys
-- `GEMINI_API_KEY` — from https://aistudio.google.com/app/apikey
-- `SARVAM_API_KEY` — from https://dashboard.sarvam.ai/
+Verify: `curl http://localhost:8000/healthz` → `{"status":"ok"}`
 
-The shared-secret defaults in `.env.example` (`INTERNAL_HMAC_KEY`, `SERVICE_TOKEN_SIGNING_KEY`, `DEV_SHARED_JWT_SECRET`) **already match the Java dev defaults** — leave them as-is for local dev so Python↔Java calls authenticate.
-
-Verify:
-```bash
-curl http://localhost:8000/healthz
-```
-
-> For dev/test tooling (the eval harness), also `pip install -r requirements-dev.txt` (adds pytest).
+> **Gemini model:** must be a current model. `gemini-2.5-flash-lite` was retired by Google (404) and
+> is already updated to `gemini-2.5-flash` in `app/config.py`. If Gemini calls start 404-ing, that's
+> the first thing to check.
 
 ---
 
-## 4. Frontend — TypeScript / Vite (`src/`, root project)
+## 3. Core API — Java / Spring Boot (`influora-api/`) — via Docker
+
+**Terminal 2.** On this Windows machine, `mvn spring-boot:run` fails at startup with
+`Unable to establish loopback connection` / `java.net.ConnectException` — a JDK 21-on-Windows NIO
+loopback issue (antivirus/VPN/EDR interfering with the internal Unix-domain-socket the JVM uses).
+**Run the backend in Docker instead** — it sidesteps the bug entirely and is the verified path.
+
+```bash
+# from the repo root — build once (re-run after backend code changes)
+docker build -t influora-api ./influora-api
+
+# run, overriding the container-internal hostnames + AI base URLs.
+# NOTE the INFLUORA_ prefix on the *_AI_BASE_URL vars — those keys only exist in
+# application-prod.yml, so in the dev profile only Spring's relaxed-binding form
+# (INFLUORA_VOICE_AI_BASE_URL, not VOICE_AI_BASE_URL) actually overrides them.
+docker rm -f influora-api 2>/dev/null
+docker run -d --name influora-api \
+  --env-file influora-api/.env \
+  -e SPRING_DATASOURCE_URL="jdbc:mysql://host.docker.internal:3307/influora_local?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" \
+  -e SPRING_DATA_REDIS_HOST=host.docker.internal \
+  -e SPRING_DATA_REDIS_PORT=6379 \
+  -e INFLUORA_VOICE_AI_BASE_URL=http://host.docker.internal:8000 \
+  -e INFLUORA_BRAND_SAFETY_AI_BASE_URL=http://host.docker.internal:8000 \
+  -e INFLUORA_TRENDSPARK_AI_BASE_URL=http://host.docker.internal:8000 \
+  -e INFLUORA_MEERA_CHAT_AI_BASE_URL=http://host.docker.internal:8000 \
+  -e INFLUORA_ANALYZE_SITE_AI_BASE_URL=http://host.docker.internal:8000 \
+  -p 8080:8080 influora-api
+
+docker logs -f influora-api      # wait for "Started InfluoraApiApplication"
+```
+
+Why the overrides: inside the container, `localhost` is the container itself, not your host — so
+MySQL (3307), Redis (6379) and the Python AI service (8000) must be reached via
+`host.docker.internal`.
+
+Serves on **http://localhost:8080**, context path **`/api/v1`** (health at `/api/v1/health`).
+Flyway applies its migrations on first boot (be patient). Dev profile uses safe dev-default secrets.
+
+Verify: `curl http://localhost:8080/api/v1/health`
+
+> The aggregate health can read `"status":"DOWN"` purely because the **mail** health check fails
+> (`535 ... Ip is not whitelisted`) — see the troubleshooting note. The API itself (DB, R2, chat,
+> voice) is fully working in that state; only outbound email is blocked.
+
+**To restart later without rebuilding:** `docker start influora-api`
+**After backend code changes:** `docker build -t influora-api ./influora-api` then re-run the
+`docker run` command above (with the same `-e` overrides).
+
+> If your machine does NOT hit the loopback bug, you can run it natively instead:
+> set JAVA_HOME/Maven (see §0), `cd influora-api`, load `.env`
+> (`set -a && source <(tr -d '\r' < .env) && set +a`), then `mvn spring-boot:run`. Same result.
+
+---
+
+## 4. Frontend — TypeScript / Vite (repo root)
 
 **Terminal 3.**
 
 ```bash
-# from the repo root
-npm ci                              # installs from package-lock.json (use npm, not pnpm)
-
-cp .env.local.example .env.local    # Windows: copy .env.local.example .env.local
-
+npm ci                                # from package-lock.json (use npm, not pnpm)
+cp .env.local.example .env.local      # Windows: copy .env.local.example .env.local
 npm run dev
 ```
 
-The dev server prints a local URL — **http://localhost:3000** (this project's `vite.config.ts` overrides Vite's own 5173 default). `.env.local` is preconfigured to point `VITE_API_BASE_URL` at `http://localhost:8080/api/v1`, so it talks to your local Java API.
-
-> Reminder: Vite bakes `VITE_*` values in at build/start time. If you change `.env.local`, **restart `npm run dev`** for it to take effect.
+Serves on **http://localhost:3000** (`vite.config.ts` overrides Vite's own 5173 default).
+`.env.local` points `VITE_API_MODE=live` and `VITE_API_BASE_URL=http://localhost:8080/api/v1`.
+Vite bakes `VITE_*` in at start — **restart `npm run dev`** after editing `.env.local`.
 
 ---
 
 ## 5. Start order & the full local loop
 
-1. `docker compose up -d` → wait for MySQL healthy.
-2. Terminal 1: `influora-api` (Java) — wait for Flyway + "Started" log.
-3. Terminal 2: `influora-ai` (Python).
+1. `docker compose up -d` → MySQL healthy.
+2. Terminal 1: AI service (`uvicorn ... --host 0.0.0.0 --port 8000`).
+3. Terminal 2: backend Docker container (§3) → wait for "Started InfluoraApiApplication".
 4. Terminal 3: frontend (`npm run dev`).
-5. Open the Vite URL in your browser.
+5. Open http://localhost:3000.
 
-A quick end-to-end check: register → log in → send one Meera chat message. That exercises the DB, the JWT/JWKS chain, and the Python↔Java internal call all at once.
+Quick E2E: register/log in as a brand → open **Meera** → paste a product URL (she runs the
+`analyze_site` tool and reads the real page) or click the **voice** button for a hands-free chat.
 
 ---
 
 ## 6. Ports reference
 
-| Service | Port | URL |
+| Service | Host port | URL |
 |---|---|---|
-| Frontend (Vite dev) | 3000 | http://localhost:3000 |
-| Core API (Java) | 8080 | http://localhost:8080/api/v1 |
+| Frontend (Vite) | 3000 | http://localhost:3000 |
+| Core API (Java, Docker) | 8080 | http://localhost:8080/api/v1 |
 | AI service (Python) | 8000 | http://localhost:8000 |
-| MySQL | 3306 | (internal) |
-| ClamAV | 3310 | (internal, prod profile) |
-| Redis | 6379 | (optional / prod) |
+| MySQL | **3307** | (host 3307 → container 3306) |
+| Redis | 6379 | (internal) |
+| ClamAV | 3310 | (prod profile only) |
 
 ---
 
@@ -178,35 +189,22 @@ A quick end-to-end check: register → log in → send one Meera chat message. T
 
 | Symptom | Cause / fix |
 |---|---|
-| `mvn: command not found` | Maven not installed. This repo has **no `mvnw`**. Install Maven 3.9+, or use the Docker build. |
-| Java starts then exits with a secrets error | You set `APP_ENV=prod` locally. For local dev keep `APP_ENV=dev` (default in `.env.example`) — prod turns on strict secret validation. |
-| Python exits: `missing required secrets/config: ...` | Fill `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `SARVAM_API_KEY` in `influora-ai/.env`. |
-| Frontend loads but every API call fails / CORS error | The Java API isn't running, or `.env.local` `VITE_API_BASE_URL` doesn't match where it's serving. Restart `npm run dev` after any `.env.local` edit. |
-| Meera chat returns 401 / `SIGNATURE_MISMATCH` | The three shared secrets in `influora-ai/.env` don't match the Java side. For dev, use the untouched `.env.example` defaults on both sides. |
-| Flyway fails on boot | The `influora` database/schema is in a bad state. Easiest local reset: `docker compose down -v` (deletes the MySQL volume) then `docker compose up -d` and restart the API. **Only do this locally — `-v` erases the database.** |
-| `playwright` errors about a missing browser | You skipped `python -m playwright install --with-deps chromium`. Run it inside the activated venv. |
-| Port already in use | Something else holds 8080/8000/5173/3306. Stop it, or change the port (`--port` for uvicorn, `SERVER_PORT` env for Java, `--port` for `vite`). |
+| Backend `mvn spring-boot:run` dies with `Unable to establish loopback connection` / `ConnectException` | JDK 21-on-Windows NIO loopback bug. **Run the backend in Docker** (§3) instead. |
+| Backend health `"status":"DOWN"` but everything works | The **mail** health check fails because MSG91/SMTP requires your machine's **public IP to be whitelisted** — `535 5.7.8 <ip> - Ip is not whitelisted`. Your IP is dynamic, so it changes; add the new IP at dashboard.msg91.com. The rest of the API is unaffected. |
+| Meera voice / brand-safety / analyze-site 500 or "transport failure" from the Docker backend | The `*_AI_BASE_URL` env vars must use the **`INFLUORA_` prefix** (relaxed binding) AND point at `host.docker.internal:8000`, and the AI service must be bound to `--host 0.0.0.0`. See §2 and §3. |
+| Meera can't reach the AI at all / `POST /chat` fails from the browser | Set `MEERA_ALLOWED_ORIGINS=http://localhost:3000` in `influora-ai/.env` (CORS for the browser→Python SSE call), restart the AI service. |
+| Gemini calls 404 / analyze-site "could not classify" | The configured Gemini model was retired. Current working model is `gemini-2.5-flash` (`influora-ai/app/config.py`). |
+| `mvn: command not found` / wrong Java version | Maven isn't on PATH and the default Java may be 8. Export `JAVA_HOME` (JDK 21) + Maven bin — see §0. No `mvnw` wrapper exists. |
+| DB connection refused from the container | MySQL is on host **3307** (not 3306) and must be reached via `host.docker.internal` from inside the container (§3). |
+| Frontend loads but API calls fail / CORS | Backend not up on :8080, or `.env.local` `VITE_API_BASE_URL` mismatched. Restart `npm run dev` after any `.env.local` edit. |
+| Flyway fails on boot | Local reset (dev only, erases data): `docker compose down -v` then `docker compose up -d` and re-run the backend. |
+| Port already in use (8080/8000/3000/3307) | Stop the holder or change the port (`--port` for uvicorn/vite, `-p` for the docker run). |
 
 ---
 
 ## 8. Run each service in Docker instead (optional)
 
-Every service has a working `Dockerfile`, so you can skip installing Node/Java/Python locally and just build images:
-
-```bash
-# Core API
-docker build -t influora-api ./influora-api
-docker run --env-file influora-api/.env -p 8080:8080 influora-api
-
-# AI service
-docker build -t influora-ai ./influora-ai
-docker run --env-file influora-ai/.env -p 8000:8000 influora-ai
-
-# Frontend (VITE_* values are build args, not runtime env!)
-docker build -t influora-web \
-  --build-arg VITE_API_BASE_URL=http://localhost:8080/api/v1 \
-  --build-arg VITE_API_MODE=live .
-docker run -p 8081:80 influora-web
-```
-
-For a single-command full production-style stack, use the `docker-compose.prod.yml` template in `BLUEPRINT/10-RUN-ON-SERVER-UTHO.md`.
+Every service has a working `Dockerfile`. See `RUN-LOCAL.md` §3 for the backend; the AI service and
+frontend images build the same way (`docker build -t influora-ai ./influora-ai`,
+`docker build -t influora-web --build-arg VITE_API_BASE_URL=... .`). For a single-command
+production-style stack, use `docker-compose.prod.yml` in `BLUEPRINT/10-RUN-ON-SERVER-UTHO.md`.

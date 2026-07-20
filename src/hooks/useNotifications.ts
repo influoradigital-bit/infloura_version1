@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { isApiLive, type Role } from '@/lib/api';
+import { toast } from '@/hooks/use-toast';
 
 // ---------------------------------------------------------------------------
 // Environment / config — same local-const pattern as src/lib/meera-api.ts
@@ -217,10 +218,12 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
         });
         if (!res.ok) throw new Error('Failed to mark notification read');
       } catch {
-        // Revert on error
+        // Revert on error + tell the user (was a silent revert — the notification
+        // just popped back to unread with no explanation).
         setNotifications((prev) =>
           prev.map((n) => (n.id === id ? { ...n, read: false } : n))
         );
+        toast({ title: 'Couldn’t mark as read', description: 'Please try again.', variant: 'destructive' });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -258,6 +261,11 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
         setNotifications((prev) =>
           prev.map((n) => (failedIds.has(n.id) ? { ...n, read: false } : n)),
         );
+        toast({
+          title: 'Some notifications couldn’t be marked read',
+          description: 'Please try again.',
+          variant: 'destructive',
+        });
       }
     }
   }, [notifications]);

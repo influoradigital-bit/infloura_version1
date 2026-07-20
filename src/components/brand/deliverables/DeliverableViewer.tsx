@@ -9,8 +9,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { useDeliverableDetail } from '@/hooks/brand/useDeliverableDetail';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import type { DeliverableFile, DeliverableStatus } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 interface DeliverableViewerProps {
   deliverableId: string;
@@ -159,6 +160,7 @@ export function DeliverableViewer({
   onOpenChange,
   onActionComplete,
 }: DeliverableViewerProps) {
+  const { toast } = useToast();
   const { deliverable, isLoading, error, refetch } = useDeliverableDetail(deliverableId);
   const [reviseModalOpen, setReviseModalOpen] = React.useState(false);
   const [isApproving, setIsApproving] = React.useState(false);
@@ -174,7 +176,13 @@ export function DeliverableViewer({
       onActionComplete?.();
       onOpenChange(false);
     } catch (err) {
-      console.error('Failed to approve deliverable:', err);
+      // Approval releases escrow — a silent failure here left the brand thinking
+      // the payment went through when it did not. Surface it.
+      toast({
+        title: 'Could not approve deliverable',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setIsApproving(false);
     }
@@ -189,7 +197,11 @@ export function DeliverableViewer({
       onActionComplete?.();
       onOpenChange(false);
     } catch (err) {
-      console.error('Failed to request revision:', err);
+      toast({
+        title: 'Could not request revision',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setIsRevising(false);
     }
