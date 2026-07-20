@@ -330,8 +330,12 @@ export default function BrandMessagesPage() {
   const [searchParams] = useSearchParams();
   const creatorIdFromUrl = searchParams.get('creator');
   
+  // Only default to the first thread when NO specific creator was requested. If a
+  // creator WAS requested (?creator=) but has no conversation, leave it unselected
+  // so we show a "no conversation yet" state instead of silently opening the wrong
+  // creator's thread (audit #10).
   const initialConversation = creatorIdFromUrl
-    ? mockConversations.find(c => c.creator.id === creatorIdFromUrl) || mockConversations[0]
+    ? mockConversations.find(c => c.creator.id === creatorIdFromUrl) ?? null
     : mockConversations[0];
 
   // Live mode (isApiLive()) state — mock rendering above stays untouched.
@@ -344,6 +348,15 @@ export default function BrandMessagesPage() {
   const [sendingMessage, setSendingMessage] = React.useState(false);
 
   const conversations = isApiLive() ? liveConversations : mockConversations;
+
+  // True when the URL asked for a specific creator (?creator=) that the brand has
+  // no conversation with — drives a dedicated empty state instead of the wrong
+  // thread (audit #10). Gated on !conversationsLoading so it doesn't flash while
+  // the live list is still arriving.
+  const requestedCreatorMissing =
+    !!creatorIdFromUrl &&
+    !conversationsLoading &&
+    !conversations.some((c) => c.creator.id === creatorIdFromUrl);
 
   const [selectedConversation, setSelectedConversation] = React.useState<Conversation | null>(
     isApiLive() ? null : initialConversation
@@ -385,11 +398,19 @@ export default function BrandMessagesPage() {
   // Auto-select a conversation once the live list arrives (mock mode selects synchronously above).
   React.useEffect(() => {
     if (!isApiLive() || selectedConversation || liveConversations.length === 0) return;
-    const match = creatorIdFromUrl
-      ? liveConversations.find((c) => c.creator.id === creatorIdFromUrl)
-      : undefined;
-    setSelectedConversation(match || liveConversations[0]);
-    if (creatorIdFromUrl) setIsMobileConversationOpen(true);
+    // A specific creator was requested: open THEIR thread if it exists, otherwise
+    // leave unselected (→ "no conversation yet" state). Never fall back to a
+    // different creator's thread (audit #10).
+    if (creatorIdFromUrl) {
+      const match = liveConversations.find((c) => c.creator.id === creatorIdFromUrl);
+      if (match) {
+        setSelectedConversation(match);
+        setIsMobileConversationOpen(true);
+      }
+      return;
+    }
+    // No specific creator (plain inbox open): default to the first conversation.
+    setSelectedConversation(liveConversations[0]);
   }, [liveConversations, selectedConversation, creatorIdFromUrl]);
 
   const loadMessages = React.useCallback(async (dealId: string) => {
@@ -936,10 +957,22 @@ export default function BrandMessagesPage() {
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
                   <Send className="h-8 w-8 text-muted-foreground" />
                 </div>
-                <h3 className="mb-1 text-lg font-semibold">Select a conversation</h3>
-                <p className="text-sm text-muted-foreground">
-                  Choose a creator to start messaging
-                </p>
+                {requestedCreatorMissing ? (
+                  <>
+                    <h3 className="mb-1 text-lg font-semibold">No conversation yet</h3>
+                    <p className="text-sm text-muted-foreground">
+                      You don’t have a conversation with this creator yet. Send them a
+                      campaign invite to start one.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="mb-1 text-lg font-semibold">Select a conversation</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Choose a creator to start messaging
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           )}
