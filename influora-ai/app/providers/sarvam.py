@@ -281,7 +281,11 @@ class SarvamProvider:
                         #    steadier, more repeatable delivery call-to-call; this is what stops Priya
                         #    from "sounding different each time". Higher is more expressive but less
                         #    consistent.
-                        #  - speech_sample_rate 44100 — crisper/smoother audio than the 24kHz default.
+                        #  - speech_sample_rate 24000 — Sarvam's default. Deliberately NOT 44100:
+                        #    the higher rate ~doubles the audio payload on this latency-critical
+                        #    batch-REST path and pushed the call past the read timeout
+                        #    (ReadTimeout -> browser-fallback voice). 24kHz is plenty for speech and
+                        #    keeps the response fast. (Set explicitly so the choice is documented.)
                         #  NOTE: there is deliberately NO "pause" field — it is NOT a real Sarvam
                         #  parameter (absent from the convert API), so sending it was a silent no-op.
                         #  pitch / loudness / enable_preprocessing are v2-only and correctly omitted
@@ -293,7 +297,7 @@ class SarvamProvider:
                             "model": "bulbul:v3",
                             "pace": 1.1,
                             "temperature": 0.35,
-                            "speech_sample_rate": 44100,
+                            "speech_sample_rate": 24000,
                         },
                     )
                     response.raise_for_status()

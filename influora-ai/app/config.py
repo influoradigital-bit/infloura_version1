@@ -111,7 +111,15 @@ class ProviderTimeouts:
 
     sarvam_connect: float = 3.0
     sarvam_stt_read: float = 10.0
-    sarvam_tts_read: float = 8.0
+    # Batch REST /text-to-speech (NOT the streaming WS API) takes ~2.5-4s+ for a
+    # 400-500 char Hindi-capable reply; 8.0s was too tight and produced
+    # `sarvam speak failed: ReadTimeout`, which drops the reply to the browser
+    # fallback voice AND (on repeats) trips the TTS circuit breaker, so voice
+    # stays dead through the recovery window. 15s gives a normal reply room to
+    # finish. Voice is additive (the text reply is already on screen), so a
+    # longer read ceiling costs nothing on the critical path. If TTS latency
+    # becomes the bottleneck, move to Sarvam's streaming WebSocket TTS.
+    sarvam_tts_read: float = 15.0
 
     spring_connect: float = 2.0
     spring_read: float = 5.0

@@ -335,7 +335,9 @@ async def test_speak_request_uses_tuned_v3_params_and_no_pause(monkeypatch):
     assert captured["model"] == "bulbul:v3"
     assert captured["speaker"] == "priya"
     assert captured["temperature"] == 0.35
-    assert captured["speech_sample_rate"] == 44100
+    # 24000 (Sarvam default) on purpose — 44100 doubled the payload and blew the
+    # read timeout on this batch-REST path.
+    assert captured["speech_sample_rate"] == 24000
     assert "pause" not in captured, "pause is not a real Sarvam param — must not return"
     # v2-only params must never be sent on a v3 request.
     assert "pitch" not in captured
