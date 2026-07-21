@@ -29,8 +29,14 @@ import { cn } from '@/lib/utils'
 interface VoiceModeProps {
   open: boolean
   onExit: () => void
-  /** Send a finished utterance through the normal turn pipeline (handleSend). */
-  onSend: (text: string) => void
+  /**
+   * Send a finished utterance through the normal turn pipeline (handleSend).
+   * `lang` (W3) is the Sarvam-detected language for the utterance
+   * (`lang_detected` from `/meera/voice/transcribe`), so the reply can be
+   * spoken back in the same language. Undefined when no detection is
+   * available.
+   */
+  onSend: (text: string, lang?: string) => void
   /** Parent turn-engine phase — 'thinking' while Meera composes a reply. */
   phase: Phase
   /** Parent TTS speaking flag — true while Meera's reply audio is playing. */
@@ -79,7 +85,7 @@ export function VoiceMode({
     stop,
   } = useVoiceInput({
     autoStopSilenceMs: SILENCE_AUTO_STOP_MS,
-    onResult: (text) => {
+    onResult: (text, lang) => {
       failureCountRef.current = 0
       const trimmed = text.trim()
       if (!trimmed) {
@@ -89,7 +95,7 @@ export function VoiceMode({
       }
       setLastHeard(trimmed)
       awaitingReplyRef.current = true
-      onSend(trimmed)
+      onSend(trimmed, lang)
     },
     onError: () => {
       failureCountRef.current += 1

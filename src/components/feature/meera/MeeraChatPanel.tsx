@@ -348,7 +348,7 @@ export function MeeraChatPanel({
    * second generation. This gives the same token-by-token feel from the text
    * we already hold. Instant under prefers-reduced-motion.
    */
-  const revealReply = (assistantMessageId: string, fullText: string) => {
+  const revealReply = (assistantMessageId: string, fullText: string, lang?: string) => {
     setAwaitingFirstToken(false)
 
     const settle = () => {
@@ -369,7 +369,7 @@ export function MeeraChatPanel({
           // Reduced motion: show the whole reply at once, but still stream the
           // audio sentence-by-sentence (audio pacing isn't "motion").
           setMessages((prev) => prev.map((m) => (m.id === assistantMessageId ? { ...m, text: fullText } : m)))
-          speakSequence(sentences, { onAllDone: settle })
+          speakSequence(sentences, { onAllDone: settle, lang })
         } else {
           speakSequence(sentences, {
             onSentenceStart: (i) => {
@@ -377,6 +377,7 @@ export function MeeraChatPanel({
               setMessages((prev) => prev.map((m) => (m.id === assistantMessageId ? { ...m, text: partial } : m)))
             },
             onAllDone: settle,
+            lang,
           })
         }
         return
@@ -388,7 +389,7 @@ export function MeeraChatPanel({
       settle()
       // No-op while voice is disabled; kept so enabling voice mid-reveal still
       // gets the reply spoken (as a single clip on this legacy path).
-      speak(fullText)
+      speak(fullText, lang)
     }
 
     if (reduceMotion) {
@@ -427,7 +428,7 @@ export function MeeraChatPanel({
    *    `tool_result` events bubble up via `onFunctionCall` so the Living
    *    Canvas stage keeps advancing.
    */
-  const handleLiveSend = (text: string) => {
+  const handleLiveSend = (text: string, lang?: string) => {
     if (!conversationId || phase !== 'awaiting-input' || paused || creditsExhausted) return
 
     const history = [
@@ -452,7 +453,7 @@ export function MeeraChatPanel({
         setMessages((prev) => [...prev, { id: assistantMessageId, role: 'meera', text: '' }])
 
         if (turnRes.reply != null) {
-          revealReply(assistantMessageId, turnRes.reply)
+          revealReply(assistantMessageId, turnRes.reply, lang)
           return
         }
 
@@ -535,7 +536,10 @@ export function MeeraChatPanel({
             setPhase('awaiting-input')
             // Voice is additive only — the bubble above is already fully
             // rendered by the time we speak it (Priya's voice handoff §5A.B).
-            speak(assistantText)
+            // `lang` (W3): the language detected on the user's own utterance
+            // for this turn, so the spoken reply matches (Hinglish in →
+            // Hinglish out).
+            speak(assistantText, lang)
           },
           onError: (event) => {
             setAwaitingFirstToken(false)
@@ -589,7 +593,11 @@ export function MeeraChatPanel({
    * that advances the scripted turn cursor — the engine never auto-plays
    * past an awaiting-input turn on its own.
    */
-  const handleMockSend = (text: string) => {
+  // `lang` accepted (unused) only so this matches handleLiveSend's signature —
+  // `handleSend` below is assigned one or the other, and both are passed to
+  // Composer/VoiceMode's shared `onSend: (text, lang?) => void` prop type.
+  // The mock scripted path has no real voice-language detection to honor.
+  const handleMockSend = (text: string, _lang?: string) => {
     if (phase !== 'awaiting-input' || conversationDone) return
 
     // Turn 0 is gated on something that looks like a site — nudge otherwise,

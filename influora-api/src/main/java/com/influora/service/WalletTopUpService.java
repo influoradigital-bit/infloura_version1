@@ -2,6 +2,7 @@ package com.influora.service;
 
 import com.influora.common.ApiException;
 import com.influora.common.Ulids;
+import com.influora.config.WalletProperties;
 import com.influora.domain.entity.Wallet;
 import com.influora.domain.entity.WalletTopUp;
 import com.influora.domain.entity.Workspace;
@@ -67,6 +68,7 @@ public class WalletTopUpService {
     private final BrandContextService brandContext;
     private final WorkspaceRepository workspaceRepository;
     private final RazorpayClient razorpayClient;
+    private final WalletProperties walletProperties;
 
     public WalletTopUpService(
             WalletTopUpRepository topUpRepository,
@@ -75,7 +77,8 @@ public class WalletTopUpService {
             PlatformWalletService platformWalletService,
             BrandContextService brandContext,
             WorkspaceRepository workspaceRepository,
-            RazorpayClient razorpayClient) {
+            RazorpayClient razorpayClient,
+            WalletProperties walletProperties) {
         this.topUpRepository = topUpRepository;
         this.walletService = walletService;
         this.ledgerService = ledgerService;
@@ -83,6 +86,7 @@ public class WalletTopUpService {
         this.brandContext = brandContext;
         this.workspaceRepository = workspaceRepository;
         this.razorpayClient = razorpayClient;
+        this.walletProperties = walletProperties;
     }
 
     /**
@@ -101,6 +105,17 @@ public class WalletTopUpService {
         if (amount == null || amount.signum() <= 0) {
             throw new ApiException(
                     "INVALID_TOPUP_AMOUNT", "Top-up amount must be positive", HttpStatus.BAD_REQUEST);
+        }
+        // [SEC: Kabir Option-1 audit P1 must-fix] Config-driven ceiling — the authoritative guard
+        // (the DTO's @DecimalMax is defense-in-depth only, hardcoded because bean validation can't
+        // read Spring config). Checked BEFORE any Razorpay order is minted, same as the positive-
+        // amount check above.
+        BigDecimal maxTopUp = walletProperties.getMaxTopupAmount();
+        if (maxTopUp != null && amount.compareTo(maxTopUp) > 0) {
+            throw new ApiException(
+                    "TOPUP_LIMIT_EXCEEDED",
+                    "Top-up amount exceeds the maximum allowed of " + maxTopUp,
+                    HttpStatus.BAD_REQUEST);
         }
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new ApiException(

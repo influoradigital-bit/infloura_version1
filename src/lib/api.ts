@@ -89,11 +89,65 @@ export type Role = 'brand' | 'creator';
 // Response envelope + error class
 // ---------------------------------------------------------------------------
 
+/**
+ * Mirrors the backend's `ApiErrorBody` record (influora-api/.../common/ApiErrorBody.java)
+ * exactly, field-for-field. `requiredAmount`/`walletBalance`/`shortfallAmount`/`currency` are
+ * additive and `NON_NULL` on the wire (class-level `@JsonInclude(Include.NON_NULL)` drops them
+ * entirely when absent) — populated ONLY on the `INSUFFICIENT_FUNDS` 402 from
+ * `POST /wallet/escrow/fund` (see `InsufficientFundsException`); every other error response
+ * omits them. Jackson serializes a Java record's components by their declared parameter names
+ * (no `@JsonProperty` override on `ApiErrorBody`), so these camelCase keys are exact.
+ */
+export interface ApiErrorPayload {
+  code: string;
+  message: string;
+  field?: string;
+  fields?: Array<{ field: string; message: string }>;
+  requiredAmount?: number;
+  walletBalance?: number;
+  shortfallAmount?: number;
+  currency?: string;
+}
+
 export interface ApiEnvelope<T> {
   success: boolean;
   data?: T;
-  error?: { code: string; message: string };
+  error?: ApiErrorPayload;
   meta?: { page?: number; limit?: number; total?: number; hasMore?: boolean };
+}
+
+/**
+ * The server-computed `INSUFFICIENT_FUNDS` 402 figures, carried on `ApiError.details`. All four
+ * fields come from the exact same balance read that gates the escrow charge (never re-derived or
+ * estimated client-side) — see `InsufficientFundsException`'s Javadoc. Optional because
+ * `ApiError` is the generic error type for every endpoint; only the `INSUFFICIENT_FUNDS` 402
+ * populates this.
+ */
+export interface InsufficientFundsDetails {
+  requiredAmount: number;
+  walletBalance: number;
+  shortfallAmount: number;
+  currency: string;
+}
+
+/**
+ * Extracts the `INSUFFICIENT_FUNDS` 402 shortfall figures from a parsed error payload, if
+ * present. Returns `undefined` for every other error (or an older/edge server that 402s without
+ * the additive fields) so callers can distinguish "no server shortfall available" from "server
+ * says shortfall is 0" and fall back gracefully instead of re-estimating client-side.
+ */
+export function extractInsufficientFundsDetails(
+  error: ApiErrorPayload | undefined,
+): InsufficientFundsDetails | undefined {
+  if (!error || error.shortfallAmount == null || error.requiredAmount == null || error.walletBalance == null || !error.currency) {
+    return undefined;
+  }
+  return {
+    requiredAmount: error.requiredAmount,
+    walletBalance: error.walletBalance,
+    shortfallAmount: error.shortfallAmount,
+    currency: error.currency,
+  };
 }
 
 export class ApiError extends Error {
@@ -101,6 +155,8 @@ export class ApiError extends Error {
     public code: string,
     message: string,
     public status?: number,
+    /** Populated only for `INSUFFICIENT_FUNDS` 402s that carry the server-computed shortfall. */
+    public details?: InsufficientFundsDetails,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -254,6 +310,7 @@ class HttpClient {
         envelope.error?.code || 'UNKNOWN',
         envelope.error?.message || res.statusText,
         res.status,
+        extractInsufficientFundsDetails(envelope.error),
       );
     }
 
@@ -302,7 +359,12 @@ class HttpClient {
       throw new ApiError('NETWORK_ERROR', `Invalid JSON from ${path}`, res.status);
     }
     if (!res.ok || !envelope.success) {
-      throw new ApiError(envelope.error?.code || 'UNKNOWN', envelope.error?.message || res.statusText, res.status);
+      throw new ApiError(
+        envelope.error?.code || 'UNKNOWN',
+        envelope.error?.message || res.statusText,
+        res.status,
+        extractInsufficientFundsDetails(envelope.error),
+      );
     }
     return { data: envelope.data as T, meta: envelope.meta };
   }
@@ -357,6 +419,7 @@ class HttpClient {
         envelope.error?.code || 'UNKNOWN',
         envelope.error?.message || res.statusText,
         res.status,
+        extractInsufficientFundsDetails(envelope.error),
       );
     }
     return (envelope.data as T) ?? null;
@@ -1560,6 +1623,26 @@ export interface PayoutMethod {
   isPrimary: boolean;
   usable: boolean;
 }
+
+/**
+ * Non-secret, environment-scoped config — GET /config/razorpay
+ * (`PublicConfigController`). `keyId` is Razorpay's publishable "Key ID",
+ * safe to embed in client-side Checkout code (it identifies the merchant,
+ * it does not authorize a charge). The `keySecret` is NEVER served by any
+ * endpoint the browser can reach.
+ */
+export interface RazorpayConfigResponse {
+  keyId: string;
+}
+
+export const config = {
+  /** GET /config/razorpay — source of the `key` param for `window.Razorpay(...)`. */
+  razorpay: () =>
+    isLive()
+      ? http.request<RazorpayConfigResponse>('GET', '/config/razorpay')
+      // Mock mode never talks to a real Razorpay account — this key is not live/usable.
+      : mockOr<RazorpayConfigResponse>({ keyId: 'rzp_test_mock' }),
+};
 
 export const wallet = {
   /** GET /wallet */
@@ -3223,6 +3306,7 @@ export const api = {
   messages,
   contracts,
   deliverables,
+  config,
   wallet,
   creatorProfile,
   me,

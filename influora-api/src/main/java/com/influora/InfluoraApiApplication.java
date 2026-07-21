@@ -21,6 +21,7 @@ import com.influora.config.RazorpayProperties;
 import com.influora.config.ShopifyProperties;
 import com.influora.config.TrendSparkAiProperties;
 import com.influora.config.TrendSparkProperties;
+import com.influora.config.WalletProperties;
 import com.influora.config.WooCommerceProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -49,6 +50,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
     // ScoreCalculationJob calls BrandSafetyScoreService. Injected by @Component
     // ScoreCalculationJob, so it must be registered here like every other properties class below.
     BrandSafetyScoringProperties.class,
+    // Wallet business limits (Kabir Option-1 audit P1 must-fix) — max-topup ceiling read by
+    // WalletTopUpService#initiateTopUp.
+    WalletProperties.class,
     // ---------------------------------------------------------------------
     // Everything below was @ConfigurationProperties but registered NOWHERE: no
     // @EnableConfigurationProperties entry, no @ConfigurationPropertiesScan, no

@@ -1,6 +1,7 @@
 package com.influora.service;
 
 import com.influora.common.ApiException;
+import com.influora.common.InsufficientFundsException;
 import com.influora.common.PageMeta;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.Campaign;
@@ -173,8 +174,17 @@ public class EscrowService {
 
         Wallet wallet = walletService.requireWorkspaceWallet(workspaceId);
         if (wallet.getBalance().compareTo(amount) < 0) {
-            throw new ApiException(
-                    "INSUFFICIENT_FUNDS", "Wallet balance is insufficient for this escrow amount", HttpStatus.PAYMENT_REQUIRED);
+            // [SEC: MF-1 follow-up, 2026-07-21] The 402 body now carries the exact server-derived
+            // requiredAmount/walletBalance/shortfallAmount so the frontend's inline top-up leg never
+            // has to estimate a charge amount from its own GET /wallet read — it sends this
+            // shortfallAmount straight to POST /wallet/topup. All three figures come from this same
+            // balance read (`wallet`) and the already-derived `amount`, never re-fetched or guessed.
+            throw new InsufficientFundsException(
+                    "Wallet balance is insufficient for this escrow amount",
+                    amount,
+                    wallet.getBalance(),
+                    amount.subtract(wallet.getBalance()),
+                    currency);
         }
 
         EscrowHold hold =

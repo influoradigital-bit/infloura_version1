@@ -8,7 +8,14 @@ import { MEERA_COMPOSER, MEERA_VOICE_COPY } from '@/data/meera-copy'
 import { cn } from '@/lib/utils'
 
 interface ComposerProps {
-  onSend: (text: string) => void
+  /**
+   * `lang` (W3): the Sarvam-detected language of the utterance that produced
+   * this text via voice input (`lang_detected` from
+   * `/meera/voice/transcribe`), so the caller can speak the reply back in
+   * the same language. Undefined for typed input or a browser-STT fallback
+   * transcript (no detection available).
+   */
+  onSend: (text: string, lang?: string) => void
   /** Contextual chips for the CURRENT turn — sourced from `MeeraTurn.suggestedReplies`, never static. */
   suggestedReplies?: string[]
   /**
@@ -44,6 +51,14 @@ interface ComposerProps {
 export function Composer({ onSend, suggestedReplies = [], templates = [], disabled, sendLocked, initialDraft, className }: ComposerProps) {
   const [value, setValue] = useState(() => initialDraft ?? '')
   const [voiceFallback, setVoiceFallback] = useState<string | null>(null)
+  /**
+   * W3: language Sarvam detected for the most recent voice-inserted transcript
+   * (`lang_detected`, e.g. `hi-IN`), so `onSend` can carry it through to the
+   * spoken reply. Cleared on manual edit — once the user has hand-typed over
+   * or after the voice text, the detection no longer reliably describes what
+   * they're sending.
+   */
+  const [voiceLang, setVoiceLang] = useState<string | undefined>(undefined)
   /** Announced via aria-live so screen-reader users hear what Meera transcribed. */
   const [transcriptionAnnouncement, setTranscriptionAnnouncement] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -67,11 +82,12 @@ export function Composer({ onSend, suggestedReplies = [], templates = [], disabl
   const showTemplates = templates.length > 0 && !locked && value.trim() === ''
 
   const { supported: voiceInputSupported, phase, start, stop } = useVoiceInput({
-    onResult: (cleanedText) => {
+    onResult: (cleanedText, lang) => {
       // Edit-first, always. Land the cleaned transcript in the composer's
       // existing value for the user to review and send themselves.
       setVoiceFallback(null)
       setTranscriptionAnnouncement(cleanedText)
+      setVoiceLang(lang)
       setValue((prev) => (prev ? `${prev} ${cleanedText}` : cleanedText))
     },
     onError: () => {
@@ -83,10 +99,11 @@ export function Composer({ onSend, suggestedReplies = [], templates = [], disabl
   const handleSend = () => {
     const trimmed = value.trim()
     if (!trimmed || locked) return
-    onSend(trimmed)
+    onSend(trimmed, voiceLang)
     setValue('')
     setVoiceFallback(null)
     setTranscriptionAnnouncement(null)
+    setVoiceLang(undefined)
   }
 
   return (
@@ -109,7 +126,10 @@ export function Composer({ onSend, suggestedReplies = [], templates = [], disabl
         <textarea
           ref={textareaRef}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value)
+            setVoiceLang(undefined)
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()

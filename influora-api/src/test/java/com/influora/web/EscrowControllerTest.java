@@ -5,12 +5,21 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.influora.common.ApiErrorBody;
+import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
+import com.influora.common.GlobalExceptionHandler;
+import com.influora.common.InsufficientFundsException;
 import com.influora.common.PageMeta;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.BrandContextService;
+import com.influora.service.ErrorLogService;
 import com.influora.service.EscrowService;
 import com.influora.service.EscrowService.PagedEscrowHolds;
 import com.influora.service.PayoutService;
@@ -92,5 +101,66 @@ class EscrowControllerTest {
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertEquals(0, response.getBody().data().size());
     verify(escrowService).listForWorkspace(principal, WORKSPACE_ID, 1, 20);
+  }
+
+  // --------------------------------------------------------------------------------------------
+  // [SEC: MF-1 follow-up, 2026-07-21] Web-layer: GlobalExceptionHandler's dedicated
+  // InsufficientFundsException handler must actually put requiredAmount/walletBalance/
+  // shortfallAmount/currency on the wire as camelCase JSON, and NON_NULL must still omit those
+  // four fields for every other error (ApiErrorBody.of path), so the 402 shape is additive-only.
+  // --------------------------------------------------------------------------------------------
+
+  @Mock private ErrorLogService errorLogService;
+
+  // findAndRegisterModules() picks up jackson-datatype-jsr310 (on the classpath via Spring Boot's
+  // starter) so ApiResponse's java.time.Instant field serializes -- a bare `new ObjectMapper()`
+  // would throw on Instant without it.
+  private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+
+  @Test
+  @DisplayName(
+      "GlobalExceptionHandler: INSUFFICIENT_FUNDS 402 body serializes requiredAmount/walletBalance/"
+          + "shortfallAmount/currency as camelCase JSON")
+  void insufficientFundsExceptionSerializesShortfallFieldsOnTheWire() throws Exception {
+    GlobalExceptionHandler handler = new GlobalExceptionHandler(errorLogService);
+    InsufficientFundsException ex =
+        new InsufficientFundsException(
+            "Wallet balance is insufficient for this escrow amount",
+            new BigDecimal("50000"),
+            new BigDecimal("20000"),
+            new BigDecimal("30000"),
+            "INR");
+
+    ResponseEntity<ApiResponse<Void>> response = handler.handleInsufficientFunds(ex);
+
+    assertEquals(HttpStatus.PAYMENT_REQUIRED, response.getStatusCode());
+    String json = objectMapper.writeValueAsString(response.getBody());
+    assertTrue(json.contains("\"code\":\"INSUFFICIENT_FUNDS\""));
+    assertTrue(json.contains("\"requiredAmount\":50000"));
+    assertTrue(json.contains("\"walletBalance\":20000"));
+    assertTrue(json.contains("\"shortfallAmount\":30000"));
+    assertTrue(json.contains("\"currency\":\"INR\""));
+  }
+
+  @Test
+  @DisplayName(
+      "GlobalExceptionHandler: a non-insufficient-funds ApiException omits requiredAmount/"
+          + "walletBalance/shortfallAmount/currency entirely (NON_NULL, additive-only shape)")
+  void genericApiExceptionOmitsShortfallFields() throws Exception {
+    GlobalExceptionHandler handler = new GlobalExceptionHandler(errorLogService);
+    ApiException ex =
+        new ApiException("CAMPAIGN_NOT_FOUND", "Campaign not found", HttpStatus.NOT_FOUND);
+
+    ResponseEntity<ApiResponse<Void>> response = handler.handleApi(ex);
+
+    String json = objectMapper.writeValueAsString(response.getBody());
+    assertFalse(json.contains("requiredAmount"));
+    assertFalse(json.contains("walletBalance"));
+    assertFalse(json.contains("shortfallAmount"));
+    ApiErrorBody body = objectMapper.readTree(json).has("error")
+        ? objectMapper.treeToValue(objectMapper.readTree(json).get("error"), ApiErrorBody.class)
+        : null;
+    assertTrue(body != null);
+    assertEquals("CAMPAIGN_NOT_FOUND", body.code());
   }
 }

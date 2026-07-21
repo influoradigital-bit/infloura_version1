@@ -56,8 +56,15 @@ export const MAX_TRANSCRIPT_LENGTH = 4000
 const MAX_UTTERANCE_MS = 20000
 
 export interface UseVoiceInputOptions {
-  /** Called with the cleaned (but still editable) transcript. Never auto-sends. */
-  onResult: (cleanedText: string) => void
+  /**
+   * Called with the cleaned (but still editable) transcript. Never auto-sends.
+   * `lang` (W3) is the Sarvam-detected language code (`lang_detected` from
+   * `/meera/voice/transcribe`, e.g. `hi-IN`) for the utterance just
+   * transcribed — passed through so a caller can thread it into the spoken
+   * reply (`useVoiceOutput.speak`'s `lang` param). Undefined on the browser
+   * `webkitSpeechRecognition` fallback path, which never detects a language.
+   */
+  onResult: (cleanedText: string, lang?: string) => void
   /** Called on any failure path with the fallback copy to show the user. */
   onError?: (message: string) => void
   lang?: string
@@ -348,7 +355,7 @@ export function useVoiceInput({
           }
 
           // Server already cleaned this — no client-side cleanTranscript pass.
-          onResult(text)
+          onResult(text, result.langDetected)
           setPhase('idle')
         })
         .catch(() => {

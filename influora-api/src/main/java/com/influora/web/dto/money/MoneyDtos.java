@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MilestoneStatus;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
@@ -75,7 +76,13 @@ public final class MoneyDtos {
      * {@code OnboardingDtos.KycRequest} exactly.
      */
     public record WalletTopUpRequest(
-            @NotNull @DecimalMin("1.00") @Digits(integer = 12, fraction = 2) BigDecimal amount,
+            // [SEC: Kabir Option-1 audit P1 must-fix] Defense-in-depth only — this hardcoded
+            // 1000000.00 MUST match influora.wallet.max-topup-amount (WalletProperties). Bean
+            // validation runs before Spring config is available to a record component, so it
+            // can't read the config value; the AUTHORITATIVE ceiling is the config-driven check
+            // in WalletTopUpService#initiateTopUp, right after the positive-amount check.
+            @NotNull @DecimalMin("1.00") @DecimalMax("1000000.00") @Digits(integer = 12, fraction = 2)
+                    BigDecimal amount,
             @Pattern(regexp = "^[A-Z]{5}[0-9]{4}[A-Z]{1}$", message = "Invalid PAN format") String pan,
             @Pattern(
                             regexp = "^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$",

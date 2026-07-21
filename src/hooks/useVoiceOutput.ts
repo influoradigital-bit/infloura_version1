@@ -82,7 +82,14 @@ export interface UseVoiceOutputResult {
   enabled: boolean
   setEnabled: (value: boolean) => void
   isSpeaking: boolean
-  speak: (text: string) => void
+  /**
+   * `lang` (W3): the `lang_detected` code from `/meera/voice/transcribe` for
+   * the turn being replied to — forwarded verbatim to `meeraApi.speak` so the
+   * server-TTS reply matches the language the user spoke. Optional; omitted
+   * for mock-mode/scripted lines and browser-STT turns that never produced a
+   * detection, in which case the backend's own default applies.
+   */
+  speak: (text: string, lang?: string) => void
   /**
    * Speak an ordered list of sentences back-to-back, synthesizing the NEXT
    * while the current one plays, and calling `onSentenceStart(i)` at the moment
@@ -93,7 +100,7 @@ export interface UseVoiceOutputResult {
    */
   speakSequence: (
     sentences: string[],
-    opts?: { onSentenceStart?: (index: number) => void; onAllDone?: () => void },
+    opts?: { onSentenceStart?: (index: number) => void; onAllDone?: () => void; lang?: string },
   ) => void
   stop: () => void
   /** Speaking rate, clamped to [0.5, 1.5]. Persisted like the on/off toggle. */
@@ -189,7 +196,7 @@ export function useVoiceOutput(): UseVoiceOutputResult {
   }, [supported, releaseAudio])
 
   const speak = useCallback(
-    (rawText: string) => {
+    (rawText: string, lang?: string) => {
       // Text has already rendered by the time this is ever called — speaking
       // is purely additive from here. If unsupported or disabled, no-op.
       if (!supported || !enabled || !rawText) return
@@ -233,7 +240,7 @@ export function useVoiceOutput(): UseVoiceOutputResult {
       // Kick off the server-TTS attempt but never await it before
       // returning — speak() itself must stay synchronous/instant.
       meeraApi
-        .speak(text)
+        .speak(text, lang)
         .then((blob) => {
           if (speakTokenRef.current !== token) return // superseded — discard
           if (!blob) {
@@ -285,7 +292,7 @@ export function useVoiceOutput(): UseVoiceOutputResult {
   const speakSequence = useCallback(
     (
       sentences: string[],
-      opts?: { onSentenceStart?: (index: number) => void; onAllDone?: () => void },
+      opts?: { onSentenceStart?: (index: number) => void; onAllDone?: () => void; lang?: string },
     ) => {
       // Supersede anything in flight — same "cancel before you start" rule as speak().
       const token = (speakTokenRef.current += 1)
@@ -319,7 +326,7 @@ export function useVoiceOutput(): UseVoiceOutputResult {
       const prefetch = (i: number) => {
         if (i >= spoken.length || fetches.has(i)) return
         const text = spoken[i]
-        fetches.set(i, text ? meeraApi.speak(text).catch(() => null) : Promise.resolve(null))
+        fetches.set(i, text ? meeraApi.speak(text, opts?.lang).catch(() => null) : Promise.resolve(null))
       }
 
       // Fall back to the browser voice for ONE sentence, keeping the sequence going.

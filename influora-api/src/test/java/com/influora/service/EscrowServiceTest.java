@@ -10,9 +10,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
+import com.influora.common.InsufficientFundsException;
 import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.PaymentMilestone;
+import com.influora.domain.entity.Wallet;
+import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.EscrowStatus;
+import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.UserType;
 import com.influora.integration.razorpay.RazorpayClient;
 import com.influora.repository.CampaignRepository;
@@ -64,6 +68,7 @@ class EscrowServiceTest {
     @Mock private CreatorContextService creatorContext;
     @Mock private RazorpayClient razorpayClient;
     @Mock private AuthPrincipal principal;
+    @Mock private WorkspaceMember workspaceMember;
     @Mock private CampaignServiceInvoiceService campaignServiceInvoiceService;
     @Mock private DeliverableRepository deliverableRepository;
     @Mock private WorkspaceRepository workspaceRepository;
@@ -305,5 +310,94 @@ class EscrowServiceTest {
         assertEquals(404, ex.getStatus().value());
         // Must never fall back to an unscoped lookup that would find the other tenant's row.
         verify(milestoneRepository, never()).findById(MILESTONE_ID);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // [SEC: MF-1 follow-up, 2026-07-21] initiateFund -- INSUFFICIENT_FUNDS 402 carries the exact
+    // server-computed requiredAmount/walletBalance/shortfallAmount/currency (Ash → Vikram handoff,
+    // closes the "no test asserts the new 402 body" gap ahead of Kabir's Option 1 money-path gate).
+    // ------------------------------------------------------------------------------------------
+
+    private static final String CAMPAIGN_ID = "01HCAMPAIGN1234567AB";
+    private static final String FUND_IDEMPOTENCY_KEY = "idem-fund-1";
+
+    /** Anonymous-subclass wallet stub -- same pattern as WalletServiceTest#createTestWallet
+     * (Wallet has no public setters/builder; its factory methods always zero the balance). */
+    private static Wallet walletWithBalance(BigDecimal balance) {
+        return new Wallet() {
+            @Override
+            public BigDecimal getBalance() {
+                return balance;
+            }
+
+            @Override
+            public String getCurrency() {
+                return "INR";
+            }
+        };
+    }
+
+    @Test
+    @DisplayName(
+            "initiateFund: throws InsufficientFundsException with the exact server-computed"
+                    + " requiredAmount/walletBalance/shortfallAmount/currency when wallet balance <"
+                    + " required amount")
+    void initiateFundThrowsInsufficientFundsWithExactServerFigures() {
+        BigDecimal requiredAmount = BigDecimal.valueOf(50000);
+        BigDecimal walletBalance = BigDecimal.valueOf(20000);
+        Wallet wallet = walletWithBalance(walletBalance);
+
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY))
+                .thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(wallet);
+
+        InsufficientFundsException ex =
+                assertThrows(
+                        InsufficientFundsException.class,
+                        () ->
+                                service.initiateFund(
+                                        principal,
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        null,
+                                        requiredAmount,
+                                        "INR",
+                                        FUND_IDEMPOTENCY_KEY));
+
+        assertEquals("INSUFFICIENT_FUNDS", ex.getCode());
+        assertEquals(402, ex.getStatus().value());
+        // Concrete shortfall example, per handoff: required 50000, balance 20000 -> shortfall 30000.
+        assertEquals(0, requiredAmount.compareTo(ex.getRequiredAmount()));
+        assertEquals(0, walletBalance.compareTo(ex.getWalletBalance()));
+        assertEquals(0, BigDecimal.valueOf(30000).compareTo(ex.getShortfallAmount()));
+        assertEquals("INR", ex.getCurrency());
+        // The exact figures are the server-derived amount and the same balance read that gates the
+        // charge -- shortfall must equal required - balance, never re-fetched or estimated.
+        assertEquals(
+                0,
+                requiredAmount.subtract(walletBalance).compareTo(ex.getShortfallAmount()));
+
+        verify(brandContext).requireRole(workspaceMember, MemberRole.OWNER, MemberRole.ADMIN);
+        verify(escrowHoldRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("initiateFund: wallet balance exactly equal to the required amount does NOT throw INSUFFICIENT_FUNDS")
+    void initiateFundBoundaryBalanceEqualsAmountDoesNotThrowInsufficientFunds() {
+        BigDecimal requiredAmount = BigDecimal.valueOf(50000);
+        Wallet wallet = walletWithBalance(requiredAmount);
+
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY))
+                .thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(wallet);
+        when(razorpayClient.createOrder(eq(requiredAmount), eq("INR"), any()))
+                .thenReturn(new RazorpayClient.OrderResult("order-1", "created"));
+
+        service.initiateFund(
+                principal, WORKSPACE_ID, CAMPAIGN_ID, null, requiredAmount, "INR", FUND_IDEMPOTENCY_KEY);
+
+        verify(escrowHoldRepository).save(any(EscrowHold.class));
     }
 }

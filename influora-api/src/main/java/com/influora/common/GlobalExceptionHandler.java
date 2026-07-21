@@ -39,6 +39,25 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(ApiErrorBody.of(ex.getCode(), ex.getMessage())));
     }
 
+    // [SEC: MF-1 follow-up, 2026-07-21] Spring dispatches to the most specific matching handler,
+    // so this subclass-specific handler wins over handleApi(ApiException) above for this one type
+    // — no @Order needed. Only place requiredAmount/walletBalance/shortfallAmount/currency are
+    // ever put on the wire; every other ApiException still serializes via the generic handler
+    // above with those four fields omitted (ApiErrorBody's NON_NULL inclusion).
+    @ExceptionHandler(InsufficientFundsException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInsufficientFunds(InsufficientFundsException ex) {
+        return ResponseEntity.status(ex.getStatus())
+                .body(
+                        ApiResponse.fail(
+                                ApiErrorBody.insufficientFunds(
+                                        ex.getCode(),
+                                        ex.getMessage(),
+                                        ex.getRequiredAmount(),
+                                        ex.getWalletBalance(),
+                                        ex.getShortfallAmount(),
+                                        ex.getCurrency())));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
         List<ApiErrorBody.FieldError> fields =

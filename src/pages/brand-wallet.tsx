@@ -78,6 +78,7 @@ import {
   type WalletTopUpResponse,
   type EscrowHoldRow,
 } from '@/lib/api';
+import { openRazorpayCheckout } from '@/lib/razorpay';
 
 // Types
 interface Transaction {
@@ -350,11 +351,19 @@ export default function BrandWalletPage() {
   // click. Reset to null on success, on dialog close, and whenever the amount changes (a changed
   // amount is a new submission, not a retry).
   const [topUpIdempotencyKey, setTopUpIdempotencyKey] = React.useState<string | null>(null);
-  // Honest post-submit state: the backend only returns a Razorpay ORDER — money is not credited
-  // until the webhook confirms it. No checkout launcher exists in this codebase yet (grepped for
-  // `window.Razorpay` / `new Razorpay` — only TODO comments in FundEscrowButton.tsx), so this page
-  // surfaces the order as-is instead of faking a completed payment.
+  // The backend only returns a Razorpay ORDER — money is not credited until the webhook
+  // confirms it. `topUpOrder` holds that order; `topUpStage` tracks what's happened with the
+  // real Razorpay Checkout launcher (src/lib/razorpay.ts) since then. The client Checkout
+  // success callback is NEVER trusted as proof of a credited wallet — only used to decide
+  // when to start re-fetching the balance (see `handleTopUpCheckoutSuccess`).
   const [topUpOrder, setTopUpOrder] = React.useState<WalletTopUpResponse | null>(null);
+  const [topUpStage, setTopUpStage] = React.useState<
+    'awaiting_payment' | 'confirming' | 'confirmed' | 'dismissed'
+  >('awaiting_payment');
+  // Guards against opening the same Razorpay modal twice for one order (React StrictMode
+  // double-invoke / re-render safe). Reset whenever a fresh order is minted or the human
+  // explicitly asks to retry after dismissing the modal.
+  const topUpCheckoutOpenRef = React.useRef(false);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [filterType, setFilterType] = React.useState('all');
 
@@ -430,8 +439,50 @@ export default function BrandWalletPage() {
       setAddFundsError(null);
       setTopUpIdempotencyKey(null);
       setTopUpOrder(null);
+      setTopUpStage('awaiting_payment');
+      topUpCheckoutOpenRef.current = false;
     }
   };
+
+  // Called after the Razorpay Checkout success callback fires. SECURITY: this is NOT proof
+  // the wallet was credited — the ledger credit is applied asynchronously off the Razorpay
+  // webhook (WalletTopUpService#confirmCredited). This only re-fetches the wallet/escrow
+  // summaries so the balance updates as soon as the webhook lands, and shows an honest
+  // "confirming" state in the meantime rather than claiming success prematurely.
+  const handleTopUpCheckoutSuccess = React.useCallback(async () => {
+    topUpCheckoutOpenRef.current = false;
+    setTopUpStage('confirming');
+    await Promise.all([loadWallet(), loadEscrow()]);
+    setTopUpStage('confirmed');
+  }, [loadWallet, loadEscrow]);
+
+  // No money moved on this leg — let the human retry the SAME order (it hasn't been paid)
+  // instead of forcing them to start a brand-new top-up submission.
+  const handleTopUpCheckoutDismiss = React.useCallback(() => {
+    topUpCheckoutOpenRef.current = false;
+    setTopUpStage('dismissed');
+  }, []);
+
+  const retryTopUpCheckout = () => {
+    setTopUpStage('awaiting_payment');
+  };
+
+  // Opens the real Razorpay Checkout for the top-up order once it's ready. Real launcher
+  // (src/lib/razorpay.ts) — replaces the old "order created, no launcher exists" honest gap.
+  React.useEffect(() => {
+    if (!topUpOrder || topUpStage !== 'awaiting_payment' || topUpCheckoutOpenRef.current) return;
+    topUpCheckoutOpenRef.current = true;
+    openRazorpayCheckout({
+      orderId: topUpOrder.razorpayOrderId,
+      amount: topUpOrder.amount,
+      currency: topUpOrder.currency,
+      name: 'Influora',
+      description: 'Add funds to wallet',
+      onSuccess: () => void handleTopUpCheckoutSuccess(),
+      onDismiss: () => handleTopUpCheckoutDismiss(),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topUpOrder, topUpStage]);
 
   // POST /wallet/topup, then refresh balances + escrow. The Idempotency-Key is minted once per
   // logical submission (kept in topUpIdempotencyKey) and reused across retries of that same
@@ -449,8 +500,9 @@ export default function BrandWalletPage() {
       const order = await api.wallet.topUp({ amount }, idempotencyKey);
       // Success closes out this submission — the key must not be reused for a future one.
       setTopUpIdempotencyKey(null);
+      topUpCheckoutOpenRef.current = false;
+      setTopUpStage('awaiting_payment');
       setTopUpOrder(order);
-      await Promise.all([loadWallet(), loadEscrow()]);
     } catch (e) {
       // Keep the same idempotency key held so a user-initiated retry of this submission reuses it.
       setAddFundsError(e instanceof ApiError ? e.message : 'Could not add funds. Please try again.');
@@ -578,17 +630,33 @@ export default function BrandWalletPage() {
                 </DialogHeader>
                 {topUpOrder ? (
                   // Honest post-submit state: the backend only created a Razorpay ORDER — the
-                  // ledger is credited asynchronously off the payment webhook, never here. No
-                  // checkout launcher exists in this codebase yet, so we surface the order as-is
-                  // instead of pretending the balance already updated.
+                  // ledger is credited asynchronously off the payment webhook, never here.
+                  // `topUpStage` reflects what the real Checkout launcher (src/lib/razorpay.ts)
+                  // has reported, but the Checkout callback itself is never trusted as proof of
+                  // a credit — only used to decide when to re-fetch the wallet balance.
                   <div className="space-y-4 py-4">
                     <div className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
-                      <AlertCircle className="h-5 w-5 flex-shrink-0 text-primary" />
+                      {topUpStage === 'confirmed' ? (
+                        <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-green-500" />
+                      ) : (
+                        <AlertCircle className="h-5 w-5 flex-shrink-0 text-primary" />
+                      )}
                       <div className="space-y-1">
-                        <p className="font-medium">Payment order created</p>
+                        <p className="font-medium">
+                          {topUpStage === 'awaiting_payment' && 'Opening payment window…'}
+                          {topUpStage === 'confirming' && 'Confirming your payment…'}
+                          {topUpStage === 'confirmed' && 'Payment received'}
+                          {topUpStage === 'dismissed' && 'Payment window closed'}
+                        </p>
                         <p className="text-sm text-muted-foreground">
-                          Complete the payment to add funds to your wallet. Your balance updates
-                          automatically once the payment is confirmed.
+                          {topUpStage === 'awaiting_payment' &&
+                            'Complete the payment in the Razorpay window to add funds to your wallet.'}
+                          {topUpStage === 'confirming' &&
+                            'Your balance updates automatically once the payment webhook confirms it — this can take a few seconds.'}
+                          {topUpStage === 'confirmed' &&
+                            'Your balance will reflect the top-up as soon as the payment is confirmed. If it doesn’t update within a minute, refresh this page.'}
+                          {topUpStage === 'dismissed' &&
+                            'No payment was made and no money moved. You can retry this same order or cancel.'}
                         </p>
                       </div>
                     </div>
@@ -606,6 +674,11 @@ export default function BrandWalletPage() {
                         <span>{topUpOrder.status}</span>
                       </div>
                     </div>
+                    {topUpStage === 'dismissed' && (
+                      <Button onClick={retryTopUpCheckout} className="w-full">
+                        Retry payment
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-6 py-4">

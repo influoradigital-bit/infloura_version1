@@ -209,6 +209,13 @@ influora:
     api-base-url: ${RAZORPAY_API_BASE_URL:https://api.razorpay.com/v1}
     payout-api-base-url: ${RAZORPAYX_API_BASE_URL:https://api.razorpay.com/v1}
     platform-fee-percent: ${PLATFORM_FEE_PERCENT:15.00}
+  # [SEC: Kabir Option-1 audit P1 must-fix] Wallet business limits. max-topup-amount is the
+  # authoritative server-side ceiling on POST /wallet/topup — enforced in
+  # WalletTopUpService#initiateTopUp, right after the existing positive-amount check. The DTO's
+  # @DecimalMax (WalletTopUpRequest#amount) hardcodes the same value for fast 400 feedback but is
+  # NOT authoritative (bean validation can't read Spring config).
+  wallet:
+    max-topup-amount: ${WALLET_MAX_TOPUP_AMOUNT:1000000.00}
   # Brand-safety scoring feature flag (Priya ruling). OFF by default: ScoreCalculationJob then never
   # calls BrandSafetyScoreService and leaves creator_scores.brand_safety_score / garm_flags /
   # content_sentiment NULL on every row (its pre-existing behaviour). When turned on, EACH scored

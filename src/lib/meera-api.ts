@@ -11,7 +11,7 @@
  * The browser NEVER calls /internal/meera/* (Python-to-Spring only).
  */
 
-import { ApiError, isApiLive } from './api';
+import { ApiError, extractInsufficientFundsDetails, isApiLive, type ApiErrorPayload } from './api';
 
 // ---------------------------------------------------------------------------
 // Environment / config
@@ -338,7 +338,7 @@ async function request<T>(
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
 
-  let envelope: { success: boolean; data?: T; error?: { code: string; message: string } };
+  let envelope: { success: boolean; data?: T; error?: ApiErrorPayload };
   try {
     envelope = await res.json();
   } catch {
@@ -349,7 +349,11 @@ async function request<T>(
     throw new ApiError(
       envelope.error?.code || 'UNKNOWN',
       envelope.error?.message || res.statusText,
-      res.status
+      res.status,
+      // [SEC: MF-1 follow-up] `POST /wallet/escrow/fund`'s INSUFFICIENT_FUNDS 402 rides this
+      // path (fundEscrow uses this local `request`, not HttpClient in api.ts) — carry the
+      // server-computed shortfall through so useEscrowFund never has to re-estimate it.
+      extractInsufficientFundsDetails(envelope.error)
     );
   }
 
@@ -564,8 +568,16 @@ export const meeraApi = {
    * Deliberately bypasses the shared `request()` helper: that helper assumes
    * a JSON `{ success, data }` envelope, but this endpoint's success body is
    * raw audio bytes, not JSON.
+   *
+   * `lang` (W3): the BCP-47-ish code `/meera/voice/transcribe` returned as
+   * `lang_detected` for the turn being replied to (e.g. `hi-IN`), so the
+   * spoken reply matches the language the user actually spoke instead of
+   * always defaulting to English. Optional — omitted when no detection is
+   * available (e.g. the browser STT fallback never produced one), in which
+   * case the backend's own default (`en-IN`, `voice.py`'s
+   * `body.get("lang", "en-IN")`) applies.
    */
-  speak: async (text: string): Promise<Blob | null> => {
+  speak: async (text: string, lang?: string): Promise<Blob | null> => {
     if (!isApiLive()) return null;
 
     try {
@@ -577,7 +589,7 @@ export const meeraApi = {
         method: 'POST',
         headers,
         credentials: 'include',
-        body: JSON.stringify({ text }),
+        body: JSON.stringify(lang ? { text, lang } : { text }),
       });
 
       if (!res.ok) return null;
