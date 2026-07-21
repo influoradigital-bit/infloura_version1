@@ -16,11 +16,14 @@ import com.influora.common.ApiException;
 import com.influora.domain.entity.CreatorBankAccount;
 import com.influora.domain.entity.Payout;
 import com.influora.domain.entity.Wallet;
+import com.influora.domain.enums.EscrowStatus;
+import com.influora.domain.enums.MilestoneStatus;
 import com.influora.domain.enums.TxnReferenceType;
 import com.influora.domain.enums.WalletTransactionType;
 import com.influora.integration.razorpay.RazorpayXClient;
 import com.influora.integration.razorpay.RazorpayXClient.PayoutResult;
 import com.influora.repository.CreatorBankAccountRepository;
+import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.PayoutRepository;
 import com.influora.repository.WalletRepository;
@@ -28,6 +31,7 @@ import com.influora.repository.WalletTransactionRepository;
 import com.influora.service.payout.RazorpayFundAccountService;
 import com.influora.web.dto.money.MoneyDtos.CreatorWithdrawResponse;
 import com.influora.web.dto.money.MoneyDtos.WalletBalanceResponse;
+import com.influora.web.dto.money.MoneyDtos.WalletSummaryResponse;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Optional;
@@ -66,6 +70,7 @@ class WalletServiceTest {
     @Mock private RazorpayFundAccountService fundAccountService;
     @Mock private PayoutRepository payoutRepository;
     @Mock private IdempotencyService idempotencyService;
+    @Mock private EscrowHoldRepository escrowHoldRepository;
 
     private WalletService walletService;
 
@@ -82,7 +87,8 @@ class WalletServiceTest {
                         razorpayXClient,
                         fundAccountService,
                         payoutRepository,
-                        idempotencyService);
+                        idempotencyService,
+                        escrowHoldRepository);
     }
 
     /** Mirrors {@code PayoutServiceTest#mockIdempotencyExecuteOnce}: run the supplier as the race winner. */
@@ -131,6 +137,54 @@ class WalletServiceTest {
         assertEquals(new BigDecimal("10000.00"), result.balance());
         assertEquals(new BigDecimal("5000.00"), result.escrowBalance());
         assertEquals("INR", result.currency());
+    }
+
+    // ------------------------------------------------------------------
+    // getSummary -- brand dashboard escrowLocked derive-on-read (Track C escrow-display fix).
+    // wallets.escrow_balance is a dead column (never written); escrowLocked must instead reflect
+    // the live sum of the workspace's FUNDED escrow holds.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "getSummary: escrowLocked sums only this workspace's FUNDED holds, ignoring the dead"
+                    + " wallets.escrow_balance column, other statuses, and other workspaces")
+    void testGetSummaryDerivesEscrowLockedFromFundedHoldsOnly() {
+        // Dead column deliberately set to a different, non-zero value to prove it is NOT read.
+        Wallet wallet = createTestWallet(new BigDecimal("10000.00"), new BigDecimal("999.00"));
+        when(walletRepository.findByOwnerId(WORKSPACE_ID)).thenReturn(Optional.of(wallet));
+        when(paymentMilestoneRepository.sumAmountByWorkspaceAndStatus(
+                        eq(WORKSPACE_ID), eq(MilestoneStatus.FUNDED)))
+                .thenReturn(BigDecimal.ZERO);
+        // Repository-level aggregate already scopes by workspace + FUNDED status; the mock here
+        // stands in for "two FUNDED holds (5000 + 15000) for this workspace, RELEASED/other-
+        // workspace holds excluded" per the query's WHERE clause.
+        when(escrowHoldRepository.sumAmountByWorkspaceIdAndStatus(WORKSPACE_ID, EscrowStatus.FUNDED))
+                .thenReturn(new BigDecimal("20000.00"));
+
+        WalletSummaryResponse result = walletService.getSummary(WORKSPACE_ID);
+
+        assertEquals(new BigDecimal("20000.00"), result.escrowLocked());
+        verify(escrowHoldRepository)
+                .sumAmountByWorkspaceIdAndStatus(WORKSPACE_ID, EscrowStatus.FUNDED);
+    }
+
+    @Test
+    @DisplayName("getSummary: escrowLocked is a non-null zero when the workspace has no FUNDED holds")
+    void testGetSummaryEscrowLockedZeroWhenNoFundedHolds() {
+        Wallet wallet = createTestWallet(new BigDecimal("10000.00"), BigDecimal.ZERO);
+        when(walletRepository.findByOwnerId(WORKSPACE_ID)).thenReturn(Optional.of(wallet));
+        when(paymentMilestoneRepository.sumAmountByWorkspaceAndStatus(
+                        eq(WORKSPACE_ID), eq(MilestoneStatus.FUNDED)))
+                .thenReturn(BigDecimal.ZERO);
+        // COALESCE(...,0) at the JPQL layer means a workspace with zero matching rows returns 0,
+        // not null -- mirrored here since we're mocking the repository boundary.
+        when(escrowHoldRepository.sumAmountByWorkspaceIdAndStatus(WORKSPACE_ID, EscrowStatus.FUNDED))
+                .thenReturn(BigDecimal.ZERO);
+
+        WalletSummaryResponse result = walletService.getSummary(WORKSPACE_ID);
+
+        assertEquals(BigDecimal.ZERO, result.escrowLocked());
     }
 
     // ------------------------------------------------------------------

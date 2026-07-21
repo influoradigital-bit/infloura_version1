@@ -21,10 +21,13 @@ import com.influora.service.PayoutReconciliationService;
 import com.influora.service.WalletTopUpService;
 import com.influora.service.billing.InvoiceService;
 import com.influora.service.billing.SubscriptionService;
+import com.influora.common.ApiException;
 import com.influora.service.notification.event.InvoiceReadyEvent;
 import com.influora.service.notification.event.SubscriptionHaltedEvent;
+import com.influora.service.notification.event.SubscriptionPaymentFailedEvent;
 import java.time.Instant;
 import java.util.function.Supplier;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -142,6 +145,21 @@ class RazorpayWebhookControllerTest {
                 + "\"created_at\":1705270405}";
     }
 
+    private static String pendingPayload() {
+        return "{"
+                + "\"event\":\"subscription.pending\","
+                + "\"payload\":{\"subscription\":{\"entity\":{"
+                + "\"id\":\""
+                + SUBSCRIPTION_ID
+                + "\",\"plan_id\":\""
+                + PLAN_ID
+                + "\",\"status\":\"pending\","
+                + "\"notes\":{\"workspaceId\":\""
+                + WORKSPACE_ID
+                + "\"}}}},"
+                + "\"created_at\":1705000000}";
+    }
+
     private static String activatedPayloadMissingWorkspaceId() {
         return "{"
                 + "\"event\":\"subscription.activated\","
@@ -250,6 +268,51 @@ class RazorpayWebhookControllerTest {
         verify(eventPublisher).publishEvent(captor.capture());
         assertEquals(SUBSCRIPTION_ID, captor.getValue().entityId());
         assertEquals("brand@example.com", captor.getValue().recipientEmail());
+    }
+
+    @Test
+    @DisplayName("[Track B, P2] subscription.pending: applies PAST_DUE status with NO period update, and publishes SubscriptionPaymentFailedEvent")
+    void receive_subscriptionPending_appliesPastDueStatusAndPublishesEvent() {
+        stubIdempotencyServiceRunsAction();
+        when(brandContextService.resolveBillingRecipient(WORKSPACE_ID))
+                .thenReturn(new BillingRecipient("user_1", "brand@example.com"));
+
+        ResponseEntity<Void> response = controller.receive(VALID_SIGNATURE, pendingPayload());
+
+        assertEquals(200, response.getStatusCode().value());
+        verify(subscriptionService)
+                .applySubscriptionWebhookUpdate(
+                        eq(SUBSCRIPTION_ID),
+                        eq(WORKSPACE_ID),
+                        eq(PLAN_ID),
+                        eq(SubscriptionStatus.PAST_DUE),
+                        isNull(),
+                        isNull(),
+                        eq(Instant.ofEpochSecond(1705000000)));
+        verify(invoiceService, never()).generateInvoiceFromWebhook(any(), any(), anyLong(), any(), any(), any());
+
+        ArgumentCaptor<SubscriptionPaymentFailedEvent> captor =
+                ArgumentCaptor.forClass(SubscriptionPaymentFailedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals(SUBSCRIPTION_ID, captor.getValue().entityId());
+        assertEquals(WORKSPACE_ID, captor.getValue().workspaceId());
+        assertEquals("brand@example.com", captor.getValue().recipientEmail());
+    }
+
+    @Test
+    @DisplayName("[SEC: WebhookSignatureVerifier] an invalid/unverified signature is rejected (400) before any parsing/dispatch — fail-closed, applies to subscription.* the same as every other event type")
+    void receive_invalidSignature_rejectsBeforeAnyDispatch() {
+        when(signatureVerifier.verify(anyString(), anyString())).thenReturn(false);
+
+        ApiException ex =
+                Assertions.assertThrows(
+                        ApiException.class, () -> controller.receive("bad-signature", pendingPayload()));
+
+        assertEquals("INVALID_WEBHOOK_SIGNATURE", ex.getCode());
+        verify(subscriptionService, never())
+                .applySubscriptionWebhookUpdate(any(), any(), any(), any(), any(), any(), any());
+        verify(idempotencyService, never()).executeOnce(anyString(), any(), anyString(), any(Supplier.class));
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

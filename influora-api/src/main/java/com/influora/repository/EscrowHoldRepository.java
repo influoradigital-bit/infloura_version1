@@ -27,6 +27,22 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
     @Query("SELECT COALESCE(SUM(e.amount), 0) FROM EscrowHold e WHERE e.status IN :statuses")
     BigDecimal sumAmountByStatusIn(@Param("statuses") Collection<EscrowStatus> statuses);
 
+    /**
+     * Workspace-scoped derive-on-read for the brand dashboard's {@code escrowLocked} figure
+     * ({@code WalletService.getSummary} -> {@code WalletSummaryResponse.escrowLocked}).
+     * {@code wallets.escrow_balance} is a dead column (never written by any service — funding an
+     * escrow hold only ever moves {@code wallets.balance} via {@code WalletLedgerService.post()},
+     * see {@code EscrowHold}'s class javadoc), so "locked" money is derived here as the live sum of
+     * the workspace's holds currently in {@code FUNDED} status — money moved into escrow but not
+     * yet {@code RELEASED}/{@code REFUNDED}. {@code COALESCE(...,0)} guarantees a non-null zero for
+     * a workspace with no funded holds, matching {@link #sumAmountByStatusIn}'s convention.
+     */
+    @Query(
+            "SELECT COALESCE(SUM(e.amount), 0) FROM EscrowHold e "
+                    + "WHERE e.workspaceId = :workspaceId AND e.status = :status")
+    BigDecimal sumAmountByWorkspaceIdAndStatus(
+            @Param("workspaceId") String workspaceId, @Param("status") EscrowStatus status);
+
     Optional<EscrowHold> findByIdempotencyKey(String idempotencyKey);
 
     Optional<EscrowHold> findByIdAndWorkspaceId(String id, String workspaceId);

@@ -43,11 +43,15 @@ import org.springframework.web.bind.annotation.RestController;
  * (TECH-STACK.md rule #2 — resolve the row, then check ownership; never trust a path param
  * alone). Mounted at {@code /billing} (full path {@code /api/v1/billing}).
  *
- * <p>Write endpoints ({@code /checkout}, {@code /cancel}) are stubbed — {@link SubscriptionService}
- * throws a typed {@code NOT_YET_IMPLEMENTED} until Phase 2 (Task 19/20) wires Razorpay
- * Subscriptions. {@link com.influora.common.GlobalExceptionHandler} translates that {@code
- * ApiException} into the standard {@code ApiResponse} envelope, so no local try/catch is needed
- * here.
+ * <p>Write endpoints ({@code /checkout}, {@code /cancel}) are REAL — Phase 2 (Task 19/20) wired
+ * them to real Razorpay Subscriptions flows via {@link SubscriptionService#initiateCheckout} and
+ * {@link SubscriptionService#cancel}. (Stale note removed [Track B, P2, 2026-07-21]: an earlier
+ * revision of this javadoc claimed these throw a typed {@code NOT_YET_IMPLEMENTED} — that was true
+ * only before Task 19/20 landed and is no longer accurate; both methods can still throw a typed
+ * {@link com.influora.common.ApiException} for real business-rule failures — e.g. {@code
+ * ALREADY_SUBSCRIBED}, {@code RAZORPAY_MISCONFIGURED}, {@code SUBSCRIPTION_NOT_FOUND} — which
+ * {@link com.influora.common.GlobalExceptionHandler} still translates into the standard {@code
+ * ApiResponse} envelope, so no local try/catch is needed here.)
  */
 @RestController
 @RequestMapping("/billing")
@@ -150,7 +154,7 @@ public class BillingController {
                 .body(pdf);
     }
 
-    /** Phase 2 (Task 19) — stubbed, throws {@code NOT_YET_IMPLEMENTED}. */
+    /** Phase 2 (Task 19) — real Razorpay Subscriptions hosted-checkout URL. */
     @PostMapping("/checkout")
     public ResponseEntity<ApiResponse<CheckoutResponse>> checkout(
             @AuthenticationPrincipal AuthPrincipal principal, @RequestBody CheckoutRequest body) {
@@ -160,7 +164,7 @@ public class BillingController {
         return ResponseEntity.ok(ApiResponse.ok(new CheckoutResponse(checkoutUrl)));
     }
 
-    /** Phase 2 (Task 19/20) — stubbed, throws {@code NOT_YET_IMPLEMENTED}. */
+    /** Phase 2 (Task 19/20) — real Razorpay Subscriptions cancel-at-period-end. */
     @PostMapping("/cancel")
     public ResponseEntity<ApiResponse<Void>> cancel(@AuthenticationPrincipal AuthPrincipal principal) {
         Workspace workspace = brandContextService.requireBrandWorkspace(principal);

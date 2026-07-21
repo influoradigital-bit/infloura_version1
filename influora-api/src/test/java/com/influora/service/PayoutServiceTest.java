@@ -15,8 +15,13 @@ import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorBankAccount;
 import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.PaymentMilestone;
+import com.influora.domain.entity.Wallet;
+import com.influora.domain.entity.WalletTransaction;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.EscrowStatus;
+import com.influora.domain.enums.TxnDirection;
+import com.influora.domain.enums.TxnReferenceType;
+import com.influora.domain.enums.WalletTransactionType;
 import com.influora.integration.razorpay.RazorpayXClient;
 import com.influora.integration.razorpay.RazorpayXClient.PayoutResult;
 import com.influora.repository.CollaborationRepository;
@@ -25,7 +30,9 @@ import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.PayoutRepository;
+import com.influora.repository.WalletTransactionRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.WalletLedgerService.LedgerPostingResult;
 import com.influora.web.dto.money.MoneyDtos.PayoutResponse;
 import java.math.BigDecimal;
 import java.util.List;
@@ -71,6 +78,14 @@ class PayoutServiceTest {
     private static final String COLLABORATION_ID = "01HCOLLAB1234567890AB";
     private static final String CREATOR_ID = "01HCREATORUSER1234567";
     private static final String IDEMPOTENCY_KEY = "payout:" + MILESTONE_ID;
+    private static final String RELEASED_TXN_ID = "01HRELEASEDTXN1234567";
+    private static final String CREATOR_WALLET_ID = "01HCREATORWALLET12345";
+    private static final String CLEARING_WALLET_ID = "01HCLEARINGWALLET1234";
+    // 15% creator-side platform commission on a gross milestone amount of 5000 -> net 4250. This
+    // is deliberately DIFFERENT from the gross amount so a test that regresses back to paying
+    // milestone.getAmount() (gross) fails loudly instead of coincidentally matching.
+    private static final BigDecimal GROSS_AMOUNT = BigDecimal.valueOf(5000);
+    private static final BigDecimal NET_AMOUNT = BigDecimal.valueOf(4250);
 
     @Mock private PaymentMilestoneRepository milestoneRepository;
     @Mock private EscrowHoldRepository escrowHoldRepository;
@@ -82,6 +97,10 @@ class PayoutServiceTest {
     @Mock private com.influora.service.payout.RazorpayFundAccountService fundAccountService;
     @Mock private BrandContextService brandContext;
     @Mock private IdempotencyService idempotencyService;
+    @Mock private WalletTransactionRepository walletTransactionRepository;
+    @Mock private WalletLedgerService walletLedgerService;
+    @Mock private PlatformWalletService platformWalletService;
+    @Mock private WalletService walletService;
     @Mock private AuthPrincipal principal;
     @Mock private WorkspaceMember member;
 
@@ -100,7 +119,84 @@ class PayoutServiceTest {
                         razorpayXClient,
                         fundAccountService,
                         brandContext,
-                        idempotencyService);
+                        idempotencyService,
+                        walletTransactionRepository,
+                        walletLedgerService,
+                        platformWalletService,
+                        walletService);
+    }
+
+    /**
+     * Stubs the release-ledger lookup {@code PayoutService#resolveNetPayoutAmount} depends on --
+     * {@link PaymentMilestone#getReleasedTxnId()} must resolve to a {@link WalletTransaction} whose
+     * {@code amount} is the NET (post-commission) figure, distinct from the milestone's gross
+     * {@code amount}. Every test exercising a successful/replayed payout path needs this stubbed.
+     */
+    private void mockReleaseLedgerNetAmount() {
+        WalletTransaction releaseCredit =
+                WalletTransaction.builder()
+                        .id(RELEASED_TXN_ID)
+                        .walletId(CREATOR_WALLET_ID)
+                        .groupId("01HGROUP1234567890AB")
+                        .direction(TxnDirection.CREDIT)
+                        .type(WalletTransactionType.ESCROW_RELEASE)
+                        .amount(NET_AMOUNT)
+                        .currency("INR")
+                        .balanceAfter(NET_AMOUNT)
+                        .referenceType(TxnReferenceType.MILESTONE)
+                        .referenceId(MILESTONE_ID)
+                        .idempotencyKey("release:" + ESCROW_HOLD_ID + ":C")
+                        .build();
+        when(walletTransactionRepository.findById(RELEASED_TXN_ID))
+                .thenReturn(Optional.of(releaseCredit));
+    }
+
+    /** Stubs the wallet-debit leg {@code doQueuePayout} posts before ever calling RazorpayX. */
+    private void mockWalletDebit() {
+        Wallet creatorWallet = Wallet.forUser(CREATOR_WALLET_ID, CREATOR_ID);
+        Wallet clearingWallet = Wallet.forWorkspace(CLEARING_WALLET_ID, "platform-clearing");
+        when(walletService.requireOrCreateUserWallet(CREATOR_ID)).thenReturn(creatorWallet);
+        when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
+        WalletTransaction debitLeg =
+                WalletTransaction.builder()
+                        .id("01HDEBITLEG1234567890")
+                        .walletId(CREATOR_WALLET_ID)
+                        .groupId("01HGROUP2234567890AB")
+                        .direction(TxnDirection.DEBIT)
+                        .type(WalletTransactionType.PAYOUT)
+                        .amount(NET_AMOUNT)
+                        .currency("INR")
+                        .balanceAfter(BigDecimal.ZERO)
+                        .referenceType(TxnReferenceType.MILESTONE)
+                        .referenceId(MILESTONE_ID)
+                        .idempotencyKey("payout-debit:" + MILESTONE_ID + ":D")
+                        .build();
+        WalletTransaction creditLeg =
+                WalletTransaction.builder()
+                        .id("01HCREDITLEG123456789")
+                        .walletId(CLEARING_WALLET_ID)
+                        .groupId("01HGROUP2234567890AB")
+                        .direction(TxnDirection.CREDIT)
+                        .type(WalletTransactionType.PAYOUT)
+                        .amount(NET_AMOUNT)
+                        .currency("INR")
+                        .balanceAfter(NET_AMOUNT)
+                        .referenceType(TxnReferenceType.MILESTONE)
+                        .referenceId(MILESTONE_ID)
+                        .idempotencyKey("payout-debit:" + MILESTONE_ID + ":C")
+                        .build();
+        when(walletLedgerService.post(
+                        eq(CREATOR_WALLET_ID),
+                        eq(CLEARING_WALLET_ID),
+                        eq(NET_AMOUNT),
+                        eq("INR"),
+                        eq(WalletTransactionType.PAYOUT),
+                        eq(TxnReferenceType.MILESTONE),
+                        eq(MILESTONE_ID),
+                        anyString(),
+                        eq("payout-debit:" + MILESTONE_ID),
+                        eq(null)))
+                .thenReturn(new LedgerPostingResult(debitLeg, creditLeg));
     }
 
     /**
@@ -142,16 +238,28 @@ class PayoutServiceTest {
                 .contractId("01HCONTRACT1234567AB")
                 .collaborationId(COLLABORATION_ID)
                 .sequenceNo(1)
-                .amount(BigDecimal.valueOf(5000))
+                .amount(GROSS_AMOUNT)
                 .currency("INR")
                 .build();
+    }
+
+    /**
+     * Binds {@code milestone} to the funded/released escrow hold AND sets its {@code
+     * releasedTxnId} to {@link #RELEASED_TXN_ID} -- the release-ledger pointer {@code
+     * PayoutService#resolveNetPayoutAmount} reads to determine the NET payout figure. Callers must
+     * also stub {@link #mockReleaseLedgerNetAmount()} so that id actually resolves to {@link
+     * #NET_AMOUNT}.
+     */
+    private void bindReleased(PaymentMilestone milestone) {
+        milestone.markFunded(ESCROW_HOLD_ID);
+        milestone.markReleased(RELEASED_TXN_ID, "release:" + ESCROW_HOLD_ID);
     }
 
     private EscrowHold releasedHold() {
         return EscrowHold.builder()
                 .id(ESCROW_HOLD_ID)
                 .workspaceId(WORKSPACE_ID)
-                .amount(BigDecimal.valueOf(5000))
+                .amount(GROSS_AMOUNT)
                 .currency("INR")
                 .status(EscrowStatus.RELEASED)
                 .idempotencyKey("release:" + ESCROW_HOLD_ID)
@@ -173,26 +281,47 @@ class PayoutServiceTest {
     void testFirstCallInitiatesPayoutExactlyOnce() {
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         PaymentMilestone milestone = releasedMilestone();
-        // Bind the milestone to the funded/released escrow hold so getEscrowHoldId() is non-null.
-        milestone.markFunded(ESCROW_HOLD_ID);
+        // Bind the milestone to the funded/released escrow hold so getEscrowHoldId() is non-null,
+        // AND to its release-ledger credit leg so resolveNetPayoutAmount can find the NET figure.
+        bindReleased(milestone);
         when(milestoneRepository.findById(MILESTONE_ID))
                 .thenReturn(Optional.empty()) // replay pre-check sees nothing queued yet
                 .thenReturn(Optional.of(milestone)); // doQueuePayout's own lookup
         when(escrowHoldRepository.findById(ESCROW_HOLD_ID)).thenReturn(Optional.of(releasedHold()));
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration()));
-        when(razorpayXClient.initiatePayout(eq(CREATOR_ID), eq(BigDecimal.valueOf(5000)), eq("INR"), anyString()))
+        // NET_AMOUNT (4250), NOT GROSS_AMOUNT (5000) -- this is the money-safety regression guard.
+        when(razorpayXClient.initiatePayout(eq(CREATOR_ID), eq(NET_AMOUNT), eq("INR"), anyString()))
                 .thenReturn(new PayoutResult("payout_abc123", "queued"));
         mockIdempotencyExecuteOnce();
         mockFundAccountResolution();
+        mockReleaseLedgerNetAmount();
+        mockWalletDebit();
 
         PayoutResponse response = service.queuePayout(principal, WORKSPACE_ID, MILESTONE_ID);
 
         assertEquals("payout_abc123", response.payoutId());
         assertEquals(MILESTONE_ID, response.milestoneId());
-        assertEquals(0, BigDecimal.valueOf(5000).compareTo(response.amount()));
+        // Money-safety: the payout response reports the NET amount actually paid, never gross.
+        assertEquals(0, NET_AMOUNT.compareTo(response.amount()));
         assertEquals("queued", response.status());
         verify(razorpayXClient, times(1))
-                .initiatePayout(eq(CREATOR_ID), eq(BigDecimal.valueOf(5000)), eq("INR"), eq(IDEMPOTENCY_KEY));
+                .initiatePayout(eq(CREATOR_ID), eq(NET_AMOUNT), eq("INR"), eq(IDEMPOTENCY_KEY));
+        // Regression pin: RazorpayX must NEVER be called with the milestone's gross amount.
+        verify(razorpayXClient, never()).initiatePayout(any(), eq(GROSS_AMOUNT), any(), any());
+        // Double-pay guardrail: the creator's wallet balance is debited the SAME net amount, on the
+        // SAME milestone reference, before the money is ever handed to RazorpayX.
+        verify(walletLedgerService, times(1))
+                .post(
+                        eq(CREATOR_WALLET_ID),
+                        eq(CLEARING_WALLET_ID),
+                        eq(NET_AMOUNT),
+                        eq("INR"),
+                        eq(WalletTransactionType.PAYOUT),
+                        eq(TxnReferenceType.MILESTONE),
+                        eq(MILESTONE_ID),
+                        anyString(),
+                        eq("payout-debit:" + MILESTONE_ID),
+                        eq(null));
         // Milestone persisted with the payout's idempotency key -- the local replay guard.
         ArgumentCaptor<PaymentMilestone> captor = ArgumentCaptor.forClass(PaymentMilestone.class);
         verify(milestoneRepository).save(captor.capture());
@@ -206,19 +335,23 @@ class PayoutServiceTest {
     void testRetryDoesNotDoubleCallGateway() {
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         PaymentMilestone milestone = releasedMilestone();
-        milestone.markFunded(ESCROW_HOLD_ID);
+        bindReleased(milestone);
         milestone.markPayoutQueued(IDEMPOTENCY_KEY);
         when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
         when(escrowHoldRepository.findById(ESCROW_HOLD_ID)).thenReturn(Optional.of(releasedHold()));
+        mockReleaseLedgerNetAmount();
 
         PayoutResponse response = service.queuePayout(principal, WORKSPACE_ID, MILESTONE_ID);
 
         assertEquals(MILESTONE_ID, response.milestoneId());
-        assertEquals(0, BigDecimal.valueOf(5000).compareTo(response.amount()));
+        // Replay reports the NET amount too -- never gross.
+        assertEquals(0, NET_AMOUNT.compareTo(response.amount()));
         // The gateway must NEVER be called on a replay -- this is the whole point of the fix.
         verify(razorpayXClient, never()).initiatePayout(any(), any(), any(), any());
         verify(idempotencyService, never()).executeOnce(any(), any(), any(), any());
         verify(milestoneRepository, never()).save(any());
+        // No wallet debit either -- a replay must never move money a second time.
+        verify(walletLedgerService, never()).post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -228,9 +361,9 @@ class PayoutServiceTest {
     void testConcurrentRaceLoserReturnsWinnerGracefully() {
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         PaymentMilestone freshMilestone = releasedMilestone();
-        freshMilestone.markFunded(ESCROW_HOLD_ID);
+        bindReleased(freshMilestone);
         PaymentMilestone wonMilestone = releasedMilestone();
-        wonMilestone.markFunded(ESCROW_HOLD_ID);
+        bindReleased(wonMilestone);
         wonMilestone.markPayoutQueued(IDEMPOTENCY_KEY);
 
         // Three reads of the milestone happen before this test's assertions: (1) queuePayout's
@@ -245,11 +378,16 @@ class PayoutServiceTest {
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration()));
         when(idempotencyService.executeOnce(anyString(), any(), anyString(), any()))
                 .thenThrow(new IdempotencyService.AlreadyInProgressException(IDEMPOTENCY_KEY));
+        mockReleaseLedgerNetAmount();
 
         PayoutResponse response = service.queuePayout(principal, WORKSPACE_ID, MILESTONE_ID);
 
         assertEquals(MILESTONE_ID, response.milestoneId());
+        assertEquals(0, NET_AMOUNT.compareTo(response.amount()));
         verify(razorpayXClient, never()).initiatePayout(any(), any(), any(), any());
+        // The race loser never touches the wallet ledger -- only the winner's (already-completed)
+        // path could have, and that happened inside a different call.
+        verify(walletLedgerService, never()).post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -259,17 +397,19 @@ class PayoutServiceTest {
     void testConcurrentRaceNoVisibleWinnerThrows409() {
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         PaymentMilestone freshMilestone = releasedMilestone();
-        freshMilestone.markFunded(ESCROW_HOLD_ID);
+        bindReleased(freshMilestone);
         // Not markPayoutQueued -- both replayIfPresent checks (pre-check and post-race) see a
         // milestone whose idempotencyKey does not match yet, so neither one queues a response.
         // validateForPayout (E2 HIGH-1 -- runs BEFORE executeOnce) still fully validates the
-        // milestone/escrow/collaboration on every call, so those repositories must be stubbed even
-        // though this scenario's outcome hinges on the idempotency race, not validation.
+        // milestone/escrow/collaboration on every call, including resolving the NET payout amount
+        // off the release ledger, so those repositories must be stubbed even though this scenario's
+        // outcome hinges on the idempotency race, not validation.
         when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(freshMilestone));
         when(escrowHoldRepository.findById(ESCROW_HOLD_ID)).thenReturn(Optional.of(releasedHold()));
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration()));
         when(idempotencyService.executeOnce(anyString(), any(), anyString(), any()))
                 .thenThrow(new IdempotencyService.AlreadyInProgressException(IDEMPOTENCY_KEY));
+        mockReleaseLedgerNetAmount();
 
         ApiException ex =
                 assertThrows(
@@ -402,11 +542,13 @@ class PayoutServiceTest {
     void testTransientGatewayFailureThenSuccessfulRetryUnwedgesPayout() {
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         PaymentMilestone milestone = releasedMilestone();
-        milestone.markFunded(ESCROW_HOLD_ID);
+        bindReleased(milestone);
         when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
         when(escrowHoldRepository.findById(ESCROW_HOLD_ID)).thenReturn(Optional.of(releasedHold()));
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration()));
         mockFundAccountResolution();
+        mockReleaseLedgerNetAmount();
+        mockWalletDebit();
 
         // First attempt: validation passes (asserted implicitly by reaching executeOnce), but the
         // gateway call inside executeOnce fails -- IdempotencyService is responsible for marking

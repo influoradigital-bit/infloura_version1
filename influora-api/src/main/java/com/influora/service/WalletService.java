@@ -7,12 +7,14 @@ import com.influora.domain.entity.CreatorBankAccount;
 import com.influora.domain.entity.Payout;
 import com.influora.domain.entity.Wallet;
 import com.influora.domain.entity.WalletTransaction;
+import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MilestoneStatus;
 import com.influora.domain.enums.TxnDirection;
 import com.influora.domain.enums.TxnReferenceType;
 import com.influora.domain.enums.WalletTransactionType;
 import com.influora.integration.razorpay.RazorpayXClient;
 import com.influora.repository.CreatorBankAccountRepository;
+import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.PayoutRepository;
 import com.influora.repository.WalletRepository;
@@ -70,6 +72,7 @@ public class WalletService {
     private final RazorpayFundAccountService fundAccountService;
     private final PayoutRepository payoutRepository;
     private final IdempotencyService idempotencyService;
+    private final EscrowHoldRepository escrowHoldRepository;
 
     public WalletService(
             WalletRepository walletRepository,
@@ -81,7 +84,8 @@ public class WalletService {
             RazorpayXClient razorpayXClient,
             RazorpayFundAccountService fundAccountService,
             PayoutRepository payoutRepository,
-            IdempotencyService idempotencyService) {
+            IdempotencyService idempotencyService,
+            EscrowHoldRepository escrowHoldRepository) {
         this.walletRepository = walletRepository;
         this.ledgerService = ledgerService;
         this.walletTransactionRepository = walletTransactionRepository;
@@ -92,6 +96,7 @@ public class WalletService {
         this.fundAccountService = fundAccountService;
         this.payoutRepository = payoutRepository;
         this.idempotencyService = idempotencyService;
+        this.escrowHoldRepository = escrowHoldRepository;
     }
 
     public record PagedWalletTransactions(List<WalletTransactionRowResponse> items, PageMeta meta) {}
@@ -122,6 +127,13 @@ public class WalletService {
      * Brand dashboard wallet summary (canonical {@code GET /wallet}). {@code pendingPayouts} is the
      * total of FUNDED milestones — money already committed into escrow but not yet released to
      * creators — across the workspace's collaborations.
+     *
+     * <p>{@code escrowLocked} is derived on read as the sum of the workspace's {@link EscrowHold}
+     * rows currently {@code FUNDED} — {@code wallets.escrow_balance} is never written by any
+     * service (funding a hold only ever moves {@code wallets.balance} via {@code
+     * WalletLedgerService.post()}), so reading that column always returned a stale 0.00 on the
+     * brand dashboard. Derive-on-read (vs. maintain-on-write) can't drift out of sync with the
+     * {@link EscrowHold} rows that are the actual source of truth for locked funds.
      */
     @Transactional(readOnly = true)
     public WalletSummaryResponse getSummary(String workspaceId) {
@@ -132,7 +144,12 @@ public class WalletService {
         if (pendingPayouts == null) {
             pendingPayouts = BigDecimal.ZERO;
         }
-        return toSummaryResponse(wallet, pendingPayouts);
+        BigDecimal escrowLocked =
+                escrowHoldRepository.sumAmountByWorkspaceIdAndStatus(workspaceId, EscrowStatus.FUNDED);
+        if (escrowLocked == null) {
+            escrowLocked = BigDecimal.ZERO;
+        }
+        return toSummaryResponse(wallet, escrowLocked, pendingPayouts);
     }
 
     /**
@@ -146,9 +163,12 @@ public class WalletService {
                         userId, MilestoneStatus.FUNDED);
         final BigDecimal pendingPayouts =
                 pendingRaw == null ? BigDecimal.ZERO : pendingRaw;
+        // Creator-side escrowLocked derivation is out of scope for this fix (Track C targets only
+        // the brand dashboard's escrowLocked figure) — still reads the dead `escrow_balance`
+        // column here, unchanged from prior behavior.
         return walletRepository
                 .findByOwnerId(userId)
-                .map(wallet -> toSummaryResponse(wallet, pendingPayouts))
+                .map(wallet -> toSummaryResponse(wallet, wallet.getEscrowBalance(), pendingPayouts))
                 .orElseGet(
                         () ->
                                 new WalletSummaryResponse(
@@ -386,12 +406,10 @@ public class WalletService {
                 runwayDays);
     }
 
-    private WalletSummaryResponse toSummaryResponse(Wallet wallet, BigDecimal pendingPayouts) {
+    private WalletSummaryResponse toSummaryResponse(
+            Wallet wallet, BigDecimal escrowLocked, BigDecimal pendingPayouts) {
         return new WalletSummaryResponse(
-                wallet.getBalance(),
-                wallet.getEscrowBalance(),
-                pendingPayouts,
-                computeRunwayDays(wallet));
+                wallet.getBalance(), escrowLocked, pendingPayouts, computeRunwayDays(wallet));
     }
 
     /**

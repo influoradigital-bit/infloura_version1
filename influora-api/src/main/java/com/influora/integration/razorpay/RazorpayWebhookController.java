@@ -15,6 +15,7 @@ import com.influora.service.billing.InvoiceService;
 import com.influora.service.billing.SubscriptionService;
 import com.influora.service.notification.event.InvoiceReadyEvent;
 import com.influora.service.notification.event.SubscriptionHaltedEvent;
+import com.influora.service.notification.event.SubscriptionPaymentFailedEvent;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -113,16 +114,23 @@ public class RazorpayWebhookController {
             // additionally produces an Invoice (a real Razorpay charge happened). subscription.halted
             // never touches the period — Razorpay exhausted its own dunning retries, this is a
             // status-only transition (see SubscriptionDunningJob's own halt path for the local
-            // safety-net equivalent). subscription.pending is intentionally NOT routed here — it maps
-            // to SubscriptionPaymentFailedEvent, which is out of this task's scope (tracked
-            // separately); NotificationListener.on(SubscriptionPaymentFailedEvent) is already wired
-            // ahead of that follow-up.
+            // safety-net equivalent).
+            // [Track B, P2] subscription.pending is now routed too — Razorpay fires this when a
+            // renewal charge attempt fails but its own dunning retries have not yet been exhausted
+            // (that terminal state is subscription.halted, above). Same status-only shape as halted
+            // (no period touched — see SubscriptionDunningJob's currentPeriodEnd-anchor javadoc,
+            // which already documents this case), but the target status is PAST_DUE and the
+            // publisher is SubscriptionPaymentFailedEvent, whose listener
+            // (NotificationListener.on(SubscriptionPaymentFailedEvent)) was already wired ahead of
+            // this follow-up.
             case "subscription.activated" ->
                     handleSubscriptionEvent(rawPayload, SubscriptionStatus.ACTIVE, true, false);
             case "subscription.charged" ->
                     handleSubscriptionEvent(rawPayload, SubscriptionStatus.ACTIVE, true, true);
             case "subscription.halted" ->
                     handleSubscriptionEvent(rawPayload, SubscriptionStatus.HALTED, false, false);
+            case "subscription.pending" ->
+                    handleSubscriptionEvent(rawPayload, SubscriptionStatus.PAST_DUE, false, false);
             default -> {
                 // Unhandled event types are acknowledged (200) but not acted on, per Razorpay's
                 // webhook contract — returning a non-2xx for unknown-but-valid events causes
@@ -229,9 +237,9 @@ public class RazorpayWebhookController {
      * Mirrors {@code SubscriptionDunningJob#publishHaltedEmail}'s identical idiom.
      *
      * @param updatePeriod whether this event carries an authoritative new billing period —
-     *     true for activated/charged (a real period boundary), false for halted (status-only,
-     *     the existing period is left untouched; same treatment {@code SubscriptionDunningJob}'s
-     *     javadoc documents for a future {@code subscription.pending} case).
+     *     true for activated/charged (a real period boundary), false for halted/pending
+     *     (status-only, the existing period is left untouched — {@code SubscriptionDunningJob}'s
+     *     javadoc documents why {@code subscription.pending} must not touch the period).
      * @param generateInvoice true only for {@code subscription.charged} — a real Razorpay charge
      *     happened and must produce an {@link Invoice} row via the existing Phase 4 path.
      */
@@ -296,6 +304,8 @@ public class RazorpayWebhookController {
                     }
                     if (targetStatus == SubscriptionStatus.HALTED) {
                         publishSubscriptionHaltedEmail(event.workspaceId(), event.subscriptionId());
+                    } else if (targetStatus == SubscriptionStatus.PAST_DUE) {
+                        publishSubscriptionPaymentFailedEmail(event.workspaceId(), event.subscriptionId());
                     }
                 });
     }
@@ -354,6 +364,23 @@ public class RazorpayWebhookController {
         if (recipient != null && recipient.email() != null) {
             eventPublisher.publishEvent(
                     new SubscriptionHaltedEvent(recipient.userId(), workspaceId, subscriptionId, recipient.email()));
+        }
+    }
+
+    /**
+     * [Track B, P2] {@code subscription.pending} only — Razorpay attempted a renewal charge and it
+     * failed, but Razorpay's own dunning retries are not yet exhausted (that terminal state is
+     * {@code subscription.halted}, handled by {@link #publishSubscriptionHaltedEmail}). Mirrors that
+     * method's shape exactly, publishing {@link SubscriptionPaymentFailedEvent} instead — see that
+     * event's own javadoc for why the listener ({@code
+     * NotificationListener.on(SubscriptionPaymentFailedEvent)}) was already wired ahead of this.
+     */
+    private void publishSubscriptionPaymentFailedEmail(String workspaceId, String subscriptionId) {
+        BillingRecipient recipient = brandContextService.resolveBillingRecipient(workspaceId);
+        if (recipient != null && recipient.email() != null) {
+            eventPublisher.publishEvent(
+                    new SubscriptionPaymentFailedEvent(
+                            recipient.userId(), workspaceId, subscriptionId, recipient.email()));
         }
     }
 

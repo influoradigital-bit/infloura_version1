@@ -7,8 +7,12 @@ import com.influora.domain.entity.CreatorBankAccount;
 import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.Payout;
 import com.influora.domain.entity.PaymentMilestone;
+import com.influora.domain.entity.Wallet;
+import com.influora.domain.entity.WalletTransaction;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MemberRole;
+import com.influora.domain.enums.TxnReferenceType;
+import com.influora.domain.enums.WalletTransactionType;
 import com.influora.integration.razorpay.RazorpayXClient;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.CreatorBankAccountRepository;
@@ -16,9 +20,11 @@ import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.PayoutRepository;
+import com.influora.repository.WalletTransactionRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.payout.RazorpayFundAccountService;
 import com.influora.web.dto.money.MoneyDtos.PayoutResponse;
+import java.math.BigDecimal;
 import java.time.Instant;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -76,6 +82,39 @@ import org.springframework.transaction.annotation.Transactional;
  * regardless of the hold's actual state, and (per the fix above) this check running before {@code
  * executeOnce} also means a probing/enumerating caller can no longer poison another workspace's
  * idempotency key as a side effect of the probe.
+ *
+ * <p><b>NET-vs-GROSS payout amount [money-safety fix, live-payments blocker].</b> Previously this
+ * class paid {@link PaymentMilestone#getAmount()} — the milestone's GROSS amount — to RazorpayX.
+ * But {@code EscrowService#release} only ever credits the creator's Influora wallet the NET amount
+ * (gross minus {@link PlatformFeeService}'s creator-side commission, via {@code
+ * WalletLedgerService.post(..., ESCROW_RELEASE, ...)}). Since RazorpayX is a real bank/UPI payout,
+ * paying gross would over-pay every creator by the platform's own commission the moment RazorpayX
+ * goes live. The payout amount is now re-derived from the SAME {@link
+ * com.influora.domain.entity.WalletTransaction} the release actually posted — {@link
+ * PaymentMilestone#getReleasedTxnId()} points at the release's credit leg on the creator's wallet,
+ * and that leg's {@code amount} column IS the net figure by construction (see {@code
+ * EscrowService#releaseInternal}, {@code platformFeeService.deductAtRelease(...).netAmount()}).
+ * This is never client-supplied and never re-computed independently (a second, drifting definition
+ * of "net" would be its own bug) — it is read straight off the ledger row the release already wrote.
+ *
+ * <p><b>Double-pay guardrail [money-safety fix].</b> {@code EscrowService#release} credits the
+ * creator's Influora wallet balance; that same balance is independently withdrawable via {@code
+ * POST /wallet/withdraw} ({@code WalletService#requestCreatorWithdrawal}). Before this fix, {@code
+ * doQueuePayout} never touched the wallet ledger at all — a milestone payout and a manual wallet
+ * withdrawal could both legitimately fire for the exact same released funds, paying the creator
+ * twice from two independent rails. This also confirms {@link PayoutReconciliationService}'s own
+ * re-credit-on-reversal logic was already assuming a debit that never actually happened: it
+ * re-credits the wallet with {@code WalletTransactionType.PAYOUT} when RazorpayX reports {@code
+ * reversed}, which only makes sense if something had debited that same amount at queue time.
+ * {@code doQueuePayout} now posts that missing debit — creator wallet to platform clearing wallet,
+ * {@code WalletTransactionType.PAYOUT}, idempotency key {@code "payout-debit:" + milestoneId} —
+ * BEFORE calling RazorpayX, inside the same {@code @Transactional} method as the gateway call. This
+ * closes the hole in both directions: if the creator already withdrew the funds, the wallet balance
+ * is short and {@code WalletLedgerService.post} throws {@code INSUFFICIENT_BALANCE} before RazorpayX
+ * is ever called; if a payout is queued first, a subsequent {@code /wallet/withdraw} call sees the
+ * now-reduced balance and is rejected the same way. On a RazorpayX {@code reversed} webhook, {@link
+ * PayoutReconciliationService} puts the money back — now a real re-credit of a real debit, not a
+ * credit with no matching debit ever written.
  */
 @Service
 public class PayoutService {
@@ -92,6 +131,10 @@ public class PayoutService {
     private final RazorpayFundAccountService fundAccountService;
     private final BrandContextService brandContext;
     private final IdempotencyService idempotencyService;
+    private final WalletTransactionRepository walletTransactionRepository;
+    private final WalletLedgerService walletLedgerService;
+    private final PlatformWalletService platformWalletService;
+    private final WalletService walletService;
 
     public PayoutService(
             PaymentMilestoneRepository milestoneRepository,
@@ -103,7 +146,11 @@ public class PayoutService {
             RazorpayXClient razorpayXClient,
             RazorpayFundAccountService fundAccountService,
             BrandContextService brandContext,
-            IdempotencyService idempotencyService) {
+            IdempotencyService idempotencyService,
+            WalletTransactionRepository walletTransactionRepository,
+            WalletLedgerService walletLedgerService,
+            PlatformWalletService platformWalletService,
+            WalletService walletService) {
         this.milestoneRepository = milestoneRepository;
         this.escrowHoldRepository = escrowHoldRepository;
         this.collaborationRepository = collaborationRepository;
@@ -114,6 +161,10 @@ public class PayoutService {
         this.fundAccountService = fundAccountService;
         this.brandContext = brandContext;
         this.idempotencyService = idempotencyService;
+        this.walletTransactionRepository = walletTransactionRepository;
+        this.walletLedgerService = walletLedgerService;
+        this.platformWalletService = platformWalletService;
+        this.walletService = walletService;
     }
 
     public PayoutResponse queuePayout(AuthPrincipal principal, String workspaceId, String milestoneId) {
@@ -164,9 +215,47 @@ public class PayoutService {
     /**
      * Result of {@link #validateForPayout} — the milestone and collaboration rows it already
      * loaded and validated, threaded into {@link #doQueuePayout} so that method never needs to
-     * re-run (or duplicate) any check once inside {@code executeOnce}.
+     * re-run (or duplicate) any check once inside {@code executeOnce}. {@code netAmount} is the
+     * server-derived NET figure the creator's wallet was actually credited at release (see class
+     * javadoc) — the amount this payout must pay, never {@link PaymentMilestone#getAmount()}
+     * (gross).
      */
-    private record PayoutContext(PaymentMilestone milestone, Collaboration collaboration) {}
+    private record PayoutContext(
+            PaymentMilestone milestone, Collaboration collaboration, BigDecimal netAmount) {}
+
+    /**
+     * Re-derives the NET amount a payout for this (already-RELEASED) milestone must pay — the
+     * exact figure {@code EscrowService#release} credited to the creator's Influora wallet, read
+     * straight off that release's own ledger row rather than recomputed. {@link
+     * PaymentMilestone#getReleasedTxnId()} is the id of the {@code ESCROW_RELEASE} credit leg
+     * {@code WalletLedgerService.post} wrote on the creator's wallet (see {@code
+     * EscrowService#releaseInternal}); that leg's {@code amount} column IS
+     * {@code platformFeeService.deductAtRelease(...).netAmount()} by construction — gross minus
+     * the creator-side platform commission. A milestone that reaches this method always has a
+     * RELEASED hold (checked by the caller), so {@code releasedTxnId} should never be null in
+     * practice; the missing-ledger-row case is defensive only (e.g. data corruption) and fails
+     * closed rather than silently falling back to gross.
+     */
+    private BigDecimal resolveNetPayoutAmount(PaymentMilestone milestone) {
+        String releasedTxnId = milestone.getReleasedTxnId();
+        if (releasedTxnId == null) {
+            throw new ApiException(
+                    "MILESTONE_RELEASE_LEDGER_MISSING",
+                    "Milestone release ledger entry not found — cannot determine net payout amount",
+                    HttpStatus.CONFLICT);
+        }
+        WalletTransaction releaseCredit =
+                walletTransactionRepository
+                        .findById(releasedTxnId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "MILESTONE_RELEASE_LEDGER_MISSING",
+                                                "Milestone release ledger entry not found — cannot determine net"
+                                                        + " payout amount",
+                                                HttpStatus.CONFLICT));
+        return releaseCredit.getAmount();
+    }
 
     /**
      * All domain validation for {@link #queuePayout}, run BEFORE {@code executeOnce} reserves the
@@ -218,7 +307,9 @@ public class PayoutService {
                                                 "Collaboration not found",
                                                 HttpStatus.NOT_FOUND));
 
-        return new PayoutContext(milestone, collaboration);
+        BigDecimal netAmount = resolveNetPayoutAmount(milestone);
+
+        return new PayoutContext(milestone, collaboration, netAmount);
     }
 
     /**
@@ -245,8 +336,11 @@ public class PayoutService {
         if (hold != null && !hold.getWorkspaceId().equals(workspaceId)) {
             throw new ApiException("MILESTONE_NOT_FOUND", "Milestone not found", HttpStatus.NOT_FOUND);
         }
+        // Replay reports the same NET amount the original queue call paid — never gross — so a
+        // retried caller sees exactly what was (or will be) actually sent to the creator's bank.
+        BigDecimal netAmount = resolveNetPayoutAmount(milestone);
         return new PayoutResponse(
-                idempotencyKey, milestone.getId(), milestone.getAmount(), milestone.getCurrency(), "queued");
+                idempotencyKey, milestone.getId(), netAmount, milestone.getCurrency(), "queued");
     }
 
     /**
@@ -260,6 +354,7 @@ public class PayoutService {
     protected PayoutResponse doQueuePayout(PayoutContext ctx, String idempotencyKey) {
         PaymentMilestone milestone = ctx.milestone();
         Collaboration collaboration = ctx.collaboration();
+        BigDecimal netAmount = ctx.netAmount();
         String creatorUserId = collaboration.getCreatorId();
 
         // [B7/C-5] Resolves a REAL RazorpayX fund account off the creator's on-file primary bank
@@ -278,9 +373,34 @@ public class PayoutService {
                                                 HttpStatus.CONFLICT));
         String fundAccountId = fundAccountService.resolveFundAccountId(creatorUserId, bankAccount.getId());
 
+        // [Money-safety fix, double-pay guardrail — see class javadoc] Debit the creator's wallet
+        // for the SAME net amount BEFORE ever calling RazorpayX, inside this one @Transactional
+        // method. This is the missing counterpart to EscrowService#release's credit: without it,
+        // the released funds stay withdrawable via POST /wallet/withdraw at the same time a real
+        // bank payout is in flight for them. WalletLedgerService.post enforces the wallet's balance
+        // can't go negative, so if the creator already withdrew this money (or a payout for it was
+        // already debited under a different flow) this throws INSUFFICIENT_BALANCE here — before
+        // RazorpayX is ever called — rather than silently paying out twice. Distinct idempotency key
+        // ("payout-debit:") from the queuePayout key itself, scoped to this milestone.
+        Wallet clearingWallet = platformWalletService.requireClearingWallet();
+        Wallet creatorWallet = walletService.requireOrCreateUserWallet(creatorUserId);
+        String debitIdempotencyKey = "payout-debit:" + milestone.getId();
+        walletLedgerService.post(
+                creatorWallet.getId(),
+                clearingWallet.getId(),
+                netAmount,
+                milestone.getCurrency(),
+                WalletTransactionType.PAYOUT,
+                TxnReferenceType.MILESTONE,
+                milestone.getId(),
+                "Payout queued to bank/UPI for milestone " + milestone.getId(),
+                debitIdempotencyKey,
+                null);
+
+        // [Money-safety fix — see class javadoc] NET amount, never milestone.getAmount() (gross).
         var payout =
                 razorpayXClient.initiatePayout(
-                        fundAccountId, milestone.getAmount(), milestone.getCurrency(), idempotencyKey);
+                        fundAccountId, netAmount, milestone.getCurrency(), idempotencyKey);
 
         payoutRepository.save(
                 Payout.createQueued(
@@ -289,7 +409,7 @@ public class PayoutService {
                         creatorUserId,
                         payout.payoutId(),
                         fundAccountId,
-                        milestone.getAmount(),
+                        netAmount,
                         milestone.getCurrency(),
                         payout.status(),
                         idempotencyKey,
@@ -303,6 +423,6 @@ public class PayoutService {
         milestoneRepository.save(milestone);
 
         return new PayoutResponse(
-                payout.payoutId(), milestone.getId(), milestone.getAmount(), milestone.getCurrency(), payout.status());
+                payout.payoutId(), milestone.getId(), netAmount, milestone.getCurrency(), payout.status());
     }
 }
