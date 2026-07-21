@@ -1,0 +1,11 @@
+{
+  "case_id": "tr-008-jewelry-raw-assets",
+  "input": {
+    "product_description": "Just need a batch of raw photo and video assets of our jewelry pieces that our own team can edit and reuse across channels later."
+  },
+  "output": {
+    "template_name": "UGC Content Pack",
+    "campaign_type": "STANDARD",
+    "budget_band": "₹5,000–₹20,000"
+  }
+}

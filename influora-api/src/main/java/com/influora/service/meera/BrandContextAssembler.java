@@ -4,6 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.common.JsonLists;
 import com.influora.domain.entity.BrandProfile;
 import com.influora.domain.entity.Workspace;
+import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
+import com.influora.web.dto.meera.MeeraContextDtos.CreditState;
+import com.influora.web.dto.meera.MeeraContextDtos.PastCampaignEntry;
+import com.influora.web.dto.meera.MeeraContextDtos.TemplateDigestEntry;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -77,5 +82,133 @@ public class BrandContextAssembler {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // POST /internal/meera/context (Platform-AI Phase 1, Wave 1a — Priya ruling A2/A1).
+    // Same allow-list discipline as #assemble above, extended with the two NEW digests and
+    // wire-formatted for Python per the Wave-1c field-name seam (MeeraContextDtos javadoc).
+    // ---------------------------------------------------------------------------------------
+
+    /** A1: {@code product_catalog} entries carry ONLY these three fields into the prompt. */
+    private static final List<String> PRODUCT_CATALOG_ALLOWED_FIELDS = List.of("name", "price", "currency");
+
+    /**
+     * Assembles the BRAND-audience {@code ContextResponse} for the new context endpoint.
+     * {@code templates} and {@code recentCampaigns} are pre-fetched by {@link MeeraContextService}
+     * (tenant-scoped repository reads live there, not in this pure mapper) and formatted here into
+     * the {@code template_digest} / {@code past_campaign_summary} slots per the P1 fix in
+     * {@code wiki/ai-review/campaign-templates-knowledge-ai-review.md}. {@code credit} is the
+     * live {@link AICreditService} state, formatted into {@code credit_state{mode,credits_remaining}}
+     * — never wallet/escrow balances (A1 NEVER list).
+     */
+    public ContextResponse assembleBrandContext(
+            Workspace workspace,
+            BrandProfile brandProfile,
+            List<com.influora.domain.entity.CampaignTemplate> templates,
+            List<PastCampaignEntry> recentCampaigns,
+            String creditMode,
+            int creditsRemaining) {
+        List<String> nicheTags = brandProfile != null ? nicheTags(brandProfile) : null;
+        Object toneDial = brandProfile != null ? parseJsonOrNull(brandProfile.getToneProfileJson()) : null;
+        Object brandAesthetic = brandProfile != null ? parseJsonOrNull(brandProfile.getBrandAestheticJson()) : null;
+        String brandColor = extractBrandColor(brandAesthetic);
+        Object competitorUrls = brandProfile != null ? parseJsonOrNull(brandProfile.getCompetitorUrlsJson()) : null;
+        List<Map<String, Object>> productCatalog =
+                brandProfile != null ? filteredProductCatalog(brandProfile.getProductCatalogJson()) : null;
+        String analysisStatus =
+                brandProfile != null ? brandProfile.getAnalysisStatus().name() : "PENDING";
+
+        return new ContextResponse(
+                workspace.getId(),
+                workspace.getName(),
+                workspace.getIndustry(),
+                workspace.getWebsiteUrl(),
+                nicheTags,
+                toneDial,
+                brandColor,
+                brandAesthetic,
+                productCatalog,
+                competitorUrls,
+                analysisStatus,
+                templateDigest(templates),
+                recentCampaigns,
+                new CreditState(creditMode, creditsRemaining));
+    }
+
+    /**
+     * {@code brand_color} (Ash's canonical seam key) lives inside the raw {@code brand_aesthetic}
+     * blob as {@code accent_color} — see {@code AnalyzeSiteTriggerService#toCallback}, which is the
+     * only writer of {@code brandAestheticJson} and always shapes it as {@code {accent_color: hex}}
+     * when a color is present. Pulled out to a top-level field so Python's {@code build_block_b}
+     * (which reads {@code brand.get("brand_color")} directly, not nested) can find it.
+     */
+    @SuppressWarnings("unchecked")
+    private String extractBrandColor(Object brandAesthetic) {
+        if (!(brandAesthetic instanceof Map<?, ?> map)) {
+            return null;
+        }
+        Object color = ((Map<String, Object>) map).get("accent_color");
+        return color instanceof String ? (String) color : null;
+    }
+
+    /** A1: filters each raw catalog entry down to name/price/currency only — never the full scraped row. */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> filteredProductCatalog(String productCatalogJson) {
+        Object raw = parseJsonOrNull(productCatalogJson);
+        if (!(raw instanceof List<?> rawList)) {
+            return null;
+        }
+        List<Map<String, Object>> filtered = new ArrayList<>();
+        for (Object entry : rawList) {
+            if (!(entry instanceof Map<?, ?> map)) {
+                continue;
+            }
+            Map<String, Object> allowed = new LinkedHashMap<>();
+            for (String field : PRODUCT_CATALOG_ALLOWED_FIELDS) {
+                if (((Map<String, Object>) map).containsKey(field)) {
+                    allowed.put(field, ((Map<String, Object>) map).get(field));
+                }
+            }
+            filtered.add(allowed);
+        }
+        return filtered;
+    }
+
+    /** ~1 line per template: name, campaign_type, budget band, key requirements — SYSTEM always + this workspace's CUSTOM. */
+    private List<TemplateDigestEntry> templateDigest(List<com.influora.domain.entity.CampaignTemplate> templates) {
+        if (templates == null) {
+            return List.of();
+        }
+        List<TemplateDigestEntry> digest = new ArrayList<>();
+        for (com.influora.domain.entity.CampaignTemplate template : templates) {
+            digest.add(
+                    new TemplateDigestEntry(
+                            template.getName(),
+                            template.getCampaignType() != null ? template.getCampaignType().name() : null,
+                            budgetBand(template.getBudgetMin(), template.getBudgetMax()),
+                            keyRequirements(template.getRequirementsJson())));
+        }
+        return digest;
+    }
+
+    private String budgetBand(java.math.BigDecimal min, java.math.BigDecimal max) {
+        if (min == null && max == null) {
+            return null;
+        }
+        String low = min != null ? min.stripTrailingZeros().toPlainString() : "0";
+        String high = max != null ? max.stripTrailingZeros().toPlainString() : "?";
+        return "₹" + low + "–₹" + high;
+    }
+
+    /** First few requirement lines, comma-joined — keeps the digest at ~1 line per template (Ash's cost note). */
+    private static final int MAX_DIGEST_REQUIREMENTS = 3;
+
+    private String keyRequirements(String requirementsJson) {
+        List<String> requirements = JsonLists.stringListFromJson(requirementsJson);
+        if (requirements == null || requirements.isEmpty()) {
+            return null;
+        }
+        return String.join(", ", requirements.subList(0, Math.min(MAX_DIGEST_REQUIREMENTS, requirements.size())));
     }
 }

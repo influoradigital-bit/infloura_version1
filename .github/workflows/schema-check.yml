@@ -6,6 +6,15 @@ on:
       - 'influora-ai/app/tools/schemas.py'
       - 'influora-api/src/main/java/com/influora/domain/enums/MeeraToolName.java'
       - 'influora-api/src/main/java/com/influora/web/dto/meera/MeeraToolDtos.java'
+      # Platform-AI Phase 1, Wave 1c (Priya A1 change-req): the /internal/meera/context payload
+      # is the SAME kind of Python<->Java wire-shape drift risk as the tool DTOs above — a field
+      # renamed/removed here without updating influora-ai/app/prompt/assembler.py (Wave 2) 500s
+      # chat.py at conversation start. Trigger the check on either side of that seam so a PR
+      # touching one is at least flagged to check the other; the actual snake_case field-name
+      # canonicalization is documented in MeeraContextDtos' class javadoc.
+      - 'influora-api/src/main/java/com/influora/web/dto/meera/MeeraContextDtos.java'
+      - 'influora-api/src/main/java/com/influora/service/meera/BrandContextAssembler.java'
+      - 'influora-ai/app/prompt/assembler.py'
   push:
     branches:
       - main
@@ -54,6 +63,18 @@ jobs:
           create_camp = next(t for t in TOOL_SCHEMAS if t['name'] == 'create_campaign')
           campaign_type_enum = create_camp['input_schema']['properties']['campaign_type']['enum']
           print("PYTHON_CAMPAIGN_TYPE_ENUM=" + json.dumps(sorted(campaign_type_enum)))
+
+          # Platform-AI Phase 1 W2a (Priya A3): create_campaign must expose optional
+          # template_id so Spring's template-copy path (CreateCampaignExecutor) is reachable.
+          has_template_id = 'template_id' in create_camp['input_schema']['properties']
+          print("PYTHON_HAS_TEMPLATE_ID=" + json.dumps(has_template_id))
+
+          # Platform-AI Phase 1 W2a: the /internal/meera/context payload's canonical field
+          # set now lives in assembler.py (CONTEXT_PAYLOAD_FIELDS) instead of a pinned string
+          # here, so this check is a real Python<->Java diff, not a copy-pasted EXPECTED list.
+          sys.path.insert(0, '.')
+          from app.prompt.assembler import CONTEXT_PAYLOAD_FIELDS
+          print("PYTHON_CONTEXT_FIELDS=" + json.dumps(sorted(CONTEXT_PAYLOAD_FIELDS)))
           EOF
 
       - name: Extract Java schema (MeeraToolName enum)
@@ -96,6 +117,20 @@ jobs:
           echo "${{ steps.python-schema.outputs.PYTHON_CAMPAIGN_TYPE_ENUM }}"
           echo ""
 
+          # Platform-AI Phase 1 W2a (Priya A3) — BLOCKING: create_campaign must expose
+          # optional template_id, or Spring's template-copy executor path (which already
+          # accepts it, W1b) is unreachable from a real Meera turn.
+          if [ "${{ steps.python-schema.outputs.PYTHON_HAS_TEMPLATE_ID }}" != "true" ]; then
+            echo "❌ DRIFT DETECTED: create_campaign is missing optional 'template_id' "
+            echo "   (Priya A3 / Ash STANDARD-enum ruling — Spring's CreateCampaignExecutor "
+            echo "   already accepts it; schemas.py must offer it to Claude or the whole "
+            echo "   template-recommendation flow (W2a) is dead on arrival)."
+            exit 1
+          else
+            echo "✅ create_campaign exposes optional template_id"
+          fi
+          echo ""
+
           # EXPECTED EXCEPTION (Priya ruling — wiki/ai-review/T4-schema-fix-correction.md):
           # Python exposing 3 of Java's 4 campaign_type values (STANDARD absent) is CORRECT BY DESIGN.
           # STANDARD is the server-side default/fallback and is deliberately NOT exposed to the AI.
@@ -135,3 +170,43 @@ jobs:
           fi
 
           echo "✅ Blocking schema invariants passed (tool-name set matches Java)."
+
+      - name: Extract Java context payload field names (MeeraContextDtos.ContextResponse)
+        id: java-context-schema
+        run: |
+          cd influora-api
+          # Wave 1c: the canonical snake_case wire keys for POST /internal/meera/context, read
+          # straight off @JsonProperty("...") annotations in ContextResponse — this IS the
+          # contract influora-ai/app/prompt/assembler.py (Wave 2) must read verbatim.
+          JAVA_CONTEXT_FIELDS=$(awk '/public record ContextResponse/,/\{\}\)/' \
+            src/main/java/com/influora/web/dto/meera/MeeraContextDtos.java \
+            | grep -oP '@JsonProperty\("\K[a-z_]+(?="\))' \
+            | jq -R -s -c 'split("\n")[:-1] | sort')
+          echo "JAVA_CONTEXT_FIELDS=$JAVA_CONTEXT_FIELDS"
+
+      - name: Check context payload field names — LIVE Python<->Java diff (Wave 2)
+        run: |
+          # Wave 1 shipped this as a pinned-string EXPECTED guard because Python wasn't wired
+          # to the endpoint yet. Wave 2 (chat.py now calls POST /internal/meera/context via
+          # app/clients/spring.py::get_meera_context and builds Block B from the response) makes
+          # this a REAL diff: Java's @JsonProperty set vs. Python's CONTEXT_PAYLOAD_FIELDS
+          # constant (influora-ai/app/prompt/assembler.py) — the one place Python declares which
+          # keys it expects. BLOCKING now: a mismatch here 500s chat.py at conversation start
+          # (Arjun risk #4), and Wave 2 is exactly the point that risk goes live.
+          PYTHON_FIELDS='${{ steps.python-schema.outputs.PYTHON_CONTEXT_FIELDS }}'
+          JAVA_FIELDS='${{ steps.java-context-schema.outputs.JAVA_CONTEXT_FIELDS }}'
+
+          echo "Python CONTEXT_PAYLOAD_FIELDS (assembler.py): $PYTHON_FIELDS"
+          echo "Java ContextResponse @JsonProperty set:       $JAVA_FIELDS"
+
+          if [ "$PYTHON_FIELDS" != "$JAVA_FIELDS" ]; then
+            echo ""
+            echo "❌ DRIFT DETECTED: context payload field set has diverged between Python and Java."
+            echo "   Update BOTH influora-ai/app/prompt/assembler.py::CONTEXT_PAYLOAD_FIELDS and"
+            echo "   influora-api MeeraContextDtos.ContextResponse in the SAME PR — a mismatch here"
+            echo "   500s chat.py at conversation start (missing key -> KeyError in build_block_b's"
+            echo "   callers, or a field Python silently never reads)."
+            exit 1
+          else
+            echo "✅ Context payload field set matches between Python and Java."
+          fi

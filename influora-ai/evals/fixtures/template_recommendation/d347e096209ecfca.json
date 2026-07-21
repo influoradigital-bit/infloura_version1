@@ -1,0 +1,11 @@
+{
+  "case_id": "tr-012-travel-bag-content-library",
+  "input": {
+    "product_description": "We want to build up a big library of raw video clips of people using our travel bag that we can repurpose into ads ourselves later."
+  },
+  "output": {
+    "template_name": "UGC Content Pack",
+    "campaign_type": "STANDARD",
+    "budget_band": "₹5,000–₹20,000"
+  }
+}

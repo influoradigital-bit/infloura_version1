@@ -126,6 +126,31 @@ def test_trend_tag_expected_drop_agreement():
     assert scores == {"theme_f1": 1.0, "campaign_acc": 1.0, "drop_agreement": 1.0}
 
 
+def test_template_recommendation_always_wrong_model_fails_the_gate():
+    """A model that always recommends the same (wrong) template must trip the
+    0.80 name-accuracy threshold — proves the eval gate can actually go red,
+    same as the brand_safety/trend_tag checks above."""
+
+    def stubborn_caller(case_input):
+        return {"template_name": "Brand Awareness", "campaign_type": "HYPE", "budget_band": "₹10,000–₹50,000"}
+
+    report = run_dataset("template_recommendation", stubborn_caller)
+    assert not report.passed
+    assert report.aggregate["name_acc"] < 0.80
+    assert any("template-name accuracy" in f for f in report.failures)
+
+
+def test_template_recommendation_off_catalog_name_scores_malformed():
+    from evals.run_eval import score_template_recommendation
+
+    scores = score_template_recommendation(
+        {"template_name": "Brand Awareness", "campaign_type": "HYPE", "budget_band": "₹10,000–₹50,000"},
+        {"template_name": "Made Up Template", "campaign_type": "HYPE", "budget_band": "₹10,000–₹50,000"},
+    )
+    assert scores["malformed"] == 1.0
+    assert scores["name_acc"] == 0.0
+
+
 # ---------------------------------------------------------------------------
 # Scorer unit checks.
 # ---------------------------------------------------------------------------

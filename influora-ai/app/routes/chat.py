@@ -44,7 +44,7 @@ from fastapi import APIRouter, Header, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.auth.service_token import AuthError, auth_error_to_http, verify_token_async
-from app.clients.spring import SpringInternalClient
+from app.clients.spring import SpringCallError, SpringInternalClient
 from app.config import CLAUDE_MODEL, get_settings
 from app.costs.gate import check_spend_gate
 from app.costs.pricing import estimate_cost_usd
@@ -77,6 +77,73 @@ def _get_spring() -> SpringInternalClient:
 
 def sse_event(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+async def _fetch_brand_context(
+    *,
+    spring: SpringInternalClient,
+    workspace_id: str,
+    onbehalf_jwt: str,
+    request_id: str,
+    conversation: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Server-sources Block B via `POST /internal/meera/context` (Priya A2).
+
+    Builds the shape `app.prompt.assembler.assemble_prompt` expects (a nested
+    `brand` dict, separate `credit_state`, `audience`) from Spring's flat
+    `ContextResponse` payload (`display_name`/`tone_dial`/`brand_color`/
+    `niche_tags`/`product_catalog`/`template_digest`/`past_campaign_summary`/
+    `credit_state` -- the W1c seam-fixed canonical vocabulary). Deliberately
+    does NOT read `brand` or `prompt_version` from the client body anywhere --
+    those keys are ignored entirely now that Block B is server-sourced.
+
+    Never raises: a context-fetch failure (Spring down, brand not yet
+    analyzed, transient network error) degrades to an EMPTY Block B rather
+    than 500ing the whole chat turn -- Meera still replies, just without brand
+    personalization for that one turn.
+    """
+    audience = "BRAND"
+    try:
+        response = await spring.get_meera_context(
+            workspace_id=workspace_id, audience=audience, onbehalf_jwt=onbehalf_jwt
+        )
+        context_data = response.data if isinstance(response.data, dict) else {}
+    except SpringCallError as exc:
+        log_event(
+            logger, logging.WARNING, "meera_context_fetch_failed",
+            workspace_id=workspace_id, request_id=request_id,
+            fields={"error_code": exc.code, "status_code": exc.status_code},
+        )
+        context_data = {}
+    except Exception as exc:  # network/timeout/unexpected -- never 500 the turn
+        log_event(
+            logger, logging.WARNING, "meera_context_fetch_failed",
+            workspace_id=workspace_id, request_id=request_id,
+            fields={"error_type": type(exc).__name__},
+        )
+        context_data = {}
+
+    brand_fields = {
+        "display_name": context_data.get("display_name"),
+        "niche_tags": context_data.get("niche_tags"),
+        "tone_dial": context_data.get("tone_dial"),
+        "brand_color": context_data.get("brand_color"),
+        "product_catalog": context_data.get("product_catalog"),
+        "template_digest": context_data.get("template_digest"),
+        "past_campaign_summary": context_data.get("past_campaign_summary"),
+    }
+    # Only carry keys Spring actually sent -- build_block_b's `if "display_name"
+    # in brand` presence check must not see a None-valued key just because the
+    # context fetch failed or Spring omitted an optional field.
+    brand = {k: v for k, v in brand_fields.items() if v is not None}
+
+    return {
+        "workspace_id": workspace_id,
+        "audience": audience,
+        "brand": brand,
+        "credit_state": context_data.get("credit_state") or {},
+        "conversation": conversation,
+    }
 
 
 @router.post("/chat")
@@ -153,7 +220,22 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         fields={"conversation_len": shape_of(body.get("conversation"))},
     )
 
-    prompt = assemble_prompt(body, session_id=body.get("conversation_id"))
+    # Platform-AI Phase 1 (W2a, Priya A2): Block B is now server-sourced from
+    # Spring's POST /internal/meera/context, never from the browser body.
+    # Any client-supplied `brand`/`prompt_version` key in `body` is IGNORED
+    # below -- `brand_context` is built ONLY from this fetch + server-derived
+    # fields, so a spoofed client body cannot inject or override the system
+    # prompt's brand block. On fetch failure, degrade gracefully: empty Block
+    # B, log, never 500 the turn (voice/text chat must still work while a
+    # brand's profile is still analyzing, or Spring is briefly unavailable).
+    brand_context = await _fetch_brand_context(
+        spring=_get_spring(),
+        workspace_id=workspace_id,
+        onbehalf_jwt=onbehalf_jwt,
+        request_id=request_id,
+        conversation=body.get("conversation") or [],
+    )
+    prompt = assemble_prompt(brand_context, session_id=body.get("conversation_id"))
     claude = _get_claude()
     spring = _get_spring()
     loop_ctx = ToolLoopContext(

@@ -1,0 +1,11 @@
+{
+  "case_id": "tr-001-rice-cooker",
+  "input": {
+    "product_description": "We just launched an electric rice cooker. Want influencers to actually cook rice with it on camera and give an honest review before people buy."
+  },
+  "output": {
+    "template_name": "Affiliate / Revenue Share",
+    "campaign_type": "REVIEW",
+    "budget_band": "₹0–₹30,000"
+  }
+}

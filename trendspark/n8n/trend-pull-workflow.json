@@ -234,7 +234,7 @@
         960,
         160
       ],
-      "notes": "INLINE mirror of theme-tagger.js (canonical). Builds EXACT trends columns (Priya §1a): ULID id, source/themes as JSON strings, expires_at = detected + peak_window_days. Drops rows with no text or no themes (fail-closed, no garbage)."
+      "notes": "INLINE mirror of theme-tagger.js (canonical) — vocab consts (THEMES/KEYWORD_TO_THEMES/NICHE_TO_THEMES/CAMPAIGN_RULES) must stay byte-equivalent to that module; CI enforces it via trendspark/n8n/tagger-sync.test.js (.github/workflows/trendspark-tagger-sync.yml), so a drift here fails the build. Builds EXACT trends columns (Priya §1a): ULID id, source/themes as JSON strings, expires_at = detected + peak_window_days. Drops rows with no text or no themes (fail-closed, no garbage)."
     },
     {
       "parameters": {

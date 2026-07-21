@@ -1,0 +1,11 @@
+{
+  "case_id": "tr-004-affiliate-coupon",
+  "input": {
+    "product_description": "Want creators to promote our fitness app with a unique coupon code and earn a revenue-share commission on every sale they drive."
+  },
+  "output": {
+    "template_name": "Affiliate / Revenue Share",
+    "campaign_type": "REVIEW",
+    "budget_band": "₹0–₹30,000"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "case_id": "tr-014-ambiguous-review-or-affiliate",
+  "input": {
+    "product_description": "Want influencers to try our new candle line and share genuine feedback with their audience, and if it sells well through them, happy to work out a commission.",
+    "note": "ambiguous -- review-led but affiliate-adjacent; both surface under the same REVIEW-type SYSTEM template so scored as a match either way"
+  },
+  "output": {
+    "template_name": "Affiliate / Revenue Share",
+    "campaign_type": "REVIEW",
+    "budget_band": "₹0–₹30,000"
+  }
+}

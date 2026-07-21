@@ -10,7 +10,10 @@ Block B — PER-BRAND CACHED (cache_control: ephemeral): brand profile, tone dia
 Block C — VOLATILE SUFFIX (uncached): conversation history + newest user turn.
 
 Cache-key discipline (Kabir guardrail #4): Block A carries ZERO brand data. All
-brand data lives in Block B/C, keyed by workspace_id. This module never lets
+brand data lives in Block B/C, keyed by (prompt_version, audience, workspace_id,
+session_id) — see `cache_key_for`. `audience` is part of the key (Priya's W2
+cross-cutting lock #1) so a future CREATOR-audience turn can never collide
+with a BRAND turn on the same workspace_id/session_id. This module never lets
 per-turn dynamic data leak backwards into Block A/B ordering.
 
 Untrusted content (scraped site text, raw user chat, brand profile text) is
@@ -34,6 +37,34 @@ from app.tools.schemas import get_tool_schemas
 # Forbidden brand-context fields — defense in depth. Spring should never send
 # these (field-level allow-list on Spring's side), but if one slips through we
 # strip it here before it ever reaches a prompt.
+# Canonical snake_case field set for POST /internal/meera/context's response
+# body (`MeeraContextDtos.ContextResponse` on the Spring side, the W1c seam-
+# fixed vocabulary this module already consumes). This is the LIVE half of
+# the Python<->Java schema-drift check (.github/workflows/schema-check.yml,
+# "Check context payload field names") -- Wave 1 shipped that step as a
+# pinned-string guard against a hardcoded EXPECTED list because Python wasn't
+# wired to the endpoint yet; now that it is (W2), CI extracts THIS constant
+# and diffs it against Java's @JsonProperty set instead of a copy-pasted
+# string, so the two sides can never silently drift again. Keep in sync with
+# `_fetch_brand_context` in app/routes/chat.py (the one place that reads
+# these keys off the live response) and with MeeraContextDtos.ContextResponse.
+CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
+    "analysis_status",
+    "brand_aesthetic",
+    "brand_color",
+    "competitor_urls",
+    "credit_state",
+    "display_name",
+    "industry",
+    "niche_tags",
+    "past_campaign_summary",
+    "product_catalog",
+    "template_digest",
+    "tone_dial",
+    "website_url",
+    "workspace_id",
+)
+
 _FORBIDDEN_BRAND_FIELDS = {
     "pan",
     "kyc",
@@ -105,6 +136,67 @@ def _safe(value: Any) -> str:
     return neutralize_angle_brackets(str(value))
 
 
+def _render_template_digest(template_digest: Any) -> str | None:
+    """Renders `template_digest[]` ({name, campaign_type, budget_band,
+    key_requirements}) into 1-line-per-template Block-B text.
+
+    W2 gate item (Ash P2-C, binding): `name` and `key_requirements` are
+    brand-authored free text (a workspace's own SYSTEM/CUSTOM template row)
+    reaching a *system* block — untrusted input exactly like the existing
+    brand fields above. Spring does not neutralize prompt-injection at the
+    data layer (Kabir's audit confirmed this is intentional and load-bearing
+    on this wrapper existing here), so every free-text sub-field is passed
+    through `_safe` individually, same as `product_catalog` entries.
+    `campaign_type`/`budget_band` are also wrapped defensively even though
+    they are normally server-computed enums/ranges — cheap insurance, no
+    assumption that Spring's shape can never widen.
+    """
+    if not isinstance(template_digest, list) or not template_digest:
+        return None
+    entries = []
+    for entry in template_digest:
+        if not isinstance(entry, dict):
+            continue
+        name = _safe(entry.get("name", "?"))
+        campaign_type = _safe(entry.get("campaign_type", "?"))
+        budget_band = _safe(entry.get("budget_band", "?"))
+        key_requirements = entry.get("key_requirements")
+        line = f"{name} ({campaign_type}, {budget_band})"
+        if key_requirements:
+            line += f" — {_safe(key_requirements)}"
+        entries.append(line)
+    if not entries:
+        return None
+    return "- Campaign templates available: " + "; ".join(entries)
+
+
+def _render_past_campaign_summary(past_campaigns: Any) -> str | None:
+    """Renders `past_campaign_summary[]` ({type, creator_count, funded}) into
+    one Block-B line.
+
+    Fixes the shape bug Meera flagged (assembler.py:136, W2 gate item): Spring
+    sends a `List[PastCampaignEntry]`, not a single string — the previous
+    `_safe(brand['past_campaign_summary'])` call `str()`-ified the whole list
+    (Python's default list repr) instead of rendering it. `type` is
+    brand-chosen (via campaign_type/template) free-ish text, so it goes
+    through `_safe` too; `creator_count`/`funded` are plain ints/bools, safe
+    to interpolate directly.
+    """
+    if not isinstance(past_campaigns, list) or not past_campaigns:
+        return None
+    entries = []
+    for entry in past_campaigns:
+        if not isinstance(entry, dict):
+            continue
+        campaign_type = _safe(entry.get("type", "?"))
+        creator_count = entry.get("creator_count", "?")
+        funded = "funded" if entry.get("funded") else "not funded"
+        entries.append(f"{campaign_type} x{creator_count} ({funded})")
+    if not entries:
+        return None
+    return "- Past campaigns: " + "; ".join(entries)
+
+
 def build_block_b(brand_context: dict[str, Any]) -> dict[str, Any]:
     """Per-brand cached block, keyed by workspace_id. Stable within a session.
 
@@ -133,8 +225,12 @@ def build_block_b(brand_context: dict[str, Any]) -> dict[str, Any]:
             for item in catalog
         )
         lines.append(f"- Product catalog: {catalog_lines}")
-    if brand.get("past_campaign_summary"):
-        lines.append(f"- Past campaigns: {_safe(brand['past_campaign_summary'])}")
+    template_digest_line = _render_template_digest(brand.get("template_digest"))
+    if template_digest_line:
+        lines.append(template_digest_line)
+    past_campaign_line = _render_past_campaign_summary(brand.get("past_campaign_summary"))
+    if past_campaign_line:
+        lines.append(past_campaign_line)
     if credit_state:
         lines.append(
             f"- Credit state: mode={credit_state.get('mode', 'unknown')}, "
@@ -231,9 +327,19 @@ def build_block_c_messages(conversation: list[dict[str, Any]]) -> list[dict[str,
     return messages
 
 
-def cache_key_for(prompt_version: str, workspace_id: str, session_id: str | None) -> str:
-    """Cache key is NEVER global — always (prompt_version, workspace_id, session_id)."""
-    return f"{prompt_version}:{workspace_id}:{session_id or 'no-session'}"
+def cache_key_for(prompt_version: str, audience: str, workspace_id: str, session_id: str | None) -> str:
+    """Cache key is NEVER global — always (prompt_version, audience, workspace_id,
+    session_id).
+
+    `audience` (Priya's cross-cutting lock #1, W2 HARD gate) is part of the key
+    because Block B is now server-sourced per workspace+audience: the moment a
+    future CREATOR-audience turn shares this cache path (Phase 3, A4), a brand
+    turn and a creator turn for the same workspace_id+session_id must never
+    collide on the same cached Block B. This is the info barrier's last line,
+    not just a correctness nicety — Kabir's W2 re-audit checks this exact
+    signature.
+    """
+    return f"{prompt_version}:{audience}:{workspace_id}:{session_id or 'no-session'}"
 
 
 def assemble_prompt(brand_context: dict[str, Any], session_id: str | None = None) -> AssembledPrompt:
@@ -241,9 +347,12 @@ def assemble_prompt(brand_context: dict[str, Any], session_id: str | None = None
 
     `brand_context` is the sanitized object Spring sends (see §2 of the AI
     service spec) — already field-allow-listed on Spring's side; this function
-    strips any forbidden fields again as defense-in-depth.
+    strips any forbidden fields again as defense-in-depth. `audience` defaults
+    to "BRAND" (Phase 1 is BRAND-only; A4/CREATOR is Phase 3) but is read from
+    `brand_context` so callers can pass it explicitly once CREATOR ships.
     """
     workspace_id = brand_context.get("workspace_id", "unknown")
+    audience = brand_context.get("audience") or "BRAND"
     prompt_version = brand_context.get("prompt_version") or stamp_prompt_version()
 
     block_a = build_block_a()
@@ -254,7 +363,7 @@ def assemble_prompt(brand_context: dict[str, Any], session_id: str | None = None
         system_blocks=[block_a, block_b],
         messages=messages,
         prompt_version=prompt_version,
-        cache_key=cache_key_for(prompt_version, workspace_id, session_id),
+        cache_key=cache_key_for(prompt_version, audience, workspace_id, session_id),
     )
 
 

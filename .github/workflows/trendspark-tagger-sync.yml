@@ -1,0 +1,43 @@
+name: TrendSpark Tagger Sync
+
+# Blocks vocab drift across the three copies of the Trend-Spark theme-tagger:
+#   - trendspark/n8n/theme-tagger.js                          (canonical module)
+#   - the inline Code node in trendspark/n8n/trend-pull-workflow.json (runtime paste)
+#   - influora-api/.../trendspark/{theme-taxonomy,campaign-rulebook}.json (source of truth)
+# n8n Code nodes can't require() a repo file, so the module is hand-pasted into the
+# workflow JSON; this check enforces the sync that used to rely on discipline alone.
+# The check asserts relationships only — it never changes tagger behavior.
+
+on:
+  pull_request:
+    paths:
+      - 'trendspark/n8n/theme-tagger.js'
+      - 'trendspark/n8n/trend-pull-workflow.json'
+      - 'trendspark/n8n/tagger-sync.test.js'
+      - 'influora-api/src/main/resources/trendspark/theme-taxonomy.json'
+      - 'influora-api/src/main/resources/trendspark/campaign-rulebook.json'
+      - '.github/workflows/trendspark-tagger-sync.yml'
+  push:
+    branches:
+      - main
+      - 'feature/**'
+      - 'feat/**'
+
+jobs:
+  tagger-sync:
+    runs-on: ubuntu-latest
+    name: theme-tagger vocab in sync (node ⇄ module ⇄ JSON)
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Vocab drift + closed-vocab integrity check
+        run: node trendspark/n8n/tagger-sync.test.js
+
+      - name: theme-tagger self-test (tagging behavior)
+        run: node trendspark/n8n/theme-tagger.js

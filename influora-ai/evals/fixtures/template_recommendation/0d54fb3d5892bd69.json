@@ -1,0 +1,12 @@
+{
+  "case_id": "tr-013-ambiguous-awareness-and-sales",
+  "input": {
+    "product_description": "We want people to know about us and also buy -- honestly not sure which matters more right now, just starting out.",
+    "note": "ambiguous -- awareness vs sales, both plausible; scored as awareness since discovery precedes conversion for a brand-new, unknown product"
+  },
+  "output": {
+    "template_name": "Brand Awareness",
+    "campaign_type": "HYPE",
+    "budget_band": "₹10,000–₹50,000"
+  }
+}

@@ -13,12 +13,17 @@ import static org.mockito.Mockito.when;
 import com.influora.common.ApiException;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.CampaignIntent;
+import com.influora.domain.entity.CampaignTemplate;
 import com.influora.domain.entity.MeeraToolCall;
+import com.influora.domain.enums.CampaignIntentType;
 import com.influora.domain.enums.CampaignStatus;
+import com.influora.domain.enums.CampaignTemplateCategory;
+import com.influora.domain.enums.CampaignTemplateScope;
 import com.influora.repository.CampaignIntentRepository;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.MeeraToolCallRepository;
 import com.influora.service.AuditLogService;
+import com.influora.service.CampaignTemplateService;
 import com.influora.service.IdempotencyService;
 import com.influora.service.IntegrationHealthService;
 import com.influora.web.dto.meera.MeeraToolDtos.CreateCampaignResult;
@@ -54,6 +59,7 @@ class CreateCampaignExecutorTest {
     @Mock private MeeraToolCallRepository toolCallRepository;
     @Mock private AuditLogService auditLogService;
     @Mock private IdempotencyService idempotencyService;
+    @Mock private CampaignTemplateService campaignTemplateService;
 
     private CreateCampaignExecutor executor;
 
@@ -65,7 +71,8 @@ class CreateCampaignExecutorTest {
                         campaignRepository,
                         toolCallRepository,
                         auditLogService,
-                        idempotencyService);
+                        idempotencyService,
+                        campaignTemplateService);
     }
 
     // testDirectCampaignRejectedWithoutStoreIntegration removed (P3-20 Vikram fix): the
@@ -170,6 +177,112 @@ class CreateCampaignExecutorTest {
         assertNotNull(result);
         assertEquals(true, result.replay());
         // NOTE: integrationHealthService removed from constructor
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Platform-AI Phase 1, Wave 1b (Priya A3 + Ash's STANDARD-enum ruling): optional template_id.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "template_id present -> derives campaign_type from the template row (incl. STANDARD),"
+                    + " ignoring any AI-supplied campaign_type, and copies requirements/hashtags/"
+                    + "target_audience/brand_guidelines; budget stays null")
+    void testTemplateIdPresentDerivesCampaignTypeAndCopiesFields() {
+        mockIdempotencyExecuteOnce();
+        String templateId = "01HWXYZTEMPLATE1234567";
+        CampaignTemplate template =
+                CampaignTemplate.builder()
+                        .id(templateId)
+                        .name("UGC Starter")
+                        .category(CampaignTemplateCategory.UGC)
+                        .scope(CampaignTemplateScope.SYSTEM)
+                        .campaignType(CampaignIntentType.STANDARD) // the UGC SYSTEM preset's real type
+                        .requirementsJson("[\"Include tracked link\",\"Disclose partnership\"]")
+                        .hashtagsJson("[\"#ad\"]")
+                        .targetAudienceJson("{\"ageRange\":\"18-25\"}")
+                        .brandGuidelines("Keep it authentic")
+                        .build();
+        when(campaignTemplateService.requireVisible(templateId, WORKSPACE_ID)).thenReturn(template);
+        when(campaignIntentRepository.save(any(CampaignIntent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Map<String, Object> input =
+                Map.of(
+                        "product_name", "Widget",
+                        "campaign_type", "DIRECT", // must be IGNORED — template is the authority
+                        "template_id", templateId,
+                        "creator_count", 3);
+
+        CreateCampaignResult result =
+                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, IDEMPOTENCY_KEY, input);
+
+        assertNotNull(result);
+        assertEquals(CampaignStatus.DRAFT.name(), result.status());
+
+        org.mockito.ArgumentCaptor<Campaign> campaignCaptor = org.mockito.ArgumentCaptor.forClass(Campaign.class);
+        verify(campaignRepository).save(campaignCaptor.capture());
+        Campaign saved = campaignCaptor.getValue();
+        assertEquals(CampaignIntentType.STANDARD, saved.getCampaignType());
+        assertEquals(template.getRequirementsJson(), saved.getRequirementsJson());
+        assertEquals(template.getHashtagsJson(), saved.getHashtagsJson());
+        assertEquals(template.getTargetAudienceJson(), saved.getTargetAudienceJson());
+        assertEquals(template.getBrandGuidelines(), saved.getBrandGuidelines());
+        assertEquals(null, saved.getBudgetMin());
+        assertEquals(null, saved.getBudgetMax());
+
+        org.mockito.ArgumentCaptor<CampaignIntent> intentCaptor =
+                org.mockito.ArgumentCaptor.forClass(CampaignIntent.class);
+        // Saved twice by design (initial insert, then confirm() after the campaign id is known) —
+        // same pattern the pre-existing tests in this class don't need to assert on explicitly.
+        verify(campaignIntentRepository, org.mockito.Mockito.times(2)).save(intentCaptor.capture());
+        assertEquals(CampaignIntentType.STANDARD, intentCaptor.getValue().getCampaignType());
+    }
+
+    @Test
+    @DisplayName("template_id present but not visible to this workspace -> propagates 404, no campaign created")
+    void testTemplateIdNotVisiblePropagates404() {
+        mockIdempotencyExecuteOnce();
+        String templateId = "01HWXYZOTHERWORKSPACE12";
+        when(campaignTemplateService.requireVisible(templateId, WORKSPACE_ID))
+                .thenThrow(new ApiException("TEMPLATE_NOT_FOUND", "Template not found", org.springframework.http.HttpStatus.NOT_FOUND));
+
+        Map<String, Object> input =
+                Map.of("product_name", "Widget", "template_id", templateId, "creator_count", 3);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, IDEMPOTENCY_KEY, input));
+        assertEquals("TEMPLATE_NOT_FOUND", ex.getCode());
+        verify(campaignRepository, never()).save(any(Campaign.class));
+    }
+
+    @Test
+    @DisplayName("template_id absent -> behavior unchanged: AI-supplied campaign_type used, no template fields copied")
+    void testTemplateIdAbsentUnchangedBehavior() {
+        mockIdempotencyExecuteOnce();
+        when(campaignIntentRepository.save(any(CampaignIntent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Map<String, Object> input =
+                Map.of("product_name", "Widget", "campaign_type", "HYPE", "creator_count", 3);
+
+        CreateCampaignResult result =
+                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, IDEMPOTENCY_KEY, input);
+
+        assertNotNull(result);
+        org.mockito.ArgumentCaptor<Campaign> campaignCaptor = org.mockito.ArgumentCaptor.forClass(Campaign.class);
+        verify(campaignRepository).save(campaignCaptor.capture());
+        Campaign saved = campaignCaptor.getValue();
+        assertEquals(CampaignIntentType.HYPE, saved.getCampaignType());
+        assertEquals(null, saved.getRequirementsJson());
+        assertEquals(null, saved.getHashtagsJson());
+        assertEquals(null, saved.getBudgetMin());
+        assertEquals(null, saved.getBudgetMax());
+        org.mockito.Mockito.verifyNoInteractions(campaignTemplateService);
     }
 
     @SuppressWarnings("unchecked")

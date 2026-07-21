@@ -112,7 +112,13 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "name": CREATE_CAMPAIGN,
         "description": (
             "PROPOSE building a campaign from conversation intent. Spring "
-            "re-derives all amounts and re-authorizes before creating anything."
+            "re-derives all amounts and re-authorizes before creating anything. "
+            "If the brand's goal matches one of the campaign templates surfaced "
+            "in your brand context (see the 'Campaign templates available' line "
+            "in your system context), pass its template_id so Spring copies the "
+            "template's requirements/hashtags/audience/brand_guidelines into the "
+            "draft -- do not also guess those fields yourself when a template_id "
+            "is set."
         ),
         "input_schema": {
             "type": "object",
@@ -124,6 +130,19 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 },
                 "creator_count": {"type": "integer"},
                 "creator_ids": {"type": "array", "items": {"type": "string"}},
+                "template_id": {
+                    "type": "string",
+                    "description": (
+                        "Optional. ID of a SYSTEM or this workspace's own CUSTOM "
+                        "campaign template to base the draft on (from the "
+                        "template_digest in your brand context). When set, Spring "
+                        "derives campaign_type from the template row itself (which "
+                        "may be STANDARD -- a template-only type this tool's own "
+                        "campaign_type enum deliberately does not expose) and "
+                        "IGNORES any AI-supplied campaign_type. Omit for a "
+                        "from-scratch campaign."
+                    ),
+                },
             },
             "required": ["product_name", "campaign_type", "creator_count"],
         },

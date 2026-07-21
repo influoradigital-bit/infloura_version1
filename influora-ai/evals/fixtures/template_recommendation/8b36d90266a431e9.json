@@ -1,0 +1,11 @@
+{
+  "case_id": "tr-015-overnight-kit-content-and-ads",
+  "input": {
+    "product_description": "We want a big batch of content for our new overnight skincare kit that we can also boost as paid ads afterward -- content generation is the goal, not reach or sales directly."
+  },
+  "output": {
+    "template_name": "UGC Content Pack",
+    "campaign_type": "STANDARD",
+    "budget_band": "₹5,000–₹20,000"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "case_id": "tr-007-blender-honest-review",
+  "input": {
+    "product_description": "We need honest video reviews of our new blender -- creators actually using it and telling their audience if it's worth buying."
+  },
+  "output": {
+    "template_name": "Affiliate / Revenue Share",
+    "campaign_type": "REVIEW",
+    "budget_band": "₹0–₹30,000"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "case_id": "tr-009-sneaker-clickthrough",
+  "input": {
+    "product_description": "Want people to click through from the reel straight to checkout and buy our new sneaker drop this week -- conversions are the whole point."
+  },
+  "output": {
+    "template_name": "Sales & Conversions",
+    "campaign_type": "DIRECT",
+    "budget_band": "₹15,000–₹75,000"
+  }
+}

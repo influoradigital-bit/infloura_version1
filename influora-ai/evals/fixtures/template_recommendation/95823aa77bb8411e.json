@@ -1,0 +1,11 @@
+{
+  "case_id": "tr-011-supplement-commission",
+  "input": {
+    "product_description": "Looking for creators who'll take a commission based on the sales they personally generate for our new supplement, coupon-tracked."
+  },
+  "output": {
+    "template_name": "Affiliate / Revenue Share",
+    "campaign_type": "REVIEW",
+    "budget_band": "₹0–₹30,000"
+  }
+}

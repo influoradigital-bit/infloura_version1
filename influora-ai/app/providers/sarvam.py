@@ -86,6 +86,121 @@ MAX_TTS_CHARS = 2000
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?।])\s+")
 
 
+# ---------------------------------------------------------------------------
+# speakable() — TTS text normalizer (Platform-AI Phase 1, W2b / A5 constraint).
+#
+# Sarvam's TTS reads text literally: "₹15,000" comes out as symbol-by-symbol
+# noise, a leading "#" on a hashtag reads as "hash" or is silently dropped
+# depending on the voice, and "UGC" gets mangled as a single mispronounced
+# word instead of three letters. This runs on the text actually POSTED to
+# Sarvam, never on what's shown in the chat panel (that stays exactly as
+# written). Per Priya's A5 constraint, this MUST run per-chunk right before
+# each Sarvam call (not once on the whole reply) so it's already shaped
+# correctly for V3's future per-sentence streamed-TTS pattern — see `speak()`
+# below, which calls this inside the per-chunk loop.
+# ---------------------------------------------------------------------------
+
+_ONES = (
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+    "seventeen", "eighteen", "nineteen",
+)
+_TENS = (
+    "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+)
+
+
+def _int_to_words(n: int) -> str:
+    """Small integer-to-English-words converter, standard (not Indian lakh/crore)
+    thousand-grouping to match the persona's spoken style. Good for the price/
+    budget ranges Meera actually says out loud (single-to-low-crore INR
+    amounts); falls back to the digit string for anything larger or negative
+    rather than guessing.
+    """
+    if n < 0 or n >= 1_000_000_000:
+        return str(n)
+    if n < 20:
+        return _ONES[n]
+    if n < 100:
+        tens, rem = divmod(n, 10)
+        return _TENS[tens] + (f"-{_ONES[rem]}" if rem else "")
+    if n < 1000:
+        hundreds, rem = divmod(n, 100)
+        return _ONES[hundreds] + " hundred" + (f" {_int_to_words(rem)}" if rem else "")
+    if n < 1_000_000:
+        thousands, rem = divmod(n, 1000)
+        return _int_to_words(thousands) + " thousand" + (f" {_int_to_words(rem)}" if rem else "")
+    millions, rem = divmod(n, 1_000_000)
+    return _int_to_words(millions) + " million" + (f" {_int_to_words(rem)}" if rem else "")
+
+
+def _parse_amount(raw: str) -> float | None:
+    cleaned = raw.replace(",", "").strip()
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _amount_to_words(raw: str) -> str:
+    value = _parse_amount(raw)
+    if value is None:
+        return raw
+    if value == int(value):
+        return _int_to_words(int(value))
+    whole = int(value)
+    frac_digits = raw.replace(",", "").split(".", 1)[1] if "." in raw else ""
+    words = _int_to_words(whole)
+    if frac_digits:
+        words += " point " + " ".join(_ONES[int(d)] for d in frac_digits if d.isdigit())
+    return words
+
+
+# ₹15,000  |  ₹15,000–₹75,000  |  ₹15,000-75,000  (en-dash or hyphen, second ₹ optional)
+_RUPEE_RE = re.compile(r"₹\s*([\d,]+(?:\.\d+)?)\s*(?:[–-]\s*₹?\s*([\d,]+(?:\.\d+)?))?")
+_HASHTAG_RE = re.compile(r"#(\w+)")
+_UGC_RE = re.compile(r"\bUGC\b")
+
+
+def _replace_rupee_amount(match: re.Match[str]) -> str:
+    raw_low, raw_high = match.group(1), match.group(2)
+    if raw_high is None:
+        return f"{_amount_to_words(raw_low)} rupees"
+
+    low_val, high_val = _parse_amount(raw_low), _parse_amount(raw_high)
+    # Same-magnitude thousands range ("₹15,000–₹75,000") reads more naturally
+    # as "fifteen to seventy-five thousand rupees" than repeating "thousand"
+    # twice — matches how a person actually says a budget band out loud.
+    if (
+        low_val is not None
+        and high_val is not None
+        and low_val > 0
+        and high_val > 0
+        and low_val % 1000 == 0
+        and high_val % 1000 == 0
+    ):
+        return (
+            f"{_int_to_words(int(low_val // 1000))} to "
+            f"{_int_to_words(int(high_val // 1000))} thousand rupees"
+        )
+    return f"{_amount_to_words(raw_low)} to {_amount_to_words(raw_high)} rupees"
+
+
+def speakable(text: str) -> str:
+    """Normalizes text for TTS: ₹ amounts/ranges -> spoken words, hashtags lose
+    their leading '#' (still spoken as the word, not the symbol), "UGC" is
+    expanded to letter-by-letter "U G C" so it's pronounced as an initialism
+    instead of a mangled single word. Applied to the text actually posted to
+    Sarvam; the chat panel always shows the original, unmodified reply.
+    """
+    if not text:
+        return text
+    result = _RUPEE_RE.sub(_replace_rupee_amount, text)
+    result = _HASHTAG_RE.sub(r"\1", result)
+    result = _UGC_RE.sub("U G C", result)
+    return result
+
+
 def _chunk_text(text: str, limit: int = MAX_TTS_CHARS) -> list[str]:
     """Split text into <=limit-char chunks, preferring sentence boundaries and
     never cutting a word. Returns [] for empty input and [text] for text that
@@ -266,6 +381,11 @@ class SarvamProvider:
                 ),
             ) as client:
                 for chunk in chunks:
+                    # speakable() runs HERE, per-chunk, right before the call --
+                    # not once on the whole reply -- per Priya's A5 constraint
+                    # (future-proofs for V3's per-sentence streamed TTS, where
+                    # each "chunk" really will be one sentence).
+                    spoken_chunk = speakable(chunk)
                     response = await client.post(
                         "/text-to-speech",
                         headers={"api-subscription-key": settings.sarvam_api_key},
@@ -291,7 +411,7 @@ class SarvamProvider:
                         #  pitch / loudness / enable_preprocessing are v2-only and correctly omitted
                         #  (v3 auto-preprocesses).
                         json={
-                            "inputs": [chunk],
+                            "inputs": [spoken_chunk],
                             "target_language_code": lang,
                             "speaker": "priya",
                             "model": "bulbul:v3",

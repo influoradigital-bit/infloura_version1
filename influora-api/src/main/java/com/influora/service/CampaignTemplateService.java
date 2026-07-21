@@ -138,8 +138,16 @@ public class CampaignTemplateService {
         return new DeleteResponse(true);
     }
 
-    /** SYSTEM templates are visible to any workspace; CUSTOM templates only to their owner. */
-    private CampaignTemplate requireVisible(String templateId, String workspaceId) {
+    /**
+     * SYSTEM templates are visible to any workspace; CUSTOM templates only to their owner. 404s
+     * (never 403) on a cross-workspace CUSTOM template so visibility failures don't leak
+     * existence. Public — also reused by {@link
+     * com.influora.service.meera.tool.CreateCampaignExecutor} (Platform-AI Phase 1, Wave 1b,
+     * Priya A3) for the {@code create_campaign} tool's optional {@code template_id} visibility
+     * check, per the ruling: "executor validates visibility (reuse
+     * CampaignTemplateService.requireVisible)".
+     */
+    public CampaignTemplate requireVisible(String templateId, String workspaceId) {
         CampaignTemplate template =
                 templateRepository
                         .findById(templateId)

@@ -1,0 +1,11 @@
+{
+  "case_id": "tr-010-app-launch-eyeballs",
+  "input": {
+    "product_description": "Brand new app just launched, trying to get it in front of as many new eyes as possible before we worry about anything else."
+  },
+  "output": {
+    "template_name": "Brand Awareness",
+    "campaign_type": "HYPE",
+    "budget_band": "₹10,000–₹50,000"
+  }
+}

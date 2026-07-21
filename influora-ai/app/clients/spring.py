@@ -267,6 +267,38 @@ class SpringInternalClient:
             allow_retry=False,
         )
 
+    async def get_meera_context(
+        self,
+        *,
+        workspace_id: str,
+        audience: str,
+        onbehalf_jwt: str,
+    ) -> SpringResponse:
+        """POST /internal/meera/context — server-sources Block B (Platform-AI
+        Phase 1, W2a). Per Priya's A2 correction (b), `workspace_id`+`audience`
+        ride inside the signed JSON body (never a query param), so the
+        audience selector cannot be flipped after the HMAC signature is
+        computed. Read-tier (no state mutation), so `allow_retry=True` is
+        safe — unlike the money/state forwards above, a transient network
+        retry here re-fetches the same read, not a double-execute.
+
+        Response shape (`response.data`, per `MeeraContextDtos.ContextResponse`,
+        the W1c seam-fixed canonical vocabulary `app/prompt/assembler.py`
+        already consumes): workspace_id, display_name, industry, website_url,
+        niche_tags, tone_dial, brand_color, brand_aesthetic, product_catalog,
+        competitor_urls, analysis_status, template_digest,
+        past_campaign_summary, credit_state.
+        """
+        payload = {"workspace_id": workspace_id, "audience": audience}
+        return await self.call_tool_endpoint(
+            tool_name="_context",
+            path="/internal/meera/context",
+            payload=payload,
+            onbehalf_jwt=onbehalf_jwt,
+            idempotency_key=None,
+            allow_retry=True,
+        )
+
     async def release_turn_credit(
         self,
         *,

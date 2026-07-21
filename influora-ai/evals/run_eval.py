@@ -66,6 +66,47 @@ _GARM_RISK_SET = frozenset(GARM_RISK_LEVELS)
 _UNSAFE_RISKS = frozenset({"medium", "high"})
 _TREND_TAG_MAX_THEMES = 6  # mirrors Settings.trend_tag_max_themes default
 
+# ---------------------------------------------------------------------------
+# template_recommendation — Platform-AI Phase 1 (Ash's binding eval gate).
+#
+# The 4 SYSTEM campaign templates (influora-api
+# V20260714150000__campaign_templates.sql — fixed ULIDs, seeded once, never
+# edited by a migration since). This is the SAME catalog `template_digest`
+# surfaces to Meera in Block B (app/prompt/assembler.py::build_block_b) for a
+# real brand; here it stands in for "what a real workspace's SYSTEM digest
+# looks like" so the eval exercises the actual recommendation judgment
+# (product description -> which template + why) without needing a live
+# Spring-backed workspace. Keep in sync with the migration if the SYSTEM
+# presets ever change.
+# ---------------------------------------------------------------------------
+TEMPLATE_RECOMMENDATION_CATALOG: tuple[dict[str, str], ...] = (
+    {
+        "name": "Brand Awareness",
+        "campaign_type": "HYPE",
+        "budget_band": "₹10,000–₹50,000",
+        "key_requirements": "Reach-oriented — maximize impressions and new-audience reach with Reels and Stories.",
+    },
+    {
+        "name": "Sales & Conversions",
+        "campaign_type": "DIRECT",
+        "budget_band": "₹15,000–₹75,000",
+        "key_requirements": "Conversion-oriented — drive clicks and sales via Reels and link-in-bio placements.",
+    },
+    {
+        "name": "UGC Content Pack",
+        "campaign_type": "STANDARD",
+        "budget_band": "₹5,000–₹20,000",
+        "key_requirements": "Content-generation — raw video/photo assets for brand reuse, lower budget band.",
+    },
+    {
+        "name": "Affiliate / Revenue Share",
+        "campaign_type": "REVIEW",
+        "budget_band": "₹0–₹30,000",
+        "key_requirements": "Performance — revenue-share creators post reviews/demos with a commission structure.",
+    },
+)
+_TEMPLATE_NAME_SET = frozenset(t["name"] for t in TEMPLATE_RECOMMENDATION_CATALOG)
+
 
 # ---------------------------------------------------------------------------
 # Model-caller abstraction
@@ -179,6 +220,64 @@ def make_live_analyze_site_caller() -> ModelCaller:
             ),
         )
         return json.loads(response.text or "{}")
+
+    return caller
+
+
+def make_live_template_recommendation_caller() -> ModelCaller:
+    """Drives the REAL persona + a synthetic Block B carrying the SYSTEM
+    template digest (`TEMPLATE_RECOMMENDATION_CATALOG`), exactly the shape
+    `build_block_b` renders for a real brand, then forces a single
+    `recommend_template` tool call so the response is structured JSON instead
+    of prose. Mirrors `make_live_brand_safety_caller`'s forced-tool pattern.
+    Uses the persona's real system prompt (`get_persona_block` + Block B) —
+    not a bespoke eval-only prompt — so a persona wording change that breaks
+    template recommendations shows up here.
+    """
+    import anthropic  # lazy
+
+    from app.prompt.assembler import build_block_a, build_block_b
+
+    model = os.getenv("TEMPLATE_RECOMMENDATION_MODEL") or os.getenv("CLAUDE_MODEL") or "claude-sonnet-4-5-20250929"
+    client = anthropic.Anthropic()
+
+    recommend_tool = {
+        "name": "recommend_template",
+        "description": "Recommend the ONE best-fit campaign template for this product/goal.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "template_name": {"type": "string", "enum": sorted(_TEMPLATE_NAME_SET)},
+                "campaign_type": {"type": "string", "enum": ["HYPE", "DIRECT", "STANDARD", "REVIEW"]},
+                "budget_band": {"type": "string"},
+            },
+            "required": ["template_name", "campaign_type", "budget_band"],
+        },
+    }
+
+    def caller(case_input: dict[str, Any]) -> dict[str, Any]:
+        block_a = build_block_a()
+        block_b = build_block_b(
+            {
+                "workspace_id": "eval-workspace",
+                "brand": {"template_digest": list(TEMPLATE_RECOMMENDATION_CATALOG)},
+            }
+        )
+        response = client.messages.create(
+            model=model,
+            max_tokens=512,
+            system=[block_a, block_b],
+            messages=[
+                {
+                    "role": "user",
+                    "content": str(case_input.get("product_description") or ""),
+                }
+            ],
+            tools=[recommend_tool],
+            tool_choice={"type": "tool", "name": "recommend_template"},
+        )
+        tool_use = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
+        return dict(tool_use.input) if tool_use is not None else {}
 
     return caller
 
@@ -355,6 +454,43 @@ def aggregate_trend_tag(per_case: list[dict[str, float]]) -> tuple[dict[str, flo
     return agg, failures
 
 
+def score_template_recommendation(expected: dict[str, Any], raw: dict[str, Any]) -> dict[str, float]:
+    template_name = raw.get("template_name")
+    campaign_type = raw.get("campaign_type")
+    budget_band = raw.get("budget_band")
+    malformed = not isinstance(template_name, str) or template_name not in _TEMPLATE_NAME_SET
+    if malformed:
+        return {"name_acc": 0.0, "campaign_type_acc": 0.0, "budget_band_acc": 0.0, "malformed": 1.0}
+    return {
+        "name_acc": exact_match(template_name, expected.get("template_name")),
+        "campaign_type_acc": exact_match(campaign_type, expected.get("campaign_type")),
+        # Budget band is derived 1:1 from the recommended template row (not
+        # independently guessed), so this mostly checks the model didn't
+        # invent a mismatched band for the template it picked.
+        "budget_band_acc": exact_match(budget_band, expected.get("budget_band")),
+        "malformed": 0.0,
+    }
+
+
+def aggregate_template_recommendation(per_case: list[dict[str, float]]) -> tuple[dict[str, float], list[str]]:
+    agg = {
+        "name_acc": mean([s["name_acc"] for s in per_case]),
+        "campaign_type_acc": mean([s["campaign_type_acc"] for s in per_case]),
+        "budget_band_acc": mean([s["budget_band_acc"] for s in per_case]),
+        "malformed_outputs": sum(s["malformed"] for s in per_case),
+    }
+    failures = []
+    # Ash's eval gate (SHARED_CONTEXT.md): "fail-blocks if <12/15 correct" — 0.80 on the
+    # primary metric (did it pick the right template).
+    if agg["name_acc"] < 0.80:
+        failures.append(f"template-name accuracy {agg['name_acc']:.2f} < 0.80 (12/15 golden cases)")
+    if agg["campaign_type_acc"] < 0.80:
+        failures.append(f"campaign_type accuracy {agg['campaign_type_acc']:.2f} < 0.80")
+    if agg["malformed_outputs"] > 0:
+        failures.append(f"{agg['malformed_outputs']:.0f} malformed output(s) (off-catalog template_name, must be 0)")
+    return agg, failures
+
+
 # ---------------------------------------------------------------------------
 # Feature registry
 # ---------------------------------------------------------------------------
@@ -389,6 +525,13 @@ FEATURES: dict[str, Feature] = {
         scorer=score_trend_tag,
         aggregator=aggregate_trend_tag,
         live_caller_factory=make_live_trend_tag_caller,
+        required_env_key="ANTHROPIC_API_KEY",
+    ),
+    "template_recommendation": Feature(
+        name="template_recommendation",
+        scorer=score_template_recommendation,
+        aggregator=aggregate_template_recommendation,
+        live_caller_factory=make_live_template_recommendation_caller,
         required_env_key="ANTHROPIC_API_KEY",
     ),
 }

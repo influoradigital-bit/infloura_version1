@@ -5,6 +5,285 @@
 
 ---
 
+## Vikram — W2 DONE (Platform-AI Phase 1, Wave 2 — AI service wiring + voice)
+
+```
+FROM Vikram → Kavya | W2a (server-source Block B, template digest, cache-key audience, template_id) + W2b (voice lang-parity persona rail + speakable() normalizer) | see file list below | READY for QA | pytest 407 passed / 2 failed (both pre-existing, unrelated — see below); eval `--offline all` exit 0, template_recommendation 15/15
+```
+
+**PROVENANCE (Priya's process condition):** everything below is NEW this wave, written by me, not found pre-existing in the tree — unlike W1 (which arrived pre-written, 3rd occurrence overall counting portfolio-tracking). No code in this handoff predates this session.
+
+**Files — all NEW changes in `influora-ai/` unless noted:**
+- `app/clients/spring.py` — **NEW method** `get_meera_context()`: POSTs `/internal/meera/context` with `{workspace_id, audience}` signed body, reusing the exact same HMAC+service-token mesh auth as every other forward. Read-tier (`allow_retry=True`).
+- `app/routes/chat.py` — **NEW function** `_fetch_brand_context()`: calls `spring.get_meera_context(...)`, maps the flat Spring response into the shape `assemble_prompt` expects (nested `brand`, separate `credit_state`, `audience`). `chat()` now calls this instead of passing `body` straight to `assemble_prompt` — client-supplied `body["brand"]`/`body["prompt_version"]` are **never read anywhere in this path** (pinned by a new signature test). On `SpringCallError`/any exception, degrades to an empty Block B (logged `meera_context_fetch_failed`), never 500s the turn.
+- `app/prompt/assembler.py`:
+  - `cache_key_for(prompt_version, audience, workspace_id, session_id)` — **audience added** (Priya's cross-cutting HARD gate #1). `assemble_prompt` reads `brand_context.get("audience") or "BRAND"`.
+  - `build_block_b` — **NEW** `_render_template_digest()` and `_render_past_campaign_summary()`. Fixes the Meera-flagged assembler.py:136 bug (past_campaign_summary is a `List[PastCampaignEntry]`, not a string — the old code `str()`-ified a list). Template `name`/`key_requirements` and past-campaign `type` are passed through `_safe()` individually — **P2-C (Kabir, binding) satisfied**: brand-authored template free-text reaching a system block is neutralized, Python does not assume Spring did it.
+  - **NEW constant** `CONTEXT_PAYLOAD_FIELDS` — the canonical field set, now the live half of the CI diff-check (see below).
+- `app/tools/schemas.py` — `create_campaign` gains optional `template_id` (string). `campaign_type` stays required, enum stays `HYPE|DIRECT|REVIEW` (STANDARD never AI-selectable, per Ash's DERIVE ruling — Spring already derives it from the template row, W1). Backward-compatible (old bodies still validate).
+- `app/prompt/persona.py` — **ONE line** in the tools section: recommend a matching template by name via `present_options` + pass `template_id` to `create_campaign`. **ONE line** in the voice/language rail: reply in the language the brand used (Hinglish in/out).
+- `app/config.py` — `PROMPT_VERSION` bumped `meera-2026.07.21.3` → `meera-2026.07.21.4` (Block B shape + schema + persona all changed this wave).
+- `app/providers/sarvam.py` — **NEW** `speakable()` normalizer (+ `_int_to_words`/`_amount_to_words` helpers): `₹15,000–₹75,000` → `"fifteen to seventy-five thousand rupees"`, strips leading `#` from hashtags, expands `UGC` → `"U G C"`. Wired into `speak()` **per-chunk, inside the existing chunking loop** (not once on the whole reply) — future-proofs for V3's per-sentence streamed TTS per Priya's A5 constraint. `/voice/speak` already read `body.get("lang", "en-IN")` and passed it to Sarvam — no code change needed there; threading the actual detected value through is W3 (frontend).
+- `.github/workflows/schema-check.yml` — swapped the W1 pinned-`EXPECTED`-string context-payload check for a **live diff**: Python's `CONTEXT_PAYLOAD_FIELDS` vs Java's `@JsonProperty` set, now **blocking**. Added a blocking check that `create_campaign` exposes `template_id`.
+- `docs/authorization.md` §4 (+ its exact duplicate `docs/docs/authorization.md`) — added `POST /internal/meera/context` (auth model, audience-in-signed-body, allow-list) and `create_campaign.template_id` (visibility check, STANDARD-derive, budget-null) writeups.
+- Eval: `evals/datasets/template_recommendation.jsonl` (**NEW**, 15 cases: 12 clear incl. rice-cooker→REVIEW/Affiliate, awareness→HYPE/Brand-Awareness, UGC-pack→STANDARD/UGC-Content-Pack, affiliate→REVIEW; 3 ambiguous), `evals/fixtures/template_recommendation/*.json` (**NEW**, 15 recorded baseline fixtures), `evals/run_eval.py` (**NEW** `TEMPLATE_RECOMMENDATION_CATALOG`, `make_live_template_recommendation_caller` — drives the REAL persona+Block B via a forced `recommend_template` tool call, `score_template_recommendation`/`aggregate_template_recommendation`, registered in `FEATURES`), `evals/README.md` updated.
+- Tests (**all NEW**): `tests/routes/test_chat_context_source.py` (5 — `_fetch_brand_context` call/mapping/degrade-on-failure/signature-pin), `tests/prompt/test_assembler_context_wiring.py` (10 — template digest rendering + P2-C neutralization, past-campaign list rendering + neutralization, cache-key audience separation, `CONTEXT_PAYLOAD_FIELDS` pin), `tests/tools/test_schemas_template_id.py` (5 — template_id optional/additive, campaign_type enum unwidened), `tests/providers/test_sarvam_speakable.py` (10 — rupee ranges/singles/decimals, hashtags, UGC, word-boundary, combined, no-op), plus 2 new cases added to `tests/evals/test_eval_harness_offline.py` (stubborn-model-fails-gate, off-catalog-malformed).
+
+**Test/eval results:**
+- `PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q` → **407 passed, 2 failed**. Both failures are `tests/routes/test_voice.py::TestTruncateForTts` (`test_truncation_adds_ellipsis`, `test_max_chars_constant_is_200`) — confirmed **pre-existing and unrelated** by `git stash` + re-run on the unmodified tree (same 2 failures, same reason: `TTS_MAX_CHARS` was already bumped 200→500 with a documented rationale comment before this wave; the test was never updated to match). Was 373 passed before this wave (34 new tests added, all green).
+- `python evals/run_eval.py --offline all` → **exit 0**, all 4 datasets PASS including `template_recommendation` 15/15 (name_acc 1.000, campaign_type_acc 1.000, budget_band_acc 1.000, malformed 0).
+- `pytest tests/evals -q` → 18 passed (was 16 before the 2 new template_recommendation-gate tests).
+
+**Assumptions / flags for Ash/Priya/Kabir:**
+1. **06-MEERA-PERMISSIONS-MATRIX.md / 02-API-CONTRACT-BRAND.md do not exist in this working tree** (confirmed via `find` — they only exist in sibling worktrees under `.claude/worktrees/*` and `_to_delete/`, per the known branch/worktree-divergence pattern). Per Priya's A2/A3 doc condition I updated the docs that DO exist here (`docs/authorization.md` §4 + its duplicate). Flagging so whoever owns the canonical docs location confirms whether those two files need updating on a different branch.
+2. **`speakable()`'s exact wording** for the range-collapse case (`"₹15,000–₹75,000"` → `"fifteen to seventy-five thousand rupees"`, dropping the repeated "thousand") only triggers when both bounds are exact multiples of 1000 — falls back to full `"X thousand to Y thousand rupees"`/decimal-word form otherwise. Not exhaustively natural for every possible amount (e.g. lakh/crore phrasing not implemented — standard-English thousand-grouping only), flagging as a P2 polish item, not blocking.
+3. **`template_recommendation` eval's live caller** builds a synthetic Block B (`TEMPLATE_RECOMMENDATION_CATALOG`, hand-mirrored from `V20260714150000__campaign_templates.sql`'s 4 SYSTEM seed rows) rather than hitting a live Spring workspace — if the SYSTEM template seed data ever changes, this catalog needs a matching update (documented in the constant's docstring).
+4. Did **not** touch `influora-api` (Java) at all this wave — W1 is signed, out of scope per my instructions. Did **not** touch frontend (`src/`) — W3 scope.
+
+**VETO: not exercised.** Cleared to QA.
+
+---
+
+## Priya — W1 SIGN-OFF (Platform-AI Phase 1, Wave 1) — 2026-07-21
+
+```
+FROM Priya → Ash | W1 production sign-off (architectural conformance) | MeeraContextDtos.java, MeeraInternalController.java, BrandContextAssembler.java, CreateCampaignExecutor.java | ✅ SIGNED — W2 UNBLOCKED (bound by Ash's 4 criteria) | Vikram cleared to start W2 (AI service)
+```
+
+**This is an ARCH conformance check, not re-QA** (Kavya PASS → Meera PASS+seam-fix → Kabir 0 P0/0 P1 → Ash APPROVED already did correctness/security/build). Spot-checked the two barrier-critical files myself for assurance.
+
+**1 — Rulings A1–A5 honored:**
+- **A1 (info barrier) ✅** — spot-verified `MeeraContextDtos.ContextResponse`: strict Java `record`, 14 explicit `@JsonProperty` components, NO `@JsonAnyGetter`/Map-spread/reflection at root — a new column cannot auto-flow. Kabir confirmed 0 forbidden fields (no pan/gstin/kyc/wallet/email/phone/escrow/budgetMax/per-counterparty). `product_catalog` hard-filtered to name/price/currency. CREATOR structurally 400s (Phase-3 guard). All reads own-workspace-scoped. Allow-list invariant LOCKED and held.
+- **A2 (context endpoint, no new auth) ✅** — spot-verified `MeeraInternalController#context`: `@PostMapping("/context")` reuses `resolveForWorkspace(onBehalfJwt, body.workspaceId())` — same mesh gate as `/messages`+`/turns/release`, zero new auth. My correction (b) implemented: `audience` rides in the signed JSON body; Kabir confirmed HMAC covers the raw cached bytes, so BRAND→CREATOR flip breaks the signature. Workspace cross-check present, no IDOR.
+- **A3 (template_id derive) ✅** — executor `requireVisible` (SYSTEM/own-CUSTOM, 404 cross-workspace), derives `campaign_type` from template row (STANDARD ok, AI value ignored), copies requirements/hashtags/audience/brand_guidelines, budget null both branches, optional+additive. Contract change conforms.
+- **A4 ✅** (sibling forward-lock: CREATOR structurally absent, honored). **A5 ✅** (N/A this wave — voice is W2b; pattern-lock intact).
+
+**2 — Ash's two downstream seam decisions: architecturally sound.**
+- **Field-name (Spring adapts to Python's canonical vocab):** correct and consistent with A1's intent (one canonical vocabulary, min blast radius). Ash flipped my original A1 phrasing (Spring-as-source) to Python-as-source — I RATIFY: the endpoint is net-new with zero other consumers, so re-aligning it is free, whereas churning `build_block_b`'s cached-prefix format + eval fixtures buys nothing. Meera's seam fix (display_name/tone_dial + `brand_color` extracted from `brand_aesthetic.accent_color`) verified with a new passing test. This IS the single reconciliation point (W1c) — correctly located.
+- **STANDARD-enum (derive from template row):** consistent with A3; keeps the AI-facing enum `HYPE|DIRECT|REVIEW` unwidened, template row is authority once chosen. Approved.
+
+**3 — Ash's 4 W2-bound criteria: AGREE, all mandatory before W2 sign-off.**
+Eval gate (15 golden + green run + before/after diff), P2-C untrusted-wrapper BOTH sides (Spring must not assume Python neutralizes; Python must not assume Spring did), assembler wiring (template_digest injection + schemas.py template_id + CI diff-check swap from pinned-list to live diff + PROMPT_VERSION bump + one persona line), and — **my cross-cutting lock** — cache key MUST become `(prompt_version, audience, workspace_id, session_id)`. Confirming the cache-key lock is a HARD W2 gate item: it is the info-barrier's last line, not just correctness. Kabir re-audits the cache key on W2. Also carry forward Meera's flag: `assembler.py:136` treats `past_campaign_summary` as a string but Spring sends a List — that's a W2 Python shape-handling fix, fold into the assembler-wiring criterion.
+
+**4 — 2 deferred P2s: defer to pre-Phase-3 CONFIRMED (neither pulled forward).**
+- **P2-A** (vetted sub-fields for tone_dial/brand_aesthetic/competitor_urls vs whole-blob) — barrier-safe today (sole writer `AnalyzeSiteTriggerService#toCallback` emits bounded brand-own data; blob-level entries are within my ratified A1 list). Defer OK. **Condition:** must land before ANY writer stores richer blobs into those fields — track it as a pre-Phase-3 gate, not open-ended.
+- **P2-B** (BRAND-workspace/userType guard on the endpoint) — no leak today (own-workspace binding holds), belt-and-braces before CREATOR audience ships. Defer to pre-Phase-3 OK. Both are correctly non-blocking for W1.
+
+**PROCESS NOTE (attached, non-blocking):** this feature arrived pre-written in the working tree ahead of the pipeline — **2nd occurrence** (portfolio-tracking was the 1st). The gates worked (caught + fixed a real seam bug: missing `brand_color`/wrong keys), so no HOLD. But two-in-a-row is a pattern. Flagging to Arjun/Swapnil: code landing outside the pipeline erodes the knowledge-distribution guarantee even when the gates catch the bugs. Recommend a lightweight "who wrote this and when" provenance line on the originating handoff going forward. Not a W1 blocker.
+
+**VERDICT: ✅ SIGNED — W1 PRODUCTION APPROVED. W2 (Vikram, AI service) is CLEARED TO START, bound by Ash's 4 W2 acceptance criteria (eval gate, P2-C both-sides wrapper, `(prompt_version,audience,workspace_id,session_id)` cache-key lock, assembler wiring). W2 sign-off is blocked until all 4 are green. P2-A/P2-B deferred to pre-Phase-3 with the P2-A "before richer blobs" condition. Docs gap (Vikram gap #4: `docs/authorization.md` §4 + 06-MATRIX/02-CONTRACT don't yet reflect the new route/field) → route a docs update into W2, before final Phase-1 sign-off.**
+
+---
+
+## GATE (Ash) — W1 AI re-review + eval → ✅ APPROVED, route to Priya for W1 sign-off
+
+W1 is backend-only (no prompt / PROMPT_VERSION / schema-prose change yet — those are W2), so this gate checks
+**contract conformance** to the Phase-1 prompt design and **binds the eval + safety criteria that fire at W2.**
+
+**Contract conformance — PASS** (read `MeeraContextDtos.java` ContextResponse):
+- `template_digest[]` = {name, campaign_type, budget_band, key_requirements} — exactly the digest shape my design needs; directly renderable as one Block-B line each. ✅
+- `past_campaign_summary[]` = {type, creator_count, funded} — matches the 2–3 line flywheel summary. ✅
+- `credit_state` = {mode, credits_remaining}; wire keys (`display_name`/`tone_dial`/`brand_color`/`niche_tags`/`product_catalog[name,price,currency]`) all match `assembler.py::build_block_b` (Meera's seam fix confirmed). ✅
+
+**BINDING W2 acceptance criteria (I block W2 sign-off on these):**
+1. **Eval gate:** 15 golden `product → expected template/budget` cases added to `influora-ai/evals/`, run on the PROMPT_VERSION bump. No W2 sign-off without a green eval run + the before/after diff. (Deferred here correctly — nothing to eval on backend-only W1.)
+2. **P2-C (Kabir, now MINE):** the Python untrusted-wrapper is **load-bearing** for the NEW free-text fields. `build_block_b` MUST pass `template_digest` (name + key_requirements) and `past_campaign_summary` through `_safe()`/untrusted neutralization just like the existing brand fields — a brand-authored template name is untrusted input reaching a system block. Spring must NOT assume Python neutralizes; Python must NOT assume Spring did. Defense in depth, both sides.
+3. **Cache-key:** Block-B is now server-sourced per workspace+audience → cache key becomes `(prompt_version, audience, workspace_id, session_id)` (Priya cross-cutting lock) AND Block B must carry `cache_control: ephemeral` keyed so one workspace's context never serves another. Verify no per-turn dynamic data leaks into the cached block.
+4. **assembler.py wiring:** `build_block_b` gains a template-digest + past-campaign section (it reads neither today); `schemas.py` create_campaign gains optional `template_id`; `get_tool_schemas()` + CI diff-check updated; ONE persona line for template recommendation; PROMPT_VERSION bumped.
+
+**P2 backlog accepted (non-blocking, tracked):** Kabir's P2-A (emit vetted sub-fields for tone_dial/brand_aesthetic/competitor_urls blobs instead of whole JSON), P2-B (brand-workspace/userType guard on the endpoint before Phase-3 CREATOR). Both land before Phase 3, not W1.
+
+**VERDICT: W1 APPROVED — clean pipeline (Kavya PASS → Meera PASS + seam fix → Kabir APPROVED 0 P0/P1 → Ash APPROVED). Route to Priya for W1 sign-off. W2 unblocks on Priya sign-off, and is bound by criteria 1–4 above.**
+
+---
+
+## RULING (Ash) — field-name seam winner (W1c/W2), resolves Kavya's blocker
+
+**Decision: the canonical wire vocabulary is the one Python ALREADY consumes** — `display_name`, `tone_dial`,
+`brand_color`, `niche_tags`, `product_catalog[{name,price,currency}]`, `past_campaign_summary`,
+`credit_state{mode,credits_remaining}` (per `influora-ai/app/prompt/assembler.py` build_block_b, which is battle-tested
+and whose keys are baked into the cached Block-B format + eval fixtures). **Spring's new context endpoint adapts to
+these names** — it renames its DTO output fields (`brand_name`→`display_name`, `tone_profile`→`tone_dial`, etc.);
+Python's assembler is NOT changed. Rationale: the endpoint is net-new with zero other consumers, so re-aligning its
+output is free; changing build_block_b would churn the cached-prefix format + fixtures for no gain. One canonical
+vocabulary, min blast radius.
+- **Route:** small DTO-field rename back to **Vikram** (`MeeraContextDtos.java` + `MeeraContextService`/assembler mapping
+  + its tests) — fold into **Meera's build-verify gate**, do NOT fully reopen W1. Meera confirms the endpoint's emitted
+  JSON keys match build_block_b exactly before PASS.
+- **W2 acceptance criterion:** assembler.py consumes the endpoint payload unchanged (no key renames needed on the Python
+  side). If W2 ever needs a Python-side rename, that's a seam violation — bounce it back here.
+- CI shared-schema diff-check extends to assert the context payload keys == build_block_b's expected keys (Priya A1).
+
+---
+
+## RULING (Ash) — STANDARD-enum gap (A3), unblocks W1b/W2a
+
+**Decision: DERIVE, don't widen.** When `template_id` is present, `create_campaign` takes `campaign_type`
+from the template row (may be STANDARD); the AI-facing tool enum stays `HYPE|DIRECT|REVIEW` (unchanged, so
+STANDARD never becomes an AI-selectable value and the locked contract doesn't widen). When `template_id` is
+absent, behavior is exactly as today. Rationale: keeps the Meera↔Spring schema minimal, avoids teaching the model
+a 4th type it should never pick on its own, and the template row is already the authority for campaign_type.
+Executor: if `template_id` set → campaign_type = template.campaign_type (ignore any AI-supplied value); else → AI value.
+Vikram (W1b) + Ash (W2a schema/persona) implement to this. Field-name seam (W1c) confirmed as the sole
+camelCase→snake_case reconciliation point — miss it and W2 500s (Arjun risk #4, acknowledged).
+
+---
+
+## TASK: Platform-AI Phase 1 — Knowledge Foundation (Ash → Priya + Arjun)
+
+**Owner:** Priya (arch rulings) → Arjun (decompose + route). **Source of truth (read first, don't re-derive):**
+`wiki/ai-review/platform-ai-strategy-brand-creator-voice.md` (full 4-phase roadmap + the P0 info-barrier rule)
+and `wiki/ai-review/campaign-templates-knowledge-ai-review.md` (the concrete Phase-1 P1s).
+
+**One-line why:** Meera runs on an EMPTY knowledge layer (Block B never populated live), campaign templates
+are invisible to the AI, and the entire creator side has zero AI. Phase 1 wires the knowledge the platform
+already owns into the prompt — no bigger model, no new provider. Money rails stay AI-free (unchanged).
+
+```
+FROM Ash → Priya | ARCH RULINGS (5) before any code — see A1–A5 below | wiki/ai-review/platform-ai-strategy-brand-creator-voice.md, influora-ai/app/prompt/assembler.py, influora-ai/app/tools/schemas.py | NEEDS RULING | Arjun blocked on A1–A3
+FROM Ash → Arjun | Decompose Phase 1 into waves + route to Vikram/Ananya/Kavya/Meera/Kabir — see W1–W3 below | (Priya's A1–A3 rulings) | BLOCKED on Priya A1–A3 | gate loop: Kavya QA → Meera verify → Kabir security → Ash re-review → Priya sign-off
+```
+
+### PRIYA — 5 architecture rulings (you decide; you don't implement)
+
+- **A1 — INFO BARRIER (P0, locks a permanent invariant).** The moment AI advises both brand and creator, we're
+  a broker running advisors for both sides of the same negotiation. **How to solve:** turn the single
+  `_FORBIDDEN_BRAND_FIELDS` blacklist in `assembler.py` into **two audience-scoped ALLOW-lists (BRAND / CREATOR)**
+  enforced Spring-side at the context endpoint (A2). Cross-party facts may enter a prompt ONLY in aggregate,
+  market-level form — never per-counterparty. **Ruling needed:** the exact field allow-list per audience + ratify
+  "aggregate-only" as a locked schema invariant. Co-review with Kabir.
+- **A2 — CONTEXT ENDPOINT seam.** New `GET /internal/meera/context?workspace_id=&audience=` on the EXISTING
+  service-token + HMAC mesh gate (same auth as `/internal/meera/*` tool forwards). It server-sources Block B
+  (brand profile, credit_state, template digest, past_campaign_summary); Python stops trusting any `brand` key in
+  the browser body. **Ruling needed:** confirm this is the right seam and it reuses the current mesh auth, not a new one.
+- **A3 — create_campaign `template_id` (touches YOUR locked Meera↔Spring contract).** Add optional `template_id`
+  to the 5-tool schema; executor validates visibility (reuse `CampaignTemplateService.requireVisible`), copies
+  requirements/hashtags/audience/brand_guidelines into the draft; **budget stays null** (money unchanged).
+  **Ruling needed:** approve the contract change + the CI shared-schema diff-check update + `PROMPT_VERSION` bump discipline.
+- **A4 — CREATOR AI as a Meera sibling (Phase 3 arch, decide now so Phase 1 doesn't paint us in).** Reuse the
+  three-block assembler + credit-service pattern + tool-tier discipline for a future creator copilot, READ-tier tools
+  only, money tools structurally absent. **Ruling needed:** sibling-of-Meera vs separate service.
+- **A5 — Voice streamed-TTS pattern (Phase 4 arch).** Approve sentence-chunked TTS (per-sentence Sarvam calls +
+  client-side audio queue) as the pattern — no new provider. **Ruling needed:** pattern OK, or hold for later.
+
+### ARJUN — decompose Phase 1 into waves + route (after Priya A1–A3)
+
+**W1 — Backend (Vikram):** (a) build the A2 context endpoint returning field-allow-listed brand profile + credit
+state + **template digest** (SYSTEM always + this workspace's CUSTOM, ~1 line each) + a 2–3 line
+`past_campaign_summary` (last N campaigns: type, creator count, funded y/n). (b) `create_campaign` executor accepts
+`template_id` per A3 (visibility check + copy fields, budget null). Route → Kavya.
+
+**W2 — AI service (Vikram + Ash):** `chat.py` calls the context endpoint server-side and IGNORES body `brand`;
+`assembler.py` injects the template digest into Block B (cached); add `template_id` to `schemas.py` +
+`get_tool_schemas()` + update the CI diff-check; **bump `PROMPT_VERSION`**; add ONE persona line ("when the brand's
+goal matches a template, recommend it by name via present_options and pass its template_id to create_campaign").
+Voice in the same wave: thread `lang_detected` from `/voice/transcribe` → `/voice/speak`, add a persona
+language-match rail (Hinglish in → Hinglish out), and a `speakable()` normalizer before TTS (₹ → "rupees", strip #,
+expand "UGC"). Route → Kavya.
+
+**W3 — Frontend (Ananya):** stop sending any brand context in the `useMeeraStream` body (server-sources it now);
+thread `lang_detected` from transcribe → speak so the reply speaks the user's language. Route → Kavya.
+
+**Gates (all waves):** Kavya QA → Meera build/verify → **Kabir security** (MANDATORY: audits the A1 audience
+allow-list + that client-supplied system-block text is fully removed — that was a real injection smell) → **Ash
+re-review** (prompt/version/eval) → Priya sign-off.
+
+**Eval gate (Ash owns, block sign-off without it):** 15 golden `product → expected template/budget` cases added to
+`influora-ai/evals/`, run on the `PROMPT_VERSION` bump. Start logging `present_options` tap-vs-recommended now — free eval set for Phase 2.
+
+**Phases 2–4 (not this task, tracked in the strategy doc):** outcome grounding + turn ON GARM scoring
+(`BrandSafetyScoringProperties.isEnabled()` is false today) → creator AI v1 (C1 pre-submit compliance check is
+highest ROI) → conversational + streamed-voice depth.
+
+### PRIYA — Architecture Rulings (A1–A5) — 2026-07-20
+
+```
+FROM Priya → Ash+Arjun | Rulings A1–A5 | assembler.py, tools/schemas.py, chat.py, BrandContextAssembler.java, MeeraInternalController.java, docs/authorization.md §4 | A1 APPROVE-W/CHANGES · A2 APPROVE · A3 APPROVE-W/CHANGES · A4 APPROVE · A5 APPROVE | Arjun unblocked on W1/W2
+```
+
+**Key verified fact (changes the plan):** `service/meera/BrandContextAssembler.java` ALREADY implements the deny-by-default field allow-list (Guardrail 3) — but it is NOT wired into `/chat`, and there is NO `/internal/meera/context` route on `MeeraInternalController` yet. A1/A2 = wire + audience-scope the EXISTING assembler, not build one from scratch. Reuse it; do not fork a second allow-list.
+
+**A1 — INFO BARRIER — APPROVE-WITH-CHANGES (P0, LOCKED INVARIANT).**
+Turn the single Python `_FORBIDDEN_BRAND_FIELDS` blacklist into two Spring-side ALLOW-lists on `BrandContextAssembler`, selected by `audience`. Python's blacklist STAYS as defense-in-depth (belt+braces), never the primary gate. Locked allow-lists (actual field names):
+- **BRAND allow-list** (source → Block B): `workspace_id`, `brand_name`(Workspace.name), `industry`, `website_url`, `niche_tags`(BrandProfile.nicheTagsJson), `tone_profile`(toneProfileJson), `brand_aesthetic`(brandAestheticJson, incl. brand_color), `product_catalog`(productCatalogJson — name/price/currency only), `competitor_urls`(brand's OWN list — barrier-safe), `analysis_status`, **NEW** `template_digest` (SYSTEM + this workspace's CUSTOM, 1 line each), **NEW** `past_campaign_summary` (last N of THIS workspace: type, creator count, funded y/n), `credit_state{mode,credits_remaining}`.
+- **CREATOR allow-list** (Phase 3, lock now, READ-tier only): `creator_id`, self `display_name`/`niches`/`follower_tier`/`engagement_rate` (own PLATFORM_VERIFIED), `my_deals` (own side only), `my_metrics` (own DeliverableMetric/CreatorScore), `campaign_requirements` (only campaigns the creator is party to: requirements/brand_guidelines/hashtags/disclosure), `market_rate_band` (AGGREGATE only), creator `credit_state` (daily action cap).
+- **NEVER, either side:** billingEmail/gstin/pan/kyc*, User.email/phone/passwordHash, wallet/escrow balances, budgetMax, any per-counterparty private datum (a creator's floor rate / other deals / negotiation history; another creator's agreed rate in the same campaign; any other workspace's data).
+- **RATIFIED as a locked schema invariant:** cross-party facts enter a prompt ONLY as niche/tier-level aggregates ("creators in your niche typically close at ₹X–Y") — never per-counterparty. Enforced at the Spring context endpoint (A2), not in Python.
+- **Change required:** reconcile the field-name seam — `BrandContextAssembler` emits `brandName/toneProfile/nicheTags`; Python `build_block_b` reads `display_name/tone_dial/niche_tags`. Pick ONE canonical set (prefer Spring's snake_case as source of truth) and update the CI shared-schema diff-check to cover the context payload, not just tool DTOs.
+- **Kabir co-review points:** (1) audience selector cannot be spoofed client-side (see A2); (2) `competitor_urls` confirmed brand-own, not scraped third-party PII; (3) `product_catalog` carries no order/customer data; (4) verify the CREATOR list never resolves another party's row even via a JOIN.
+
+**A2 — CONTEXT ENDPOINT — APPROVE.**
+`GET /internal/meera/context?workspace_id=&audience=` on the EXISTING dual-credential mesh gate — reuses `InternalServiceTokenFilter` + `OnBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, workspaceId)` (already the exact method `/messages` and `/turns/release` use). **No new auth.** Cross-check the on-behalf JWT's `workspaceId` against the `workspace_id` **query param** (mirrors the body-check the tool routes do). Server-sources Block B via `BrandContextAssembler.assemble(...)` + credit state + the two new digests. `chat.py` MUST stop passing the browser body to `assemble_prompt` and instead fetch this endpoint server-side; **Python ignores any `brand`/`prompt_version` key in the client body** (confirmed: `assemble_prompt(body,…)` at chat.py:156 today reads brand + prompt_version straight from the request body — that is the client-supplied-system-block smell, kill it).
+- **One correction to Ash's seam (Kabir must gate):** the HMAC canonical string is `METHOD + path + sha256hex(body) + timestamp + nonce`. A GET has an empty body, so `workspace_id`+`audience` ride ONLY in the querystring — if the verifier's `path` excludes the query, the audience selector is UNSIGNED and flippable by anything holding the HMAC key. Lock ONE of: (a) canonical `path` includes the raw querystring, or (b) make it **POST `/internal/meera/context` with a signed JSON body** `{workspace_id, audience}`. I rule **(b)** — least ambiguity, keeps audience inside the signed+integrity-checked payload and inside the workspace cross-check. "GET" is cosmetic here; correctness wins.
+
+**A3 — create_campaign `template_id` — APPROVE-WITH-CHANGES.**
+Add optional `template_id` to the `create_campaign` schema (the D-tier tool). Executor reuses `CampaignTemplateService.requireVisible(templateId, workspaceId)` (SYSTEM-or-own, already returns 404 on cross-workspace — good) and copies requirements/hashtags/audience/brand_guidelines into the draft. **budget stays null — money rails untouched, confirmed.** Requires: CI shared-schema diff-check update (schemas.py ↔ Spring `CreateCampaign` DTO) + `PROMPT_VERSION` bump + docs (06-MATRIX, 02-CONTRACT).
+- **Change required (gap Ash's plan missed):** `create_campaign.campaign_type` enum is `HYPE/DIRECT/REVIEW` — there is **no `STANDARD`**, but the UGC SYSTEM template's type IS `STANDARD`. A brand picking the UGC template can't round-trip its type through this tool. Resolve before W2: either add `STANDARD` to the enum (schema change, diff-check + PROMPT_VERSION already in scope) or have the executor derive `campaign_type` from the template row when `template_id` is present and drop it from the required set. I lean **derive-from-template** (template is the authority once chosen; avoids widening the enum the persona reasons over). Ash to pick; either way it's one decision, not a blocker.
+- Keep `template_id` OPTIONAL and additive — old bodies must still validate (backward-compat is why the diff-check exists).
+
+**A4 — CREATOR AI as a Meera SIBLING — APPROVE (sibling, not separate service).**
+Reuse the three-block assembler + credit-service + tool-tier discipline. READ-tier tools only; money tools **structurally absent** (no schema entry, no executor path — same model as MeeraInternalController: capability absence, not a soft block). Rationale: a separate service would fork the prompt-cache design, the mesh gate, and the allow-list — three things that MUST stay identical for the barrier to hold. One infra, two audiences, enforced at the A2 endpoint. Non-negotiable siblings-share constraints: (1) same context endpoint with `audience=CREATOR`; (2) creator daily action cap (BrandAiCredit-style); (3) cheapest adequate model; (4) the A1 CREATOR allow-list is the ONLY context source.
+
+**A5 — Voice streamed-TTS — APPROVE (pattern, no new provider).**
+Sentence-chunked TTS: fire a per-sentence Sarvam call as each sentence completes over SSE, queue audio client-side. No new provider, no money impact — an orchestration change in the voice-output hook + allowing multi-input Sarvam calls. Ships in Phase 4 as planned; approving the PATTERN now so Phase-1 voice work (V1 lang parity + V2 `speakable()` normalizer) doesn't build a shape we have to unwind. Constraint: `speakable()` normalization runs per-sentence BEFORE each TTS call (not once on the whole reply), and the phrase cache (V4) keys on the normalized sentence.
+
+**Cross-cutting architectural risks Ash's plan under-specified (LOCKED):**
+1. **Cache-key must gain `audience`.** `cache_key_for(prompt_version, workspace_id, session_id)` has no audience component. The moment CREATOR AI (A4) shares the Block-B cache path, a brand and creator turn could collide on `(prompt_version, workspace_id, session_id)`. Lock the key as `(prompt_version, audience, workspace_id, session_id)` NOW, even though Phase 1 is BRAND-only — retrofitting a cache key after cross-audience data is flowing is a barrier incident waiting to happen.
+2. **PROMPT_VERSION bump already invalidates cache** — confirmed `prompt_version` is in the key; the W2 bump auto-evicts stale Block A/B. Good. Just ensure the bump is a single source (persona.py `stamp_prompt_version()`), server-stamped, never client-supplied (see A2 — stop trusting body `prompt_version`).
+3. **Block B is now server-sourced but still cache_control:ephemeral** — the digest (template + past_campaign) is stable within a session, so it caches fine, but it changes when a brand saves a new CUSTOM template mid-session. Acceptable (next conversation picks it up); do NOT try to invalidate mid-session — that thrashes the 65% cost lever. Document as intended staleness.
+4. **Per-audience cache SEPARATION is the barrier's last line** — item 1 is not just correctness, it's the info-barrier. Kabir must include the cache key in the A1 audit.
+
+### ARJUN — Phase 1 Routing (Wave Breakdown + Assignments) — 2026-07-20
+
+**Dependency-ordered wave structure (3 waves, W2 blocked on W1 completion):**
+
+**WAVE 1 — Backend context endpoint + create_campaign template_id (W1a/W1b parallel → W1c seam fix)**
+```
+FROM Arjun → Vikram | W1a: POST /internal/meera/context endpoint (A2) | influora-api/src/main/java/com/influora/web/MeeraInternalController.java, service/meera/BrandContextAssembler.java, web/dto/meera/MeeraDtos.java, docs/authorization.md | ASSIGNED | implement POST /internal/meera/context with signed {workspace_id,audience} body; wire BrandContextAssembler.assemble(workspaceId,BRAND); return BRAND allow-list fields + NEW template_digest + NEW past_campaign_summary; reuse InternalServiceTokenFilter+OnBehalfAuthResolver
+FROM Arjun → Vikram | W1b: create_campaign accepts template_id (A3) | influora-ai/app/tools/executors/campaign.py (if Spring-side executor), OR influora-api/src/main/java/com/influora/service/campaign/executors/CreateCampaignExecutor.java, web/dto/campaign/CampaignDtos.java | ASSIGNED | add optional template_id to CreateCampaign DTO; executor calls CampaignTemplateService.requireVisible(templateId,workspaceId), copies requirements/hashtags/audience/brand_guidelines to draft; budget stays null; resolve STANDARD-enum gap per Priya A3 (derive campaign_type from template row when template_id present)
+FROM Vikram → Vikram | W1c: seam reconciliation (A1 change-req) | BrandContextAssembler.java, influora-ai/app/prompt/assembler.py | BLOCKED on W1a | reconcile field-name mismatch: Spring emits brandName/toneProfile/nicheTags → Python reads display_name/tone_dial/niche_tags; pick ONE canonical (prefer Spring snake_case); extend CI shared-schema diff-check (influora-ai/.github/workflows/schema-check.yml or scripts/schema-diff-check.sh) to cover context payload
+FROM Vikram → Kavya | W1 QA gate | all W1a/W1b/W1c files | BLOCKED on W1c | STANDARD-enum gap resolved, audience=BRAND hardcoded in this wave, POST body signed, allow-list enforced, template_id optional+backward-compat
+```
+
+**WAVE 2 — AI service wiring + voice lang-parity/normalizer (W2a Python + W2b voice, both parallel after W1 clears)**
+```
+FROM Arjun → Vikram | W2a: chat.py server-sources context + ignore client brand/prompt_version | influora-ai/app/routes/chat.py, app/clients/spring.py, app/prompt/assembler.py, app/tools/schemas.py, app/prompt/persona.py, influora-ai/.github/workflows/schema-check.yml | BLOCKED on W1 Kavya PASS | chat.py fetch POST /internal/meera/context at conversation start, pass to assembler; assembler.build_block_b injects template_digest; IGNORE body brand/prompt_version keys; add template_id to schemas.py CreateCampaign + get_tool_schemas(); update CI diff-check; bump PROMPT_VERSION; add ONE persona line re: template recommendation via present_options; update cache_key_for → (prompt_version,audience,workspace_id,session_id) per Priya locked cross-cutting #1
+FROM Arjun → Vikram | W2b: voice lang-parity + speakable() normalizer | influora-ai/app/routes/voice.py, app/providers/sarvam.py, app/prompt/persona.py | BLOCKED on W1 Kavya PASS (parallel with W2a) | thread lang_detected from /voice/transcribe response → /voice/speak request; add persona language-match rail (Hinglish in→Hinglish out); implement speakable(text) normalizer before TTS: ₹15,000→"fifteen thousand rupees", strip #, expand UGC→"U G C"; apply per-sentence BEFORE each Sarvam call (future-proof for V3 streamed-TTS)
+FROM Vikram → Kavya | W2 QA gate | all W2a+W2b files | BLOCKED on W2a+W2b | client brand/prompt_version fully ignored, template_digest in Block B, cache key has audience, PROMPT_VERSION bumped, lang-parity works, speakable() normalization tested
+```
+
+**WAVE 3 — Frontend client-supplied-context removal + lang threading**
+```
+FROM Arjun → Ananya | W3: stop sending brand in useMeeraStream body + thread lang_detected | src/hooks/useMeeraStream.ts, src/components/feature/meera/MeeraChatPanel.tsx (if lang state lives there), src/lib/meera-api.ts | BLOCKED on W2 Kavya PASS | remove any brand/niche_tags/product_catalog/tone_dial fields from chat request body (server sources via W1 endpoint now); thread lang_detected from transcribe response state → speak request so reply speaks user's language
+FROM Ananya → Kavya | W3 QA gate | W3 files | BLOCKED on W3 | no brand context in browser body, lang_detected threaded, tsc clean
+```
+
+**GATE LOOP (applies to each wave after its Kavya QA pass):**
+```
+FROM Kavya → Meera | W1/W2/W3 build/verify | per-wave file list | BLOCKED on Kavya per-wave | mvn -o test (backend waves), pytest (AI-service W2), npm run build + tsc (frontend W3); curl POST /internal/meera/context with mock signed body (W1 only); verify audience field in logs; verify template_digest present in response; verify lang_detected→speak round-trip
+FROM Meera → Kabir | W1/W2 security audit (MANDATORY) | BrandContextAssembler.java, MeeraInternalController.java, chat.py, assembler.py, app/cache.py (cache_key_for) | BLOCKED on Meera per-wave | OWASP audit: (1) audience selector cannot be spoofed client-side (POST body signed, workspace cross-check); (2) client-supplied brand/prompt_version fully ignored in Python; (3) BRAND allow-list enforced (no billingEmail/gstin/kyc/wallet/budgetMax/per-counterparty data); (4) cache key includes audience (barrier separation); (5) competitor_urls=brand-own; (6) product_catalog no order/customer data; flag for W3: no Kabir gate (frontend removal, no auth surface)
+FROM Kabir → Ash | W2 re-review (prompt/eval gate) | persona.py, schemas.py, influora-ai/evals/ | BLOCKED on Kabir W2 PASS | verify PROMPT_VERSION bumped; 15 golden product→template/budget cases added to evals/, run green; start logging present_options tap-vs-recommended (free Phase-2 eval set); persona template-recommendation line landed
+FROM Ash → Priya | Final sign-off | full Phase 1 changeset | BLOCKED on Ash W2+W3 clear | all waves green, eval gate passed, barrier locked, cache-key audience-scoped, Block B server-sourced
+```
+
+**EVAL GATE (Ash owns, blocks Priya sign-off):**
+- 15 golden cases in `influora-ai/evals/test_template_recommendation.py`: product description → expected template name + budget band (e.g. "sustainable cotton tees, ₹50 MRP, sell 200/mo" → UGC template + ₹5–20k budget).
+- Run on PROMPT_VERSION bump, fail-blocks if <12/15 correct.
+- Start logging `present_options` tool calls: log `{turn_id, options:[...], recommended:idx, user_tapped:idx}` → Phase 2 uses this as eval set for recommendation quality.
+
+**DEPENDENCY RISKS FLAGGED:**
+1. **W2 BLOCKS on W1 endpoint contract** — chat.py cannot call `/internal/meera/context` until W1 ships + Kavya clears it; cannot proceed in parallel.
+2. **Cache-key change (W2a) is a cross-cutting lock** — Priya's ruling #1 (audience in cache key) must land in W2 even though Phase 1 is BRAND-only, to avoid retrofit risk when Phase 3 CREATOR goes live.
+3. **Field-name seam (W1c) could break Python if missed** — Spring emits camelCase, Python reads snake_case today; W1c reconciliation is the ONLY place this is fixed for the context payload; if skipped, W2 will 500 on missing keys.
+4. **STANDARD-enum gap (A3 change-req) must resolve in W1b or W2a** — UGC template is campaign_type=STANDARD but tool enum lacks it; Ash must pick: add STANDARD to enum OR derive from template row. Either blocks W2 schema-change.
+
+**PARALLEL OPPORTUNITIES:**
+- W1a (context endpoint) + W1b (template_id) can run in parallel — different files, no collision.
+- W2a (Python) + W2b (voice) can run in parallel after W1 clears — different surfaces.
+- W3 frontend is fast (<2h) once W2 lands, low collision risk.
+
+---
+
 ## TASK: Campaign HYPE config persistence (hype_config JSON column) — local verification
 
 ```
@@ -236,7 +515,190 @@ FROM Meera → Priya | Wave 2 local verification (4 checks) | influora-api/src/t
 **CHECK #4 — frontend build sanity: PASS.**
 `npx tsc --noEmit -p tsconfig.json` → exit 0, zero errors.
 
+---
+
+## Vikram — W1 DONE (Platform-AI Phase 1, Wave 1 — backend context endpoint + template_id)
+
+```
+FROM Vikram → Kavya | W1a+W1b+W1c: POST /internal/meera/context + create_campaign template_id + field-name seam | see file list below | READY for QA | mvn -o test green (targeted 19/19, full suite pre-existing-unrelated 2 fails only)
+```
+
+**Finding on arrival:** all three W1 subtasks (W1a, W1b, W1c) were already implemented in the working tree (untracked/modified files, no commit) when I started — same pattern as the earlier portfolio-tracking incident (code written outside the pipeline). I did NOT re-implement; I read every file against Priya's A1/A2/A3 rulings + Ash's STANDARD-enum ruling line-by-line, then verified by compiling and running the tests. Everything checked out — see verification below. Treat this handoff as **verification + contract documentation**, not "I wrote this."
+
+**Files (all under `influora-api/`):**
+- `src/main/java/com/influora/web/MeeraInternalController.java` — new `POST /internal/meera/context`, reuses `OnBehalfAuthResolver.resolveForWorkspace` (no new auth), delegates to `MeeraContextService`
+- `src/main/java/com/influora/service/meera/MeeraContextService.java` — **NEW**, orchestrator: fetches workspace/brand profile/templates(SYSTEM+CUSTOM)/recent campaigns(last 5)/credit state, hardcodes `audience=BRAND` (400s on anything else — Phase 3 CREATOR guarded not populated)
+- `src/main/java/com/influora/service/meera/BrandContextAssembler.java` — extended with `assembleBrandContext(...)`, reuses the existing allow-list discipline, adds `template_digest` (SYSTEM always + workspace's CUSTOM, name/campaign_type/budget-band/key-requirements) and `past_campaign_summary` (last 5: type/creator_count/funded), filters `product_catalog` to name/price/currency only
+- `src/main/java/com/influora/web/dto/meera/MeeraContextDtos.java` — **NEW**, `ContextRequest{workspace_id, audience}`, `ContextResponse` — every field explicitly `@JsonProperty`-annotated snake_case (the W1c seam fix)
+- `src/main/java/com/influora/service/meera/tool/CreateCampaignExecutor.java` — optional `template_id`: if present, `CampaignTemplateService.requireVisible` (visibility check) then copies requirements/hashtags/target_audience/brand_guidelines and derives `campaign_type` from `template.getCampaignType()` (may be STANDARD, ignores AI-supplied value) per Ash's DERIVE ruling; if absent, byte-for-byte unchanged. Budget stays null either way.
+- `src/main/java/com/influora/service/CampaignTemplateService.java` — `requireVisible` doc updated noting the new caller
+- `.github/workflows/schema-check.yml` — new step extracts `ContextResponse`'s `@JsonProperty` set and diffs against a pinned expected list (non-blocking for now — Python side isn't wired yet, that's W2)
+- Tests: `src/test/java/com/influora/service/meera/tool/CreateCampaignExecutorTest.java` (3 new cases: template_id present+derives+copies incl. STANDARD, template_id absent+unchanged, template_id not-visible+404), `src/test/java/com/influora/service/meera/BrandContextAssemblerTest.java` (NEW, 4 tests), `src/test/java/com/influora/service/meera/MeeraContextServiceTest.java` (NEW, 5 tests), `src/test/java/com/influora/web/MeeraInternalControllerContextTest.java` (NEW, 2 tests)
+
+**Exact context-payload JSON shape (W2/Kavya contract — `POST /internal/meera/context` response body):**
+```json
+{
+  "workspace_id": "string",
+  "brand_name": "string",
+  "industry": "string|null",
+  "website_url": "string|null",
+  "niche_tags": ["string"] ,
+  "tone_profile": { "...": "raw parsed BrandProfile.toneProfileJson" },
+  "brand_aesthetic": { "...": "raw parsed BrandProfile.brandAestheticJson" },
+  "product_catalog": [ { "name": "string", "price": "number", "currency": "string" } ],
+  "competitor_urls": ["string"],
+  "analysis_status": "PENDING|READY|...",
+  "template_digest": [
+    { "name": "string", "campaign_type": "HYPE|DIRECT|REVIEW|STANDARD", "budget_band": "₹low–₹high", "key_requirements": "comma joined, first 3" }
+  ],
+  "past_campaign_summary": [
+    { "type": "HYPE|DIRECT|REVIEW|STANDARD", "creator_count": 0, "funded": true }
+  ],
+  "credit_state": { "mode": "unlimited|metered", "credits_remaining": 0 }
+}
+```
+Request body: `{"workspace_id": "string", "audience": "BRAND"}` (POST, signed — audience rides inside the HMAC-covered JSON body, not a query param, per Priya's A2 correction). Header: `X-Onbehalf-Authorization`. `null`-valued optional fields are omitted (`@JsonInclude(NON_NULL)`), not sent as `null`.
+
+**Build/test results:**
+- `mvn -o -DskipTests compile` → BUILD SUCCESS
+- `mvn -o test -Dtest=CreateCampaignExecutorTest,BrandContextAssemblerTest,MeeraContextServiceTest,MeeraInternalControllerContextTest` → 19/19 PASS
+- `mvn -o -DskipITs test` (full suite) → 1367 run, 2 failures — **both pre-existing and unrelated to W1**, zero files touched by these two tests are in the W1 changeset: `WalletControllerTest.testTransactionsDelegatesToService` (NPE on `workspace` — known wallet 403/null-workspace issue, tracked separately) and `MeeraVoiceAiClientTest.testSpeakSendsBearerTokenAndBody` (URL assertion mismatch in `/voice/speak` — unrelated voice client test). Confirmed unrelated by grep: neither `WalletController.java` nor `MeeraVoiceAiClient.java` appears anywhere in this wave's file list.
+
+**Gaps / assumptions flagged for Priya/Kabir (not fixed unilaterally, out of my authority):**
+1. **STANDARD-enum ruling implemented correctly** — verified `create_campaign.campaign_type` enum itself is untouched (Python-side, W2 scope); the executor derives from the template row only. Matches Ash's ruling exactly.
+2. **`template_id` not persisted on `Campaign`/`CampaignIntent`** — traceability lives only in the audit log (`auditDetail.put("templateId", ...)`), by explicit design note in the executor's javadoc ("no schema change to persist templateId on the row itself — out of scope for this wave"). Flag if product wants a real column later.
+3. **CI diff-check for the context payload is a pinned-list guard, not a live Python↔Java diff** (Python side isn't wired to the endpoint until W2) — the workflow's own comment says to replace it with a real diff once W2 lands. Whoever does W2 must not skip that swap.
+4. **`docs/authorization.md` §4 and the 06-MATRIX/02-CONTRACT docs** mentioned in Priya's A2/A3 rulings do NOT yet reflect the new `/internal/meera/context` route or `template_id` field — I did not touch docs (out of my file scope per the task instructions I was given); flagging so Kavya/Arjun route a docs update before Priya's final sign-off.
+5. Cache-key audience-scoping (Priya's cross-cutting risk #1: `(prompt_version, audience, workspace_id, session_id)`) is **W2 scope** (Python `cache_key_for`), not touched here — confirming it's still open so W2 doesn't miss it.
+
 **VETO: not exercised — full PASS across all 4 checks.** Cleared to proceed to Kabir (I4 security) per the Wave 2 gate loop.
+
+---
+
+## Kavya — W1 QA Verdict (Platform-AI Phase 1, Wave 1)
+
+```
+FROM Kavya → Meera | W1 QA gate PASS | all W1 files | ✅ PASS | route to Meera build/verify
+```
+
+**Review date:** 2026-07-21 · **Reviewer:** Kavya (QA Lead) · **Scope:** W1a (context endpoint) + W1b (template_id) + W1c (field-name seam), per Vikram handoff
+
+| Check | Verdict | Evidence |
+|-------|---------|----------|
+| **A2: POST auth** | ✅ PASS | MeeraInternalController.java:123-129 — `POST /internal/meera/context`, reuses `OnBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, body.workspaceId())` (existing mesh gate, NO new auth). `workspace_id`+`audience` in POST body (signed by HMAC, per Priya ruling). |
+| **A1: Info barrier** | ✅ PASS | BrandContextAssembler.java:93-158 — allow-list discipline enforced. Emits ONLY: workspace_id, brand_name, industry, website_url, niche_tags, tone_profile, brand_aesthetic, product_catalog (name/price/currency filter at line 138-158), competitor_urls, analysis_status, template_digest, past_campaign_summary, credit_state. NO PII/forbidden fields (billingEmail/gstin/pan/kyc/wallet_balance/email/phone/creator PII/escrow) — javadoc lines 30-37 EXPLICITLY excludes these. Filter is allow-list (safe), not blacklist. |
+| **A1: audience gating** | ✅ PASS | MeeraContextService.java:86-93 — BRAND hardcoded, CREATOR throws 400 AUDIENCE_NOT_SUPPORTED (Phase 3 guard). Test coverage: MeeraContextServiceTest.java:74-85. audience selector CANNOT be spoofed (POST body signed, workspace cross-check at controller line 126). |
+| **A3: template_id** | ✅ PASS | CreateCampaignExecutor.java:159-164 — optional+additive; when present: `requireVisible` line 160 (SYSTEM/own-CUSTOM only, 404s cross-workspace), derives `campaign_type` from template row (line 161, may be STANDARD per Ash ruling, AI value IGNORED), copies requirements/hashtags/target_audience/brand_guidelines (lines 200-204). Budget NULL both branches (line 195 builder has NO budgetMin/budgetMax set, confirmed lines 232-233 test assertion). When absent: unchanged (line 163). Test: CreateCampaignExecutorTest.java:191-241 (3 branches covered). |
+| **W1c: field seam** | ⚠️ MISMATCH | MeeraContextDtos.java:64-76 emits snake_case `brand_name`, `tone_profile`, `niche_tags`. BUT Python influora-ai/app/prompt/assembler.py:119-125 READS `display_name`, `tone_dial`, `niche_tags` (partial match). W2 WILL 500 on missing `display_name`/`tone_dial` keys unless Python updated. Vikram's contract doc (line 427-447 SHARED_CONTEXT) lists the Spring keys but does NOT confirm Python changed yet. **RULING: Priya's A1 said "prefer Spring's snake_case as source of truth" + Vikram gap #3 flags this as W2 task to swap the pinned-list CI check for a real diff. Accept for W1 (backend-only), BLOCK W2 if Python not fixed.** |
+| **Test coverage** | ✅ PASS | (1) MeeraContextServiceTest.java:5 tests — audience guard (73-85), template digest SYSTEM+CUSTOM (96-135), past_campaign_summary creator_count+funded (139-186). (2) BrandContextAssemblerTest.java:4 tests — product_catalog filter (40-65), template_digest formatting incl. STANDARD (82-109), allow-list enforcement (69-79). (3) CreateCampaignExecutorTest.java:3 new W1b cases (191-286) — template_id present/derives/copies, absent/unchanged, not-visible/404. (4) MeeraInternalControllerContextTest.java:2 tests (76-120) — auth + workspace cross-check. ALL green per Vikram (19/19 targeted). |
+| **Standards** | ✅ PASS | No `any` (Java typed). No hardcoded secrets (grepped MeeraContextService/BrandContextAssembler/CreateCampaignExecutor, zero hits). Transaction boundaries correct: MeeraContextService.java:84 `@Transactional(readOnly=true)`, CreateCampaignExecutor.java:139 `@Transactional` (write). No N+1: templates fetched once (MeeraContextService.java:104-106), campaigns once (120), collaborations once (128). |
+
+**Security escalations to Kabir:**
+1. **A1 audience allow-list review (MANDATORY)** — BrandContextAssembler BRAND list must be audited for any per-counterparty data leaks (none found in this QA, but Kabir must verify per Priya A1 co-review point 4: "verify the CREATOR list never resolves another party's row even via a JOIN" — CREATOR list is Phase 3 but the pattern must be locked now).
+2. **A2 HMAC canonical string audit** — confirm POST body `workspace_id`+`audience` are inside the signed payload (Priya ruling: "POST with a signed JSON body" to avoid unsigned querystring). I cannot verify HMAC plumbing (filter-chain level, out of QA scope), Kabir must.
+3. **product_catalog source** — Priya A1 point 3: "competitor_urls confirmed brand-own, not scraped third-party PII; product_catalog carries no order/customer data". BrandContextAssembler.java:116 reads `brandProfile.getProductCatalogJson()` — I cannot trace the scraper source (analyze_site), Kabir must confirm no PII/customer data in that JSON.
+
+**W1c seam mismatch detail (does NOT block W1 → Meera, BLOCKS W2):**
+- Spring emits: `brand_name`, `tone_profile`, `niche_tags`, `product_catalog`, `template_digest`, `past_campaign_summary`, `credit_state`
+- Python READS (influora-ai/app/prompt/assembler.py:119-125): `display_name`, `tone_dial`, `niche_tags` (only `niche_tags` matches)
+- **W2 will 500** on `KeyError: 'display_name'` when chat.py calls the context endpoint unless assembler.py updated to read Spring's keys
+- Vikram gap #3 (SHARED_CONTEXT line 459) flags this exact issue + notes the CI diff-check is a pinned-list placeholder until W2 swaps it for a live diff
+- **Verdict:** W1 backend is correct per Priya's ruling (Spring = source of truth). Python must conform in W2. Arjun: gate W2 Kavya pass on confirmation that assembler.py changed to read `brand_name`/`tone_profile` not `display_name`/`tone_dial`.
+
+**Overall verdict: ✅ PASS W1 to Meera build/verify.** A2 conformance clean, A1 info-barrier enforced (allow-list, no PII found), A3 template_id correct (STANDARD handled, budget null, optional+additive), test coverage full. W1c seam is a known W2 blocker, documented. No TECH-STACK violations. Route to Meera for `mvn -o test` + curl smoke-test of `/internal/meera/context` (mock signed body). Then Kabir for security audit (3 escalations above).
+
+---
+
+## Meera — W1 Build Verify (Platform-AI Phase 1, Wave 1)
+
+```
+FROM Meera → Kabir | W1 build/verify PASS, seam FIX-APPLIED | MeeraContextDtos.java, BrandContextAssembler.java + 2 test files | ✅ PASS | proceed to Kabir's 3 security escalations (mandatory gate)
+```
+
+**Verifier:** Meera · **Maven:** `C:\Users\Sage world\.maven\apache-maven-3.9.6\bin\mvn.cmd -o` (offline, confirmed working; `influora-api/.tools/apache-maven-3.9.9` also present but unused since the `.maven` install verified first)
+
+### PART A — build/test
+
+| Step | Result |
+|------|--------|
+| `mvn -o -DskipTests compile` | ✅ BUILD SUCCESS (643 source files) |
+| `mvn -o test -Dtest=CreateCampaignExecutorTest,BrandContextAssemblerTest,MeeraContextServiceTest,MeeraInternalControllerContextTest` | ✅ 20/20 PASS (0 fail, 0 err) — was 19/19 in Vikram's run, now 20 after I added 1 new test for the `brand_color` extraction below |
+| `mvn -o -DskipITs test` (full suite) | ⚠️ 1368 run, 1 failure, 1 error, 3 skipped — **both are the exact 2 pre-existing failures Vikram/Kavya already flagged, confirmed unrelated** |
+
+Full-suite failure detail:
+- `WalletControllerTest.testTransactionsDelegatesToService` — NPE, `Cannot invoke "Workspace.getId()" because "workspace" is null` (WalletController.java:146). `WalletController.java` / `WalletControllerTest.java` are **not** in the W1 changeset (`git status --porcelain influora-api/src` confirms zero touch).
+- `MeeraVoiceAiClientTest.testSpeakSendsBearerTokenAndBody` — URL assertion `expected: <http://localhost:8000/voice/speak> but was: </voice/speak>`. `MeeraVoiceAiClient.java` is **not** in the W1 changeset.
+- No new failures anywhere in a W1-touched file. **Does not block.**
+
+### PART B — seam-fix confirmation (Ash's field-name ruling)
+
+Cross-checked `MeeraContextDtos.java`/`MeeraContextService.java` (as they stood before my edit) against `influora-ai/app/prompt/assembler.py::build_block_b` (lines 108–145):
+
+| Ash's canonical key | Spring emitted (BEFORE) | Spring emits (AFTER fix) | Status |
+|---|---|---|---|
+| `display_name` | `brand_name` | `display_name` | FIX-APPLIED |
+| `tone_dial` | `tone_profile` | `tone_dial` | FIX-APPLIED |
+| `brand_color` | *(absent — buried as `accent_color` inside `brand_aesthetic`)* | `brand_color` (top-level, extracted from `brand_aesthetic.accent_color`) | FIX-APPLIED |
+| `niche_tags` | `niche_tags` | `niche_tags` | MATCH (no change) |
+| `product_catalog[{name,price,currency}]` | `product_catalog` (already filtered to name/price/currency, `BrandContextAssemblerTest` covers it) | unchanged | MATCH (no change) |
+| `past_campaign_summary` | `past_campaign_summary` | unchanged | MATCH (no change) |
+| `credit_state{mode,credits_remaining}` | `credit_state{mode,credits_remaining}` | unchanged | MATCH (no change) |
+
+Kavya's QA correctly caught the mismatch (she compared against Priya's original A1 wording, which the top-of-bus **RULING (Ash)** superseded — Ash's ruling is decisive: Spring adapts to Python's already-battle-tested names, not the reverse). Per the gate instructions, this was scoped as a mechanical DTO rename, folded into my gate rather than bouncing back to Vikram:
+
+**Files changed (rename + `brand_color` extraction, all within MeeraContextDtos/MeeraContextService/BrandContextAssembler + their tests, nothing else touched):**
+- `influora-api/src/main/java/com/influora/web/dto/meera/MeeraContextDtos.java` — `ContextResponse`: `@JsonProperty("brand_name") brandName` → `@JsonProperty("display_name") displayName`; `@JsonProperty("tone_profile") toneProfile` → `@JsonProperty("tone_dial") toneDial`; added `@JsonProperty("brand_color") String brandColor` field; javadoc updated to point at Ash's ruling instead of the superseded "Spring snake_case is source of truth" framing.
+- `influora-api/src/main/java/com/influora/service/meera/BrandContextAssembler.java` — `assembleBrandContext(...)` renamed local var `toneProfile`→`toneDial`, added `extractBrandColor(Object brandAesthetic)` helper that pulls `accent_color` out of the parsed `brand_aesthetic` blob (the only writer, `AnalyzeSiteTriggerService#toCallback`, always shapes it as `{accent_color: hex}}`), passes it as the new positional `brandColor` arg. `brand_aesthetic` itself is left in the payload (harmless extra field, not in Ash's canonical list but not forbidden either).
+- `influora-api/src/test/java/com/influora/web/MeeraInternalControllerContextTest.java` — updated the positional `ContextResponse(...)` constructor call in `testContextHappyPath` for the new field (added one `null` arg).
+- `influora-api/src/test/java/com/influora/service/meera/BrandContextAssemblerTest.java` — added `testBrandColorExtractedFromAccentColor` (new, proves `accent_color` → top-level `brand_color`).
+- `MeeraContextService.java` — **unchanged**, it never referenced the field names directly (delegates entirely to the assembler).
+
+`product_catalog` item shape and `past_campaign_summary`/`credit_state` sub-keys were already exact matches — no changes needed there. Note (flagging, not blocking): `assembler.py:136-137` currently treats `past_campaign_summary` as a single string (`_safe(brand['past_campaign_summary'])`) while Spring sends a `List<PastCampaignEntry>` — that's a W2 (Python-side `assembler.py`) shape-handling detail, not a field-name mismatch, and out of my scope (no Python edits made, per the gate rules).
+
+### VERDICT: ✅ PASS
+
+Build green, targeted tests 20/20, full suite has only the 2 known pre-existing unrelated failures, seam fix applied and verified with a new passing test. **Routing to Kabir** for the 3 mandatory security escalations Kavya flagged (A1 audience allow-list co-review, A2 HMAC canonical-string/signed-body audit, product_catalog PII-source confirmation).
+
+---
+
+## Kabir — W1 Security Audit (Platform-AI Phase 1, Wave 1) — 2026-07-21
+
+```
+FROM Kabir → Ash | W1 OWASP + info-barrier audit COMPLETE | MeeraInternalController.java, MeeraContextService.java, MeeraContextDtos.java, BrandContextAssembler.java, CreateCampaignExecutor.java, CampaignTemplateService.java, InternalServiceTokenFilter.java, InternalRequestVerifier.java, CachedBodyHttpServletRequest.java, OnBehalfAuthResolver.java | ✅ APPROVED (0 P0, 0 P1, 3 P2) | route to Ash for AI re-review + eval gate
+```
+
+**Auditor:** Kabir (Red-Team Lead) · **Method:** read CURRENT code, adversarial. Authorized scope: Influora code only.
+
+### ESCALATION RULINGS (3)
+
+**1 — AUDIENCE ALLOW-LIST (P0 info barrier) → PASS.**
+`ContextResponse` (MeeraContextDtos.java:66-81) is a **strict top-level allow-list**: a fixed Java `record` with 14 explicitly `@JsonProperty`-named components. **No `@JsonAnyGetter`, no `Map`-spread, no reflection/passthrough** at the response root — a new `BrandProfile`/`Workspace` column cannot auto-flow. Full emitted-field set: `workspace_id, display_name, industry, website_url, niche_tags, tone_dial, brand_color, brand_aesthetic, product_catalog, competitor_urls, analysis_status, template_digest, past_campaign_summary, credit_state`. **None are PII/forbidden** — no pan/gstin/kyc/aadhaar/bank/upi/wallet_balance/email/phone/address/full_name/escrow. `product_catalog` is hard-filtered to name/price/currency (BrandContextAssembler.java:155-176, deny-by-default per-field copy). `past_campaign_summary` carries only enum-type/int-count/bool-funded (PastCampaignEntry) — no free text, no creator identity. `credit_state` is AI-turn budget only, never wallet/escrow. **Cross-party/barrier: SAFE** — every field sources from the SAME workspace's own rows (MeeraContextService.java:95-114, all reads `workspaceId`-scoped); template_digest = SYSTEM + this workspace's own CUSTOM (`findByScopeAndWorkspaceId`, line 106), no cross-workspace/creator data. CREATOR audience is structurally rejected (MeeraContextService.java:86-93, 400 AUDIENCE_NOT_SUPPORTED) — Phase-1 cannot pull creator data or cross sides. **Weakest point (→ P2-A):** `tone_dial`, `brand_aesthetic`, `competitor_urls` emit the WHOLE parsed JSON blob (`parseJsonOrNull` → `Object.class`), not a vetted sub-field copy like product_catalog. Not a leak today — sole writer is `AnalyzeSiteTriggerService#toCallback` (aesthetic=`{accent_color}` only; competitor_urls written as empty `List.of()`; tone=AI descriptor map), all bounded brand-own analysis data, all within Priya's ratified A1 blob-level entries — but it violates strict deny-by-default per-subfield discipline. Hardening, not a block.
+
+**2 — HMAC CANONICAL STRING / audience integrity → PASS.**
+`audience` is genuinely **inside the signed payload**. Priya's ruling (b) is correctly implemented: it's a POST with `{workspace_id, audience}` in the JSON **body** (ContextRequest, MeeraContextDtos.java:36-38), NOT a header/querystring. The HMAC canonical is `METHOD+path+sha256hex(body)+timestamp+nonce` (InternalRequestVerifier.java:81-84) and the hashed `body` is the **raw cached bytes** (`CachedBodyHttpServletRequest.getCachedBodyAsString()`, InternalServiceTokenFilter.java:88/103) — **no re-serialization**, so no field-drop/canonicalization gap; flipping BRAND→CREATOR after signing breaks the signature. The SAME cached bytes feed `@RequestBody` binding (CachedBodyHttpServletRequest.getInputStream), so signed-vs-bound bodies are byte-identical. **Replay:** `|now-ts|>clockSkew` reject + single-use `NonceCache.tryConsume` (verifier:59-72). **Workspace binding:** `resolveForWorkspace(onBehalfJwt, body.workspaceId())` asserts `token.workspaceId == body.workspaceId` (OnBehalfAuthResolver.java:72-83) — a workspace-A on-behalf JWT CANNOT fetch workspace B (service token is not workspace-scoped; the on-behalf JWT is the tenant binding). No IDOR on workspace_id.
+
+**3 — PRODUCT_CATALOG SOURCE TRACE → PASS (W1); one W2 gate item.**
+`product_catalog` is the brand's OWN catalog: MeeraContextService.java:102 `brandProfileRepository.findByWorkspaceId(workspaceId)` → `productCatalogJson` filtered to name/price/currency. No JOIN to another workspace/creator, no order/customer data (source is analyze_site scrape, `Data.productCatalog()`, AnalyzeSiteTriggerService.java:162). **Defense-in-depth flag (→ P2-C):** name/price values (and template names/key_requirements, all brand-authored free text) flow RAW into what becomes a system-prompt Block-B. Spring correctly does not try to neutralize prompt-injection at the data layer, but that makes the **Python-side untrusted-content wrapping load-bearing** — W2 (assembler.py) MUST wrap template_digest/product_catalog/competitor_urls free-text in untrusted delimiters. Spring must not emit assuming Python neutralizes; Ash to confirm the wrapper exists on the W2 gate.
+
+### OWASP SURFACE (new endpoint + template_id path)
+
+| # | Check | Verdict | Evidence |
+|---|-------|---------|----------|
+| A01 | Broken access control / authN | ✅ PASS | Dual-credential mesh gate: `InternalServiceTokenFilter` (service JWT: pinned HS256, aud/iss required, TTL ceiling) + HMAC sig, THEN `resolveForWorkspace` on-behalf JWT. Unauthenticated never reaches controller. |
+| A01 | IDOR on `workspace_id` | ✅ PASS | token.workspaceId==body.workspaceId (OnBehalfAuthResolver:72-83). |
+| A01 | IDOR on `template_id` (create_campaign) | ✅ PASS | `requireVisible(templateId, ctx.workspaceId())` (CreateCampaignExecutor:160) uses TOKEN-resolved workspace; SYSTEM-or-own only, cross-workspace CUSTOM → 404 not 403 (no existence leak), CampaignTemplateService:150-162. Could not defeat. Budget stays null both branches. |
+| A03 | Injection (SQL) | ✅ PASS | Repository/JPA methods only, no dynamic SQL. JSON parse in try/catch → null. |
+| A03 | Prompt injection | ⚠️ P2-C | brand-authored free text → prompt; mitigated by Python untrusted-wrapper (W2 gate item). |
+| A04 | Info-barrier separation (design) | ✅ PASS | audience=BRAND hardcoded; CREATOR rejected; per-audience cache key (Priya cross-cut #1) is a W2 lock — Kabir to re-verify on W2. |
+| A09 | Error-message info leak | ✅ PASS | AUDIENCE_NOT_SUPPORTED echoes only the (non-sensitive) audience value; WORKSPACE_NOT_FOUND only reachable after workspace-binding holds (no enumeration). |
+
+### P2 BACKLOG (hardening — none block W1)
+- **P2-A** (BrandContextAssembler.java:113-116) — emit vetted sub-fields for `tone_dial`/`brand_aesthetic`/`competitor_urls` instead of whole `parseJsonOrNull` blobs; restores strict deny-by-default per-subfield parity with product_catalog. Barrier-safe today (brand-own bounded source); do before any writer starts storing richer blobs.
+- **P2-B** (MeeraInternalController.java:123-129) — context endpoint asserts workspace-binding but not that the resolved principal is a BRAND-type workspace. No leak (own-workspace only), but add a userType/brand-workspace guard as belt-and-braces before CREATOR audience ships in Phase 3.
+- **P2-C** (W2, assembler.py) — untrusted-content wrapper around template/catalog/competitor free-text must exist before Block-B injection; Ash to gate. Spring must not rely on it being absent.
+
+### VERDICT: ✅ APPROVED — route to Ash (AI re-review + eval gate)
+0 P0, 0 P1, 3 P2 (backlog). Info barrier holds (strict top-level allow-list, CREATOR structurally absent, all data own-workspace). `audience` is signed inside the HMAC'd raw body; no workspace/template IDOR; template_id path solid, budget null. P2-C (Python untrusted-wrapper) is the one item Ash MUST confirm on the W2 gate. Cache-key `audience` component (Priya cross-cut #1/#4) is a W2 change — flagged for my W2 re-audit, not a W1 blocker.
 
 ---
 

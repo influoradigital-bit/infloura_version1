@@ -1,0 +1,11 @@
+{
+  "case_id": "tr-002-sneaker-awareness",
+  "input": {
+    "product_description": "New sneaker line just dropped, we want as many new people as possible to see it and remember our brand -- pure reach push."
+  },
+  "output": {
+    "template_name": "Brand Awareness",
+    "campaign_type": "HYPE",
+    "budget_band": "₹10,000–₹50,000"
+  }
+}

@@ -7,6 +7,7 @@ import com.influora.domain.enums.MeeraToolName;
 import com.influora.security.OnBehalfAuthResolver;
 import com.influora.security.OnBehalfAuthResolver.OnBehalfContext;
 import com.influora.service.brand.AnalyzeSiteTriggerService;
+import com.influora.service.meera.MeeraContextService;
 import com.influora.service.meera.MeeraSessionService;
 import com.influora.service.meera.tool.CalculateBudgetExecutor;
 import com.influora.service.meera.tool.ConfirmLaunchExecutor;
@@ -15,6 +16,8 @@ import com.influora.service.meera.tool.RequestPaymentExecutor;
 import com.influora.service.meera.tool.ShowCreatorsExecutor;
 import com.influora.service.meera.tool.ToolCallValidator;
 import com.influora.service.meera.tool.ToolCallValidator.ToolCallRejectedException;
+import com.influora.web.dto.meera.MeeraContextDtos.ContextRequest;
+import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
 import com.influora.web.dto.meera.MeeraDtos.AnalyzeSiteChatResult;
 import com.influora.web.dto.meera.MeeraToolDtos.CalculateBudgetResult;
 import com.influora.web.dto.meera.MeeraToolDtos.ConfirmLaunchResult;
@@ -81,6 +84,7 @@ public class MeeraInternalController {
     private final ConfirmLaunchExecutor confirmLaunchExecutor;
     private final MeeraSessionService sessionService;
     private final AnalyzeSiteTriggerService analyzeSiteTriggerService;
+    private final MeeraContextService contextService;
 
     public MeeraInternalController(
             OnBehalfAuthResolver onBehalfAuthResolver,
@@ -91,7 +95,8 @@ public class MeeraInternalController {
             RequestPaymentExecutor requestPaymentExecutor,
             ConfirmLaunchExecutor confirmLaunchExecutor,
             MeeraSessionService sessionService,
-            AnalyzeSiteTriggerService analyzeSiteTriggerService) {
+            AnalyzeSiteTriggerService analyzeSiteTriggerService,
+            MeeraContextService contextService) {
         this.onBehalfAuthResolver = onBehalfAuthResolver;
         this.toolCallValidator = toolCallValidator;
         this.showCreatorsExecutor = showCreatorsExecutor;
@@ -101,6 +106,26 @@ public class MeeraInternalController {
         this.confirmLaunchExecutor = confirmLaunchExecutor;
         this.sessionService = sessionService;
         this.analyzeSiteTriggerService = analyzeSiteTriggerService;
+        this.contextService = contextService;
+    }
+
+    /**
+     * Server-sources Block B for influora-ai (Platform-AI Phase 1, Wave 1a — Priya A2). POST, not
+     * GET: the on-behalf JWT + HMAC mesh signature cover the request body, and Priya's ruling on
+     * A1's correction is explicit that a GET's querystring-carried {@code audience} would ride
+     * UNSIGNED unless the HMAC canonical string is changed everywhere else too — POST with a
+     * signed JSON body is the least-ambiguous fix. Same dual-credential mesh gate as every other
+     * {@code /internal/meera/*} route; unlike the tool routes this is a plain read with no
+     * tool-tier concept, so it uses {@link OnBehalfAuthResolver#resolveForWorkspace} (matching
+     * {@code /messages} and {@code /turns/release}), not the scope-gated variants — there is no
+     * new auth here, per Priya's ruling.
+     */
+    @PostMapping("/context")
+    public ResponseEntity<ApiResponse<ContextResponse>> context(
+            @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt, @Valid @RequestBody ContextRequest body) {
+        onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, body.workspaceId());
+        ContextResponse result = contextService.assemble(body.workspaceId(), body.audience());
+        return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
     @PostMapping("/show_creators")

@@ -1,0 +1,11 @@
+{
+  "case_id": "tr-006-yoga-mat-reach",
+  "input": {
+    "product_description": "New yoga mat brand, first campaign ever -- just want max impressions and reach across Instagram Reels to get on people's radar."
+  },
+  "output": {
+    "template_name": "Brand Awareness",
+    "campaign_type": "HYPE",
+    "budget_band": "₹10,000–₹50,000"
+  }
+}

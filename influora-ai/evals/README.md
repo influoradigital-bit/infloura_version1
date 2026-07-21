@@ -1,6 +1,6 @@
 # influora-ai eval harness
 
-Golden-set eval loop for the three live AI features, so a prompt or model
+Golden-set eval loop for the live AI features, so a prompt or model
 change can't silently regress quality:
 
 | Dataset | Feature | Route / contract | Provider |
@@ -8,6 +8,7 @@ change can't silently regress quality:
 | `brand_safety_garm` | GARM brand-safety classification | `POST /internal/brand-safety` — forced `analyze_creator_content` tool (`app/tools/schemas.py`, `app/prompt/brand_safety.py`) | Claude |
 | `analyze_site_classify` | Website niche/tone classification | `POST /analyze-site` — `_CLASSIFY_SYSTEM_INSTRUCTION` JSON contract (`app/providers/gemini.py`) | Gemini |
 | `trend_tag` | Trend-Spark closed-vocab recovery tagger | `POST /internal/trendspark/tag` — closed theme/campaign vocab (`app/prompt/trend_tag.py`) | Claude (Haiku-class) |
+| `template_recommendation` | Platform-AI Phase 1 — campaign-template recommendation | `POST /chat` (`create_campaign.template_id`, `app/tools/schemas.py` + `app/prompt/assembler.py::build_block_b`'s `template_digest` rendering) — Ash's binding W2 eval gate | Claude |
 
 The harness has two modes:
 
@@ -48,6 +49,9 @@ PYTHONUTF8=1 python -m pytest tests/evals -q
 | trend_tag | theme F1 (after the REAL closed-vocab validator) | >= 0.70 |
 | trend_tag | campaign_type accuracy | >= 0.80 |
 | trend_tag | drop agreement (recover vs drop decision) | 1.00 |
+| template_recommendation | template-name accuracy (fail-blocks if <12/15 correct) | >= 0.80 |
+| template_recommendation | campaign_type accuracy | >= 0.80 |
+| template_recommendation | off-catalog `template_name` (malformed) | 0 (hard veto) |
 
 Notes on scoring:
 

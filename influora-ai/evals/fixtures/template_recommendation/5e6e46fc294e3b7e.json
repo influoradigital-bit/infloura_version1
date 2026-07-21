@@ -1,0 +1,11 @@
+{
+  "case_id": "tr-005-flash-sale-clicks",
+  "input": {
+    "product_description": "Running a 48-hour flash sale on our skincare site -- need reels with a trackable link in bio to drive clicks and conversions this week."
+  },
+  "output": {
+    "template_name": "Sales & Conversions",
+    "campaign_type": "DIRECT",
+    "budget_band": "₹15,000–₹75,000"
+  }
+}

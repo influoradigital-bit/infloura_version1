@@ -3,13 +3,23 @@
  *
  * Canonical, pure, secret-free theme + campaign tagger for the n8n daily trend pull.
  * The SAME logic is pasted into the "Theme Tagger" Code node of trend-pull-workflow.json.
- * This file is the source of truth; keep the node in sync with it.
+ * This file is the canonical JS copy; keep the node in sync with it.
  *
- * Vocab is a verbatim embed of Nisha's LOCKED config (do NOT invent themes):
+ * Vocab is an embed of Nisha's LOCKED config (do NOT invent themes):
  *   influora-api/src/main/resources/trendspark/theme-taxonomy.json   (themes + keyword/niche maps)
  *   influora-api/src/main/resources/trendspark/campaign-rulebook.json (campaign_type + peak_window_days)
- * n8n Code nodes cannot require() a repo file, so the closed vocab is embedded inline here.
- * If either JSON changes, re-sync this file (and the node) — nothing else reads it.
+ * Those JSON configs are the source of truth. n8n Code nodes cannot require() a repo
+ * file, so the closed vocab is embedded inline here AND in the workflow node.
+ * If either JSON changes, re-sync this file and the node.
+ *
+ * DRIFT IS CI-ENFORCED — do not rely on discipline alone:
+ *   trendspark/n8n/tagger-sync.test.js (run: `node trendspark/n8n/tagger-sync.test.js`)
+ *   asserts THEMES exactly equals the taxonomy, the maps are supersets of the locked
+ *   config with identical shared values, campaign typicals match, and this file is
+ *   byte-equivalent to the inline node. Gated in CI by
+ *   .github/workflows/trendspark-tagger-sync.yml. A vocab change that misses any copy
+ *   fails the build. Never edit the tagger's behavior just to make the check pass —
+ *   propagate the real vocab change to every copy instead.
  *
  * Contract (Priya schema-lock §1a): produces { themes:[closed vocab], campaign_type, peak_window_days }
  *   campaign_type ∈ { HYPE, SEASONAL, PRIDE, EDUCATIONAL }
