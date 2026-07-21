@@ -1,0 +1,16 @@
+{
+  "case_id": "ase-005-malformed-block-then-valid-block",
+  "input": {
+    "raw_html": "<script type=\"application/ld+json\">{not valid json at all</script><script type=\"application/ld+json\">{\"@type\":\"Product\",\"name\":\"Still Recovered\",\"offers\":{\"@type\":\"Offer\",\"price\":100,\"priceCurrency\":\"INR\"}}</script>"
+  },
+  "output": {
+    "scraped_products": [
+      {
+        "name": "Still Recovered",
+        "price": 100.0,
+        "currency": "INR"
+      }
+    ],
+    "source": "json_ld"
+  }
+}

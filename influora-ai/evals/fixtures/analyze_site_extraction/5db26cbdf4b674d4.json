@@ -1,0 +1,10 @@
+{
+  "case_id": "ase-003-no-structured-data",
+  "input": {
+    "raw_html": "<html><head><title>A Brand</title></head><body><div id=\"root\"></div><script src=\"/bundle.js\"></script></body></html>"
+  },
+  "output": {
+    "scraped_products": [],
+    "source": "none"
+  }
+}

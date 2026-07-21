@@ -1,0 +1,16 @@
+{
+  "case_id": "ase-006-opengraph-only",
+  "input": {
+    "raw_html": "<html><head><meta property=\"og:title\" content=\"VoltEdge 65W GaN Charger\" /><meta property=\"product:price:amount\" content=\"1799\" /><meta property=\"product:price:currency\" content=\"INR\" /></head><body><div id=\"app\"></div></body></html>"
+  },
+  "output": {
+    "scraped_products": [
+      {
+        "name": "VoltEdge 65W GaN Charger",
+        "price": 1799.0,
+        "currency": "INR"
+      }
+    ],
+    "source": "opengraph"
+  }
+}

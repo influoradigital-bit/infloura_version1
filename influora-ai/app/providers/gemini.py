@@ -1,12 +1,17 @@
 """Gemini provider client — website scrape classification + grammar-cleanup pass.
 
-Pinned to `gemini-2.5-flash-lite` (app/config.py GEMINI_MODEL) — this IS the P0
-fix; the deprecated `gemini-2.0-flash` id must never appear here again.
+Pinned to `gemini-2.5-flash` (app/config.py GEMINI_MODEL) — that config constant
+is the source of truth; `gemini-2.5-flash-lite` was retired by Google (404) and
+must never appear here again, same as the long-dead `gemini-2.0-flash` id.
 
 Used for:
 - Website analyzer classify step (niche, tone dial, catalog, palette) from
-  already-scraped, already-sanitized page text (routes/analyze_site.py handles
-  the scrape + SSRF guard + HTML sanitization BEFORE calling this).
+  already-scraped, already-sanitized page text PLUS any structured
+  (JSON-LD/OpenGraph/microdata) product facts already extracted from the raw
+  HTML (routes/analyze_site.py handles the scrape + SSRF guard + HTML
+  sanitization + structured extraction BEFORE calling this — this module never
+  fetches anything itself, and there is no Playwright/browser render in this
+  path; see analyze_site.py's module docstring).
 - Optional grammar-cleanup pass for voice transcripts (cheap, bulk, quality
   tolerant — per §6 routing table).
 
@@ -27,6 +32,7 @@ from google import genai
 from google.genai import types as genai_types
 
 from app.config import GEMINI_MODEL, get_settings
+from app.prompt.untrusted import wrap_untrusted
 from app.providers.claude import CircuitBreaker, CircuitOpenError
 
 logger = logging.getLogger(__name__)
@@ -37,8 +43,17 @@ _CLASSIFY_SYSTEM_INSTRUCTION = (
     "the brand: niche_tags (list of short tags), tone_dial "
     "(formality 0-1, energy 0-1, emoji_ok bool, cultural_context string), "
     "brand_color (hex, best guess or null), and product_catalog (list of "
-    "{name, price, currency} best-effort, empty list if unclear). Respond with "
-    "ONLY the JSON object, no prose, no markdown fences."
+    "{name, price, currency, price_source} best-effort, empty list if unclear). "
+    "The page text may be preceded by a block titled 'KNOWN PRODUCT FACTS' -- "
+    "these are ALREADY SCRAPED from structured data (JSON-LD/OpenGraph) on the "
+    "same page and are VERIFIED, not guesses. Include every known product in "
+    "product_catalog with price_source set to \"scraped\" and its price/currency "
+    "copied EXACTLY -- never invent a different price or name for a product that "
+    "is already known. Only fill in ADDITIONAL products you infer yourself from "
+    "the page text, and mark those with price_source \"inferred\". If there is no "
+    "KNOWN PRODUCT FACTS block, every product_catalog entry you produce is "
+    "price_source \"inferred\". Respond with ONLY the JSON object, no prose, no "
+    "markdown fences."
 )
 
 # P2 (Ash AI review): structural response_schema for classify_site, so the
@@ -78,8 +93,21 @@ _CLASSIFY_RESPONSE_SCHEMA = genai_types.Schema(
                     "name": genai_types.Schema(type=genai_types.Type.STRING),
                     "price": genai_types.Schema(type=genai_types.Type.NUMBER),
                     "currency": genai_types.Schema(type=genai_types.Type.STRING),
+                    # P1-B (Ash AI review, brand-intake-and-trend-sources):
+                    # "scraped" = copied verbatim from a KNOWN PRODUCT FACTS
+                    # block (JSON-LD/OpenGraph extracted from raw HTML before
+                    # this call -- see structured_extract.py); "inferred" =
+                    # a model guess from page text. Downstream (calculate_budget,
+                    # Meera's "quote the real price" rule) must never treat an
+                    # inferred price as a fact. `enum` isn't used here (kept a
+                    # plain STRING) so an unexpected value degrades safely
+                    # instead of tripping schema validation; analyze_site.py's
+                    # merge step is the actual enforcement point -- it always
+                    # forces "scraped" for known products regardless of what
+                    # the model returns.
+                    "price_source": genai_types.Schema(type=genai_types.Type.STRING),
                 },
-                required=["name", "price", "currency"],
+                required=["name", "price", "currency", "price_source"],
             ),
         ),
     },
@@ -127,7 +155,7 @@ def _usage_from_response(response: Any) -> dict[str, Any] | None:
 
     P2 (Ash AI review, wiki/ai-review/partial-fixes-batch-ai-review.md):
     `output_tokens` folds in `thoughts_token_count` when present. For 2.5-class
-    models (GEMINI_MODEL is `gemini-2.5-flash-lite`) Google separately bills
+    models (GEMINI_MODEL is `gemini-2.5-flash`, config.py) Google separately bills
     "thinking" tokens under `usage_metadata.thoughts_token_count`, distinct
     from `candidates_token_count` (the visible output) -- reading only
     `candidates_token_count` systematically UNDER-counts spend against the
@@ -156,20 +184,52 @@ class GeminiProvider:
             recovery_seconds=settings.breaker.recovery_seconds,
         )
 
-    async def classify_site(self, sanitized_page_text: str) -> ClassifyResult:
+    async def classify_site(
+        self, sanitized_page_text: str, known_products: list[dict[str, Any]] | None = None
+    ) -> ClassifyResult:
         """Classify already-sanitized (SSRF-guarded, script/iframe-stripped) page
         text into a structured brand profile. Never raises — returns ok=False on
         any provider failure so the caller can degrade gracefully.
+
+        `known_products` (P1-B) are FACTS already scraped from the raw HTML's
+        structured data (JSON-LD/OpenGraph -- see app/prompt/structured_extract.py),
+        prepended to the prompt as a "KNOWN PRODUCT FACTS" block so the model
+        fills only the gaps instead of re-guessing a price/name that's already
+        known. Callers still get the model's product_catalog back verbatim here
+        -- analyze_site.py's merge step is what forcibly re-asserts scraped facts
+        over anything the model returns, this parameter only shapes the prompt.
         """
         try:
             self._breaker.before_call()
         except CircuitOpenError as exc:
             return ClassifyResult(ok=False, error=f"circuit_open: {exc}")
 
+        contents = sanitized_page_text
+        if known_products:
+            # C2 (Kabir P1-B audit): this block is built from scraped page
+            # data (product names come straight off the target site's own
+            # JSON-LD/OpenGraph markup) -- a hostile product name could try
+            # to forge a `</untrusted_*>` close tag or inject instructions
+            # via a plain json.dumps escape alone. Route it through the same
+            # wrap_untrusted() neutralization as the scraped page text below
+            # (wrap_untrusted_scrape -> _wrap_untrusted -> wrap_untrusted) so
+            # `<`/`>` can never form a tag boundary here either. The content
+            # stays semantically "authoritative for FACTS" (the system
+            # instruction still tells the model these are verified scraped
+            # facts, and merge_known_products force-reasserts them
+            # afterwards regardless of what the model does with the prompt)
+            # -- only the raw bytes are neutralized, so this cannot weaken
+            # the money-safety guard.
+            known_block = json.dumps(known_products, ensure_ascii=False)
+            known_wrapped = wrap_untrusted("known_product_facts", known_block)
+            contents = (
+                f"KNOWN PRODUCT FACTS (scraped, authoritative):\n{known_wrapped}\n\n{sanitized_page_text}"
+            )
+
         try:
             response = await self._client.aio.models.generate_content(
                 model=GEMINI_MODEL,
-                contents=sanitized_page_text,
+                contents=contents,
                 config=genai_types.GenerateContentConfig(
                     system_instruction=_CLASSIFY_SYSTEM_INSTRUCTION,
                     temperature=0.2,

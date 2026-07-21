@@ -1,0 +1,16 @@
+{
+  "case_id": "ase-008-json-ld-wins-over-opengraph",
+  "input": {
+    "raw_html": "<head><meta property=\"og:title\" content=\"Should Not Win\" /><script type=\"application/ld+json\">{\"@type\":\"Product\",\"name\":\"JSON-LD Wins\",\"offers\":{\"@type\":\"Offer\",\"price\":250,\"priceCurrency\":\"INR\"}}</script></head>"
+  },
+  "output": {
+    "scraped_products": [
+      {
+        "name": "JSON-LD Wins",
+        "price": 250.0,
+        "currency": "INR"
+      }
+    ],
+    "source": "json_ld"
+  }
+}

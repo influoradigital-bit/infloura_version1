@@ -204,7 +204,7 @@ def make_live_analyze_site_caller() -> ModelCaller:
     except Exception:  # pragma: no cover - assembler shape may change
         wrap_untrusted_scrape = lambda text: text  # noqa: E731
 
-    model = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash-lite"
+    model = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
     def caller(case_input: dict[str, Any]) -> dict[str, Any]:
@@ -220,6 +220,34 @@ def make_live_analyze_site_caller() -> ModelCaller:
             ),
         )
         return json.loads(response.text or "{}")
+
+    return caller
+
+
+def make_live_analyze_site_extraction_caller() -> ModelCaller:
+    """P1-B eval: exercises the REAL, deterministic structured-extraction
+    parser (app/prompt/structured_extract.py) against real-HTML-shaped
+    fixtures -- Shopify-style JSON-LD @graph on a sparse SPA body, a plain
+    static-site JSON-LD Product, and a page with zero structured data. No
+    provider call, no API key needed -- "live" and "offline" produce
+    identical output since the function is pure, but the harness still needs
+    a caller wired through the same Feature machinery as the other datasets
+    (an --offline fixture is recorded once so CI never needs network either
+    way). This is the DoD scorer that previously didn't exist: today's
+    analyze_site_classify eval only checked niche_tags/tone on pre-cleaned
+    text and never exercised whether scraped products/prices are actually
+    recovered from raw HTML.
+    """
+    from app.prompt.structured_extract import extract_structured_facts
+
+    def caller(case_input: dict[str, Any]) -> dict[str, Any]:
+        products = extract_structured_facts(str(case_input.get("raw_html") or ""))
+        return {
+            "scraped_products": [
+                {"name": p.name, "price": p.price, "currency": p.currency} for p in products
+            ],
+            "source": products[0].source if products else "none",
+        }
 
     return caller
 
@@ -415,6 +443,44 @@ def aggregate_analyze_site(per_case: list[dict[str, float]]) -> tuple[dict[str, 
     return agg, failures
 
 
+def score_analyze_site_extraction(expected: dict[str, Any], raw: dict[str, Any]) -> dict[str, float]:
+    """Exact name+price+currency recall against the deterministic structured
+    extractor's output. Unlike niche_f1 (open vocabulary, tolerant), a
+    scraped price is a FACT -- there is no partial credit for a wrong price,
+    since a wrong "scraped" price is exactly the money-path hallucination
+    risk P1-B exists to close."""
+    expected_products = expected.get("scraped_products") or []
+    actual_products = raw.get("scraped_products") or []
+    actual_by_name = {p.get("name"): p for p in actual_products if isinstance(p, dict)}
+
+    if not expected_products:
+        # A page with no structured data must recover nothing -- recovering
+        # a phantom product here would itself be a bug (fabrication).
+        return {"recall": 1.0 if not actual_products else 0.0, "false_positive": 1.0 if actual_products else 0.0}
+
+    hits = 0
+    for exp in expected_products:
+        act = actual_by_name.get(exp["name"])
+        if act is not None and act.get("price") == exp.get("price") and act.get("currency") == exp.get("currency"):
+            hits += 1
+    return {"recall": hits / len(expected_products), "false_positive": 0.0}
+
+
+def aggregate_analyze_site_extraction(per_case: list[dict[str, float]]) -> tuple[dict[str, float], list[str]]:
+    agg = {
+        "recall": mean([s["recall"] for s in per_case]),
+        "false_positives": sum(s["false_positive"] for s in per_case),
+    }
+    failures = []
+    # Exact-match, not F1-tolerant like niche tags: a scraped price/name is a
+    # verified fact, so every golden case must recover it exactly.
+    if agg["recall"] < 1.0:
+        failures.append(f"structured-extraction recall {agg['recall']:.2f} < 1.00 (must recover every expected fact exactly)")
+    if agg["false_positives"] > 0:
+        failures.append(f"{agg['false_positives']:.0f} fabricated product(s) on a no-structured-data page (must be 0)")
+    return agg, failures
+
+
 def score_trend_tag(expected: dict[str, Any], raw: dict[str, Any]) -> dict[str, float]:
     # Run the model's raw JSON through the REAL closed-vocab validator the
     # route uses — off-vocab themes are dropped and "nothing valid" becomes a
@@ -518,6 +584,16 @@ FEATURES: dict[str, Feature] = {
         scorer=score_analyze_site,
         aggregator=aggregate_analyze_site,
         live_caller_factory=make_live_analyze_site_caller,
+        required_env_key="GEMINI_API_KEY",
+    ),
+    "analyze_site_extraction": Feature(
+        name="analyze_site_extraction",
+        scorer=score_analyze_site_extraction,
+        aggregator=aggregate_analyze_site_extraction,
+        live_caller_factory=make_live_analyze_site_extraction_caller,
+        # No key is actually consulted (the caller is a pure function) -- this
+        # just reuses the existing gate convention so `--live all` doesn't
+        # need a special case; `--offline` (the CI path) never checks it.
         required_env_key="GEMINI_API_KEY",
     ),
     "trend_tag": Feature(

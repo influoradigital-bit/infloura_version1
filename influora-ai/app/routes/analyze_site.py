@@ -7,6 +7,14 @@ scraped HTML is sanitized (script/iframe/active-content stripped) BEFORE it
 ever reaches a prompt — Gemini only ever sees inert text, never live markup
 that could carry a prompt-injection payload disguised as page content.
 
+P1-B: before sanitization throws the tags away, `app.prompt.structured_extract`
+parses the RAW HTML for schema.org JSON-LD / OpenGraph / microdata product
+facts (name/price/currency) — these are FACTS, not model guesses, and are
+handed to Gemini as a "KNOWN PRODUCT FACTS" block so it fills only gaps.
+`merge_known_products` then re-asserts those facts over the model's own
+output before this route returns, so a scraped price can never be silently
+overwritten by a hallucinated one downstream (calculate_budget, Meera).
+
 End-to-end target: <= 45s (async job).
 """
 
@@ -24,6 +32,7 @@ from app.costs.gate import check_spend_gate
 from app.costs.pricing import estimate_cost_usd
 from app.costs.spend_tracker import record_spend
 from app.prompt.assembler import wrap_untrusted_scrape
+from app.prompt.structured_extract import ScrapedProduct, extract_structured_facts
 from app.providers.gemini import GeminiProvider
 from app.security.redaction import log_event, shape_of
 from app.security.ssrf_guard import SsrfBlockedError, guarded_fetch
@@ -35,8 +44,17 @@ _gemini_provider: GeminiProvider | None = None
 
 # Strips script/style/iframe/object/embed tags and their contents, plus any
 # on*="" event-handler attributes and javascript: URIs, before the text ever
-# reaches a prompt. This is a defense-in-depth text sanitizer; Playwright's
-# rendered DOM text extraction (not raw innerHTML) is the primary control.
+# reaches a prompt. This is the PRIMARY control today: the fetch is a static
+# `httpx` GET via `guarded_fetch` (see ssrf_guard.py) -- there is no
+# Playwright / headless-browser render anywhere in this path, despite
+# `playwright==1.49.1` sitting in requirements.txt. That means client-rendered
+# (JS/SPA) storefronts can come back near-empty (see `empty_page` below).
+# P1-B (structured JSON-LD/OpenGraph/microdata extraction from the RAW HTML,
+# below) recovers most product facts on exactly those sites without a
+# browser. Actual JS rendering is a separate, security-gated future task
+# (P1-A(ii) -- Priya render-sandbox ruling, SHARED_CONTEXT.md) — a headless
+# browser pointed at an attacker-controlled URL is real SSRF/RCE surface and
+# must not be wired in casually.
 _ACTIVE_TAG_RE = re.compile(
     r"<\s*(script|style|iframe|object|embed|noscript)[^>]*>.*?<\s*/\s*\1\s*>",
     re.IGNORECASE | re.DOTALL,
@@ -69,6 +87,55 @@ def strip_active_content(html: str) -> str:
     text_only = _HTML_TAG_RE.sub(" ", cleaned)
     # Collapse excessive whitespace left behind by tag stripping.
     return re.sub(r"\s+", " ", text_only).strip()
+
+
+_MAX_CATALOG_ITEMS = 25
+
+
+def _scraped_product_to_dict(product: ScrapedProduct) -> dict:
+    """P1-B: scraped facts always win. `price_source: "scraped"` is set here,
+    unconditionally -- never derived from anything the model said."""
+    return {
+        "name": product.name,
+        "price": product.price,
+        "currency": product.currency,
+        "price_source": "scraped",
+    }
+
+
+def merge_known_products(known: list[ScrapedProduct], model_catalog: list[dict] | None) -> list[dict]:
+    """Merges structured-extraction FACTS with the model's product_catalog.
+
+    Money-safety contract (P1-B): every scraped product is included verbatim
+    with price_source="scraped" and its price is NEVER overwritten by the
+    model's output -- even if the model also produced an entry for the same
+    product name, the scraped fact wins and the model's duplicate is dropped.
+    Anything the model produced beyond the known set is kept as
+    price_source="inferred" (forced, regardless of what the model itself
+    claimed) so a malformed/dishonest model response can never masquerade as
+    a scraped fact downstream.
+    """
+    merged: list[dict] = [_scraped_product_to_dict(p) for p in known]
+    known_names = {p.name.strip().lower() for p in known}
+
+    for item in model_catalog or []:
+        if len(merged) >= _MAX_CATALOG_ITEMS:
+            break
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name or name.lower() in known_names:
+            continue  # already represented by a scraped fact -- never override it
+        merged.append(
+            {
+                "name": name[:200],
+                "price": item.get("price"),
+                "currency": item.get("currency"),
+                "price_source": "inferred",
+            }
+        )
+
+    return merged[:_MAX_CATALOG_ITEMS]
 
 
 async def perform_site_analysis(
@@ -125,13 +192,42 @@ async def perform_site_analysis(
     except Exception:
         html_text = ""
 
+    # P1-B: parse structured product FACTS (JSON-LD/OpenGraph/microdata) from
+    # the RAW HTML -- must run BEFORE strip_active_content, which throws away
+    # <script>/<meta> tags entirely. This is the already-fetched, SSRF-safe
+    # response; extraction makes zero new network calls. Pure stdlib parsing
+    # over inert text -- never executed, so this is safe even though it reads
+    # <script type="application/ld+json"> content the model itself never sees
+    # verbatim (only the parsed JSON facts are forwarded to Gemini, wrapped as
+    # untrusted data same as the rest of the page text).
+    try:
+        known_products = extract_structured_facts(html_text)
+    except Exception:
+        known_products = []
+
     sanitized_text = strip_active_content(html_text)
-    if not sanitized_text:
+
+    # Priya's render-sandbox ruling (SHARED_CONTEXT.md, 2026-07-21): many
+    # Shopify/Wix "empty-looking" SPA pages still emit Product/Offer JSON-LD
+    # server-side even when the *visible* text is sparse/empty. If structured
+    # extraction recovered something, do NOT bail with empty_page -- classify
+    # using the known facts (the model still gets whatever sanitized text
+    # exists, which may legitimately be "").  This measurement (how often
+    # known_products is non-empty on an otherwise-empty page) is exactly the
+    # signal that informs whether the render sidecar (P1-A(ii)) is still
+    # needed for the residual set.
+    if not sanitized_text and not known_products:
         return {
             "success": False,
             "error": {"code": "empty_page", "message": "no readable content found"},
             "degraded": "paste_a_link",
         }
+    if not sanitized_text and known_products:
+        log_event(
+            logger, logging.INFO, "analyze_site_structured_only_recovery",
+            workspace_id=workspace_id, request_id=request_id,
+            fields={"scraped_product_count": len(known_products)},
+        )
 
     # Wrap as untrusted data before it ever touches a prompt — Gemini's classify
     # call embeds this as data, and any embedded "ignore previous instructions"
@@ -139,8 +235,12 @@ async def perform_site_analysis(
     # extract structured fields, not to follow instructions from the page).
     untrusted_payload = wrap_untrusted_scrape(sanitized_text[:20000])
 
+    known_product_dicts = [
+        {"name": p.name, "price": p.price, "currency": p.currency} for p in known_products
+    ]
+
     gemini = _get_gemini()
-    result = await gemini.classify_site(untrusted_payload)
+    result = await gemini.classify_site(untrusted_payload, known_products=known_product_dicts)
 
     if result.usage:
         try:
@@ -181,7 +281,7 @@ async def perform_site_analysis(
             "niche_tags": result.niche_tags,
             "tone_dial": result.tone_dial,
             "brand_color": result.brand_color,
-            "product_catalog": result.product_catalog,
+            "product_catalog": merge_known_products(known_products, result.product_catalog),
         },
     }
 

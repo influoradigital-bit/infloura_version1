@@ -49,7 +49,18 @@ public final class MeeraToolDtos {
             BigDecimal suggestedPerCreatorRate,
             int suggestedCreatorCount,
             String currency,
-            String rationale) {}
+            String rationale,
+            /**
+             * C1 (Kabir P1-B audit, condition 1): {@code "scraped"} when the {@code product_price}
+             * this suggestion was derived from is a verified scraped fact (per the brand context's
+             * {@code price_source}), {@code "inferred"} otherwise — including when no
+             * {@code price_source} was supplied at all (fail safe: unknown provenance is never
+             * treated as confirmed). Lets Meera say "based on an estimated price" instead of
+             * quoting a guess as fact; never changes the math itself, which stays exactly as
+             * before — this is provenance-awareness only, and the charged amount at commit is
+             * still always independently re-derived server-side (see class javadoc).
+             */
+            String priceConfidence) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record CreateCampaignResult(

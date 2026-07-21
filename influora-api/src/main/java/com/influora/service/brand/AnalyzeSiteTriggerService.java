@@ -159,12 +159,40 @@ public class AnalyzeSiteTriggerService {
         return new AnalyzeSiteCallback(
                 workspaceId,
                 "READY",
-                data.productCatalog() != null ? data.productCatalog() : List.of(),
+                normalizePriceSource(data.productCatalog()),
                 data.brandColor() != null ? Map.of("accent_color", data.brandColor()) : Map.of(),
                 data.toneDial() != null ? data.toneDial() : Map.of(),
                 data.nicheTags() != null ? data.nicheTags() : List.of(),
                 List.of(),
                 null);
+    }
+
+    /**
+     * C1 (Kabir P1-B audit, condition 1): influora-ai's {@code merge_known_products} always sets
+     * {@code price_source} ("scraped"|"inferred") on every catalog entry today, but this Spring
+     * side must not silently trust that invariant forever — a future influora-ai build, a partial
+     * response, or a hand-crafted callback could omit the field. Fail safe: any entry missing (or
+     * blank) {@code price_source} is normalized to {@code "inferred"} here, at the write path,
+     * before the value is ever persisted to {@link BrandProfile#getProductCatalogJson()} — unknown
+     * provenance is treated as untrusted, never silently upgraded to "scraped".
+     */
+    private static List<Map<String, Object>> normalizePriceSource(List<Map<String, Object>> productCatalog) {
+        if (productCatalog == null) {
+            return List.of();
+        }
+        List<Map<String, Object>> normalized = new java.util.ArrayList<>(productCatalog.size());
+        for (Map<String, Object> item : productCatalog) {
+            if (item == null) {
+                continue;
+            }
+            Map<String, Object> copy = new java.util.LinkedHashMap<>(item);
+            Object priceSource = copy.get("price_source");
+            if (!(priceSource instanceof String s) || s.isBlank()) {
+                copy.put("price_source", "inferred");
+            }
+            normalized.add(copy);
+        }
+        return normalized;
     }
 
     /**

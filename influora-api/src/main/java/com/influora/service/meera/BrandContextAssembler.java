@@ -90,8 +90,18 @@ public class BrandContextAssembler {
     // wire-formatted for Python per the Wave-1c field-name seam (MeeraContextDtos javadoc).
     // ---------------------------------------------------------------------------------------
 
-    /** A1: {@code product_catalog} entries carry ONLY these three fields into the prompt. */
-    private static final List<String> PRODUCT_CATALOG_ALLOWED_FIELDS = List.of("name", "price", "currency");
+    /**
+     * A1: {@code product_catalog} entries carry ONLY these fields into the prompt.
+     *
+     * <p>{@code price_source} (C1, Kabir P1-B audit) travels alongside {@code price} so Block B /
+     * Meera can see whether a price is a verified scraped fact ({@code "scraped"}) or a model guess
+     * ({@code "inferred"}) — without it, {@code calculate_budget} and Meera's "quote the real
+     * price" rule have no way to tell an inferred price from a scraped one, and the money-safety
+     * guard in {@code merge_known_products} (influora-ai) becomes cosmetic once it reaches this
+     * layer.
+     */
+    private static final List<String> PRODUCT_CATALOG_ALLOWED_FIELDS =
+            List.of("name", "price", "currency", "price_source");
 
     /**
      * Assembles the BRAND-audience {@code ContextResponse} for the new context endpoint.
@@ -152,7 +162,16 @@ public class BrandContextAssembler {
         return color instanceof String ? (String) color : null;
     }
 
-    /** A1: filters each raw catalog entry down to name/price/currency only — never the full scraped row. */
+    /**
+     * A1: filters each raw catalog entry down to name/price/currency/price_source only — never the
+     * full scraped row.
+     *
+     * <p>C1 fail-safe (defense in depth alongside {@code AnalyzeSiteTriggerService}'s write-path
+     * normalization): if a persisted row somehow carries no {@code price_source} at all (a row
+     * written before this field existed, or any other write path that skipped normalization), it
+     * is defaulted to {@code "inferred"} here too — unknown provenance is never treated as
+     * "scraped" by omission.
+     */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> filteredProductCatalog(String productCatalogJson) {
         Object raw = parseJsonOrNull(productCatalogJson);
@@ -169,6 +188,10 @@ public class BrandContextAssembler {
                 if (((Map<String, Object>) map).containsKey(field)) {
                     allowed.put(field, ((Map<String, Object>) map).get(field));
                 }
+            }
+            Object priceSource = allowed.get("price_source");
+            if (!(priceSource instanceof String s) || s.isBlank()) {
+                allowed.put("price_source", "inferred");
             }
             filtered.add(allowed);
         }

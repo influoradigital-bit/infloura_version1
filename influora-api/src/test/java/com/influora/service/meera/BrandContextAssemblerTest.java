@@ -36,7 +36,7 @@ class BrandContextAssemblerTest {
     private final BrandContextAssembler assembler = new BrandContextAssembler();
 
     @Test
-    @DisplayName("product_catalog entries are filtered to name/price/currency only — extra scraped fields dropped")
+    @DisplayName("product_catalog entries are filtered to name/price/currency/price_source only — extra scraped fields dropped")
     void testProductCatalogFilteredToAllowedFields() {
         when(workspace.getId()).thenReturn("ws1");
         when(workspace.getName()).thenReturn("Acme");
@@ -44,8 +44,8 @@ class BrandContextAssemblerTest {
         BrandProfile profile =
                 BrandProfile.builder().id("bp1").workspaceId("ws1").analysisStatus(AnalysisStatus.READY).build();
         profile.applyAnalysisResult(
-                "[{\"name\":\"Widget\",\"price\":499,\"currency\":\"INR\",\"sku\":\"secret-internal-sku\","
-                        + "\"supplierCost\":50}]",
+                "[{\"name\":\"Widget\",\"price\":499,\"currency\":\"INR\",\"price_source\":\"scraped\","
+                        + "\"sku\":\"secret-internal-sku\",\"supplierCost\":50}]",
                 null,
                 null,
                 "[]",
@@ -56,12 +56,33 @@ class BrandContextAssemblerTest {
 
         assertEquals(1, response.productCatalog().size());
         var entry = response.productCatalog().get(0);
-        assertEquals(3, entry.size());
+        assertEquals(4, entry.size());
         assertTrue(entry.containsKey("name"));
         assertTrue(entry.containsKey("price"));
         assertTrue(entry.containsKey("currency"));
+        assertEquals("scraped", entry.get("price_source"));
         assertTrue(!entry.containsKey("sku"));
         assertTrue(!entry.containsKey("supplierCost"));
+    }
+
+    @Test
+    @DisplayName("C1 fail-safe: product_catalog entry missing price_source defaults to \"inferred\" -- never assumed scraped")
+    void testProductCatalogMissingPriceSourceDefaultsToInferred() {
+        when(workspace.getId()).thenReturn("ws1");
+        when(workspace.getName()).thenReturn("Acme");
+
+        BrandProfile profile =
+                BrandProfile.builder().id("bp1").workspaceId("ws1").analysisStatus(AnalysisStatus.READY).build();
+        // No price_source key at all -- simulates a row persisted before this field existed, or
+        // any write path that skipped normalization.
+        profile.applyAnalysisResult(
+                "[{\"name\":\"Widget\",\"price\":499,\"currency\":\"INR\"}]", null, null, "[]", null);
+
+        ContextResponse response =
+                assembler.assembleBrandContext(workspace, profile, List.of(), List.of(), "metered", 42);
+
+        var entry = response.productCatalog().get(0);
+        assertEquals("inferred", entry.get("price_source"));
     }
 
     @Test

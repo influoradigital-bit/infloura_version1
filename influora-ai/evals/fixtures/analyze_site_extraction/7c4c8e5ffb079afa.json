@@ -1,0 +1,21 @@
+{
+  "case_id": "ase-004-item-list-with-aggregate-offer",
+  "input": {
+    "raw_html": "<script type=\"application/ld+json\">{\"@type\":\"ItemList\",\"itemListElement\":[{\"@type\":\"Product\",\"name\":\"Chai Blend 250g\",\"offers\":{\"@type\":\"Offer\",\"price\":299,\"priceCurrency\":\"INR\"}},{\"@type\":\"Product\",\"name\":\"Chai Blend 500g\",\"offers\":{\"@type\":\"AggregateOffer\",\"lowPrice\":499,\"price\":499,\"priceCurrency\":\"INR\"}}]}</script>"
+  },
+  "output": {
+    "scraped_products": [
+      {
+        "name": "Chai Blend 250g",
+        "price": 299.0,
+        "currency": "INR"
+      },
+      {
+        "name": "Chai Blend 500g",
+        "price": 499.0,
+        "currency": "INR"
+      }
+    ],
+    "source": "json_ld"
+  }
+}

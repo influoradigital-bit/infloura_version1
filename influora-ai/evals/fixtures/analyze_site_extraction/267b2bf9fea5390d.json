@@ -1,0 +1,16 @@
+{
+  "case_id": "ase-007-microdata-only",
+  "input": {
+    "raw_html": "<div itemscope itemtype=\"https://schema.org/Product\"><span itemprop=\"name\">Brahmi Focus Drops</span><span itemprop=\"offers\" itemscope itemtype=\"https://schema.org/Offer\"><span itemprop=\"price\" content=\"699\">Rs 699</span><span itemprop=\"priceCurrency\" content=\"INR\">INR</span></span></div>"
+  },
+  "output": {
+    "scraped_products": [
+      {
+        "name": "Brahmi Focus Drops",
+        "price": 699.0,
+        "currency": "INR"
+      }
+    ],
+    "source": "microdata"
+  }
+}

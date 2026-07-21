@@ -104,6 +104,12 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "type": "string",
                     "enum": ["awareness", "launch", "conversion", "review"],
                 },
+                # C1 re-confirm (Kabir P1-B re-audit): `price_source` is deliberately NOT part of
+                # this schema. It previously was, and the model could self-certify a guessed price
+                # as "scraped" to suppress the estimate caveat -- the model's own claim about its
+                # own input's provenance is not a trustworthy signal. The Java executor now
+                # re-derives price_source itself from the persisted BrandProfile product catalog
+                # (server state), so there is nothing for Claude to pass here.
             },
             "required": ["product_price", "goal"],
         },

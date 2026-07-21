@@ -1,0 +1,16 @@
+{
+  "case_id": "ase-010-multiple-offers-first-priced-one-wins",
+  "input": {
+    "raw_html": "<script type=\"application/ld+json\">{\"@type\":\"Product\",\"name\":\"Squat-Proof Leggings\",\"offers\":[{\"@type\":\"Offer\",\"price\":null,\"priceCurrency\":\"INR\"},{\"@type\":\"Offer\",\"price\":1599,\"priceCurrency\":\"INR\"}]}</script>"
+  },
+  "output": {
+    "scraped_products": [
+      {
+        "name": "Squat-Proof Leggings",
+        "price": 1599.0,
+        "currency": "INR"
+      }
+    ],
+    "source": "json_ld"
+  }
+}

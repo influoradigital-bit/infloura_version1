@@ -1,0 +1,10 @@
+{
+  "case_id": "ase-009-non-product-json-ld-ignored",
+  "input": {
+    "raw_html": "<script type=\"application/ld+json\">{\"@type\":\"Organization\",\"name\":\"Sage Digital\",\"url\":\"https://example.test\"}</script><script type=\"application/ld+json\">{\"@type\":\"BreadcrumbList\",\"itemListElement\":[]}</script>"
+  },
+  "output": {
+    "scraped_products": [],
+    "source": "none"
+  }
+}

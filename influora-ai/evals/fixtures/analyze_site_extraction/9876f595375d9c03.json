@@ -1,0 +1,21 @@
+{
+  "case_id": "ase-001-shopify-spa-json-ld-graph",
+  "input": {
+    "raw_html": "<html><head><script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@graph\":[{\"@type\":\"WebSite\",\"name\":\"Lumos Skincare\"},{\"@type\":\"Product\",\"name\":\"Retinal Night Serum\",\"offers\":{\"@type\":\"Offer\",\"price\":\"899.00\",\"priceCurrency\":\"INR\"}},{\"@type\":\"Product\",\"name\":\"Niacinamide 10% Moisturizer\",\"offers\":{\"@type\":\"Offer\",\"price\":649,\"priceCurrency\":\"INR\"}}]}</script></head><body><div id=\"root\"></div></body></html>"
+  },
+  "output": {
+    "scraped_products": [
+      {
+        "name": "Retinal Night Serum",
+        "price": 899.0,
+        "currency": "INR"
+      },
+      {
+        "name": "Niacinamide 10% Moisturizer",
+        "price": 649.0,
+        "currency": "INR"
+      }
+    ],
+    "source": "json_ld"
+  }
+}

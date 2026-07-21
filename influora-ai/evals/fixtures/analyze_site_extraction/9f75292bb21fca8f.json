@@ -1,0 +1,16 @@
+{
+  "case_id": "ase-002-static-site-single-product",
+  "input": {
+    "raw_html": "<html><head><title>Earthful Organics</title></head><body><p>Earthful Organics -- certified organic staples from Indian farms.</p><script type=\"application/ld+json\">{\"@type\":\"Product\",\"name\":\"Cold-Pressed Groundnut Oil\",\"offers\":{\"@type\":\"Offer\",\"price\":\"550\",\"priceCurrency\":\"INR\"}}</script></body></html>"
+  },
+  "output": {
+    "scraped_products": [
+      {
+        "name": "Cold-Pressed Groundnut Oil",
+        "price": 550.0,
+        "currency": "INR"
+      }
+    ],
+    "source": "json_ld"
+  }
+}

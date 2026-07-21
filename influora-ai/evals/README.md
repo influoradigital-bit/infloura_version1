@@ -7,6 +7,7 @@ change can't silently regress quality:
 |---|---|---|---|
 | `brand_safety_garm` | GARM brand-safety classification | `POST /internal/brand-safety` — forced `analyze_creator_content` tool (`app/tools/schemas.py`, `app/prompt/brand_safety.py`) | Claude |
 | `analyze_site_classify` | Website niche/tone classification | `POST /analyze-site` — `_CLASSIFY_SYSTEM_INSTRUCTION` JSON contract (`app/providers/gemini.py`) | Gemini |
+| `analyze_site_extraction` | P1-B structured product-fact extraction (JSON-LD/OpenGraph/microdata) from raw HTML | `perform_site_analysis` (`app/routes/analyze_site.py`) — `app/prompt/structured_extract.py`'s deterministic parser | none (pure function, no provider call) |
 | `trend_tag` | Trend-Spark closed-vocab recovery tagger | `POST /internal/trendspark/tag` — closed theme/campaign vocab (`app/prompt/trend_tag.py`) | Claude (Haiku-class) |
 | `template_recommendation` | Platform-AI Phase 1 — campaign-template recommendation | `POST /chat` (`create_campaign.template_id`, `app/tools/schemas.py` + `app/prompt/assembler.py::build_block_b`'s `template_digest` rendering) — Ash's binding W2 eval gate | Claude |
 
@@ -46,6 +47,8 @@ PYTHONUTF8=1 python -m pytest tests/evals -q
 | brand_safety_garm | malformed outputs (schema contract) | 0 |
 | analyze_site_classify | niche-tag set-overlap F1 (open vocab, tolerant) | >= 0.60 |
 | analyze_site_classify | tone bucket score (formality/energy terciles + emoji_ok) | >= 0.70 |
+| analyze_site_extraction | scraped name+price+currency exact recall (facts, not tolerant F1) | 1.00 |
+| analyze_site_extraction | fabricated products on a no-structured-data page | 0 (hard veto) |
 | trend_tag | theme F1 (after the REAL closed-vocab validator) | >= 0.70 |
 | trend_tag | campaign_type accuracy | >= 0.80 |
 | trend_tag | drop agreement (recover vs drop decision) | 1.00 |
