@@ -115,6 +115,26 @@ import org.springframework.transaction.annotation.Transactional;
  * now-reduced balance and is rejected the same way. On a RazorpayX {@code reversed} webhook, {@link
  * PayoutReconciliationService} puts the money back — now a real re-credit of a real debit, not a
  * credit with no matching debit ever written.
+ *
+ * <p><b>Orphaned-debit fix [P1, SEC: Kabir, landed-money-path audit 2b].</b> {@link
+ * #doQueuePayout} is annotated {@code @Transactional}, but {@link #queuePayout} invokes it as a
+ * lambda ({@code () -> doQueuePayout(...)}) on {@code this} -- a Spring self-invocation, which
+ * bypasses the AOP proxy entirely, so that {@code @Transactional} is a NO-OP here. It does NOT
+ * wrap the wallet debit and the RazorpayX call in one atomic unit; the debit above commits in
+ * {@link WalletLedgerService#post}'s own (real, cross-bean) transaction the instant it returns. If
+ * RazorpayX fails or the process crashes AFTER the debit commits but BEFORE a result is durably
+ * recorded, the debit is orphaned -- the creator has been debited toward a payout that was never
+ * confirmed sent. Making this method genuinely transactional would NOT be the fix: rolling back
+ * the debit after RazorpayX's send has already partially succeeded would reintroduce the
+ * double-pay/lost-money hole the debit-first ordering exists to avoid -- an external gateway call
+ * is fundamentally not something a local transaction can safely wrap. The actual fix is a durable
+ * intent record plus a background reconciler: a {@link Payout} row is now persisted with {@link
+ * Payout#STATUS_PENDING} BEFORE the debit and BEFORE the RazorpayX call (created fresh, or reused
+ * by {@code idempotencyKey} on a reclaimed retry). A separate scheduled sweep ({@code
+ * PayoutOrphanedDebitSweepJob}) finds rows still PENDING past a grace period and hands them to
+ * {@link PayoutReconciliationService#reconcileOrphanedPendingPayout}, which retries the (idempotent)
+ * gateway call or, if that itself fails, reverses the debit via the same re-credit path already
+ * used for a genuine RazorpayX {@code reversed} webhook.
  */
 @Service
 public class PayoutService {
@@ -224,19 +244,20 @@ public class PayoutService {
             PaymentMilestone milestone, Collaboration collaboration, BigDecimal netAmount) {}
 
     /**
-     * Re-derives the NET amount a payout for this (already-RELEASED) milestone must pay — the
-     * exact figure {@code EscrowService#release} credited to the creator's Influora wallet, read
-     * straight off that release's own ledger row rather than recomputed. {@link
-     * PaymentMilestone#getReleasedTxnId()} is the id of the {@code ESCROW_RELEASE} credit leg
-     * {@code WalletLedgerService.post} wrote on the creator's wallet (see {@code
-     * EscrowService#releaseInternal}); that leg's {@code amount} column IS
-     * {@code platformFeeService.deductAtRelease(...).netAmount()} by construction — gross minus
-     * the creator-side platform commission. A milestone that reaches this method always has a
-     * RELEASED hold (checked by the caller), so {@code releasedTxnId} should never be null in
-     * practice; the missing-ledger-row case is defensive only (e.g. data corruption) and fails
-     * closed rather than silently falling back to gross.
+     * Loads the release-ledger credit leg {@link PaymentMilestone#getReleasedTxnId()} points at —
+     * the exact figure {@code EscrowService#release} credited to the creator's Influora wallet —
+     * and asserts it actually belongs to THIS milestone before returning it.
+     *
+     * <p><b>[P2, SEC: Kabir, landed-money-path audit 1c].</b> Previously this did a bare {@code
+     * findById(releasedTxnId)} with no assertion that the loaded row's {@code referenceId} equals
+     * this milestone's id. {@code releasedTxnId} is server-set (never client-supplied) so this was
+     * not API-exploitable, but it was also not defended against DB-level tampering/corruption
+     * redirecting a milestone's pointer at a different milestone's release credit. This binding
+     * assert is defense-in-depth: fails closed with {@code MILESTONE_RELEASE_LEDGER_MISMATCH}
+     * rather than silently paying out an amount that was actually released for someone else's
+     * milestone.
      */
-    private BigDecimal resolveNetPayoutAmount(PaymentMilestone milestone) {
+    private WalletTransaction loadReleaseCredit(PaymentMilestone milestone) {
         String releasedTxnId = milestone.getReleasedTxnId();
         if (releasedTxnId == null) {
             throw new ApiException(
@@ -254,7 +275,29 @@ public class PayoutService {
                                                 "Milestone release ledger entry not found — cannot determine net"
                                                         + " payout amount",
                                                 HttpStatus.CONFLICT));
-        return releaseCredit.getAmount();
+        if (releaseCredit.getReferenceType() != TxnReferenceType.MILESTONE
+                || !milestone.getId().equals(releaseCredit.getReferenceId())) {
+            throw new ApiException(
+                    "MILESTONE_RELEASE_LEDGER_MISMATCH",
+                    "Milestone release ledger entry does not belong to this milestone",
+                    HttpStatus.CONFLICT);
+        }
+        return releaseCredit;
+    }
+
+    /**
+     * Re-derives the NET amount a payout for this (already-RELEASED) milestone must pay — the
+     * exact figure {@code EscrowService#release} credited to the creator's Influora wallet, read
+     * straight off that release's own ledger row rather than recomputed. That leg's {@code amount}
+     * column IS {@code platformFeeService.deductAtRelease(...).netAmount()} by construction — gross
+     * minus the creator-side platform commission. Only the milestone-binding assert from {@link
+     * #loadReleaseCredit} applies here (no creator-wallet check) — used by {@link
+     * #replayIfPresent}, which does not have a resolved {@link Collaboration}/creator id on hand;
+     * the fuller creator-wallet binding check lives in {@link #validateForPayout}, the only path
+     * that actually authorizes money movement.
+     */
+    private BigDecimal resolveNetPayoutAmount(PaymentMilestone milestone) {
+        return loadReleaseCredit(milestone).getAmount();
     }
 
     /**
@@ -307,7 +350,19 @@ public class PayoutService {
                                                 "Collaboration not found",
                                                 HttpStatus.NOT_FOUND));
 
-        BigDecimal netAmount = resolveNetPayoutAmount(milestone);
+        // [P2, SEC: Kabir, landed-money-path audit 1c] Full binding assert -- not just that the
+        // release credit belongs to THIS milestone (loadReleaseCredit already checks that) but that
+        // it landed on THIS milestone's creator's wallet, not some other user's. This is the only
+        // path that actually authorizes a RazorpayX call, so it gets the strongest check.
+        WalletTransaction releaseCredit = loadReleaseCredit(milestone);
+        Wallet creatorWallet = walletService.requireOrCreateUserWallet(collaboration.getCreatorId());
+        if (!creatorWallet.getId().equals(releaseCredit.getWalletId())) {
+            throw new ApiException(
+                    "MILESTONE_RELEASE_LEDGER_MISMATCH",
+                    "Milestone release ledger entry does not belong to this milestone's creator wallet",
+                    HttpStatus.CONFLICT);
+        }
+        BigDecimal netAmount = releaseCredit.getAmount();
 
         return new PayoutContext(milestone, collaboration, netAmount);
     }
@@ -349,6 +404,21 @@ public class PayoutService {
      * ownership) by {@link #validateForPayout} before the idempotency key was ever reserved; the
      * only things that can throw from this point on are the RazorpayX call itself and the final
      * persistence, both of which SHOULD mark the key FAILED (and be retryable) on failure.
+     *
+     * <p><b>{@code @Transactional} here is a NO-OP [SEC: Kabir, landed-money-path audit 2b] —
+     * do not rely on it for atomicity.</b> {@link #queuePayout} calls this method as a lambda
+     * ({@code () -> doQueuePayout(...)}) on {@code this}, a Spring self-invocation that bypasses
+     * the AOP transaction proxy entirely. The wallet debit below commits in its own, genuinely
+     * transactional call ({@link WalletLedgerService#post}) the instant it returns — it is NOT
+     * rolled back if the RazorpayX call that follows fails or the process crashes. That is
+     * intentional, not a bug to "fix" by wrapping this method in a real transaction: doing so
+     * would roll back the debit even after RazorpayX's send had already partially succeeded,
+     * reintroducing the double-pay/lost-money hole this debit-first ordering exists to avoid — an
+     * external, non-transactional gateway call cannot be safely wrapped in a local DB transaction
+     * either way. The safety net for the window between the debit committing and the gateway
+     * result being durably recorded is the {@link Payout#STATUS_PENDING} row persisted below
+     * BEFORE either of those steps, swept by {@code PayoutOrphanedDebitSweepJob} /
+     * {@link PayoutReconciliationService#reconcileOrphanedPendingPayout}.
      */
     @Transactional
     protected PayoutResponse doQueuePayout(PayoutContext ctx, String idempotencyKey) {
@@ -359,9 +429,7 @@ public class PayoutService {
 
         // [B7/C-5] Resolves a REAL RazorpayX fund account off the creator's on-file primary bank
         // account (previously the creator's raw user id was passed straight to RazorpayX as if it
-        // were a fund account id) and persists a Payout row keyed on the RazorpayX payout id — the
-        // durable record PayoutReconciliationService updates from the payout.processed/
-        // payout.reversed webhook.
+        // were a fund account id).
         CreatorBankAccount bankAccount =
                 creatorBankAccountRepository
                         .findByCreatorUserIdAndPrimaryTrue(creatorUserId)
@@ -373,15 +441,39 @@ public class PayoutService {
                                                 HttpStatus.CONFLICT));
         String fundAccountId = fundAccountService.resolveFundAccountId(creatorUserId, bankAccount.getId());
 
+        // [P1 fix, SEC: Kabir, landed-money-path audit 2b] Persist the durable payout-intent row
+        // BEFORE the wallet debit and BEFORE the RazorpayX call — the whole point of the fix (see
+        // this method's javadoc and Payout#STATUS_PENDING). Looked up by idempotencyKey first: on
+        // a reclaimed FAILED-key retry (a prior attempt got this far or further before failing/
+        // crashing) the SAME row is reused rather than inserting a second one, which would violate
+        // the column's UNIQUE constraint and would also be the wrong behavior — the row from the
+        // first attempt is exactly the record PayoutOrphanedDebitSweepJob needs to have seen.
+        Payout payout = payoutRepository.findByIdempotencyKey(idempotencyKey).orElse(null);
+        if (payout == null) {
+            payout =
+                    Payout.createPending(
+                            Ulids.newUlid(),
+                            milestone.getId(),
+                            creatorUserId,
+                            fundAccountId,
+                            netAmount,
+                            milestone.getCurrency(),
+                            idempotencyKey,
+                            Instant.now());
+            payoutRepository.save(payout);
+        }
+
         // [Money-safety fix, double-pay guardrail — see class javadoc] Debit the creator's wallet
-        // for the SAME net amount BEFORE ever calling RazorpayX, inside this one @Transactional
-        // method. This is the missing counterpart to EscrowService#release's credit: without it,
-        // the released funds stay withdrawable via POST /wallet/withdraw at the same time a real
-        // bank payout is in flight for them. WalletLedgerService.post enforces the wallet's balance
-        // can't go negative, so if the creator already withdrew this money (or a payout for it was
-        // already debited under a different flow) this throws INSUFFICIENT_BALANCE here — before
-        // RazorpayX is ever called — rather than silently paying out twice. Distinct idempotency key
-        // ("payout-debit:") from the queuePayout key itself, scoped to this milestone.
+        // for the SAME net amount BEFORE ever calling RazorpayX. This is the missing counterpart to
+        // EscrowService#release's credit: without it, the released funds stay withdrawable via POST
+        // /wallet/withdraw at the same time a real bank payout is in flight for them.
+        // WalletLedgerService.post enforces the wallet's balance can't go negative, so if the
+        // creator already withdrew this money (or a payout for it was already debited under a
+        // different flow) this throws INSUFFICIENT_BALANCE here — before RazorpayX is ever called —
+        // rather than silently paying out twice. Distinct idempotency key ("payout-debit:") from
+        // the queuePayout key itself, scoped to this milestone. NOTE: this commits in its own real
+        // transaction regardless of this method's no-op @Transactional (see javadoc above) — that
+        // is exactly why the PENDING row above must be written first.
         Wallet clearingWallet = platformWalletService.requireClearingWallet();
         Wallet creatorWallet = walletService.requireOrCreateUserWallet(creatorUserId);
         String debitIdempotencyKey = "payout-debit:" + milestone.getId();
@@ -398,22 +490,16 @@ public class PayoutService {
                 null);
 
         // [Money-safety fix — see class javadoc] NET amount, never milestone.getAmount() (gross).
-        var payout =
+        var gatewayResult =
                 razorpayXClient.initiatePayout(
                         fundAccountId, netAmount, milestone.getCurrency(), idempotencyKey);
 
-        payoutRepository.save(
-                Payout.createQueued(
-                        Ulids.newUlid(),
-                        milestone.getId(),
-                        creatorUserId,
-                        payout.payoutId(),
-                        fundAccountId,
-                        netAmount,
-                        milestone.getCurrency(),
-                        payout.status(),
-                        idempotencyKey,
-                        Instant.now()));
+        // [P1 fix] The gateway call returned — transition the PENDING row to its real RazorpayX
+        // identity/status. If the process dies between the debit above and this line, the row is
+        // left PENDING with the debit already posted: exactly the orphaned-debit window
+        // PayoutOrphanedDebitSweepJob exists to sweep.
+        payout.markGatewayConfirmed(gatewayResult.payoutId(), gatewayResult.status());
+        payoutRepository.save(payout);
 
         // Mark this milestone as having had a payout queued under this key — the local replay
         // guard for every subsequent call (see replayIfPresent). Reuses the same column
@@ -423,6 +509,10 @@ public class PayoutService {
         milestoneRepository.save(milestone);
 
         return new PayoutResponse(
-                payout.payoutId(), milestone.getId(), netAmount, milestone.getCurrency(), payout.status());
+                gatewayResult.payoutId(),
+                milestone.getId(),
+                netAmount,
+                milestone.getCurrency(),
+                gatewayResult.status());
     }
 }

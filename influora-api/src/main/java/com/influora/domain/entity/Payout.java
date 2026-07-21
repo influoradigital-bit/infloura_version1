@@ -68,7 +68,65 @@ public class Payout {
     @Column(name = "confirmed_at")
     private Instant confirmedAt;
 
+    /**
+     * [P1 fix, SEC: Kabir 2b -- orphaned-debit sweeper] Our own pre-gateway-call marker status --
+     * deliberately UPPERCASE and distinct from every value RazorpayX itself ever reports (always
+     * lowercase: {@code queued}/{@code pending}/{@code processing}/{@code processed}/{@code
+     * reversed}/{@code cancelled}/{@code rejected}), so a sweep query can never accidentally match
+     * a row RazorpayX has already put into its own "pending" state. Set the instant a payout intent
+     * is persisted -- BEFORE the wallet debit and BEFORE the RazorpayX call -- so a crash/failure
+     * anywhere in that window leaves a durable, sweep-able record instead of an invisible orphaned
+     * debit. See {@code PayoutService#doQueuePayout} and {@code
+     * PayoutReconciliationService#reconcileOrphanedPendingPayout}.
+     */
+    public static final String STATUS_PENDING = "PENDING";
+
     protected Payout() {}
+
+    /**
+     * [P1 fix] Persists the durable "a payout is about to happen" record BEFORE the wallet debit
+     * or the RazorpayX call. {@code razorpayPayoutId} is not yet known (RazorpayX has not been
+     * called), so a unique placeholder derived from this row's own id is stored instead and
+     * overwritten by {@link #markGatewayConfirmed} once the gateway responds. On a reclaimed retry
+     * (idempotency key was FAILED, caller calls {@code queuePayout} again), {@code PayoutService}
+     * looks this row up by {@code idempotencyKey} and reuses it rather than calling this factory a
+     * second time for the same key (the column is {@code UNIQUE}).
+     */
+    public static Payout createPending(
+            String id,
+            String milestoneId,
+            String creatorUserId,
+            String fundAccountId,
+            BigDecimal amount,
+            String currency,
+            String idempotencyKey,
+            Instant now) {
+        Payout p = new Payout();
+        p.id = id;
+        p.milestoneId = milestoneId;
+        p.creatorUserId = creatorUserId;
+        p.razorpayPayoutId = "pending:" + id;
+        p.fundAccountId = fundAccountId;
+        p.amount = amount;
+        p.currency = currency;
+        p.status = STATUS_PENDING;
+        p.idempotencyKey = idempotencyKey;
+        p.createdAt = now;
+        p.updatedAt = now;
+        return p;
+    }
+
+    /**
+     * [P1 fix] Transitions a {@link #createPending} row to its real RazorpayX identity/status once
+     * the gateway call returns successfully. Deliberately NOT {@link #confirmStatus} -- that method
+     * is reserved for the later, webhook-driven terminal-state transition and stamps {@code
+     * confirmedAt}; this is only "the gateway accepted the request," not a confirmed final outcome.
+     */
+    public void markGatewayConfirmed(String razorpayPayoutId, String status) {
+        this.razorpayPayoutId = razorpayPayoutId;
+        this.status = status;
+        this.updatedAt = Instant.now();
+    }
 
     public static Payout createQueued(
             String id,

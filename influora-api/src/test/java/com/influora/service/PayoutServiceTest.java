@@ -222,6 +222,18 @@ class PayoutServiceTest {
                 .thenReturn(CREATOR_ID);
     }
 
+    /**
+     * [P2, SEC: Kabir 1c] Stubs the creator-wallet lookup {@code validateForPayout}'s binding
+     * assert needs -- confirms the release-ledger credit's {@code walletId} equals THIS
+     * milestone's creator's wallet id. Lighter-weight than {@link #mockWalletDebit()} (which also
+     * stubs the clearing wallet + the ledger post itself) for tests that only need to get past
+     * validation without exercising the debit/gateway path.
+     */
+    private void mockCreatorWalletBinding() {
+        Wallet creatorWallet = Wallet.forUser(CREATOR_WALLET_ID, CREATOR_ID);
+        when(walletService.requireOrCreateUserWallet(CREATOR_ID)).thenReturn(creatorWallet);
+    }
+
     /** Mirrors {@code RedemptionServiceTest#mockIdempotencyExecuteOnce}: run the supplier as the race winner. */
     private void mockIdempotencyExecuteOnce() {
         when(idempotencyService.executeOnce(anyString(), any(), anyString(), any()))
@@ -379,6 +391,7 @@ class PayoutServiceTest {
         when(idempotencyService.executeOnce(anyString(), any(), anyString(), any()))
                 .thenThrow(new IdempotencyService.AlreadyInProgressException(IDEMPOTENCY_KEY));
         mockReleaseLedgerNetAmount();
+        mockCreatorWalletBinding(); // [P2] validateForPayout's binding assert runs before the race
 
         PayoutResponse response = service.queuePayout(principal, WORKSPACE_ID, MILESTONE_ID);
 
@@ -410,6 +423,7 @@ class PayoutServiceTest {
         when(idempotencyService.executeOnce(anyString(), any(), anyString(), any()))
                 .thenThrow(new IdempotencyService.AlreadyInProgressException(IDEMPOTENCY_KEY));
         mockReleaseLedgerNetAmount();
+        mockCreatorWalletBinding(); // [P2] validateForPayout's binding assert runs before the race
 
         ApiException ex =
                 assertThrows(
@@ -579,5 +593,172 @@ class PayoutServiceTest {
         assertEquals("payout_retry_ok", response.payoutId());
         verify(razorpayXClient, times(2)).initiatePayout(eq(CREATOR_ID), any(), any(), anyString());
         verify(milestoneRepository, times(1)).save(any());
+    }
+
+    // ------------------------------------------------------------------
+    // [P1, SEC: Kabir, landed-money-path audit 2b] Orphaned-debit fix -- a durable PENDING Payout
+    // row must exist BEFORE the wallet debit / RazorpayX call, and be updated (never re-inserted)
+    // once the gateway responds.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "queuePayout: persists a PENDING Payout row BEFORE the wallet debit and the RazorpayX"
+                    + " call, then updates that SAME row to the gateway's status once it responds")
+    void testPersistsPendingPayoutRowBeforeGatewayCall() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        PaymentMilestone milestone = releasedMilestone();
+        bindReleased(milestone);
+        when(milestoneRepository.findById(MILESTONE_ID))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(milestone));
+        when(escrowHoldRepository.findById(ESCROW_HOLD_ID)).thenReturn(Optional.of(releasedHold()));
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration()));
+        when(razorpayXClient.initiatePayout(eq(CREATOR_ID), eq(NET_AMOUNT), eq("INR"), anyString()))
+                .thenReturn(new PayoutResult("payout_abc123", "queued"));
+        mockIdempotencyExecuteOnce();
+        mockFundAccountResolution();
+        mockReleaseLedgerNetAmount();
+        mockWalletDebit();
+        // No prior Payout row for this idempotency key -- Mockito's default Optional answer
+        // returns Optional.empty() for the unstubbed findByIdempotencyKey call.
+
+        // payoutRepository.save() is called TWICE on the SAME (mutable) Payout object -- once to
+        // persist it PENDING, once to persist it gateway-confirmed. An ArgumentCaptor would only
+        // ever see the object's FINAL state for both captures (classic Mockito mutable-argument
+        // pitfall), so snapshot the immutable String status/id at each actual call instead.
+        java.util.List<String> savedStatusesAtCallTime = new java.util.ArrayList<>();
+        java.util.List<String> savedRazorpayIdsAtCallTime = new java.util.ArrayList<>();
+        java.util.List<String> savedRowIdsAtCallTime = new java.util.ArrayList<>();
+        when(payoutRepository.save(any()))
+                .thenAnswer(
+                        invocation -> {
+                            com.influora.domain.entity.Payout p = invocation.getArgument(0);
+                            savedStatusesAtCallTime.add(p.getStatus());
+                            savedRazorpayIdsAtCallTime.add(p.getRazorpayPayoutId());
+                            savedRowIdsAtCallTime.add(p.getId());
+                            return p;
+                        });
+
+        service.queuePayout(principal, WORKSPACE_ID, MILESTONE_ID);
+
+        org.mockito.InOrder order =
+                org.mockito.Mockito.inOrder(payoutRepository, walletLedgerService, razorpayXClient);
+        // The PENDING row is saved BEFORE the debit and BEFORE the gateway call ...
+        order.verify(payoutRepository).save(any());
+        order.verify(walletLedgerService)
+                .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        order.verify(razorpayXClient).initiatePayout(any(), any(), any(), anyString());
+        // ... and updated (not re-inserted) once the gateway responds.
+        order.verify(payoutRepository).save(any());
+
+        assertEquals(2, savedStatusesAtCallTime.size());
+        assertEquals(com.influora.domain.entity.Payout.STATUS_PENDING, savedStatusesAtCallTime.get(0));
+        assertEquals("queued", savedStatusesAtCallTime.get(1));
+        assertEquals("payout_abc123", savedRazorpayIdsAtCallTime.get(1));
+        // Both saves are literally the same row (same object/id) -- an update, not a second insert.
+        assertEquals(savedRowIdsAtCallTime.get(0), savedRowIdsAtCallTime.get(1));
+    }
+
+    @Test
+    @DisplayName(
+            "queuePayout: RazorpayX failure leaves the Payout row PENDING with the debit already"
+                    + " posted -- the exact orphaned-debit state PayoutOrphanedDebitSweepJob sweeps")
+    void testGatewayFailureLeavesOrphanedDebitAsPendingRow() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        PaymentMilestone milestone = releasedMilestone();
+        bindReleased(milestone);
+        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        when(escrowHoldRepository.findById(ESCROW_HOLD_ID)).thenReturn(Optional.of(releasedHold()));
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration()));
+        mockFundAccountResolution();
+        mockReleaseLedgerNetAmount();
+        mockWalletDebit();
+        mockIdempotencyExecuteOnce();
+        when(razorpayXClient.initiatePayout(eq(CREATOR_ID), any(), any(), anyString()))
+                .thenThrow(new RuntimeException("RazorpayX unreachable"));
+
+        assertThrows(
+                RuntimeException.class, () -> service.queuePayout(principal, WORKSPACE_ID, MILESTONE_ID));
+
+        // The debit still posted (money-safety fix, unaffected) ...
+        verify(walletLedgerService, times(1))
+                .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        // ... and exactly one Payout row was saved: the PENDING row, never confirmed because the
+        // gateway call threw before markGatewayConfirmed. This is the durable orphaned-debit
+        // record the sweeper relies on.
+        ArgumentCaptor<com.influora.domain.entity.Payout> captor =
+                ArgumentCaptor.forClass(com.influora.domain.entity.Payout.class);
+        verify(payoutRepository, times(1)).save(captor.capture());
+        assertEquals(com.influora.domain.entity.Payout.STATUS_PENDING, captor.getValue().getStatus());
+    }
+
+    // ------------------------------------------------------------------
+    // [P2, SEC: Kabir, landed-money-path audit 1c] Binding assert -- the loaded release-ledger
+    // credit must actually belong to THIS milestone's creator/workspace, not just resolve by id.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "queuePayout: rejects with MILESTONE_RELEASE_LEDGER_MISMATCH if the release credit's"
+                    + " walletId does not belong to this milestone's creator (cross-creator binding failure)")
+    void testRejectsReleaseCreditForWrongCreatorWallet() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        PaymentMilestone milestone = releasedMilestone();
+        bindReleased(milestone);
+        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        when(escrowHoldRepository.findById(ESCROW_HOLD_ID)).thenReturn(Optional.of(releasedHold()));
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration()));
+        mockReleaseLedgerNetAmount(); // release credit lives on CREATOR_WALLET_ID
+        // But the resolved creator wallet is a DIFFERENT wallet id -- simulating a
+        // tampered/misdirected releasedTxnId pointing at another user's release credit.
+        Wallet otherUsersWallet = Wallet.forUser("01HOTHERWALLET1234567", "01HOTHERCREATOR123456");
+        when(walletService.requireOrCreateUserWallet(CREATOR_ID)).thenReturn(otherUsersWallet);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.queuePayout(principal, WORKSPACE_ID, MILESTONE_ID));
+
+        assertEquals("MILESTONE_RELEASE_LEDGER_MISMATCH", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        verify(razorpayXClient, never()).initiatePayout(any(), any(), any(), any());
+        verify(idempotencyService, never()).executeOnce(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "queuePayout: rejects with MILESTONE_RELEASE_LEDGER_MISMATCH if the release credit's"
+                    + " referenceId points at a different milestone (cross-milestone binding failure)")
+    void testRejectsReleaseCreditForWrongMilestone() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        PaymentMilestone milestone = releasedMilestone();
+        bindReleased(milestone);
+        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        when(escrowHoldRepository.findById(ESCROW_HOLD_ID)).thenReturn(Optional.of(releasedHold()));
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration()));
+        WalletTransaction releaseCreditForAnotherMilestone =
+                WalletTransaction.builder()
+                        .id(RELEASED_TXN_ID)
+                        .walletId(CREATOR_WALLET_ID)
+                        .groupId("01HGROUP1234567890AB")
+                        .direction(TxnDirection.CREDIT)
+                        .type(WalletTransactionType.ESCROW_RELEASE)
+                        .amount(NET_AMOUNT)
+                        .currency("INR")
+                        .balanceAfter(NET_AMOUNT)
+                        .referenceType(TxnReferenceType.MILESTONE)
+                        .referenceId("01HSOMEOTHERMILESTONE") // NOT this test's MILESTONE_ID
+                        .idempotencyKey("release:" + ESCROW_HOLD_ID + ":C")
+                        .build();
+        when(walletTransactionRepository.findById(RELEASED_TXN_ID))
+                .thenReturn(Optional.of(releaseCreditForAnotherMilestone));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.queuePayout(principal, WORKSPACE_ID, MILESTONE_ID));
+
+        assertEquals("MILESTONE_RELEASE_LEDGER_MISMATCH", ex.getCode());
+        verify(razorpayXClient, never()).initiatePayout(any(), any(), any(), any());
+        verify(idempotencyService, never()).executeOnce(any(), any(), any(), any());
     }
 }

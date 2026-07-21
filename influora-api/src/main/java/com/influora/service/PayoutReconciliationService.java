@@ -4,7 +4,9 @@ import com.influora.domain.entity.Payout;
 import com.influora.domain.entity.Wallet;
 import com.influora.domain.enums.TxnReferenceType;
 import com.influora.domain.enums.WalletTransactionType;
+import com.influora.integration.razorpay.RazorpayXClient;
 import com.influora.repository.PayoutRepository;
+import com.influora.repository.WalletTransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -37,16 +39,22 @@ public class PayoutReconciliationService {
     private final WalletLedgerService ledgerService;
     private final PlatformWalletService platformWalletService;
     private final WalletService walletService;
+    private final WalletTransactionRepository walletTransactionRepository;
+    private final RazorpayXClient razorpayXClient;
 
     public PayoutReconciliationService(
             PayoutRepository payoutRepository,
             WalletLedgerService ledgerService,
             PlatformWalletService platformWalletService,
-            WalletService walletService) {
+            WalletService walletService,
+            WalletTransactionRepository walletTransactionRepository,
+            RazorpayXClient razorpayXClient) {
         this.payoutRepository = payoutRepository;
         this.ledgerService = ledgerService;
         this.platformWalletService = platformWalletService;
         this.walletService = walletService;
+        this.walletTransactionRepository = walletTransactionRepository;
+        this.razorpayXClient = razorpayXClient;
     }
 
     /**
@@ -101,6 +109,84 @@ public class PayoutReconciliationService {
         // on, so a retried `reversed` delivery can never double-credit.
         if (STATUS_REVERSED.equals(newStatus) && !wasAlreadyReversed) {
             reCreditReversedPayout(payout, razorpayPayoutId);
+        }
+    }
+
+    /**
+     * [P1 fix, SEC: Kabir, landed-money-path audit 2b — orphaned-debit sweeper.] Called by {@code
+     * PayoutOrphanedDebitSweepJob} for every {@link Payout} row still sitting in {@link
+     * Payout#STATUS_PENDING} past the sweep's grace period — i.e. {@code
+     * PayoutService#doQueuePayout} persisted the row before calling RazorpayX, but no result was
+     * ever durably recorded (a crash/failure between the wallet debit committing and the gateway
+     * response being saved; see that method's javadoc).
+     *
+     * <p>Two cases, distinguished by whether the queue-time debit actually posted:
+     *
+     * <ul>
+     *   <li><b>No debit posted</b> ({@code payout-debit:&lt;milestoneId&gt;} ledger key absent) —
+     *       the process crashed before ever debiting the creator. There is no orphaned debit to
+     *       reconcile; this row is simply awaiting a legitimate retry through {@code
+     *       PayoutService#queuePayout} (which will find and reuse this same row by {@code
+     *       idempotencyKey}). Logged only, no money movement.
+     *   <li><b>Debit posted</b> — retry the (idempotent) RazorpayX call first, reusing the SAME
+     *       {@code idempotencyKey}/{@code reference_id} the original attempt used, so this can
+     *       never double-pay even if the original call actually succeeded and only the local
+     *       confirmation was lost. Only if that retry itself fails do we reverse the debit — the
+     *       SAME re-credit path {@link #confirmExecuted} already uses for a genuine RazorpayX
+     *       {@code reversed} webhook (C-6), kept as the one re-credit code path in this codebase
+     *       rather than inventing a second one.
+     * </ul>
+     */
+    @Transactional
+    public void reconcileOrphanedPendingPayout(Payout payout) {
+        if (!Payout.STATUS_PENDING.equals(payout.getStatus())) {
+            // Already progressed past PENDING between the sweep query running and this row being
+            // processed (e.g. the original request finally completed, or a prior sweep run already
+            // handled it) — nothing to do.
+            return;
+        }
+
+        boolean debitPosted =
+                walletTransactionRepository
+                        .findByIdempotencyKey("payout-debit:" + payout.getMilestoneId() + ":D")
+                        .isPresent();
+        if (!debitPosted) {
+            log.warn(
+                    "PayoutReconciliation: PENDING payout {} (milestone {}) has no debit posted yet —"
+                            + " nothing orphaned, awaiting a legitimate retry via PayoutService#queuePayout",
+                    payout.getId(),
+                    payout.getMilestoneId());
+            return;
+        }
+
+        try {
+            RazorpayXClient.PayoutResult result =
+                    razorpayXClient.initiatePayout(
+                            payout.getFundAccountId(),
+                            payout.getAmount(),
+                            payout.getCurrency(),
+                            payout.getIdempotencyKey());
+            payout.markGatewayConfirmed(result.payoutId(), result.status());
+            payoutRepository.save(payout);
+            log.info(
+                    "PayoutReconciliation: retried orphaned-debit payout {} — gateway confirmed"
+                            + " razorpayPayoutId={} status={}",
+                    payout.getId(),
+                    result.payoutId(),
+                    result.status());
+        } catch (Exception e) {
+            log.error(
+                    "PayoutReconciliation: gateway retry failed for orphaned-debit payout {} (milestone"
+                            + " {}) — reversing the debit instead",
+                    payout.getId(),
+                    payout.getMilestoneId(),
+                    e);
+            boolean wasAlreadyReversed = STATUS_REVERSED.equals(payout.getStatus());
+            payout.confirmStatus(STATUS_REVERSED, null);
+            payoutRepository.save(payout);
+            if (!wasAlreadyReversed) {
+                reCreditReversedPayout(payout, payout.getRazorpayPayoutId());
+            }
         }
     }
 
