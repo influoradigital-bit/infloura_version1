@@ -13,14 +13,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * unique constraint on {@code creator_nudge_log(creator_profile_id, shown_day)}
  * (V20260721140000) is what actually enforces the cap.
  *
- * <p>{@code model} (AI-service config) and {@code theme-tag-batch-cron} (bound directly as a
- * {@code @Scheduled} cron placeholder, not a field here) deliberately do NOT live on this class —
- * see {@code CreatorThemeTaggingJob}. */
+ * <p>{@code model} (AI-service config) and {@code theme-tag-batch-cron}/{@code
+ * caption-sync-cron} (bound directly as {@code @Scheduled} cron placeholders, not fields here)
+ * deliberately do NOT live on this class — see {@code CreatorThemeTaggingJob}/{@code
+ * CreatorCaptionSyncJob}. */
 @ConfigurationProperties(prefix = "influora.creator-copilot")
 public class CreatorCopilotProperties {
 
     /** Off by default — gates whether {@code CreatorThemeTaggingJob}'s scheduled body actually
-     * runs, same pattern as {@code BrandSafetyScoringProperties.isEnabled()}. */
+     * runs, same pattern as {@code BrandSafetyScoringProperties.isEnabled()}. Also gates {@code
+     * CreatorCaptionSyncJob}, which shares this flag rather than getting its own. */
     private boolean enabled = false;
 
     /** Minimum theme-overlap score to surface a suggestion at all. Below this, the co-pilot stays
@@ -32,6 +34,15 @@ public class CreatorCopilotProperties {
     private int maxSuggestionsPerCreatorPerDay = 1;
 
     private String promptVersion = "creator-copilot-v1";
+
+    /** Recent-media page size {@code CreatorCaptionSyncJob} requests per creator per run — mirrors
+     * {@code InstagramMetricsFetcher.DEFAULT_MEDIA_LIMIT}'s default of 25, capped at Meta's 100. */
+    private int captionSyncMediaLimit = 25;
+
+    /** Optional cap on how many creators {@code CreatorCaptionSyncJob} processes in a single run
+     * (0 = unlimited) — a safety valve if the connected-creator count grows large enough that one
+     * nightly run risks running long or burning too much of the Meta rate-limit budget. */
+    private int captionSyncMaxCreatorsPerRun = 0;
 
     public boolean isEnabled() {
         return enabled;
@@ -65,5 +76,21 @@ public class CreatorCopilotProperties {
     public void setPromptVersion(String promptVersion) {
         this.promptVersion =
                 (promptVersion == null || promptVersion.isBlank()) ? "creator-copilot-v1" : promptVersion;
+    }
+
+    public int getCaptionSyncMediaLimit() {
+        return captionSyncMediaLimit;
+    }
+
+    public void setCaptionSyncMediaLimit(int captionSyncMediaLimit) {
+        this.captionSyncMediaLimit = captionSyncMediaLimit <= 0 ? 25 : captionSyncMediaLimit;
+    }
+
+    public int getCaptionSyncMaxCreatorsPerRun() {
+        return captionSyncMaxCreatorsPerRun;
+    }
+
+    public void setCaptionSyncMaxCreatorsPerRun(int captionSyncMaxCreatorsPerRun) {
+        this.captionSyncMaxCreatorsPerRun = Math.max(captionSyncMaxCreatorsPerRun, 0);
     }
 }

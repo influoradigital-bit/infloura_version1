@@ -39,4 +39,11 @@ public interface MetaOAuthTokenRepository extends JpaRepository<MetaOAuthToken, 
      */
     Optional<MetaOAuthToken> findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(
             String creatorProfileId);
+
+    /**
+     * All non-revoked, non-expired creator-owned tokens (workspace_id IS NULL) — system-wide sweep
+     * for {@code CreatorCaptionSyncJob}, same "not workspace-scoped by design" convention as {@link
+     * #findByRevokedFalseAndExpiresAtAfter(Instant)} above, restricted to the creator key-space only.
+     */
+    List<MetaOAuthToken> findByWorkspaceIdIsNullAndRevokedFalseAndExpiresAtAfter(Instant now);
 }
