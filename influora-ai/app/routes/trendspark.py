@@ -40,13 +40,18 @@ from app.costs.gate import check_spend_gate
 from app.costs.pricing import estimate_cost_usd
 from app.costs.spend_tracker import record_spend
 from app.prompt.trendspark import (
-    FORBIDDEN_PETNAMES,
     MODE_OWN_CONTENT,
     MODE_SNAPSBY,
     build_system_prompt,
     build_user_message,
     fallback_message,
     normalize_mode,
+)
+from app.prompt.validators import (
+    _CODE_FENCE_RE,
+    _has_forbidden_petname,
+    _PRICE_RE,
+    _statement_count,
 )
 from app.providers.claude import ClaudeProvider
 from app.security.redaction import log_event, shape_of
@@ -56,25 +61,11 @@ router = APIRouter()
 
 _claude_provider: ClaudeProvider | None = None
 
-# ```json ... ``` / ``` ... ``` fence stripping (defensive parse, schema-lock §4).
-_CODE_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
-# Unambiguous romantic pet-names -> whole-word, case-insensitive.
-_PETNAME_RE = re.compile(
-    r"\b(" + "|".join(p for p in FORBIDDEN_PETNAMES if p != "love") + r")\b",
-    re.IGNORECASE,
-)
-# "love" only as a vocative (direct address) so the verb "love this" is NOT flagged.
-_LOVE_VOCATIVE_RE = re.compile(r",\s*love\b|\blove\s*[!.?]", re.IGNORECASE)
-# Echoed price kill-switch: rupee symbol, or rs/inr/rupee keywords. The model is
-# never SENT a price, so any price token in the output is invented -> reject.
-_PRICE_RE = re.compile(r"₹|\brs\.?\b|\binr\b|\brupees?\b", re.IGNORECASE)
 # OWN_CONTENT must never surface the marketplace (tone-guide §3/§6 rule 5).
+# Trendspark-specific (unlike the 5 regexes above, now shared via
+# app.prompt.validators per Priya R1 Conflict 7) — this one stays local since
+# it only applies to trendspark's OWN_CONTENT mode branch.
 _OWN_CONTENT_FORBIDDEN_RE = re.compile(r"\bsnapsby\b|\bvideos?\b|\bbuy\b", re.IGNORECASE)
-# "<=2 sentences" cap (tone-guide §2). Count statements terminated by . or ! (runs
-# collapsed); a trailing/soft question CTA ("Want a peek?") is NOT a statement, so
-# the canonical GOOD nudges (2 statements + 1 question tag) pass while urgency spam
-# ("ACT NOW! ... BUY ...! LIMITED TIME!" -> 3-4 statements) is rejected.
-_STATEMENT_RE = re.compile(r"[.!]+")
 
 
 def _get_claude() -> ClaudeProvider:
@@ -112,15 +103,6 @@ def _normalize_videos(raw: Any, max_videos: int) -> tuple[list[dict[str, Any]], 
         if len(videos) >= max_videos:
             break
     return videos, sent_ids
-
-
-def _has_forbidden_petname(message: str) -> bool:
-    return bool(_PETNAME_RE.search(message) or _LOVE_VOCATIVE_RE.search(message))
-
-
-def _statement_count(message: str) -> int:
-    """Number of '.'/'!'-terminated statements (question CTAs excluded)."""
-    return len(_STATEMENT_RE.findall(message))
 
 
 def parse_and_validate(

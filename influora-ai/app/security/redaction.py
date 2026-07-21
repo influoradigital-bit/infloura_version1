@@ -71,6 +71,16 @@ _REDACT_KEYS = {
     "jwt",
     "bearer",
     "x-onbehalf-authorization",
+    # Creator AI Co-pilot (Priya R1 ruling, P2 row) -- Tier-1's
+    # /internal/creator-suggestion route never receives caption text at all
+    # (no `caption_snippet` field, per the R1 Conflict-5 cut), so these keys
+    # are forward cover: Tier-2's caption-touching routes and any other
+    # creator-flow logging (Vikram's Java side / future routes) that might
+    # log caption/IG text get the same redaction backstop from day one,
+    # rather than adding it reactively once such a route exists.
+    "caption",
+    "captions",
+    "ig_handle",
 }
 
 

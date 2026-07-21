@@ -38,6 +38,13 @@ ALLOWED_ALGS = ("RS256", "ES256")  # asymmetric only; never accept HS256 from JW
 
 SCOPE_SERVICE = "service"
 SCOPE_CHAT_STREAM = "chat:stream"
+# Creator AI Co-pilot Tier-1 (`wiki/build/creator-copilot-ai-route-plan.md` §4.1,
+# blessed as-designed by Priya's R1 ruling). A DISTINCT scope from SCOPE_SERVICE
+# — not reused — so a brand-side service token can never satisfy the creator
+# route's scope requirement even if replayed here, and vice versa. Preserves
+# Kabir's bidirectional scope segregation the same way `trendspark`'s own
+# ENDPOINT_SCOPES entry already relies on.
+SCOPE_CREATOR = "creator"
 
 # Maps each endpoint to the scopes allowed to call it.
 ENDPOINT_SCOPES: dict[str, tuple[str, ...]] = {
@@ -51,6 +58,11 @@ ENDPOINT_SCOPES: dict[str, tuple[str, ...]] = {
     # Internal-only: called by Java's TrendSparkAiClient (T4), never by a
     # browser/stream token. Service-scope only, same as brand_safety.
     "trendspark": (SCOPE_SERVICE,),
+    # Internal-only: called by Java's CreatorSuggestionAiClient (Creator AI
+    # Co-pilot Tier-1). creator-scope only — deliberately NOT SCOPE_SERVICE,
+    # keyed on creator_profile_id instead of workspace_id (see
+    # VerifiedCreatorToken / verify_creator_token below).
+    "creator_suggestion": (SCOPE_CREATOR,),
 }
 
 
@@ -68,6 +80,20 @@ class VerifiedToken:
     scope: str
     subject: str | None
     conversation_id: str | None
+    claims: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class VerifiedCreatorToken:
+    """Sibling of `VerifiedToken`, for the Creator AI Co-pilot Tier-1 route
+    (`creator_suggestion`). Creator tokens carry no `workspace_id` claim at
+    all — the tenant key is `creator_profile_id` — so this is a distinct
+    dataclass rather than an optional field bolted onto `VerifiedToken`.
+    """
+
+    creator_profile_id: str
+    scope: str
+    subject: str | None
     claims: dict[str, Any]
 
 
@@ -271,6 +297,75 @@ def verify_token(
         scope=scope,
         subject=claims.get("sub"),
         conversation_id=claims.get("conversation_id") or claims.get("conversationId"),
+        claims=claims,
+    )
+
+
+def verify_creator_token(
+    token: str,
+    *,
+    endpoint: str,
+    body_creator_profile_id: str,
+) -> VerifiedCreatorToken:
+    """Sibling of `verify_token()`, keyed on `creator_profile_id` instead of
+    `workspace_id` -- creator tokens carry no workspace claim. Shares
+    `_decode_and_verify` (same JWKS/alg/aud/iss pipeline) so signature
+    validation is identical to `verify_token`; only the tenant-claim name and
+    return dataclass differ.
+
+    ADDITIVE ONLY: this function does not modify `verify_token()`'s existing
+    body or behavior in any way (that function is exercised by
+    `tests/security/test_service_token*.py` today and by the money-adjacent
+    brand path; touching it is out of scope for the Creator AI Co-pilot
+    feature — see `wiki/build/creator-copilot-ai-route-plan.md` §4.1).
+
+    Raises AuthError (mapped to 401/403 by callers, same as `verify_token`)
+    on any failure. Never makes a provider call before this returns
+    successfully.
+    """
+    settings = get_settings()
+    expected_aud = (settings.service_token_aud, settings.stream_token_aud)
+    claims = _decode_and_verify(token, expected_aud=expected_aud)
+
+    scope = claims.get("scope")
+    if not scope:
+        raise AuthError(status.HTTP_401_UNAUTHORIZED, "missing_scope", "token has no scope claim")
+
+    allowed_scopes = ENDPOINT_SCOPES.get(endpoint, ())
+    if scope not in allowed_scopes:
+        raise AuthError(
+            status.HTTP_403_FORBIDDEN,
+            "scope_mismatch",
+            f"scope {scope!r} cannot call endpoint {endpoint!r}",
+        )
+
+    # Canonical claim is snake_case `creator_profile_id` -- confirmed by Java
+    # (Priya code-review Fix #2). No camelCase fallback: a second accepted
+    # spelling is dead-code ambiguity now that the minting side is settled.
+    token_creator_id = claims.get("creator_profile_id")
+    if not token_creator_id:
+        raise AuthError(
+            status.HTTP_401_UNAUTHORIZED, "missing_creator_claim", "no creator_profile_id in token"
+        )
+
+    if token_creator_id != body_creator_profile_id:
+        raise AuthError(
+            status.HTTP_403_FORBIDDEN,
+            "creator_mismatch",
+            "token.creator_profile_id does not match request body creator_profile_id",
+        )
+
+    now = int(time.time())
+    exp = claims.get("exp")
+    if exp is not None and exp < now:
+        # Defense-in-depth: jwt.decode already checks this, but keep an explicit
+        # check so the invariant is visible and independently testable.
+        raise AuthError(status.HTTP_401_UNAUTHORIZED, "expired_token", "token expired")
+
+    return VerifiedCreatorToken(
+        creator_profile_id=token_creator_id,
+        scope=scope,
+        subject=claims.get("sub"),
         claims=claims,
     )
 

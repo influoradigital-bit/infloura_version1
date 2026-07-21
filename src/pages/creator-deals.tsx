@@ -24,6 +24,7 @@ import { cn, formatINR } from '@/lib/utils';
 import { api, ApiError, type DealStatusFilter } from '@/lib/api';
 import { demoHypeInvite, type HypeInvite } from '@/lib/demo-data';
 import { HypeInboxCard } from '@/components/creator/hype-inbox-card';
+import { DailySuggestionSection } from '@/components/creator/copilot/DailySuggestionSection';
 import { useToast } from '@/hooks/use-toast';
 
 /**
@@ -411,6 +412,9 @@ export default function CreatorDealsPage() {
             })}
           </div>
         </div>
+
+        {/* Creator AI Co-pilot — daily suggestion, mounted above HypeInboxCard per spec §3.2 */}
+        <DailySuggestionSection className="mb-3" />
 
         {/* Hype invites — one-tap accept, shown alongside new proposals */}
         {(activeFilter === 'all' || activeFilter === 'new') &&

@@ -66,7 +66,13 @@ def _get_optional_float(name: str) -> float | None:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.07.21.7"
+PROMPT_VERSION = "meera-2026.07.21.8"
+# ^ bumped for the Creator AI Co-pilot Tier-1 creator-tone prompt
+# (app/prompt/creator_suggestion.py) shipping in this revision. Single global
+# constant, reused (not split) per Priya's R1 ruling §5.1 — the per-row
+# `creator_nudge_log.prompt_version` column (Java-side, stamped by Vikram's
+# CreatorNudgeService) gives audit granularity, so a second Python constant
+# would add a second source of truth for no additional audit power.
 
 # Trend-Spark (T8) — cheap Haiku-class model for the ONE phrasing call. Never
 # Opus/Sonnet (schema-lock §4 / cost §1). Pinned the same way as CLAUDE_MODEL
@@ -80,6 +86,15 @@ TREND_TAG_MODEL = os.getenv("TREND_TAG_MODEL", TRENDSPARK_MODEL)
 # Persona name injected into the Trend-Spark system prompt — a single config
 # constant (schema-lock §6) so it's never hardcoded in app/prompt/trendspark.py.
 TRENDSPARK_PERSONA_NAME = os.getenv("TRENDSPARK_PERSONA_NAME", "Meera")
+
+# Creator AI Co-pilot Tier-1 (POST /internal/creator-suggestion) — same cheap
+# Haiku-class model as Trend-Spark for the ONE phrasing call. Defaults to the
+# EXACT TRENDSPARK_MODEL string (not a separate literal) so it shares
+# TRENDSPARK_MODEL's PRICING_TABLE row automatically via the same
+# _resolve_rate fallback pattern pricing.py already has for TREND_TAG_MODEL /
+# BRAND_SAFETY_MODEL -- overridable via env for an independent bump, per
+# wiki/build/creator-copilot-ai-route-plan.md §5.2.
+CREATOR_COPILOT_MODEL = os.getenv("CREATOR_COPILOT_MODEL", TRENDSPARK_MODEL)
 
 # Brand-safety GARM classification model (Wave C task C2) — pinned the same
 # way as TRENDSPARK_MODEL above. The default is DELIBERATELY Sonnet
@@ -244,6 +259,24 @@ class Settings:
     )
     trendspark_max_tokens: int = field(
         default_factory=lambda: _get_int("TRENDSPARK_MAX_TOKENS", 300)
+    )
+
+    # --- Creator AI Co-pilot Tier-1 (POST /internal/creator-suggestion) ---
+    # Input cap + output shape for the one cheap phrasing call. Mirrors the
+    # trendspark_* caps above; no CREATOR_COPILOT_MAX_CAPTION_CHARS -- R1
+    # dropped `caption_snippet` from the request contract entirely, so
+    # there's nothing left to cap (see app/prompt/creator_suggestion.py).
+    creator_copilot_max_trend_text_chars: int = field(
+        default_factory=lambda: _get_int("CREATOR_COPILOT_MAX_TREND_TEXT_CHARS", 200)
+    )
+    creator_copilot_max_headline_chars: int = field(
+        default_factory=lambda: _get_int("CREATOR_COPILOT_MAX_HEADLINE_CHARS", 120)
+    )
+    creator_copilot_max_content_idea_chars: int = field(
+        default_factory=lambda: _get_int("CREATOR_COPILOT_MAX_CONTENT_IDEA_CHARS", 300)
+    )
+    creator_copilot_max_tokens: int = field(
+        default_factory=lambda: _get_int("CREATOR_COPILOT_MAX_TOKENS", 300)
     )
 
     # --- Trend-Spark LLM Recovery Tagger (POST /internal/trendspark/tag) ---

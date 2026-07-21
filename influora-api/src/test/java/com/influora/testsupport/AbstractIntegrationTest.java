@@ -2,6 +2,7 @@ package com.influora.testsupport;
 
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.MySQLContainer;
@@ -59,6 +60,25 @@ import org.testcontainers.utility.DockerImageName;
  * be run in this sandbox.
  */
 @SpringBootTest
+// Boots under the 'dev' Spring profile ON PURPOSE. This test's job is DB/migration/constraint
+// verification against real MySQL, NOT secret-hygiene verification. Two things make 'dev' the
+// correct (and only maintainable) choice for that job:
+//   1. application-dev.yml supplies the throwaway AES-256 encryption keys (influora.pii.*,
+//      influora.meta.token-encryption-key, shopify/woocommerce/conversion-webhook) that several
+//      constructor-level ciphers (PiiEncryptionProperties, MetaTokenStorage, ...) require to boot
+//      AT ALL -- application.yml has no defaults for them (a real deploy MUST supply them via env),
+//      so a no-profile boot fails closed before the context is even usable.
+//   2. InfluoraEnvironment.isDev() then returns true, so the fail-closed startup validators
+//      (SecretsStartupValidator, CompanyTaxStartupValidator) run in WARN-only mode instead of
+//      aborting a context that is deliberately using committed dev-default secrets. Those
+//      validators exist to protect real non-dev deploys; asserting them here would only re-test
+//      config hygiene, not the schema this class is built to verify.
+// The Testcontainers datasource + Flyway path is UNAFFECTED: @DynamicPropertySource below overrides
+// spring.datasource.* (highest precedence) and application-dev.yml overrides neither datasource nor
+// flyway, so every V* migration still runs for real against the throwaway container.
+// (Prior "INV-2 / no @ActiveProfiles" design starved the context of the keys in (1) and tripped the
+// validators in (2) -- it broke every test on this base class once SecretsStartupValidator landed.)
+@ActiveProfiles("dev")
 @Testcontainers
 // Must run before @Testcontainers' own beforeAll (which calls MYSQL.start()) so a Docker-less
 // environment is SKIPPED, not ERRORed -- see DockerAvailableCondition's javadoc for why an

@@ -96,6 +96,15 @@ try:
 except Exception:
     logger.exception("trend_tag router failed to import — /internal/trendspark/tag NOT registered")
 
+try:
+    from app.routes import creator_suggestion
+
+    app.include_router(creator_suggestion.router, tags=["creator-copilot"])
+except Exception:
+    logger.exception(
+        "creator_suggestion router failed to import — /internal/creator-suggestion NOT registered"
+    )
+
 
 @app.on_event("startup")
 async def _refuse_boot_on_missing_secrets() -> None:

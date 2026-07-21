@@ -9,6 +9,8 @@ import com.influora.config.BrandSafetyServiceTokenProperties;
 import com.influora.config.ClamAvProperties;
 import com.influora.config.CompanyTaxProperties;
 import com.influora.config.ConversionWebhookProperties;
+import com.influora.config.CreatorCopilotProperties;
+import com.influora.config.CreatorSuggestionAiProperties;
 import com.influora.config.InternalServiceTokenProperties;
 import com.influora.config.JwksSigningKeyProperties;
 import com.influora.config.JwtProperties;
@@ -53,6 +55,13 @@ import org.springframework.scheduling.annotation.EnableScheduling;
     // Wallet business limits (Kabir Option-1 audit P1 must-fix) — max-topup ceiling read by
     // WalletTopUpService#initiateTopUp.
     WalletProperties.class,
+    // Creator AI Co-pilot Tier-1 — registered here explicitly (not left for the comment block
+    // below to later discover missing) precisely BECAUSE that block documents how easy it is for
+    // a @ConfigurationProperties class to go unregistered and silently break boot: CreatorNudgeService
+    // and CreatorThemeTaggingJob inject CreatorCopilotProperties, CreatorSuggestionAiClient injects
+    // CreatorSuggestionAiProperties — both are live-bean dependencies from day one.
+    CreatorCopilotProperties.class,
+    CreatorSuggestionAiProperties.class,
     // ---------------------------------------------------------------------
     // Everything below was @ConfigurationProperties but registered NOWHERE: no
     // @EnableConfigurationProperties entry, no @ConfigurationPropertiesScan, no

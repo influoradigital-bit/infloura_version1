@@ -60,6 +60,17 @@ public class CreatorProfile {
     @Column(name = "portfolio_settings_json", columnDefinition = "json")
     private String portfolioSettingsJson;
 
+    /**
+     * Creator AI Co-pilot Tier-1 (V20260721120000) — mirrors {@code BrandProfile.themeTagsJson}
+     * exactly. System/batch-written by {@code CreatorThemeTaggingJob} (unions newly-tagged themes
+     * from {@code creator_captions}), never routed through {@link #applySelfEdit} — same separation
+     * {@code BrandProfile.setThemeTagsJson} keeps from {@code applyAnalysisResult}. Null until the
+     * nightly tagger has produced a first rollup for this creator.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "theme_tags", columnDefinition = "json")
+    private String themeTagsJson;
+
     @Column(name = "rate_min", precision = 12, scale = 2)
     private BigDecimal rateMin;
 
@@ -260,6 +271,17 @@ public class CreatorProfile {
 
     public String getPortfolioSettingsJson() {
         return portfolioSettingsJson;
+    }
+
+    public String getThemeTagsJson() {
+        return themeTagsJson;
+    }
+
+    /** System/batch writer only ({@code CreatorThemeTaggingJob}) — plain setter, not part of
+     * {@link #applySelfEdit}'s user-facing partial-update surface. */
+    public void setThemeTagsJson(String themeTagsJson) {
+        this.themeTagsJson = themeTagsJson;
+        touch();
     }
 
     public BigDecimal getRateMin() {

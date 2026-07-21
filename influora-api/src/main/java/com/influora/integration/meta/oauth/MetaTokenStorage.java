@@ -158,6 +158,104 @@ public class MetaTokenStorage {
                         });
     }
 
+    // -------------------------------------------------------------------------------------------
+    // Creator-owned overloads (Creator AI Co-pilot Tier-1 OAuth flip, be-services-plan.md §3).
+    // These never touch the brand-scoped methods above: creator rows always have workspaceId=NULL,
+    // brand rows never do, so the two key-spaces are disjoint by construction (Kabir gate, IDOR
+    // threat-1: PASS).
+    // -------------------------------------------------------------------------------------------
+
+    /**
+     * Stores (or replaces) the encrypted token for a creator with NO owning workspace.
+     *
+     * <p>[SEC: Kabir gate finding F-1, Low — hardening, not a live vuln] making {@code
+     * workspace_id} nullable (V20260721150000) silently drops the DB uniqueness the brand path
+     * relied on: {@code UNIQUE(workspace_id, creator_profile_id)} does NOT constrain these rows,
+     * because MySQL treats multiple NULLs as distinct, not equal. Without this revoke-before-insert
+     * step, two concurrent first-time creator connects (double-submit, or a reconnect race) could
+     * each insert a non-revoked NULL-workspace row for the same creator; {@link
+     * #getValidCreatorToken} would then throw {@code IncorrectResultSizeDataAccessException} on
+     * every subsequent read (self-DoS for that one creator, no cross-tenant impact). Revoking any
+     * existing non-revoked creator-owned row FIRST — inside this same {@code @Transactional}
+     * method, before the new row is even built — guarantees at most one non-revoked row per
+     * creator can exist at any point in time, closing the race at the source rather than papering
+     * over it with a second unique-key backstop.
+     */
+    @Transactional
+    public void storeCreatorToken(
+            String creatorProfileId,
+            String accessToken,
+            Instant expiresAt,
+            List<String> grantedScopes,
+            String igBusinessAccountId) {
+        repository
+                .findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(creatorProfileId)
+                .ifPresent(
+                        existing -> {
+                            existing.revoke();
+                            repository.save(existing);
+                        });
+
+        String encrypted = encrypt(accessToken);
+        String scopesJson = JsonLists.toJson(grantedScopes);
+
+        MetaOAuthToken entity =
+                MetaOAuthToken.builder()
+                        .id(Ulids.newUlid())
+                        .creatorProfileId(creatorProfileId)
+                        // .workspaceId(...) intentionally omitted — stays null (creator-owned row).
+                        .igBusinessAccountId(igBusinessAccountId)
+                        .encryptedAccessToken(encrypted)
+                        .expiresAt(expiresAt)
+                        .grantedScopesJson(scopesJson)
+                        .lastRefreshedAt(Instant.now())
+                        .build();
+        repository.save(entity);
+
+        auditLog.recordToolCall(
+                null,
+                "META_OAUTH_TOKEN_STORED",
+                TOOL_TIER_SENSITIVE,
+                AuditLogService.OUTCOME_ALLOWED,
+                null,
+                null,
+                null,
+                Map.of(
+                        "creatorProfileId", creatorProfileId,
+                        "scopeCount", grantedScopes == null ? 0 : grantedScopes.size()));
+    }
+
+    /** Returns the decrypted token for a creator-owned row. Empty if none exists, it has been
+     * revoked, or it is expired — same three-way-collapse convention as {@link #getValidToken}. */
+    @Transactional(readOnly = true)
+    public Optional<String> getValidCreatorToken(String creatorProfileId) {
+        return repository
+                .findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(creatorProfileId)
+                .filter(t -> t.getExpiresAt().isAfter(Instant.now()))
+                .map(t -> decrypt(t.getEncryptedAccessToken()));
+    }
+
+    /** Marks a creator-owned token revoked (does not delete the row). */
+    @Transactional
+    public void revokeCreatorToken(String creatorProfileId) {
+        repository
+                .findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(creatorProfileId)
+                .ifPresent(
+                        t -> {
+                            t.revoke();
+                            repository.save(t);
+                            auditLog.recordToolCall(
+                                    null,
+                                    "META_OAUTH_TOKEN_REVOKED",
+                                    TOOL_TIER_SENSITIVE,
+                                    AuditLogService.OUTCOME_ALLOWED,
+                                    null,
+                                    null,
+                                    null,
+                                    Map.of("creatorProfileId", creatorProfileId));
+                        });
+    }
+
     private String encrypt(String plaintext) {
         try {
             Cipher cipher = Cipher.getInstance(ALGORITHM);

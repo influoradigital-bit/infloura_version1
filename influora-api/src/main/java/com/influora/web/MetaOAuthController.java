@@ -4,15 +4,14 @@ import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.enums.UserType;
-import com.influora.integration.meta.dto.MetaTokenResponse;
 import com.influora.integration.meta.oauth.MetaOAuthService;
 import com.influora.integration.meta.oauth.MetaOAuthStateStore;
-import com.influora.integration.meta.oauth.MetaTokenStorage;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.creatorcopilot.CreatorMetaOAuthService;
+import com.influora.service.creatorcopilot.CreatorMetaOAuthService.ConnectResult;
 import com.influora.web.dto.meta.MetaDtos.MetaAuthorizeResponse;
 import com.influora.web.dto.meta.MetaDtos.MetaCallbackResponse;
-import java.time.Instant;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,19 +34,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class MetaOAuthController {
 
     private final MetaOAuthService oAuthService;
-    private final MetaTokenStorage tokenStorage;
     private final MetaOAuthStateStore stateStore;
     private final CreatorProfileRepository creatorProfileRepository;
+    private final CreatorMetaOAuthService creatorMetaOAuthService;
 
     public MetaOAuthController(
             MetaOAuthService oAuthService,
-            MetaTokenStorage tokenStorage,
             MetaOAuthStateStore stateStore,
-            CreatorProfileRepository creatorProfileRepository) {
+            CreatorProfileRepository creatorProfileRepository,
+            CreatorMetaOAuthService creatorMetaOAuthService) {
         this.oAuthService = oAuthService;
-        this.tokenStorage = tokenStorage;
         this.stateStore = stateStore;
         this.creatorProfileRepository = creatorProfileRepository;
+        this.creatorMetaOAuthService = creatorMetaOAuthService;
     }
 
     /** Mints a CSRF-bound state token and returns the Meta authorization dialog URL. */
@@ -61,7 +60,18 @@ public class MetaOAuthController {
     /**
      * Handles Meta's redirect back with {@code code}/{@code state}. Exchanges the code for a
      * short-lived token, immediately upgrades it to a long-lived token, then stores it encrypted
-     * scoped to the caller's own workspace + creator profile.
+     * scoped to the caller's creator profile only — NEVER {@code principal.getWorkspaceId()}
+     * (Creator AI Co-pilot Tier-1 OAuth-flip fix, be-services-plan.md §0/§3).
+     *
+     * <p><b>Verified live bug, now fixed:</b> a CREATOR-type {@link AuthPrincipal} has no {@code
+     * workspaceId} (see {@code security/AnalyticsUsageCapInterceptor.java}'s own comment). Before
+     * this fix, this method called {@code tokenStorage.storeToken(creatorProfile.getId(),
+     * principal.getWorkspaceId(), ...)} with a {@code null} workspace against a column that was
+     * {@code NOT NULL} at the time — every creator who ever completed this callback got a {@code
+     * DataIntegrityViolationException} on the insert. This path could never have succeeded. It now
+     * delegates to {@link CreatorMetaOAuthService#connect}, which stores the token as
+     * creator-owned (nullable {@code workspace_id}, V20260721150000) and resolves whether a usable
+     * IG Business/Creator account is linked (API-CONTRACT.md §4.2).
      */
     @GetMapping("/callback")
     public ApiResponse<MetaCallbackResponse> callback(
@@ -85,21 +95,10 @@ public class MetaOAuthController {
                                                 "No creator profile for this user",
                                                 HttpStatus.NOT_FOUND));
 
-        MetaTokenResponse shortLived = oAuthService.exchangeCodeForToken(code);
-        MetaTokenResponse longLived = oAuthService.exchangeForLongLivedToken(shortLived.accessToken());
+        ConnectResult result = creatorMetaOAuthService.connect(creatorProfile.getId(), code);
 
-        Instant expiresAt =
-                Instant.now()
-                        .plusSeconds(longLived.expiresInSeconds() != null ? longLived.expiresInSeconds() : 0);
-
-        tokenStorage.storeToken(
-                creatorProfile.getId(),
-                principal.getWorkspaceId(),
-                longLived.accessToken(),
-                expiresAt,
-                MetaOAuthService.REQUIRED_SCOPES);
-
-        return ApiResponse.ok(new MetaCallbackResponse(true, MetaOAuthService.REQUIRED_SCOPES));
+        return ApiResponse.ok(
+                new MetaCallbackResponse(result.connected(), result.grantedScopes(), result.accountType()));
     }
 
     private void requireCreator(AuthPrincipal principal) {

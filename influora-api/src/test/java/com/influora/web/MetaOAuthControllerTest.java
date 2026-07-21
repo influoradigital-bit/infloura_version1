@@ -13,15 +13,13 @@ import static org.mockito.Mockito.when;
 import com.influora.common.ApiException;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.enums.UserType;
-import com.influora.integration.meta.dto.MetaTokenResponse;
 import com.influora.integration.meta.oauth.MetaOAuthService;
 import com.influora.integration.meta.oauth.MetaOAuthStateStore;
-import com.influora.integration.meta.oauth.MetaTokenStorage;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.creatorcopilot.CreatorMetaOAuthService;
+import com.influora.service.creatorcopilot.CreatorMetaOAuthService.ConnectResult;
 import com.influora.web.dto.meta.MetaDtos.MetaAuthorizeResponse;
 import com.influora.web.dto.meta.MetaDtos.MetaCallbackResponse;
-import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -29,12 +27,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpStatus;
 
 /**
- * Unit tests for {@link MetaOAuthController} — mirrors {@link ShopifyConnectControllerTest}'s
- * coverage shape: authorize URL issuance, callback CSRF-state consumption, status read, and
- * disconnect delegation.
+ * Unit tests for {@link MetaOAuthController}. {@code /callback} now delegates the exchange +
+ * creator-owned token storage to {@link CreatorMetaOAuthService} (Creator AI Co-pilot Tier-1
+ * OAuth-flip fix, be-services-plan.md §0/§3) instead of calling {@code MetaOAuthService}/{@code
+ * MetaTokenStorage} directly with {@code principal.getWorkspaceId()} — that old call path is the
+ * verified-broken one this fix replaces (a CREATOR principal has no workspaceId, so it always
+ * threw {@code DataIntegrityViolationException} on insert).
  */
 @ExtendWith(MockitoExtension.class)
 class MetaOAuthControllerTest {
@@ -46,9 +46,9 @@ class MetaOAuthControllerTest {
             new AuthPrincipal(USER_ID, "creator@example.com", UserType.CREATOR, WORKSPACE_ID);
 
     @Mock private MetaOAuthService oAuthService;
-    @Mock private MetaTokenStorage tokenStorage;
     @Mock private MetaOAuthStateStore stateStore;
     @Mock private com.influora.repository.CreatorProfileRepository creatorProfileRepository;
+    @Mock private CreatorMetaOAuthService creatorMetaOAuthService;
 
     private MetaOAuthController controller;
 
@@ -56,7 +56,7 @@ class MetaOAuthControllerTest {
     void setUp() {
         controller =
                 new MetaOAuthController(
-                        oAuthService, tokenStorage, stateStore, creatorProfileRepository);
+                        oAuthService, stateStore, creatorProfileRepository, creatorMetaOAuthService);
     }
 
     private CreatorProfile testProfile() {
@@ -87,28 +87,37 @@ class MetaOAuthControllerTest {
     }
 
     @Test
-    @DisplayName("callback: happy path exchanges code and stores the token")
-    void callback_happyPath_storesToken() {
+    @DisplayName("callback: happy path delegates to CreatorMetaOAuthService, never touches principal.workspaceId")
+    void callback_happyPath_delegatesToCreatorMetaOAuthService() {
         CreatorProfile profile = testProfile();
         when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile));
         when(stateStore.consume("state-123", USER_ID)).thenReturn(true);
-        when(oAuthService.exchangeCodeForToken("auth-code"))
-                .thenReturn(new MetaTokenResponse("short", "bearer", 3600L));
-        when(oAuthService.exchangeForLongLivedToken("short"))
-                .thenReturn(new MetaTokenResponse("long-lived", "bearer", 5_184_000L));
+        when(creatorMetaOAuthService.connect(CREATOR_PROFILE_ID, "auth-code"))
+                .thenReturn(new ConnectResult(true, MetaOAuthService.REQUIRED_SCOPES, "business"));
 
         MetaCallbackResponse response =
                 controller.callback(CREATOR_PRINCIPAL, "auth-code", "state-123").data();
 
         assertTrue(response.connected());
         assertEquals(MetaOAuthService.REQUIRED_SCOPES, response.grantedScopes());
-        verify(tokenStorage, times(1))
-                .storeToken(
-                        eq(CREATOR_PROFILE_ID),
-                        eq(WORKSPACE_ID),
-                        eq("long-lived"),
-                        org.mockito.ArgumentMatchers.any(Instant.class),
-                        eq(MetaOAuthService.REQUIRED_SCOPES));
+        assertEquals("business", response.accountType());
+        verify(creatorMetaOAuthService, times(1)).connect(CREATOR_PROFILE_ID, "auth-code");
+    }
+
+    @Test
+    @DisplayName("callback: NO_BUSINESS_ACCOUNT surfaces as a 200 with connected=false, accountType=personal")
+    void callback_noBusinessAccount_surfacesAsPersonalAccountType() {
+        CreatorProfile profile = testProfile();
+        when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile));
+        when(stateStore.consume("state-123", USER_ID)).thenReturn(true);
+        when(creatorMetaOAuthService.connect(CREATOR_PROFILE_ID, "auth-code"))
+                .thenReturn(new ConnectResult(false, MetaOAuthService.REQUIRED_SCOPES, "personal"));
+
+        MetaCallbackResponse response =
+                controller.callback(CREATOR_PRINCIPAL, "auth-code", "state-123").data();
+
+        assertTrue(!response.connected());
+        assertEquals("personal", response.accountType());
     }
 
     @Test
@@ -123,13 +132,7 @@ class MetaOAuthControllerTest {
 
         assertEquals("META_OAUTH_STATE_INVALID", ex.getCode());
         verify(oAuthService, never()).exchangeCodeForToken(anyString());
-        verify(tokenStorage, never())
-                .storeToken(
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.any(Instant.class),
-                        org.mockito.ArgumentMatchers.anyList());
+        verify(creatorMetaOAuthService, never()).connect(anyString(), anyString());
     }
 
     // NOTE: status(), disconnectDelete(), disconnectPost() tests removed — methods don't exist in production MetaOAuthController

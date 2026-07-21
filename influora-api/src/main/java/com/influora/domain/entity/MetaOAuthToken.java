@@ -14,6 +14,15 @@ import org.hibernate.type.SqlTypes;
  * <p>[SEC: Kabir sign-off gate] {@code encryptedAccessToken} is AES-256-GCM ciphertext produced by
  * {@code MetaTokenStorage} — this entity never sees or exposes plaintext; there is deliberately no
  * plain getter/setter pair that could be mistaken for one.
+ *
+ * <p><b>{@code workspaceId} is nullable (V20260721150000, Creator AI Co-pilot Tier-1 OAuth flip)</b>
+ * — a creator-owned row (this feature) always has {@code workspaceId == null}; a brand-owned row
+ * (unchanged, pre-existing) always has a non-null {@code workspaceId}. The two key-spaces are
+ * disjoint by construction: creator reads/writes key on {@code
+ * findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse}, brand reads/writes key on the
+ * untouched {@code findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse} (which never matches a
+ * null-workspace row). See {@code MetaTokenStorage} for the creator-owned method pair and Kabir
+ * gate finding F-1 for the revoke-before-insert discipline this nullability requires.
  */
 @Entity
 @Table(name = "meta_oauth_tokens")
@@ -23,11 +32,21 @@ public class MetaOAuthToken {
     @Column(length = 26)
     private String id;
 
-    @Column(name = "workspace_id", nullable = false, length = 26)
+    @Column(name = "workspace_id", length = 26)
     private String workspaceId;
 
     @Column(name = "creator_profile_id", nullable = false, length = 26)
     private String creatorProfileId;
+
+    /**
+     * Instagram's real numeric Business Account id, resolved via {@code
+     * FacebookPageClient.resolveConnectedInstagram} at connect time (V65 {@code
+     * ig_business_account_id} — H-9 fix). Was added to the schema but never mapped on this entity
+     * until the Creator Co-pilot OAuth-flip work; nullable — existing rows connected before either
+     * fix shipped won't have it until the creator reconnects.
+     */
+    @Column(name = "ig_business_account_id", length = 64)
+    private String igBusinessAccountId;
 
     @Column(name = "encrypted_access_token", nullable = false, columnDefinition = "TEXT")
     private String encryptedAccessToken;
@@ -63,6 +82,17 @@ public class MetaOAuthToken {
 
     public String getCreatorProfileId() {
         return creatorProfileId;
+    }
+
+    public String getIgBusinessAccountId() {
+        return igBusinessAccountId;
+    }
+
+    /** Set once at connect time when a linked IG business account resolves (V65/H-9, now also
+     * populated on the creator-owned connect path — see {@code CreatorMetaOAuthService}). */
+    public void applyIgBusinessAccountId(String igBusinessAccountId) {
+        this.igBusinessAccountId = igBusinessAccountId;
+        touch();
     }
 
     public String getEncryptedAccessToken() {
@@ -130,6 +160,11 @@ public class MetaOAuthToken {
 
         public Builder creatorProfileId(String creatorProfileId) {
             t.creatorProfileId = creatorProfileId;
+            return this;
+        }
+
+        public Builder igBusinessAccountId(String igBusinessAccountId) {
+            t.igBusinessAccountId = igBusinessAccountId;
             return this;
         }
 

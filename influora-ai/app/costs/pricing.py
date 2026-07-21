@@ -20,6 +20,7 @@ from typing import Any, NamedTuple
 from app.config import (
     BRAND_SAFETY_MODEL,
     CLAUDE_MODEL,
+    CREATOR_COPILOT_MODEL,
     GEMINI_MODEL,
     TREND_TAG_MODEL,
     TRENDSPARK_MODEL,
@@ -141,6 +142,19 @@ def _resolve_rate(model: str) -> ModelRate:
     the same "same-cost-class estimate beats silently unrecorded spend"
     reasoning applies.
 
+    3. `model` equals the CONFIGURED `CREATOR_COPILOT_MODEL` but isn't itself
+       a `PRICING_TABLE` key -> fall back to `TRENDSPARK_MODEL`'s (Haiku-class)
+       row and log a warning. Same reasoning as fallback 1:
+       `app/config.py` defaults `CREATOR_COPILOT_MODEL` to the exact
+       `TRENDSPARK_MODEL` string, so ordinarily they share ONE row above and
+       this branch never triggers -- it only matters if `CREATOR_COPILOT_MODEL`
+       is independently overridden (per its config.py comment, "overridable
+       via env for an independent bump") before the new id has its own
+       `PRICING_TABLE` row. `routes/creator_suggestion.py` mirrors
+       trendspark.py's/trend_tag.py's bare `except ValueError`-logs-and-
+       swallows spend-recording shape, so the same "same-cost-class estimate
+       beats silently unrecorded spend" reasoning applies here too.
+
     Any other unpriced model still raises.
     """
     rate = PRICING_TABLE.get(model)
@@ -164,6 +178,15 @@ def _resolve_rate(model: str) -> ModelRate:
             model, CLAUDE_MODEL, model,
         )
         return PRICING_TABLE[CLAUDE_MODEL]
+
+    if model == CREATOR_COPILOT_MODEL and TRENDSPARK_MODEL in PRICING_TABLE:
+        logger.warning(
+            "pricing: CREATOR_COPILOT_MODEL=%r has no PRICING_TABLE row -- falling back to "
+            "TRENDSPARK_MODEL=%r's rate so spend is still recorded; add %r to "
+            "PRICING_TABLE to price it correctly",
+            model, TRENDSPARK_MODEL, model,
+        )
+        return PRICING_TABLE[TRENDSPARK_MODEL]
 
     raise ValueError(f"no pricing entry for model {model!r} -- add it to PRICING_TABLE first")
 

@@ -28,4 +28,15 @@ public interface MetaOAuthTokenRepository extends JpaRepository<MetaOAuthToken, 
 
     Optional<MetaOAuthToken> findFirstByCreatorProfileIdAndRevokedFalseOrderByCreatedAtAsc(
             String creatorProfileId);
+
+    /**
+     * Creator-owned key-space (Creator AI Co-pilot Tier-1 OAuth flip, be-services-plan §3) —
+     * {@code workspaceId IS NULL} is what distinguishes a creator-owned row from a brand-owned one;
+     * this query never returns a brand row (those always have a non-null workspaceId), and the
+     * brand-scoped {@link #findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse} above never returns
+     * a creator-owned row. The two key-spaces are disjoint by construction (Kabir gate, IDOR
+     * threat-1: PASS).
+     */
+    Optional<MetaOAuthToken> findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(
+            String creatorProfileId);
 }

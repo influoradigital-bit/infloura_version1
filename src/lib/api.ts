@@ -2852,8 +2852,21 @@ export const brandReviews = {
 // ---------------------------------------------------------------------------
 
 export interface MetaAuthorizeResponse { authorizationUrl: string; state: string }
-export interface MetaCallbackResponse { connected: boolean; grantedScopes: string[] }
-export interface MetaConnectionState { connected: boolean; scopes: string[] }
+export interface MetaCallbackResponse {
+  connected: boolean;
+  grantedScopes: string[];
+  /** 'personal' means OAuth succeeded but the linked IG is not a Business/Creator account —
+   *  creator co-pilot cannot use it (`connected` is `false` in this case). Absent/undefined on
+   *  the ordinary success path. Creator-copilot-API-CONTRACT.md §4.2. */
+  accountType?: 'personal' | 'business';
+}
+export interface MetaConnectionState {
+  connected: boolean;
+  scopes: string[];
+  /** null = unknown (never resolved a callback yet). Persisted alongside `connected`/`scopes` in
+   *  the same localStorage mirror (`META_CONNECTION_KEY`). Creator-copilot-API-CONTRACT.md §4.2. */
+  accountType: 'personal' | 'business' | null;
+}
 
 const META_CONNECTION_KEY = 'meta_connection';
 /** Mirrors MetaOAuthService.REQUIRED_SCOPES (MetaOAuthService.java:28-33). */
@@ -2878,16 +2891,18 @@ export const metaOAuth = {
   getLocalConnectionState: (): MetaConnectionState => {
     try {
       const raw = localStorage.getItem(META_CONNECTION_KEY);
-      if (!raw) return { connected: false, scopes: [] };
+      if (!raw) return { connected: false, scopes: [], accountType: null };
       const p = JSON.parse(raw) as Partial<MetaConnectionState>;
-      return { connected: !!p.connected, scopes: p.scopes ?? [] };
+      return { connected: !!p.connected, scopes: p.scopes ?? [], accountType: p.accountType ?? null };
     } catch {
-      return { connected: false, scopes: [] };
+      return { connected: false, scopes: [], accountType: null };
     }
   },
 
-  setLocalConnectionState: (connected: boolean, scopes: string[]): void => {
-    localStorage.setItem(META_CONNECTION_KEY, JSON.stringify({ connected, scopes }));
+  /** `accountType` optional + defaults to `null` so existing call sites (pre-dating this field)
+   *  keep compiling untouched; pass it explicitly once a caller has a callback's `accountType`. */
+  setLocalConnectionState: (connected: boolean, scopes: string[], accountType: 'personal' | 'business' | null = null): void => {
+    localStorage.setItem(META_CONNECTION_KEY, JSON.stringify({ connected, scopes, accountType }));
   },
 };
 
@@ -3293,6 +3308,64 @@ export const trendspark = {
 };
 
 // ---------------------------------------------------------------------------
+// Creator AI Co-pilot Tier-1 — daily suggestion (creator-copilot-API-CONTRACT.md, FROZEN v1)
+// ---------------------------------------------------------------------------
+
+/** Mirrors GET .../suggestion/today's `suggestion` object, API-CONTRACT.md §2. */
+export interface DailySuggestion {
+  id: string;
+  theme: string;
+  headline: string;
+  contentIdea: string;
+  expiresAt: string; // ISO 8601
+}
+
+/** Wire-level status from the backend (API-CONTRACT.md §2). Distinct from the UI-facing
+ *  `SuggestionStatus` union derived from it in `useDailySuggestion` — don't conflate the two. */
+export type CreatorCopilotWireStatus = 'pending_tagging' | 'ready' | 'no_suggestion_today';
+
+export interface CreatorSuggestionTodayResponse {
+  suggestion: DailySuggestion | null;
+  status: CreatorCopilotWireStatus;
+}
+
+const MOCK_CREATOR_SUGGESTION: CreatorSuggestionTodayResponse = {
+  status: 'ready',
+  suggestion: {
+    id: 'cc_mock_1',
+    theme: 'skincare + winter',
+    headline: 'Your skincare + winter niche is trending',
+    contentIdea:
+      'A 3-beat reel: morning routine cold-open, ingredient close-up, "why winter skin needs this" voiceover.',
+    expiresAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+  },
+};
+
+export const creatorCopilot = {
+  /**
+   * GET /creator/copilot/suggestion/today (API-CONTRACT.md §1.1). Never throws for the
+   * "nothing to say today" case — that's `status: 'pending_tagging' | 'no_suggestion_today'`
+   * with `suggestion: null`, a 200 success, not a 4xx/204.
+   */
+  getTodaySuggestion: (): Promise<CreatorSuggestionTodayResponse> =>
+    isLive()
+      ? http.request<CreatorSuggestionTodayResponse>('GET', '/creator/copilot/suggestion/today', { role: 'creator' })
+      : mockOr<CreatorSuggestionTodayResponse>(MOCK_CREATOR_SUGGESTION),
+
+  /** POST /creator/copilot/suggestion/:id/dismiss (API-CONTRACT.md §1.2) — stamps `dismissed_at`. */
+  dismissSuggestion: (id: string): Promise<void> =>
+    isLive()
+      ? http.request<void>('POST', `/creator/copilot/suggestion/${id}/dismiss`, { role: 'creator' })
+      : mockOr(undefined),
+
+  /** POST /creator/copilot/suggestion/:id/acted (API-CONTRACT.md §1.3) — stamps `acted_at`. */
+  markSuggestionActed: (id: string): Promise<void> =>
+    isLive()
+      ? http.request<void>('POST', `/creator/copilot/suggestion/${id}/acted`, { role: 'creator' })
+      : mockOr(undefined),
+};
+
+// ---------------------------------------------------------------------------
 // Default export — single facade
 // ---------------------------------------------------------------------------
 
@@ -3331,6 +3404,7 @@ export const api = {
   creatorDisputes,
   brandDisputes,
   trendspark,
+  creatorCopilot,
 };
 
 export default api;
