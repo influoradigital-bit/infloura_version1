@@ -84,6 +84,9 @@ services:
       MEERA_CHAT_AI_BASE_URL: http://influora-ai:8000
       ANALYZE_SITE_AI_BASE_URL: http://influora-ai:8000
       CLAMAV_HOST: ""
+      # TEST ONLY: allow SUPER_ADMIN/ADMIN login without MFA enrollment (default is true and
+      # blocks a freshly-seeded admin with no in-app enrollment path). Re-enable for production.
+      INFLUORA_ADMIN_MFAENFORCEONLOGIN: "false"
       # --- Email: MSG91 + its SMTP relay (Msg91EmailClient) ---
       MSG91_ENABLED: "true"
       MSG91_AUTH_KEY: ${MSG91_AUTH_KEY}
