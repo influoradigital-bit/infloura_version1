@@ -73,6 +73,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/influora?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       SPRING_DATASOURCE_USERNAME: influora_app
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
+      # Point Spring at the redis container (default is localhost → Connection refused).
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
       INFLUORA_API_PUBLIC_URL: http://200.141.1.6/api/v1
       INFLUORA_WEB_BASE_URL: http://200.141.1.6
       CORS_ALLOWED_ORIGINS: http://200.141.1.6
