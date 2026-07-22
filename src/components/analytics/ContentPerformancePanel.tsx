@@ -14,7 +14,16 @@ interface ContentPerformancePanelProps {
   className?: string;
 }
 
-function formatCompact(n: number): string {
+/**
+ * `n` is `number | null | undefined` because the wire DTO omits `reach`/
+ * `impressions` entirely when Meta didn't report them (`@JsonInclude(NON_NULL)`
+ * on `AnalyticsDtos.ContentPerformanceResponse`) rather than sending JSON
+ * `null` — so both the explicit-null and omitted-key cases land here and
+ * must render the same "no data" fallback instead of the literal text
+ * "undefined" (Priya's brand-fixes review, fix #4).
+ */
+function formatCompact(n: number | null | undefined): string {
+  if (n == null) return '—';
   return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
 }
 
@@ -129,7 +138,10 @@ export function ContentPerformancePanel({
                   <div className="text-right">
                     <p className="flex items-center justify-end gap-1 font-medium">
                       <TrendingUp className="h-3.5 w-3.5 text-success-foreground" aria-hidden="true" />
-                      {item.engagementRate !== null ? `${item.engagementRate}%` : '—'}
+                      {/* Loose null check: an omitted (NON_NULL) key arrives as `undefined`,
+                          not `null` — `!== null` never caught that case (Priya's brand-fixes
+                          review, fix #4). */}
+                      {item.engagementRate != null ? `${item.engagementRate}%` : '—'}
                     </p>
                     <p className="text-xs text-muted-foreground">Eng. rate</p>
                   </div>

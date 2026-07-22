@@ -14,8 +14,11 @@ interface BrandSafetyBadgeProps {
   /**
    * CreatorScoresResponse.garmFlags — wire contract is `List<String>`
    * (AnalyticsDtos.java CreatorScoresResponse.garmFlags, mirrored by
-   * CreatorScores.garmFlags in src/lib/types.ts). See the "Known backend gap"
-   * note below the component for why this is expected to render empty today.
+   * CreatorScores.garmFlags in src/lib/types.ts). BrandSafetyScoreService
+   * writes a flat above-floor-category JSON string array
+   * (BrandSafetyScoreService.writeGarmFlagsJson), matching what
+   * JsonLists.stringListFromJson reads back — see the component's doc
+   * comment below for the (now-fixed) history here.
    */
   garmFlags?: string[] | null;
   loading?: boolean;
@@ -71,24 +74,21 @@ function getGrade(score: number): {
  * graceful-degradation contract) is an explicit informational empty state,
  * never a fabricated grade.
  *
- * Known backend gap (flagging per B5 precedent, not fabricating a shape):
+ * Backend gap CLOSED (was flagged here per B5 precedent; re-verified during
+ * the Brand Surface Audit fix pass, wiki/reports/brand-feature-audit.md):
+ * this comment used to describe a real mismatch — an earlier
  * BrandSafetyScoreService.writeGarmFlagsJson (influora-api/src/main/java/com/influora/
- * service/scoring/BrandSafetyScoreService.java) serializes the FULL classified-item
- * list (each with a nested 10-category {category,risk,rationale} breakdown) into
- * `creator_scores.garm_flags`. But AnalyticsService.getCreatorScores reads that
- * column back with JsonLists.stringListFromJson (a List<String> parser), and
- * AnalyticsDtos.CreatorScoresResponse.garmFlags is typed List<String> — a
- * `List<ClassifiedItem>` JSON payload will fail that parse and silently
- * degrade to an empty list (JsonLists.stringListFromJson catches
- * JsonProcessingException and returns Collections.emptyList()), so `garmFlags`
- * from the live API is expected to always render empty today even when risk
- * was actually found. This is a backend DTO/entity shape mismatch outside
- * frontend authority to fix — flagged here and in the C4 report for Vikram/
- * Kavya rather than silently working around it or inventing a 10-category
- * breakdown UI the API cannot yet deliver. The prop is still accepted and
- * rendered defensively (as plain tags) so the UI is correct the moment the
- * backend is patched to emit true strings (e.g. one flag string per
- * above-floor category) — no frontend change should be needed then.
+ * service/scoring/BrandSafetyScoreService.java) serialized the FULL
+ * classified-item list (each with a nested 10-category {category,risk,rationale}
+ * breakdown) into `creator_scores.garm_flags`, which AnalyticsService.getCreatorScores'
+ * JsonLists.stringListFromJson (a List<String> parser) couldn't parse — it
+ * would silently degrade to an empty list. That has since been fixed:
+ * writeGarmFlagsJson now writes the distinct set of above-floor GARM category
+ * names as a flat JSON string array, exactly what stringListFromJson expects
+ * and what AnalyticsDtos.CreatorScoresResponse.garmFlags (List<String>)
+ * declares. The prop is still rendered defensively below (plain tags, no
+ * assumption of a fixed category list), which is also just the correct way
+ * to render a flat string array — no frontend change was needed for this fix.
  */
 export function BrandSafetyBadge({
   brandSafetyScore,

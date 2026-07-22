@@ -60,6 +60,7 @@ class CreateCampaignExecutorTest {
     @Mock private AuditLogService auditLogService;
     @Mock private IdempotencyService idempotencyService;
     @Mock private CampaignTemplateService campaignTemplateService;
+    @Mock private com.influora.service.meera.MeeraInteractionLogService meeraInteractionLogService;
 
     private CreateCampaignExecutor executor;
 
@@ -72,7 +73,8 @@ class CreateCampaignExecutorTest {
                         toolCallRepository,
                         auditLogService,
                         idempotencyService,
-                        campaignTemplateService);
+                        campaignTemplateService,
+                        meeraInteractionLogService);
     }
 
     // testDirectCampaignRejectedWithoutStoreIntegration removed (P3-20 Vikram fix): the

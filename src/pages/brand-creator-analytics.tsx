@@ -12,9 +12,12 @@ import { MetricsTrendChart } from '@/components/analytics/MetricsTrendChart';
 import { EngagementRateGauge } from '@/components/analytics/EngagementRateGauge';
 import { FakeFollowerIndicator } from '@/components/analytics/FakeFollowerIndicator';
 import { QualityScoreDisplay } from '@/components/analytics/QualityScoreDisplay';
+import { BrandSafetyBadge } from '@/components/analytics/BrandSafetyBadge';
+import { ContentPerformancePanel } from '@/components/analytics/ContentPerformancePanel';
 
 import { useCreatorMetrics } from '@/hooks/analytics/useCreatorMetrics';
 import { useCreatorScores } from '@/hooks/analytics/useCreatorScores';
+import { useContentPerformance } from '@/hooks/analytics/useContentPerformance';
 import { demoCreators } from '@/lib/demo-data';
 import type { AnalyticsDateRange } from '@/lib/types';
 
@@ -29,11 +32,18 @@ import type { AnalyticsDateRange } from '@/lib/types';
  * entity exists yet, per AnalyticsController's javadoc). Omitted rather than
  * faked; see the "coming soon" note below the quality/authenticity row.
  *
- * BrandSafetyBadge / letter-grade UI is intentionally not built —
- * brandSafetyScore/garmFlags/contentSentiment are always null from the real
- * backend today (BrandSafetyScoreService isn't built), so
- * FakeFollowerIndicator/QualityScoreDisplay already render "not yet
- * available" for their null fields instead.
+ * BrandSafetyBadge is mounted below (Brand Surface Audit PARTIAL #5,
+ * wiki/reports/brand-feature-audit.md item 5) — the earlier comment here
+ * claiming it was "intentionally not built" because BrandSafetyScoreService
+ * isn't built was stale: the service exists (ScoreCalculationJob ->
+ * BrandSafetyScoreService, Kabir-signed-off wiki/errors/wave-c-task-c3-security-review.md)
+ * and this page's own `useCreatorScores` already carries brandSafetyScore/
+ * garmFlags from GET /analytics/creators/{creatorId}/scores — same read path
+ * creator-analytics.tsx uses for the creator self-view. `brandSafetyScore`
+ * is still null whenever the score hasn't been computed yet for a given
+ * creator (job hasn't run / disabled by default), which BrandSafetyBadge
+ * already renders as an explicit "not yet available" empty state, so no
+ * placeholder/fake data is introduced here.
  */
 export default function BrandCreatorAnalyticsPage() {
   const { creatorId } = useParams();
@@ -50,6 +60,12 @@ export default function BrandCreatorAnalyticsPage() {
     dateRange,
   );
   const { data: scores, loading: scoresLoading, error: scoresError } = useCreatorScores(creatorId);
+  const {
+    data: content,
+    loading: contentLoading,
+    error: contentError,
+    notImplemented: contentNotImplemented,
+  } = useContentPerformance(creatorId);
 
   const creator = demoCreators.find((c) => c.id === creatorId);
 
@@ -150,7 +166,7 @@ export default function BrandCreatorAnalyticsPage() {
       </div>
 
       {/* Scores */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         <FakeFollowerIndicator
           authenticityScore={scores?.authenticityScore ?? null}
           reasons={scores?.fakeFollowerReasons}
@@ -163,7 +179,20 @@ export default function BrandCreatorAnalyticsPage() {
           audienceMatchScore={scores?.audienceMatchScore}
           loading={scoresLoading}
         />
+        <BrandSafetyBadge
+          brandSafetyScore={scores?.brandSafetyScore ?? null}
+          garmFlags={scores?.garmFlags}
+          loading={scoresLoading}
+        />
       </div>
+
+      {/* Content performance (per-post media) */}
+      <ContentPerformancePanel
+        data={content}
+        loading={contentLoading}
+        error={contentError}
+        notImplemented={contentNotImplemented}
+      />
 
       {/* Audience demographics — no backend data source yet */}
       <div className="rounded-lg border border-dashed border-border p-6 text-center">

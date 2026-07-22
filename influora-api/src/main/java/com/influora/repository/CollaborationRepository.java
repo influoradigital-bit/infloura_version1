@@ -2,6 +2,7 @@ package com.influora.repository;
 
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.enums.CollaborationStatus;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -9,6 +10,51 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface CollaborationRepository extends JpaRepository<Collaboration, String> {
+
+    /**
+     * One row of the {@code niche_rate_band} candidate pool (Phase 2 item 2.1) — a
+     * platform-wide, cross-tenant projection over real {@code agreed_rate} data, never widened
+     * beyond these scalar columns. {@link com.influora.service.meera.BrandContextAssembler}
+     * aggregates this into a single min/median/max {@code RateBand} behind the k-anonymity floor
+     * (n&gt;=5 on both {@code creatorId} and {@code workspaceId}); no individual row from this
+     * projection is ever serialized into a response.
+     */
+    interface RateBandCandidateRow {
+        BigDecimal getAgreedRate();
+
+        String getCurrency();
+
+        String getWorkspaceId();
+
+        String getCreatorId();
+
+        Long getTotalFollowers();
+    }
+
+    /**
+     * Real, completed-collaboration rate data for one niche — the ground truth behind {@code
+     * niche_rate_band} (Phase 2 item 2.1). {@code status = 'COMPLETED'} only (not "&gt;=
+     * COMPLETED" — {@link CollaborationStatus} has no ordinal ordering; {@code DISPUTED}/{@code
+     * CANCELLED} rows are excluded so a disputed rate never counts as a clean market signal).
+     * {@code JSON_CONTAINS} requires MySQL 8.0.17+, already assumed elsewhere in this schema (see
+     * {@code V20260721140000__creator_nudge_log.sql}'s own MySQL-8.0.13+ note). Callers MUST
+     * aggregate this into a single {@code RateBand} behind the k-anonymity floor before any of it
+     * reaches a response — no row from this query may be serialized directly (Kabir's mandatory
+     * Phase-2 gate).
+     */
+    @Query(
+            value =
+                    "SELECT co.agreed_rate AS agreedRate, co.currency AS currency, "
+                            + "ca.workspace_id AS workspaceId, co.creator_id AS creatorId, "
+                            + "cp.total_followers AS totalFollowers "
+                            + "FROM collaborations co "
+                            + "JOIN campaigns ca ON ca.id = co.campaign_id "
+                            + "JOIN creator_profiles cp ON cp.user_id = co.creator_id "
+                            + "WHERE co.status = 'COMPLETED' "
+                            + "AND co.agreed_rate IS NOT NULL "
+                            + "AND JSON_CONTAINS(cp.categories, JSON_QUOTE(:niche))",
+            nativeQuery = true)
+    List<RateBandCandidateRow> findRateBandCandidates(@Param("niche") String niche);
 
     boolean existsByCampaignIdAndCreatorId(String campaignId, String creatorId);
 

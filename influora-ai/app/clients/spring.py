@@ -287,7 +287,9 @@ class SpringInternalClient:
         already consumes): workspace_id, display_name, industry, website_url,
         niche_tags, tone_dial, brand_color, brand_aesthetic, product_catalog,
         competitor_urls, analysis_status, template_digest,
-        past_campaign_summary, credit_state.
+        past_campaign_summary, credit_state, outcome_digest (Phase 2 moat --
+        see `_fetch_brand_context` in app/routes/chat.py, which must copy this
+        key into `brand_fields` or it never reaches `build_block_b`).
         """
         payload = {"workspace_id": workspace_id, "audience": audience}
         return await self.call_tool_endpoint(
@@ -297,6 +299,47 @@ class SpringInternalClient:
             onbehalf_jwt=onbehalf_jwt,
             idempotency_key=None,
             allow_retry=True,
+        )
+
+    async def log_interaction(
+        self,
+        *,
+        workspace_id: str,
+        event_type: str,
+        session_id: str | None,
+        tool_name: str | None,
+        campaign_id: str | None,
+        prompt_version: str | None,
+        onbehalf_jwt: str,
+    ) -> SpringResponse:
+        """POST /internal/meera/interaction-log — Phase 2 item 2.3 flywheel logging (Meera:
+        Label-to-Moat build plan §2.3, Priya's Q3 ruling: one Spring-side store, single source of
+        truth for the "options presented -> tapped -> draft -> funded" funnel). Only needed for
+        Python-originated events: `present_options` is a LOCAL tool (`is_local_tool`) that never
+        reaches Spring via the normal tool-forward path, so `OPTIONS_PRESENTED` has no other write
+        route. `workspace_id` here is only a claim carried in the signed body for the mesh
+        signature — Spring re-derives the AUTHORITATIVE workspace id from the on-behalf JWT before
+        persisting (SR-1; see `MeeraInternalController#interactionLog`), never trusting this field
+        directly. No `Idempotency-Key` -- this is a pure analytics-event append, not a money/state
+        write; a duplicate row from a retried call is an acceptable, low-cost outcome, so
+        `allow_retry` stays False purely to match this module's "no blind retries on internal
+        forwards" convention, not because a retry would be unsafe.
+        """
+        payload = {
+            "workspace_id": workspace_id,
+            "event_type": event_type,
+            "session_id": session_id,
+            "tool_name": tool_name,
+            "campaign_id": campaign_id,
+            "prompt_version": prompt_version,
+        }
+        return await self.call_tool_endpoint(
+            tool_name="_interaction_log",
+            path="/internal/meera/interaction-log",
+            payload=payload,
+            onbehalf_jwt=onbehalf_jwt,
+            idempotency_key=None,
+            allow_retry=False,
         )
 
     async def release_turn_credit(

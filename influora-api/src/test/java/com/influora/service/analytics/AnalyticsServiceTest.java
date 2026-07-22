@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.influora.common.ApiException;
 import com.influora.domain.entity.CreatorMetric;
 import com.influora.domain.entity.CreatorScore;
+import com.influora.domain.entity.MediaMetric;
 import com.influora.domain.entity.Workspace;
 import com.influora.repository.AudienceDemographicsRepository;
 import com.influora.repository.CreatorMetricsRepository;
@@ -22,6 +23,7 @@ import com.influora.repository.MediaMetricsRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.BrandContextService;
 import com.influora.service.MetricsAuthorizationService;
+import com.influora.web.dto.analytics.AnalyticsDtos.ContentPerformanceResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorMetricsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorScoresResponse;
 import java.math.BigDecimal;
@@ -246,5 +248,108 @@ class AnalyticsServiceTest {
 
         assertEquals("SCORE_NOT_FOUND", ex.getCode());
         assertEquals(404, ex.getStatus().value());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // getContentPerformance — brand-feature-audit.md fix #4 (new brand-facing /media route)
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "getContentPerformance: unauthorized workspace/creator pair (foreign creator) is rejected"
+                    + " with FORBIDDEN before any MediaMetric row is read")
+    void testGetContentPerformanceRejectsUnauthorizedCreator() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(metricsAuthorizationService.resolveAuthorizedCreatorProfileId(
+                        WORKSPACE_ID, OTHER_WORKSPACES_CREATOR_ID))
+                .thenThrow(
+                        new ApiException(
+                                "FORBIDDEN",
+                                "This workspace is not authorized to view metrics for that creator",
+                                HttpStatus.FORBIDDEN));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                analyticsService.getContentPerformance(
+                                        principal, OTHER_WORKSPACES_CREATOR_ID));
+
+        assertEquals("FORBIDDEN", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        verifyNoInteractions(mediaMetricsRepository);
+    }
+
+    @Test
+    @DisplayName(
+            "getContentPerformance: authorized creator returns per-post rows with a derived"
+                    + " engagementRate")
+    void testGetContentPerformanceSucceedsForAuthorizedCreator() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(metricsAuthorizationService.resolveAuthorizedCreatorProfileId(WORKSPACE_ID, CREATOR_ID))
+                .thenReturn(CREATOR_ID);
+
+        MediaMetric media =
+                MediaMetric.builder()
+                        .id("01HMEDIA123456789012345")
+                        .creatorProfileId(CREATOR_ID)
+                        .mediaId("ig-media-1")
+                        .mediaType("REEL")
+                        .permalink("https://instagram.com/p/abc123")
+                        .impressions(5000L)
+                        .reach(4000L)
+                        .engagement(200L)
+                        .postedAt(Instant.parse("2026-07-10T00:00:00Z"))
+                        .time(Instant.parse("2026-07-11T00:00:00Z"))
+                        .build();
+
+        when(mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class)))
+                .thenReturn(List.of(media));
+
+        List<ContentPerformanceResponse> result =
+                analyticsService.getContentPerformance(principal, CREATOR_ID);
+
+        assertEquals(1, result.size());
+        ContentPerformanceResponse row = result.get(0);
+        assertEquals("ig-media-1", row.mediaId());
+        assertEquals("REEL", row.mediaType());
+        assertEquals(4000L, row.reach());
+        assertEquals(5000L, row.impressions());
+        // 200 / 4000 * 100 = 5.00 — derived, never fabricated.
+        assertEquals(new BigDecimal("5.00"), row.engagementRate());
+        verify(metricsAuthorizationService).resolveAuthorizedCreatorProfileId(WORKSPACE_ID, CREATOR_ID);
+        verify(mediaMetricsRepository)
+                .findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("getContentPerformance: engagementRate is null (not zero/guessed) when reach is missing")
+    void testGetContentPerformanceEngagementRateNullWhenReachMissing() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(metricsAuthorizationService.resolveAuthorizedCreatorProfileId(WORKSPACE_ID, CREATOR_ID))
+                .thenReturn(CREATOR_ID);
+
+        MediaMetric media =
+                MediaMetric.builder()
+                        .id("01HMEDIA223456789012345")
+                        .creatorProfileId(CREATOR_ID)
+                        .mediaId("ig-media-2")
+                        .mediaType("IMAGE")
+                        .engagement(50L)
+                        .reach(null)
+                        .time(Instant.parse("2026-07-11T00:00:00Z"))
+                        .build();
+
+        when(mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class)))
+                .thenReturn(List.of(media));
+
+        List<ContentPerformanceResponse> result =
+                analyticsService.getContentPerformance(principal, CREATOR_ID);
+
+        assertEquals(1, result.size());
+        assertEquals(null, result.get(0).engagementRate());
     }
 }

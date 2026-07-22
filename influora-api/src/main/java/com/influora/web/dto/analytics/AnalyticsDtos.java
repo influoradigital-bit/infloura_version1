@@ -146,10 +146,22 @@ public final class AnalyticsDtos {
     }
 
     /**
-     * Creator-facing per-post performance (P2-14, {@code GET /creator/analytics/me/media}) — the
-     * latest {@code MediaMetric} poll snapshot for each distinct post, newest posts first. Mirrors
-     * {@code MediaMetric}'s fields directly; no aggregation/derivation beyond picking the latest
-     * poll per {@code mediaId}.
+     * Per-post performance — the latest {@code MediaMetric} poll snapshot for each distinct post,
+     * newest posts first. Mirrors {@code MediaMetric}'s fields directly; the only derived value is
+     * {@code engagementRate}. Shared verbatim by both the creator-self route ({@code GET
+     * /creator/analytics/me/media}, P2-14) and the brand-facing mirror ({@code GET
+     * /analytics/creators/{creatorId}/media}, brand-feature-audit.md fix #4) — same authorization
+     * shape as {@link CreatorMetricsResponse}/{@link CreatorScoresResponse}/{@link
+     * CreatorDemographicsResponse}.
+     *
+     * <p><b>{@code engagementRate}</b> [brand-feature-audit.md fix #4]: added for the brand route's
+     * FE consumer ({@code ContentPerformanceItem} in {@code src/lib/api.ts}, rendered by
+     * {@code ContentPerformancePanel} — see {@code useContentPerformance.ts}), which expects a rate,
+     * not a raw engagement count. Computed as {@code engagement / reach * 100} when {@code reach} is
+     * present and positive, else {@code null} — never fabricated, same "real value or null" contract
+     * as every other derived field in this service. Purely additive: the creator-self route gains
+     * this field too, but nothing there previously read a rate off this DTO, so no existing consumer
+     * breaks.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ContentPerformanceResponse(
@@ -165,5 +177,6 @@ public final class AnalyticsDtos {
             Long shares,
             Long videoViews,
             BigDecimal avgWatchTimeSeconds,
-            Instant postedAt) {}
+            Instant postedAt,
+            BigDecimal engagementRate) {}
 }

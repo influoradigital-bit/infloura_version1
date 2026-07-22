@@ -3,9 +3,11 @@ package com.influora.web;
 import com.influora.common.ApiResponse;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.BrandDeliverableService;
+import com.influora.service.DeliverableSafetyReviewService;
 import com.influora.web.dto.deliverable.BrandDeliverableDtos.DeliverableDetailResponse;
 import com.influora.web.dto.deliverable.BrandDeliverableDtos.ReviewResponse;
 import com.influora.web.dto.deliverable.BrandDeliverableDtos.ReviseRequest;
+import com.influora.web.dto.deliverable.DeliverableSafetyDtos.DeliverableSafetyReviewResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,9 +27,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class BrandDeliverableController {
 
     private final BrandDeliverableService brandDeliverableService;
+    private final DeliverableSafetyReviewService deliverableSafetyReviewService;
 
-    public BrandDeliverableController(BrandDeliverableService brandDeliverableService) {
+    public BrandDeliverableController(
+            BrandDeliverableService brandDeliverableService,
+            DeliverableSafetyReviewService deliverableSafetyReviewService) {
         this.brandDeliverableService = brandDeliverableService;
+        this.deliverableSafetyReviewService = deliverableSafetyReviewService;
     }
 
     @GetMapping("/{deliverableId}")
@@ -62,5 +68,20 @@ public class BrandDeliverableController {
             @RequestBody ReviseRequest body) {
         return ResponseEntity.ok(
                 ApiResponse.ok(brandDeliverableService.reject(principal, deliverableId, body)));
+    }
+
+    /**
+     * [Fix: brand-feature-audit.md #3] Advisory-only brand-safety review of this deliverable's
+     * caption — see {@link DeliverableSafetyReviewService} class javadoc for the full contract
+     * (server-interpreted verdict, never blocks {@link #approve}/{@link #reject}/{@link #revise}).
+     * Matches the FE's documented expectation ({@code api.contentPerformance}'s sibling in {@code
+     * src/lib/api.ts}: {@code deliverables.getSafetyReview}, {@code GET
+     * /deliverables/:id/safety-review}).
+     */
+    @GetMapping("/{deliverableId}/safety-review")
+    public ResponseEntity<ApiResponse<DeliverableSafetyReviewResponse>> getSafetyReview(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String deliverableId) {
+        return ResponseEntity.ok(
+                ApiResponse.ok(deliverableSafetyReviewService.getReview(principal, deliverableId)));
     }
 }

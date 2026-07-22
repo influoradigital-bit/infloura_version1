@@ -66,10 +66,16 @@ def _get_optional_float(name: str) -> float | None:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.07.21.8"
-# ^ bumped for the Creator AI Co-pilot Tier-1 creator-tone prompt
-# (app/prompt/creator_suggestion.py) shipping in this revision. Single global
-# constant, reused (not split) per Priya's R1 ruling §5.1 — the per-row
+PROMPT_VERSION = "meera-2026.07.21.9"
+# ^ bumped for Phase 2 item 2.1 (outcome digest): Block B gains the
+# `outcome_digest` section (campaign_outcomes[] + niche_rate_band) in this
+# revision, and prompt_version is a component of `cache_key_for` — without the
+# bump, sessions cached under `.8` would keep serving a stale Block B with no
+# digest, and eval deltas across this change couldn't be cleanly attributed
+# (Ash's Q3 ruling, wiki/build/phase2-ash-review.md).
+# Prior bump: Creator AI Co-pilot Tier-1 creator-tone prompt
+# (app/prompt/creator_suggestion.py). Single global constant, reused (not
+# split) per Priya's R1 ruling §5.1 — the per-row
 # `creator_nudge_log.prompt_version` column (Java-side, stamped by Vikram's
 # CreatorNudgeService) gives audit granularity, so a second Python constant
 # would add a second source of truth for no additional audit power.

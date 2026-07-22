@@ -84,12 +84,26 @@ public class ContractController {
             return ApiResponse.ok(contractService.recordSignatureForCreator(principal, contractId));
         }
         var workspace = brandContext.requireBrandWorkspace(principal);
-        if (body == null || body.role() == null || body.role().isBlank()) {
-            throw new ApiException(
-                    "INVALID_SIGNER_ROLE", "role must be BRAND or CREATOR", HttpStatus.BAD_REQUEST);
-        }
+        // [Fix: brand-feature-audit.md #2] Server-derive the signer role from the authenticated
+        // principal's own userType instead of REQUIRING `body.role()`. Every principal that
+        // reaches this branch is BRAND-authenticated (`requireBrandWorkspace` above), and the
+        // FE's only real call path (`api.ts:1466`, `signContract`) sends just
+        // `{name, agreedAt}` -- no `role` -- to self-attest the brand's own signature, which
+        // previously 400'd with INVALID_SIGNER_ROLE on every brand sign. Mirrors how
+        // `recordSignatureForCreator` (creator branch above) ignores the body entirely and
+        // derives the role from the authenticated identity.
+        //
+        // An explicit `role` is still honored when a caller sends one -- this preserves the
+        // elevated-member CREATOR-relay path documented on
+        // `ContractService#recordSignature` (Kabir E2 LOW-4: a brand OWNER/ADMIN/MANAGER
+        // recording the creator's out-of-band signature). That path is not exercised by any FE
+        // call site today, but nothing here removes it; `recordSignature` still validates
+        // `role` is BRAND or CREATOR and still gates CREATOR-relay behind elevated membership.
+        String role = (body != null && body.role() != null && !body.role().isBlank())
+                ? body.role()
+                : "BRAND";
         return ApiResponse.ok(
-                contractService.recordSignature(principal, workspace.getId(), contractId, body.role()));
+                contractService.recordSignature(principal, workspace.getId(), contractId, role));
     }
 
     /**

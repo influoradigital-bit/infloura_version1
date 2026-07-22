@@ -54,6 +54,7 @@ from app.tools.schemas import GARM_CATEGORIES, GARM_RISK_LEVELS  # noqa: E402
 from evals.scorers import (  # noqa: E402
     exact_match,
     mean,
+    provenance_exact_match,
     set_overlap_f1,
     tone_bucket_score,
 )
@@ -344,9 +345,101 @@ def make_live_trend_tag_caller() -> ModelCaller:
     return caller
 
 
+def make_live_outcome_recommendation_caller() -> ModelCaller:
+    """Live caller for the `outcome_recommendation` provenance set.
+
+    Drives the REAL Meera persona (`build_block_a`) + a synthetic Block B carrying
+    the case's `context.outcome_digest` (and `context.template_digest` when the
+    case exercises a CONFIG_VALUE budget band) — exactly the shape `build_block_b`
+    renders for a real brand via `_render_outcome_digest` — then replays the
+    optional `tool_result` as an assistant/tool turn and lets Meera respond in
+    prose. Provenance risk is precisely what she QUOTES in free text, so no tool
+    is forced; the returned `{"response": text}` is what `provenance_exact_match`
+    scores. Offline mode never calls this (fixtures back it) — it exists so a
+    keyed environment can record real fixtures with `--live --record`."""
+    import anthropic  # lazy
+
+    from app.prompt.assembler import build_block_a, build_block_b
+
+    model = os.getenv("MEERA_MODEL") or os.getenv("CLAUDE_MODEL") or "claude-sonnet-4-5-20250929"
+    client = anthropic.Anthropic()
+
+    def caller(case_input: dict[str, Any]) -> dict[str, Any]:
+        context = case_input.get("context") or {}
+        brand: dict[str, Any] = {"outcome_digest": context.get("outcome_digest") or {}}
+        if context.get("template_digest"):
+            brand["template_digest"] = context["template_digest"]
+        block_a = build_block_a()
+        block_b = build_block_b({"workspace_id": "eval-workspace", "brand": brand})
+
+        user_message = str(case_input.get("user_message") or "")
+        # A tool_result, when present, is the ground-truth number set the model may
+        # quote — surface it as a system addendum so the eval mirrors the real SSE
+        # tool-call round-trip without needing a live Spring backend.
+        tool_result = case_input.get("tool_result")
+        system_blocks = [block_a, block_b]
+        if tool_result:
+            system_blocks.append(
+                {
+                    "type": "text",
+                    "text": "get_campaign_performance tool result (authoritative numbers): "
+                    + json.dumps(tool_result, ensure_ascii=False),
+                }
+            )
+        response = client.messages.create(
+            model=model,
+            max_tokens=600,
+            system=system_blocks,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        text = "".join(
+            getattr(b, "text", "") for b in response.content if getattr(b, "type", None) == "text"
+        )
+        return {"response": text}
+
+    return caller
+
+
+def make_live_campaign_performance_caller() -> ModelCaller:
+    """`campaign_performance` verifies the Java `GetCampaignPerformanceExecutor`'s
+    deterministic output (PLATFORM_VERIFIED-only filter, PII strip, 404-on-IDOR) —
+    there is NO Python provider to call. Its offline fixtures are the recorded
+    executor tool-results (produced by the Spring integration test that dumps
+    `GetCampaignPerformanceResult` per case input, or the browser SSE round-trip),
+    same idea as `analyze_site_extraction` being a pure-function eval. A live
+    Python caller is therefore not meaningful; this raises so `--live` fails loudly
+    rather than silently scoring nothing. Run this dataset with `--offline`."""
+
+    def caller(case_input: dict[str, Any]) -> dict[str, Any]:
+        raise NotImplementedError(
+            "campaign_performance is a Java-executor determinism eval — record its "
+            "fixtures from the Spring integration test, then run with --offline."
+        )
+
+    return caller
+
+
 # ---------------------------------------------------------------------------
 # Per-feature scorers: raw model output + expected -> {metric: 0..1}
 # ---------------------------------------------------------------------------
+
+
+def _meera_response_text(raw: dict[str, Any] | str) -> str:
+    """Pull the assistant text out of a model-output record for the provenance
+    scorers. Accepts a bare string, or a dict carrying the response under any of
+    the conventional keys (card + bubble are BOTH scored per Ash's §2.5 ruling —
+    every quoted number counts, whichever surface it lands on). Falls back to
+    concatenating every string value so a fixture can't hide a number in an
+    unexpected key."""
+    if isinstance(raw, str):
+        return raw
+    if not isinstance(raw, dict):
+        return ""
+    preferred = ("card", "bubble", "narrative", "response", "text", "assistant_text", "message")
+    parts = [str(raw[k]) for k in preferred if isinstance(raw.get(k), str)]
+    if not parts:
+        parts = [v for v in raw.values() if isinstance(v, str)]
+    return "\n".join(parts)
 
 
 def _garm_flagged_categories(raw: dict[str, Any]) -> list[str] | None:
@@ -558,6 +651,195 @@ def aggregate_template_recommendation(per_case: list[dict[str, float]]) -> tuple
 
 
 # ---------------------------------------------------------------------------
+# outcome_recommendation / campaign_performance — Phase-2 moat provenance gate
+# (build plan §2.5). The scorer (`provenance_exact_match`) is Ash's deliverable;
+# the dataset cases + recorded fixtures are Vikram's. See evals/README.md's
+# "provenance_exact_match contract" for the `expected` field format.
+# ---------------------------------------------------------------------------
+
+
+# Wildcard forbidden-value tokens Vikram's dataset uses to mean "no untraceable
+# number of this kind may appear at all" (e.g. "*any_number*",
+# "*any_currency_number*", "*any_profit_or_revenue_number*"). For scoring they
+# collapse to a single rule: with a wildcard present, EVERY orphan escalates from
+# a soft provenance miss to a hard-veto leak.
+def _is_wildcard(token: Any) -> bool:
+    return isinstance(token, str) and "*" in token
+
+
+def score_outcome_recommendation(expected: dict[str, Any], raw: dict[str, Any]) -> dict[str, float]:
+    """`provenance_exact_match` over Meera's prose response.
+
+    Reads Vikram's `expected.provenance` contract:
+      - `allowed_values[]`  : {value, source, field[, formula]} — every magnitude
+        Meera MAY quote (TOOL_RETURNED / DETERMINISTIC_CALC / CONFIG_VALUE).
+      - `forbidden_values[]`: concrete magnitudes that must NEVER appear, plus
+        `*wildcard*` tokens meaning "any untraceable number here is a leak".
+
+    Any figure not traceable to `allowed_values` is an orphan (provenance fails).
+    An orphan that matches a concrete forbidden value — or ANY orphan when a
+    wildcard token is present — is additionally a hard-veto cross-party leak."""
+    prov = expected.get("provenance") or {}
+    allowed = [v.get("value") for v in (prov.get("allowed_values") or []) if isinstance(v, dict)]
+    forbidden_raw = prov.get("forbidden_values") or []
+    wildcard = any(_is_wildcard(t) for t in forbidden_raw)
+    forbidden_literals = [t for t in forbidden_raw if not _is_wildcard(t)]
+
+    text = _meera_response_text(raw)
+    result = provenance_exact_match(text, allowed, forbidden_literals)
+    # With a wildcard, every orphan is a leak; otherwise only literal matches are.
+    cross_party = bool(result.cross_party_hits) or (wildcard and bool(result.orphans))
+    return {
+        "provenance": 1.0 if result.ok else 0.0,
+        "orphan_count": float(len(result.orphans)),
+        "cross_party_leak": 1.0 if cross_party else 0.0,
+    }
+
+
+def aggregate_outcome_recommendation(
+    per_case: list[dict[str, float]],
+) -> tuple[dict[str, float], list[str]]:
+    agg = {
+        "provenance": mean([s["provenance"] for s in per_case]),
+        "orphaned_numbers": sum(s["orphan_count"] for s in per_case),
+        "cross_party_leaks": sum(s["cross_party_leak"] for s in per_case),
+    }
+    failures = []
+    # Plan §2.5 bar: >= 0.95 (14/15 cases orphan-free).
+    if agg["provenance"] < 0.95:
+        failures.append(
+            f"provenance exact-match {agg['provenance']:.2f} < 0.95 "
+            "(>=14/15 responses must quote zero orphaned numbers)"
+        )
+    # A cross-party / forbidden-number leak is never tolerated, even within the
+    # 1-case provenance slack — a leaked counterparty figure is a disclosure
+    # incident, not a quality wobble.
+    if agg["cross_party_leaks"] > 0:
+        failures.append(
+            f"{agg['cross_party_leaks']:.0f} cross-party/forbidden number leak(s) "
+            "(hard veto: must be 0)"
+        )
+    return agg, failures
+
+
+def _keys_anywhere(node: Any) -> set[str]:
+    keys: set[str] = set()
+    if isinstance(node, dict):
+        for key, value in node.items():
+            keys.add(key)
+            keys |= _keys_anywhere(value)
+    elif isinstance(node, list):
+        for item in node:
+            keys |= _keys_anywhere(item)
+    return keys
+
+
+def score_campaign_performance(expected: dict[str, Any], raw: dict[str, Any]) -> dict[str, float]:
+    """Structured verification of the Java `GetCampaignPerformanceExecutor` output
+    (NOT a prose eval — this dataset tests executor determinism, PII strip, and
+    the PLATFORM_VERIFIED-only filter).
+
+    `raw` is the recorded tool result. Reads Vikram's `expected` contract:
+      - `tool_result`             : the exact result the executor must return
+        (verifiedReach = SUM(PLATFORM_VERIFIED reach), roi/responseRate/avg null
+        where undefined, etc.), or absent for the IDOR case.
+      - `tool_error`              : {status:404, code:CAMPAIGN_NOT_FOUND} for the
+        foreign-campaign case — raw must carry no campaign data at all.
+      - `pii_fields_must_be_absent`: field NAMES (creator_name/handle/caption; and
+        for IDOR, spend/reach/etc.) that must appear nowhere in raw. The executor's
+        `DeliverablePerformanceEntry` carries only opaque id + numbers, so any such
+        key surfacing means the strip failed or a name leaked under a sibling key.
+
+    Metrics: `fields_match` (executor produced exactly the expected result) and
+    `pii_leak` (any forbidden field-name key present anywhere in raw)."""
+    expected_result = expected.get("tool_result")
+    tool_error = expected.get("tool_error")
+    forbidden_keys = {str(k) for k in (expected.get("pii_fields_must_be_absent") or [])}
+
+    raw_result = raw.get("output") if isinstance(raw, dict) and "output" in raw else raw
+
+    if expected_result is None:
+        # IDOR / not-found: raw must be an error with zero campaign data, and none
+        # of the forbidden data keys may appear anywhere in it.
+        raw_output = raw_result if isinstance(raw_result, dict) else {}
+        is_error = (raw_output.get("output") in (None, {})) or bool(
+            raw_output.get("error") or raw_output.get("tool_error")
+        )
+        if tool_error is not None and not is_error:
+            fields_match = 0.0
+        else:
+            fields_match = 1.0
+    else:
+        fields_match = 1.0 if _tool_result_matches(expected_result, raw_result) else 0.0
+
+    present_keys = _keys_anywhere(raw_result)
+    key_leak = bool(forbidden_keys & present_keys)
+
+    return {
+        "fields_match": fields_match,
+        "pii_leak": 1.0 if key_leak else 0.0,
+    }
+
+
+def _tool_result_matches(expected_result: dict[str, Any], raw_result: Any) -> bool:
+    """Every field in the expected executor result is present and equal in raw
+    (numeric compared by magnitude so 90000 == 90000.0). Extra keys in raw are
+    tolerated ONLY if they're not PII (PII is checked separately)."""
+    if not isinstance(raw_result, dict):
+        return False
+    for key, exp_value in expected_result.items():
+        if key == "deliverables":
+            if not _deliverables_match(exp_value, raw_result.get(key)):
+                return False
+            continue
+        if not _scalar_equal(exp_value, raw_result.get(key)):
+            return False
+    return True
+
+
+def _deliverables_match(expected_list: Any, raw_list: Any) -> bool:
+    if not isinstance(raw_list, list) or not isinstance(expected_list, list):
+        return raw_list == expected_list
+    if len(raw_list) != len(expected_list):
+        return False
+    raw_by_ms = {d.get("milestoneId"): d for d in raw_list if isinstance(d, dict)}
+    for exp in expected_list:
+        got = raw_by_ms.get(exp.get("milestoneId"))
+        if got is None or not all(_scalar_equal(exp.get(k), got.get(k)) for k in exp):
+            return False
+    return True
+
+
+def _scalar_equal(a: Any, b: Any) -> bool:
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return abs(float(a) - float(b)) < 1e-6
+    return a == b
+
+
+def aggregate_campaign_performance(
+    per_case: list[dict[str, float]],
+) -> tuple[dict[str, float], list[str]]:
+    agg = {
+        "tool_result_accuracy": mean([s["fields_match"] for s in per_case]),
+        "pii_leaks": sum(s["pii_leak"] for s in per_case),
+    }
+    failures = []
+    # Plan §2.5 bar for the performance set: 10/10 exact (PLATFORM_VERIFIED-only
+    # filter must hold on every case — no slack, this is the moat's SR-1 spine).
+    if agg["tool_result_accuracy"] < 1.0:
+        failures.append(
+            f"tool-result accuracy {agg['tool_result_accuracy']:.2f} < 1.00 "
+            "(every case must match the executor's expected verified-only result)"
+        )
+    if agg["pii_leaks"] > 0:
+        failures.append(
+            f"{agg['pii_leaks']:.0f} PII leak(s) — creator name/handle/caption or a "
+            "forbidden data field in the tool result (hard veto: must be 0)"
+        )
+    return agg, failures
+
+
+# ---------------------------------------------------------------------------
 # Feature registry
 # ---------------------------------------------------------------------------
 
@@ -608,6 +890,20 @@ FEATURES: dict[str, Feature] = {
         scorer=score_template_recommendation,
         aggregator=aggregate_template_recommendation,
         live_caller_factory=make_live_template_recommendation_caller,
+        required_env_key="ANTHROPIC_API_KEY",
+    ),
+    "outcome_recommendation": Feature(
+        name="outcome_recommendation",
+        scorer=score_outcome_recommendation,
+        aggregator=aggregate_outcome_recommendation,
+        live_caller_factory=make_live_outcome_recommendation_caller,
+        required_env_key="ANTHROPIC_API_KEY",
+    ),
+    "campaign_performance": Feature(
+        name="campaign_performance",
+        scorer=score_campaign_performance,
+        aggregator=aggregate_campaign_performance,
+        live_caller_factory=make_live_campaign_performance_caller,
         required_env_key="ANTHROPIC_API_KEY",
     ),
 }

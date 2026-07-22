@@ -3,15 +3,18 @@ package com.influora.web;
 import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
 import com.influora.domain.entity.AiConversation;
+import com.influora.domain.enums.MeeraInteractionEventType;
 import com.influora.domain.enums.MeeraToolName;
 import com.influora.security.OnBehalfAuthResolver;
 import com.influora.security.OnBehalfAuthResolver.OnBehalfContext;
 import com.influora.service.brand.AnalyzeSiteTriggerService;
 import com.influora.service.meera.MeeraContextService;
+import com.influora.service.meera.MeeraInteractionLogService;
 import com.influora.service.meera.MeeraSessionService;
 import com.influora.service.meera.tool.CalculateBudgetExecutor;
 import com.influora.service.meera.tool.ConfirmLaunchExecutor;
 import com.influora.service.meera.tool.CreateCampaignExecutor;
+import com.influora.service.meera.tool.GetCampaignPerformanceExecutor;
 import com.influora.service.meera.tool.RequestPaymentExecutor;
 import com.influora.service.meera.tool.ShowCreatorsExecutor;
 import com.influora.service.meera.tool.ToolCallValidator;
@@ -22,6 +25,7 @@ import com.influora.web.dto.meera.MeeraDtos.AnalyzeSiteChatResult;
 import com.influora.web.dto.meera.MeeraToolDtos.CalculateBudgetResult;
 import com.influora.web.dto.meera.MeeraToolDtos.ConfirmLaunchResult;
 import com.influora.web.dto.meera.MeeraToolDtos.CreateCampaignResult;
+import com.influora.web.dto.meera.MeeraToolDtos.GetCampaignPerformanceResult;
 import com.influora.web.dto.meera.MeeraToolDtos.MessageWriteback;
 import com.influora.web.dto.meera.MeeraToolDtos.MessageWritebackResult;
 import com.influora.web.dto.meera.MeeraToolDtos.ReleaseTurnRequest;
@@ -82,9 +86,11 @@ public class MeeraInternalController {
     private final CreateCampaignExecutor createCampaignExecutor;
     private final RequestPaymentExecutor requestPaymentExecutor;
     private final ConfirmLaunchExecutor confirmLaunchExecutor;
+    private final GetCampaignPerformanceExecutor getCampaignPerformanceExecutor;
     private final MeeraSessionService sessionService;
     private final AnalyzeSiteTriggerService analyzeSiteTriggerService;
     private final MeeraContextService contextService;
+    private final MeeraInteractionLogService meeraInteractionLogService;
 
     public MeeraInternalController(
             OnBehalfAuthResolver onBehalfAuthResolver,
@@ -94,9 +100,11 @@ public class MeeraInternalController {
             CreateCampaignExecutor createCampaignExecutor,
             RequestPaymentExecutor requestPaymentExecutor,
             ConfirmLaunchExecutor confirmLaunchExecutor,
+            GetCampaignPerformanceExecutor getCampaignPerformanceExecutor,
             MeeraSessionService sessionService,
             AnalyzeSiteTriggerService analyzeSiteTriggerService,
-            MeeraContextService contextService) {
+            MeeraContextService contextService,
+            MeeraInteractionLogService meeraInteractionLogService) {
         this.onBehalfAuthResolver = onBehalfAuthResolver;
         this.toolCallValidator = toolCallValidator;
         this.showCreatorsExecutor = showCreatorsExecutor;
@@ -104,9 +112,11 @@ public class MeeraInternalController {
         this.createCampaignExecutor = createCampaignExecutor;
         this.requestPaymentExecutor = requestPaymentExecutor;
         this.confirmLaunchExecutor = confirmLaunchExecutor;
+        this.getCampaignPerformanceExecutor = getCampaignPerformanceExecutor;
         this.sessionService = sessionService;
         this.analyzeSiteTriggerService = analyzeSiteTriggerService;
         this.contextService = contextService;
+        this.meeraInteractionLogService = meeraInteractionLogService;
     }
 
     /**
@@ -208,6 +218,24 @@ public class MeeraInternalController {
     }
 
     /**
+     * Phase 2 item 2.2 — R-tier, read-only, no money. Same auth shape as {@code calculate_budget}/
+     * {@code show_creators} (scope-gated {@link OnBehalfAuthResolver#resolveForWorkspaceRequiringScope},
+     * not the elevated-role C-tier variant) — no new auth pattern introduced. IDOR is enforced
+     * inside {@link GetCampaignPerformanceExecutor}, not here (see its class javadoc).
+     */
+    @PostMapping("/get_campaign_performance")
+    public ResponseEntity<ApiResponse<GetCampaignPerformanceResult>> getCampaignPerformance(
+            @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt, @RequestBody Map<String, Object> body) {
+        String workspaceId = requireWorkspaceId(body);
+        OnBehalfContext ctx =
+                onBehalfAuthResolver.resolveForWorkspaceRequiringScope(
+                        onBehalfJwt, workspaceId, MeeraToolName.get_campaign_performance.name());
+        requireTool(MeeraToolName.get_campaign_performance, workspaceId);
+        var result = getCampaignPerformanceExecutor.execute(ctx.workspaceId(), body);
+        return ResponseEntity.ok(ApiResponse.ok(result));
+    }
+
+    /**
      * Write-back callback for the real assistant turn (11-AI-FLOW-DETAILED.md Flow 2 step 6). Not
      * a tool-call — no {@link ToolCallValidator} gate applies — but still runs behind the same
      * dual-credential mesh filter as every other {@code /internal/meera/*} route. The body has no
@@ -284,6 +312,36 @@ public class MeeraInternalController {
         return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
+    /**
+     * Write path for Phase 2 item 2.3's {@code OPTIONS_PRESENTED} flywheel event (Meera:
+     * Label-to-Moat build plan §2.3, Priya's Q3 ruling). {@code present_options} is a Python LOCAL
+     * tool — it never reaches Spring as a proposed tool call, so this is a dedicated logging
+     * write-back, same shape as {@link #analyzeSiteResult}: same dual-credential mesh gate as
+     * every other {@code /internal/meera/*} route, NOT a {@link ToolCallValidator}-gated tool call
+     * (there is no tool tier here, only a fire-and-forget analytics append).
+     *
+     * <p><b>SR-1:</b> {@code workspace_id} in the body is only used for {@link
+     * OnBehalfAuthResolver#resolveForWorkspace}'s cross-check against the signed on-behalf JWT —
+     * the row is persisted under {@code ctx.workspaceId()} (the JWT-verified value), never the
+     * raw body field directly.
+     */
+    @PostMapping("/interaction-log")
+    public ResponseEntity<ApiResponse<Void>> interactionLog(
+            @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt, @RequestBody Map<String, Object> body) {
+        String workspaceId = requireWorkspaceId(body);
+        OnBehalfContext ctx = onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, workspaceId);
+        meeraInteractionLogService.record(
+                ctx.workspaceId(),
+                stringOrNull(body.get("session_id")),
+                MeeraInteractionEventType.OPTIONS_PRESENTED,
+                stringOrNull(body.get("tool_name")),
+                null,
+                stringOrNull(body.get("campaign_id")),
+                null,
+                stringOrNull(body.get("prompt_version")));
+        return ResponseEntity.ok(ApiResponse.ok(null));
+    }
+
     /** Throws (mapped to 4xx by {@code GlobalExceptionHandler}) if the tool fails the whitelist/tier gate. */
     private void requireTool(MeeraToolName expected, String workspaceId) {
         MeeraToolName resolved;
@@ -311,6 +369,10 @@ public class MeeraInternalController {
     /** {@code conversation_id} is optional on most tool bodies — not every tool schema carries one. */
     private static String conversationIdOf(Map<String, Object> body) {
         Object value = body == null ? null : body.get("conversation_id");
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private static String stringOrNull(Object value) {
         return value == null ? null : String.valueOf(value);
     }
 }

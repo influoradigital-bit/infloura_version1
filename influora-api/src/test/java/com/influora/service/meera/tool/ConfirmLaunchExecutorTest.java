@@ -98,6 +98,7 @@ class ConfirmLaunchExecutorTest {
     @Mock private AICreditService aiCreditService;
     @Mock private IdempotencyService idempotencyService;
     @Mock private BrandCampaignFeeService brandCampaignFeeService;
+    @Mock private com.influora.service.meera.MeeraInteractionLogService meeraInteractionLogService;
 
     private ConfirmLaunchExecutor executor;
 
@@ -117,6 +118,7 @@ class ConfirmLaunchExecutorTest {
                         aiCreditService,
                         idempotencyService,
                         brandCampaignFeeService,
+                        meeraInteractionLogService,
                         null);
     }
 

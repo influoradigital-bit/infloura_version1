@@ -28,7 +28,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class ToolCallValidator {
 
-    /** The exact 5-tool whitelist + tier, per 06-MEERA-PERMISSIONS-MATRIX.md. No 6th tool exists. */
+    /**
+     * The tool whitelist + tier. 06-MEERA-PERMISSIONS-MATRIX.md's original 5; {@code
+     * get_campaign_performance} (Phase 2 item 2.2, R-tier) is the first tool added after that
+     * matrix was written — see {@code wiki/ai-review/meera-label-to-moat-build-plan.md} §2.2.
+     */
     private static final Map<MeeraToolName, MeeraToolTier> TIER_BY_TOOL = new EnumMap<>(MeeraToolName.class);
 
     static {
@@ -37,6 +41,7 @@ public class ToolCallValidator {
         TIER_BY_TOOL.put(MeeraToolName.create_campaign, MeeraToolTier.D);
         TIER_BY_TOOL.put(MeeraToolName.request_payment, MeeraToolTier.C);
         TIER_BY_TOOL.put(MeeraToolName.confirm_launch, MeeraToolTier.C);
+        TIER_BY_TOOL.put(MeeraToolName.get_campaign_performance, MeeraToolTier.R);
     }
 
     private final AuditLogService auditLogService;

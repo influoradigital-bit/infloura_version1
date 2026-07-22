@@ -226,3 +226,12 @@ influora:
   brand-safety-scoring:
     enabled: ${BRAND_SAFETY_SCORING_ENABLED:false}
     max-creators-per-run: ${BRAND_SAFETY_SCORING_MAX_CREATORS_PER_RUN:100}
+  # meera_interaction_log retention purge (MeeraInteractionLogRetentionPurgeJob). HARD, MANDATORY
+  # predecessor to any future read/join/analytics consumer of this table (Priya's PARTIAL-2 ruling,
+  # wiki/build/partials-resolution-plan.md) and Kabir's L1 fast-follow (wiki/build/phase2-kabir-
+  # security.md). enabled defaults false everywhere (same conservative-default convention as
+  # brand-safety-scoring above and influora.cleanup.dry-run) so no environment starts deleting rows
+  # just because this job exists on the classpath; see application-prod.yml to opt in.
+  meera-interaction-log-retention:
+    enabled: ${MEERA_INTERACTION_LOG_RETENTION_ENABLED:false}
+    retention-days: ${MEERA_INTERACTION_LOG_RETENTION_DAYS:180}

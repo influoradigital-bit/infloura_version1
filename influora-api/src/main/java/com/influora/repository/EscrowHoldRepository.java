@@ -43,6 +43,21 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
     BigDecimal sumAmountByWorkspaceIdAndStatus(
             @Param("workspaceId") String workspaceId, @Param("status") EscrowStatus status);
 
+    /**
+     * Campaign-scoped SUM of hold amounts strictly in one status — Phase 2 item 2.1/2.2's SR-1
+     * ground-truth query (Meera: Label-to-Moat build plan §2.1). Callers computing "spend"/"funded"
+     * for the outcome digest or {@code get_campaign_performance} MUST pass {@link
+     * EscrowStatus#RELEASED} here — never the {@code FUNDED_STATUSES} campaign-status proxy {@code
+     * MeeraContextService} uses for the unrelated Phase-1 {@code past_campaign_summary} field.
+     * {@code COALESCE(...,0)} matches this repository's existing zero-for-no-rows convention (see
+     * {@link #sumAmountByStatusIn}/{@link #sumAmountByWorkspaceIdAndStatus}).
+     */
+    @Query(
+            "SELECT COALESCE(SUM(e.amount), 0) FROM EscrowHold e "
+                    + "WHERE e.campaignId = :campaignId AND e.status = :status")
+    BigDecimal sumAmountByCampaignIdAndStatus(
+            @Param("campaignId") String campaignId, @Param("status") EscrowStatus status);
+
     Optional<EscrowHold> findByIdempotencyKey(String idempotencyKey);
 
     Optional<EscrowHold> findByIdAndWorkspaceId(String id, String workspaceId);

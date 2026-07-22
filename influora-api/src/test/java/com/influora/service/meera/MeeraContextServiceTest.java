@@ -22,6 +22,9 @@ import com.influora.repository.BrandProfileRepository;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CampaignTemplateRepository;
 import com.influora.repository.CollaborationRepository;
+import com.influora.repository.DeliverableMetricRepository;
+import com.influora.repository.EscrowHoldRepository;
+import com.influora.repository.UtmCampaignRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
 import java.util.List;
@@ -51,6 +54,9 @@ class MeeraContextServiceTest {
     @Mock private CampaignTemplateRepository templateRepository;
     @Mock private CampaignRepository campaignRepository;
     @Mock private CollaborationRepository collaborationRepository;
+    @Mock private EscrowHoldRepository escrowHoldRepository;
+    @Mock private DeliverableMetricRepository deliverableMetricRepository;
+    @Mock private UtmCampaignRepository utmCampaignRepository;
     @Mock private AICreditService creditService;
     @Mock private Workspace workspace;
 
@@ -65,6 +71,9 @@ class MeeraContextServiceTest {
                         templateRepository,
                         campaignRepository,
                         collaborationRepository,
+                        escrowHoldRepository,
+                        deliverableMetricRepository,
+                        utmCampaignRepository,
                         creditService,
                         new BrandContextAssembler());
     }

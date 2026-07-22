@@ -3,15 +3,27 @@ package com.influora.service.meera;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.common.JsonLists;
 import com.influora.domain.entity.BrandProfile;
+import com.influora.domain.entity.Campaign;
+import com.influora.domain.entity.Collaboration;
+import com.influora.domain.entity.DeliverableMetric;
+import com.influora.domain.entity.UtmCampaign;
 import com.influora.domain.entity.Workspace;
+import com.influora.repository.CollaborationRepository.RateBandCandidateRow;
+import com.influora.web.dto.meera.MeeraContextDtos.CampaignOutcomeEntry;
 import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.CreditState;
+import com.influora.web.dto.meera.MeeraContextDtos.OutcomeDigest;
 import com.influora.web.dto.meera.MeeraContextDtos.PastCampaignEntry;
+import com.influora.web.dto.meera.MeeraContextDtos.RateBand;
 import com.influora.web.dto.meera.MeeraContextDtos.TemplateDigestEntry;
+import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 /**
@@ -118,7 +130,8 @@ public class BrandContextAssembler {
             List<com.influora.domain.entity.CampaignTemplate> templates,
             List<PastCampaignEntry> recentCampaigns,
             String creditMode,
-            int creditsRemaining) {
+            int creditsRemaining,
+            OutcomeDigest outcomeDigest) {
         List<String> nicheTags = brandProfile != null ? nicheTags(brandProfile) : null;
         Object toneDial = brandProfile != null ? parseJsonOrNull(brandProfile.getToneProfileJson()) : null;
         Object brandAesthetic = brandProfile != null ? parseJsonOrNull(brandProfile.getBrandAestheticJson()) : null;
@@ -143,7 +156,8 @@ public class BrandContextAssembler {
                 analysisStatus,
                 templateDigest(templates),
                 recentCampaigns,
-                new CreditState(creditMode, creditsRemaining));
+                new CreditState(creditMode, creditsRemaining),
+                outcomeDigest);
     }
 
     /**
@@ -233,5 +247,223 @@ public class BrandContextAssembler {
             return null;
         }
         return String.join(", ", requirements.subList(0, Math.min(MAX_DIGEST_REQUIREMENTS, requirements.size())));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Phase 2 item 2.1 — outcome digest (wiki/ai-review/meera-label-to-moat-build-plan.md
+    // §2.1, wiki/build/phase2-backend-design.md §1). SR-1 discipline: every number below is
+    // derived from an authoritative record MeeraContextService already fetched — this class
+    // never queries a repository itself, it only aggregates/shapes rows handed to it (same
+    // "fetch there, shape here" split as the rest of this file). Zero `FUNDED_STATUSES` import
+    // anywhere in this section — spend/funded come exclusively from `EscrowStatus.RELEASED`
+    // sums (Priya B4 / Ash's SR-1 verification).
+    // ---------------------------------------------------------------------------------------
+
+    /** k-anonymity floor (n>=5 on BOTH legs) — Kabir's mandatory Phase-2 gate, no backoff in v1. */
+    private static final int RATE_BAND_K_ANON_FLOOR = 5;
+
+    private static final long MICRO_FOLLOWER_THRESHOLD = 10_000L;
+    private static final long MID_FOLLOWER_THRESHOLD = 50_000L;
+    private static final long MACRO_FOLLOWER_THRESHOLD = 500_000L;
+
+    /**
+     * Builds the outcome digest — {@code campaign_outcomes[]} (last-N, reusing {@code
+     * MeeraContextService.PAST_CAMPAIGN_LIMIT}, never a separate/larger limit per Priya's B1)
+     * plus one platform-wide {@code niche_rate_band}. {@code recentCampaigns}/{@code
+     * workspaceCollaborations} and the three per-campaign maps are exactly what {@code
+     * MeeraContextService} fetched for the SAME campaigns already used for {@code
+     * past_campaign_summary} — no extra campaign-selection query. {@code niche}/{@code
+     * rateBandCandidates} are {@code null}/empty when the brand has no profile or no niche tags,
+     * in which case {@code niche_rate_band} is {@code null} without ever running the cross-tenant
+     * query.
+     */
+    public OutcomeDigest assembleOutcomeDigest(
+            List<Campaign> recentCampaigns,
+            List<Collaboration> workspaceCollaborations,
+            Map<String, BigDecimal> releasedSpendByCampaignId,
+            Map<String, List<DeliverableMetric>> verifiedMetricsByCampaignId,
+            Map<String, List<UtmCampaign>> utmByCampaignId,
+            String niche,
+            List<RateBandCandidateRow> rateBandCandidates) {
+        List<CampaignOutcomeEntry> entries =
+                recentCampaigns == null
+                        ? List.of()
+                        : recentCampaigns.stream()
+                                .map(
+                                        c ->
+                                                buildOutcomeEntry(
+                                                        c,
+                                                        workspaceCollaborations,
+                                                        releasedSpendByCampaignId,
+                                                        verifiedMetricsByCampaignId,
+                                                        utmByCampaignId))
+                                .toList();
+        RateBand rateBand = niche == null ? null : buildRateBand(niche, rateBandCandidates);
+        return new OutcomeDigest(entries, rateBand);
+    }
+
+    /**
+     * One {@code campaign_outcomes[]} entry. {@code spendInr}/{@code funded} come exclusively
+     * from the caller-supplied {@code releasedSpendByCampaignId} map, which MUST be populated
+     * from {@code EscrowHoldRepository.sumAmountByCampaignIdAndStatus(campaignId,
+     * EscrowStatus.RELEASED)} — never any other status, never the campaign-status proxy. {@code
+     * verifiedReach}/{@code reachSource} are filtered to {@code
+     * DeliverableMetric.SOURCE_PLATFORM_VERIFIED} only; a campaign with only self-reported
+     * numbers gets {@code null} for both (Vikram open Q1, approved by Priya+Ash: conservative,
+     * no flagged self-reported fallback in v1).
+     */
+    private CampaignOutcomeEntry buildOutcomeEntry(
+            Campaign campaign,
+            List<Collaboration> workspaceCollaborations,
+            Map<String, BigDecimal> releasedSpendByCampaignId,
+            Map<String, List<DeliverableMetric>> verifiedMetricsByCampaignId,
+            Map<String, List<UtmCampaign>> utmByCampaignId) {
+        String campaignId = campaign.getId();
+
+        long creatorCount =
+                workspaceCollaborations == null
+                        ? 0
+                        : workspaceCollaborations.stream()
+                                .filter(c -> campaignId.equals(c.getCampaignId()))
+                                .map(Collaboration::getCreatorId)
+                                .distinct()
+                                .count();
+
+        BigDecimal spendInr =
+                releasedSpendByCampaignId == null
+                        ? BigDecimal.ZERO
+                        : releasedSpendByCampaignId.getOrDefault(campaignId, BigDecimal.ZERO);
+        boolean funded = spendInr != null && spendInr.signum() > 0;
+
+        List<DeliverableMetric> verifiedMetrics =
+                (verifiedMetricsByCampaignId == null
+                        ? List.<DeliverableMetric>of()
+                        : verifiedMetricsByCampaignId.getOrDefault(campaignId, List.of()))
+                        .stream()
+                        .filter(m -> DeliverableMetric.SOURCE_PLATFORM_VERIFIED.equals(m.getSource()))
+                        .toList();
+        Long verifiedReach = verifiedMetrics.isEmpty() ? null : sumReach(verifiedMetrics);
+        String reachSource = verifiedReach == null ? null : DeliverableMetric.SOURCE_PLATFORM_VERIFIED;
+
+        List<UtmCampaign> utmRows =
+                utmByCampaignId == null ? List.of() : utmByCampaignId.getOrDefault(campaignId, List.of());
+        BigDecimal attributedRevenueInr = sumRevenue(utmRows);
+
+        return new CampaignOutcomeEntry(
+                campaign.getCampaignType() != null ? campaign.getCampaignType().name() : "STANDARD",
+                (int) creatorCount,
+                spendInr,
+                funded,
+                verifiedReach,
+                reachSource,
+                attributedRevenueInr);
+    }
+
+    private static Long sumReach(List<DeliverableMetric> metrics) {
+        long total = 0L;
+        boolean any = false;
+        for (DeliverableMetric m : metrics) {
+            if (m.getReach() != null) {
+                total += m.getReach();
+                any = true;
+            }
+        }
+        return any ? total : null;
+    }
+
+    private static BigDecimal sumRevenue(List<UtmCampaign> utmRows) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (UtmCampaign u : utmRows) {
+            if (u.getRevenueAttributed() != null) {
+                total = total.add(u.getRevenueAttributed());
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Aggregates the raw {@code niche_rate_band} candidate pool (a platform-wide, cross-tenant
+     * projection — the single most security-sensitive query in this design) into ONE band, never
+     * leaking a row. Groups by follower-tier bucket (the {@code NANO/MICRO/MID/MACRO} convention
+     * — same bucketing as {@code AdminCreatorService#deriveTier}, duplicated here as a private
+     * constant table since that method is private on an unrelated admin service; deliberately
+     * NOT {@code RateEstimationService}'s 5-bucket MEGA variant, which is a synthetic formula
+     * estimate, not empirical data), picks the tier bucket with the most rows, and returns {@code
+     * null} — no partial/low-n band, ever — unless BOTH k-anonymity legs clear the floor:
+     * distinct {@code creatorId} count AND distinct {@code workspaceId} count &gt;= {@link
+     * #RATE_BAND_K_ANON_FLOOR}. No backoff to a niche-only grouping in v1 (Priya/Ash ruling on
+     * Vikram's open Q2) — a blurred band is worse than none, and widening the query would reopen
+     * k-anon exposure that needs its own Kabir pass.
+     */
+    private RateBand buildRateBand(String niche, List<RateBandCandidateRow> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+        Map<String, List<RateBandCandidateRow>> byTier =
+                candidates.stream().collect(Collectors.groupingBy(r -> tierBucket(r.getTotalFollowers())));
+        List<RateBandCandidateRow> largestBucket =
+                byTier.values().stream().max(Comparator.comparingInt(List::size)).orElse(List.of());
+        if (largestBucket.isEmpty()) {
+            return null;
+        }
+
+        long distinctCreators =
+                largestBucket.stream().map(RateBandCandidateRow::getCreatorId).filter(Objects::nonNull).distinct().count();
+        long distinctWorkspaces =
+                largestBucket.stream()
+                        .map(RateBandCandidateRow::getWorkspaceId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .count();
+        if (distinctCreators < RATE_BAND_K_ANON_FLOOR || distinctWorkspaces < RATE_BAND_K_ANON_FLOOR) {
+            return null;
+        }
+
+        List<BigDecimal> rates =
+                largestBucket.stream()
+                        .map(RateBandCandidateRow::getAgreedRate)
+                        .filter(Objects::nonNull)
+                        .sorted()
+                        .toList();
+        if (rates.isEmpty()) {
+            return null;
+        }
+        BigDecimal min = rates.get(0);
+        BigDecimal max = rates.get(rates.size() - 1);
+        BigDecimal median = median(rates);
+        String currency =
+                largestBucket.stream()
+                        .map(RateBandCandidateRow::getCurrency)
+                        .filter(c -> c != null && !c.isBlank())
+                        .findFirst()
+                        .orElse("INR");
+
+        return new RateBand(min, median, max, currency, niche, (int) distinctCreators, (int) distinctWorkspaces);
+    }
+
+    private static String tierBucket(Long totalFollowers) {
+        long followers = totalFollowers == null ? 0L : totalFollowers;
+        if (followers >= MACRO_FOLLOWER_THRESHOLD) {
+            return "MACRO";
+        }
+        if (followers >= MID_FOLLOWER_THRESHOLD) {
+            return "MID";
+        }
+        if (followers >= MICRO_FOLLOWER_THRESHOLD) {
+            return "MICRO";
+        }
+        return "NANO";
+    }
+
+    /** {@code rates} MUST already be sorted ascending. */
+    private static BigDecimal median(List<BigDecimal> rates) {
+        int size = rates.size();
+        int mid = size / 2;
+        if (size % 2 == 1) {
+            return rates.get(mid);
+        }
+        return rates.get(mid - 1)
+                .add(rates.get(mid))
+                .divide(BigDecimal.valueOf(2), java.math.RoundingMode.HALF_UP);
     }
 }

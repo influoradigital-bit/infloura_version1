@@ -1502,6 +1502,40 @@ export interface DeliverableDetail {
   canRequestRevision: boolean;
 }
 
+/**
+ * Deliverable-level brand-safety advisory review — Brand Surface Audit fix #3
+ * (wiki/reports/brand-feature-audit.md item 3). Field-for-field CONFIRMED
+ * against Vikram's real `DeliverableSafetyDtos.java` by Priya's contract
+ * reconciliation (wiki/build/brand-fixes-priya-review.md — verdict/status
+ * enum casing exact, `SafetyCheck{id,label,status,detail}` exact,
+ * `score`/`computedAt` nullable+omitted on NON_NULL, both already optional
+ * here so their absence is valid) and red-teamed by Kabir
+ * (wiki/build/brand-fixes-kabir-review.md — no cross-party leak, no IDOR,
+ * verdict is server-computed and cannot be steered by model output). `detail`
+ * IS model-generated free text about the deliverable's own caption (Kabir F1)
+ * — render it as plain text only, never `dangerouslySetInnerHTML`
+ * (Kabir F2; see DeliverableSafetyReviewCard).
+ */
+export type DeliverableSafetyVerdict = 'PASS' | 'REVIEW' | 'FAIL';
+export type DeliverableSafetyCheckStatus = 'PASS' | 'FAIL' | 'WARNING';
+
+export interface DeliverableSafetyCheck {
+  id: string;
+  label: string;
+  status: DeliverableSafetyCheckStatus;
+  /** Optional — human-readable rationale, if the backend's classifier returns one. */
+  detail?: string;
+}
+
+export interface DeliverableSafetyReview {
+  overallVerdict: DeliverableSafetyVerdict;
+  checks: DeliverableSafetyCheck[];
+  /** Optional — 0-100; not confirmed whether the backend reuses CreatorScoresResponse.brandSafetyScore's scale. */
+  score?: number | null;
+  /** Optional — set when the classifier hasn't run yet for this deliverable version (e.g. async job pending). */
+  computedAt?: string | null;
+}
+
 export const deliverables = {
   /** GET /deals/:dealId/deliverables */
   list: (role: Role, dealId: string) =>
@@ -1559,6 +1593,43 @@ export const deliverables = {
           body: { feedback },
         })
       : mockOr({ status: 'REVISION_REQUESTED' as DeliverableStatus }),
+
+  /**
+   * GET /deliverables/:id/safety-review — Brand Surface Audit fix #3
+   * (wiki/reports/brand-feature-audit.md item 3: "No code path scores
+   * submitted deliverable content"). Route + shape CONFIRMED against
+   * Vikram's real `DeliverableSafetyDtos.java` / `BrandDeliverableController.java`
+   * by Priya's contract reconciliation (wiki/build/brand-fixes-priya-review.md
+   * §"#3 DeliverableSafetyReview — contract CLEAN, PASS") — exact route,
+   * exact verdict/status enum casing, exact field names. Advisory only — the
+   * FE never blocks approve/reject on this (see DeliverableSafetyReviewCard;
+   * confirmed independently by Kabir's red-team pass, invariant 4).
+   */
+  getSafetyReview: (id: string): Promise<DeliverableSafetyReview> =>
+    isLive()
+      ? http.request<DeliverableSafetyReview>('GET', `/deliverables/${id}/safety-review`)
+      : mockOr<DeliverableSafetyReview>({
+          overallVerdict: 'PASS',
+          // Mock ids/labels mirror the real, fixed 10-category GARM set
+          // (app/tools/schemas.py::GARM_CATEGORIES, labeled in
+          // DeliverableSafetyReviewService.buildCategoryLabels) — the earlier
+          // 3-id illustrative mock (disclosure/brand_mention/garm_risk) didn't
+          // match what the live service actually returns (Priya's review, nit).
+          checks: [
+            { id: 'adult_explicit_sexual_content', label: 'Adult / explicit sexual content', status: 'PASS' },
+            { id: 'arms_ammunition', label: 'Arms & ammunition', status: 'PASS' },
+            { id: 'crime_harmful_acts_to_individuals', label: 'Crime / harmful acts to individuals', status: 'PASS' },
+            { id: 'death_injury_military_conflict', label: 'Death, injury & military conflict', status: 'PASS' },
+            { id: 'hate_speech_acts_of_aggression', label: 'Hate speech & acts of aggression', status: 'PASS' },
+            { id: 'illegal_drugs_tobacco_alcohol', label: 'Illegal drugs, tobacco & alcohol', status: 'PASS' },
+            { id: 'obscenity_profanity', label: 'Obscenity & profanity', status: 'PASS' },
+            { id: 'spam_or_harmful_content', label: 'Spam or harmful content', status: 'PASS' },
+            { id: 'terrorism', label: 'Terrorism', status: 'PASS' },
+            { id: 'debated_sensitive_social_issues', label: 'Debated sensitive social issues', status: 'PASS' },
+          ],
+          score: 96,
+          computedAt: new Date().toISOString(),
+        }),
 };
 
 // ---------------------------------------------------------------------------
@@ -2601,13 +2672,34 @@ export const creatorAnalytics = {
 // Content performance — AnalyticsController @ /analytics/creators/:id/media
 // ---------------------------------------------------------------------------
 
-/** Per-post row returned by GET /analytics/creators/:creatorId/media. */
+/**
+ * Per-post row returned by GET /analytics/creators/:creatorId/media.
+ * Brand Surface Audit fix #4 (wiki/reports/brand-feature-audit.md item 4):
+ * the route didn't exist on AnalyticsController as of the audit; Vikram is
+ * adding it. This shape is what ContentPerformancePanel actually renders
+ * (mediaType/postedAt for the row header, reach/impressions/engagementRate
+ * for the three stat columns) — treat every field here as the FE's required
+ * minimum. Confirm against the real response once
+ * wiki/build/brand-fixes-backend.md documents it (not written as of this
+ * pass); if the backend adds extra fields, they're additive and don't need a
+ * type change here, but if any of these six are missing/renamed the panel
+ * needs an update.
+ */
 export interface ContentPerformanceItem {
   mediaId: string;
   mediaType: string;
   postedAt: string;
-  reach: number;
-  impressions: number;
+  /**
+   * Nullable on the wire — `AnalyticsDtos.ContentPerformanceResponse` is
+   * `@JsonInclude(NON_NULL)`, so when Meta didn't report reach for a post the
+   * key is OMITTED entirely (arrives as `undefined`), never sent as JSON
+   * `null`. Typed `| null` so the `?? null`/`== null` consumers in
+   * ContentPerformancePanel treat "omitted" and "explicit null" the same way
+   * (Priya's brand-fixes review, fix #4).
+   */
+  reach: number | null;
+  /** Same NON_NULL-omission behavior as `reach` — see its doc comment. */
+  impressions: number | null;
   engagementRate: number | null;
 }
 

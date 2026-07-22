@@ -141,14 +141,16 @@ class ToolCallValidatorTest {
     }
 
     @Test
-    @DisplayName("Exactly 5 tools in whitelist, no more")
-    void testExactlyFiveToolsInWhitelist() {
-        // The enum should have exactly 5 values
-        assertEquals(5, MeeraToolName.values().length,
-                "MeeraToolName should have exactly 5 tools (the whitelist). " +
-                "Adding a 6th tool requires explicit security review and matrix update.");
+    @DisplayName("Exactly 6 tools in whitelist, no more (5 original + Phase 2's get_campaign_performance)")
+    void testExactlySixToolsInWhitelist() {
+        // Phase 2 item 2.2 (Meera: Label-to-Moat build plan §2.2, Priya+Ash design sign-off) added
+        // get_campaign_performance as the 6th whitelisted tool — the first addition since the
+        // original 06-MEERA-PERMISSIONS-MATRIX.md 5. The enum should have exactly 6 values.
+        assertEquals(6, MeeraToolName.values().length,
+                "MeeraToolName should have exactly 6 tools (the whitelist). " +
+                "Adding a 7th tool requires explicit security review and matrix update.");
 
-        // All 5 should have valid tiers
+        // All 6 should have valid tiers
         for (MeeraToolName tool : MeeraToolName.values()) {
             MeeraToolTier tier = validator.tierOf(tool);
             assertNotNull(tier, "Tool " + tool + " must have a tier mapping");

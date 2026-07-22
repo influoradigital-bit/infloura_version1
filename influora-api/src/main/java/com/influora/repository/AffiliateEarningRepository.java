@@ -37,6 +37,15 @@ public interface AffiliateEarningRepository extends JpaRepository<AffiliateEarni
     /** Workspace-scoped earnings history read (e.g. a future brand-facing view) -- direct column, no join needed. */
     List<AffiliateEarning> findByWorkspaceIdAndCreatorId(String workspaceId, String creatorId);
 
+    /**
+     * Campaign-scoped earnings in one status -- Phase 2 item 2.2's {@code get_campaign_performance}
+     * tool sums {@link AffiliateEarning.Status#SETTLED} rows here for {@code
+     * settledCommissionInr}, mirroring the SETTLED-only discipline the class javadoc already
+     * documents for the settlement machine (PENDING/FAILED are not-yet-paid, never counted as
+     * realized spend).
+     */
+    List<AffiliateEarning> findByCampaignIdAndStatus(String campaignId, AffiliateEarning.Status status);
+
     /** Creator-scoped earnings history (V-GA-7) — newest first for the creator dashboard. */
     List<AffiliateEarning> findByCreatorIdOrderByCreatedAtDesc(String creatorId);
 

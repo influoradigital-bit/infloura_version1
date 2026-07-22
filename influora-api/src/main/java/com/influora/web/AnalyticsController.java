@@ -4,10 +4,12 @@ import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.analytics.AnalyticsService;
+import com.influora.web.dto.analytics.AnalyticsDtos.ContentPerformanceResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorMetricsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorScoresResponse;
 import java.time.Instant;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -84,6 +86,23 @@ public class AnalyticsController {
             @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String creatorId) {
         return ResponseEntity.ok(
                 ApiResponse.ok(analyticsService.getCreatorDemographics(principal, creatorId)));
+    }
+
+    /**
+     * [Fix: brand-feature-audit.md #4] Brand-facing per-post content performance. The FE
+     * ({@code src/lib/api.ts} {@code contentPerformance.list}, consumed by
+     * {@code useContentPerformance.ts}) has always called this exact path — there was simply no
+     * matching route here (only {@code /creator/analytics/me/media}, self-scoped), so every brand
+     * call 404'd. Same authorization gate as {@link #getMetrics}/{@link #getScores}/{@link
+     * #getDemographics}: {@code creatorId} is routed through {@code
+     * MetricsAuthorizationService.resolveAuthorizedCreatorProfileId} inside {@link
+     * AnalyticsService#getContentPerformance} before any {@code MediaMetric} row is read.
+     */
+    @GetMapping("/{creatorId}/media")
+    public ResponseEntity<ApiResponse<List<ContentPerformanceResponse>>> getContentPerformance(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String creatorId) {
+        return ResponseEntity.ok(
+                ApiResponse.ok(analyticsService.getContentPerformance(principal, creatorId)));
     }
 
     private static Instant parseInstant(String value, String paramName) {

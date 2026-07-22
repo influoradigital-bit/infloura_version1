@@ -3,6 +3,7 @@ package com.influora.web.dto.meera;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -58,6 +59,59 @@ public final class MeeraContextDtos {
             @JsonProperty("mode") String mode, @JsonProperty("credits_remaining") int creditsRemaining) {}
 
     /**
+     * One line of the outcome digest's {@code campaign_outcomes[]} (Phase 2, item 2.1 — "Meera:
+     * Label to Moat" build plan). Every numeric field here is server-derived from an authoritative
+     * record — SR-1 (no self-reported trust): {@code spendInr}/{@code funded} come exclusively
+     * from {@code EscrowHold.status = RELEASED} (never the {@code FUNDED_STATUSES} campaign-status
+     * proxy {@code MeeraContextService} uses for the Phase-1 {@code past_campaign_summary} field),
+     * {@code verifiedReach}/{@code reachSource} come exclusively from {@code DeliverableMetric}
+     * rows filtered to {@code source = PLATFORM_VERIFIED} (self-reported numbers are omitted, not
+     * flagged, in v1 per Priya/Ash's ruling on Vikram's design open question 1), and {@code
+     * attributedRevenueInr} sums real {@code UtmCampaign.revenueAttributed} rows. {@code type} is
+     * the only free-text-ish field (brand-authored via campaign_type/template) and is {@code
+     * _safe()}-wrapped on the Python side before it reaches a prompt (B2 fix).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record CampaignOutcomeEntry(
+            @JsonProperty("type") String type,
+            @JsonProperty("creator_count") int creatorCount,
+            @JsonProperty("spend_inr") BigDecimal spendInr,
+            @JsonProperty("funded") boolean funded,
+            @JsonProperty("verified_reach") Long verifiedReach,
+            @JsonProperty("reach_source") String reachSource,
+            @JsonProperty("attributed_revenue_inr") BigDecimal attributedRevenueInr) {}
+
+    /**
+     * Platform-wide (cross-tenant) real-rate aggregate for the requesting brand's own niche —
+     * {@code niche_rate_band} in the outcome digest. Aggregate-only: no per-counterparty row ever
+     * leaves {@code BrandContextAssembler#buildRateBand}, only this min/median/max + the two
+     * k-anonymity sample-size counts (Kabir's mandatory Phase-2 gate: n&gt;=5 on BOTH {@code
+     * sampleSize} (distinct creators/counterparties) and {@code workspaceSampleSize} (distinct
+     * workspaces), else the whole object is {@code null} — never a partial/low-n band).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record RateBand(
+            @JsonProperty("min") BigDecimal min,
+            @JsonProperty("median") BigDecimal median,
+            @JsonProperty("max") BigDecimal max,
+            @JsonProperty("currency") String currency,
+            @JsonProperty("niche") String niche,
+            @JsonProperty("sample_size") int sampleSize,
+            @JsonProperty("workspace_sample_size") int workspaceSampleSize) {}
+
+    /**
+     * The outcome digest — Phase 2 item 2.1, the moat's core payload. {@code nicheRateBand} is
+     * {@code null} (not a sparse "insufficient data" object) whenever the k-anonymity floor isn't
+     * met, matching this file's existing {@code @JsonInclude(NON_NULL)} convention; Python's
+     * {@code build_block_b} simply omits the corresponding line rather than rendering an
+     * empty-state string.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record OutcomeDigest(
+            @JsonProperty("campaign_outcomes") List<CampaignOutcomeEntry> campaignOutcomes,
+            @JsonProperty("niche_rate_band") RateBand nicheRateBand) {}
+
+    /**
      * The BRAND-audience allow-listed context payload (Priya A1's locked BRAND allow-list,
      * verbatim). {@code product_catalog} entries are pre-filtered to {@code name}/{@code price}/
      * {@code currency} only (A1: "productCatalogJson — name/price/currency only") — never the raw
@@ -78,5 +132,6 @@ public final class MeeraContextDtos {
             @JsonProperty("analysis_status") String analysisStatus,
             @JsonProperty("template_digest") List<TemplateDigestEntry> templateDigest,
             @JsonProperty("past_campaign_summary") List<PastCampaignEntry> pastCampaignSummary,
-            @JsonProperty("credit_state") CreditState creditState) {}
+            @JsonProperty("credit_state") CreditState creditState,
+            @JsonProperty("outcome_digest") OutcomeDigest outcomeDigest) {}
 }

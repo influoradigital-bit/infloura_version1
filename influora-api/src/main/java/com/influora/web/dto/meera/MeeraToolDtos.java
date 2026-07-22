@@ -79,6 +79,52 @@ public final class MeeraToolDtos {
     public record ConfirmLaunchResult(
             String campaignId, String status, int creatorsInvited, boolean replay) {}
 
+    /**
+     * One deliverable's platform-verified performance numbers — Phase 2 item 2.2's {@code
+     * get_campaign_performance} R-tier tool. PII-stripped by construction: no creator name/IG
+     * handle/caption/any free-text field, only an opaque {@code milestoneId} + numeric metrics,
+     * mirroring {@link CreatorSummary}'s precedent of exposing an opaque id but never a free-text
+     * creator-authored field (Kabir's mandatory Phase-2 gate — no per-deliverable PII leak).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record DeliverablePerformanceEntry(
+            String milestoneId, Long reach, Long impressions, Long engagements) {}
+
+    /**
+     * {@code get_campaign_performance}'s result — the exact contract Priya ruled in
+     * {@code wiki/build/phase2-priya-review.md} §2 Q2, reconciling Vikram's raw-aggregate design
+     * with Ananya's card fields: every derived number ({@code roi}/{@code responseRate}/{@code
+     * avgCreatorScore}) is SERVER-COMPUTED here, never left for the frontend or the model to
+     * compute from two provenanced numbers (that would manufacture an orphaned figure the card
+     * would present as fact — Ash's B1). {@code provenance} is a SINGLE top-level 2-state tag
+     * (never per-field) because v1 surfaces PLATFORM_VERIFIED numbers only — every number that
+     * reaches this DTO is, by construction, drawn from an authoritative server record (released
+     * escrow, platform-verified deliverable metrics, UTM revenue, settled affiliate earnings), so
+     * the tag is always {@code "PLATFORM_VERIFIED"} in v1 (Ash's Q1 ruling; {@code
+     * "SELF_REPORTED"} is reserved for a future fast-follow that surfaces flagged self-reported
+     * numbers, not used by this executor today). No {@code narrative} field — the one-sentence
+     * summary is Meera's own LLM turn in the chat bubble, grounded on these numbers, never a
+     * server string echoed back into this DTO (Priya/Ash Q2).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record GetCampaignPerformanceResult(
+            String campaignId,
+            long creatorCount,
+            BigDecimal spendInr,
+            Long verifiedReach,
+            BigDecimal attributedRevenueInr,
+            BigDecimal settledCommissionInr,
+            // D1 (Priya impl-review): roi is null for zero-spend/no-revenue campaigns (a common
+            // early-state). It MUST serialize as explicit JSON `null`, not be omitted by the
+            // record-level NON_NULL, or the frontend guard (meera-api.ts `roi === null ||
+            // typeof === 'number'`) fails on an absent field and StagePerformance spins forever.
+            @JsonInclude(JsonInclude.Include.ALWAYS)
+            BigDecimal roi,
+            Double responseRate,
+            Double avgCreatorScore,
+            String provenance,
+            List<DeliverablePerformanceEntry> deliverables) {}
+
     /** Generic error body for a tool-call rejected by {@code ToolCallValidator} before execution. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ToolRejection(String toolName, String reasonCode, String message) {}

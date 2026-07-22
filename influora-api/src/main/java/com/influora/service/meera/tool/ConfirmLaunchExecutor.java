@@ -10,6 +10,7 @@ import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.MeeraToolCall;
 import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.EscrowStatus;
+import com.influora.domain.enums.MeeraInteractionEventType;
 import com.influora.domain.enums.MeeraToolName;
 import com.influora.domain.enums.ToolCallStatus;
 import com.influora.domain.enums.ToolResultRefType;
@@ -23,6 +24,7 @@ import com.influora.service.AuditLogService;
 import com.influora.service.BrandCampaignFeeService;
 import com.influora.service.IdempotencyService;
 import com.influora.service.meera.AICreditService;
+import com.influora.service.meera.MeeraInteractionLogService;
 import com.influora.web.dto.meera.MeeraToolDtos.ConfirmLaunchResult;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -133,6 +135,7 @@ public class ConfirmLaunchExecutor {
     private final AICreditService aiCreditService;
     private final IdempotencyService idempotencyService;
     private final BrandCampaignFeeService brandCampaignFeeService;
+    private final MeeraInteractionLogService meeraInteractionLogService;
     private final ConfirmLaunchExecutor self;
 
     public ConfirmLaunchExecutor(
@@ -146,6 +149,7 @@ public class ConfirmLaunchExecutor {
             AICreditService aiCreditService,
             IdempotencyService idempotencyService,
             BrandCampaignFeeService brandCampaignFeeService,
+            MeeraInteractionLogService meeraInteractionLogService,
             @Lazy ConfirmLaunchExecutor self) {
         this.campaignIntentRepository = campaignIntentRepository;
         this.campaignRepository = campaignRepository;
@@ -157,6 +161,7 @@ public class ConfirmLaunchExecutor {
         this.aiCreditService = aiCreditService;
         this.idempotencyService = idempotencyService;
         this.brandCampaignFeeService = brandCampaignFeeService;
+        this.meeraInteractionLogService = meeraInteractionLogService;
         this.self = self;
     }
 
@@ -333,6 +338,20 @@ public class ConfirmLaunchExecutor {
         campaign.setStatus(CampaignStatus.ACTIVE);
         brandCampaignFeeService.chargeOnPublish(campaign, workspaceId);
         campaignRepository.save(campaign);
+
+        // Phase 2 item 2.3 — flywheel logging, at the REAL DRAFT/PAUSED/PENDING_APPROVAL -> ACTIVE
+        // transition (fee already charged, status already persisted above) — not in
+        // CreateCampaignExecutor, which only ever creates a DRAFT (build-design §0.6 write-point
+        // correction). Fire-and-forget; never blocks or fails the launch.
+        meeraInteractionLogService.record(
+                workspaceId,
+                conversationId,
+                MeeraInteractionEventType.DRAFT_FUNDED,
+                "confirm_launch",
+                null,
+                campaign.getId(),
+                null,
+                null);
 
         // --- Invite: select up to creator_count discoverable creators not already on this
         // campaign and write real Collaboration rows (never a hard-coded zero). ---

@@ -4,7 +4,7 @@
  */
 import { MEERA_STAGE_TITLES, MEERA_STAGE_SUBTITLES } from '@/data/meera-copy'
 
-export type MeeraStageId = 'snapshot' | 'recommend' | 'matching' | 'funding' | 'live'
+export type MeeraStageId = 'snapshot' | 'recommend' | 'matching' | 'funding' | 'live' | 'performance'
 
 export type MeeraFunctionCall =
   | 'analyze_site'
@@ -13,6 +13,17 @@ export type MeeraFunctionCall =
   | 'create_campaign'
   | 'request_payment'
   | 'confirm_launch'
+  // LOCKED wire name (Priya F1/F5, Ash F5, phase2-priya-review.md §2 Q5 /
+  // §4): must match `schemas.py::GET_CAMPAIGN_PERFORMANCE` and
+  // `MeeraToolName.java`'s `get_campaign_performance` byte-for-byte — the
+  // plan's `campaign_performance` shorthand is NOT the wire name. A
+  // mismatch silently drops the tool_result entirely at
+  // `MeeraChatPanel.tsx`'s `onToolResult` early-return, not just skips the
+  // stage advance. The Python<->Java pair is CI-covered
+  // (.github/workflows/schema-check.yml); this frontend union member is NOT
+  // — there is no automated check that it stays in lockstep, so don't
+  // rename this without re-confirming both backend sides first.
+  | 'get_campaign_performance'
 
 export interface StageConfigEntry {
   id: MeeraStageId
@@ -58,9 +69,16 @@ export const STAGE_CONFIG: Record<MeeraStageId, StageConfigEntry> = {
     subtitle: MEERA_STAGE_SUBTITLES.live,
     trigger: 'confirm_launch',
   },
+  performance: {
+    id: 'performance',
+    order: 6,
+    title: MEERA_STAGE_TITLES.performance,
+    subtitle: MEERA_STAGE_SUBTITLES.performance,
+    trigger: 'get_campaign_performance',
+  },
 }
 
-export const STAGE_ORDER: MeeraStageId[] = ['snapshot', 'recommend', 'matching', 'funding', 'live']
+export const STAGE_ORDER: MeeraStageId[] = ['snapshot', 'recommend', 'matching', 'funding', 'live', 'performance']
 
 export function nextStage(current: MeeraStageId): MeeraStageId | null {
   const idx = STAGE_ORDER.indexOf(current)

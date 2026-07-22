@@ -235,6 +235,61 @@ export interface ConfirmLaunchPayload {
   replay: boolean;
 }
 
+/**
+ * `MeeraToolDtos.GetCampaignPerformanceResult` — locked contract per
+ * `wiki/build/phase2-priya-review.md` §2 Q2 (Ash's F1/F3 concur,
+ * `wiki/build/phase2-ash-review.md`). Every number here is server-computed;
+ * this DTO is the ONLY source of truth for the performance card —
+ * `StagePerformance` never derives `roi` from `attributedRevenueInr /
+ * spendInr` itself (SR-1: no frontend arithmetic over money-adjacent
+ * numbers, per Ash's F1/B1 ruling).
+ *
+ * `provenance` is a SINGLE top-level 2-state tag for the whole result, not
+ * per-field (`roiSource`/`responseRateSource`/etc. were dropped at design
+ * review — Priya Q1/Ash Q1). v1 always emits `PLATFORM_VERIFIED` since only
+ * verified numbers are ever surfaced; `SELF_REPORTED` is reserved for a
+ * future fast-follow.
+ *
+ * `responseRate`/`avgCreatorScore` are typed OPTIONAL: as of this writing
+ * Vikram's backend design doc (`wiki/build/phase2-backend-design.md`) had
+ * not landed an implementation changes-log entry, so per Priya's B1
+ * nice-to-have these two may be cut from v1 rather than shipped. `roi` +
+ * `provenance` are the guaranteed core (Ash B1: "ROI must be server-computed
+ * ... responseRate/avgCreatorScore must each get a defined server
+ * derivation + source tag OR be cut for v1"). Re-verify field names against
+ * the real Java DTO once Vikram's changes log confirms — do not widen this
+ * type on a guess.
+ */
+export interface CampaignPerformancePayload {
+  campaignId: string;
+  creatorCount: number;
+  spendInr: number;
+  /** Nullable on the DTO — zero PLATFORM_VERIFIED deliverable-metric rows. */
+  verifiedReach?: number;
+  attributedRevenueInr: number;
+  settledCommissionInr: number;
+  /**
+   * Server-computed ratio (1.4 = 140% return; Priya Q2: ratio, not a
+   * percentage or INR delta). `null` when spend is zero or revenue is
+   * unavailable — render "not enough data yet", never fall back to a
+   * client-computed guess.
+   */
+  roi: number | null;
+  /** 0..1 (Priya Q2). Optional — may be absent in v1; guard every read. */
+  responseRate?: number;
+  /** 0..100, same scale as `CreatorScoresResponse` (Priya Q2). Optional — may be absent in v1; guard every read. */
+  avgCreatorScore?: number;
+  /** Single top-level tag for the whole result — see doc comment above. */
+  provenance: 'PLATFORM_VERIFIED' | 'SELF_REPORTED';
+  /** PII-stripped by construction (guardrail 6) — opaque milestone id + numeric metrics only, no creator name/handle. */
+  deliverables: Array<{
+    milestoneId: string;
+    reach?: number;
+    impressions?: number;
+    engagements?: number;
+  }>;
+}
+
 // ---------------------------------------------------------------------------
 // Tool-result payload type guards
 // ----------------------------------------------------------------------------
@@ -272,6 +327,22 @@ export function isConfirmLaunchPayload(data: unknown): data is ConfirmLaunchPayl
   if (!data || typeof data !== 'object') return false;
   const d = data as Partial<ConfirmLaunchPayload>;
   return typeof d.campaignId === 'string' && typeof d.status === 'string';
+}
+
+/**
+ * `responseRate`/`avgCreatorScore` are deliberately NOT checked here — they
+ * are optional on `CampaignPerformancePayload` (see doc comment) and may be
+ * absent in v1. `roi` accepts `null` (zero-spend/no-revenue case) so the
+ * guard only checks its type, not truthiness.
+ */
+export function isCampaignPerformancePayload(data: unknown): data is CampaignPerformancePayload {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Partial<CampaignPerformancePayload>;
+  return (
+    typeof d.campaignId === 'string' &&
+    (d.roi === null || typeof d.roi === 'number') &&
+    (d.provenance === 'PLATFORM_VERIFIED' || d.provenance === 'SELF_REPORTED')
+  );
 }
 
 /**

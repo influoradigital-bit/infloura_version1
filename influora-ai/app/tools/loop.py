@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.clients.spring import SpringCallError, SpringInternalClient, idempotency_key_for
+from app.config import PROMPT_VERSION
 from app.providers.claude import ClaudeProvider, ClaudeStreamEvent
 from app.routes.analyze_site import perform_site_analysis
 from app.tools.schemas import (
@@ -224,6 +225,29 @@ async def run_tool_loop(
                             "content": _safe_json({"success": True}),
                         }
                     )
+                    # Phase 2 item 2.3 -- flywheel logging (Meera: Label-to-Moat build plan §2.3,
+                    # Priya's Q3 ruling). present_options never reaches Spring via the normal
+                    # tool-forward path (it's LOCAL), so this is the one dedicated write-back.
+                    # Best-effort, never breaks the turn -- same try/except discipline as the
+                    # analyze_site_result write-back below.
+                    try:
+                        await spring.log_interaction(
+                            workspace_id=ctx.workspace_id,
+                            event_type="OPTIONS_PRESENTED",
+                            session_id=None,
+                            tool_name=PRESENT_OPTIONS,
+                            campaign_id=None,
+                            prompt_version=PROMPT_VERSION,
+                            onbehalf_jwt=ctx.onbehalf_jwt,
+                        )
+                    except Exception as exc:  # flywheel logging is best-effort, never breaks the turn
+                        logger.warning(
+                            "interaction-log write-back failed for workspace_id=%s"
+                            " event=OPTIONS_PRESENTED: %s: %s",
+                            ctx.workspace_id,
+                            type(exc).__name__,
+                            exc,
+                        )
                     yield LoopEvent(
                         type="tool_result",
                         tool_name=tool_name,

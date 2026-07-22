@@ -68,6 +68,7 @@ export const MEERA_STAGE_TITLES: Record<string, string> = {
   matching: 'Matching creators',
   funding: 'Fund the campaign',
   live: 'Campaign is live',
+  performance: 'How it performed',
 }
 
 export const MEERA_STAGE_SUBTITLES: Record<string, string> = {
@@ -76,6 +77,7 @@ export const MEERA_STAGE_SUBTITLES: Record<string, string> = {
   matching: 'Verified creators only — Instagram-checked stats',
   funding: 'Money moves only when you approve',
   live: 'Watch invites turn into acceptances',
+  performance: 'Verified numbers, straight from the platform',
 }
 
 /**
@@ -139,6 +141,17 @@ export const MEERA_STAT_LABELS = {
   creators: 'Creators matched',
   invitesSent: 'Invites sent',
   slotsAccepted: 'Slots accepted',
+  roi: 'Return on spend',
+  responseRate: 'Response rate',
+  avgCreatorScore: 'Avg CreatorScore',
+}
+
+/** Stage 6 — performance card copy (2.4). Numbers only on the card; the
+ * one-sentence narrative is Meera's own chat-bubble turn, never duplicated
+ * here (Priya/Ash Q2 ruling — card=numbers, bubble=qualitative voice). */
+export const MEERA_PERFORMANCE_COPY = {
+  roiUnavailable: 'Not enough data yet',
+  seeFullBreakdown: 'See full breakdown',
 }
 
 /** Payout ledger (T9) */

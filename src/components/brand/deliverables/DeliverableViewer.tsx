@@ -9,6 +9,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { useDeliverableDetail } from '@/hooks/brand/useDeliverableDetail';
+import { useDeliverableSafetyReview } from '@/hooks/brand/useDeliverableSafetyReview';
+import { DeliverableSafetyReviewCard } from './DeliverableSafetyReviewCard';
 import { api, ApiError } from '@/lib/api';
 import type { DeliverableFile, DeliverableStatus } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
@@ -162,6 +164,7 @@ export function DeliverableViewer({
 }: DeliverableViewerProps) {
   const { toast } = useToast();
   const { deliverable, isLoading, error, refetch } = useDeliverableDetail(deliverableId);
+  const { review: safetyReview, loading: safetyReviewLoading } = useDeliverableSafetyReview(deliverableId);
   const [reviseModalOpen, setReviseModalOpen] = React.useState(false);
   const [isApproving, setIsApproving] = React.useState(false);
   const [isRevising, setIsRevising] = React.useState(false);
@@ -341,6 +344,9 @@ export function DeliverableViewer({
                 </CardContent>
               </Card>
             )}
+
+            {/* Brand-safety advisory review (Brand Surface Audit fix #3) — never gates the actions below */}
+            <DeliverableSafetyReviewCard review={safetyReview} loading={safetyReviewLoading} />
 
             {/* Action Buttons */}
             {(deliverable.canApprove || deliverable.canRequestRevision) && (

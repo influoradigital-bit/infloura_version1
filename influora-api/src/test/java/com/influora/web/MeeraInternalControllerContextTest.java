@@ -15,6 +15,7 @@ import com.influora.service.meera.MeeraSessionService;
 import com.influora.service.meera.tool.CalculateBudgetExecutor;
 import com.influora.service.meera.tool.ConfirmLaunchExecutor;
 import com.influora.service.meera.tool.CreateCampaignExecutor;
+import com.influora.service.meera.tool.GetCampaignPerformanceExecutor;
 import com.influora.service.meera.tool.RequestPaymentExecutor;
 import com.influora.service.meera.tool.ShowCreatorsExecutor;
 import com.influora.service.meera.tool.ToolCallValidator;
@@ -50,9 +51,11 @@ class MeeraInternalControllerContextTest {
     @Mock private CreateCampaignExecutor createCampaignExecutor;
     @Mock private RequestPaymentExecutor requestPaymentExecutor;
     @Mock private ConfirmLaunchExecutor confirmLaunchExecutor;
+    @Mock private GetCampaignPerformanceExecutor getCampaignPerformanceExecutor;
     @Mock private MeeraSessionService sessionService;
     @Mock private AnalyzeSiteTriggerService analyzeSiteTriggerService;
     @Mock private MeeraContextService contextService;
+    @Mock private com.influora.service.meera.MeeraInteractionLogService meeraInteractionLogService;
 
     private MeeraInternalController controller;
 
@@ -67,9 +70,11 @@ class MeeraInternalControllerContextTest {
                         createCampaignExecutor,
                         requestPaymentExecutor,
                         confirmLaunchExecutor,
+                        getCampaignPerformanceExecutor,
                         sessionService,
                         analyzeSiteTriggerService,
-                        contextService);
+                        contextService,
+                        meeraInteractionLogService);
     }
 
     @Test
@@ -92,7 +97,8 @@ class MeeraInternalControllerContextTest {
                         "READY",
                         List.of(),
                         List.of(),
-                        new CreditState("metered", 10));
+                        new CreditState("metered", 10),
+                        null);
         when(contextService.assemble(WORKSPACE_ID, "BRAND")).thenReturn(expected);
 
         var response = controller.context(ON_BEHALF_JWT, new ContextRequest(WORKSPACE_ID, "BRAND"));

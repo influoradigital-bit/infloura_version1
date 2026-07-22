@@ -196,7 +196,17 @@ public final class MoneyDtos {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ContractPdfDownloadResponse(String downloadUrl, Instant expiresAt) {}
 
-    public record ContractSignRequest(@NotBlank String role) {}
+    /**
+     * `role` is now OPTIONAL (brand-feature-audit.md #2 fix). The FE's real call path
+     * (`api.ts:1466` -> `signContract` -> {@code POST /contracts/:id/sign}) sends only
+     * {@code {name, agreedAt}} -- no `role` -- for a brand principal self-signing their own
+     * contract. Requiring `role` here 400'd every brand signature. {@link
+     * com.influora.web.ContractController#sign} now server-derives the default from the
+     * authenticated principal's own userType and only falls back to this field for the
+     * (currently FE-unused) elevated-member relay path documented on {@link
+     * com.influora.service.ContractService#recordSignature}.
+     */
+    public record ContractSignRequest(String role) {}
 
     // ---------------------------------------------------------------------
     // Payouts (Razorpay)

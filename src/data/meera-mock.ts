@@ -90,6 +90,23 @@ export const MOCK_LIVE_STATS = {
   slotsTotal: 15,
 }
 
+/** Stage 6 mock — mirrors the locked `GetCampaignPerformanceResult` shape
+ * (roi ratio, responseRate 0..1, avgCreatorScore 0..100) so the `!live`
+ * branch of `StagePerformance` exercises the same fields the real payload
+ * carries. No narrative string here — the narrative is Meera's own
+ * chat-bubble line (`MEERA_CONVERSATION_SCRIPT`), never a card field. */
+export interface MockCampaignPerformance {
+  roi: number
+  responseRate: number
+  avgCreatorScore: number
+}
+
+export const MOCK_CAMPAIGN_PERFORMANCE: MockCampaignPerformance = {
+  roi: 2.4,
+  responseRate: 0.72,
+  avgCreatorScore: 84,
+}
+
 /**
  * Turn-based mock conversation engine for the left panel.
  *

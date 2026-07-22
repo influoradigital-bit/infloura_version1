@@ -9,10 +9,14 @@ import com.influora.common.ApiResponse;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.BrandDeliverableService;
+import com.influora.service.DeliverableSafetyReviewService;
 import com.influora.web.dto.deliverable.BrandDeliverableDtos.DeliverableDetailResponse;
 import com.influora.web.dto.deliverable.BrandDeliverableDtos.DeliverableFileDetail;
 import com.influora.web.dto.deliverable.BrandDeliverableDtos.ReviewResponse;
 import com.influora.web.dto.deliverable.BrandDeliverableDtos.ReviseRequest;
+import com.influora.web.dto.deliverable.DeliverableSafetyDtos.DeliverableSafetyReviewResponse;
+import com.influora.web.dto.deliverable.DeliverableSafetyDtos.SafetyVerdict;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -29,13 +33,15 @@ class BrandDeliverableControllerTest {
     private static final String DELIVERABLE_ID = "01HDELIVERABLE1234567";
 
     @Mock private BrandDeliverableService brandDeliverableService;
+    @Mock private DeliverableSafetyReviewService deliverableSafetyReviewService;
     @Mock private AuthPrincipal principal;
 
     private BrandDeliverableController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new BrandDeliverableController(brandDeliverableService);
+        controller =
+                new BrandDeliverableController(brandDeliverableService, deliverableSafetyReviewService);
     }
 
     @Test
@@ -103,5 +109,22 @@ class BrandDeliverableControllerTest {
                 "https://r2.example.com/signed?sig=abc123",
                 response.getBody().data().files().get(0).url());
         verify(brandDeliverableService).getDetail(principal, DELIVERABLE_ID);
+    }
+
+    @Test
+    @DisplayName("GET /deliverables/{id}/safety-review delegates to DeliverableSafetyReviewService (brand-feature-audit.md fix #3)")
+    void testGetSafetyReview() {
+        DeliverableSafetyReviewResponse review =
+                new DeliverableSafetyReviewResponse(
+                        SafetyVerdict.PASS, List.of(), new java.math.BigDecimal("98.00"), Instant.now());
+        when(deliverableSafetyReviewService.getReview(eq(principal), eq(DELIVERABLE_ID)))
+                .thenReturn(review);
+
+        ResponseEntity<ApiResponse<DeliverableSafetyReviewResponse>> response =
+                controller.getSafetyReview(principal, DELIVERABLE_ID);
+
+        assertEquals(200, response.getStatusCode().value());
+        assertEquals(SafetyVerdict.PASS, response.getBody().data().overallVerdict());
+        verify(deliverableSafetyReviewService).getReview(principal, DELIVERABLE_ID);
     }
 }

@@ -2,14 +2,19 @@ package com.influora.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.analytics.AnalyticsService;
+import com.influora.web.dto.analytics.AnalyticsDtos.ContentPerformanceResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -83,5 +88,52 @@ class AnalyticsControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
         assertEquals(false, response.getBody().data().hasData());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // getContentPerformance — brand-feature-audit.md fix #4 (new /{creatorId}/media route)
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "getContentPerformance: authorized creator — delegates to AnalyticsService, returns 200"
+                    + " + rows as-is")
+    void testGetContentPerformanceReturnsServiceResponseWrappedInApiResponse() {
+        ContentPerformanceResponse row =
+                new ContentPerformanceResponse(
+                        "ig-media-1", "REEL", "https://instagram.com/p/abc123",
+                        5000L, 4000L, 200L, 150L, 20L, 10L, 5L, null, null,
+                        Instant.parse("2026-07-10T00:00:00Z"), new BigDecimal("5.00"));
+        when(analyticsService.getContentPerformance(principal, CREATOR_ID)).thenReturn(List.of(row));
+
+        ResponseEntity<ApiResponse<List<ContentPerformanceResponse>>> response =
+                controller.getContentPerformance(principal, CREATOR_ID);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(1, response.getBody().data().size());
+        assertEquals("ig-media-1", response.getBody().data().get(0).mediaId());
+        assertEquals(new BigDecimal("5.00"), response.getBody().data().get(0).engagementRate());
+        verify(analyticsService).getContentPerformance(principal, CREATOR_ID);
+    }
+
+    @Test
+    @DisplayName(
+            "getContentPerformance: foreign creator — the FORBIDDEN thrown by AnalyticsService's"
+                    + " authorization gate propagates untouched, controller adds no fallback data")
+    void testGetContentPerformancePropagatesForbiddenForForeignCreator() {
+        when(analyticsService.getContentPerformance(principal, CREATOR_ID))
+                .thenThrow(
+                        new ApiException(
+                                "FORBIDDEN",
+                                "This workspace is not authorized to view metrics for that creator",
+                                HttpStatus.FORBIDDEN));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> controller.getContentPerformance(principal, CREATOR_ID));
+
+        assertEquals("FORBIDDEN", ex.getCode());
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
     }
 }

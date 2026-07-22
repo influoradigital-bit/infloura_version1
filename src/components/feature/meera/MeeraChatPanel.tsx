@@ -91,12 +91,20 @@ const STAGE_TO_CALL: Record<string, MeeraFunctionCall> = {
 
 /**
  * Every tool name the LIVE Python stream can actually report via `tool_result`
- * — matches the 5-tool backend contract one-for-one (influora-ai/app/tools/
- * schemas.py:32-38: show_creators, calculate_budget, create_campaign,
- * request_payment, confirm_launch). `analyze_site` is NOT a real backend tool
- * — it only exists as a mock-mode stage trigger (STAGE_TO_CALL above) and must
- * never gate the live stream, or a live `create_campaign` tool_result would be
- * silently dropped here while a tool that can never fire stayed allow-listed.
+ * — matches the backend tool contract one-for-one (influora-ai/app/tools/
+ * schemas.py: show_creators, calculate_budget, create_campaign,
+ * request_payment, confirm_launch, get_campaign_performance). `analyze_site`
+ * is NOT a real backend tool — it only exists as a mock-mode stage trigger
+ * (STAGE_TO_CALL above) and must never gate the live stream, or a live
+ * `create_campaign` tool_result would be silently dropped here while a tool
+ * that can never fire stayed allow-listed.
+ *
+ * `get_campaign_performance` (2.4, phase2-frontend-design.md §5.3): this
+ * array IS the actual advancement gate — a name here that doesn't
+ * byte-for-byte match `schemas.py`/`MeeraToolName.java`'s wire name makes
+ * `onToolResult` below drop the tool_result entirely (see its early-return),
+ * not just skip the stage. See stage-config.ts's `MeeraFunctionCall` union
+ * for the full lockstep warning.
  */
 const MEERA_FUNCTION_CALLS: readonly MeeraFunctionCall[] = [
   'calculate_budget',
@@ -104,6 +112,7 @@ const MEERA_FUNCTION_CALLS: readonly MeeraFunctionCall[] = [
   'create_campaign',
   'request_payment',
   'confirm_launch',
+  'get_campaign_performance',
 ]
 
 function isMeeraFunctionCall(name: string): name is MeeraFunctionCall {

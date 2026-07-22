@@ -15,6 +15,7 @@ import com.influora.config.InternalServiceTokenProperties;
 import com.influora.config.JwksSigningKeyProperties;
 import com.influora.config.JwtProperties;
 import com.influora.config.MeeraChatAiProperties;
+import com.influora.config.MeeraInteractionLogRetentionProperties;
 import com.influora.config.MeeraStreamProperties;
 import com.influora.config.MetaApiProperties;
 import com.influora.config.PiiEncryptionProperties;
@@ -62,6 +63,11 @@ import org.springframework.scheduling.annotation.EnableScheduling;
     // CreatorSuggestionAiProperties — both are live-bean dependencies from day one.
     CreatorCopilotProperties.class,
     CreatorSuggestionAiProperties.class,
+    // meera_interaction_log retention purge (Priya's PARTIAL-2 hard gate,
+    // wiki/build/partials-resolution-plan.md; Kabir L1, wiki/build/phase2-kabir-security.md) —
+    // injected by @Component MeeraInteractionLogRetentionPurgeJob, so it must be registered here
+    // like every other properties class in this list.
+    MeeraInteractionLogRetentionProperties.class,
     // ---------------------------------------------------------------------
     // Everything below was @ConfigurationProperties but registered NOWHERE: no
     // @EnableConfigurationProperties entry, no @ConfigurationPropertiesScan, no

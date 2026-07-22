@@ -466,7 +466,7 @@ async def test_loop_iteration_cap_prevents_runaway_injected_loop():
 
 # ---------------------------------------------------------------------------
 # Schema-validator sanity: every tool named in the corpus attack strings that
-# ISN'T one of the real 5 tools must be rejected by is_known_tool, and every
+# ISN'T one of the real tools must be rejected by is_known_tool, and every
 # commit-tier (Forbidden without human-confirm framing) tool is correctly
 # classified so the loop's tier logic has correct inputs.
 # ---------------------------------------------------------------------------
@@ -480,16 +480,21 @@ def test_attacker_invented_tool_names_are_unknown(fake_name):
     assert is_known_tool(fake_name) is False
 
 
-def test_exactly_five_tools_exist_and_tiers_match_spec():
+def test_exactly_six_tools_exist_and_tiers_match_spec():
+    # Phase 2 item 2.2 (Meera: Label-to-Moat build plan §2.2) added
+    # get_campaign_performance as the 6th tool -- the first addition since the
+    # original 06-MEERA-PERMISSIONS-MATRIX.md 5.
     assert set(TOOL_NAMES) == {
         "show_creators",
         "calculate_budget",
         "create_campaign",
         "request_payment",
         "confirm_launch",
+        "get_campaign_performance",
     }
     assert is_money_tool("request_payment") is True
     assert is_money_tool("confirm_launch") is True
     assert is_money_tool("show_creators") is False
     assert is_money_tool("calculate_budget") is False
     assert is_money_tool("create_campaign") is False
+    assert is_money_tool("get_campaign_performance") is False

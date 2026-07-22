@@ -44,6 +44,7 @@ class BrandDeliverableServiceTest {
     @Mock private AuthPrincipal principal;
     @Mock private EscrowService escrowService;
     @Mock private CollaborationLifecycleService collaborationLifecycleService;
+    @Mock private com.influora.service.meera.MeeraInteractionLogService meeraInteractionLogService;
 
     private BrandDeliverableService service;
     private Workspace workspace;
@@ -57,7 +58,8 @@ class BrandDeliverableServiceTest {
                         r2StorageService,
                         r2Properties,
                         escrowService,
-                        collaborationLifecycleService);
+                        collaborationLifecycleService,
+                        meeraInteractionLogService);
         workspace = Workspace.newBrand(WORKSPACE_ID, "Acme Brand", "acme", "Fashion", "SMB");
     }
 

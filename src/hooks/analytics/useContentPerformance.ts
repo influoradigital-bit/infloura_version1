@@ -1,14 +1,26 @@
 /**
  * useContentPerformance - brand-facing per-post media performance
  * ----------------------------------------------------------------------------
- * Intended backend: GET /analytics/creators/{creatorId}/media — NOT YET
- * BUILT. Checked influora-api/src/main/java/com/influora/web/AnalyticsController.java
- * directly; only /metrics, /scores, /demographics exist. See the gap note
- * above `contentPerformance` in src/lib/api.ts.
+ * STALE-DOC FIX (Brand Surface Audit fix #4, wiki/reports/brand-feature-audit.md
+ * item 4): this comment used to claim `api.contentPerformance.list` "always
+ * rejects with a typed ApiError('NOT_IMPLEMENTED', ...)". That was already
+ * false — `contentPerformance.list` in src/lib/api.ts makes a real
+ * `GET /analytics/creators/{creatorId}/media` call via `http.request` in live
+ * mode (no NOT_IMPLEMENTED short-circuit exists there). The route itself
+ * isn't live on the backend yet either — `AnalyticsController` only exposes
+ * `/metrics`, `/scores`, `/demographics` today — so until Vikram ships it,
+ * this live call 404s. `http.request` doesn't special-case that into an
+ * `ApiError('NOT_IMPLEMENTED', ...)` (a 404 with no JSON envelope fails JSON
+ * parsing and surfaces as `ApiError('NETWORK_ERROR', ...)` instead), so the
+ * `notImplemented` branch below is dead until either the backend starts
+ * returning a real `NOT_IMPLEMENTED` envelope or the route ships for real.
+ * `ContentPerformanceItem` (src/lib/api.ts) is the FE's expected row shape —
+ * confirm it against Vikram's real response once wiki/build/brand-fixes-backend.md
+ * documents it; not yet written as of this pass.
  *
- * Same hook shape as the other analytics hooks. In live mode, `api.contentPerformance.list`
- * always rejects with a typed ApiError('NOT_IMPLEMENTED', ...) — this hook
- * surfaces that as `error` with the code preserved so the panel can render an
+ * Same hook shape as the other analytics hooks: `error` carries whatever
+ * `ApiError` the live call throws, with `notImplemented` set only for the
+ * (currently unreachable) `NOT_IMPLEMENTED` code so the panel can render an
  * explicit "API not yet available" banner instead of a generic failure.
  */
 

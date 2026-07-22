@@ -292,14 +292,42 @@ public class AnalyticsService {
     }
 
     /**
+     * Brand-facing per-post content performance (brand-feature-audit.md fix #4 — {@code
+     * AnalyticsController} had no {@code /{creatorId}/media} route at all; the FE's
+     * {@code contentPerformance.list} call 404'd on every brand). Same authorization shape as
+     * {@link #getCreatorMetrics}/{@link #getCreatorScores}/{@link #getCreatorDemographics}: resolve
+     * the caller's brand workspace, route {@code creatorId} through {@link
+     * MetricsAuthorizationService#resolveAuthorizedCreatorProfileId} BEFORE any {@link
+     * MediaMetricsRepository} read, then delegate to the same builder the creator-self route uses.
+     */
+    @Transactional(readOnly = true)
+    public List<ContentPerformanceResponse> getContentPerformance(
+            AuthPrincipal principal, String creatorId) {
+        String workspaceId = brandContext.requireBrandWorkspace(principal).getId();
+        String authorizedCreatorId =
+                metricsAuthorizationService.resolveAuthorizedCreatorProfileId(workspaceId, creatorId);
+        return buildContentPerformanceResponse(authorizedCreatorId);
+    }
+
+    /**
      * Creator-self per-post performance — see {@link #getCreatorMetricsForProfile} javadoc for why
-     * no brand-authorization gate applies here. Pulls the most recent {@link #CONTENT_PERFORMANCE_LOOKBACK}
-     * poll rows for the creator (across all posts) and keeps only the latest poll per distinct
-     * {@code mediaId} (rows arrive newest-first, so the first occurrence per media id wins) — never
-     * a fabricated aggregate, just the latest real snapshot per post.
+     * no brand-authorization gate applies here.
      */
     @Transactional(readOnly = true)
     public List<ContentPerformanceResponse> getContentPerformanceForProfile(String creatorProfileId) {
+        return buildContentPerformanceResponse(creatorProfileId);
+    }
+
+    /**
+     * Shared by both the brand-facing and creator-self content-performance reads. Pulls the most
+     * recent {@link #CONTENT_PERFORMANCE_LOOKBACK} poll rows for the creator (across all posts) and
+     * keeps only the latest poll per distinct {@code mediaId} (rows arrive newest-first, so the
+     * first occurrence per media id wins) — never a fabricated aggregate, just the latest real
+     * snapshot per post. {@code engagementRate} is derived per-row (see {@link
+     * ContentPerformanceResponse} javadoc); left {@code null} rather than guessed when {@code reach}
+     * is missing or zero.
+     */
+    private List<ContentPerformanceResponse> buildContentPerformanceResponse(String creatorProfileId) {
         List<MediaMetric> recent =
                 mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
                         creatorProfileId, PageRequest.of(0, CONTENT_PERFORMANCE_LOOKBACK));
@@ -325,8 +353,19 @@ public class AnalyticsService {
                                         m.getShares(),
                                         m.getVideoViews(),
                                         m.getAvgWatchTimeSeconds(),
-                                        m.getPostedAt()))
+                                        m.getPostedAt(),
+                                        engagementRate(m.getEngagement(), m.getReach())))
                 .toList();
+    }
+
+    /** {@code engagement / reach * 100}, rounded to 2dp; {@code null} when reach is absent/zero. */
+    private static BigDecimal engagementRate(Long engagement, Long reach) {
+        if (engagement == null || reach == null || reach <= 0) {
+            return null;
+        }
+        return BigDecimal.valueOf(engagement)
+                .multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(reach), 2, RoundingMode.HALF_UP);
     }
 
     /** Raw {@code {bucket: count}} JSON -> Map, same unchecked-raw-type convention as {@code

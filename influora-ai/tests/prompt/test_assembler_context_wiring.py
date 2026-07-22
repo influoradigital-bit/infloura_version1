@@ -166,4 +166,5 @@ def test_context_payload_fields_constant_matches_spring_contract():
         "template_digest",
         "past_campaign_summary",
         "credit_state",
+        "outcome_digest",
     }

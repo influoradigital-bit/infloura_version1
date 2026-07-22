@@ -28,6 +28,12 @@ CALCULATE_BUDGET = "calculate_budget"
 CREATE_CAMPAIGN = "create_campaign"
 REQUEST_PAYMENT = "request_payment"
 CONFIRM_LAUNCH = "confirm_launch"
+# Phase 2 item 2.2 (Meera: Label-to-Moat build plan §2.2) — R-tier, read-only, no money.
+# Wire name is a LOCKED constant across schemas.py / MeeraToolName.java / the frontend
+# MeeraFunctionCall union (Priya F1 / Ash F5) -- a mismatch silently drops the tool
+# result client-side (MeeraChatPanel.tsx's onToolResult early-return), so this exact
+# string, byte-for-byte, is the only name that may ever be used for this tool.
+GET_CAMPAIGN_PERFORMANCE = "get_campaign_performance"
 
 TOOL_NAMES: tuple[str, ...] = (
     SHOW_CREATORS,
@@ -35,6 +41,7 @@ TOOL_NAMES: tuple[str, ...] = (
     CREATE_CAMPAIGN,
     REQUEST_PAYMENT,
     CONFIRM_LAUNCH,
+    GET_CAMPAIGN_PERFORMANCE,
 )
 
 # analyze_site — a LOCAL tool, deliberately NOT in TOOL_NAMES/TOOL_TO_SPRING_PATH
@@ -64,6 +71,7 @@ TOOL_TIERS: dict[str, ToolTier] = {
     CREATE_CAMPAIGN: "draft",
     REQUEST_PAYMENT: "commit",
     CONFIRM_LAUNCH: "commit",
+    GET_CAMPAIGN_PERFORMANCE: "read",
 }
 
 # Maps each tool name to the Spring internal endpoint path it forwards to.
@@ -73,6 +81,7 @@ TOOL_TO_SPRING_PATH: dict[str, str] = {
     CREATE_CAMPAIGN: "/internal/meera/create_campaign",
     REQUEST_PAYMENT: "/internal/meera/request_payment",
     CONFIRM_LAUNCH: "/internal/meera/confirm_launch",
+    GET_CAMPAIGN_PERFORMANCE: "/internal/meera/get_campaign_performance",
 }
 
 # Tools whose forward MUST carry Idempotency-Key = tool_use.id + workspace_id.
@@ -184,6 +193,20 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {"campaign_intent_id": {"type": "string"}},
             "required": ["campaign_intent_id"],
+        },
+    },
+    {
+        "name": GET_CAMPAIGN_PERFORMANCE,
+        "description": (
+            "Return verified performance for ONE of this brand's own campaigns: spend, "
+            "reach, engagement, ROI, response rate, and attributed revenue. Read-only, no "
+            "money. Only works for a campaign owned by the current workspace -- every number "
+            "returned is a real platform-verified figure, never estimated or guessed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"campaign_id": {"type": "string"}},
+            "required": ["campaign_id"],
         },
     },
 ]

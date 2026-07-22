@@ -131,6 +131,10 @@ async def _fetch_brand_context(
         "product_catalog": context_data.get("product_catalog"),
         "template_digest": context_data.get("template_digest"),
         "past_campaign_summary": context_data.get("past_campaign_summary"),
+        # Phase 2 moat: carry the server-built outcome digest into the prompt.
+        # Without this the digest is generated + serialized by Spring but never
+        # reaches build_block_b (brand.get("outcome_digest") was always None).
+        "outcome_digest": context_data.get("outcome_digest"),
     }
     # Only carry keys Spring actually sent -- build_block_b's `if "display_name"
     # in brand` presence check must not see a None-valued key just because the

@@ -9,6 +9,7 @@ import com.influora.domain.entity.MeeraToolCall;
 import com.influora.domain.enums.CampaignIntentType;
 import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.IntentStatus;
+import com.influora.domain.enums.MeeraInteractionEventType;
 import com.influora.domain.enums.MeeraToolName;
 import com.influora.domain.enums.ToolCallStatus;
 import com.influora.domain.enums.ToolResultRefType;
@@ -18,6 +19,7 @@ import com.influora.repository.MeeraToolCallRepository;
 import com.influora.service.AuditLogService;
 import com.influora.service.CampaignTemplateService;
 import com.influora.service.IdempotencyService;
+import com.influora.service.meera.MeeraInteractionLogService;
 import com.influora.web.dto.meera.MeeraToolDtos.CreateCampaignResult;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
@@ -67,6 +69,7 @@ public class CreateCampaignExecutor {
     private final AuditLogService auditLogService;
     private final IdempotencyService idempotencyService;
     private final CampaignTemplateService campaignTemplateService;
+    private final MeeraInteractionLogService meeraInteractionLogService;
 
     public CreateCampaignExecutor(
             CampaignIntentRepository campaignIntentRepository,
@@ -74,13 +77,15 @@ public class CreateCampaignExecutor {
             MeeraToolCallRepository toolCallRepository,
             AuditLogService auditLogService,
             IdempotencyService idempotencyService,
-            CampaignTemplateService campaignTemplateService) {
+            CampaignTemplateService campaignTemplateService,
+            MeeraInteractionLogService meeraInteractionLogService) {
         this.campaignIntentRepository = campaignIntentRepository;
         this.campaignRepository = campaignRepository;
         this.toolCallRepository = toolCallRepository;
         this.auditLogService = auditLogService;
         this.idempotencyService = idempotencyService;
         this.campaignTemplateService = campaignTemplateService;
+        this.meeraInteractionLogService = meeraInteractionLogService;
     }
 
     public CreateCampaignResult execute(
@@ -239,6 +244,19 @@ public class CreateCampaignExecutor {
                 idempotencyKey,
                 null,
                 auditDetail);
+
+        // Phase 2 item 2.3 — flywheel logging. Fire-and-forget, own REQUIRES_NEW transaction; a
+        // logging failure can never fail this draft-creation call (see
+        // MeeraInteractionLogService#record's contract).
+        meeraInteractionLogService.record(
+                workspaceId,
+                conversationId,
+                MeeraInteractionEventType.DRAFT_CREATED,
+                "create_campaign",
+                null,
+                campaign.getId(),
+                null,
+                null);
 
         return new CreateCampaignResult(campaign.getId(), intent.getId(), CampaignStatus.DRAFT.name(), false);
     }

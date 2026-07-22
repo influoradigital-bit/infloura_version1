@@ -52,7 +52,7 @@ class BrandContextAssemblerTest {
                 null);
 
         ContextResponse response =
-                assembler.assembleBrandContext(workspace, profile, List.of(), List.of(), "metered", 42);
+                assembler.assembleBrandContext(workspace, profile, List.of(), List.of(), "metered", 42, null);
 
         assertEquals(1, response.productCatalog().size());
         var entry = response.productCatalog().get(0);
@@ -79,7 +79,7 @@ class BrandContextAssemblerTest {
                 "[{\"name\":\"Widget\",\"price\":499,\"currency\":\"INR\"}]", null, null, "[]", null);
 
         ContextResponse response =
-                assembler.assembleBrandContext(workspace, profile, List.of(), List.of(), "metered", 42);
+                assembler.assembleBrandContext(workspace, profile, List.of(), List.of(), "metered", 42, null);
 
         var entry = response.productCatalog().get(0);
         assertEquals("inferred", entry.get("price_source"));
@@ -92,7 +92,7 @@ class BrandContextAssemblerTest {
         when(workspace.getName()).thenReturn("Acme");
 
         ContextResponse response =
-                assembler.assembleBrandContext(workspace, null, List.of(), List.of(), "unlimited", 0);
+                assembler.assembleBrandContext(workspace, null, List.of(), List.of(), "unlimited", 0, null);
 
         assertEquals("PENDING", response.analysisStatus());
         assertNull(response.productCatalog());
@@ -118,7 +118,7 @@ class BrandContextAssemblerTest {
                         .build();
 
         ContextResponse response =
-                assembler.assembleBrandContext(workspace, null, List.of(ugc), List.of(), "metered", 10);
+                assembler.assembleBrandContext(workspace, null, List.of(ugc), List.of(), "metered", 10, null);
 
         assertEquals(1, response.templateDigest().size());
         TemplateDigestEntry entry = response.templateDigest().get(0);
@@ -140,7 +140,7 @@ class BrandContextAssemblerTest {
         profile.applyAnalysisResult(null, "{\"accent_color\":\"#FF5733\"}", null, "[]", null);
 
         ContextResponse response =
-                assembler.assembleBrandContext(workspace, profile, List.of(), List.of(), "metered", 42);
+                assembler.assembleBrandContext(workspace, profile, List.of(), List.of(), "metered", 42, null);
 
         assertEquals("#FF5733", response.brandColor());
     }
@@ -155,7 +155,7 @@ class BrandContextAssemblerTest {
                 List.of(new PastCampaignEntry("HYPE", 3, true), new PastCampaignEntry("DIRECT", 0, false));
 
         ContextResponse response =
-                assembler.assembleBrandContext(workspace, null, List.of(), pastCampaigns, "unlimited", 7);
+                assembler.assembleBrandContext(workspace, null, List.of(), pastCampaigns, "unlimited", 7, null);
 
         assertEquals(pastCampaigns, response.pastCampaignSummary());
         assertEquals("unlimited", response.creditState().mode());

@@ -97,3 +97,10 @@ influora:
   # the safe default.
   cleanup:
     dry-run: ${CLEANUP_DRY_RUN:false}
+  # meera_interaction_log retention purge is OFF by default (application.yml) — same
+  # explicit-opt-in-in-prod convention as cleanup.dry-run above. Prod is the environment with real,
+  # accumulating flywheel rows, so it is the one place this should actually run; enable via
+  # MEERA_INTERACTION_LOG_RETENTION_ENABLED (preferred) or by uncommenting below.
+  # meera-interaction-log-retention:
+  #   enabled: ${MEERA_INTERACTION_LOG_RETENTION_ENABLED:true}
+  #   retention-days: ${MEERA_INTERACTION_LOG_RETENTION_DAYS:180}

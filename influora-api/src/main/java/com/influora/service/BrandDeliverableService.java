@@ -9,9 +9,11 @@ import com.influora.config.R2Properties;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.DeliverableStatus;
+import com.influora.domain.enums.MeeraInteractionEventType;
 import com.influora.integration.storage.R2StorageService;
 import com.influora.repository.DeliverableRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.meera.MeeraInteractionLogService;
 import com.influora.web.dto.deliverable.BrandDeliverableDtos.DeliverableDetailResponse;
 import com.influora.web.dto.deliverable.BrandDeliverableDtos.DeliverableFileDetail;
 import com.influora.web.dto.deliverable.BrandDeliverableDtos.ReviewResponse;
@@ -50,6 +52,7 @@ public class BrandDeliverableService {
     private final R2Properties r2Properties;
     private final EscrowService escrowService;
     private final CollaborationLifecycleService collaborationLifecycleService;
+    private final MeeraInteractionLogService meeraInteractionLogService;
 
     public BrandDeliverableService(
             BrandContextService brandContext,
@@ -57,13 +60,15 @@ public class BrandDeliverableService {
             R2StorageService r2StorageService,
             R2Properties r2Properties,
             EscrowService escrowService,
-            CollaborationLifecycleService collaborationLifecycleService) {
+            CollaborationLifecycleService collaborationLifecycleService,
+            MeeraInteractionLogService meeraInteractionLogService) {
         this.brandContext = brandContext;
         this.deliverableRepository = deliverableRepository;
         this.r2StorageService = r2StorageService;
         this.r2Properties = r2Properties;
         this.escrowService = escrowService;
         this.collaborationLifecycleService = collaborationLifecycleService;
+        this.meeraInteractionLogService = meeraInteractionLogService;
     }
 
     @Transactional(readOnly = true)
@@ -111,7 +116,8 @@ public class BrandDeliverableService {
     @Transactional
     public ReviewResponse requestRevision(
             AuthPrincipal principal, String deliverableId, ReviseRequest request) {
-        Deliverable deliverable = requireBrandDeliverable(principal, deliverableId);
+        Workspace workspace = brandContext.requireBrandWorkspace(principal);
+        Deliverable deliverable = requireBrandDeliverable(workspace, deliverableId);
         if (!canReview(deliverable.getStatus())) {
             throw new ApiException(
                     "INVALID_STATE",
@@ -123,10 +129,25 @@ public class BrandDeliverableService {
             throw new ApiException(
                     "INVALID_REQUEST", "feedback is required", HttpStatus.BAD_REQUEST);
         }
-        deliverable.applyRevision(TextSanitizer.sanitizePlainText(feedback.trim()));
+        String sanitizedFeedback = TextSanitizer.sanitizePlainText(feedback.trim());
+        deliverable.applyRevision(sanitizedFeedback);
         deliverableRepository.save(deliverable);
         // W2-1 — the creator must revise before this collaboration can proceed.
         collaborationLifecycleService.onDeliverableReviewed(deliverable.getCollaborationId());
+        // Phase 2 item 2.3 — flywheel logging. sanitizedFeedback is HTML-stripped only
+        // (TextSanitizer), NOT PII-redacted; MeeraInteractionLogService.record redacts it via
+        // SensitiveTextRedactor as its own first line before persisting. campaignId is left null
+        // here — a Deliverable resolves to a campaign only via collaboration -> campaign, an extra
+        // join not worth adding for this optional field (the column is nullable by design).
+        meeraInteractionLogService.record(
+                workspace.getId(),
+                null,
+                MeeraInteractionEventType.REVISION_REQUESTED,
+                null,
+                null,
+                null,
+                sanitizedFeedback,
+                null);
         return new ReviewResponse(DeliverableStatus.REVISION_REQUESTED);
     }
 

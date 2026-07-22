@@ -57,6 +57,7 @@ CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     "display_name",
     "industry",
     "niche_tags",
+    "outcome_digest",
     "past_campaign_summary",
     "product_catalog",
     "template_digest",
@@ -197,6 +198,72 @@ def _render_past_campaign_summary(past_campaigns: Any) -> str | None:
     return "- Past campaigns: " + "; ".join(entries)
 
 
+def _render_outcome_digest(outcome_digest: Any) -> str | None:
+    """Renders `outcome_digest` ({campaign_outcomes[], niche_rate_band}) — Phase 2 item 2.1, the
+    moat's core payload — into up to two Block-B lines: one summarizing recent verified campaign
+    outcomes, one for the cross-tenant niche rate band when present (below the k-anonymity floor
+    it is `None` and simply produces no line, matching `niche_rate_band`'s own null-not-sparse
+    convention on the Java side).
+
+    B2 gate item (Priya, required backend change): EVERY string sub-field is passed through
+    `_safe` before interpolation, not just `type` — `niche` (brand-authored via
+    `BrandProfile.nicheTagsJson`) and `currency` also land in this system block and must be
+    neutralized the same way `template_digest`'s `campaign_type`/`budget_band` are, defensively,
+    even though they are normally server-computed. Numeric fields (BigDecimal/int off the wire)
+    are interpolated directly, same as `past_campaign_summary`'s `creator_count`/`funded`.
+
+    Lock-3 CI-gap mitigation (Priya): every nested field is read via `.get()`, never `[]` —
+    the top-level/tool-name diff-check does not cover nested DTO fields, so a nested Java rename
+    must degrade to a missing line here, never a `KeyError`-500 at conversation start.
+    """
+    if not isinstance(outcome_digest, dict):
+        return None
+
+    lines: list[str] = []
+
+    campaign_outcomes = outcome_digest.get("campaign_outcomes")
+    if isinstance(campaign_outcomes, list) and campaign_outcomes:
+        entries = []
+        for entry in campaign_outcomes:
+            if not isinstance(entry, dict):
+                continue
+            campaign_type = _safe(entry.get("type", "?"))
+            creator_count = entry.get("creator_count", "?")
+            funded = "funded" if entry.get("funded") else "not funded"
+            spend_inr = entry.get("spend_inr")
+            verified_reach = entry.get("verified_reach")
+            attributed_revenue_inr = entry.get("attributed_revenue_inr")
+
+            detail = f"{campaign_type} x{creator_count} ({funded}"
+            if spend_inr is not None:
+                detail += f", spend ₹{spend_inr}"
+            detail += ")"
+            if verified_reach is not None:
+                detail += f", verified reach {verified_reach}"
+            if attributed_revenue_inr is not None:
+                detail += f", attributed revenue ₹{attributed_revenue_inr}"
+            entries.append(detail)
+        if entries:
+            lines.append("- Campaign outcomes (platform-verified only): " + "; ".join(entries))
+
+    rate_band = outcome_digest.get("niche_rate_band")
+    if isinstance(rate_band, dict):
+        niche = _safe(rate_band.get("niche", "?"))
+        currency = _safe(rate_band.get("currency", "INR"))
+        rate_min = rate_band.get("min")
+        rate_median = rate_band.get("median")
+        rate_max = rate_band.get("max")
+        if rate_min is not None and rate_median is not None and rate_max is not None:
+            lines.append(
+                f"- Real market rate band for '{niche}': {currency} {rate_min}–{rate_max}"
+                f" (median {rate_median}), from real completed collaborations across the platform"
+            )
+
+    if not lines:
+        return None
+    return "\n".join(lines)
+
+
 def build_block_b(brand_context: dict[str, Any]) -> dict[str, Any]:
     """Per-brand cached block, keyed by workspace_id. Stable within a session.
 
@@ -231,6 +298,9 @@ def build_block_b(brand_context: dict[str, Any]) -> dict[str, Any]:
     past_campaign_line = _render_past_campaign_summary(brand.get("past_campaign_summary"))
     if past_campaign_line:
         lines.append(past_campaign_line)
+    outcome_digest_lines = _render_outcome_digest(brand.get("outcome_digest"))
+    if outcome_digest_lines:
+        lines.append(outcome_digest_lines)
     if credit_state:
         lines.append(
             f"- Credit state: mode={credit_state.get('mode', 'unknown')}, "

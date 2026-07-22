@@ -6,6 +6,7 @@ import { StageRecommend } from '@/components/feature/meera/StageRecommend'
 import { StageMatching } from '@/components/feature/meera/StageMatching'
 import { StageFunding } from '@/components/feature/meera/StageFunding'
 import { StageLive } from '@/components/feature/meera/StageLive'
+import { StagePerformance } from '@/components/feature/meera/StagePerformance'
 import { STAGE_CONFIG } from '@/data/stage-config'
 import type { MeeraStageId } from '@/data/stage-config'
 import type { MeeraStagePayloads } from '@/hooks/useMeeraStage'
@@ -31,6 +32,13 @@ interface LivingCanvasProps {
 function escrowStateForStage(stage: MeeraStageId, isPaid: boolean): EscrowPillState {
   if (stage === 'funding') return isPaid ? 'secured' : 'securing'
   if (stage === 'live') return 'releasing'
+  // F2/F4 (Priya + Ash design review, phase2-priya-review.md §4 / §Q5): a
+  // brand reaching the performance stage has already funded and completed a
+  // campaign — falling through to the default 'unfunded' here would visibly
+  // regress a released-funds campaign back to the "unfunded" look. 'secured'
+  // is the correct released/secured visual (green lock + amount), not a new
+  // EscrowPillState — there's no dedicated "released" variant today.
+  if (stage === 'performance') return 'secured'
   return 'unfunded'
 }
 
@@ -40,6 +48,17 @@ function escrowStateForStage(stage: MeeraStageId, isPaid: boolean): EscrowPillSt
  * `undefined` (never a mock number) if neither has arrived yet; EscrowPill
  * renders its label without an amount in that case. */
 function liveTotalLabel(stagePayloads: MeeraStagePayloads | undefined): string | undefined {
+  // Performance stage: `spendInr` is the real, RELEASED-escrow amount
+  // (GetCampaignPerformanceResult) — the most authoritative figure once a
+  // campaign has run its course, ahead of the earlier advisory numbers below.
+  const performance = stagePayloads?.performance
+  if (
+    performance &&
+    typeof performance === 'object' &&
+    typeof (performance as { spendInr?: unknown }).spendInr === 'number'
+  ) {
+    return formatINR((performance as { spendInr: number }).spendInr)
+  }
   const funding = stagePayloads?.funding
   if (funding && typeof funding === 'object' && typeof (funding as { serverAmount?: unknown }).serverAmount === 'number') {
     return formatINR((funding as { serverAmount: number }).serverAmount)
@@ -104,6 +123,7 @@ export function LivingCanvas({ stage, isPaid, onPay, onGoLive, presenceState, st
             />
           )}
           {stage === 'live' && <StageLive toolResult={stagePayloads?.live} />}
+          {stage === 'performance' && <StagePerformance toolResult={stagePayloads?.performance} />}
         </StageMorph>
       </div>
     </div>
