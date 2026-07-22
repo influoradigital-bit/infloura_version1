@@ -38,9 +38,24 @@ from app.providers.claude import CircuitBreaker, CircuitOpenError
 logger = logging.getLogger(__name__)
 
 _CLASSIFY_SYSTEM_INSTRUCTION = (
-    "You are a classifier for a D2C brand's website. Given sanitized page text "
+    "You are a classifier for a business's website. Given sanitized page text "
     "(scripts/iframes already stripped), extract a compact JSON object describing "
-    "the brand: niche_tags (list of short tags), tone_dial "
+    "THAT business: niche_tags (list of short tags for what THIS site's OWNER "
+    "itself sells or does). "
+    # [Ash AI review 2026-07-23] Classify the site OWNER's own offering, not
+    # example/illustrative content it displays about OTHER brands, products, or
+    # creators. A platform, marketplace, agency, or SaaS product often showcases
+    # its customers' niches (beauty, fashion, food, ...) as examples or demos --
+    # tag what the OWNER does (e.g. ['saas','software'], ['marketplace'],
+    # ['influencer-marketing','martech'], ['agency']), NOT those example niches.
+    # Failure mode this guards against: influora.in (an influencer-marketing SaaS
+    # platform) was tagged ['beauty','skincare'] purely from the serum/skincare
+    # campaign EXAMPLES on its landing page. A genuine D2C brand's own store is
+    # unaffected -- its page is about its own product, so 'owner offering' == the
+    # product's niche exactly as before.
+    "If the page is a service/SaaS/marketplace/agency with no physical product "
+    "catalog of its own, return an empty product_catalog and niche_tags for the "
+    "service itself. tone_dial "
     "(formality 0-1, energy 0-1, emoji_ok bool, cultural_context string), "
     "brand_color (hex, best guess or null), and product_catalog (list of "
     "{name, price, currency, price_source} best-effort, empty list if unclear). "
