@@ -248,7 +248,15 @@ class GeminiProvider:
                 config=genai_types.GenerateContentConfig(
                     system_instruction=_CLASSIFY_SYSTEM_INSTRUCTION,
                     temperature=0.2,
-                    max_output_tokens=1024,
+                    # [Ash AI-review 2026-07-23] gemini-2.5-flash is a THINKING model and its
+                    # thinking tokens count against max_output_tokens (see the note at
+                    # _usage_from_response). At 1024 the reasoning over a 20k-char page — now asking
+                    # it to separate the site owner's own niche from example/customer content —
+                    # exhausted the budget before the JSON was emitted, so response.text came back
+                    # empty/truncated -> json.loads -> "unparseable_response" -> analysis FAILED
+                    # (brand category stuck on the stale value). The JSON itself is only a few
+                    # hundred tokens; 4096 leaves ample room for thinking + the full object.
+                    max_output_tokens=4096,
                     response_mime_type="application/json",
                     response_schema=_CLASSIFY_RESPONSE_SCHEMA,
                 ),
