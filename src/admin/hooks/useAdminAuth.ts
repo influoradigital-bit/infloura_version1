@@ -30,7 +30,6 @@ import { auditAction, AuditAction } from '../utils/auditLogger';
  */
 export const Permission = {
   DASHBOARD_VIEW: 'dashboard:view',
-
   BRAND_VIEW: 'brand:view',
   BRAND_EDIT: 'brand:edit',
   BRAND_KYC_REVIEW: 'brand:kyc-review',
