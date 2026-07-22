@@ -17,9 +17,17 @@ on:
   workflow_dispatch:
     inputs:
       publish_web:
-        description: 'Also build+push the frontend (web) image? Needs the domain vars set.'
+        description: 'Also build+push the frontend (web) image?'
         type: boolean
-        default: false
+        default: true
+      vite_api_base_url:
+        description: 'API base URL to bake into the frontend bundle'
+        type: string
+        default: 'http://200.141.1.6/api/v1'
+      vite_meera_stream_url:
+        description: 'Meera SSE stream URL to bake into the frontend bundle'
+        type: string
+        default: 'http://200.141.1.6/meera'
   push:
     branches: [main]
     paths:
@@ -75,9 +83,9 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-ai:${{ github.sha }}
 
   web:
-    name: Build & push frontend (domain-baked)
-    # Only runs on manual dispatch with publish_web=true — because the bundle hard-codes
-    # the API URL, this MUST be rebuilt whenever the domain changes.
+    name: Build & push frontend (URL-baked)
+    # Runs on manual dispatch with publish_web=true (default). The bundle hard-codes the API
+    # URL at build time, so this MUST be rebuilt whenever that URL changes (IP → real domain).
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_web }}
     runs-on: ubuntu-latest
     permissions:
@@ -85,14 +93,6 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      - name: Guard — domain vars must be set
-        run: |
-          if [ -z "${{ vars.VITE_API_BASE_URL }}" ] || [ -z "${{ vars.VITE_MEERA_STREAM_URL }}" ]; then
-            echo "::error::Set repo variables VITE_API_BASE_URL and VITE_MEERA_STREAM_URL"
-            echo "  e.g. VITE_API_BASE_URL=https://api.yourdomain.com/api/v1"
-            echo "       VITE_MEERA_STREAM_URL=https://ai.yourdomain.com"
-            exit 1
-          fi
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -104,8 +104,8 @@ jobs:
           push: true
           build-args: |
             VITE_API_MODE=live
-            VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
-            VITE_MEERA_STREAM_URL=${{ vars.VITE_MEERA_STREAM_URL }}
+            VITE_API_BASE_URL=${{ inputs.vite_api_base_url }}
+            VITE_MEERA_STREAM_URL=${{ inputs.vite_meera_stream_url }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:latest
             ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:${{ github.sha }}
