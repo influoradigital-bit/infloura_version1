@@ -1,21 +1,10 @@
 name: influora-test
 
 # Meera/Priya — IP-ONLY TEST deploy (no domain, no TLS). NOT production.
-#
-# Purpose: prove the stack builds, boots, and is clickable on http://200.141.1.6.
-# Differences from docker-compose.hostinger.yml (the real prod one):
-#   - dev profile (APP_ENV/SPRING_PROFILES_ACTIVE=dev): boots on built-in dev keys, no
-#     Secure-cookie requirement (so login works over plain HTTP), no GST validator, and
-#     NoOp malware scan → ClamAV dropped (~2 GB RAM saved on this 2-vCPU box).
-#   - single origin: everything on http://200.141.1.6, Caddy path-routes. Same-origin ⇒ no CORS.
-#   - Caddy config is INLINE (compose `configs.content`) because the Hostinger MCP deploys only
-#     this one file — a bind-mounted ./Caddyfile would not exist on the box.
-#
-# Deploy: Hostinger MCP createNewProject(project_name="influora-test", content=<this file>,
-#         environment=<the ${VARs} below>). Images must exist in GHCR first (publish workflow).
-#
-# When you get a real domain: switch to docker-compose.hostinger.yml (prod profile + real TLS +
-# real secrets) and rebuild the web image with the domain URLs.
+# Serves on http://200.141.1.6 (single-origin, Caddy path-routes). dev profile.
+# SECRETS: every ${VAR} below is supplied via the Hostinger MCP `environment` field at deploy
+# time (NEVER committed). Values come from influora-ai/.env + influora-api/.env.
+# When you get a real domain: switch to docker-compose.hostinger.yml (prod profile + TLS).
 
 configs:
   caddyfile:
@@ -24,14 +13,11 @@ configs:
         auto_https off
       }
       :80 {
-        # NOT handle_path — the backend's own context-path is /api/v1, so the /api prefix
-        # must be forwarded intact (stripping it would 404 every API call).
         handle /api/* {
           reverse_proxy influora-api:8080 {
             header_up X-Forwarded-Proto http
           }
         }
-        # /meera/* → AI service (disabled in this test — no provider keys; see below).
         handle_path /meera/* {
           reverse_proxy influora-ai:8000 {
             flush_interval -1
@@ -54,6 +40,7 @@ services:
     depends_on:
       - frontend
       - influora-api
+      - influora-ai
 
   mysql:
     image: mysql:8.0
@@ -90,22 +77,66 @@ services:
       INFLUORA_WEB_BASE_URL: http://200.141.1.6
       CORS_ALLOWED_ORIGINS: http://200.141.1.6
       SERVER_FORWARD_HEADERS_STRATEGY: framework
-      # Shared api<->ai secrets — set explicitly so both sides match regardless of dev defaults.
       INTERNAL_REQUEST_HMAC_SECRET: ${INTERNAL_HMAC_KEY}
       INTERNAL_SERVICE_TOKEN_SECRET: ${SERVICE_TOKEN_SIGNING_KEY}
-      # Internal AI URLs (validator rejects localhost even in some paths).
       BRAND_SAFETY_AI_BASE_URL: http://influora-ai:8000
       TRENDSPARK_AI_BASE_URL: http://influora-ai:8000
       MEERA_CHAT_AI_BASE_URL: http://influora-ai:8000
       ANALYZE_SITE_AI_BASE_URL: http://influora-ai:8000
       CLAMAV_HOST: ""
+      # --- Email: MSG91 + its SMTP relay (Msg91EmailClient) ---
+      MSG91_ENABLED: "true"
+      MSG91_AUTH_KEY: ${MSG91_AUTH_KEY}
+      MSG91_SENDER_ID: ${MSG91_SENDER_ID}
+      MSG91_ROUTE: "4"
+      MSG91_WIDGET_ID: ${MSG91_WIDGET_ID}
+      MSG91_TOKEN_AUTH: ${MSG91_TOKEN_AUTH}
+      MSG91_EMAIL_DOMAIN: ${MSG91_EMAIL_DOMAIN}
+      MSG91_FROM_EMAIL: ${MSG91_FROM_EMAIL}
+      MSG91_FROM_NAME: Influora
+      MSG91_EMAIL_TEMPLATE_ID: ${MSG91_EMAIL_TEMPLATE_ID}
+      MSG91_OTP_TEMPLATE_ID: ${MSG91_OTP_TEMPLATE_ID}
+      MSG91_EMAIL_COMPANY_NAME: ${MSG91_EMAIL_COMPANY_NAME}
+      MSG91_EMAIL_TEMPLATE_OTP_VARIABLE: otp
+      MSG91_EMAIL_TRANSACTIONAL_LINK_VARIABLE: magic_link
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: "587"
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      # --- Cloudflare R2 media storage ---
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME}
+      R2_ENDPOINT: ${R2_ENDPOINT}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
     depends_on:
       mysql: { condition: service_healthy }
 
-  # influora-ai is DISABLED in this test: it refuses to boot without real provider keys
-  # (ANTHROPIC_API_KEY, GEMINI_API_KEY, SARVAM_API_KEY + DEV_SHARED_JWT_SECRET). To enable Meera
-  # chat, add those keys and re-add this service (it was crash-looping otherwise). Kept out so the
-  # test stack is clean. The Caddy /meera route stays but 502s until this service is back.
+  influora-ai:
+    image: ghcr.io/influoradigital-bit/influora-ai:latest
+    restart: unless-stopped
+    environment:
+      APP_ENV: dev
+      LOG_LEVEL: INFO
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CLAUDE_MODEL: claude-sonnet-4-5-20250929
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      SARVAM_API_KEY: ${SARVAM_API_KEY}
+      # Verify Meera stream tokens against the API's real JWKS (same path as prod).
+      SPRING_JWKS_URL: http://influora-api:8080/api/v1/.well-known/jwks.json
+      SPRING_INTERNAL_BASE_URL: http://influora-api:8080/api/v1
+      # MUST byte-match the Java side.
+      INTERNAL_HMAC_KEY: ${INTERNAL_HMAC_KEY}
+      SERVICE_TOKEN_SIGNING_KEY: ${SERVICE_TOKEN_SIGNING_KEY}
+      # Browser SSE origin — must equal the frontend origin or the preflight fails.
+      MEERA_ALLOWED_ORIGINS: http://200.141.1.6
+      REDIS_URL: redis://redis:6379
+      # Cost guard on a public test box.
+      AI_DAILY_SPEND_CEILING_USD: "5.0"
+      AI_SPEND_KILL_SWITCH: "false"
+    depends_on:
+      - influora-api
 
   frontend:
     image: ghcr.io/influoradigital-bit/influora-web:latest
