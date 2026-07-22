@@ -24,11 +24,14 @@ configs:
         auto_https off
       }
       :80 {
-        handle_path /api/* {
+        # NOT handle_path — the backend's own context-path is /api/v1, so the /api prefix
+        # must be forwarded intact (stripping it would 404 every API call).
+        handle /api/* {
           reverse_proxy influora-api:8080 {
             header_up X-Forwarded-Proto http
           }
         }
+        # /meera/* → AI service (disabled in this test — no provider keys; see below).
         handle_path /meera/* {
           reverse_proxy influora-ai:8000 {
             flush_interval -1
@@ -51,7 +54,6 @@ services:
     depends_on:
       - frontend
       - influora-api
-      - influora-ai
 
   mysql:
     image: mysql:8.0
@@ -100,23 +102,10 @@ services:
     depends_on:
       mysql: { condition: service_healthy }
 
-  influora-ai:
-    image: ghcr.io/influoradigital-bit/influora-ai:latest
-    restart: unless-stopped
-    environment:
-      APP_ENV: dev
-      LOG_LEVEL: INFO
-      # Optional: AI replies won't work without a real key. Leave blank to test everything else.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      SARVAM_API_KEY: ${SARVAM_API_KEY:-}
-      # MUST byte-match the Java side above.
-      INTERNAL_HMAC_KEY: ${INTERNAL_HMAC_KEY}
-      SERVICE_TOKEN_SIGNING_KEY: ${SERVICE_TOKEN_SIGNING_KEY}
-      SPRING_INTERNAL_BASE_URL: http://influora-api:8080/api/v1
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      - influora-api
+  # influora-ai is DISABLED in this test: it refuses to boot without real provider keys
+  # (ANTHROPIC_API_KEY, GEMINI_API_KEY, SARVAM_API_KEY + DEV_SHARED_JWT_SECRET). To enable Meera
+  # chat, add those keys and re-add this service (it was crash-looping otherwise). Kept out so the
+  # test stack is clean. The Caddy /meera route stays but 502s until this service is back.
 
   frontend:
     image: ghcr.io/influoradigital-bit/influora-web:latest
