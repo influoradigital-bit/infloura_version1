@@ -32,7 +32,11 @@ ENV VITE_API_MODE=$VITE_API_MODE \
     VITE_API_BASE_URL=$VITE_API_BASE_URL \
     VITE_MEERA_STREAM_URL=$VITE_MEERA_STREAM_URL
 
-RUN npm run build
+# `npm run build` also fires the `postbuild` prerender (scripts/prerender.mjs), which needs a
+# Chrome binary not present in this alpine build stage. Run vite directly to skip prerender —
+# SSG/prerender is irrelevant for the IP test. TODO(prod): add chromium + PRERENDER_CHROME_PATH
+# to restore prerender for SEO before the real-domain build.
+RUN npx vite build
 
 # ---- Runtime stage -------------------------------------------------------------------------
 FROM nginx:1.27-alpine AS runtime

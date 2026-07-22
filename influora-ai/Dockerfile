@@ -15,7 +15,10 @@
 #   - Brand-supplied site URLs for /analyze-site, but ONLY through ssrf_guard,
 #     which itself blocks private/loopback/link-local/CGNAT ranges.
 
-FROM python:3.13-slim AS base
+# Pinned to bookworm (Debian 12): the floating `-slim` tag moved to trixie (Debian 13), which
+# renamed ttf-unifont/ttf-ubuntu-font-family → fonts-unifont, breaking Playwright's
+# `install --with-deps chromium` apt step (Package '...' has no installation candidate).
+FROM python:3.13-slim-bookworm AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
