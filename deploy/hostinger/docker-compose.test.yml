@@ -86,6 +86,11 @@ services:
       TRENDSPARK_AI_BASE_URL: http://influora-ai:8000
       MEERA_CHAT_AI_BASE_URL: http://influora-ai:8000
       ANALYZE_SITE_AI_BASE_URL: http://influora-ai:8000
+      # Browser-reachable SSE URL Spring returns as SendTurnResponse.streamUrl. The dev profile
+      # otherwise falls back to MeeraStreamProperties' Java default http://localhost:8000/chat,
+      # which the browser can't reach and CSP blocks. Route it same-origin through Caddy's
+      # handle_path /meera/* -> influora-ai:8000 (prefix stripped -> POST /chat).
+      INFLUORA_MEERA_STREAM_PUBLICCHATURL: http://200.141.1.6/meera/chat
       CLAMAV_HOST: ""
       # TEST ONLY: allow SUPER_ADMIN/ADMIN login without MFA enrollment (default is true and
       # blocks a freshly-seeded admin with no in-app enrollment path). Re-enable for production.
