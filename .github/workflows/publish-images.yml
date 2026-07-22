@@ -29,10 +29,14 @@ on:
         type: string
         default: 'http://200.141.1.6/meera'
   push:
-    branches: [main]
+    branches:
+      - main
+      - feat/creator-taxonomy-keyword-patch   # so it runs without needing main / the dispatch button
     paths:
       - 'influora-api/**'
       - 'influora-ai/**'
+      - 'src/**'
+      - 'Dockerfile'
       - '.github/workflows/publish-images.yml'
 
 env:
@@ -86,7 +90,8 @@ jobs:
     name: Build & push frontend (URL-baked)
     # Runs on manual dispatch with publish_web=true (default). The bundle hard-codes the API
     # URL at build time, so this MUST be rebuilt whenever that URL changes (IP → real domain).
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_web }}
+    # Runs on push (uses the fallback IP URLs below) OR on manual dispatch with publish_web.
+    if: ${{ github.event_name == 'push' || inputs.publish_web }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -104,8 +109,8 @@ jobs:
           push: true
           build-args: |
             VITE_API_MODE=live
-            VITE_API_BASE_URL=${{ inputs.vite_api_base_url }}
-            VITE_MEERA_STREAM_URL=${{ inputs.vite_meera_stream_url }}
+            VITE_API_BASE_URL=${{ inputs.vite_api_base_url || 'http://200.141.1.6/api/v1' }}
+            VITE_MEERA_STREAM_URL=${{ inputs.vite_meera_stream_url || 'http://200.141.1.6/meera' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:latest
             ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:${{ github.sha }}
