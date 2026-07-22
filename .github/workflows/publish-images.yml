@@ -1,0 +1,111 @@
+name: Publish Images (GHCR)
+
+# Meera/Priya — registry-images deploy path for the Hostinger VPS.
+#
+# Builds the three Influora service images and pushes them to GitHub Container
+# Registry (ghcr.io/influoradigital-bit/influora-{api,ai,web}). The Hostinger VPS
+# then pulls these pre-built images via the management API (docker-compose.hostinger.yml)
+# — no `docker build` or SSH on the box.
+#
+# IMPORTANT — the frontend is domain-dependent. Vite bakes VITE_API_BASE_URL and
+# VITE_MEERA_STREAM_URL into the JS bundle at BUILD time (see root Dockerfile). So the
+# `web` image is only correct for ONE domain. Until you own the domain, leave the repo
+# variables below unset and skip the `web` job (run it after DNS is decided). The `api`
+# and `ai` images are domain-independent and safe to publish now.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_web:
+        description: 'Also build+push the frontend (web) image? Needs the domain vars set.'
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - 'influora-api/**'
+      - 'influora-ai/**'
+      - '.github/workflows/publish-images.yml'
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: influoradigital-bit
+
+jobs:
+  api:
+    name: Build & push influora-api
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./influora-api
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-api:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-api:${{ github.sha }}
+
+  ai:
+    name: Build & push influora-ai
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./influora-ai
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-ai:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-ai:${{ github.sha }}
+
+  web:
+    name: Build & push frontend (domain-baked)
+    # Only runs on manual dispatch with publish_web=true — because the bundle hard-codes
+    # the API URL, this MUST be rebuilt whenever the domain changes.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_web }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard — domain vars must be set
+        run: |
+          if [ -z "${{ vars.VITE_API_BASE_URL }}" ] || [ -z "${{ vars.VITE_MEERA_STREAM_URL }}" ]; then
+            echo "::error::Set repo variables VITE_API_BASE_URL and VITE_MEERA_STREAM_URL"
+            echo "  e.g. VITE_API_BASE_URL=https://api.yourdomain.com/api/v1"
+            echo "       VITE_MEERA_STREAM_URL=https://ai.yourdomain.com"
+            exit 1
+          fi
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            VITE_API_MODE=live
+            VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
+            VITE_MEERA_STREAM_URL=${{ vars.VITE_MEERA_STREAM_URL }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:${{ github.sha }}

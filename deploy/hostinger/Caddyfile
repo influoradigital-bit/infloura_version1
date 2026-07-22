@@ -1,0 +1,39 @@
+# Caddy — automatic TLS + reverse proxy for the Influora stack on Hostinger.
+# Domains come from the compose `environment:` (APP_DOMAIN / API_DOMAIN / AI_DOMAIN).
+# Caddy fetches + renews Let's Encrypt certs automatically once DNS points at this box.
+# Certs persist in the caddy_data volume, so redeploys don't re-issue (avoids rate limits).
+
+{
+	email {$ACME_EMAIL}
+}
+
+# ---- Frontend (static SPA) ----
+{$APP_DOMAIN} {
+	reverse_proxy frontend:80
+}
+
+# ---- Core API (Java) ----
+{$API_DOMAIN} {
+	# matches Spring's 1GB max-request-size for large deliverable uploads
+	request_body {
+		max_size 1GB
+	}
+	reverse_proxy influora-api:8080 {
+		# large uploads need a generous read timeout
+		transport http {
+			read_timeout 300s
+		}
+	}
+}
+
+# ---- AI service (Python, SSE streaming) ----
+{$AI_DOMAIN} {
+	reverse_proxy influora-ai:8000 {
+		# Meera streams token-by-token. flush_interval -1 disables response buffering
+		# so SSE chunks reach the browser immediately instead of all-at-once at the end.
+		flush_interval -1
+		transport http {
+			read_timeout 3600s
+		}
+	}
+}
