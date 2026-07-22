@@ -135,6 +135,24 @@ influora:
   # ${VOICE_AI_BASE_URL} (fail-fast), so prod behavior is unchanged.
   voice-ai:
     base-url: ${VOICE_AI_BASE_URL:${MEERA_CHAT_AI_BASE_URL:http://localhost:8000}}
+  # [Ash AI-review 2026-07-23] Same class of bug as voice-ai above, for the other three
+  # server-side AI clients. Their base-urls were mapped ONLY in application-prod.yml, so on the
+  # dev-profile deploy the boot-time validator warned "…base-url still points at localhost" and
+  # every Spring->influora-ai call (analyze-site classify, brand-safety scoring, trendspark)
+  # failed with a transport error to localhost inside the api container. The env vars
+  # (BRAND_SAFETY_AI_BASE_URL / TRENDSPARK_AI_BASE_URL / MEERA_CHAT_AI_BASE_URL /
+  # ANALYZE_SITE_AI_BASE_URL) are already set to the AI container on every containerized deploy —
+  # they just weren't read in dev. Bind them here (default profile) so dev inherits them; prod's
+  # application-prod.yml still overrides. NOTE: meera-chat TEXT replies were unaffected because the
+  # browser streams them direct via Caddy /meera/* (SSE), not through MeeraChatAiClient.
+  brand-safety-ai:
+    base-url: ${BRAND_SAFETY_AI_BASE_URL:http://localhost:8000}
+  trendspark-ai:
+    base-url: ${TRENDSPARK_AI_BASE_URL:http://localhost:8000}
+  meera-chat-ai:
+    base-url: ${MEERA_CHAT_AI_BASE_URL:http://localhost:8000}
+  analyze-site-ai:
+    base-url: ${ANALYZE_SITE_AI_BASE_URL:http://localhost:8000}
   internal-service-token:
     # Kabir 2.2/2.4, MF-2, LB-2 — distinct secret from every other key (JWT/stream/R2/Razorpay).
     # Verifies X-Meera-Service-Token (aud=influora-internal, iss=meera-python, exp<=60s) and signs
