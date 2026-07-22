@@ -17,6 +17,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
@@ -170,6 +171,20 @@ public class GlobalExceptionHandler {
                                 ApiErrorBody.of(
                                         "INVALID_PARAMETER",
                                         "Parameter '" + ex.getName() + "' has an invalid value")));
+    }
+
+    // Kabir — a request Content-Type the endpoint doesn't accept (e.g. text/xml against a
+    // @RequestBody(consumes = APPLICATION_JSON) handler) was falling through to the generic 500
+    // handler instead of a clean 415.
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMediaTypeNotSupported(
+            HttpMediaTypeNotSupportedException ex) {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(
+                        ApiResponse.fail(
+                                ApiErrorBody.of(
+                                        "UNSUPPORTED_MEDIA_TYPE",
+                                        "Content-Type '" + ex.getContentType() + "' is not supported for this endpoint")));
     }
 
     @ExceptionHandler(Exception.class)

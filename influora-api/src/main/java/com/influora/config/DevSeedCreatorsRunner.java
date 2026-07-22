@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -23,8 +24,13 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>a new forward migration {@code V72__remove_seed_creators.sql} deletes those 5 accounts in
  *       every environment (including prod) — that is the security fix, and
- *   <li>this runner re-inserts them <b>only when the {@code dev} profile is active</b>, so local
- *       development still has creators to browse in discovery after V72 has removed them.
+ *   <li>this runner re-inserts them <b>only when the {@code dev} profile is active AND the explicit
+ *       opt-in flag {@code influora.dev.seed-creators=true} is set</b>, so local development can still
+ *       have creators to browse in discovery after V72 has removed them — while an internet-reachable
+ *       box left on the {@code dev} profile (e.g. the IP-only test deploy) does <b>not</b> silently
+ *       re-create the {@code Password@123} accounts the migration just removed. [SEC: Kabir residual —
+ *       the migration alone did not close C-18 on a dev-profiled exposed box because this runner ran
+ *       unconditionally under {@code dev}; the flag makes re-seeding a deliberate local choice.]
  * </ul>
  *
  * <p>Runs as an {@link ApplicationRunner}, i.e. after Flyway has finished (Flyway runs during
@@ -36,6 +42,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @Profile("dev")
+@ConditionalOnProperty(name = "influora.dev.seed-creators", havingValue = "true")
 public class DevSeedCreatorsRunner implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DevSeedCreatorsRunner.class);

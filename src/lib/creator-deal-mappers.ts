@@ -160,6 +160,13 @@ export function mapDealToDealsPageRow(deal: Deal): CreatorDealsPageRow {
     deliverablesDone: deal.deliverablesDone,
     deliverablesTotal: deal.deliverablesTotal,
     escrowFunded: deal.escrowFunded,
+    // Explicitly undefined: the `GET /deals` summary payload does not carry these.
+    // The page renders each behind a truthy guard, so they simply don't show — an
+    // honest empty state, never a fabricated rating/badge. If the deals summary API
+    // later returns brand rating / payout-speed / an offer-expiry, populate here.
+    brandRating: undefined,
+    brandPaymentSpeed: undefined,
+    expiresAt: undefined,
   };
 }
 
