@@ -17,10 +17,14 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -109,6 +113,49 @@ public class GlobalExceptionHandler {
         log.error("Optimistic locking failure", ex);
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponse.fail(ApiErrorBody.of("CONCURRENT_MODIFICATION", "This record was modified by another request; please retry")));
+    }
+
+    // No handler mapped the request path (e.g. a typo'd static resource / unknown route) — was
+    // falling through to the generic 500 handler instead of a clean 404.
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNoResourceFound(NoResourceFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.fail(ApiErrorBody.of("NOT_FOUND", "The requested resource was not found")));
+    }
+
+    // A required @RequestParam was missing — a client input error, not a server fault.
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingServletRequestParameter(
+            MissingServletRequestParameterException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(
+                        ApiResponse.fail(
+                                ApiErrorBody.of(
+                                        "MISSING_PARAMETER",
+                                        "Required parameter '" + ex.getParameterName() + "' is missing")));
+    }
+
+    // Route exists but not for this HTTP method (e.g. DELETE on a GET-only endpoint) — 405, not 500.
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodNotSupported(
+            HttpRequestMethodNotSupportedException ex) {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(
+                        ApiResponse.fail(
+                                ApiErrorBody.of(
+                                        "METHOD_NOT_ALLOWED",
+                                        "HTTP method '" + ex.getMethod() + "' is not supported for this endpoint")));
+    }
+
+    // A path/query param couldn't be converted to its target type (e.g. non-numeric id) — 400, not 500.
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(
+                        ApiResponse.fail(
+                                ApiErrorBody.of(
+                                        "INVALID_PARAMETER",
+                                        "Parameter '" + ex.getName() + "' has an invalid value")));
     }
 
     @ExceptionHandler(Exception.class)

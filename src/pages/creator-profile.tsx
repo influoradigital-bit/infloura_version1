@@ -7,7 +7,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
 import {
   Dialog,
@@ -21,77 +20,20 @@ import {
   Instagram,
   Youtube,
   CheckCircle2,
-  Star,
   TrendingUp,
-  Calendar,
   MapPin,
   Edit2,
   Camera,
-  Shield,
-  Award,
-  Clock,
-  Briefcase,
   IndianRupee,
   ExternalLink,
   Link as LinkIcon,
   Loader2,
   RefreshCw,
+  Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-// Mock creator profile data
-const mockProfile = {
-  name: 'Priya Sharma',
-  displayName: 'Priya Creates',
-  email: 'priya@creator.com',
-  phone: '+91 98765 43210',
-  bio: 'Fashion & lifestyle content creator. Passionate about sustainable fashion and mindful living. Love helping brands tell their stories through creative content.',
-  city: 'Mumbai',
-  avatar: '',
-  verified: true,
-  verifiedSince: '2025-01-15',
-
-  // Social handles
-  socials: {
-    instagram: {
-      handle: '@priya_creates',
-      followers: 125000,
-      engagement: 4.2,
-      verified: true,
-      lastSynced: new Date(Date.now() - 1000 * 60 * 60 * 3), // 3 hours ago
-    },
-    youtube: {
-      handle: 'Priya Creates',
-      subscribers: 50000,
-      avgViews: 25000,
-      verified: true,
-      lastSynced: new Date(Date.now() - 1000 * 60 * 60 * 5), // 5 hours ago
-    },
-  },
-  
-  // Verticals and rates
-  verticals: ['Fashion & Lifestyle', 'Beauty & Skincare', 'Travel & Adventure'],
-  languages: ['Hindi', 'English', 'Marathi'],
-  rateRange: { min: 25000, max: 75000 },
-  
-  // Stats
-  stats: {
-    totalCollabs: 45,
-    completedOnTime: 43,
-    avgRating: 4.8,
-    totalEarnings: 425000,
-    responseRate: 95,
-    repeatBrands: 12,
-  },
-  
-  // Badges
-  badges: [
-    { id: 'b1', title: 'Top Creator', description: 'Top 5% engagement rate', icon: Star },
-    { id: 'b2', title: 'Fast Responder', description: '< 2 hour response time', icon: Clock },
-    { id: 'b3', title: 'On-Time Delivery', description: '95% OTD rate', icon: CheckCircle2 },
-    { id: 'b4', title: 'Brand Favorite', description: '12 repeat collaborations', icon: Award },
-  ],
-};
+import { api, ApiError, type CreatorProfileSelfResponse, type CreatorProfilePatchPayload } from '@/lib/api';
+import { toast } from '@/hooks/use-toast';
 
 function formatINR(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -107,30 +49,72 @@ function formatNumber(num: number): string {
   return num.toString();
 }
 
+/** Best-effort icon for a platform string — falls back to a generic link icon for anything
+ * that isn't Instagram/YouTube (the only two the design has bespoke art for). */
+function getPlatformIcon(platform: string) {
+  const key = platform.toLowerCase();
+  if (key.includes('instagram')) return Instagram;
+  if (key.includes('youtube')) return Youtube;
+  return LinkIcon;
+}
+
+function getPlatformIconWrapClass(platform: string): string {
+  const key = platform.toLowerCase();
+  if (key.includes('instagram')) return 'bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400';
+  if (key.includes('youtube')) return 'bg-red-500';
+  return 'bg-muted-foreground/60';
+}
+
 export default function CreatorProfilePage() {
+  const [profile, setProfile] = React.useState<CreatorProfileSelfResponse | null>(null);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+
   const [showEditDialog, setShowEditDialog] = React.useState(false);
   const [editData, setEditData] = React.useState({
-    displayName: mockProfile.displayName,
-    bio: mockProfile.bio,
-    city: mockProfile.city,
-    rateMin: mockProfile.rateRange.min.toString(),
-    rateMax: mockProfile.rateRange.max.toString(),
+    displayName: '',
+    bio: '',
+    city: '',
+    rateMin: '',
+    rateMax: '',
   });
   const [isSaving, setIsSaving] = React.useState(false);
-  const [syncingPlatform, setSyncingPlatform] = React.useState<'instagram' | 'youtube' | null>(null);
-  const [lastSynced, setLastSynced] = React.useState({
-    instagram: mockProfile.socials.instagram.lastSynced,
-    youtube: mockProfile.socials.youtube.lastSynced,
-  });
+  const [syncingPlatform, setSyncingPlatform] = React.useState<string | null>(null);
+  const [lastSynced, setLastSynced] = React.useState<Record<string, Date>>({});
 
-  const handleSyncStats = async (platform: 'instagram' | 'youtube') => {
+  const loadProfile = React.useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const data = await api.creatorProfile.getMe();
+      setProfile(data);
+      setEditData({
+        displayName: data.displayName ?? '',
+        bio: data.bio ?? '',
+        city: data.city ?? '',
+        rateMin: data.rateMin != null ? String(data.rateMin) : '',
+        rateMax: data.rateMax != null ? String(data.rateMax) : '',
+      });
+    } catch (err) {
+      setLoadError(err instanceof ApiError ? err.message : 'Could not load your profile.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  const handleSyncStats = async (platform: string) => {
     setSyncingPlatform(platform);
     await new Promise((resolve) => setTimeout(resolve, 1800));
     setLastSynced((prev) => ({ ...prev, [platform]: new Date() }));
     setSyncingPlatform(null);
   };
 
-  const formatSyncTime = (date: Date) => {
+  const formatSyncTime = (date?: Date) => {
+    if (!date) return null;
     const diff = Date.now() - date.getTime();
     const mins = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
@@ -141,14 +125,52 @@ export default function CreatorProfilePage() {
 
   const handleSave = async () => {
     setIsSaving(true);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setIsSaving(false);
-    setShowEditDialog(false);
+    try {
+      const payload: CreatorProfilePatchPayload = {
+        displayName: editData.displayName,
+        bio: editData.bio,
+        city: editData.city,
+        rateMin: editData.rateMin ? Number(editData.rateMin) : undefined,
+        rateMax: editData.rateMax ? Number(editData.rateMax) : undefined,
+      };
+      const updated = await api.creatorProfile.patchMe(payload);
+      setProfile(updated);
+      setShowEditDialog(false);
+      toast({ title: 'Profile updated' });
+    } catch (err) {
+      toast({
+        title: 'Could not save changes',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const onTimeRate = (mockProfile.stats.completedOnTime / mockProfile.stats.totalCollabs * 100).toFixed(0);
+  if (isLoading && !profile) {
+    return (
+      <CreatorLayout>
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </CreatorLayout>
+    );
+  }
 
-  const publicUsername = mockProfile.socials.instagram.handle.replace(/[@_]/g, '') || 'priyacreates';
+  if (!profile) {
+    return (
+      <CreatorLayout>
+        <div className="container mx-auto px-4 py-16 max-w-2xl text-center">
+          <p className="text-muted-foreground mb-4">{loadError || 'Could not load your profile.'}</p>
+          <Button onClick={loadProfile}>Retry</Button>
+        </div>
+      </CreatorLayout>
+    );
+  }
+
+  const publicUsername =
+    profile.username || profile.platforms[0]?.handle.replace(/[@_]/g, '') || 'creator';
 
   return (
     <CreatorLayout>
@@ -179,15 +201,15 @@ export default function CreatorProfilePage() {
               {/* Avatar */}
               <div className="relative">
                 <Avatar className="h-24 w-24">
-                  <AvatarImage src={mockProfile.avatar} />
+                  <AvatarImage src={profile.avatarUrl ?? undefined} />
                   <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white text-2xl font-bold">
-                    {mockProfile.name.charAt(0)}
+                    {(profile.displayName || profile.username || 'C').charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <button className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg">
                   <Camera className="h-4 w-4" />
                 </button>
-                {mockProfile.verified && (
+                {profile.verified && (
                   <div className="absolute -top-1 -right-1 h-7 w-7 rounded-full bg-blue-500 text-white flex items-center justify-center">
                     <CheckCircle2 className="h-4 w-4" />
                   </div>
@@ -197,25 +219,33 @@ export default function CreatorProfilePage() {
               {/* Info */}
               <div className="flex-1 text-center sm:text-left">
                 <div className="flex items-center justify-center sm:justify-start gap-2">
-                  <h1 className="text-2xl font-bold">{mockProfile.displayName}</h1>
+                  <h1 className="text-2xl font-bold">{profile.displayName || 'Unnamed creator'}</h1>
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowEditDialog(true)}>
                     <Edit2 className="h-4 w-4" />
                   </Button>
                 </div>
-                <p className="text-muted-foreground">{mockProfile.name}</p>
-                <div className="flex items-center justify-center sm:justify-start gap-2 mt-2 text-sm text-muted-foreground">
-                  <MapPin className="h-4 w-4" />
-                  <span>{mockProfile.city}</span>
-                </div>
-                <p className="mt-3 text-sm text-balance">{mockProfile.bio}</p>
+                {profile.username && <p className="text-muted-foreground">@{profile.username}</p>}
+                {profile.city && (
+                  <div className="flex items-center justify-center sm:justify-start gap-2 mt-2 text-sm text-muted-foreground">
+                    <MapPin className="h-4 w-4" />
+                    <span>{profile.city}</span>
+                  </div>
+                )}
+                <p className="mt-3 text-sm text-balance">
+                  {profile.bio || 'No bio yet — tell brands about yourself.'}
+                </p>
 
-                {/* Verticals */}
+                {/* Categories */}
                 <div className="flex flex-wrap gap-2 mt-4 justify-center sm:justify-start">
-                  {mockProfile.verticals.map((vertical) => (
-                    <Badge key={vertical} variant="secondary">
-                      {vertical}
-                    </Badge>
-                  ))}
+                  {profile.categories.length > 0 ? (
+                    profile.categories.map((category) => (
+                      <Badge key={category} variant="secondary">
+                        {category}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-sm text-muted-foreground">No categories added yet.</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -228,87 +258,61 @@ export default function CreatorProfilePage() {
             <CardTitle className="text-base">Connected Accounts</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {/* Instagram */}
-            <div className="p-3 bg-muted/50 rounded-lg space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 flex items-center justify-center">
-                    <Instagram className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium">{mockProfile.socials.instagram.handle}</p>
-                      {mockProfile.socials.instagram.verified && (
-                        <CheckCircle2 className="h-4 w-4 text-blue-500" />
+            {profile.platforms.length === 0 && (
+              <p className="text-sm text-muted-foreground">No social accounts connected yet.</p>
+            )}
+            {profile.platforms.map((social) => {
+              const Icon = getPlatformIcon(social.platform);
+              const syncedAt = formatSyncTime(lastSynced[social.platform]);
+              return (
+                <div key={social.platform} className="p-3 bg-muted/50 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={cn(
+                          'h-10 w-10 rounded-full flex items-center justify-center',
+                          getPlatformIconWrapClass(social.platform),
+                        )}
+                      >
+                        <Icon className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{social.handle}</p>
+                          {social.isVerified && <CheckCircle2 className="h-4 w-4 text-blue-500" />}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {formatNumber(social.followers)} followers
+                          {' • '}
+                          {social.engagementRate}% engagement
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title={`Sync stats from ${social.platform}`}
+                        onClick={() => handleSyncStats(social.platform)}
+                        disabled={!!syncingPlatform}
+                      >
+                        <RefreshCw
+                          className={`h-4 w-4 ${syncingPlatform === social.platform ? 'animate-spin text-primary' : ''}`}
+                        />
+                      </Button>
+                      {social.profileUrl && (
+                        <Button variant="ghost" size="icon" asChild>
+                          <a href={social.profileUrl} target="_blank" rel="noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {formatNumber(mockProfile.socials.instagram.followers)} followers
-                      {' • '}
-                      {mockProfile.socials.instagram.engagement}% engagement
-                    </p>
                   </div>
+                  {syncedAt && <p className="text-xs text-muted-foreground pl-[52px]">Last synced: {syncedAt}</p>}
                 </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    title="Sync stats from Instagram"
-                    onClick={() => handleSyncStats('instagram')}
-                    disabled={!!syncingPlatform}
-                  >
-                    <RefreshCw className={`h-4 w-4 ${syncingPlatform === 'instagram' ? 'animate-spin text-primary' : ''}`} />
-                  </Button>
-                  <Button variant="ghost" size="icon">
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground pl-[52px]">
-                Last synced: {formatSyncTime(lastSynced.instagram)}
-              </p>
-            </div>
-
-            {/* YouTube */}
-            <div className="p-3 bg-muted/50 rounded-lg space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-red-500 flex items-center justify-center">
-                    <Youtube className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium">{mockProfile.socials.youtube.handle}</p>
-                      {mockProfile.socials.youtube.verified && (
-                        <CheckCircle2 className="h-4 w-4 text-blue-500" />
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {formatNumber(mockProfile.socials.youtube.subscribers)} subscribers
-                      {' • '}
-                      {formatNumber(mockProfile.socials.youtube.avgViews)} avg views
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    title="Sync stats from YouTube"
-                    onClick={() => handleSyncStats('youtube')}
-                    disabled={!!syncingPlatform}
-                  >
-                    <RefreshCw className={`h-4 w-4 ${syncingPlatform === 'youtube' ? 'animate-spin text-primary' : ''}`} />
-                  </Button>
-                  <Button variant="ghost" size="icon">
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground pl-[52px]">
-                Last synced: {formatSyncTime(lastSynced.youtube)}
-              </p>
-            </div>
+              );
+            })}
 
             <Button variant="outline" className="w-full">
               <LinkIcon className="h-4 w-4 mr-2" />
@@ -317,46 +321,37 @@ export default function CreatorProfilePage() {
           </CardContent>
         </Card>
 
-        {/* Stats */}
+        {/* Stats — the real fields the backend actually returns; no fabricated
+            "total collabs" / "rating" / "on-time %" (not part of CreatorProfileSelfResponse). */}
         <Card className="mb-6">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Performance Stats</CardTitle>
-            <CardDescription>Your track record with brands</CardDescription>
+            <CardTitle className="text-base">Profile Stats</CardTitle>
+            <CardDescription>How brands see you</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="text-center p-4 bg-muted/50 rounded-lg">
-                <p className="text-3xl font-bold text-stage-contracted-fg">{mockProfile.stats.totalCollabs}</p>
-                <p className="text-sm text-muted-foreground">Total Collabs</p>
+                <div className="flex items-center justify-center gap-1">
+                  <Users className="h-5 w-5 text-stage-contracted-fg" />
+                  <p className="text-3xl font-bold">{formatNumber(profile.totalFollowers)}</p>
+                </div>
+                <p className="text-sm text-muted-foreground">Total Followers</p>
               </div>
               <div className="text-center p-4 bg-muted/50 rounded-lg">
                 <div className="flex items-center justify-center gap-1">
-                  <Star className="h-5 w-5 text-amber-500 fill-amber-500" />
-                  <p className="text-3xl font-bold">{mockProfile.stats.avgRating}</p>
+                  <TrendingUp className="h-5 w-5 text-stage-approved-fg" />
+                  <p className="text-3xl font-bold">{profile.engagementRate}%</p>
                 </div>
-                <p className="text-sm text-muted-foreground">Avg Rating</p>
-              </div>
-              <div className="text-center p-4 bg-muted/50 rounded-lg">
-                <p className="text-3xl font-bold text-stage-approved-fg">{onTimeRate}%</p>
-                <p className="text-sm text-muted-foreground">On-Time Delivery</p>
-              </div>
-              <div className="text-center p-4 bg-muted/50 rounded-lg">
-                <p className="text-3xl font-bold text-stage-outreach-fg">{mockProfile.stats.responseRate}%</p>
-                <p className="text-sm text-muted-foreground">Response Rate</p>
+                <p className="text-sm text-muted-foreground">Engagement Rate</p>
               </div>
             </div>
 
-            {/* Repeat Brands */}
-            <div className="mt-4 p-4 bg-stage-contracted rounded-lg">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Award className="h-5 w-5 text-stage-contracted-fg" />
-                  <span className="font-medium text-violet-800">Brand Loyalty</span>
-                </div>
-                <span className="text-stage-contracted-fg font-semibold">
-                  {mockProfile.stats.repeatBrands} repeat brands
-                </span>
+            <div>
+              <div className="flex items-center justify-between text-sm mb-1.5">
+                <span className="text-muted-foreground">Profile Completeness</span>
+                <span className="font-medium">{profile.profileCompleteness}%</span>
               </div>
+              <Progress value={profile.profileCompleteness} className="h-1.5" />
             </div>
           </CardContent>
         </Card>
@@ -368,40 +363,26 @@ export default function CreatorProfilePage() {
             <CardDescription>Your expected fee per collaboration</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between p-4 bg-stage-approved rounded-lg">
-              <div className="flex items-center gap-2">
-                <IndianRupee className="h-5 w-5 text-stage-approved-fg" />
-                <span className="font-medium text-green-800">Rate Range</span>
+            {profile.rateMin != null && profile.rateMax != null ? (
+              <div className="flex items-center justify-between p-4 bg-stage-approved rounded-lg">
+                <div className="flex items-center gap-2">
+                  <IndianRupee className="h-5 w-5 text-stage-approved-fg" />
+                  <span className="font-medium text-green-800">Rate Range</span>
+                </div>
+                <span className="text-stage-approved-fg font-semibold">
+                  {formatINR(profile.rateMin)} - {formatINR(profile.rateMax)}
+                </span>
               </div>
-              <span className="text-stage-approved-fg font-semibold">
-                {formatINR(mockProfile.rateRange.min)} - {formatINR(mockProfile.rateRange.max)}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Badges */}
-        <Card className="mb-6">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Achievements</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-3">
-              {mockProfile.badges.map((badge) => {
-                const Icon = badge.icon;
-                return (
-                  <div key={badge.id} className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
-                    <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                      <Icon className="h-5 w-5 text-stage-negotiating-fg" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{badge.title}</p>
-                      <p className="text-xs text-muted-foreground">{badge.description}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            ) : (
+              <div className="flex items-center justify-between gap-3 p-4 bg-muted/50 rounded-lg">
+                <p className="text-sm text-muted-foreground">
+                  Set your rate range so brands know your budget.
+                </p>
+                <Button size="sm" variant="outline" onClick={() => setShowEditDialog(true)}>
+                  Add rates
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -412,11 +393,15 @@ export default function CreatorProfilePage() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {mockProfile.languages.map((language) => (
-                <Badge key={language} variant="outline">
-                  {language}
-                </Badge>
-              ))}
+              {profile.languages.length > 0 ? (
+                profile.languages.map((language) => (
+                  <Badge key={language} variant="outline">
+                    {language}
+                  </Badge>
+                ))
+              ) : (
+                <span className="text-sm text-muted-foreground">No languages added yet.</span>
+              )}
             </div>
           </CardContent>
         </Card>

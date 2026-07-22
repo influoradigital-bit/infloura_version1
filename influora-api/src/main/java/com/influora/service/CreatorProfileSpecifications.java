@@ -55,7 +55,12 @@ public final class CreatorProfileSpecifications {
             List<Predicate> preds = new ArrayList<>();
             for (String lang : languages) {
                 String needle = "%\"" + lang.toLowerCase(Locale.ROOT).trim() + "\"%";
-                preds.add(cb.like(cb.lower(cb.coalesce(root.get("languagesJson"), "")), needle));
+                // languagesJson is a JSON-typed column (SqlTypes.JSON=3001); Hibernate 6 rejects
+                // lower() applied to a JSON type, so cast the path to String first.
+                preds.add(
+                        cb.like(
+                                cb.lower(cb.coalesce(root.get("languagesJson").as(String.class), "")),
+                                needle));
             }
             return cb.or(preds.toArray(Predicate[]::new));
         };
@@ -69,7 +74,12 @@ public final class CreatorProfileSpecifications {
             List<Predicate> preds = new ArrayList<>();
             for (String category : categories) {
                 String needle = "%\"" + category.toLowerCase(Locale.ROOT).trim() + "\"%";
-                preds.add(cb.like(cb.lower(cb.coalesce(root.get("categoriesJson"), "")), needle));
+                // categoriesJson is a JSON-typed column (SqlTypes.JSON=3001); Hibernate 6 rejects
+                // lower() applied to a JSON type, so cast the path to String first.
+                preds.add(
+                        cb.like(
+                                cb.lower(cb.coalesce(root.get("categoriesJson").as(String.class), "")),
+                                needle));
             }
             return cb.or(preds.toArray(Predicate[]::new));
         };

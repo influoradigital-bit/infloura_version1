@@ -3,7 +3,6 @@ import { CreatorLayout } from '@/components/creator/creator-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -27,7 +26,6 @@ import {
   Wallet,
   TrendingUp,
   Clock,
-  CheckCircle2,
   IndianRupee,
   ArrowUpRight,
   ArrowDownRight,
@@ -59,83 +57,42 @@ import { useToast } from '@/hooks/use-toast';
 
 // ---------------------------------------------------------------------------
 // Live-wiring notes (ported from claude/api-connection-workflow-b62285):
-//   GET  /wallet              → api.wallet.get('creator')        (availableBalance, escrowLocked)
-//   GET  /wallet/transactions → api.wallet.transactions('creator') (History tab)
+//   GET  /wallet              → api.wallet.get('creator')        (availableBalance, escrowLocked, pendingPayouts)
+//   GET  /wallet/transactions → api.wallet.transactions('creator') (History tab + Payouts tab)
 //
 // Withdraw (POST /wallet/withdraw) and payout methods (GET/POST /wallet/payout-methods,
-// PUT /wallet/payout-methods/:id/primary) are now wired to the live facade — see
+// PUT /wallet/payout-methods/:id/primary) are wired to the live facade — see
 // handleWithdraw / loadPayoutMethods / handleAddMethod / handleSetPrimary below.
 // Withdraw sends a client-generated Idempotency-Key (B10 — WalletService rejects a
 // withdrawal with no key).
 //
-// Still no facade coverage — remain mock-only in both mock and live mode:
-//   - totalEarned / thisMonth / lastMonth (growth %) on the earnings hero card
-//   - detailed payout breakdown (mockPayouts: tds/platformFee/gst/netAmount/utr,
-//     brandName, campaignTitle) — there is no GET /wallet/payouts endpoint
-//   - tax documents list
+// No facade coverage yet (render a proper empty state, never fabricated figures):
+//   - detailed payout breakdown (TDS/platform-fee/GST split, brand/campaign name, UTR) —
+//     there is no GET /wallet/payouts endpoint; the Payouts tab below instead lists the
+//     real debit rows from /wallet/transactions (description/amount/status only)
+//   - tax documents (Form-16A etc.) — no backend endpoint
 // ---------------------------------------------------------------------------
 
-// Payout states
-type PayoutStatus = 'QUEUED' | 'INITIATED' | 'PROCESSING' | 'PAID' | 'FAILED';
-
-const payoutStatusConfig: Record<PayoutStatus, { label: string; color: string; bgColor: string }> = {
-  QUEUED: { label: 'Queued', color: 'text-stage-draft-fg', bgColor: 'bg-stage-draft' },
-  INITIATED: { label: 'Initiated', color: 'text-stage-outreach-fg', bgColor: 'bg-stage-outreach' },
-  PROCESSING: { label: 'Processing', color: 'text-stage-negotiating-fg', bgColor: 'bg-stage-negotiating' },
-  PAID: { label: 'Paid', color: 'text-stage-approved-fg', bgColor: 'bg-stage-approved' },
-  FAILED: { label: 'Failed', color: 'text-stage-disputed-fg', bgColor: 'bg-stage-disputed' },
+/** Real wallet zero-state — used until `/wallet` resolves, and again if it 404s/errors. */
+const EMPTY_EARNINGS = {
+  availableBalance: 0,
+  escrowLocked: 0,
+  pendingPayouts: 0,
 };
 
-const mockEarningsData = {
-  totalEarned: 425000,
-  pendingPayout: 120000,
-  inEscrow: 155000,
-  thisMonth: 85000,
-  lastMonth: 120000,
-};
-
-const mockPayouts = [
-  {
-    id: 'p1',
-    brandName: 'Nykaa Fashion',
-    campaignTitle: 'Winter Collection',
-    grossAmount: 50000,
-    tds: 500, // 1%
-    platformFee: 5000, // 10%
-    gst: 900, // 18% on platform fee
-    netAmount: 43600,
-    status: 'PAID' as PayoutStatus,
-    paidAt: '2026-05-28',
-    payoutMethod: 'UPI',
-    utr: 'UTR123456789',
-  },
-  {
-    id: 'p2',
-    brandName: 'BoAt Lifestyle',
-    campaignTitle: 'Earbuds Launch',
-    grossAmount: 75000,
-    tds: 750,
-    platformFee: 7500,
-    gst: 1350,
-    netAmount: 65400,
-    status: 'PROCESSING' as PayoutStatus,
-    initiatedAt: '2026-06-01',
-    payoutMethod: 'Bank',
-  },
-  {
-    id: 'p3',
-    brandName: 'Mamaearth',
-    campaignTitle: 'Skincare Routine',
-    grossAmount: 35000,
-    tds: 350,
-    platformFee: 3500,
-    gst: 630,
-    netAmount: 30520,
-    status: 'QUEUED' as PayoutStatus,
-    expectedAt: '2026-06-05',
-    payoutMethod: 'UPI',
-  },
-];
+/**
+ * Generic status-badge tone by substring match against whatever status string the
+ * backend sends on a `WalletTransactionRow` (e.g. "COMPLETED", "PROCESSING", "FAILED").
+ * Not tied to a fixed enum — real backend statuses vary by transaction type.
+ */
+function statusBadgeClass(status: string): string {
+  const s = status.toUpperCase();
+  if (s.includes('FAIL')) return 'bg-stage-disputed text-stage-disputed-fg';
+  if (s.includes('PROCESS') || s.includes('PEND') || s.includes('QUEUE') || s.includes('INITIAT')) {
+    return 'bg-stage-negotiating text-stage-negotiating-fg';
+  }
+  return 'bg-stage-approved text-stage-approved-fg';
+}
 
 interface WalletTransaction {
   id: string;
@@ -143,6 +100,8 @@ interface WalletTransaction {
   description: string;
   amount: number;
   date: string;
+  status: string;
+  balanceAfter: number;
 }
 
 /**
@@ -159,22 +118,10 @@ function mapWalletTransactionRow(row: WalletTransactionRow): WalletTransaction {
     description: row.description,
     amount: isCredit ? Math.abs(row.amount) : -Math.abs(row.amount),
     date: row.createdAt,
+    status: row.status,
+    balanceAfter: row.balanceAfter,
   };
 }
-
-const mockTransactions: WalletTransaction[] = [
-  { id: 't1', type: 'EARNING', description: 'Winter Collection - Nykaa Fashion', amount: 50000, date: '2026-05-28' },
-  { id: 't2', type: 'PAYOUT', description: 'Payout to UPI', amount: -43600, date: '2026-05-28' },
-  { id: 't3', type: 'EARNING', description: 'Product Review - Samsung', amount: 35000, date: '2026-05-20' },
-  { id: 't4', type: 'PAYOUT', description: 'Payout to Bank Account', amount: -30520, date: '2026-05-20' },
-  { id: 't5', type: 'EARNING', description: 'Brand Collab - Zomato', amount: 45000, date: '2026-05-15' },
-];
-
-const mockTaxDocs = [
-  { id: 'td1', title: 'Form 16A - Q4 FY25-26', period: 'Jan-Mar 2026', status: 'AVAILABLE' },
-  { id: 'td2', title: 'Form 16A - Q3 FY25-26', period: 'Oct-Dec 2025', status: 'AVAILABLE' },
-  { id: 'td3', title: 'Annual Statement FY25-26', period: 'Apr 2025 - Mar 2026', status: 'PENDING' },
-];
 
 function formatINR(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -352,7 +299,7 @@ export default function CreatorWalletPage() {
   const liveApi = isApiLive();
   const { toast } = useToast();
 
-  const [selectedPayout, setSelectedPayout] = React.useState<typeof mockPayouts[0] | null>(null);
+  const [selectedPayout, setSelectedPayout] = React.useState<WalletTransaction | null>(null);
   const [showPayoutSettings, setShowPayoutSettings] = React.useState(false);
   const [showWithdrawDialog, setShowWithdrawDialog] = React.useState(false);
   const [withdrawAmount, setWithdrawAmount] = React.useState('');
@@ -373,10 +320,10 @@ export default function CreatorWalletPage() {
 
   // Wallet balance + transactions — DISPLAY-only live data behind isApiLive(),
   // mock as fallback. Does not touch the withdraw mutation (see notes above).
-  const [earnings, setEarnings] = React.useState(mockEarningsData);
+  const [earnings, setEarnings] = React.useState(EMPTY_EARNINGS);
   const [walletLoading, setWalletLoading] = React.useState(false);
   const [walletError, setWalletError] = React.useState<string | null>(null);
-  const [transactions, setTransactions] = React.useState<WalletTransaction[]>(mockTransactions);
+  const [transactions, setTransactions] = React.useState<WalletTransaction[]>([]);
 
   // GET /creator/platform-fee — global fee shown for transparency (wallet.platformFee).
   // Unlike the balance/transaction effects, this runs in BOTH mock and live mode: the
@@ -400,8 +347,8 @@ export default function CreatorWalletPage() {
     };
   }, []);
 
-  // GET /wallet — availableBalance -> pendingPayout (available to withdraw), escrowLocked -> inEscrow.
-  // totalEarned/thisMonth/lastMonth have no facade field yet, so they stay mock-derived.
+  // GET /wallet — availableBalance, escrowLocked, pendingPayouts are all real fields on
+  // WalletSummaryResponse; rendered as-is in the hero card below. No client-side derivation.
   React.useEffect(() => {
     if (!liveApi) return;
     let cancelled = false;
@@ -411,16 +358,18 @@ export default function CreatorWalletPage() {
       try {
         const remote = await api.wallet.get('creator');
         if (!cancelled && remote) {
-          setEarnings((prev) => ({
-            ...prev,
-            pendingPayout: remote.availableBalance ?? prev.pendingPayout,
-            inEscrow: remote.escrowLocked ?? prev.inEscrow,
-          }));
+          setEarnings({
+            availableBalance: remote.availableBalance ?? 0,
+            escrowLocked: remote.escrowLocked ?? 0,
+            pendingPayouts: remote.pendingPayouts ?? 0,
+          });
         }
       } catch (err) {
         if (!cancelled) {
           console.error('Failed to load wallet balance', err);
           setWalletError('Could not refresh wallet balance. Showing last known data.');
+          // Never leave a fabricated balance on screen on error — zero it out.
+          setEarnings(EMPTY_EARNINGS);
         }
       } finally {
         if (!cancelled) setWalletLoading(false);
@@ -431,7 +380,8 @@ export default function CreatorWalletPage() {
     };
   }, [liveApi]);
 
-  // GET /wallet/transactions — History tab.
+  // GET /wallet/transactions — History tab, and the source for the Payouts tab below
+  // (filtered to debit rows) since there is no dedicated GET /wallet/payouts endpoint.
   React.useEffect(() => {
     if (!liveApi) return;
     let cancelled = false;
@@ -453,6 +403,8 @@ export default function CreatorWalletPage() {
             description: err instanceof ApiError ? err.message : 'Showing your last known activity.',
             variant: 'destructive',
           });
+          // Never leave fabricated/stale rows on screen on error.
+          setTransactions([]);
         }
       }
     })();
@@ -478,9 +430,6 @@ export default function CreatorWalletPage() {
   React.useEffect(() => {
     loadPayoutMethods();
   }, [loadPayoutMethods]);
-
-  const growthPercent = ((mockEarningsData.thisMonth - mockEarningsData.lastMonth) / mockEarningsData.lastMonth * 100).toFixed(1);
-  const isPositiveGrowth = mockEarningsData.thisMonth > mockEarningsData.lastMonth;
 
   const handleWithdraw = async () => {
     const amount = parseFloat(withdrawAmount);
@@ -585,36 +534,25 @@ export default function CreatorWalletPage() {
           </div>
         )}
 
-        {/* Earnings Overview */}
+        {/* Earnings Overview — every figure here is a real field off WalletSummaryResponse
+            (GET /wallet); there is no lifetime-earnings or month-over-month endpoint yet,
+            so we no longer fabricate a "Total Earned" / growth number. */}
         <Card className="bg-gradient-to-br from-primary to-accent text-white mb-6">
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-white/80">Total Earned</p>
-              <div className="flex items-center gap-1 text-sm">
-                {walletLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : isPositiveGrowth ? (
-                  <ArrowUpRight className="h-4 w-4" />
-                ) : (
-                  <ArrowDownRight className="h-4 w-4" />
-                )}
-                <span>{Math.abs(parseFloat(growthPercent))}% vs last month</span>
-              </div>
+              <p className="text-sm text-white/80">Available Balance</p>
+              {walletLoading && <Loader2 className="h-4 w-4 animate-spin" />}
             </div>
-            <p className="text-4xl font-bold mb-6">{formatINR(mockEarningsData.totalEarned)}</p>
+            <p className="text-4xl font-bold mb-6">{formatINR(earnings.availableBalance)}</p>
 
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-white/10 rounded-lg p-3">
-                <p className="text-xs text-white/80">Pending</p>
-                <p className="text-lg font-semibold">{formatINR(earnings.pendingPayout)}</p>
-              </div>
+            <div className="grid grid-cols-2 gap-4">
               <div className="bg-white/10 rounded-lg p-3">
                 <p className="text-xs text-white/80">In Escrow</p>
-                <p className="text-lg font-semibold">{formatINR(earnings.inEscrow)}</p>
+                <p className="text-lg font-semibold">{formatINR(earnings.escrowLocked)}</p>
               </div>
               <div className="bg-white/10 rounded-lg p-3">
-                <p className="text-xs text-white/80">This Month</p>
-                <p className="text-lg font-semibold">{formatINR(mockEarningsData.thisMonth)}</p>
+                <p className="text-xs text-white/80">Pending Payouts</p>
+                <p className="text-lg font-semibold">{formatINR(earnings.pendingPayouts)}</p>
               </div>
             </div>
           </CardContent>
@@ -629,96 +567,59 @@ export default function CreatorWalletPage() {
             <TabsTrigger value="tax">Tax Docs</TabsTrigger>
           </TabsList>
 
-          {/* Payouts Tab */}
+          {/* Payouts Tab — there is no dedicated GET /wallet/payouts endpoint (no per-payout
+              brand/campaign/TDS/GST breakdown server-side), so this derives real payout rows
+              from the same /wallet/transactions data the History tab uses (debit rows only). */}
           <TabsContent value="payouts" className="space-y-4">
-            {/* Pending Payouts */}
-            {mockPayouts.filter(p => p.status !== 'PAID').length > 0 && (
-              <div className="space-y-3">
-                <h3 className="font-medium text-sm text-muted-foreground">Pending Payouts</h3>
-                {mockPayouts
-                  .filter((p) => p.status !== 'PAID')
-                  .map((payout) => {
-                    const statusInfo = payoutStatusConfig[payout.status];
-                    return (
-                      <Card
-                        key={payout.id}
-                        className="cursor-pointer hover:shadow-md transition-all"
-                        onClick={() => setSelectedPayout(payout)}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-start gap-3 min-w-0">
-                              <Avatar className="h-10 w-10 flex-shrink-0">
-                                <AvatarFallback className="bg-gradient-to-br from-violet-100 to-purple-100 text-stage-contracted-fg font-semibold text-sm">
-                                  {payout.brandName.charAt(0)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="min-w-0">
-                                <p className="font-semibold truncate">{payout.brandName}</p>
-                                <p className="text-sm text-muted-foreground truncate">
-                                  {payout.campaignTitle}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="text-right flex-shrink-0">
-                              <p className="font-semibold text-stage-approved-fg">
-                                {formatINR(payout.netAmount)}
-                              </p>
-                              <Badge className={cn(statusInfo.bgColor, statusInfo.color, 'hover:' + statusInfo.bgColor, 'mt-1')}>
-                                {statusInfo.label}
-                              </Badge>
-                            </div>
-                          </div>
-                          
-                          {/* Progress indicator for processing */}
-                          {payout.status === 'PROCESSING' && (
-                            <div className="mt-3 flex items-center gap-2">
-                              <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div className="h-full w-2/3 bg-amber-500 rounded-full animate-pulse" />
-                              </div>
-                              <span className="text-xs text-muted-foreground">Processing</span>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-              </div>
-            )}
-
-            {/* Completed Payouts */}
-            <div className="space-y-3">
-              <h3 className="font-medium text-sm text-muted-foreground">Completed</h3>
-              {mockPayouts
-                .filter((p) => p.status === 'PAID')
-                .map((payout) => (
-                  <Card
-                    key={payout.id}
-                    className="cursor-pointer hover:shadow-md transition-all"
-                    onClick={() => setSelectedPayout(payout)}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3 min-w-0">
-                          <div className="h-10 w-10 rounded-full bg-stage-approved flex items-center justify-center flex-shrink-0">
-                            <CheckCircle2 className="h-5 w-5 text-stage-approved-fg" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-semibold truncate">{payout.brandName}</p>
-                            <p className="text-sm text-muted-foreground">
-                              Paid on {new Date(payout.paidAt!).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <p className="font-semibold">{formatINR(payout.netAmount)}</p>
-                          <p className="text-xs text-muted-foreground">{payout.payoutMethod}</p>
-                        </div>
-                      </div>
+            {(() => {
+              const payoutTransactions = transactions.filter((tx) => tx.type === 'PAYOUT');
+              if (payoutTransactions.length === 0) {
+                return (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center gap-2 p-8 text-center">
+                      <Banknote className="h-8 w-8 text-muted-foreground" />
+                      <p className="font-medium">No payouts yet</p>
+                      <p className="text-sm text-muted-foreground">
+                        Your payouts will appear here once a withdrawal is processed.
+                      </p>
                     </CardContent>
                   </Card>
-                ))}
-            </div>
+                );
+              }
+              return (
+                <div className="space-y-3">
+                  {payoutTransactions.map((payout) => (
+                    <Card
+                      key={payout.id}
+                      className="cursor-pointer hover:shadow-md transition-all"
+                      onClick={() => setSelectedPayout(payout)}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="h-10 w-10 rounded-full bg-stage-outreach flex items-center justify-center flex-shrink-0">
+                              <Banknote className="h-5 w-5 text-stage-outreach-fg" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold truncate">{payout.description}</p>
+                              <p className="text-sm text-muted-foreground truncate">
+                                {new Date(payout.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="font-semibold">{formatINR(Math.abs(payout.amount))}</p>
+                            <Badge className={cn(statusBadgeClass(payout.status), 'mt-1')}>
+                              {payout.status}
+                            </Badge>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              );
+            })()}
           </TabsContent>
 
           {/* History Tab */}
@@ -798,33 +699,17 @@ export default function CreatorWalletPage() {
               </div>
             </div>
 
-            <div className="space-y-3">
-              {mockTaxDocs.map((doc) => (
-                <Card key={doc.id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
-                          <Receipt className="h-5 w-5 text-muted-foreground" />
-                        </div>
-                        <div>
-                          <p className="font-medium">{doc.title}</p>
-                          <p className="text-sm text-muted-foreground">{doc.period}</p>
-                        </div>
-                      </div>
-                      {doc.status === 'AVAILABLE' ? (
-                        <Button variant="outline" size="sm">
-                          <Download className="h-4 w-4 mr-2" />
-                          Download
-                        </Button>
-                      ) : (
-                        <Badge variant="secondary">Coming Soon</Badge>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            {/* No tax-document endpoint exists yet — show a real empty state instead of
+                fabricated Form-16A rows. */}
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center gap-2 p-8 text-center">
+                <Receipt className="h-8 w-8 text-muted-foreground" />
+                <p className="font-medium">No tax documents yet</p>
+                <p className="text-sm text-muted-foreground">
+                  Form 16A and annual statements will appear here once available.
+                </p>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
@@ -836,79 +721,39 @@ export default function CreatorWalletPage() {
             <>
               <DialogHeader>
                 <DialogTitle>Payout Details</DialogTitle>
-                <DialogDescription>
-                  {selectedPayout.brandName} - {selectedPayout.campaignTitle}
-                </DialogDescription>
+                <DialogDescription>{selectedPayout.description}</DialogDescription>
               </DialogHeader>
 
               <div className="space-y-4">
                 {/* Status */}
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Status</span>
-                  <Badge className={cn(
-                    payoutStatusConfig[selectedPayout.status].bgColor,
-                    payoutStatusConfig[selectedPayout.status].color
-                  )}>
-                    {payoutStatusConfig[selectedPayout.status].label}
+                  <Badge className={statusBadgeClass(selectedPayout.status)}>
+                    {selectedPayout.status}
                   </Badge>
                 </div>
 
                 <Separator />
 
-                {/* Breakdown */}
+                {/* Real fields only — no TDS/platform-fee/GST split, no brand/campaign name,
+                    no UTR: WalletTransactionRow doesn't carry that breakdown. */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Gross Amount</span>
-                    <span>{formatINR(selectedPayout.grossAmount)}</span>
+                    <span className="text-muted-foreground">Amount</span>
+                    <span className="font-semibold text-stage-approved-fg">
+                      {formatINR(Math.abs(selectedPayout.amount))}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Platform Fee (10%)</span>
-                    <span className="text-stage-disputed-fg">-{formatINR(selectedPayout.platformFee)}</span>
+                    <span className="text-muted-foreground">Date</span>
+                    <span>{new Date(selectedPayout.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">GST on Platform Fee</span>
-                    <span className="text-stage-disputed-fg">-{formatINR(selectedPayout.gst)}</span>
+                    <span className="text-muted-foreground">Balance After</span>
+                    <span>{formatINR(selectedPayout.balanceAfter)}</span>
                   </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">TDS (1%)</span>
-                    <span className="text-stage-disputed-fg">-{formatINR(selectedPayout.tds)}</span>
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between font-semibold">
-                    <span>Net Payout</span>
-                    <span className="text-stage-approved-fg">{formatINR(selectedPayout.netAmount)}</span>
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Payout Method */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Method</span>
-                    <span>{selectedPayout.payoutMethod}</span>
-                  </div>
-                  {selectedPayout.utr && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">UTR/Reference</span>
-                      <span className="font-mono text-xs">{selectedPayout.utr}</span>
-                    </div>
-                  )}
-                  {selectedPayout.paidAt && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Paid On</span>
-                      <span>{new Date(selectedPayout.paidAt).toLocaleDateString('en-IN')}</span>
-                    </div>
-                  )}
                 </div>
               </div>
-
-              <DialogFooter>
-                <Button variant="outline" className="w-full">
-                  <Download className="h-4 w-4 mr-2" />
-                  Download Receipt
-                </Button>
-              </DialogFooter>
             </>
           )}
         </DialogContent>
@@ -1099,9 +944,9 @@ export default function CreatorWalletPage() {
             {/* Available Balance */}
             <div className="bg-gradient-to-br from-violet-50 to-purple-50 border border-violet-200 rounded-lg p-4 text-center">
               <p className="text-sm text-muted-foreground">Available to Withdraw</p>
-              <p className="text-3xl font-bold text-stage-contracted-fg">{formatINR(earnings.pendingPayout)}</p>
+              <p className="text-3xl font-bold text-stage-contracted-fg">{formatINR(earnings.availableBalance)}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                {formatINR(earnings.inEscrow)} locked in escrow
+                {formatINR(earnings.escrowLocked)} locked in escrow
               </p>
             </div>
 
@@ -1124,7 +969,7 @@ export default function CreatorWalletPage() {
                   value={withdrawAmount}
                   onChange={(e) => setWithdrawAmount(e.target.value)}
                   className="pl-9"
-                  max={earnings.pendingPayout}
+                  max={earnings.availableBalance}
                 />
               </div>
               <div className="flex items-center justify-between text-xs">
@@ -1132,7 +977,7 @@ export default function CreatorWalletPage() {
                 <Button 
                   variant="link" 
                   className="h-auto p-0 text-xs"
-                  onClick={() => setWithdrawAmount(earnings.pendingPayout.toString())}
+                  onClick={() => setWithdrawAmount(earnings.availableBalance.toString())}
                 >
                   Withdraw All
                 </Button>
@@ -1188,7 +1033,7 @@ export default function CreatorWalletPage() {
             </Button>
             <Button 
               onClick={handleWithdraw}
-              disabled={isWithdrawing || !withdrawAmount || parseFloat(withdrawAmount) < 100 || parseFloat(withdrawAmount) > earnings.pendingPayout}
+              disabled={isWithdrawing || !withdrawAmount || parseFloat(withdrawAmount) < 100 || parseFloat(withdrawAmount) > earnings.availableBalance}
               className="bg-primary hover:bg-primary/90"
             >
               {isWithdrawing ? (

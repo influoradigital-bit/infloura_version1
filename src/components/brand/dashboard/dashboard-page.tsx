@@ -43,63 +43,13 @@ interface ActionItem {
   link: string;
 }
 
-const mockActionItems: ActionItem[] = [
-  {
-    id: '1',
-    type: 'deliverable_review',
-    title: 'Review deliverable from Priya Sharma',
-    subtitle: 'Summer Fashion Campaign',
-    deadline: new Date(Date.now() + 4 * 60 * 60 * 1000),
-    priority: 'urgent',
-    amount: 45000,
-    link: '/brand/chat?deal=deal-1',
-  },
-  {
-    id: '2',
-    type: 'counter_proposal',
-    title: 'Respond to counter-offer',
-    subtitle: 'Arjun Kapoor — Tech Review Campaign',
-    deadline: new Date(Date.now() + 18 * 60 * 60 * 1000),
-    priority: 'high',
-    amount: 75000,
-    link: '/brand/chat?deal=deal-2',
-  },
-  {
-    id: '3',
-    type: 'payment_release',
-    title: 'Release milestone payment',
-    subtitle: 'Sneha Reddy — Wellness Series',
-    deadline: new Date(Date.now() + 2 * 60 * 60 * 1000),
-    priority: 'urgent',
-    amount: 25000,
-    link: '/brand/chat?deal=deal-3',
-  },
-  {
-    id: '4',
-    type: 'sign_contract',
-    title: 'Sign pending contract',
-    subtitle: 'Rahul Verma — Product Launch',
-    deadline: new Date(Date.now() + 48 * 60 * 60 * 1000),
-    priority: 'medium',
-    amount: 120000,
-    link: '/brand/chat?deal=deal-4',
-  },
-];
-
-const mockWallet = {
-  availableBalance: 285000,
-  escrowLocked: 450000,
-  runwayDays: 47,
+/** Real zero-state — used until the dashboard loads, and again for any endpoint that
+ * fails to load (never left showing fabricated rows/figures on an error). */
+const EMPTY_WALLET = {
+  availableBalance: 0,
+  escrowLocked: 0,
+  runwayDays: 0,
 };
-
-const mockPipeline = [
-  { stage: 'Outreach', count: 8 },
-  { stage: 'Negotiating', count: 5 },
-  { stage: 'Contracted', count: 3 },
-  { stage: 'In Progress', count: 12 },
-  { stage: 'Review', count: 4 },
-  { stage: 'Settled', count: 28 },
-];
 
 const formatINR = (amount: number) => {
   if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)}L`;
@@ -138,52 +88,66 @@ const getPriorityBadge = (priority: ActionItem['priority']) => {
 export function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const [actionItems, setActionItems] = React.useState<ActionItem[]>(mockActionItems);
-  const [wallet, setWallet] = React.useState(mockWallet);
-  const [pipeline, setPipeline] = React.useState(mockPipeline);
+  const [actionItems, setActionItems] = React.useState<ActionItem[]>([]);
+  const [wallet, setWallet] = React.useState(EMPTY_WALLET);
+  const [pipeline, setPipeline] = React.useState<Array<{ stage: string; count: number }>>([]);
 
-  // Load real data when the API switches to live mode
+  // Load each of the three data sources independently — `Promise.allSettled` (not
+  // `Promise.all`) so that one endpoint rejecting (e.g. a brand-new workspace's
+  // `GET /wallet` 404ing) can't discard the other two calls that DID succeed. Each
+  // rejected source falls back to a real empty/zero state, never a fabricated one.
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const [actions, walletData, pipelineData] = await Promise.all([
-          api.dashboard.actions('brand'),
-          api.wallet.get('brand'),
-          api.dashboard.pipeline('brand'),
-        ]);
-        if (cancelled) return;
-        // Array.isArray alone, deliberately no `.length > 0` -- a brand-new account's real
-        // answer is a legitimately empty array (no actions pending, no pipeline yet), and both
-        // render a proper empty state below. Requiring non-empty treated that correct empty
-        // response the same as "API call didn't return usable data," so it silently kept the
-        // mock/demo rows forever instead of ever showing the account's real (empty) state.
-        if (Array.isArray(actions)) {
-          setActionItems(
-            actions.map((a) => ({ ...a, deadline: new Date(a.deadline) })) as ActionItem[],
-          );
-        }
-        if (walletData) {
-          setWallet({
-            availableBalance: walletData.availableBalance ?? mockWallet.availableBalance,
-            escrowLocked: walletData.escrowLocked ?? mockWallet.escrowLocked,
-            runwayDays: walletData.runwayDays ?? mockWallet.runwayDays,
-          });
-        }
-        if (Array.isArray(pipelineData)) {
-          setPipeline(pipelineData);
-        }
-      } catch (err) {
-        // Was console.error only — on failure the dashboard kept showing mock
-        // wallet/actions/pipeline as if they were the brand's real data.
-        if (!cancelled) {
-          toast({
-            title: 'Couldn’t load your dashboard',
-            description:
-              err instanceof ApiError ? err.message : 'Some figures may be out of date — refresh to retry.',
-            variant: 'destructive',
-          });
-        }
+      const [actionsResult, walletResult, pipelineResult] = await Promise.allSettled([
+        api.dashboard.actions('brand'),
+        api.wallet.get('brand'),
+        api.dashboard.pipeline('brand'),
+      ]);
+      if (cancelled) return;
+
+      // Array.isArray alone, deliberately no `.length > 0` -- a brand-new account's real
+      // answer is a legitimately empty array (no actions pending, no pipeline yet), and both
+      // render a proper empty state below. Requiring non-empty treated that correct empty
+      // response the same as "API call didn't return usable data," so it silently kept the
+      // mock/demo rows forever instead of ever showing the account's real (empty) state.
+      if (actionsResult.status === 'fulfilled' && Array.isArray(actionsResult.value)) {
+        setActionItems(
+          actionsResult.value.map((a) => ({ ...a, deadline: new Date(a.deadline) })) as ActionItem[],
+        );
+      } else if (actionsResult.status === 'rejected') {
+        setActionItems([]);
+      }
+
+      if (walletResult.status === 'fulfilled' && walletResult.value) {
+        setWallet({
+          availableBalance: walletResult.value.availableBalance ?? 0,
+          escrowLocked: walletResult.value.escrowLocked ?? 0,
+          runwayDays: walletResult.value.runwayDays ?? 0,
+        });
+      } else if (walletResult.status === 'rejected') {
+        setWallet(EMPTY_WALLET);
+      }
+
+      if (pipelineResult.status === 'fulfilled' && Array.isArray(pipelineResult.value)) {
+        setPipeline(pipelineResult.value);
+      } else if (pipelineResult.status === 'rejected') {
+        setPipeline([]);
+      }
+
+      const failures = [actionsResult, walletResult, pipelineResult].filter(
+        (r): r is PromiseRejectedResult => r.status === 'rejected',
+      );
+      // Was console.error only — on failure the dashboard kept showing mock
+      // wallet/actions/pipeline as if they were the brand's real data.
+      if (failures.length > 0) {
+        const firstError = failures[0].reason;
+        toast({
+          title: 'Couldn’t load your dashboard',
+          description:
+            firstError instanceof ApiError ? firstError.message : 'Some figures may be out of date — refresh to retry.',
+          variant: 'destructive',
+        });
       }
     })();
     return () => {

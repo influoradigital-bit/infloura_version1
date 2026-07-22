@@ -54,6 +54,7 @@ export default function CreatorLoginPage() {
 
   return (
     <AuthLoginShell
+      accent="creator"
       heroTitle="Turn collaborations into income"
       heroSubtitle="Manage deals, submit deliverables, and get paid — with a workspace built for Indian creators."
       heroBullets={[

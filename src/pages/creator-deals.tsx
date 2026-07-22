@@ -22,7 +22,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { cn, formatINR } from '@/lib/utils';
 import { api, ApiError, type DealStatusFilter } from '@/lib/api';
-import { demoHypeInvite, type HypeInvite } from '@/lib/demo-data';
+import { type HypeInvite } from '@/lib/demo-data';
 import { HypeInboxCard } from '@/components/creator/hype-inbox-card';
 import { DailySuggestionSection } from '@/components/creator/copilot/DailySuggestionSection';
 import { useToast } from '@/hooks/use-toast';
@@ -203,13 +203,14 @@ export const mockDeals: DealRoom[] = [
 export default function CreatorDealsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [deals, setDeals] = React.useState<DealRoom[]>(mockDeals);
+  const [deals, setDeals] = React.useState<DealRoom[]>([]);
   const [activeFilter, setActiveFilter] = React.useState<DealStatusFilter>('all');
   const [search, setSearch] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [actionLoading, setActionLoading] = React.useState<string | null>(null);
-  // Demo Hype invite — replaced by api-driven invites in live mode.
-  const hypeInvites = React.useMemo(() => [demoHypeInvite], []);
+  // Hype invites come from the backend; none are shown until that API exists, so we never
+  // fabricate a demo invite in the live creator inbox.
+  const hypeInvites = React.useMemo<HypeInvite[]>(() => [], []);
 
   // Load deals from API when filter changes. Live mode swaps mock for backend.
   React.useEffect(() => {

@@ -101,9 +101,9 @@ public class WalletService {
 
     public record PagedWalletTransactions(List<WalletTransactionRowResponse> items, PageMeta meta) {}
 
-    @Transactional(readOnly = true)
+    @Transactional
     public WalletBalanceResponse getBalance(String workspaceId) {
-        Wallet wallet = requireWorkspaceWallet(workspaceId);
+        Wallet wallet = getOrCreateWorkspaceWallet(workspaceId);
         return toBalanceResponse(wallet);
     }
 
@@ -135,9 +135,9 @@ public class WalletService {
      * brand dashboard. Derive-on-read (vs. maintain-on-write) can't drift out of sync with the
      * {@link EscrowHold} rows that are the actual source of truth for locked funds.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public WalletSummaryResponse getSummary(String workspaceId) {
-        Wallet wallet = requireWorkspaceWallet(workspaceId);
+        Wallet wallet = getOrCreateWorkspaceWallet(workspaceId);
         BigDecimal pendingPayouts =
                 paymentMilestoneRepository.sumAmountByWorkspaceAndStatus(
                         workspaceId, MilestoneStatus.FUNDED);
@@ -450,6 +450,13 @@ public class WalletService {
         return rawRunwayDays.compareTo(cap) > 0 ? MAX_REPORTED_RUNWAY_DAYS : rawRunwayDays.intValue();
     }
 
+    /**
+     * Money-path lookup — throws {@code WALLET_NOT_FOUND} (404) when the workspace has no wallet
+     * row. Callers on the spend/fund path (e.g. {@link BrandCampaignFeeService}, {@link
+     * EscrowService}, {@link WalletTopUpService}) rely on this throwing behavior: a missing wallet
+     * means "cannot afford" and must NOT be silently papered over with a zero-balance wallet.
+     * Read-only display endpoints should use {@link #getOrCreateWorkspaceWallet} instead.
+     */
     @Transactional(readOnly = true)
     public Wallet requireWorkspaceWallet(String workspaceId) {
         return walletRepository
@@ -458,6 +465,20 @@ public class WalletService {
                         () ->
                                 new ApiException(
                                         "WALLET_NOT_FOUND", "Wallet not found for workspace", HttpStatus.NOT_FOUND));
+    }
+
+    /**
+     * Lazily creates a workspace's wallet on first read — brands/workspaces aren't guaranteed a
+     * wallet row at registration, and until now that meant a fresh brand's dashboard read {@code
+     * GET /wallet} / {@code GET /wallet/balance} 404'd with {@code WALLET_NOT_FOUND} instead of
+     * showing a zero balance. Display-only: does not affect {@link #requireWorkspaceWallet}, which
+     * money-moving callers still use to treat a missing wallet as "cannot afford".
+     */
+    @Transactional
+    public Wallet getOrCreateWorkspaceWallet(String workspaceId) {
+        return walletRepository
+                .findByOwnerId(workspaceId)
+                .orElseGet(() -> walletRepository.save(Wallet.forWorkspace(Ulids.newUlid(), workspaceId)));
     }
 
     /** Lazily creates a creator's wallet on first payout — creators aren't given one at signup. */

@@ -147,6 +147,10 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [newRequirement, setNewRequirement] = React.useState('');
   const [newHashtag, setNewHashtag] = React.useState('');
+  // Defensive hardening only: keeps the Start/End date Popovers mutually exclusive so their
+  // portals can never overlap. Bindings below are unchanged (start→startDate, end→endDate).
+  const [startDateOpen, setStartDateOpen] = React.useState(false);
+  const [endDateOpen, setEndDateOpen] = React.useState(false);
 
   const isEditing = !!campaignId;
   const currentStepIndex = steps.findIndex((s) => s.id === currentStep);
@@ -666,7 +670,13 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
                         <Label>Start Date</Label>
-                        <Popover>
+                        <Popover
+                          open={startDateOpen}
+                          onOpenChange={(open) => {
+                            setStartDateOpen(open);
+                            if (open) setEndDateOpen(false);
+                          }}
+                        >
                           <PopoverTrigger asChild>
                             <Button
                               variant="outline"
@@ -686,7 +696,10 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                             <CalendarComponent
                               mode="single"
                               selected={formData.startDate}
-                              onSelect={(date) => updateFormData({ startDate: date })}
+                              onSelect={(date) => {
+                                updateFormData({ startDate: date });
+                                setStartDateOpen(false);
+                              }}
                               disabled={(date) => date < new Date()}
                               initialFocus
                             />
@@ -699,7 +712,13 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
 
                       <div className="space-y-2">
                         <Label>End Date</Label>
-                        <Popover>
+                        <Popover
+                          open={endDateOpen}
+                          onOpenChange={(open) => {
+                            setEndDateOpen(open);
+                            if (open) setStartDateOpen(false);
+                          }}
+                        >
                           <PopoverTrigger asChild>
                             <Button
                               variant="outline"
@@ -719,7 +738,10 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                             <CalendarComponent
                               mode="single"
                               selected={formData.endDate}
-                              onSelect={(date) => updateFormData({ endDate: date })}
+                              onSelect={(date) => {
+                                updateFormData({ endDate: date });
+                                setEndDateOpen(false);
+                              }}
                               disabled={(date) =>
                                 date < (formData.startDate || new Date())
                               }
