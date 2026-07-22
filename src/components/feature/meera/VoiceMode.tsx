@@ -147,6 +147,12 @@ export function VoiceMode({
 
   // Status copy per loop state.
   useEffect(() => {
+    // When voice input can't run at all (insecure http origin — no getUserMedia /
+    // Web Speech), don't sit forever on "Getting ready…": say why. Real fix is HTTPS.
+    if (!supported) {
+      setStatus('Voice needs a secure (HTTPS) connection')
+      return
+    }
     switch (loopState) {
       case 'listening':
         setStatus('Listening…')
@@ -160,7 +166,7 @@ export function VoiceMode({
       default:
         setStatus(needsTap ? 'Tap the mic to talk' : 'Getting ready…')
     }
-  }, [loopState, needsTap])
+  }, [loopState, needsTap, supported])
 
   const handleExit = useCallback(() => {
     stop()
@@ -217,7 +223,7 @@ export function VoiceMode({
                 ? `“${lastHeard}”`
                 : supported
                   ? 'Just talk — Meera listens when you pause.'
-                  : 'Voice input isn’t supported in this browser.'}
+                  : 'Open Influora over HTTPS to use voice — your mic is blocked on an insecure connection.'}
             </p>
           </div>
 

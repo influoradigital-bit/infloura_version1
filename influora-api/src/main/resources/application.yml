@@ -124,6 +124,17 @@ influora:
       # per Meera turn (aud=meera-stream); Python verifies this, never the user's access JWT.
       signing-secret: ${MEERA_STREAM_SIGNING_SECRET:dev-meera-stream-secret-change-in-production-min-32-chars}
       stream-token-ttl-seconds: ${MEERA_STREAM_TOKEN_TTL_SECONDS:60}
+  # [Ash AI-review 2026-07-23] MeeraVoiceAiClient (Sarvam TTS/STT proxy) @Value default is
+  # http://localhost:8000. Only application-prod.yml set influora.voice-ai.base-url, so on ANY
+  # non-prod deploy (incl. the dev-profile IP test box) every /meera/voice/speak call hit localhost
+  # inside the api container -> HttpHostConnectException -> SpeakResult.fallback() -> the browser's
+  # robotic SpeechSynthesis instead of Sarvam. Resolve here (default profile, so dev inherits it):
+  # explicit VOICE_AI_BASE_URL wins; else reuse MEERA_CHAT_AI_BASE_URL (already set to the AI
+  # container on every containerized deploy — voice is part of Meera and lives in the same service);
+  # else localhost for a bare local run. application-prod.yml still overrides with a no-default
+  # ${VOICE_AI_BASE_URL} (fail-fast), so prod behavior is unchanged.
+  voice-ai:
+    base-url: ${VOICE_AI_BASE_URL:${MEERA_CHAT_AI_BASE_URL:http://localhost:8000}}
   internal-service-token:
     # Kabir 2.2/2.4, MF-2, LB-2 — distinct secret from every other key (JWT/stream/R2/Razorpay).
     # Verifies X-Meera-Service-Token (aud=influora-internal, iss=meera-python, exp<=60s) and signs

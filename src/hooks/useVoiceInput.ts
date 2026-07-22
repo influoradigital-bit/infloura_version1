@@ -116,7 +116,15 @@ export function useVoiceInput({
   // Detected once — capability doesn't change over the hook's lifetime.
   const recorderSupportedRef = useRef(detectRecorderSupport())
   const browserSttSupportedRef = useRef(detectBrowserSttSupport())
-  const supported = recorderSupportedRef.current || browserSttSupportedRef.current
+  // Both real paths require a SECURE CONTEXT: `getUserMedia`/`navigator.mediaDevices`
+  // is undefined on an insecure origin, and Chrome's `webkitSpeechRecognition` (whose
+  // constructor still EXISTS on http, a false-positive) errors out on start there too.
+  // Without this gate, an http deploy (e.g. the raw-IP test box, no TLS) reported
+  // supported=true and then sat forever on "Getting ready…" because neither path could
+  // ever reach 'listening'. `isSecureContext` is true for https AND localhost, so local
+  // dev is unaffected. Real fix for a deploy is TLS; this just makes the UI honest.
+  const secureContext = typeof window !== 'undefined' && window.isSecureContext
+  const supported = secureContext && (recorderSupportedRef.current || browserSttSupportedRef.current)
 
   const [phase, setPhase] = useState<VoiceInputPhase>('idle')
   const recognitionRef = useRef<SpeechRecognition | null>(null)
