@@ -74,6 +74,10 @@ public class BrandSafetyAiClient {
                 if (httpClient == null) {
                     httpClient =
                             HttpClient.newBuilder()
+                                    // [Ash 2026-07-23] Pin HTTP/1.1 — java.net.http's HTTP/2 default drops the
+                                    // POST body over cleartext h2c against uvicorn (empty body -> 500). See
+                                    // AnalyzeSiteAiClient for the full write-up.
+                                    .version(HttpClient.Version.HTTP_1_1)
                                     .connectTimeout(Duration.ofSeconds(props.getConnectTimeoutSeconds()))
                                     .build();
                 }

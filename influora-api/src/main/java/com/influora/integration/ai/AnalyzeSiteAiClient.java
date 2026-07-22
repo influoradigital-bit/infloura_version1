@@ -72,6 +72,14 @@ public class AnalyzeSiteAiClient {
                 if (httpClient == null) {
                     httpClient =
                             HttpClient.newBuilder()
+                                    // [Ash AI-review 2026-07-23] Pin HTTP/1.1. java.net.http defaults to
+                                    // HTTP/2; over cleartext (h2c) against uvicorn (HTTP/1.1-only) the POST
+                                    // body is dropped, so influora-ai's /analyze-site received an EMPTY body
+                                    // -> `await request.json()` threw JSONDecodeError -> 500 -> analysis
+                                    // FAILED and the brand category never refreshed. (MeeraVoiceAiClient works
+                                    // because it uses Apache HttpClient5, which is HTTP/1.1.) Same fix applied
+                                    // to the three sibling java.net.http clients that also POST a body.
+                                    .version(HttpClient.Version.HTTP_1_1)
                                     .connectTimeout(Duration.ofSeconds(props.getConnectTimeoutSeconds()))
                                     .build();
                 }
