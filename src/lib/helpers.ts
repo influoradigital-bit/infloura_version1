@@ -48,9 +48,11 @@ export const formatTimeAgo = (date: Date | string): string => {
 /**
  * Get initials from name
  */
-export const getInitials = (name: string): string => {
+export const getInitials = (name: string | null | undefined): string => {
+  if (!name) return '';
   return name
     .split(' ')
+    .filter(Boolean)
     .map((word) => word[0])
     .join('')
     .toUpperCase()

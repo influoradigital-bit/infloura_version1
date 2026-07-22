@@ -22,6 +22,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { cn, formatINR } from '@/lib/utils';
 import { api, ApiError, type DealStatusFilter } from '@/lib/api';
+import { mapDealToDealsPageRow } from '@/lib/creator-deal-mappers';
+import { getInitials } from '@/lib/helpers';
 import { type HypeInvite } from '@/lib/demo-data';
 import { HypeInboxCard } from '@/components/creator/hype-inbox-card';
 import { DailySuggestionSection } from '@/components/creator/copilot/DailySuggestionSection';
@@ -225,7 +227,12 @@ export default function CreatorDealsPage() {
         // return usable data," so it silently kept the mock deals forever instead (same bug
         // fixed in dashboard-page.tsx's action items/pipeline).
         if (!cancelled && Array.isArray(remote)) {
-          setDeals(remote as unknown as DealRoom[]);
+          // Map the API `Deal` shape (counterpartyName/campaignName/dealValue/
+          // TERMS_AGREED…) onto the page's `DealRoom` view model. The previous
+          // `as unknown as DealRoom[]` cast silenced TypeScript while leaving every
+          // field undefined at runtime — `deal.brandName.split(' ')` then crashed the
+          // whole page for any creator with ≥1 real deal (only an empty inbox survived).
+          setDeals(remote.map(mapDealToDealsPageRow));
         }
       } catch (err) {
         if (!cancelled) {
@@ -496,7 +503,7 @@ function DealRow({ deal, actionLoading, onOpen, onAccept, onCounter, onReject }:
           <Avatar className="h-10 w-10 shrink-0">
             <AvatarImage src={deal.brandLogo} alt={deal.brandName} />
             <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-              {deal.brandName.split(' ').map((w) => w[0]).join('').slice(0, 2)}
+              {getInitials(deal.brandName)}
             </AvatarFallback>
           </Avatar>
 
