@@ -341,7 +341,9 @@ export function CampaignsList() {
         case 'date':
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         case 'budget':
-          return b.budget.max - a.budget.max;
+          // Meera-created drafts legitimately have no `budget` yet (set later
+          // in the wizard) — treat missing budget as 0 so it sorts last.
+          return (b.budget?.max ?? 0) - (a.budget?.max ?? 0);
         case 'progress':
           return b.progress - a.progress;
         default:
@@ -356,10 +358,13 @@ export function CampaignsList() {
     total: allCampaigns.length,
     active: allCampaigns.filter((c) => c.status === 'ACTIVE').length,
     draft: allCampaigns.filter((c) => c.status === 'DRAFT').length,
-    totalBudget: allCampaigns.reduce((sum, c) => sum + c.budget.max, 0),
+    // Budget-less drafts (Meera-created, budget set later in the wizard)
+    // contribute 0 rather than crashing the reduce.
+    totalBudget: allCampaigns.reduce((sum, c) => sum + (c.budget?.max ?? 0), 0),
   }), [allCampaigns]);
 
-  const formatBudget = (min: number, max: number) => {
+  const formatBudget = (min?: number, max?: number) => {
+    if (min == null || max == null) return 'No budget set';
     if (min === max) return `₹${(max / 1000).toFixed(0)}K`;
     return `₹${(min / 1000).toFixed(0)}K – ₹${(max / 1000).toFixed(0)}K`;
   };
@@ -712,7 +717,7 @@ export function CampaignsList() {
                   <div className="text-center">
                     <p className="text-xs text-muted-foreground">Budget</p>
                     <p className="text-sm font-medium">
-                      {formatBudget(campaign.budget.min, campaign.budget.max)}
+                      {formatBudget(campaign.budget?.min, campaign.budget?.max)}
                     </p>
                   </div>
                   <div className="text-center">
@@ -764,7 +769,7 @@ export function CampaignsList() {
                   <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <DollarSign className="h-3 w-3" />
-                      {formatBudget(campaign.budget.min, campaign.budget.max)}
+                      {formatBudget(campaign.budget?.min, campaign.budget?.max)}
                     </span>
                     <span className="flex items-center gap-1">
                       <Users className="h-3 w-3" />

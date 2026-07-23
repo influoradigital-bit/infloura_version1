@@ -282,7 +282,10 @@ const stages = [
   { id: 'SETTLED', label: 'Settled', color: 'border-l-green-400', icon: Banknote },
 ];
 
-const formatINR = (amount: number) => {
+const formatINR = (amount?: number | null) => {
+  // Meera-created drafts legitimately have no deal value yet — render a
+  // placeholder instead of "₹null"/"₹undefined".
+  if (amount == null || Number.isNaN(amount)) return 'No budget set';
   if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)}L`;
   if (amount >= 1000) return `₹${(amount / 1000).toFixed(0)}K`;
   return `₹${amount}`;

@@ -283,7 +283,7 @@ export function BrandLayout({ children }: BrandLayoutProps) {
                   <Settings className="mr-2 h-4 w-4" />
                   Settings
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => window.open('https://help.influora.com', '_blank')}>
+                <DropdownMenuItem onClick={() => handleNavigate('/brand/help')}>
                   <HelpCircle className="mr-2 h-4 w-4" />
                   Help & Support
                 </DropdownMenuItem>
@@ -421,6 +421,9 @@ export function BrandLayout({ children }: BrandLayoutProps) {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => handleNavigate('/brand/settings')}>
                     <Settings className="mr-2 h-4 w-4" /> Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleNavigate('/brand/help')}>
+                    <HelpCircle className="mr-2 h-4 w-4" /> Help & Support
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setShowLogoutDialog(true)} className="text-destructive-foreground focus:text-destructive-foreground">
                     <LogOut className="mr-2 h-4 w-4" /> Log out

@@ -54,6 +54,10 @@ import {
   HelpCircle,
   ChevronDown,
   Globe,
+  Star,
+  AlertTriangle,
+  Ticket,
+  TrendingUp,
 } from 'lucide-react';
 import { InfluoraLogo } from '@/components/shared/influora-logo';
 
@@ -61,21 +65,46 @@ interface CreatorLayoutProps {
   children: React.ReactNode;
 }
 
+interface CreatorNavItem {
+  label: string;
+  href: string;
+  icon: typeof Home;
+}
+
+interface CreatorNavGroup {
+  label: string;
+  items: CreatorNavItem[];
+}
+
 /**
- * 6-item navigation (was a 2-item Deals + Wallet nav that left ~8 fully-built
- * creator pages orphaned — no sidebar link, only reachable by direct URL).
+ * Grouped navigation (mirrors brand-layout's Main/Manage split) — was a flat
+ * 6-item list that left 4 fully-built creator pages orphaned — Reviews,
+ * Disputes, Coupons, and Affiliate were only reachable by direct URL.
  * Inbox + Active + Deal Room stay collapsed into one Deals page (filtered by
  * status). Profile, Public Page, and Settings live in the avatar menu, not
- * here. Reviews, Coupons, Affiliate, and Disputes stay off the sidebar too —
- * they're reachable from the dashboard's quick-links, not primary nav.
+ * here.
  */
-const navItems = [
-  { label: 'Home', href: '/creator/dashboard', icon: Home },
-  { label: 'Deals', href: '/creator/deals', icon: Briefcase },
-  { label: 'Campaigns', href: '/creator/campaigns', icon: Megaphone },
-  { label: 'Co-pilot', href: '/creator/copilot', icon: Sparkles },
-  { label: 'Analytics', href: '/creator/analytics', icon: BarChart3 },
-  { label: 'Wallet', href: '/creator/wallet', icon: Wallet },
+const navGroups: CreatorNavGroup[] = [
+  {
+    label: 'Main',
+    items: [
+      { label: 'Home', href: '/creator/dashboard', icon: Home },
+      { label: 'Deals', href: '/creator/deals', icon: Briefcase },
+      { label: 'Campaigns', href: '/creator/campaigns', icon: Megaphone },
+      { label: 'Co-pilot', href: '/creator/copilot', icon: Sparkles },
+      { label: 'Analytics', href: '/creator/analytics', icon: BarChart3 },
+      { label: 'Wallet', href: '/creator/wallet', icon: Wallet },
+    ],
+  },
+  {
+    label: 'Manage',
+    items: [
+      { label: 'Reviews', href: '/creator/reviews', icon: Star },
+      { label: 'Disputes', href: '/creator/disputes', icon: AlertTriangle },
+      { label: 'Coupons', href: '/creator/coupons', icon: Ticket },
+      { label: 'Affiliate', href: '/creator/affiliate', icon: TrendingUp },
+    ],
+  },
 ];
 
 export function CreatorLayout({ children }: CreatorLayoutProps) {
@@ -138,46 +167,53 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
             </button>
           </div>
 
-          {/* Nav items */}
-          <nav className="flex-1 px-3 py-4">
-            <div className="flex flex-col gap-0.5">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.href);
-                return (
-                  <Tooltip key={item.href}>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={() => handleNavigate(item.href)}
-                        className={cn(
-                          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                          active
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
-                        )}
-                      >
-                        <IconBadge
-                          icon={Icon}
-                          variant={active ? 'primary' : getCreatorNavIconVariant(item.href)}
-                          size="sm"
-                          active={active}
-                          rounded="lg"
-                        />
-                        <span>{item.label}</span>
-                        {item.label === 'Deals' && unreadCount > 0 && (
-                          <Badge variant="secondary" className="ml-auto h-5 px-1.5 text-xs">
-                            {unreadCount}
-                          </Badge>
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="lg:hidden">
-                      {item.label}
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })}
-            </div>
+          {/* Nav items — grouped (Main / Manage), mirrors brand-layout */}
+          <nav role="navigation" className="flex-1 overflow-y-auto px-3 py-2">
+            {navGroups.map((group) => (
+              <div key={group.label} className="mb-3 last:mb-0">
+                <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                  {group.label}
+                </p>
+                <div className="flex flex-col gap-0.5">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.href);
+                    return (
+                      <Tooltip key={item.href}>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => handleNavigate(item.href)}
+                            className={cn(
+                              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                              active
+                                ? 'bg-primary/10 text-primary'
+                                : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+                            )}
+                          >
+                            <IconBadge
+                              icon={Icon}
+                              variant={active ? 'primary' : getCreatorNavIconVariant(item.href)}
+                              size="sm"
+                              active={active}
+                              rounded="lg"
+                            />
+                            <span>{item.label}</span>
+                            {item.label === 'Deals' && unreadCount > 0 && (
+                              <Badge variant="secondary" className="ml-auto h-5 px-1.5 text-xs">
+                                {unreadCount}
+                              </Badge>
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="lg:hidden">
+                          {item.label}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
 
           {/* Sidebar bottom: user + logout */}
@@ -310,33 +346,46 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
               <SheetHeader className="px-5 pt-5 pb-3 border-b border-border">
                 <SheetTitle className="text-left text-base">Navigation</SheetTitle>
               </SheetHeader>
-              <nav className="px-3 py-3">
-                <div className="flex flex-col gap-0.5">
-                  {navItems.map((item) => {
-                    const Icon = item.icon;
-                    const active = isActive(item.href);
-                    return (
-                      <button
-                        key={item.href}
-                        onClick={() => handleNavigate(item.href)}
-                        className={cn(
-                          'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                          active
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                        )}
-                      >
-                        <Icon className="h-[18px] w-[18px]" />
-                        <span>{item.label}</span>
-                        {item.label === 'Deals' && unreadCount > 0 && (
-                          <Badge variant="secondary" className="ml-auto h-5 px-1.5 text-xs">
-                            {unreadCount}
-                          </Badge>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+              <nav className="max-h-[calc(100vh-6rem)] overflow-y-auto px-3 py-1">
+                {navGroups.map((group) => (
+                  <div key={group.label} className="mb-3 last:mb-0">
+                    <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                      {group.label}
+                    </p>
+                    <div className="flex flex-col gap-0.5">
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        const active = isActive(item.href);
+                        return (
+                          <button
+                            key={item.href}
+                            onClick={() => handleNavigate(item.href)}
+                            className={cn(
+                              'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                              active
+                                ? 'bg-primary/10 text-primary'
+                                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                            )}
+                          >
+                            <IconBadge
+                              icon={Icon}
+                              variant={active ? 'primary' : getCreatorNavIconVariant(item.href)}
+                              size="sm"
+                              active={active}
+                              rounded="lg"
+                            />
+                            <span>{item.label}</span>
+                            {item.label === 'Deals' && unreadCount > 0 && (
+                              <Badge variant="secondary" className="ml-auto h-5 px-1.5 text-xs">
+                                {unreadCount}
+                              </Badge>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </nav>
             </SheetContent>
           </Sheet>

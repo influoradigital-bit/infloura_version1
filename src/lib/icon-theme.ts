@@ -26,6 +26,10 @@ export const creatorNavIconVariant: Record<string, IconBadgeVariant> = {
   '/creator/wallet': 'approved',
   '/creator/profile': 'contracted',
   '/creator/settings': 'muted',
+  '/creator/reviews': 'approved',
+  '/creator/disputes': 'disputed',
+  '/creator/coupons': 'outreach',
+  '/creator/affiliate': 'info',
 };
 
 export function getBrandNavIconVariant(href: string): IconBadgeVariant {
