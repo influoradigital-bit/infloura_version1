@@ -1,6 +1,7 @@
 package com.influora.service.meera.tool;
 
 import com.influora.common.ApiException;
+import com.influora.common.JsonLists;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.CampaignIntent;
@@ -20,10 +21,15 @@ import com.influora.service.AuditLogService;
 import com.influora.service.CampaignTemplateService;
 import com.influora.service.IdempotencyService;
 import com.influora.service.meera.MeeraInteractionLogService;
+import com.influora.web.dto.campaign.CampaignDtos;
 import com.influora.web.dto.meera.MeeraToolDtos.CreateCampaignResult;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,6 +68,23 @@ import org.springframework.transaction.annotation.Transactional;
 public class CreateCampaignExecutor {
 
     private static final String IDEMPOTENCY_SCOPE = "meera.create_campaign";
+
+    /**
+     * Server-side allow-lists for the AI-supplied {@code platforms}/{@code content_types} lists
+     * (Ash risk R2: never trust the model's own claim of a valid enum value — filter, don't
+     * assume). There is no dedicated Java {@code Platform}/{@code ContentType} enum in this
+     * codebase today (the whole campaign write path — see {@code CampaignDtos.CampaignWriteRequest}
+     * — stores these as free-form {@code List<String>} JSON columns), so these constants are the
+     * enforcement point. Values are byte-for-byte the {@code platformOptions}/{@code
+     * contentTypeOptions} arrays in {@code src/components/brand/campaigns/campaign-form.tsx} — NOT
+     * the wider {@code Platform}/{@code ContentType} TS union types in {@code src/lib/types.ts},
+     * which include values (e.g. {@code OTHER}, {@code IMAGE}) the form itself never emits.
+     */
+    private static final Set<String> ALLOWED_PLATFORMS =
+            Set.of("INSTAGRAM", "YOUTUBE", "TIKTOK", "TWITTER", "LINKEDIN", "FACEBOOK", "TWITCH");
+
+    private static final Set<String> ALLOWED_CONTENT_TYPES =
+            Set.of("POST", "STORY", "REEL", "VIDEO", "LIVE_STREAM", "ARTICLE", "PODCAST");
 
     private final CampaignIntentRepository campaignIntentRepository;
     private final CampaignRepository campaignRepository;
@@ -151,10 +174,22 @@ public class CreateCampaignExecutor {
         String productName = stringArg(input, "product_name");
         String productUrl = stringArg(input, "product_url");
         BigDecimal productPrice = decimalArg(input, "product_price");
-        BigDecimal proposedBudget = decimalArg(input, "proposed_budget");
         Integer creatorCount = intArg(input, "creator_count");
         String campaignTypeRaw = stringArg(input, "campaign_type");
         String templateId = stringArg(input, "template_id");
+
+        // Tier-1 content-composition inputs (AI-composed CONTENT only — never money/dates; see the
+        // class-level guardrail note). Parsed unconditionally; whether they're actually applied to
+        // the draft is gated below on template == null (a template still wins for its own fields).
+        String aiTitle = stringArg(input, "title");
+        String aiDescription = stringArg(input, "description");
+        List<String> aiObjectives = stringListArg(input, "objectives");
+        List<String> aiPlatforms = filterAllowed(stringListArg(input, "platforms"), ALLOWED_PLATFORMS);
+        List<String> aiContentTypes = filterAllowed(stringListArg(input, "content_types"), ALLOWED_CONTENT_TYPES);
+        List<String> aiHashtags = stringListArg(input, "hashtags");
+        // Free-text audience descriptors (string or string[] on the wire) -- serialized below into
+        // TargetAudienceDto.interests, never treated as verified demographics.
+        List<String> aiTargetAudience = stringListArg(input, "target_audience");
 
         // Wave 1b (Priya A3 + Ash's STANDARD-enum ruling): template_id present -> the template
         // row is the authority for campaign_type (may be STANDARD); any AI-supplied campaign_type
@@ -178,14 +213,14 @@ public class CreateCampaignExecutor {
                                 .productName(productName)
                                 .productUrl(productUrl)
                                 .productPrice(productPrice)
-                                .proposedBudget(proposedBudget)
                                 .creatorCount(creatorCount)
                                 .status(IntentStatus.READY)
                                 .build());
 
         // Draft-state only — no budget/money field set (Guardrail: no money field writable by
         // this D-tier action). A human sets a real budget and funds escrow in a later, separate
-        // Commit-tier step.
+        // Commit-tier step. title/description fall back to the pre-existing generic strings so an
+        // old-style call (no Tier-1 content fields) still works byte-for-byte as before.
         Campaign.Builder campaignBuilder =
                 Campaign.builder()
                         .id(Ulids.newUlid())
@@ -207,6 +242,41 @@ public class CreateCampaignExecutor {
                     .hashtagsJson(template.getHashtagsJson())
                     .targetAudienceJson(template.getTargetAudienceJson())
                     .brandGuidelines(template.getBrandGuidelines());
+        } else {
+            // Tier-1 content composition (no template_id): apply the AI-composed fields the model
+            // passed. A template, when set, is the sole authority for its own 4 fields above — the
+            // AI-composed equivalents here are only ever applied on the from-scratch path. Still no
+            // money/date field is touched anywhere in this branch.
+            if (aiTitle != null && !aiTitle.isBlank()) {
+                campaignBuilder.title(aiTitle);
+            }
+            if (aiDescription != null && !aiDescription.isBlank()) {
+                campaignBuilder.description(aiDescription);
+            }
+            if (!aiObjectives.isEmpty()) {
+                campaignBuilder.objectivesJson(JsonLists.toJson(aiObjectives));
+            }
+            if (!aiPlatforms.isEmpty()) {
+                campaignBuilder.platformsJson(JsonLists.toJson(aiPlatforms));
+            }
+            if (!aiContentTypes.isEmpty()) {
+                campaignBuilder.contentTypesJson(JsonLists.toJson(aiContentTypes));
+            }
+            if (!aiHashtags.isEmpty()) {
+                campaignBuilder.hashtagsJson(JsonLists.toJson(aiHashtags));
+            }
+            if (!aiTargetAudience.isEmpty()) {
+                // Coordinator fix (post-review, 2026-07-23): store in the SAME structured
+                // TargetAudienceDto shape the human write path uses (CampaignService.java:152 ->
+                // {ageRange, genders, locations, interests, languages}), not a bare string[] --
+                // one canonical targetAudienceJson shape everywhere, so the campaign edit form
+                // never has to branch on which path produced the draft. The AI's descriptive
+                // strings become `interests`; it can't verify real demographics (age/gender/
+                // location/language), so those stay unset for the human to fill in in the form.
+                campaignBuilder.targetAudienceJson(
+                        JsonLists.toJsonObject(
+                                new CampaignDtos.TargetAudienceDto(null, null, null, aiTargetAudience, null)));
+            }
         }
 
         Campaign campaign = campaignRepository.save(campaignBuilder.build());
@@ -287,6 +357,54 @@ public class CreateCampaignExecutor {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /**
+     * Parses a Tier-1 content-composition input as a list of strings. Accepts a JSON array (the
+     * normal case for {@code objectives}/{@code platforms}/{@code content_types}/{@code hashtags})
+     * OR a single scalar string (the {@code target_audience} field's schema is {@code string OR
+     * string[]} — a bare string collapses to a one-element list here). Blank/null entries are
+     * dropped; never throws on a malformed value, just returns an empty list.
+     */
+    private static List<String> stringListArg(Map<String, Object> input, String key) {
+        Object value = input == null ? null : input.get(key);
+        if (value == null) {
+            return List.of();
+        }
+        if (value instanceof List<?> rawList) {
+            List<String> out = new ArrayList<>();
+            for (Object item : rawList) {
+                if (item == null) {
+                    continue;
+                }
+                String s = String.valueOf(item).trim();
+                if (!s.isEmpty()) {
+                    out.add(s);
+                }
+            }
+            return out;
+        }
+        String s = String.valueOf(value).trim();
+        return s.isEmpty() ? List.of() : List.of(s);
+    }
+
+    /**
+     * Server-side enum filter (Ash risk R2): drops any AI-supplied value not in {@code allowed},
+     * case-insensitively, and upper-cases what's kept to the canonical enum spelling. Never trusts
+     * the model to have only emitted values from the schema's {@code enum} constraint.
+     */
+    private static List<String> filterAllowed(List<String> values, Set<String> allowed) {
+        if (values.isEmpty()) {
+            return List.of();
+        }
+        Set<String> kept = new LinkedHashSet<>();
+        for (String value : values) {
+            String upper = value.toUpperCase();
+            if (allowed.contains(upper)) {
+                kept.add(upper);
+            }
+        }
+        return new ArrayList<>(kept);
     }
 
     private static Integer intArg(Map<String, Object> input, String key) {

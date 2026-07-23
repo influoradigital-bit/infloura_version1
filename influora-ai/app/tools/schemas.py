@@ -133,18 +133,123 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "in your system context), pass its template_id so Spring copies the "
             "template's requirements/hashtags/audience/brand_guidelines into the "
             "draft -- do not also guess those fields yourself when a template_id "
-            "is set."
+            "is set. Otherwise, compose a real draft: pass title, description, "
+            "objectives, platforms, content_types, hashtags, and target_audience "
+            "from the conversation so the brand opens a complete draft, not an "
+            "empty shell. campaign_type defaults to STANDARD when omitted -- only "
+            "set it when the brand explicitly wants a HYPE/DIRECT/REVIEW-shaped "
+            "campaign. NEVER pass a budget or dates here -- those stay human-only "
+            "and are set later in the campaign form."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "product_name": {"type": "string"},
+                "product_url": {
+                    "type": "string",
+                    "description": (
+                        "the brand's product/store page URL, if known from "
+                        "analyze_site or earlier in the conversation."
+                    ),
+                },
+                "product_price": {"type": "number"},
                 "campaign_type": {
                     "type": "string",
-                    "enum": ["HYPE", "DIRECT", "REVIEW"],
+                    "enum": ["HYPE", "DIRECT", "REVIEW", "STANDARD"],
+                    "description": (
+                        "Optional -- defaults to STANDARD server-side when "
+                        "omitted. Only set HYPE/DIRECT/REVIEW when the brand "
+                        "explicitly wants that shape of campaign."
+                    ),
                 },
                 "creator_count": {"type": "integer"},
-                "creator_ids": {"type": "array", "items": {"type": "string"}},
+                "creator_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Accepted for forward-compat; the Spring executor does "
+                        "not currently read this field (no-op today)."
+                    ),
+                },
+                "title": {
+                    "type": "string",
+                    "description": (
+                        "A real campaign title composed from the conversation "
+                        "(e.g. 'Diwali Launch — Glow Serum Reels'). Omit only if "
+                        "you genuinely have nothing to go on; Spring falls back "
+                        "to a generic 'Draft: <product_name>' title."
+                    ),
+                },
+                "description": {
+                    "type": "string",
+                    "description": (
+                        "A real 2-4 sentence campaign brief composed from the "
+                        "conversation -- what the campaign is, the goal, and what "
+                        "creators should do. Omit only if you have nothing to go "
+                        "on; Spring falls back to a generic placeholder."
+                    ),
+                },
+                "objectives": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Campaign objectives drawn from the conversation. Prefer "
+                        "the brand's own fixed set: 'Brand Awareness', 'Drive "
+                        "Sales', 'Product Launch', 'Engagement Growth', 'Lead "
+                        "Generation', 'App Downloads', 'Event Promotion', "
+                        "'User-Generated Content'."
+                    ),
+                },
+                "platforms": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "INSTAGRAM",
+                            "YOUTUBE",
+                            "TIKTOK",
+                            "TWITTER",
+                            "LINKEDIN",
+                            "FACEBOOK",
+                            "TWITCH",
+                        ],
+                    },
+                    "description": "Platforms this campaign should run on.",
+                },
+                "content_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "POST",
+                            "STORY",
+                            "REEL",
+                            "VIDEO",
+                            "LIVE_STREAM",
+                            "ARTICLE",
+                            "PODCAST",
+                        ],
+                    },
+                    "description": "Content formats creators should produce.",
+                },
+                "hashtags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Campaign hashtags, without the leading '#'.",
+                },
+                "target_audience": {
+                    "anyOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"type": "string"}},
+                    ],
+                    "description": (
+                        "A few short audience-descriptor phrases from the "
+                        "conversation (e.g. 'skincare enthusiasts', 'new parents') "
+                        "-- Spring stores these as interest tags, not verified "
+                        "demographics, so don't state an age range or gender as "
+                        "fact; the brand refines exact targeting in the form."
+                    ),
+                },
                 "template_id": {
                     "type": "string",
                     "description": (
@@ -152,14 +257,16 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "campaign template to base the draft on (from the "
                         "template_digest in your brand context). When set, Spring "
                         "derives campaign_type from the template row itself (which "
-                        "may be STANDARD -- a template-only type this tool's own "
-                        "campaign_type enum deliberately does not expose) and "
-                        "IGNORES any AI-supplied campaign_type. Omit for a "
-                        "from-scratch campaign."
+                        "may be STANDARD) and IGNORES any AI-supplied "
+                        "campaign_type -- and also ignores title/description/"
+                        "objectives/platforms/content_types/hashtags/"
+                        "target_audience in favor of the template's own content, "
+                        "so do not also guess those fields yourself when a "
+                        "template_id is set. Omit for a from-scratch campaign."
                     ),
                 },
             },
-            "required": ["product_name", "campaign_type", "creator_count"],
+            "required": ["product_name", "creator_count"],
         },
     },
     {

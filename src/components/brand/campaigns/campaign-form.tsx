@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import type { Platform, ContentType, CampaignStatus } from '@/lib/types';
+import type { Platform, ContentType, CampaignStatus, TargetAudience } from '@/lib/types';
 import { useCampaignStore } from '@/lib/store';
 import { api, ApiError } from '@/lib/api';
 import { validateCampaignTitle } from '@/lib/campaign-validation';
@@ -96,6 +96,7 @@ interface CampaignFormData {
   hashtags: string[];
   brandGuidelines: string;
   isPrivate: boolean;
+  targetAudience: TargetAudience;
 }
 
 const initialFormData: CampaignFormData = {
@@ -114,6 +115,7 @@ const initialFormData: CampaignFormData = {
   hashtags: [],
   brandGuidelines: '',
   isPrivate: false,
+  targetAudience: { interests: [] },
 };
 
 const objectiveOptions = [
@@ -147,6 +149,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [newRequirement, setNewRequirement] = React.useState('');
   const [newHashtag, setNewHashtag] = React.useState('');
+  const [newInterest, setNewInterest] = React.useState('');
   // Defensive hardening only: keeps the Start/End date Popovers mutually exclusive so their
   // portals can never overlap. Bindings below are unchanged (start→startDate, end→endDate).
   const [startDateOpen, setStartDateOpen] = React.useState(false);
@@ -191,6 +194,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
             hashtags: c.hashtags ?? [],
             brandGuidelines: c.brandGuidelines ?? '',
             isPrivate: c.isPrivate,
+            targetAudience: c.targetAudience ?? { interests: [] },
           });
         }
         setIsLoading(false);
@@ -313,6 +317,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
       brandGuidelines: formData.brandGuidelines,
       isPrivate: formData.isPrivate,
       maxCollaborators: formData.maxCollaborators,
+      targetAudience: formData.targetAudience,
     };
 
     try {
@@ -365,6 +370,25 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
   const removeHashtag = (index: number) => {
     updateFormData({
       hashtags: formData.hashtags.filter((_, i) => i !== index),
+    });
+  };
+
+  const addInterest = () => {
+    const interests = formData.targetAudience.interests ?? [];
+    if (newInterest.trim()) {
+      if (!interests.includes(newInterest.trim())) {
+        updateFormData({
+          targetAudience: { ...formData.targetAudience, interests: [...interests, newInterest.trim()] },
+        });
+      }
+      setNewInterest('');
+    }
+  };
+
+  const removeInterest = (index: number) => {
+    const interests = formData.targetAudience.interests ?? [];
+    updateFormData({
+      targetAudience: { ...formData.targetAudience, interests: interests.filter((_, i) => i !== index) },
     });
   };
 
@@ -921,6 +945,53 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                                 size="icon"
                                 className="h-4 w-4 p-0 hover:bg-transparent"
                                 onClick={() => removeHashtag(index)}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <Label>Target Audience</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Who is this campaign for? (e.g. skincare enthusiasts, new parents)
+                      </p>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Add an interest (e.g., skincare enthusiasts)"
+                          value={newInterest}
+                          onChange={(e) => setNewInterest(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              addInterest();
+                            }
+                          }}
+                        />
+                        <Button type="button" onClick={addInterest} variant="secondary">
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      {(formData.targetAudience.interests?.length ?? 0) > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {formData.targetAudience.interests!.map((interest, index) => (
+                            <Badge
+                              key={`${interest}-${index}`}
+                              variant="secondary"
+                              className="gap-1 pl-3 pr-1"
+                            >
+                              {interest}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-4 w-4 p-0 hover:bg-transparent"
+                                onClick={() => removeInterest(index)}
                               >
                                 <X className="h-3 w-3" />
                               </Button>

@@ -66,12 +66,25 @@ def _get_optional_float(name: str) -> float | None:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.07.21.9"
-# ^ bumped for Phase 2 item 2.1 (outcome digest): Block B gains the
-# `outcome_digest` section (campaign_outcomes[] + niche_rate_band) in this
-# revision, and prompt_version is a component of `cache_key_for` — without the
-# bump, sessions cached under `.8` would keep serving a stale Block B with no
-# digest, and eval deltas across this change couldn't be cleanly attributed
+PROMPT_VERSION = "meera-2026.07.23.10"
+# ^ bumped for the create_campaign draft-completeness fix (Tier 0 #2 + Tier 1,
+# Ash-approved plan 2026-07-23): campaign_type is now OPTIONAL on the
+# create_campaign tool schema (added STANDARD, dropped it from `required` —
+# this is the root-cause fix for the HYPE-default invisible-draft bug) and 7
+# new optional content-composition inputs were added (title, description,
+# objectives, platforms, content_types, hashtags, target_audience). The
+# persona text changed alongside it: a draft-is-never-live honesty rule, a
+# compose-the-draft instruction for create_campaign, and an anti-leak rule
+# against reading internal tool-instruction phrasing aloud. Both the tool
+# schema and the persona are part of Block A's cached prefix, so this bump is
+# required per this file's own rule above — without it, sessions cached under
+# `.9` would keep serving the stale schema/persona pair.
+#
+# Prior bump: Phase 2 item 2.1 (outcome digest) — Block B gains the
+# `outcome_digest` section (campaign_outcomes[] + niche_rate_band), and
+# prompt_version is a component of `cache_key_for` — without the bump,
+# sessions cached under `.8` would keep serving a stale Block B with no
+# digest, and eval deltas across that change couldn't be cleanly attributed
 # (Ash's Q3 ruling, wiki/build/phase2-ash-review.md).
 # Prior bump: Creator AI Co-pilot Tier-1 creator-tone prompt
 # (app/prompt/creator_suggestion.py). Single global constant, reused (not

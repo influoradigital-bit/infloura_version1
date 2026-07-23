@@ -17,6 +17,7 @@
  *   - confirm_launch: { campaignId, status, creatorsInvited, replay }
  */
 
+import { Link } from 'react-router-dom';
 import { Users, Calculator, FileText, Wallet, Rocket, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
 import {
@@ -139,7 +140,7 @@ interface CreateCampaignResultProps {
 }
 
 export function CreateCampaignResult({ data, className }: CreateCampaignResultProps) {
-  const { campaignId, status, serverBudget } = data;
+  const { campaignId, serverBudget } = data;
 
   return (
     <div
@@ -151,15 +152,21 @@ export function CreateCampaignResult({ data, className }: CreateCampaignResultPr
       <div className="flex items-center gap-2">
         <FileText className="h-4 w-4 text-meera-accent" />
         <div className="flex-1">
-          <p className="text-xs font-medium text-meera-text">Campaign created</p>
+          <p className="text-xs font-medium text-meera-text">Draft ready — review & publish</p>
           <p className="text-[10px] text-meera-text-muted">
-            {status} | {formatINR(serverBudget)}
+            {serverBudget == null ? 'Draft · budget not set yet' : `Draft · ${formatINR(serverBudget)}`}
           </p>
         </div>
         <span className="rounded-full bg-meera-accent-soft px-2 py-0.5 text-[10px] font-medium text-meera-accent">
           Draft
         </span>
       </div>
+      <Link
+        to={`/brand/campaigns/${campaignId}/edit`}
+        className="mt-2 inline-block text-[10px] font-medium text-meera-accent underline underline-offset-2"
+      >
+        Review & publish →
+      </Link>
     </div>
   );
 }

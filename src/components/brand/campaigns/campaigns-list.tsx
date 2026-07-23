@@ -612,7 +612,7 @@ export function CampaignsList() {
       ) : viewMode === 'grid' ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredCampaigns.map((campaign) =>
-            campaign.campaignType === 'HYPE' ? (
+            campaign.campaignType === 'HYPE' && campaign.hype ? (
               <HypeCampaignCard key={campaign.id} campaign={campaign} />
             ) : (
             <Card
