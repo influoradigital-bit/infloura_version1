@@ -14,6 +14,7 @@ import com.influora.domain.entity.PaymentMilestone;
 import com.influora.domain.entity.User;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
+import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DeliverableType;
 import com.influora.domain.enums.EscrowStatus;
@@ -165,10 +166,68 @@ public class ContractService {
                                         "Collaboration not found",
                                         HttpStatus.NOT_FOUND));
 
+        // [SEC: Kabir MEDIUM-1, contract-flow-architecture-2026-07-23 review — race close]
+        // Acquire a DB row lock on the collaboration BEFORE the exists-check below. Without this,
+        // `existsByCollaborationIdAndStatusNot` (a plain SELECT) then `contractRepository.save`
+        // (an INSERT) had no DB-level guarantee: two concurrent POST /contracts for the SAME
+        // collaboration could each pass the exists-check before either transaction commits
+        // (ordinary non-locking reads under REPEATABLE READ), then both INSERT — two non-CANCELLED
+        // contracts for one collaboration, exactly the state this guard exists to prevent. This
+        // PESSIMISTIC_WRITE lock is held for the rest of this @Transactional method and released
+        // at commit; a second concurrent call blocks on `findByIdForUpdate` until the first
+        // commits, so its own exists-check then correctly observes the just-inserted row and
+        // throws CONTRACT_ALREADY_EXISTS below. Deliberately acquired AFTER the workspace-ownership
+        // check above (an unauthorized caller should fail fast without taking a row lock) but
+        // BEFORE the exists-check + insert it is meant to serialize.
+        collaborationRepository
+                .findByIdForUpdate(collaboration.getId())
+                .orElseThrow(
+                        () ->
+                                new ApiException(
+                                        "COLLABORATION_NOT_FOUND",
+                                        "Collaboration not found",
+                                        HttpStatus.NOT_FOUND));
+
+        // [BE-1: Vikram, contract-flow-architecture-2026-07-23 §6.4 — immutability/duplicate guard]
+        // Previously `generate` had no awareness of any contract that might already exist for this
+        // collaboration: a second (or third...) POST /contracts call would happily create another
+        // Contract + PaymentMilestone set, silently coexisting with an already-signed/ACTIVE
+        // contract. Every new Contract also defaults to version=1 (`Contract.Builder#build`), so
+        // `ContractRepository#findByCollaborationIdOrderByVersionDesc` (the lookup DealService uses
+        // to decide "the" contract for a collaboration) had no reliable secondary sort among ties —
+        // which of the two rows displayed as "the" contract was effectively query-plan-dependent.
+        // A collaboration may have at most one non-CANCELLED contract at a time; a CANCELLED
+        // contract (future re-negotiation support) does not block a fresh one. The row lock above
+        // is what makes this check race-safe under concurrency, not just correct sequentially.
+        if (contractRepository.existsByCollaborationIdAndStatusNot(
+                collaboration.getId(), ContractStatus.CANCELLED)) {
+            throw new ApiException(
+                    "CONTRACT_ALREADY_EXISTS",
+                    "A contract already exists for this collaboration",
+                    HttpStatus.CONFLICT);
+        }
+
         List<MilestoneWriteRequest> milestoneReqs = req.milestones();
         if (milestoneReqs == null || milestoneReqs.isEmpty()) {
             throw new ApiException(
                     "MILESTONES_REQUIRED", "At least one milestone is required", HttpStatus.BAD_REQUEST);
+        }
+
+        // [SEC: Kabir MEDIUM-2, contract-flow-architecture-2026-07-23 review] Previously only the
+        // SUMMED total was checked (`totalAmount.signum() <= 0` below), so a negative milestone
+        // (e.g. [500, -200], net 300) was silently accepted. `MilestoneWriteRequest.amount` now
+        // carries `@DecimalMin("0.01")` at the request-validation boundary (`ContractController`'s
+        // `@Valid`), but this service method is re-checked defensively here too — the same
+        // belt-and-suspenders discipline as `EscrowService#adminSplitForDispute`'s own boundary
+        // re-check — so a caller that ever bypasses bean validation still cannot slip a
+        // zero/negative milestone through.
+        for (MilestoneWriteRequest m : milestoneReqs) {
+            if (m.amount() == null || m.amount().signum() <= 0) {
+                throw new ApiException(
+                        "INVALID_MILESTONE_AMOUNT",
+                        "Each milestone amount must be positive",
+                        HttpStatus.BAD_REQUEST);
+            }
         }
 
         BigDecimal totalAmount =
@@ -178,6 +237,21 @@ public class ContractService {
         if (totalAmount.signum() <= 0) {
             throw new ApiException(
                     "INVALID_CONTRACT_TOTAL", "Contract total must be positive", HttpStatus.BAD_REQUEST);
+        }
+
+        // [SEC: Kabir MEDIUM-2] Bind the contract total to the negotiated deal value so a brand
+        // cannot set an arbitrary contract amount unrelated to what was actually agreed in
+        // negotiation. Only enforced when the collaboration actually HAS an agreed rate — older/
+        // edge-case collaborations negotiated without one (agreedRate == null) have nothing to
+        // bind against, and rejecting those outright would be a functional regression, not a
+        // security fix. "Does not exceed" (not "must equal exactly") so splitting the agreed rate
+        // into fewer/rounder installments that sum to less than the full rate is still allowed.
+        if (collaboration.getAgreedRate() != null
+                && totalAmount.compareTo(collaboration.getAgreedRate()) > 0) {
+            throw new ApiException(
+                    "CONTRACT_TOTAL_EXCEEDS_AGREED_RATE",
+                    "Milestone total exceeds the collaboration's agreed rate",
+                    HttpStatus.BAD_REQUEST);
         }
 
         Contract contract =

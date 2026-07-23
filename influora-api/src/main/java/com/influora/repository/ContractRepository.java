@@ -1,6 +1,7 @@
 package com.influora.repository;
 
 import com.influora.domain.entity.Contract;
+import com.influora.domain.enums.ContractStatus;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -10,6 +11,25 @@ import org.springframework.data.repository.query.Param;
 public interface ContractRepository extends JpaRepository<Contract, String> {
 
     Optional<Contract> findByIdAndWorkspaceId(String id, String workspaceId);
+
+    /**
+     * [BE-1, contract-flow-architecture-2026-07-23 §6.4] Immutability/duplicate guard for {@code
+     * ContractService#generate} — a collaboration may have at most one non-CANCELLED contract at a
+     * time. {@code status <> :status} rather than an explicit IN-list of the other four statuses so
+     * this stays correct if {@link ContractStatus} ever grows a new terminal/non-terminal value.
+     */
+    boolean existsByCollaborationIdAndStatusNot(String collaborationId, ContractStatus status);
+
+    /**
+     * [BE-1, contract-flow-architecture-2026-07-23 §6.4] Deterministic "current contract for a
+     * collaboration" lookup — {@code findByCollaborationIdOrderByVersionDesc} orders ONLY by
+     * {@code version}, which is unstable (every row defaults to {@code version=1}, see {@code
+     * Contract.Builder#build}) whenever more than one row exists for the same collaboration.
+     * {@code createdAt DESC} as a secondary sort key makes "most recent wins" deterministic
+     * regardless of how many rows exist or what order the DB happens to return ties in. Used by
+     * {@code DealService#toDealResponse} to pick the contract surfaced on {@code DealResponse}.
+     */
+    List<Contract> findByCollaborationIdOrderByVersionDescCreatedAtDesc(String collaborationId);
 
     /**
      * Creator-scoped contract lookup — ownership is one hop away via {@code collaboration_id}

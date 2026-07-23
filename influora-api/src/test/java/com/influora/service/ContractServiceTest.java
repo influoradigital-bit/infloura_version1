@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -42,12 +43,20 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -198,6 +207,8 @@ class ContractServiceTest {
         Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).workspaceId(WORKSPACE_ID).build();
         when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(campaign));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaboration));
 
         ContractResponse response = service.generate(principal, WORKSPACE_ID, generateRequest());
 
@@ -206,6 +217,338 @@ class ContractServiceTest {
         assertEquals(WORKSPACE_ID, response.workspaceId());
         verify(contractRepository, times(1)).save(any(Contract.class));
         verify(milestoneRepository, times(1)).saveAll(any());
+    }
+
+    /**
+     * [BE-1: Vikram, contract-flow-architecture-2026-07-23 §6.4 — REAL GAP, now closed]
+     * {@code generate} previously had no duplicate-contract guard at all: a second {@code POST
+     * /contracts} for a collaboration that already had a non-CANCELLED contract would silently
+     * create a second row (both defaulting to {@code version=1}), making {@code
+     * ContractRepository#findByCollaborationIdOrderByVersionDesc} — the lookup {@code DealService}
+     * uses to pick "the" contract for a collaboration — order ties unpredictably. Proves the new
+     * {@code existsByCollaborationIdAndStatusNot} guard rejects the second create with a clean 409
+     * BEFORE any Contract/PaymentMilestone row is persisted.
+     */
+    @Test
+    @DisplayName(
+            "generate: a second create for a collaboration that already has a non-CANCELLED contract"
+                    + " is rejected with CONTRACT_ALREADY_EXISTS (409) and persists nothing")
+    void testGenerateRejectsDuplicateContractForCollaboration() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).workspaceId(WORKSPACE_ID).build();
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaboration));
+        // A non-CANCELLED contract (e.g. the one created by a prior, legitimate call) already
+        // exists for this collaboration.
+        when(contractRepository.existsByCollaborationIdAndStatusNot(
+                        COLLABORATION_ID, ContractStatus.CANCELLED))
+                .thenReturn(true);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.generate(principal, WORKSPACE_ID, generateRequest()));
+
+        assertEquals("CONTRACT_ALREADY_EXISTS", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        verify(contractRepository, never()).save(any());
+        verify(milestoneRepository, never()).saveAll(any());
+    }
+
+    /**
+     * [BE-1 edge case] A CANCELLED contract must NOT block a fresh one — the guard specifically
+     * excludes CANCELLED via {@code existsByCollaborationIdAndStatusNot(..., CANCELLED)}. Proves a
+     * collaboration whose only prior contract is CANCELLED can still get a new one.
+     */
+    @Test
+    @DisplayName(
+            "generate: a collaboration whose only prior contract is CANCELLED is NOT blocked — a new"
+                    + " contract is created normally")
+    void testGenerateAllowsNewContractWhenOnlyCancelledContractExists() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).workspaceId(WORKSPACE_ID).build();
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(contractRepository.existsByCollaborationIdAndStatusNot(
+                        COLLABORATION_ID, ContractStatus.CANCELLED))
+                .thenReturn(false);
+
+        ContractResponse response = service.generate(principal, WORKSPACE_ID, generateRequest());
+
+        assertNotNull(response);
+        verify(contractRepository, times(1)).save(any(Contract.class));
+    }
+
+    /**
+     * [SEC: Kabir MEDIUM-1, contract-flow-architecture-2026-07-23 review — race close] Proves the
+     * new pessimistic row lock ({@code CollaborationRepository#findByIdForUpdate}) is acquired
+     * BEFORE the duplicate-contract exists-check and the insert it is meant to serialize — the
+     * ordering that actually closes the race, not just that the lock method is called somewhere.
+     */
+    @Test
+    @DisplayName(
+            "generate: acquires the collaboration row lock BEFORE the duplicate-contract exists-check"
+                    + " and the save (ordering that makes the guard race-safe)")
+    void testGenerateAcquiresRowLockBeforeExistsCheckAndSave() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).workspaceId(WORKSPACE_ID).build();
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(contractRepository.existsByCollaborationIdAndStatusNot(
+                        COLLABORATION_ID, ContractStatus.CANCELLED))
+                .thenReturn(false);
+
+        service.generate(principal, WORKSPACE_ID, generateRequest());
+
+        InOrder order = inOrder(collaborationRepository, contractRepository);
+        order.verify(collaborationRepository).findByIdForUpdate(COLLABORATION_ID);
+        order.verify(contractRepository)
+                .existsByCollaborationIdAndStatusNot(COLLABORATION_ID, ContractStatus.CANCELLED);
+        order.verify(contractRepository).save(any(Contract.class));
+    }
+
+    /**
+     * [SEC: Kabir MEDIUM-1, contract-flow-architecture-2026-07-23 review — race close] Simulates
+     * two concurrent {@code generate} calls for the SAME collaboration and proves the second is
+     * rejected rather than both succeeding. Mockito mocks cannot reproduce real MySQL row-lock
+     * blocking, so this test models what the lock guarantees: {@code findByIdForUpdate} for the
+     * SECOND caller does not return until the FIRST caller's {@code contractRepository.save} has
+     * happened (exactly what a real {@code PESSIMISTIC_WRITE} lock held for the duration of the
+     * transaction enforces — the second caller's row-lock acquisition blocks until the first
+     * transaction commits). {@code existsByCollaborationIdAndStatusNot} reads a shared flag that
+     * only flips true once the first {@code save} has run, so the second caller's exists-check
+     * correctly observes the first caller's just-"committed" row. Mirrors the exact
+     * latch-based simulation pattern already used for the escrow row lock
+     * ({@code DisputeEscrowConcurrencyTest#concurrentFreezeAndRelease_freezeWins}).
+     */
+    @Test
+    @DisplayName(
+            "generate: simulated concurrent creates for the same collaboration — the lock serializes"
+                    + " them so only ONE contract is ever saved, the other is rejected")
+    void testConcurrentGenerateCallsAreSerializedByCollaborationLock() throws Exception {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).workspaceId(WORKSPACE_ID).build();
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign));
+
+        AtomicBoolean firstInsertCommitted = new AtomicBoolean(false);
+        CountDownLatch firstSaveDone = new CountDownLatch(1);
+        // Atomic winner-takes-n==1 assignment -- avoids a racy check-then-act on which caller
+        // "is" first. Whichever of the two concurrent threads reaches findByIdForUpdate first
+        // (genuinely racing, same as two real transactions) wins the lock immediately; the other
+        // blocks until the winner's save() -- the stand-in for that transaction's COMMIT.
+        java.util.concurrent.atomic.AtomicInteger lockCallOrder =
+                new java.util.concurrent.atomic.AtomicInteger(0);
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenAnswer(
+                        inv -> {
+                            int order = lockCallOrder.incrementAndGet();
+                            if (order > 1) {
+                                firstSaveDone.await(5, TimeUnit.SECONDS);
+                            }
+                            return Optional.of(collaboration);
+                        });
+        when(contractRepository.existsByCollaborationIdAndStatusNot(
+                        COLLABORATION_ID, ContractStatus.CANCELLED))
+                .thenAnswer(inv -> firstInsertCommitted.get());
+        // save() is the point a real INSERT would commit -- flip the shared flag and release the
+        // blocked second caller's lock wait, exactly as a real COMMIT would release the row lock.
+        org.mockito.Mockito.doAnswer(
+                        inv -> {
+                            firstInsertCommitted.set(true);
+                            firstSaveDone.countDown();
+                            return null;
+                        })
+                .when(contractRepository)
+                .save(any(Contract.class));
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        AtomicReference<Throwable> errorA = new AtomicReference<>();
+        AtomicReference<Throwable> errorB = new AtomicReference<>();
+        try {
+            Future<?> callA =
+                    pool.submit(
+                            () -> {
+                                try {
+                                    service.generate(principal, WORKSPACE_ID, generateRequest());
+                                } catch (Throwable t) {
+                                    errorA.set(t);
+                                }
+                            });
+            Future<?> callB =
+                    pool.submit(
+                            () -> {
+                                try {
+                                    service.generate(principal, WORKSPACE_ID, generateRequest());
+                                } catch (Throwable t) {
+                                    errorB.set(t);
+                                }
+                            });
+
+            callA.get(10, TimeUnit.SECONDS);
+            callB.get(10, TimeUnit.SECONDS);
+
+            // Exactly one of the two concurrent calls must have failed with
+            // CONTRACT_ALREADY_EXISTS -- which one (A or B) genuinely races and is not
+            // asserted; what matters is that not both succeeded and not both failed.
+            List<Throwable> errors = new java.util.ArrayList<>();
+            if (errorA.get() != null) errors.add(errorA.get());
+            if (errorB.get() != null) errors.add(errorB.get());
+            assertEquals(1, errors.size(), "exactly one concurrent create must be rejected");
+            assertEquals(ApiException.class, errors.get(0).getClass());
+            assertEquals("CONTRACT_ALREADY_EXISTS", ((ApiException) errors.get(0)).getCode());
+            // Exactly one contract was ever persisted -- the race did NOT produce two rows.
+            verify(contractRepository, times(1)).save(any(Contract.class));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /**
+     * [SEC: Kabir MEDIUM-2, contract-flow-architecture-2026-07-23 review] A negative milestone
+     * (net total still positive) must be rejected — {@code generate} previously only checked the
+     * SUMMED total, so {@code [500, -200]} (net 300) slipped through.
+     */
+    @Test
+    @DisplayName(
+            "generate: rejects a negative milestone amount even when the net total is positive —"
+                    + " INVALID_MILESTONE_AMOUNT (400), nothing persisted")
+    void testGenerateRejectsNegativeMilestoneAmount() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).workspaceId(WORKSPACE_ID).build();
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(contractRepository.existsByCollaborationIdAndStatusNot(
+                        COLLABORATION_ID, ContractStatus.CANCELLED))
+                .thenReturn(false);
+        ContractGenerateRequest req =
+                new ContractGenerateRequest(
+                        COLLABORATION_ID,
+                        List.of(
+                                new MilestoneWriteRequest(1, "Deliverable 1", BigDecimal.valueOf(500), LocalDate.now()),
+                                new MilestoneWriteRequest(
+                                        2, "Refund adjustment", BigDecimal.valueOf(-200), LocalDate.now())));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.generate(principal, WORKSPACE_ID, req));
+
+        assertEquals("INVALID_MILESTONE_AMOUNT", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(contractRepository, never()).save(any());
+        verify(milestoneRepository, never()).saveAll(any());
+    }
+
+    /**
+     * [SEC: Kabir MEDIUM-2] The milestone total must not exceed the collaboration's negotiated
+     * {@code agreedRate} — previously nothing bound the contract amount to the agreed deal value
+     * at all.
+     */
+    @Test
+    @DisplayName(
+            "generate: rejects a milestone total that exceeds the collaboration's agreedRate —"
+                    + " CONTRACT_TOTAL_EXCEEDS_AGREED_RATE (400), nothing persisted")
+    void testGenerateRejectsTotalExceedingAgreedRate() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
+        collaboration.updateAgreedRate(BigDecimal.valueOf(3000)); // agreed rate = 3000
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).workspaceId(WORKSPACE_ID).build();
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(contractRepository.existsByCollaborationIdAndStatusNot(
+                        COLLABORATION_ID, ContractStatus.CANCELLED))
+                .thenReturn(false);
+        // Milestone total (5000) exceeds the agreed rate (3000).
+        ContractGenerateRequest req = generateRequest();
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.generate(principal, WORKSPACE_ID, req));
+
+        assertEquals("CONTRACT_TOTAL_EXCEEDS_AGREED_RATE", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(contractRepository, never()).save(any());
+        verify(milestoneRepository, never()).saveAll(any());
+    }
+
+    /**
+     * [SEC: Kabir MEDIUM-2 edge case] A milestone total that is LESS than the agreed rate (a
+     * partial/rounder installment schedule) must still be allowed — the bound is "does not
+     * exceed", not "must equal exactly".
+     */
+    @Test
+    @DisplayName(
+            "generate: a milestone total below the collaboration's agreedRate is allowed (bound is"
+                    + " \"does not exceed\", not \"must equal\")")
+    void testGenerateAllowsTotalBelowAgreedRate() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
+        collaboration.updateAgreedRate(BigDecimal.valueOf(10000)); // agreed rate = 10000, well above 5000
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).workspaceId(WORKSPACE_ID).build();
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(contractRepository.existsByCollaborationIdAndStatusNot(
+                        COLLABORATION_ID, ContractStatus.CANCELLED))
+                .thenReturn(false);
+
+        ContractResponse response = service.generate(principal, WORKSPACE_ID, generateRequest());
+
+        assertNotNull(response);
+        verify(contractRepository, times(1)).save(any(Contract.class));
+    }
+
+    /**
+     * [BE-1 (c): tenant isolation on sign] A brand principal authenticated into WORKSPACE_ID must
+     * never be able to sign a contract that belongs to a DIFFERENT workspace — {@code
+     * requireContract} scopes the lookup via {@code findByIdAndWorkspaceId(contractId,
+     * workspaceId)}, so a contract that exists but belongs to OTHER_WORKSPACE_ID must come back as
+     * CONTRACT_NOT_FOUND (never leaking its existence or letting the sign proceed).
+     */
+    @Test
+    @DisplayName(
+            "recordSignature: a user from another workspace cannot sign this collaboration's"
+                    + " contract — CONTRACT_NOT_FOUND (404), no signature recorded")
+    void testRecordSignatureRejectsContractFromAnotherWorkspace() {
+        when(brandContext.requireMember(principal, OTHER_WORKSPACE_ID)).thenReturn(member);
+        // The contract belongs to WORKSPACE_ID, not OTHER_WORKSPACE_ID -- the workspace-scoped
+        // lookup must miss entirely.
+        when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, OTHER_WORKSPACE_ID))
+                .thenReturn(Optional.empty());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.recordSignature(
+                                        principal, OTHER_WORKSPACE_ID, CONTRACT_ID, "BRAND"));
+
+        assertEquals("CONTRACT_NOT_FOUND", ex.getCode());
+        assertEquals(404, ex.getStatus().value());
+        verify(contractRepository, never()).save(any());
     }
 
     @Test

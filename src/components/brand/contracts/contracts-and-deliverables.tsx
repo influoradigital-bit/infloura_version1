@@ -448,7 +448,11 @@ export function ContractsAndDeliverables() {
     setContractsLoading(true);
     setContractsError(null);
     try {
-      const rows = (await api.contracts.list('brand')) as ApiContractRow[];
+      // The live `contracts.list` response is the real backend `ContractResponse[]`
+      // shape (collaborationId/milestones/brandSignedAt/...), which doesn't
+      // structurally overlap this page's UI-only `ApiContractRow` — go through
+      // `unknown` deliberately, same as before FE-1 typed the facade.
+      const rows = (await api.contracts.list('brand')) as unknown as ApiContractRow[];
       setContracts((prev) =>
         Array.isArray(rows)
           ? rows.map((row) => mergeContractRow(row, prev.find((c) => c.id === row.id)))
@@ -480,7 +484,7 @@ export function ContractsAndDeliverables() {
     let cancelled = false;
     (async () => {
       try {
-        const row = (await api.contracts.get('brand', selectedContractId)) as ApiContractRow | null;
+        const row = (await api.contracts.get('brand', selectedContractId)) as unknown as ApiContractRow | null;
         if (!cancelled && row) {
           setContracts((prev) =>
             prev.map((c) => (c.id === selectedContractId ? mergeContractRow(row, c) : c)),

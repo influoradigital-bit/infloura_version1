@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MilestoneStatus;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
@@ -182,11 +183,24 @@ public final class MoneyDtos {
             MilestoneStatus status,
             String escrowHoldId) {}
 
+    /**
+     * [SEC: Kabir MEDIUM-2, contract-flow-architecture-2026-07-23 review] {@code amount} was
+     * previously unconstrained -- {@code generate} only checked the SUMMED total was positive, so
+     * a negative milestone (e.g. {@code [500, -200]}) could slip through as long as the net was
+     * positive. {@code @DecimalMin("0.01")} rejects zero/negative amounts at the request-validation
+     * boundary (`@Valid` cascades via {@link ContractGenerateRequest#milestones}); {@code
+     * ContractService#generate} additionally re-checks per-milestone defensively (same
+     * belt-and-suspenders discipline as {@code EscrowService#adminSplitForDispute}'s own
+     * boundary re-check) in case a caller ever bypasses bean validation.
+     */
     public record MilestoneWriteRequest(
-            int sequenceNo, String description, BigDecimal amount, LocalDate dueDate) {}
+            int sequenceNo,
+            String description,
+            @NotNull @DecimalMin("0.01") BigDecimal amount,
+            LocalDate dueDate) {}
 
     public record ContractGenerateRequest(
-            @NotBlank String collaborationId, List<MilestoneWriteRequest> milestones) {}
+            @NotBlank String collaborationId, @Valid List<MilestoneWriteRequest> milestones) {}
 
     /**
      * Presigned, time-limited GET link for downloading the generated contract PDF. Requested

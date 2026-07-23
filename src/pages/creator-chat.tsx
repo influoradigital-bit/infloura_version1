@@ -34,7 +34,15 @@ import {
 } from 'lucide-react';
 
 import { cn, formatINR } from '@/lib/utils';
-import { api, isApiLive, type Deal, type DealMessage, type MessageKind } from '@/lib/api';
+import {
+  api,
+  isApiLive,
+  type Deal,
+  type DealMessage,
+  type MessageKind,
+  type ContractApiRecord,
+  type ContractStatus,
+} from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -96,6 +104,10 @@ import type { DealContractStatus } from '@/components/brand/deal-room/deal-contr
 import { DealDeliverablesTab } from '@/components/brand/deal-room/deal-deliverables-tab';
 import { DealPaymentsTab } from '@/components/brand/deal-room/deal-payments-tab';
 import { CreatorDealContractTab } from '@/components/creator/deal-room/creator-deal-contract-tab';
+import {
+  mapApiContractToDealStatus,
+  mapDealApiContractStatus,
+} from '@/lib/creator-contract-mappers';
 
 /**
  * Deal Room is chat-first. The 4 tabs (Messages / Contract / Deliverables /
@@ -131,6 +143,14 @@ interface DealRoom {
   unreadCount: number;
   deliverablesDone: number;
   deliverablesTotal: number;
+  /**
+   * Real backend fields (DealDtos.java:38-40) — the honest source for
+   * contract state in live mode; undefined/false in mock mode (mock rooms
+   * keep using the creator-contract-store demo backbone instead).
+   */
+  contractId?: string;
+  contractStatus?: ContractStatus;
+  escrowFunded: boolean;
 }
 
 interface ChatTimelineEvent {
@@ -184,6 +204,7 @@ const mockDealRooms: DealRoom[] = [
     unreadCount: 2,
     deliverablesDone: 1,
     deliverablesTotal: 3,
+    escrowFunded: false,
   },
   {
     id: '2',
@@ -198,6 +219,7 @@ const mockDealRooms: DealRoom[] = [
     unreadCount: 1,
     deliverablesDone: 0,
     deliverablesTotal: 2,
+    escrowFunded: false,
   },
   {
     id: '3',
@@ -212,6 +234,7 @@ const mockDealRooms: DealRoom[] = [
     unreadCount: 0,
     deliverablesDone: 0,
     deliverablesTotal: 4,
+    escrowFunded: false,
   },
   {
     id: '4',
@@ -226,6 +249,7 @@ const mockDealRooms: DealRoom[] = [
     unreadCount: 0,
     deliverablesDone: 0,
     deliverablesTotal: 2,
+    escrowFunded: false,
   },
   {
     id: '5',
@@ -240,6 +264,7 @@ const mockDealRooms: DealRoom[] = [
     unreadCount: 0,
     deliverablesDone: 2,
     deliverablesTotal: 2,
+    escrowFunded: false,
   },
 ];
 
@@ -462,6 +487,9 @@ function mapDealToRoom(d: Deal): DealRoom {
     unreadCount: d.unreadCount,
     deliverablesDone: d.deliverablesDone,
     deliverablesTotal: d.deliverablesTotal,
+    contractId: d.contractId,
+    contractStatus: d.contractStatus,
+    escrowFunded: d.escrowFunded,
   };
 }
 
@@ -596,6 +624,13 @@ export default function CreatorChatPage() {
     React.useState<Record<string, DealContractStatus>>(() => getAllContractStatuses());
   const [showContractPanel, setShowContractPanel] = React.useState(false);
 
+  // FE-2/FE-3: real contract for the selected deal — GET /contracts/:id,
+  // fetched once `selectedDeal.contractId` is real (never a fabricated
+  // CTR-2024-<id>). Live mode only.
+  const [liveContract, setLiveContract] = React.useState<ContractApiRecord | null>(null);
+  const [liveContractLoading, setLiveContractLoading] = React.useState(false);
+  const [liveContractError, setLiveContractError] = React.useState<string | null>(null);
+
   const syncUrl = React.useCallback(
     (id: string, panel: CreatorToolsPanel) => {
       const next = new URLSearchParams(searchParams);
@@ -619,6 +654,31 @@ export default function CreatorChatPage() {
   };
 
   const openContractTab = () => openTool('contract');
+
+  // FE-2: fetch the full contract once a real contractId exists on the
+  // selected deal. Coarse status (deal.contractStatus) already renders an
+  // honest state before this resolves.
+  const fetchLiveContract = React.useCallback(async () => {
+    if (!liveApi || !selectedDeal?.contractId) {
+      setLiveContract(null);
+      return;
+    }
+    setLiveContractLoading(true);
+    setLiveContractError(null);
+    try {
+      const record = await api.contracts.get('creator', selectedDeal.contractId);
+      setLiveContract(record);
+    } catch {
+      setLiveContract(null);
+      setLiveContractError('Could not load contract details.');
+    } finally {
+      setLiveContractLoading(false);
+    }
+  }, [liveApi, selectedDeal?.contractId]);
+
+  React.useEffect(() => {
+    void fetchLiveContract();
+  }, [fetchLiveContract]);
 
   React.useEffect(() => {
     if (dealId) {
@@ -732,10 +792,21 @@ export default function CreatorChatPage() {
     setShowDeliverableDialog(true);
   };
 
-  const updateContractStatus = React.useCallback((dealId: string, status: DealContractStatus) => {
-    setContractStatus(dealId, status);
-    setContractStatusByDeal((prev) => ({ ...prev, [dealId]: status }));
-  }, []);
+  // FE-3: after a sign call in live mode, re-fetch the real contract instead
+  // of writing an optimistic status into the demo store — the honest state
+  // must come from `GET /contracts/:id`'s real brandSignedAt/creatorSignedAt,
+  // not a client-assumed transition.
+  const updateContractStatus = React.useCallback(
+    (dealId: string, status: DealContractStatus) => {
+      if (liveApi) {
+        void fetchLiveContract();
+        return;
+      }
+      setContractStatus(dealId, status);
+      setContractStatusByDeal((prev) => ({ ...prev, [dealId]: status }));
+    },
+    [liveApi, fetchLiveContract],
+  );
 
   const resolveDealContractStatus = (deal: DealRoom): DealContractStatus | undefined =>
     contractStatusByDeal[deal.id] ??
@@ -744,6 +815,33 @@ export default function CreatorChatPage() {
   const enrichContractEvent = React.useCallback(
     (event: ChatTimelineEvent, deal: DealRoom): ChatTimelineEvent => {
       if (event.type !== 'contract') return event;
+
+      if (liveApi) {
+        // Live mode: never fabricate a contract id/status for a chat card —
+        // use only the real fields the backend already returns on the deal
+        // (deal.contractId/contractStatus/escrowFunded, DealDtos.java:38-40).
+        // Architecture doc §FE-2/FE-3: no CTR-2024-<id> synthesis.
+        const coarseStatus = mapDealApiContractStatus(deal.contractStatus, deal.escrowFunded);
+        return {
+          ...event,
+          metadata: {
+            ...event.metadata,
+            contractId: deal.contractId ?? event.metadata?.contractId,
+            contractStatus: coarseStatus ?? event.metadata?.contractStatus,
+            brandName: deal.brandName,
+            campaignName: deal.campaignName,
+            amount: deal.dealAmount,
+            brandSigned: coarseStatus
+              ? ['brand_signed', 'creator_signed', 'active'].includes(coarseStatus)
+              : Boolean(event.metadata?.brandSigned),
+            creatorSigned: coarseStatus
+              ? ['creator_signed', 'active'].includes(coarseStatus)
+              : Boolean(event.metadata?.creatorSigned),
+            escrowStatus: deal.escrowFunded ? 'funded' : event.metadata?.escrowStatus,
+          },
+        };
+      }
+
       const status = resolveDealContractStatus(deal);
       return {
         ...event,
@@ -764,7 +862,7 @@ export default function CreatorChatPage() {
         },
       };
     },
-    [contractStatusByDeal],
+    [contractStatusByDeal, liveApi],
   );
 
   const handleViewContract = (event: ChatTimelineEvent) => {
@@ -868,12 +966,29 @@ export default function CreatorChatPage() {
     );
   }
 
-  const contractStatus = resolveDealContractStatus(selectedDeal);
-  const contractId = dealHasContract(selectedDeal.id, selectedDeal.status)
-    ? resolveContractId(selectedDeal.id)
-    : undefined;
+  // FE-2/FE-3: live mode reads the REAL deal.contractId/contractStatus/
+  // escrowFunded (DealDtos.java:38-40) — never the CTR-2024-<dealid> /
+  // creator-contract-store demo fabrication. Coarse status renders
+  // immediately from the deal-list row; once the full contract loads
+  // (liveContract, with real brandSignedAt/creatorSignedAt)
+  // mapApiContractToDealStatus takes over so "awaiting brand" vs "your turn"
+  // is derived from the two real timestamps, not the enum alone.
+  const contractStatus = liveApi
+    ? selectedDeal.contractId
+      ? liveContract
+        ? mapApiContractToDealStatus(liveContract, selectedDeal.escrowFunded)
+        : mapDealApiContractStatus(selectedDeal.contractStatus, selectedDeal.escrowFunded)
+      : undefined
+    : resolveDealContractStatus(selectedDeal);
+  const contractId = liveApi
+    ? selectedDeal.contractId
+    : dealHasContract(selectedDeal.id, selectedDeal.status)
+      ? resolveContractId(selectedDeal.id)
+      : undefined;
   const dealPhase = getDealPhase(selectedDeal.status, contractStatus);
-  const hasContract = dealHasContract(selectedDeal.id, selectedDeal.status);
+  const hasContract = liveApi
+    ? Boolean(selectedDeal.contractId)
+    : dealHasContract(selectedDeal.id, selectedDeal.status);
 
   const deliverableItems =
     selectedDeal.deliverablesTotal > 0
@@ -1446,17 +1561,31 @@ export default function CreatorChatPage() {
             <div className="h-[calc(100vh-4rem)] overflow-y-auto">
               {openPanel === 'contract' && (
                 hasContract && contractId && contractStatus ? (
-                  <CreatorDealContractTab
-                    contractId={contractId}
-                    brandName={selectedDeal.brandName}
-                    campaignName={selectedDeal.campaignName}
-                    amount={selectedDeal.dealAmount}
-                    status={contractStatus}
-                    onStatusChange={(status) => updateContractStatus(selectedDeal.id, status)}
-                  />
+                  liveApi && liveContractLoading && !liveContract ? (
+                    <div className="flex items-center justify-center h-full p-8 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading contract…
+                    </div>
+                  ) : (
+                    <CreatorDealContractTab
+                      contractId={contractId}
+                      brandName={selectedDeal.brandName}
+                      campaignName={selectedDeal.campaignName}
+                      amount={selectedDeal.dealAmount}
+                      status={contractStatus}
+                      onStatusChange={(status) => updateContractStatus(selectedDeal.id, status)}
+                    />
+                  )
                 ) : (
+                  // FE-3 honest empty state: no real contractId on the deal yet.
                   <div className="flex items-center justify-center h-full p-8 text-center text-sm text-muted-foreground">
-                    <p>Contract will appear here once the brand sends it after negotiation.</p>
+                    <div>
+                      <FileSignature className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                      <p className="font-medium text-foreground">No contract yet</p>
+                      <p className="mt-1">Contract will appear here once the brand sends it after negotiation.</p>
+                      {liveApi && liveContractError && (
+                        <p className="mt-2 text-xs text-destructive-foreground">{liveContractError}</p>
+                      )}
+                    </div>
                   </div>
                 )
               )}

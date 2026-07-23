@@ -156,7 +156,7 @@ class DealServiceTest {
                 .thenReturn(Optional.of(collaboration));
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
         when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
-        when(contractRepository.findByCollaborationIdOrderByVersionDesc(DEAL_ID)).thenReturn(List.of());
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
         when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any())).thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
@@ -212,7 +212,7 @@ class DealServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0));
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
-        when(contractRepository.findByCollaborationIdOrderByVersionDesc(DEAL_ID)).thenReturn(List.of());
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
         when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any())).thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
@@ -267,7 +267,7 @@ class DealServiceTest {
                         DEAL_ID, DealMessageKind.proposal))
                 .thenReturn(Optional.of(proposalMessage(CREATOR_USER_ID, DealSenderType.creator)));
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
-        when(contractRepository.findByCollaborationIdOrderByVersionDesc(DEAL_ID)).thenReturn(List.of());
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
         when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any())).thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
@@ -388,7 +388,7 @@ class DealServiceTest {
                         DEAL_ID, DealMessageKind.proposal))
                 .thenReturn(Optional.of(proposalMessage(CREATOR_USER_ID, DealSenderType.creator)));
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
-        when(contractRepository.findByCollaborationIdOrderByVersionDesc(DEAL_ID)).thenReturn(List.of());
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
         when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any())).thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());

@@ -2,6 +2,7 @@ import * as React from 'react';
 import {
   AlertCircle,
   CheckCircle2,
+  Clock,
   Download,
   Loader2,
   PenTool,
@@ -11,7 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { downloadContractPDF, signContract } from '@/lib/contract-generator';
-import { ApiError } from '@/lib/api';
+import { api, ApiError, isApiLive } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatINR } from '@/lib/utils';
 import type { DealContractStatus } from '@/components/brand/deal-room/deal-contract-tab';
@@ -36,11 +37,45 @@ export function CreatorDealContractTab({
 }: CreatorDealContractTabProps) {
   const [isSigning, setIsSigning] = React.useState(false);
   const [signerName, setSignerName] = React.useState('');
+  const [isFetchingPdf, setIsFetchingPdf] = React.useState(false);
   const { toast } = useToast();
   const canSign = status === 'brand_signed';
+  // FE-3 honest states, derived from the real brandSignedAt/creatorSignedAt
+  // timestamps (via mapApiContractToDealStatus): 'generated' = neither party
+  // has signed yet (DRAFT) — the creator's turn hasn't come, so this reads
+  // as "awaiting brand" too. 'creator_signed' means BOTH parties have
+  // already signed (escrow just isn't funded yet) — that's "fully signed",
+  // not "awaiting brand".
+  const awaitingBrandSignature = status === 'generated';
+  const fullySigned = status === 'creator_signed' || status === 'active';
   const netEarnings = Math.round(amount * 0.79);
+  const liveApi = isApiLive();
 
-  const handleDownload = () => {
+  // FE-6: live mode uses the real presigned R2 URL (GET /contracts/:id/pdf-download-url,
+  // ContractController.java:114) instead of the client-side HTML print. The
+  // endpoint legitimately 404s (CONTRACT_PDF_NOT_READY) until both parties
+  // have signed and the PDF has been generated — surface that honestly.
+  const handleDownload = async () => {
+    if (liveApi) {
+      setIsFetchingPdf(true);
+      try {
+        const { url } = await api.contracts.pdfDownloadUrl('creator', contractId);
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } catch (err) {
+        toast({
+          title: 'PDF not ready',
+          description:
+            err instanceof ApiError
+              ? err.message
+              : 'The signed PDF is available once both parties have signed.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsFetchingPdf(false);
+      }
+      return;
+    }
+
     downloadContractPDF(
       {
         contractId,
@@ -102,6 +137,24 @@ export function CreatorDealContractTab({
           </Card>
         )}
 
+        {/* FE-3 honest state: contract exists but the brand hasn't signed yet
+            (DRAFT with neither signature, or the rare case the creator signed
+            first — either way the real gate is `brandSignedAt`, not an
+            assumed order). */}
+        {awaitingBrandSignature && (
+          <Card className="border-border bg-muted/30">
+            <CardContent className="pt-4 flex gap-3">
+              <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
+              <div>
+                <p className="font-medium text-sm">Awaiting brand signature</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {brandName} hasn&apos;t signed this contract yet. You&apos;ll be able to sign once they do.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="space-y-3 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Contract ID</span>
@@ -137,8 +190,17 @@ export function CreatorDealContractTab({
         )}
 
         <div className="flex flex-col sm:flex-row gap-2">
-          <Button variant="outline" className="flex-1 gap-2" onClick={handleDownload}>
-            <Download className="h-4 w-4" />
+          <Button
+            variant="outline"
+            className="flex-1 gap-2"
+            onClick={handleDownload}
+            disabled={isFetchingPdf}
+          >
+            {isFetchingPdf ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
             Download PDF
           </Button>
           {canSign && (
@@ -160,10 +222,10 @@ export function CreatorDealContractTab({
               )}
             </Button>
           )}
-          {status === 'active' && (
+          {fullySigned && (
             <div className="flex items-center gap-2 text-sm text-success px-3">
               <CheckCircle2 className="h-4 w-4" />
-              Contract active
+              Fully signed
             </div>
           )}
         </div>

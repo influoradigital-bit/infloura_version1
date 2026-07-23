@@ -729,8 +729,13 @@ public class DealService {
                                 .filter(m -> !parseReadBy(m.getReadByJson()).contains(userId))
                                 .count();
 
+        // [BE-1: Vikram, contract-flow-architecture-2026-07-23 §6.4] version DESC alone is an
+        // unstable tiebreak -- every Contract row defaults to version=1 (Contract.Builder#build),
+        // so with more than one row for a collaboration "the latest" was query-plan-dependent.
+        // createdAt DESC as the secondary sort makes "most recently created wins" deterministic.
         List<Contract> contracts =
-                contractRepository.findByCollaborationIdOrderByVersionDesc(collaboration.getId());
+                contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(
+                        collaboration.getId());
         Contract latest = contracts.isEmpty() ? null : contracts.get(0);
 
         boolean escrowFunded =

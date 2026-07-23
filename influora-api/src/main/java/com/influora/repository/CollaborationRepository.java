@@ -2,14 +2,30 @@ package com.influora.repository;
 
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.enums.CollaborationStatus;
+import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface CollaborationRepository extends JpaRepository<Collaboration, String> {
+
+    /**
+     * [SEC: Kabir MEDIUM-1, contract-flow-architecture-2026-07-23 review — race-close for BE-1]
+     * Row lock used by {@code ContractService#generate} to serialize concurrent
+     * {@code POST /contracts} calls for the SAME collaboration. Without this, the existing
+     * {@code existsByCollaborationIdAndStatusNot} SELECT then {@code save} INSERT has no DB-level
+     * guarantee — two concurrent creates can both pass the exists-check before either commits and
+     * both insert, producing two non-CANCELLED contracts for one collaboration. Same
+     * {@code PESSIMISTIC_WRITE} pattern already used for {@code EscrowHold} row locks
+     * ({@code EscrowHoldRepository#findByIdForUpdate}, H-T34-1).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Collaboration c WHERE c.id = :id")
+    Optional<Collaboration> findByIdForUpdate(@Param("id") String id);
 
     /**
      * One row of the {@code niche_rate_band} candidate pool (Phase 2 item 2.1) — a

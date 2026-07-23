@@ -19,6 +19,7 @@ import com.influora.domain.enums.MilestoneStatus;
 import com.influora.integration.razorpay.RazorpayClient;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
+import com.influora.repository.ContractRepository;
 import com.influora.repository.DisputeRepository;
 import com.influora.repository.DeliverableRepository;
 import com.influora.repository.EscrowHoldRepository;
@@ -59,6 +60,7 @@ class DisputeEscrowConcurrencyTest {
     @Mock private PaymentMilestoneRepository milestoneRepository;
     @Mock private CampaignRepository campaignRepository;
     @Mock private CollaborationRepository collaborationRepository;
+    @Mock private ContractRepository contractRepository;
     @Mock private DisputeRepository disputeRepository;
     @Mock private WalletLedgerService ledgerService;
     @Mock private PlatformWalletService platformWalletService;
@@ -85,6 +87,7 @@ class DisputeEscrowConcurrencyTest {
                         milestoneRepository,
                         campaignRepository,
                         collaborationRepository,
+                        contractRepository,
                         disputeRepository,
                         ledgerService,
                         platformWalletService,

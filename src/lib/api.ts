@@ -39,7 +39,7 @@ import {
 } from './auth-session';
 
 // Re-export types needed by consumers
-export type { DeliverableStatus } from './types';
+export type { DeliverableStatus, ContractStatus } from './types';
 
 // ---------------------------------------------------------------------------
 // Environment / config
@@ -1432,44 +1432,127 @@ function parseDealMessageSseFrame(rawFrame: string): DealMessageSseFrame | null 
 // Contracts
 // ---------------------------------------------------------------------------
 
-/** Contract row shape (Task #23) consumed by src/lib/creator-contract-mappers.ts. */
+/**
+ * Payment milestone as returned inside `ContractResponse.milestones[]`
+ * (backend `payment_milestones` table, V10:24) and as sent in
+ * `ContractGenerateRequest.milestones[]` (`MoneyDtos.java:189`).
+ */
+export interface ContractMilestone {
+  id?: string;
+  sequenceNo: number;
+  description: string;
+  amount: number;
+  dueDate?: string | null;
+  status?: string;
+}
+
+/**
+ * Mirrors the backend `ContractResponse` record exactly (`MoneyDtos.java:155`,
+ * `Contract.java:19`). Contract flow spec: wiki/build/contract-flow-architecture-2026-07-23.md §3/§5.1.
+ * `totalAmount` is always server-summed from `milestones` — never trust a
+ * client-held total. `brandSignedAt`/`creatorSignedAt` are the two
+ * independent timestamps the FE must read to distinguish "awaiting brand"
+ * from "awaiting creator" — `status` alone collapses both into
+ * `PENDING_SIGNATURES` (architecture doc §4).
+ */
 export interface ContractApiRecord {
   id: string;
-  dealId: string;
+  collaborationId: string;
+  version?: number;
   status: ContractStatus;
+  totalAmount: number;
+  currency: string;
+  pdfR2Key?: string | null;
   brandSignedAt: string | null;
   creatorSignedAt: string | null;
+  milestones: ContractMilestone[];
+  effectiveDate?: string | null;
+  expirationDate?: string | null;
   createdAt?: string;
-  pdfUrl?: string | null;
+}
+
+/** Body for `POST /contracts` — `ContractGenerateRequest` (`MoneyDtos.java:188`). */
+export interface ContractGeneratePayload {
+  collaborationId: string;
+  milestones: Array<{
+    sequenceNo: number;
+    description: string;
+    amount: number;
+    dueDate?: string;
+  }>;
 }
 
 export const contracts = {
-  /** GET /contracts?dealId= */
+  /**
+   * GET /contracts?dealId= — role-aware (`ContractController.java:46`). Returns
+   * `[]` when no contract exists for the deal yet — never 404. This is the
+   * honest "not created yet" signal (architecture doc §5.2); do not build/call
+   * a `GET /deals/:id/contract` route.
+   */
   list: (role: Role, dealId?: string) =>
     isLive()
-      ? http.request('GET', '/contracts', { role, query: { dealId } })
-      : mockOr([]),
+      ? http.request<ContractApiRecord[]>('GET', '/contracts', { role, query: { dealId } })
+      : mockOr<ContractApiRecord[]>([]),
 
-  /** GET /contracts/:id */
+  /** GET /contracts/:id — full contract incl. milestones + signature timestamps. */
   get: (role: Role, id: string) =>
     isLive()
-      ? http.request('GET', `/contracts/${id}`, { role })
-      : mockOr(null),
+      ? http.request<ContractApiRecord>('GET', `/contracts/${id}`, { role })
+      : mockOr<ContractApiRecord | null>(null),
 
-  /** POST /contracts — brand generates contract for a deal */
-  generate: (dealId: string) =>
+  /**
+   * POST /contracts — brand generates a contract for a collaboration
+   * (`OWNER/ADMIN/MANAGER` only; server re-sums `totalAmount` from
+   * `milestones`, never trusts a client total). Body shape is
+   * `{ collaborationId, milestones }` — NOT `{ dealId }`.
+   */
+  generate: (payload: ContractGeneratePayload) =>
     isLive()
-      ? http.request<{ contractId: string }>('POST', '/contracts', { body: { dealId } })
-      : mockOr({ contractId: 'CTR_new' }),
+      ? http.request<ContractApiRecord>('POST', '/contracts', { body: payload })
+      : mockOr<ContractApiRecord>({
+          id: 'CTR_new',
+          collaborationId: payload.collaborationId,
+          status: 'DRAFT',
+          totalAmount: payload.milestones.reduce((sum, m) => sum + m.amount, 0),
+          currency: 'INR',
+          brandSignedAt: null,
+          creatorSignedAt: null,
+          milestones: payload.milestones,
+        }),
 
-  /** POST /contracts/:id/sign */
+  /**
+   * POST /contracts/:id/sign — signer role is server-derived from the JWT
+   * (`role` in the body is ignored for the creator path); returns the
+   * post-sign contract so the caller can re-derive the honest UI state from
+   * the real `brandSignedAt`/`creatorSignedAt` timestamps.
+   */
   sign: (role: Role, id: string, signature: { name: string; agreedAt: string }) =>
     isLive()
-      ? http.request<{ status: ContractStatus }>('POST', `/contracts/${id}/sign`, {
+      ? http.request<ContractApiRecord>('POST', `/contracts/${id}/sign`, {
           role,
           body: signature,
         })
-      : mockOr({ status: 'ACTIVE' as ContractStatus }),
+      : mockOr<ContractApiRecord>({
+          id,
+          collaborationId: '',
+          status: role === 'creator' ? 'ACTIVE' : 'PENDING_SIGNATURES',
+          totalAmount: 0,
+          currency: 'INR',
+          brandSignedAt: new Date().toISOString(),
+          creatorSignedAt: role === 'creator' ? new Date().toISOString() : null,
+          milestones: [],
+        }),
+
+  /**
+   * GET /contracts/:id/pdf-download-url — mints a fresh short-lived presigned
+   * R2 GET link. 404 `CONTRACT_PDF_NOT_READY` until both parties have signed
+   * and the PDF has been generated — that 404 is legitimate, surface it as
+   * "PDF available after both sign" rather than retrying silently.
+   */
+  pdfDownloadUrl: (role: Role, id: string) =>
+    isLive()
+      ? http.request<{ url: string }>('GET', `/contracts/${id}/pdf-download-url`, { role })
+      : mockOr<{ url: string }>({ url: '' }),
 };
 
 // ---------------------------------------------------------------------------

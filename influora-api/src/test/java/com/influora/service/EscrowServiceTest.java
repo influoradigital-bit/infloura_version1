@@ -19,8 +19,11 @@ import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.UserType;
 import com.influora.integration.razorpay.RazorpayClient;
+import com.influora.domain.entity.Contract;
+import com.influora.domain.enums.ContractStatus;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
+import com.influora.repository.ContractRepository;
 import com.influora.repository.DisputeRepository;
 import com.influora.repository.DeliverableRepository;
 import com.influora.repository.EscrowHoldRepository;
@@ -59,6 +62,7 @@ class EscrowServiceTest {
     @Mock private PaymentMilestoneRepository milestoneRepository;
     @Mock private CampaignRepository campaignRepository;
     @Mock private CollaborationRepository collaborationRepository;
+    @Mock private ContractRepository contractRepository;
     @Mock private DisputeRepository disputeRepository;
     @Mock private WalletLedgerService ledgerService;
     @Mock private PlatformWalletService platformWalletService;
@@ -85,6 +89,7 @@ class EscrowServiceTest {
                         milestoneRepository,
                         campaignRepository,
                         collaborationRepository,
+                        contractRepository,
                         disputeRepository,
                         ledgerService,
                         platformWalletService,
@@ -399,5 +404,154 @@ class EscrowServiceTest {
                 principal, WORKSPACE_ID, CAMPAIGN_ID, null, requiredAmount, "INR", FUND_IDEMPOTENCY_KEY);
 
         verify(escrowHoldRepository).save(any(EscrowHold.class));
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // [BE-2: Vikram, contract-flow-architecture-2026-07-23 §6.5] initiateFund must refuse to fund
+    // a milestone whose governing contract is not yet ACTIVE (both brandSignedAt and
+    // creatorSignedAt set). Previously this method had no contract-awareness at all.
+    // ------------------------------------------------------------------------------------------
+
+    private static final String CONTRACT_ID = "01HCONTRACT1234567AB";
+
+    private PaymentMilestone milestoneForContract(String contractId) {
+        return PaymentMilestone.builder()
+                .id(MILESTONE_ID)
+                .contractId(contractId)
+                .collaborationId(COLLAB_ID)
+                .amount(BigDecimal.valueOf(5000))
+                .build();
+    }
+
+    @Test
+    @DisplayName(
+            "initiateFund: rejects funding with CONTRACT_NOT_ACTIVE (409) when the milestone's"
+                    + " contract is DRAFT (neither party has signed) -- no hold is created")
+    void initiateFundRejectsWhenContractNotSigned() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestoneForContract(CONTRACT_ID)));
+        Contract unsignedContract =
+                Contract.builder()
+                        .id(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .totalAmount(BigDecimal.valueOf(5000))
+                        .status(ContractStatus.DRAFT)
+                        .build();
+        when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(unsignedContract));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.initiateFund(
+                                        principal,
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        MILESTONE_ID,
+                                        BigDecimal.valueOf(5000),
+                                        "INR",
+                                        FUND_IDEMPOTENCY_KEY));
+
+        assertEquals("CONTRACT_NOT_ACTIVE", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        verify(escrowHoldRepository, never()).save(any());
+        verify(walletService, never()).requireWorkspaceWallet(any());
+    }
+
+    @Test
+    @DisplayName(
+            "initiateFund: rejects funding with CONTRACT_NOT_ACTIVE (409) when only the BRAND has"
+                    + " signed (creatorSignedAt still null) -- half-signed is not enough")
+    void initiateFundRejectsWhenOnlyBrandSigned() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestoneForContract(CONTRACT_ID)));
+        Contract halfSigned =
+                Contract.builder()
+                        .id(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .totalAmount(BigDecimal.valueOf(5000))
+                        .build();
+        halfSigned.recordBrandSignature();
+        when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(halfSigned));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.initiateFund(
+                                        principal,
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        MILESTONE_ID,
+                                        BigDecimal.valueOf(5000),
+                                        "INR",
+                                        FUND_IDEMPOTENCY_KEY));
+
+        assertEquals("CONTRACT_NOT_ACTIVE", ex.getCode());
+        verify(escrowHoldRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName(
+            "initiateFund: proceeds past the contract gate once the contract is ACTIVE (both"
+                    + " brandSignedAt and creatorSignedAt set) -- reaches the wallet/hold creation path")
+    void initiateFundProceedsWhenContractActive() {
+        BigDecimal requiredAmount = BigDecimal.valueOf(5000);
+        Wallet wallet = walletWithBalance(requiredAmount);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestoneForContract(CONTRACT_ID)));
+        Contract fullySigned =
+                Contract.builder()
+                        .id(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .totalAmount(requiredAmount)
+                        .build();
+        fullySigned.recordBrandSignature();
+        fullySigned.recordCreatorSignature();
+        when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(fullySigned));
+        when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY))
+                .thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(wallet);
+        when(razorpayClient.createOrder(eq(requiredAmount), eq("INR"), any()))
+                .thenReturn(new RazorpayClient.OrderResult("order-2", "created"));
+
+        service.initiateFund(
+                principal,
+                WORKSPACE_ID,
+                CAMPAIGN_ID,
+                MILESTONE_ID,
+                requiredAmount,
+                "INR",
+                FUND_IDEMPOTENCY_KEY);
+
+        verify(escrowHoldRepository).save(any(EscrowHold.class));
+    }
+
+    @Test
+    @DisplayName(
+            "initiateFund: campaign-level funding (no milestoneId) skips the contract gate entirely"
+                    + " -- no contract/milestone lookup, existing behavior preserved")
+    void initiateFundSkipsContractGateWhenNoMilestoneId() {
+        BigDecimal requiredAmount = BigDecimal.valueOf(5000);
+        Wallet wallet = walletWithBalance(requiredAmount);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY))
+                .thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(wallet);
+        when(razorpayClient.createOrder(eq(requiredAmount), eq("INR"), any()))
+                .thenReturn(new RazorpayClient.OrderResult("order-3", "created"));
+
+        service.initiateFund(
+                principal, WORKSPACE_ID, CAMPAIGN_ID, null, requiredAmount, "INR", FUND_IDEMPOTENCY_KEY);
+
+        verify(escrowHoldRepository).save(any(EscrowHold.class));
+        verify(milestoneRepository, never()).findByIdAndWorkspaceId(any(), any());
+        verify(contractRepository, never()).findById(any());
     }
 }

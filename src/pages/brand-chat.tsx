@@ -31,13 +31,19 @@ import {
 import { cn, formatINR } from '@/lib/utils';
 import { uniqueId } from '@/lib/unique-id';
 import {
+  api,
   messages as messagesApi,
   deliverables as deliverablesApi,
   deals as dealsApi,
   isApiLive,
+  ApiError,
   type DealMessage,
   type Deal,
+  type ContractApiRecord,
+  type ContractStatus,
 } from '@/lib/api';
+import type { CollaborationStatus } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -67,10 +73,18 @@ import {
   type DealContractStatus,
 } from '@/components/brand/deal-room/deal-contract-tab';
 import {
+  DealContractGenerate,
+  type MilestoneDraft,
+} from '@/components/brand/deal-room/deal-contract-generate';
+import {
   DealDeliverablesTab,
   type DealDeliverableItem,
 } from '@/components/brand/deal-room/deal-deliverables-tab';
 import { DealPaymentsTab } from '@/components/brand/deal-room/deal-payments-tab';
+import {
+  mapApiContractToDealStatus,
+  mapDealApiContractStatus,
+} from '@/lib/creator-contract-mappers';
 
 /**
  * Deal Room is now chat-first. The 4-tab layout (Messages / Contract /
@@ -129,6 +143,17 @@ interface ChatDealRoom {
   deliverablesDone: number;
   deliverablesTotal: number;
   nextDeadline: Date | null;
+  /**
+   * Real backend fields (DealDtos.java:38-40, DealService.java:732-758) — the
+   * honest source for contract state in live mode. `rawStatus` is the full
+   * `CollaborationStatus` (unbucketed), needed to gate "Review & send
+   * contract" precisely on `TERMS_AGREED` rather than the coarse
+   * `dealStatus` bucket, which also covers CONTRACT_PENDING/CONTRACTED.
+   */
+  rawStatus: CollaborationStatus;
+  contractId?: string;
+  contractStatus?: ContractStatus;
+  escrowFunded: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +208,10 @@ function mapDealToChatRoom(deal: Deal): ChatDealRoom | null {
     deliverablesDone: deal.deliverablesDone,
     deliverablesTotal: deal.deliverablesTotal,
     nextDeadline: deal.nextDeadline ? new Date(deal.nextDeadline) : null,
+    rawStatus: deal.status,
+    contractId: deal.contractId,
+    contractStatus: deal.contractStatus,
+    escrowFunded: deal.escrowFunded,
   };
 }
 
@@ -204,6 +233,8 @@ const mockDealRooms: ChatDealRoom[] = [
     deliverablesDone: 2,
     deliverablesTotal: 3,
     nextDeadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+    rawStatus: 'IN_PROGRESS',
+    escrowFunded: true,
   },
   {
     id: 'deal-2',
@@ -221,6 +252,8 @@ const mockDealRooms: ChatDealRoom[] = [
     deliverablesDone: 0,
     deliverablesTotal: 4,
     nextDeadline: null,
+    rawStatus: 'IN_NEGOTIATION',
+    escrowFunded: false,
   },
   {
     id: 'deal-3',
@@ -238,6 +271,8 @@ const mockDealRooms: ChatDealRoom[] = [
     deliverablesDone: 0,
     deliverablesTotal: 5,
     nextDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    rawStatus: 'CONTRACTED',
+    escrowFunded: false,
   },
   {
     id: 'deal-4',
@@ -255,6 +290,8 @@ const mockDealRooms: ChatDealRoom[] = [
     deliverablesDone: 2,
     deliverablesTotal: 2,
     nextDeadline: null,
+    rawStatus: 'REVIEW_PENDING',
+    escrowFunded: true,
   },
 ];
 
@@ -506,6 +543,16 @@ export default function BrandChatPage() {
   const [isSubmittingProposal, setIsSubmittingProposal] = React.useState(false);
   const [deliverableStatuses, setDeliverableStatuses] = React.useState<Record<string, DealDeliverableItem['status']>>({});
 
+  // FE-1..FE-5: live contract state for the selected deal — GET /contracts/:id
+  // (full milestones + brandSignedAt/creatorSignedAt), plus the create-trigger
+  // (POST /contracts). Live mode only; demo mode keeps using
+  // contractStatusByDeal/CONTRACT_IDS untouched.
+  const [liveContract, setLiveContract] = React.useState<ContractApiRecord | null>(null);
+  const [liveContractLoading, setLiveContractLoading] = React.useState(false);
+  const [liveContractError, setLiveContractError] = React.useState<string | null>(null);
+  const [isGeneratingContract, setIsGeneratingContract] = React.useState(false);
+  const { toast } = useToast();
+
   // B-1: live deal-room messages (GET/POST /deals/:id/messages). Live mode only;
   // demo mode keeps the scripted mock feed below untouched.
   const [liveMessages, setLiveMessages] = React.useState<DealMessage[]>([]);
@@ -561,6 +608,76 @@ export default function BrandChatPage() {
   React.useEffect(() => {
     if (isApiLive()) void loadDealRooms();
   }, [loadDealRooms]);
+
+  // Keep `selectedDeal` (plain state, not derived) in sync whenever the live
+  // list refreshes — e.g. right after POST /contracts, so the newly-real
+  // deal.contractId/contractStatus reach the selected room without requiring
+  // the user to reselect it.
+  React.useEffect(() => {
+    if (!isApiLive() || !selectedDeal) return;
+    const updated = liveDealRooms.find((d) => d.id === selectedDeal.id);
+    if (updated && updated !== selectedDeal) setSelectedDeal(updated);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveDealRooms]);
+
+  // FE-2/FE-3 (mirrored for brand side): fetch the full contract — milestones,
+  // brandSignedAt, creatorSignedAt — once a real contractId exists. Coarse
+  // deal.contractStatus already renders an honest state before this resolves.
+  const fetchLiveContract = React.useCallback(async () => {
+    if (!isApiLive() || !selectedDeal?.contractId) {
+      setLiveContract(null);
+      return;
+    }
+    setLiveContractLoading(true);
+    setLiveContractError(null);
+    try {
+      const record = await api.contracts.get('brand', selectedDeal.contractId);
+      setLiveContract(record);
+    } catch (err) {
+      setLiveContract(null);
+      setLiveContractError(err instanceof ApiError ? err.message : 'Could not load contract details.');
+    } finally {
+      setLiveContractLoading(false);
+    }
+  }, [selectedDeal?.contractId]);
+
+  React.useEffect(() => {
+    void fetchLiveContract();
+  }, [fetchLiveContract]);
+
+  // FE-4: the create trigger. POST /contracts { collaborationId, milestones }
+  // — the deal/negotiation flow never called this before (architecture doc
+  // §0/§2), so contractId stayed null forever. After it succeeds, refresh the
+  // deal list so `selectedDeal.contractId`/`contractStatus` become real and
+  // the panel flips straight into the sign step.
+  const handleGenerateContract = async (milestones: MilestoneDraft[]) => {
+    if (!selectedDeal) return;
+    setIsGeneratingContract(true);
+    try {
+      await api.contracts.generate({
+        collaborationId: selectedDeal.id,
+        milestones: milestones.map((m, i) => ({
+          sequenceNo: i + 1,
+          description: m.description,
+          amount: m.amount,
+          dueDate: m.dueDate || undefined,
+        })),
+      });
+      toast({
+        title: 'Contract sent',
+        description: `Review and sign it below, then ${selectedDeal.creatorName} will be notified.`,
+      });
+      await loadDealRooms();
+    } catch (err) {
+      toast({
+        title: 'Could not create contract',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGeneratingContract(false);
+    }
+  };
 
   // Demo mode: URL param selection against the static mock list (unchanged).
   React.useEffect(() => {
@@ -812,8 +929,43 @@ export default function BrandChatPage() {
 
   const statusConfig = selectedDeal ? dealStatusConfig[selectedDeal.dealStatus as keyof typeof dealStatusConfig] : null;
 
-  const contractStatus = selectedDeal ? contractStatusByDeal[selectedDeal.id] : undefined;
-  const contractId = selectedDeal ? CONTRACT_IDS[selectedDeal.id] : undefined;
+  const liveApiMode = isApiLive();
+
+  // FE-2/FE-3 (brand mirror): live mode reads the REAL deal.contractId /
+  // deal.contractStatus / deal.escrowFunded (DealDtos.java:38-40) — never the
+  // CTR-2024-<dealid> / contractStatusByDeal demo fabrication. Coarse status
+  // (mapDealApiContractStatus) renders immediately from the deal-list row;
+  // once the full contract loads (liveContract, with real
+  // brandSignedAt/creatorSignedAt) mapApiContractToDealStatus takes over.
+  const contractStatus = liveApiMode
+    ? selectedDeal?.contractId
+      ? liveContract
+        ? mapApiContractToDealStatus(liveContract, selectedDeal.escrowFunded)
+        : mapDealApiContractStatus(selectedDeal.contractStatus, selectedDeal.escrowFunded)
+      : undefined
+    : selectedDeal
+      ? contractStatusByDeal[selectedDeal.id]
+      : undefined;
+  const contractId = liveApiMode
+    ? selectedDeal?.contractId
+    : selectedDeal
+      ? CONTRACT_IDS[selectedDeal.id]
+      : undefined;
+  const hasContract = liveApiMode
+    ? Boolean(selectedDeal?.contractId)
+    : Boolean(
+        selectedDeal &&
+          (contractStatus !== undefined ||
+            ['contracted', 'in_progress', 'review', 'completed'].includes(selectedDeal.dealStatus)),
+      );
+  // FE-4: show "Review & send contract" only once terms are agreed and no
+  // contract exists yet — gated on the real, unbucketed collaboration status
+  // (architecture doc §2), not the coarse dealStatus bucket which also
+  // covers CONTRACT_PENDING/CONTRACTED.
+  const canGenerateContract = Boolean(
+    liveApiMode && selectedDeal && !selectedDeal.contractId && selectedDeal.rawStatus === 'TERMS_AGREED',
+  );
+
   const dealPhase = selectedDeal
     ? getDealPhase(selectedDeal.dealStatus, contractStatus)
     : 'negotiate';
@@ -823,10 +975,6 @@ export default function BrandChatPage() {
         status: deliverableStatuses[item.id] ?? item.status,
       }))
     : [];
-  const hasContract =
-    selectedDeal &&
-    (contractStatus !== undefined ||
-      ['contracted', 'in_progress', 'review', 'completed'].includes(selectedDeal.dealStatus));
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)]">
@@ -1023,6 +1171,16 @@ export default function BrandChatPage() {
                 >
                   <FileSignature className="h-3.5 w-3.5" />
                   Contract
+                </Button>
+              )}
+              {canGenerateContract && (
+                <Button
+                  size="sm"
+                  onClick={() => openTool('contract')}
+                  className="h-7 gap-1.5 text-xs"
+                >
+                  <FileSignature className="h-3.5 w-3.5" />
+                  Review &amp; send contract
                 </Button>
               )}
               <Button
@@ -1481,19 +1639,38 @@ export default function BrandChatPage() {
               <div className="h-[calc(100vh-4rem)] overflow-y-auto">
                 {openPanel === 'contract' && (
                   hasContract && contractId && contractStatus ? (
-                    <DealContractTab
-                      dealId={selectedDeal.id}
+                    liveApiMode && liveContractLoading && !liveContract ? (
+                      <div className="flex items-center justify-center h-full p-8 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading contract…
+                      </div>
+                    ) : (
+                      <DealContractTab
+                        dealId={selectedDeal.id}
+                        creatorName={selectedDeal.creatorName}
+                        campaignName={selectedDeal.campaignName}
+                        dealValue={selectedDeal.dealValue}
+                        contractId={contractId}
+                        status={contractStatus}
+                        onStatusChange={(status) => {
+                          if (liveApiMode) {
+                            void fetchLiveContract();
+                            void loadDealRooms();
+                            return;
+                          }
+                          setContractStatusByDeal((prev) => ({
+                            ...prev,
+                            [selectedDeal.id]: status,
+                          }));
+                        }}
+                      />
+                    )
+                  ) : canGenerateContract ? (
+                    <DealContractGenerate
                       creatorName={selectedDeal.creatorName}
                       campaignName={selectedDeal.campaignName}
                       dealValue={selectedDeal.dealValue}
-                      contractId={contractId}
-                      status={contractStatus}
-                      onStatusChange={(status) =>
-                        setContractStatusByDeal((prev) => ({
-                          ...prev,
-                          [selectedDeal.id]: status,
-                        }))
-                      }
+                      isGenerating={isGeneratingContract}
+                      onGenerate={handleGenerateContract}
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full p-8 text-center text-sm text-muted-foreground">
@@ -1501,8 +1678,13 @@ export default function BrandChatPage() {
                         <FileSignature className="h-10 w-10 mx-auto mb-3 opacity-40" />
                         <p className="font-medium text-foreground">No contract yet</p>
                         <p className="mt-1">
-                          Accept a proposal in the chat to generate a contract.
+                          {liveApiMode
+                            ? 'A contract can be sent once terms are agreed.'
+                            : 'Accept a proposal in the chat to generate a contract.'}
                         </p>
+                        {liveApiMode && liveContractError && (
+                          <p className="mt-2 text-xs text-destructive-foreground">{liveContractError}</p>
+                        )}
                       </div>
                     </div>
                   )

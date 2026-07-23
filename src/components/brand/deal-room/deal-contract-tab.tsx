@@ -7,7 +7,7 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { downloadContractPDF, signContract } from '@/lib/contract-generator';
-import { ApiError } from '@/lib/api';
+import { api, ApiError, isApiLive } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatINR } from '@/lib/utils';
 
@@ -40,14 +40,39 @@ export function DealContractTab({
 }: DealContractTabProps) {
   const [isSigning, setIsSigning] = React.useState(false);
   const [signerName, setSignerName] = React.useState('');
+  const [isFetchingPdf, setIsFetchingPdf] = React.useState(false);
   const { toast } = useToast();
+  const liveApi = isApiLive();
 
   const stepDone = (key: string) => {
     const order = ['generated', 'brand_signed', 'creator_signed', 'active'];
     return order.indexOf(status) >= order.indexOf(key);
   };
 
-  const handleDownloadPDF = () => {
+  // FE-6: live mode fetches the real presigned R2 URL (GET
+  // /contracts/:id/pdf-download-url) instead of the client-side HTML print.
+  // 404 CONTRACT_PDF_NOT_READY is legitimate until both parties have signed.
+  const handleDownloadPDF = async () => {
+    if (liveApi) {
+      setIsFetchingPdf(true);
+      try {
+        const { url } = await api.contracts.pdfDownloadUrl('brand', contractId);
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } catch (err) {
+        toast({
+          title: 'PDF not ready',
+          description:
+            err instanceof ApiError
+              ? err.message
+              : 'The signed PDF is available once both parties have signed.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsFetchingPdf(false);
+      }
+      return;
+    }
+
     downloadContractPDF(
       {
         contractId,
@@ -227,8 +252,17 @@ export function DealContractTab({
         )}
 
         <div className="flex flex-col sm:flex-row gap-2">
-          <Button variant="outline" className="flex-1 gap-2" onClick={handleDownloadPDF}>
-            <Download className="h-4 w-4" />
+          <Button
+            variant="outline"
+            className="flex-1 gap-2"
+            onClick={handleDownloadPDF}
+            disabled={isFetchingPdf}
+          >
+            {isFetchingPdf ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
             Download PDF
           </Button>
           {canBrandSign && (

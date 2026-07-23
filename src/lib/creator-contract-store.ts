@@ -1,5 +1,19 @@
 import type { DealContractStatus } from '@/components/brand/deal-room/deal-contract-tab';
 import { toDealRoomId } from '@/lib/creator-deal-messages';
+import { isApiLive } from '@/lib/api';
+
+/**
+ * Demo/mock backbone only (contract-flow-architecture-2026-07-23.md, "Note for
+ * Ananya"). Every function in this module fabricates a contract id or status
+ * from `dealId`/`dealStatus` alone — that is only honest when there is no
+ * real backend to ask. In live mode (`isApiLive()`) the real contract must
+ * come from `deal.contractId` / `deal.contractStatus` / `deal.escrowFunded`
+ * (already on `DealResponse`) or `GET /contracts/:id` — never from here.
+ * Callers must gate on `!isApiLive()` before calling into this module; as a
+ * second line of defense every exported lookup also short-circuits to
+ * `undefined` when live, so a stray call site fails honest (no contract)
+ * instead of silently inventing one.
+ */
 
 const STORAGE_KEY = 'influora_creator_contract_status';
 
@@ -35,7 +49,8 @@ export function resolveDealId(id: string): string {
   return toDealRoomId(id);
 }
 
-export function resolveContractId(dealId: string): string {
+export function resolveContractId(dealId: string): string | undefined {
+  if (isApiLive()) return undefined; // live mode: real id must come from deal.contractId
   const roomId = resolveDealId(dealId);
   return DEAL_CONTRACT_IDS[roomId] ?? `CTR-2024-${roomId.padStart(3, '0')}`;
 }
@@ -57,6 +72,7 @@ export function getContractStatus(
   dealId: string,
   dealStatus?: string,
 ): DealContractStatus | undefined {
+  if (isApiLive()) return undefined; // live mode: real status must come from deal.contractStatus
   const roomId = resolveDealId(dealId);
   const stored = readAll()[roomId];
   if (stored) return stored;
@@ -66,6 +82,7 @@ export function getContractStatus(
 }
 
 export function getAllContractStatuses(): Record<string, DealContractStatus> {
+  if (isApiLive()) return {};
   return { ...DEFAULT_STATUS_BY_DEAL, ...readAll() };
 }
 
@@ -80,6 +97,7 @@ export function dealHasContract(
   dealId: string,
   dealStatus?: string,
 ): boolean {
+  if (isApiLive()) return false; // live mode: real presence must come from deal.contractId
   const roomId = resolveDealId(dealId);
   if (getContractStatus(roomId) || DEAL_CONTRACT_IDS[roomId]) return true;
   return ['contracted', 'in_progress', 'review', 'completed'].includes(dealStatus ?? '');

@@ -6,6 +6,7 @@ import com.influora.common.PageMeta;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
+import com.influora.domain.entity.Contract;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.PaymentMilestone;
@@ -23,6 +24,7 @@ import com.influora.domain.enums.WalletTransactionType;
 import com.influora.integration.razorpay.RazorpayClient;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
+import com.influora.repository.ContractRepository;
 import com.influora.repository.DeliverableRepository;
 import com.influora.repository.DisputeRepository;
 import com.influora.repository.EscrowHoldRepository;
@@ -76,6 +78,7 @@ public class EscrowService {
     private final PaymentMilestoneRepository milestoneRepository;
     private final CampaignRepository campaignRepository;
     private final CollaborationRepository collaborationRepository;
+    private final ContractRepository contractRepository;
     private final DisputeRepository disputeRepository;
     private final WalletLedgerService ledgerService;
     private final PlatformWalletService platformWalletService;
@@ -95,6 +98,7 @@ public class EscrowService {
             PaymentMilestoneRepository milestoneRepository,
             CampaignRepository campaignRepository,
             CollaborationRepository collaborationRepository,
+            ContractRepository contractRepository,
             DisputeRepository disputeRepository,
             WalletLedgerService ledgerService,
             PlatformWalletService platformWalletService,
@@ -112,6 +116,7 @@ public class EscrowService {
         this.milestoneRepository = milestoneRepository;
         this.campaignRepository = campaignRepository;
         this.collaborationRepository = collaborationRepository;
+        this.contractRepository = contractRepository;
         this.disputeRepository = disputeRepository;
         this.ledgerService = ledgerService;
         this.platformWalletService = platformWalletService;
@@ -155,6 +160,17 @@ public class EscrowService {
         if (amount == null || amount.signum() <= 0) {
             throw new ApiException(
                     "INVALID_ESCROW_AMOUNT", "Escrow amount must be positive", HttpStatus.BAD_REQUEST);
+        }
+
+        // [BE-2: Vikram, contract-flow-architecture-2026-07-23 §6.5 — escrow gated on ACTIVE]
+        // Previously this method had NO awareness of contract/signature state at all: a brand could
+        // fund escrow for a milestone whose contract was still DRAFT or only single-signed (the
+        // `promptEscrowFundingIfNeeded` notification in ContractService only fires post-full-sign,
+        // but nothing on THIS, the actual money-moving path, ever enforced it). Gated only when a
+        // milestoneId is supplied — campaign-level funding with no milestoneId predates the
+        // contract/milestone model and has no contract to check against.
+        if (milestoneId != null && !milestoneId.isBlank()) {
+            assertContractActiveForMilestone(milestoneId, workspaceId);
         }
 
         var existing = escrowHoldRepository.findByIdempotencyKey(idempotencyKey);
@@ -241,6 +257,38 @@ public class EscrowService {
                     HttpStatus.CONFLICT);
         }
         return campaign.getBudgetMax();
+    }
+
+    /**
+     * [BE-2: Vikram, contract-flow-architecture-2026-07-23 §6.5] The actual enforcement point for
+     * "escrow cannot be funded before the contract is ACTIVE". {@code Contract.status} only
+     * advances to {@code ACTIVE} once BOTH {@code brandSignedAt} and {@code creatorSignedAt} are
+     * set ({@code Contract#advanceIfFullySigned}) — checked directly here (not via the enum) so
+     * this stays correct even if a future migration back-fills {@code status} inconsistently.
+     * Workspace-scoped milestone lookup (mirrors {@code deriveFundAmount}) so a caller cannot probe
+     * another workspace's milestone/contract state via this gate either.
+     */
+    private void assertContractActiveForMilestone(String milestoneId, String workspaceId) {
+        PaymentMilestone milestone =
+                milestoneRepository
+                        .findByIdAndWorkspaceId(milestoneId, workspaceId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "MILESTONE_NOT_FOUND", "Milestone not found", HttpStatus.NOT_FOUND));
+        Contract contract =
+                contractRepository
+                        .findById(milestone.getContractId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "CONTRACT_NOT_FOUND", "Contract not found", HttpStatus.NOT_FOUND));
+        if (contract.getBrandSignedAt() == null || contract.getCreatorSignedAt() == null) {
+            throw new ApiException(
+                    "CONTRACT_NOT_ACTIVE",
+                    "Escrow cannot be funded until the contract is fully signed by both parties",
+                    HttpStatus.CONFLICT);
+        }
     }
 
     /**
