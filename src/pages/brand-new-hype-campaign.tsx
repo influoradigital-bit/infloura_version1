@@ -96,7 +96,10 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
             // leave blank (not 0) so the placeholder shows and validation
             // still requires a real, actively-typed value.
             perReelRate: c.hype?.perReelRate ? String(c.hype.perReelRate) : '',
-            slotCap: c.hype?.slotCap ? String(c.hype.slotCap) : initialForm.slotCap,
+            // Blank (not the create-mode '100' default) when the draft has no slotCap:
+            // slotCap is half of the escrow multiply (rate x slots), so reviewing a Meera
+            // draft must not inherit a silent 100-slot commitment the human never typed.
+            slotCap: c.hype?.slotCap ? String(c.hype.slotCap) : '',
           });
         }
         setIsLoading(false);
@@ -268,7 +271,11 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
                 Meera draft
               </Badge>
             )}
-            <HypeLiveIndicator hoursLeft={WINDOW_HOURS} />
+            {/* Never on a draft: when reviewing a Meera-drafted campaign nothing is live yet
+                (the copy right below literally says "nothing goes live until you do"), so a
+                "LIVE · 72h left" badge here directly contradicts it. Create mode still previews
+                the window it will run for once the human hits Launch. */}
+            {!isEditing && <HypeLiveIndicator hoursLeft={WINDOW_HOURS} />}
           </div>
           <h1 className="mt-2 text-2xl font-semibold">
             {isEditing ? 'Review your Hype draft' : 'Launch a 72-hour blitz'}

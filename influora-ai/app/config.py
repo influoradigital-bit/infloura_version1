@@ -66,7 +66,7 @@ def _get_optional_float(name: str) -> float | None:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.07.24.11"
+PROMPT_VERSION = "meera-2026.07.24.12"
 # ^ bumped for the Meera campaign-completion flow build (Vikram, 2026-07-24,
 # wiki/build/meera-completion-flow-2026-07-23.md): persona.py gained a
 # "Completing a campaign after create_campaign" section (STANDARD Option B --
