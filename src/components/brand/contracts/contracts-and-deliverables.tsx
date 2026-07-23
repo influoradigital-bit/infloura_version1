@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { api, isApiLive, ApiError } from '@/lib/api';
+import { api, isApiLive, ApiError, type ContractApiRecord, type Deal } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -399,6 +399,53 @@ function mergeContractRow(row: ApiContractRow, fallback?: Contract): Contract {
   };
 }
 
+/**
+ * Adapt the real backend `ContractApiRecord` into this page's `ApiContractRow`.
+ * The `/contracts` endpoint is collaboration-scoped: it returns `totalAmount`,
+ * `brandSignedAt`/`creatorSignedAt`, `milestones`, `expirationDate` — but NO
+ * campaign or creator identity, and none of the field names line up with the
+ * row shape this page was written against. Before this adapter the fetch did a
+ * blind `as unknown as ApiContractRow[]` cast, so `value`/`campaignName`/dates
+ * were all `undefined` and the row rendered "Untitled Campaign / ₹0 / Invalid
+ * Date". Money/date/signature fields now come straight off the record; campaign
+ * and creator identity are resolved from the matching Deal (joined by
+ * `deal.contractId === record.id`) when available.
+ */
+function adaptContractRecord(rec: ContractApiRecord, deal?: Deal): ApiContractRow {
+  // The date a fully-executed contract was "signed": prefer the creator's
+  // signature (the last of the two under the current flow), fall back to the
+  // brand's, then the effective date. Null when unsigned.
+  const signedAt = rec.creatorSignedAt ?? rec.brandSignedAt ?? rec.effectiveDate ?? undefined;
+  return {
+    id: rec.id,
+    campaignId: deal?.campaignId,
+    campaignName: deal?.campaignName,
+    creatorId: deal?.counterpartyId,
+    creatorName: deal?.counterpartyName,
+    creatorHandle: deal?.counterpartyHandle,
+    creatorImage: deal?.counterpartyAvatar,
+    status: rec.status,
+    brandSigned: rec.brandSignedAt != null,
+    creatorSigned: rec.creatorSignedAt != null,
+    signedDate: signedAt ?? undefined,
+    expiryDate: rec.expirationDate ?? undefined,
+    value: rec.totalAmount,
+    currency: rec.currency,
+    createdAt: rec.createdAt,
+  };
+}
+
+/**
+ * Format an ISO date string for display, guarding the empty/invalid case that
+ * previously rendered "Invalid Date" (e.g. a contract with no expirationDate ->
+ * `new Date('')`). Returns "—" instead of a broken date.
+ */
+function formatDateSafe(value?: string | null): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
+}
+
 /** Update one deliverable's status/feedback within a contracts array. */
 function withDeliverableStatus(
   list: Contract[],
@@ -499,15 +546,26 @@ export function ContractsAndDeliverables() {
     setContractsLoading(true);
     setContractsError(null);
     try {
-      // The live `contracts.list` response is the real backend `ContractResponse[]`
-      // shape (collaborationId/milestones/brandSignedAt/...), which doesn't
-      // structurally overlap this page's UI-only `ApiContractRow` — go through
-      // `unknown` deliberately, same as before FE-1 typed the facade.
-      const rows = (await api.contracts.list('brand')) as unknown as ApiContractRow[];
+      // The live `contracts.list` response is the real backend
+      // `ContractApiRecord[]` (collaborationId/milestones/brandSignedAt/
+      // totalAmount/...). Adapt each record into this page's row shape via
+      // `adaptContractRecord`, resolving campaign/creator identity from the
+      // brand's deals (joined by `deal.contractId`). Deals are best-effort —
+      // if that call fails the contract money/date/status still render; only
+      // the display names fall back.
+      const [records, dealList] = await Promise.all([
+        api.contracts.list('brand'),
+        api.deals.list('brand').catch(() => [] as Deal[]),
+      ]);
+      const dealByContractId = new Map<string, Deal>();
+      for (const d of dealList) {
+        if (d.contractId) dealByContractId.set(d.contractId, d);
+      }
+      const rows = Array.isArray(records)
+        ? records.map((rec) => adaptContractRecord(rec, dealByContractId.get(rec.id)))
+        : [];
       setContracts((prev) =>
-        Array.isArray(rows)
-          ? rows.map((row) => mergeContractRow(row, prev.find((c) => c.id === row.id)))
-          : [],
+        rows.map((row) => mergeContractRow(row, prev.find((c) => c.id === row.id))),
       );
     } catch (err) {
       setContractsError(err instanceof ApiError ? err.message : 'Could not load contracts.');
@@ -535,8 +593,11 @@ export function ContractsAndDeliverables() {
     let cancelled = false;
     (async () => {
       try {
-        const row = (await api.contracts.get('brand', selectedContractId)) as unknown as ApiContractRow | null;
-        if (!cancelled && row) {
+        const rec = await api.contracts.get('brand', selectedContractId);
+        if (!cancelled && rec) {
+          // No deal join here — `mergeContractRow` carries the campaign/creator
+          // names already resolved on the existing list row (fallback `c`).
+          const row = adaptContractRecord(rec);
           setContracts((prev) =>
             prev.map((c) => (c.id === selectedContractId ? mergeContractRow(row, c) : c)),
           );
@@ -900,7 +961,7 @@ export function ContractsAndDeliverables() {
                     </div>
                     <div className="bg-card rounded-lg p-3 border border-border">
                       <p className="text-xs text-muted-foreground">Expires</p>
-                      <p className="text-sm font-semibold mt-1">{new Date(selectedContract.expiryDate).toLocaleDateString()}</p>
+                      <p className="text-sm font-semibold mt-1">{formatDateSafe(selectedContract.expiryDate)}</p>
                     </div>
                   </div>
 
@@ -911,7 +972,7 @@ export function ContractsAndDeliverables() {
                         <Shield className="w-5 h-5 text-green-500" />
                         <div className="flex-1">
                           <p className="text-sm font-medium text-green-400">Contract Fully Executed</p>
-                          <p className="text-xs text-muted-foreground">Signed on {new Date(selectedContract.signedDate!).toLocaleDateString()} | Hash: {selectedContract.hash}</p>
+                          <p className="text-xs text-muted-foreground">Signed on {formatDateSafe(selectedContract.signedDate)} | Hash: {selectedContract.hash}</p>
                         </div>
                         <div className="flex gap-2">
                           <div className="flex items-center gap-1 text-xs">
@@ -957,7 +1018,7 @@ export function ContractsAndDeliverables() {
                         <div className="text-sm text-muted-foreground space-y-2">
                           <p><strong>{selectedContract.creatorName}</strong> agrees to create <strong>{selectedContract.deliverables.length} deliverable(s)</strong> for <strong>{selectedContract.campaignName}</strong>.</p>
                           <p>Total compensation: <strong>{formatCurrency(selectedContract.value, selectedContract.currency)}</strong></p>
-                          <p>Timeline: Content due by <strong>{new Date(selectedContract.expiryDate).toLocaleDateString()}</strong></p>
+                          <p>Timeline: Content due by <strong>{formatDateSafe(selectedContract.expiryDate)}</strong></p>
                           <p>Revisions: Up to <strong>2 rounds</strong> included per deliverable</p>
                         </div>
                       </Card>
@@ -981,7 +1042,7 @@ export function ContractsAndDeliverables() {
                           <Separator />
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">WHEN</span>
-                            <span className="font-medium">Due {new Date(selectedContract.expiryDate).toLocaleDateString()}</span>
+                            <span className="font-medium">Due {formatDateSafe(selectedContract.expiryDate)}</span>
                           </div>
                           <Separator />
                           <div className="flex justify-between">
@@ -1305,7 +1366,7 @@ export function ContractsAndDeliverables() {
             {/* Term Summary */}
             <Card className="p-3 bg-muted/50 border-border">
               <p className="text-xs text-muted-foreground mb-2">Contract Summary</p>
-              <p className="text-sm">{selectedContract?.deliverables.length} deliverables | {selectedContract && formatCurrency(selectedContract.value, selectedContract.currency)} | Due {selectedContract && new Date(selectedContract.expiryDate).toLocaleDateString()}</p>
+              <p className="text-sm">{selectedContract?.deliverables.length} deliverables | {selectedContract && formatCurrency(selectedContract.value, selectedContract.currency)} | Due {selectedContract && formatDateSafe(selectedContract.expiryDate)}</p>
             </Card>
 
             {/* Signature Pad */}
