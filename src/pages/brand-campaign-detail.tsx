@@ -200,7 +200,9 @@ interface DetailCampaignView {
   description: string;
   objectives: string[];
   status: 'DRAFT' | 'PENDING_APPROVAL' | 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
-  budget: { min: number; max: number; currency: string; spent: number };
+  // Meera-created drafts have no budget until a later wizard step — absent,
+  // not fabricated as zeros (TECH-STACK.md rule 7).
+  budget?: { min: number; max: number; currency: string; spent: number };
   timeline: { startDate: Date; endDate: Date };
   platforms: string[];
   contentTypes: string[];
@@ -233,14 +235,18 @@ function buildLiveCampaignView(campaign: ApiCampaign, deals: Deal[]): DetailCamp
     description: campaign.description || '',
     objectives: campaign.objectives || [],
     status: campaign.status,
-    budget: {
-      min: campaign.budget.min,
-      max: campaign.budget.max,
-      currency: campaign.budget.currency,
-      // No campaign-level "spend" field on the real Campaign DTO — derived from real deal
-      // values for deals that reached agreement, not fabricated.
-      spent: dealValueSum(engaged),
-    },
+    // Meera-created drafts legitimately have no `budget` yet (set later in the
+    // wizard) — pass that absence through rather than defaulting to zeros.
+    budget: campaign.budget
+      ? {
+          min: campaign.budget.min,
+          max: campaign.budget.max,
+          currency: campaign.budget.currency,
+          // No campaign-level "spend" field on the real Campaign DTO — derived from real deal
+          // values for deals that reached agreement, not fabricated.
+          spent: dealValueSum(engaged),
+        }
+      : undefined,
     timeline: campaign.timeline,
     platforms: campaign.platforms,
     contentTypes: campaign.contentTypes,
@@ -614,7 +620,7 @@ export default function BrandCampaignDetailPage() {
     return matchesFilter && matchesSearch;
   });
 
-  const budgetProgress = campaign ? ((campaign.budget.spent || 0) / (campaign.budget.max || 1)) * 100 : 0;
+  const budgetProgress = campaign?.budget ? ((campaign.budget.spent || 0) / (campaign.budget.max || 1)) * 100 : 0;
   const daysRemaining = campaign
     ? Math.ceil((campaign.timeline.endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : 0;
@@ -842,8 +848,8 @@ export default function BrandCampaignDetailPage() {
                   {
                     icon: <IndianRupee className="h-4 w-4" />,
                     label: 'Budget Used',
-                    value: formatCurrency(campaign.budget.spent || 0),
-                    sub: `of ${formatCurrency(campaign.budget.max)}`,
+                    value: campaign.budget ? formatCurrency(campaign.budget.spent || 0) : 'No budget set',
+                    sub: campaign.budget ? `of ${formatCurrency(campaign.budget.max)}` : 'set in campaign wizard',
                     progress: budgetProgress,
                     progressColor: budgetProgress > 90 ? 'bg-red-500' : 'bg-primary',
                   },
@@ -1572,10 +1578,10 @@ export default function BrandCampaignDetailPage() {
                         </CardHeader>
                         <CardContent className="px-4 pb-4 space-y-2">
                           {[
-                            { label: 'Total Campaign Spend', value: formatCurrency(campaign.budget.spent || 0), highlight: false },
-                            { label: 'Creator Payouts', value: formatCurrency((campaign.budget.spent || 0) * 0.82), highlight: false },
-                            { label: 'Platform Fee (10%)', value: formatCurrency((campaign.budget.spent || 0) * 0.10), highlight: false },
-                            { label: 'GST (18% on fee)', value: formatCurrency((campaign.budget.spent || 0) * 0.018), highlight: false },
+                            { label: 'Total Campaign Spend', value: formatCurrency(campaign.budget?.spent ?? 0), highlight: false },
+                            { label: 'Creator Payouts', value: formatCurrency((campaign.budget?.spent ?? 0) * 0.82), highlight: false },
+                            { label: 'Platform Fee (10%)', value: formatCurrency((campaign.budget?.spent ?? 0) * 0.10), highlight: false },
+                            { label: 'GST (18% on fee)', value: formatCurrency((campaign.budget?.spent ?? 0) * 0.018), highlight: false },
                             { label: 'Estimated ROI', value: `${mockCompleted.analytics.roi}x`, highlight: true },
                           ].map((row) => (
                             <div key={row.label} className={cn('flex items-center justify-between text-sm py-1', row.highlight && 'border-t border-border mt-2 pt-3 font-bold text-green-400')}>
@@ -1667,22 +1673,30 @@ export default function BrandCampaignDetailPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="px-4 pb-4 space-y-2 text-sm">
-                  {[
-                    { label: 'Creator Pay (est.)', value: formatCurrency((campaign.budget.max || 0) * 0.82) },
-                    { label: 'Platform Fee (10%)', value: formatCurrency((campaign.budget.max || 0) * 0.10) },
-                    { label: 'GST (18% on fee)', value: formatCurrency((campaign.budget.max || 0) * 0.018) },
-                    { label: 'Contingency', value: formatCurrency((campaign.budget.max || 0) * 0.062) },
-                  ].map((row) => (
-                    <div key={row.label} className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">{row.label}</span>
-                      <span className="font-medium">{row.value}</span>
-                    </div>
-                  ))}
-                  <Separator className="my-1" />
-                  <div className="flex items-center justify-between text-sm font-bold">
-                    <span>Total Budget</span>
-                    <span className="text-primary">{formatCurrency(campaign.budget.max)}</span>
-                  </div>
+                  {campaign.budget ? (
+                    <>
+                      {[
+                        { label: 'Creator Pay (est.)', value: formatCurrency(campaign.budget.max * 0.82) },
+                        { label: 'Platform Fee (10%)', value: formatCurrency(campaign.budget.max * 0.10) },
+                        { label: 'GST (18% on fee)', value: formatCurrency(campaign.budget.max * 0.018) },
+                        { label: 'Contingency', value: formatCurrency(campaign.budget.max * 0.062) },
+                      ].map((row) => (
+                        <div key={row.label} className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">{row.label}</span>
+                          <span className="font-medium">{row.value}</span>
+                        </div>
+                      ))}
+                      <Separator className="my-1" />
+                      <div className="flex items-center justify-between text-sm font-bold">
+                        <span>Total Budget</span>
+                        <span className="text-primary">{formatCurrency(campaign.budget.max)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      No budget set yet — add one from the campaign wizard.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </div>

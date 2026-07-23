@@ -178,9 +178,12 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
             objectives: c.objectives ?? [],
             platforms: c.platforms,
             contentTypes: c.contentTypes,
-            budgetMin: c.budget.min,
-            budgetMax: c.budget.max,
-            currency: c.budget.currency,
+            // Meera-created drafts have no budget yet — fall back to the same
+            // defaults a brand-new campaign starts with, so the wizard opens
+            // editable instead of crashing on `undefined.min`.
+            budgetMin: c.budget?.min ?? initialFormData.budgetMin,
+            budgetMax: c.budget?.max ?? initialFormData.budgetMax,
+            currency: c.budget?.currency ?? initialFormData.currency,
             startDate: c.timeline.startDate ? new Date(c.timeline.startDate) : undefined,
             endDate: c.timeline.endDate ? new Date(c.timeline.endDate) : undefined,
             maxCollaborators: c.maxCollaborators ?? initialFormData.maxCollaborators,

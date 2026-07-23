@@ -369,7 +369,9 @@ export function CampaignsList() {
     return `₹${(min / 1000).toFixed(0)}K – ₹${(max / 1000).toFixed(0)}K`;
   };
 
-  const formatDate = (date: Date) => {
+  const formatDate = (date?: Date) => {
+    // Meera-created drafts have no timeline yet — no deadline to show.
+    if (!date) return 'No deadline';
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
       day: 'numeric',
@@ -693,12 +695,12 @@ export function CampaignsList() {
                 </p>
 
                 <div className="flex flex-wrap gap-1.5">
-                  {campaign.platforms.slice(0, 3).map((platform) => (
+                  {(campaign.platforms ?? []).slice(0, 3).map((platform) => (
                     <Badge key={platform} variant="outline" className="text-xs">
                       {platformLabels[platform]}
                     </Badge>
                   ))}
-                  {campaign.platforms.length > 3 && (
+                  {(campaign.platforms?.length ?? 0) > 3 && (
                     <Badge variant="outline" className="text-xs">
                       +{campaign.platforms.length - 3}
                     </Badge>
@@ -723,13 +725,13 @@ export function CampaignsList() {
                   <div className="text-center">
                     <p className="text-xs text-muted-foreground">Creators</p>
                     <p className="text-sm font-medium">
-                      {campaign.collaboratorsCount}/{campaign.maxCollaborators}
+                      {campaign.collaboratorsCount}/{campaign.maxCollaborators ?? 0}
                     </p>
                   </div>
                   <div className="text-center">
                     <p className="text-xs text-muted-foreground">Deadline</p>
                     <p className="text-sm font-medium">
-                      {formatDate(campaign.timeline.endDate)}
+                      {formatDate(campaign.timeline?.endDate)}
                     </p>
                   </div>
                 </div>
@@ -773,11 +775,11 @@ export function CampaignsList() {
                     </span>
                     <span className="flex items-center gap-1">
                       <Users className="h-3 w-3" />
-                      {campaign.collaboratorsCount}/{campaign.maxCollaborators} creators
+                      {campaign.collaboratorsCount}/{campaign.maxCollaborators ?? 0} creators
                     </span>
                     <span className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
-                      {formatDate(campaign.timeline.endDate)}
+                      {formatDate(campaign.timeline?.endDate)}
                     </span>
                   </div>
                 </div>
