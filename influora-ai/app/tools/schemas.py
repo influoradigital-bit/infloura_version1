@@ -238,10 +238,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "description": "Campaign hashtags, without the leading '#'.",
                 },
                 "target_audience": {
-                    "anyOf": [
-                        {"type": "string"},
-                        {"type": "array", "items": {"type": "string"}},
-                    ],
+                    "type": "array",
+                    "items": {"type": "string"},
                     "description": (
                         "A few short audience-descriptor phrases from the "
                         "conversation (e.g. 'skincare enthusiasts', 'new parents') "
