@@ -49,14 +49,24 @@ public class OnBehalfTokenService {
     public static final String ISSUER = StreamTokenService.ISSUER;
 
     /**
-     * Read-only tool scope — the only tools an on-behalf token authorizes today ({@code
-     * show_creators}, {@code calculate_budget}), space-delimited to match OAuth-style scope
-     * convention. Extend this (or add a per-tier scope) when a write tool (e.g. {@code
-     * create_campaign}) is enabled per the design doc's phased rollout (§8) — that also requires
-     * the resolver to actually enforce {@code scope} against the called tool, which this pass does
-     * NOT add (see class javadoc).
+     * Read-only tool scope — {@code show_creators}, {@code calculate_budget}. Kept as the historical
+     * baseline / reference; the tokens minted today use {@link #SCOPE_DEFAULT}.
      */
     public static final String SCOPE_READ_ONLY = "show_creators calculate_budget";
+
+    /**
+     * Default tool scope minted for on-behalf tokens. Adds the two non-money write/read tools that
+     * were silently 403-ing in production (fix M-1, 2026-07-23): {@code create_campaign} (Meera
+     * could not create campaigns — narrated a refusal) and {@code get_campaign_performance} (the
+     * Analytics AI answered "how did my campaign do?" with the same refusal).
+     *
+     * <p>The two money tools — {@code request_payment} and {@code confirm_launch} — are DELIBERATELY
+     * excluded here as defense-in-depth on the money path. They remain scope-gated by the resolver
+     * in addition to their OWNER/ADMIN check; enable them via a dedicated scope only after Kabir's
+     * security review sign-off.
+     */
+    public static final String SCOPE_DEFAULT =
+            "show_creators calculate_budget create_campaign get_campaign_performance";
 
     private final SpringJwksKeyService jwksKeyService;
 
@@ -92,7 +102,7 @@ public class OnBehalfTokenService {
                 .claim("userType", userType.name())
                 .claim("conversationId", conversationId)
                 .claim("turnId", turnId)
-                .claim("scope", SCOPE_READ_ONLY)
+                .claim("scope", SCOPE_DEFAULT)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(exp))
                 .signWith(signingKey, Jwts.SIG.ES256)

@@ -162,9 +162,18 @@ public class PortfolioService {
                         .build());
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * NOT read-only: {@link CreatorProfileService#ensureUsername} may lazily persist an
+     * auto-generated handle for profiles that never went through "claim your handle" — same fix
+     * as {@code CreatorProfileService#getMyProfile} (2026-07-23 P-1). Without this, {@code
+     * resolveUsername} below fell back to a display-only slug that was never saved, so the
+     * portfolio editor's "your public page" link pointed at a handle no profile was actually
+     * registered under.
+     */
+    @Transactional
     public PortfolioPageResponse getMine(AuthPrincipal principal) {
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
+        creatorProfileService.ensureUsername(profile);
         return assemble(profile, false);
     }
 
@@ -569,6 +578,12 @@ public class PortfolioService {
                 .orElse(List.of());
     }
 
+    /**
+     * {@code getMine} now persists a real username via {@link
+     * CreatorProfileService#ensureUsername} before this ever runs, and {@code getPublic} only
+     * reaches here after a successful username lookup — so the blank-username branch below is a
+     * defensive fallback only, not the primary path (2026-07-23 P-1 fix).
+     */
     private String resolveUsername(CreatorProfile profile) {
         if (profile.getUsername() != null && !profile.getUsername().isBlank()) {
             return profile.getUsername();

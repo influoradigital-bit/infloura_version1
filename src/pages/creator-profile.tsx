@@ -169,30 +169,37 @@ export default function CreatorProfilePage() {
     );
   }
 
-  const publicUsername =
-    profile.username || profile.platforms[0]?.handle.replace(/[@_]/g, '') || 'creator';
+  // 2026-07-23 P-1 fix: `profile.username` is now always backfilled server-side (see
+  // CreatorProfileService#ensureUsername, called from GET /me/creator-profile) — a Instagram/
+  // YouTube handle is NOT the same namespace as an Influora public-page username and must never
+  // be substituted for it, and a literal 'creator' placeholder produced a dead /@creator link
+  // pointing at nobody's profile. If `username` is somehow still absent (e.g. a stale cached
+  // response from before this fix rolled out), don't fabricate a link — hide the banner instead.
+  const publicUsername = profile.username || null;
 
   return (
     <CreatorLayout>
       <div className="container mx-auto px-4 py-6 max-w-2xl">
         {/* Public page promo banner */}
-        <a
-          href={`/@${publicUsername}`}
-          target="_blank"
-          rel="noreferrer"
-          className="mb-4 flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 hover:bg-primary/10 transition-colors group"
-        >
-          <div className="h-9 w-9 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
-            <ExternalLink className="h-4 w-4" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">Your public page is live</p>
-            <p className="text-xs text-muted-foreground truncate">
-              influora.com/@{publicUsername} — share it in your Instagram bio
-            </p>
-          </div>
-          <span className="text-xs font-medium text-primary group-hover:underline shrink-0">View →</span>
-        </a>
+        {publicUsername && (
+          <a
+            href={`/@${publicUsername}`}
+            target="_blank"
+            rel="noreferrer"
+            className="mb-4 flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 hover:bg-primary/10 transition-colors group"
+          >
+            <div className="h-9 w-9 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
+              <ExternalLink className="h-4 w-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">Your public page is live</p>
+              <p className="text-xs text-muted-foreground truncate">
+                influora.com/@{publicUsername} — share it in your Instagram bio
+              </p>
+            </div>
+            <span className="text-xs font-medium text-primary group-hover:underline shrink-0">View →</span>
+          </a>
+        )}
 
         {/* Profile Header */}
         <Card className="mb-6">

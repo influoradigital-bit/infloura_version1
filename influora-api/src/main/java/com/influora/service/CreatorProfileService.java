@@ -15,6 +15,8 @@ import com.influora.web.dto.creator.CreatorProfileDtos.CreatorProfilePatchReques
 import com.influora.web.dto.creator.CreatorProfileDtos.CreatorProfileSelfResponse;
 import java.math.BigDecimal;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -22,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class CreatorProfileService {
+
+    private static final Logger log = LoggerFactory.getLogger(CreatorProfileService.class);
 
     private final CreatorContextService creatorContext;
     private final CreatorProfileRepository creatorProfileRepository;
@@ -39,9 +43,14 @@ public class CreatorProfileService {
         this.userRepository = userRepository;
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * NOT read-only: {@link #ensureUsername} may lazily persist an auto-generated handle for
+     * profiles that never went through "claim your handle" (see its javadoc — 2026-07-23 P-1).
+     */
+    @Transactional
     public CreatorProfileSelfResponse getMyProfile(AuthPrincipal principal) {
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
+        ensureUsername(profile);
         return toSelfResponse(profile, loadUser(principal.getUserId()));
     }
 
@@ -105,6 +114,52 @@ public class CreatorProfileService {
             throw new ApiException("USERNAME_TAKEN", "This username is already taken", HttpStatus.CONFLICT);
         }
         profile.applyUsername(username);
+    }
+
+    /**
+     * Lazily assigns and PERSISTS a real, resolvable username for a creator profile that never
+     * went through a "claim your handle" step — {@code profile.getUsername()} otherwise stays
+     * null forever.
+     *
+     * Root cause of the 2026-07-23 P-1 live-QA finding: with no username in the DB, the Profile
+     * page banner (src/pages/creator-profile.tsx) fell back to the literal placeholder string
+     * {@code 'creator'}, and {@code /@creator} 404'd because no profile is actually registered
+     * under that handle. {@link com.influora.service.portfolio.PortfolioService#assemble} had the
+     * same gap: it computed a display-only username from displayName for the portfolio editor's
+     * "your public page" link but never saved it, so that link was equally dead. Calling this once
+     * (idempotent — no-ops once a username exists) fixes both call sites at the source.
+     *
+     * No-op if a username is already set. Otherwise slugifies displayName via {@link
+     * UsernameUtils#normalize}, then walks numeric suffixes on collision; after 25 attempts falls
+     * back to a suffix derived from the profile's own id (guaranteed unique) rather than looping
+     * unbounded.
+     */
+    @Transactional
+    public void ensureUsername(CreatorProfile profile) {
+        if (profile.getUsername() != null && !profile.getUsername().isBlank()) {
+            return;
+        }
+        String base = UsernameUtils.normalize(profile.getDisplayName());
+        String candidate = base;
+        int attempt = 0;
+        while (creatorProfileRepository.existsByUsernameIgnoreCaseAndIdNot(candidate, profile.getId())) {
+            attempt++;
+            if (attempt > 25) {
+                String tail = profile.getId().substring(Math.max(0, profile.getId().length() - 6)).toLowerCase();
+                candidate = base.substring(0, Math.min(base.length(), 22)) + "_" + tail;
+                break;
+            }
+            String suffixed = base + "_" + attempt;
+            candidate = suffixed.substring(0, Math.min(suffixed.length(), 30));
+        }
+        profile.applyUsername(candidate);
+        try {
+            creatorProfileRepository.save(profile);
+        } catch (DataIntegrityViolationException dup) {
+            // Lost a uniqueness race to a concurrent request — leave the in-memory field as-is
+            // for this response; the next read will retry ensureUsername from a clean state.
+            log.warn("ensureUsername lost a uniqueness race for profile={}", profile.getId());
+        }
     }
 
     private User loadUser(String userId) {

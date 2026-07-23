@@ -58,7 +58,7 @@ class OnBehalfTokenServiceTest {
         assertEquals("BRAND", claims.get("userType"));
         assertEquals(CONVERSATION_ID, claims.get("conversationId"));
         assertEquals(TURN_ID, claims.get("turnId"));
-        assertEquals(OnBehalfTokenService.SCOPE_READ_ONLY, claims.get("scope"));
+        assertEquals(OnBehalfTokenService.SCOPE_DEFAULT, claims.get("scope"));
         assertTrue(claims.getAudience().contains(OnBehalfTokenService.ONBEHALF_AUDIENCE));
         assertEquals(OnBehalfTokenService.ISSUER, claims.getIssuer());
         assertNotEquals(null, claims.getId(), "jti must be present for single-use tracking");

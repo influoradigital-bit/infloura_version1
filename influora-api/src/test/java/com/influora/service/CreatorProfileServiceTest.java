@@ -66,7 +66,9 @@ class CreatorProfileServiceTest {
 
         assertEquals(PROFILE_ID, response.id());
         assertEquals("Priya Creates", response.displayName());
-        assertEquals(10, response.profileCompleteness());
+        // getMyProfile now auto-assigns a username via ensureUsername() (P-1 fix), which
+        // contributes +10 to completeness — so a name-only profile scores 20, not 10.
+        assertEquals(20, response.profileCompleteness());
         assertEquals(false, response.onboardingComplete());
     }
 
