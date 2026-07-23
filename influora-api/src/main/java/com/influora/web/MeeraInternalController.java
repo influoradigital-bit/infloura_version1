@@ -175,9 +175,16 @@ public class MeeraInternalController {
                 onBehalfAuthResolver.resolveForWorkspaceRequiringScope(
                         onBehalfJwt, workspaceId, MeeraToolName.create_campaign.name());
         requireTool(MeeraToolName.create_campaign, workspaceId);
+        // BUG FIX (2026-07-23 live 409, "Column 'conversation_id' cannot be null"): the
+        // create_campaign tool body is raw AI-proposed input + workspace_id (see class javadoc) —
+        // it never carries a conversation_id field at all, so conversationIdOf(body) was always
+        // null on this route and CampaignIntent.conversationId (NOT NULL, FK ai_conversations.id)
+        // failed on insert. ctx.conversationId() is the JWT-verified, server-minted claim (see
+        // OnBehalfAuthResolver.OnBehalfContext javadoc) — tenant-safe and always the real
+        // conversation for this turn, unlike a client-body value.
         var result =
                 createCampaignExecutor.execute(
-                        ctx.workspaceId(), conversationIdOf(body), ctx.userId(), idempotencyKey, body);
+                        ctx.workspaceId(), ctx.conversationId(), ctx.userId(), idempotencyKey, body);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(result));
     }
 

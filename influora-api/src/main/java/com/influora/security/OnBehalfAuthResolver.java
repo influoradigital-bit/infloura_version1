@@ -60,8 +60,22 @@ public class OnBehalfAuthResolver {
         this.workspaceMemberRepository = workspaceMemberRepository;
     }
 
-    /** Result of a successful on-behalf resolution — the caller's identity, re-proven per call. */
-    public record OnBehalfContext(String userId, String workspaceId, UserType userType) {}
+    /**
+     * Result of a successful on-behalf resolution — the caller's identity, re-proven per call.
+     *
+     * <p>{@code conversationId} comes straight off the verified JWT's {@code conversationId} claim
+     * ({@link OnBehalfTokenService#mint} — minted server-side at {@code MeeraSessionService#doSendTurn}
+     * from the real, FK-valid {@code ai_conversations.id} for this turn). Tool routes/executors that
+     * need a conversation id MUST read it from here, never from the request body: the body is raw
+     * AI-proposed tool input (or, for {@code create_campaign} specifically, simply doesn't carry a
+     * {@code conversation_id} field at all — see {@code MeeraInternalController} javadoc), so a
+     * body-sourced value is either absent or an unverified, client-influenced string with no
+     * workspace/tenant cross-check (the exact "don't trust a client-body conversation_id" risk
+     * flagged during this fix's review). May be {@code null} for hand-built/legacy token shapes
+     * that never carried the claim — callers persisting it into a NOT NULL column must still
+     * validate before use.
+     */
+    public record OnBehalfContext(String userId, String workspaceId, UserType userType, String conversationId) {}
 
     /**
      * Validates the forwarded on-behalf JWT and asserts it matches {@code bodyWorkspaceId}.
@@ -91,7 +105,9 @@ public class OnBehalfAuthResolver {
                     "ON_BEHALF_INVALID_CLAIMS", "On-behalf JWT missing/invalid userType", HttpStatus.UNAUTHORIZED);
         }
 
-        return new OnBehalfContext(claims.getSubject(), tokenWorkspaceId, userType);
+        String conversationId = claims.get("conversationId", String.class);
+
+        return new OnBehalfContext(claims.getSubject(), tokenWorkspaceId, userType, conversationId);
     }
 
     /**

@@ -81,7 +81,7 @@ class MeeraInternalControllerContextTest {
     @DisplayName("valid on-behalf JWT for workspace -> resolves via resolveForWorkspace (no scope check) and returns the assembled context")
     void testContextHappyPath() {
         when(onBehalfAuthResolver.resolveForWorkspace(ON_BEHALF_JWT, WORKSPACE_ID))
-                .thenReturn(new OnBehalfContext("user1", WORKSPACE_ID, UserType.BRAND));
+                .thenReturn(new OnBehalfContext("user1", WORKSPACE_ID, UserType.BRAND, "conv-1"));
         ContextResponse expected =
                 new ContextResponse(
                         WORKSPACE_ID,

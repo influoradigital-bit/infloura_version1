@@ -182,6 +182,22 @@ class OnBehalfAuthResolverTest {
         assertEquals(USER_ID, ctx.userId());
         assertEquals(WORKSPACE_ID, ctx.workspaceId());
         assertEquals(UserType.BRAND, ctx.userType());
+        assertEquals("conv-001", ctx.conversationId());
+    }
+
+    @Test
+    @DisplayName(
+            "BUG FIX (2026-07-23 create_campaign 409): resolveForWorkspace surfaces the JWT's"
+                    + " conversationId claim on the returned context -- this is the tenant-safe source"
+                    + " tool routes must use instead of an unverified request-body value")
+    void testResolveForWorkspaceExposesConversationIdFromJwtClaim() {
+        String token =
+                onBehalfTokenService.mint(
+                        WORKSPACE_ID, "conv-xyz-999", "turn-001", USER_ID, UserType.BRAND);
+
+        var ctx = resolver.resolveForWorkspace(token, WORKSPACE_ID);
+
+        assertEquals("conv-xyz-999", ctx.conversationId());
     }
 
     @Test
