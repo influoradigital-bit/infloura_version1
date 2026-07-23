@@ -10,11 +10,23 @@ import com.influora.web.dto.campaign.CampaignDtos.HypeConfigDto;
 import com.influora.web.dto.campaign.CampaignDtos.TimelineDto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 @Component
 public class CampaignValidator {
+
+    /**
+     * [SEC: Kabir follow-up, meera-completion-flow review] `hype.sourceReelUrl` is settable by
+     * Meera on a HYPE draft (see {@code CreateCampaignExecutor}'s partial HypeConfig) and is later
+     * rendered as a link in the hype UI. Previously only a non-blank check ran here, so a
+     * {@code javascript:} / {@code data:} scheme passed server validation and safety rested
+     * entirely on React's href sanitization plus the FE hype form's own {@code ^https?://} submit
+     * check — i.e. no server-side guarantee. Assert the scheme here too (defense in depth,
+     * deliberately mirroring the FE rule in {@code brand-new-hype-campaign.tsx}).
+     */
+    private static final Pattern HTTP_URL = Pattern.compile("^https?://\\S+$", Pattern.CASE_INSENSITIVE);
 
     public void validateBudget(BudgetDto budget) {
         if (budget == null) {
@@ -97,6 +109,14 @@ public class CampaignValidator {
         if (hype.sourceReelUrl() == null || hype.sourceReelUrl().isBlank()) {
             throw new ApiException(
                     "VALIDATION_ERROR", "hype.sourceReelUrl is required", HttpStatus.BAD_REQUEST);
+        }
+        // See HTTP_URL above — reject any non-http(s) scheme (javascript:, data:, ...) server-side
+        // rather than trusting the client's own URL check.
+        if (!HTTP_URL.matcher(hype.sourceReelUrl().trim()).matches()) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "hype.sourceReelUrl must be a http(s) URL",
+                    HttpStatus.BAD_REQUEST);
         }
         if (hype.hashtag() == null || hype.hashtag().isBlank()) {
             throw new ApiException("VALIDATION_ERROR", "hype.hashtag is required", HttpStatus.BAD_REQUEST);
