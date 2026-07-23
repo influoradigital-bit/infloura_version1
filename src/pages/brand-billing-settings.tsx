@@ -47,6 +47,14 @@ const formatCurrency = (amount: number): string => {
   }).format(amount);
 };
 
+// B44: the live FREE-tier plan response has come back without a usable
+// feeBps, producing "NaN%" from a bare `feeBps / 100`. Guard it here so a
+// missing/non-numeric value shows a neutral "—" instead of NaN.
+const formatFeePercent = (feeBps: number | null | undefined): string => {
+  if (feeBps == null || Number.isNaN(feeBps)) return '—';
+  return `${feeBps / 100}%`;
+};
+
 const formatDate = (iso: string | null): string => {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-IN', {
@@ -329,7 +337,7 @@ export default function BrandBillingSettingsPage() {
                 <div>
                   <p className="text-sm font-medium">Brand Fee</p>
                   <p className="text-xs text-muted-foreground">
-                    {currentPlan.feeBps / 100}% per campaign
+                    {formatFeePercent(currentPlan.feeBps)} per campaign
                   </p>
                 </div>
               </div>

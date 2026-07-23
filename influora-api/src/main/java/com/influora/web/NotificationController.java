@@ -1,6 +1,7 @@
 package com.influora.web;
 
 import com.influora.common.ApiException;
+import com.influora.common.ApiResponse;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.EmailPreference;
 import com.influora.domain.entity.Notification;
@@ -58,9 +59,21 @@ public class NotificationController {
 
     /**
      * GET /notifications - paginated list of notifications, unread-first, most-recent-first.
+     *
+     * <p>[BUG FIX, feature-audit-brand-creator-2026-07-23.md P2] Previously returned the bare
+     * {@code NotificationListResponse} body with no {@code success}/{@code data} envelope, unlike
+     * every other controller in this codebase. Now wrapped in {@link ApiResponse} like the rest of
+     * the API — the data shape inside {@code data} is unchanged. {@code src/lib/api.ts}'s {@code
+     * http.request} helper (used by {@code api.notifications.list}) unwraps {@code envelope.data}
+     * and throws an {@code ApiError} whenever {@code envelope.success} is missing/false, which is
+     * exactly what a raw, unenveloped 200 response was triggering. NOTE for Ananya/FE: {@code
+     * src/hooks/useNotifications.ts} (the hook actually wired into {@code NotificationBell.tsx})
+     * calls this endpoint with a raw {@code fetch} and deliberately reads the response body
+     * unwrapped (see that file's "Wire shape ... NOT wrapped" comment) — it will need updating to
+     * read {@code body.data.notifications} instead of {@code body.notifications} once this ships.
      */
     @GetMapping
-    public ResponseEntity<NotificationListResponse> list(
+    public ResponseEntity<ApiResponse<NotificationListResponse>> list(
             @AuthenticationPrincipal AuthPrincipal user,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -73,7 +86,8 @@ public class NotificationController {
 
         long unreadCount = notificationRepository.countByUserIdAndIsReadFalse(user.getUserId());
 
-        return ResponseEntity.ok(new NotificationListResponse(notifications, unreadCount, page, size));
+        return ResponseEntity.ok(
+                ApiResponse.ok(new NotificationListResponse(notifications, unreadCount, page, size)));
     }
 
     /**
@@ -181,9 +195,18 @@ public class NotificationController {
      * (Domain B EmailPreference model; matches NotificationPreference in src/lib/api.ts). Only
      * rows the user has explicitly touched are returned; any event type absent from the list is
      * implicitly subscribed (mirrors NotificationService#isUnsubscribed's default).
+     *
+     * <p>[BUG FIX, feature-audit-brand-creator-2026-07-23.md P2] Same envelope fix as {@link
+     * #list}. This one has a live, currently-broken FE consumer: {@code
+     * api.notifications.getPreferences} in {@code src/lib/api.ts} already calls this via {@code
+     * http.request}, which throws an {@code ApiError} on any response missing {@code
+     * success:true} — a bare, unenveloped 200 was being treated as a hard failure. Used by {@code
+     * src/pages/brand-settings.tsx} and {@code src/pages/creator-settings.tsx}. {@code
+     * http.request} unwraps {@code envelope.data} automatically, so no FE change is needed for
+     * this endpoint.
      */
     @GetMapping("/preferences")
-    public ResponseEntity<PreferencesResponse> getPreferences(
+    public ResponseEntity<ApiResponse<PreferencesResponse>> getPreferences(
             @AuthenticationPrincipal AuthPrincipal user) {
 
         List<NotificationPreferenceItem> preferences =
@@ -191,7 +214,7 @@ public class NotificationController {
                         .map(p -> new NotificationPreferenceItem(p.getEventType(), p.isUnsubscribed()))
                         .toList();
 
-        return ResponseEntity.ok(new PreferencesResponse(preferences));
+        return ResponseEntity.ok(ApiResponse.ok(new PreferencesResponse(preferences)));
     }
 
     /**

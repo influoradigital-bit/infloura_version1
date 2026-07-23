@@ -44,6 +44,7 @@ export default function CreatorAnalyticsPage() {
     data: scores,
     loading: scoresLoading,
     error: scoresError,
+    notFound: scoresNotFound,
     refresh: refreshScores,
   } = useCreatorScores(CREATOR_ANALYTICS_SELF);
   const {
@@ -53,6 +54,9 @@ export default function CreatorAnalyticsPage() {
     refresh: refreshDemographics,
   } = useCreatorDemographics(CREATOR_ANALYTICS_SELF);
 
+  // C27: scoresError no longer fires for a 404 SCORE_NOT_FOUND (useCreatorScores
+  // treats that as an honest empty state via `notFound`) — only a real load
+  // failure trips the page-level banner below.
   const hasLoadError = Boolean(metricsError || scoresError || demographicsError);
   const isInitialLoading = metricsLoading && scoresLoading && demographicsLoading;
   const hasNoMetrics =
@@ -163,6 +167,15 @@ export default function CreatorAnalyticsPage() {
                 <EngagementRateGauge rate={metrics?.engagementRate ?? null} />
               )}
             </div>
+
+            {scoresNotFound && !scoresLoading && (
+              <Alert>
+                <AlertTitle>Your Influora score is on its way</AlertTitle>
+                <AlertDescription>
+                  Your Influora score will appear once you have enough activity.
+                </AlertDescription>
+              </Alert>
+            )}
 
             <div className="grid gap-4 lg:grid-cols-3">
               <FakeFollowerIndicator

@@ -170,6 +170,18 @@ export default function BrandSettingsPage() {
     }
   };
 
+  // TODO(B43): no GET /workspaces/members (or similar) endpoint exists yet in
+  // src/lib/api.ts — until Vikram ships one, show only the current session's
+  // real workspace contact instead of fabricating a member roster (was three
+  // hardcoded fake people: Amit/Priya/Rahul @techbrands.in).
+  const workspaceMembers = liveApi
+    ? [{ name: 'You', role: 'Member', email: settings.email || 'No email on file' }]
+    : [
+        { name: 'Amit Singh', role: 'Workspace Owner', email: 'amit@techbrands.in' },
+        { name: 'Priya Kumar', role: 'Manager', email: 'priya@techbrands.in' },
+        { name: 'Rahul Verma', role: 'Editor', email: 'rahul@techbrands.in' },
+      ];
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="p-8 max-w-5xl">
@@ -281,11 +293,7 @@ export default function BrandSettingsPage() {
             <Card className="p-6">
               <h3 className="font-semibold mb-6">Workspace Members</h3>
               <div className="space-y-3">
-                {[
-                  { name: 'Amit Singh', role: 'Workspace Owner', email: 'amit@techbrands.in' },
-                  { name: 'Priya Kumar', role: 'Manager', email: 'priya@techbrands.in' },
-                  { name: 'Rahul Verma', role: 'Editor', email: 'rahul@techbrands.in' },
-                ].map((member) => (
+                {workspaceMembers.map((member) => (
                   <div key={member.email} className="flex items-center justify-between p-3 border rounded-lg">
                     <div className="flex items-center gap-3">
                       <Avatar className="h-8 w-8">

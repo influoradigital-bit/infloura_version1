@@ -22,7 +22,16 @@ interface CreatorDealContractTabProps {
   contractId: string;
   brandName: string;
   campaignName: string;
-  amount: number;
+  /** Deal.dealValue — can be null (deal not yet priced). Only a fallback; see contractAmount. */
+  amount: number | null;
+  /**
+   * C16: the real signed contract's server-summed totalAmount (GET
+   * /contracts/:id, ContractApiRecord.totalAmount) — the authoritative figure
+   * once a contract exists, since deal.dealValue can be null/stale even for a
+   * fully-signed contract. Undefined/null (no contract fetched yet, or mock
+   * mode) falls back to `amount`.
+   */
+  contractAmount?: number | null;
   status: DealContractStatus;
   onStatusChange: (status: DealContractStatus) => void;
 }
@@ -32,6 +41,7 @@ export function CreatorDealContractTab({
   brandName,
   campaignName,
   amount,
+  contractAmount,
   status,
   onStatusChange,
 }: CreatorDealContractTabProps) {
@@ -48,7 +58,11 @@ export function CreatorDealContractTab({
   // not "awaiting brand".
   const awaitingBrandSignature = status === 'generated';
   const fullySigned = status === 'creator_signed' || status === 'active';
-  const netEarnings = Math.round(amount * 0.79);
+  // C16: prefer the real contract total; fall back to the deal's dealValue,
+  // and to an honest "—" only when neither is available (rather than the
+  // previous silent "₹0" from a null amount).
+  const effectiveAmount = contractAmount ?? amount ?? null;
+  const netEarnings = effectiveAmount != null ? Math.round(effectiveAmount * 0.79) : null;
   const liveApi = isApiLive();
 
   // FE-6: live mode uses the real presigned R2 URL (GET /contracts/:id/pdf-download-url,
@@ -82,7 +96,7 @@ export function CreatorDealContractTab({
         brandName,
         creatorName: 'You',
         campaignName,
-        amount,
+        amount: effectiveAmount ?? 0,
         deliverables: [
           { title: 'Instagram Reel', description: 'Campaign content', quantity: 2 },
         ],
@@ -168,6 +182,7 @@ export function CreatorDealContractTab({
             <span className="text-muted-foreground">Campaign</span>
             <span className="font-medium">{campaignName}</span>
           </div>
+          {/* netEarnings is null-safe via formatINR (shared helper, returns "—"). */}
           <div className="flex justify-between border-t pt-2">
             <span className="font-medium">You receive (est.)</span>
             <span className="font-bold text-success">{formatINR(netEarnings)}</span>

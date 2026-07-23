@@ -1,6 +1,7 @@
 package com.influora.web.dto.tracking;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -31,9 +32,24 @@ public final class TrackingDtos {
     /**
      * Request body for {@code POST /campaigns/{campaignId}/tracking-links}. {@code campaignId}
      * itself comes from the path, not this body.
+     *
+     * <p>[BUG FIX B18, feature-audit-brand-creator-2026-07-23.md] All four fields were previously
+     * unvalidated. A request missing (or blank) {@code baseUrl} reached {@code
+     * CampaignLinkService#buildAndSaveTrackingLink} -&gt; {@code buildTrackingUrl}, which calls
+     * {@code baseUrl.contains("?")} with no null check — an unhandled {@code
+     * NullPointerException} that fell through to {@code GlobalExceptionHandler}'s generic {@code
+     * Exception} handler as a bare {@code 500 INTERNAL_ERROR} instead of a clean {@code 400}. Every
+     * other brand-facing {@code Create*Request} record in this codebase (e.g. {@code
+     * DealDtos.CreateDealRequest}) validates required string fields with {@code @NotBlank}; this
+     * record simply never got that treatment. {@code @NotBlank} + {@code @Valid} on the controller
+     * parameter (see {@code CampaignTrackingController#createTrackingLink}) now rejects a
+     * missing/blank field with a validation {@code 400} before the service is ever called.
      */
     public record CreateTrackingLinkRequest(
-            String collaborationId, String creatorProfileId, String baseUrl, String platform) {}
+            @NotBlank String collaborationId,
+            @NotBlank String creatorProfileId,
+            @NotBlank String baseUrl,
+            @NotBlank String platform) {}
 
     /** Brand-facing view of a {@code UtmCampaign} row — created by or already existing for the campaign. */
     @JsonInclude(JsonInclude.Include.NON_NULL)

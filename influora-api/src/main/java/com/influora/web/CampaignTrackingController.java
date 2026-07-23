@@ -10,6 +10,8 @@ import com.influora.web.dto.tracking.TrackingDtos.CreateCouponRequest;
 import com.influora.web.dto.tracking.TrackingDtos.CreateTrackingLinkRequest;
 import com.influora.web.dto.tracking.TrackingDtos.TrackingLinkListResponse;
 import com.influora.web.dto.tracking.TrackingDtos.TrackingLinkResponse;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -52,12 +54,21 @@ public class CampaignTrackingController {
         this.brandContextService = brandContextService;
     }
 
-    /** Create (or return the existing) UTM tracking link for a creator's campaign participation. */
+    /**
+     * Create (or return the existing) UTM tracking link for a creator's campaign participation.
+     *
+     * <p>[BUG FIX B18, feature-audit-brand-creator-2026-07-23.md] {@code @Valid} now enforces
+     * {@code CreateTrackingLinkRequest}'s {@code @NotBlank} fields (a missing/blank {@code baseUrl}
+     * used to reach {@code CampaignLinkService} unchecked and NPE — see that DTO's javadoc), and
+     * the endpoint now returns {@code 201 Created} on success, matching the rest of this codebase's
+     * POST-that-creates convention (e.g. {@code CampaignController#create}, {@code
+     * ContractController#create}) instead of the previous bare {@code 200}.
+     */
     @PostMapping("/tracking-links")
     public ResponseEntity<ApiResponse<TrackingLinkResponse>> createTrackingLink(
             @AuthenticationPrincipal AuthPrincipal principal,
             @PathVariable String campaignId,
-            @RequestBody CreateTrackingLinkRequest request) {
+            @Valid @RequestBody CreateTrackingLinkRequest request) {
         String workspaceId = brandContextService.requireBrandWorkspace(principal).getId();
         TrackingLinkResponse response =
                 campaignTrackingService.createTrackingLink(
@@ -67,7 +78,7 @@ public class CampaignTrackingController {
                         request.creatorProfileId(),
                         request.baseUrl(),
                         request.platform());
-        return ResponseEntity.ok(ApiResponse.ok(response));
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
     }
 
     /** List every UTM tracking link for a campaign the caller's workspace owns. */

@@ -17,8 +17,25 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import type { AnalyticsDateRange, CreatorMetrics } from '@/lib/types';
+
+/**
+ * B39: GET /analytics/creators/:id/metrics correctly gates per-creator
+ * metrics behind the plan limit (402 UPGRADE_REQUIRED on Free) — that's
+ * working as designed, not an authz failure. Without this check the raw
+ * backend message ("...not authorized to view metrics for that creator...")
+ * read as a real permission error instead of an upgrade prompt.
+ */
+const UPGRADE_PROMPT_MESSAGE =
+  'Upgrade to view more creator analytics — you\'ve reached your plan\'s monthly limit.';
+
+function messageForMetricsError(err: unknown): string {
+  if (err instanceof ApiError && (err.status === 402 || err.code === 'UPGRADE_REQUIRED')) {
+    return UPGRADE_PROMPT_MESSAGE;
+  }
+  return err instanceof Error ? err.message : 'Failed to load creator metrics';
+}
 
 /**
  * Sentinel creatorId meaning "the logged-in creator viewing their own analytics".
@@ -60,7 +77,7 @@ export function useCreatorMetrics(
           : await api.analytics.getCreatorMetrics(creatorId, startIso, endIso);
       setData(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load creator metrics');
+      setError(messageForMetricsError(err));
     } finally {
       setLoading(false);
     }

@@ -204,7 +204,11 @@ const statusConfig = {
   },
 };
 
-const formatBudget = (amount: number): string => {
+// Deal.dealValue is typed as `number` but the live API can and does return
+// null (deal not yet priced) — mirrors the guard the pipeline card's
+// formatINR uses for the same field (see brand-pipeline.tsx).
+const formatBudget = (amount: number | null | undefined): string => {
+  if (amount == null || Number.isNaN(amount)) return 'No budget set';
   if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)}L`;
   if (amount >= 1000) return `₹${(amount / 1000).toFixed(0)}K`;
   return `₹${amount}`;

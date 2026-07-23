@@ -242,7 +242,11 @@ const mockEscrowItems: EscrowItem[] = [
   },
 ];
 
-const formatCurrency = (amount: number, currency = 'INR'): string => {
+// Accepts null/undefined because several wallet figures (TDS/GST totals, burn
+// rate, last recharge) have no backend source yet in live mode — render a
+// neutral "—" rather than "₹NaN" or a fabricated number (B42).
+const formatCurrency = (amount: number | null | undefined, currency = 'INR'): string => {
+  if (amount == null || Number.isNaN(amount)) return '—';
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency,
@@ -314,6 +318,19 @@ function safeRandomUUID(): string {
     return crypto.randomUUID();
   }
   return `topup-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/**
+ * Derive "last recharge" honestly from the real transaction list (GET
+ * /wallet/transactions) rather than a hardcoded figure — no dedicated
+ * "last recharge" field exists on WalletSummaryResponse. Returns null when
+ * there's no completed credit yet (B42).
+ */
+function findLastRecharge(txs: Transaction[]): { amount: number; date: Date } | null {
+  const credits = txs.filter((t) => t.type === 'credit' && t.status === 'completed');
+  if (credits.length === 0) return null;
+  const latest = credits.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+  return { amount: latest.amount, date: latest.createdAt };
 }
 
 /** Badge styling + label for a real GET /wallet/escrow row's status. */
@@ -512,17 +529,38 @@ export default function BrandWalletPage() {
   };
 
   // Wallet card data: real numbers in live mode, polished demo numbers in mock mode.
-  // Fields with no backend source yet (totalSpent, monthlySpend, projectedBurn30Days,
-  // suggestedRecharge, TDS/GST totals, lastRecharge) stay mock-only.
+  // WalletSummaryResponse only carries availableBalance/escrowLocked/pendingPayouts/
+  // runwayDays — TDS/GST totals, projected burn, and suggested recharge have no
+  // backend source yet, so live mode renders an honest null (→ "—") instead of the
+  // mock figures. Last recharge is derived from the real transaction list (B42).
+  const liveLastRecharge = isApiLive() ? findLastRecharge(transactions) : null;
   const wallet = isApiLive()
     ? {
-        ...mockWalletData,
         balance: walletSummary.availableBalance,
+        currency: mockWalletData.currency,
         escrowLocked: walletSummary.escrowLocked,
         pendingSettlement: walletSummary.pendingPayouts,
         runwayDays: walletSummary.runwayDays ?? 0,
+        lastRecharge: liveLastRecharge?.date ?? null,
+        lastRechargeAmount: liveLastRecharge?.amount ?? null,
+        projectedBurn30Days: null as number | null,
+        suggestedRecharge: null as number | null,
+        totalTDSDeducted: null as number | null,
+        totalGSTPaid: null as number | null,
       }
-    : mockWalletData;
+    : {
+        balance: mockWalletData.balance,
+        currency: mockWalletData.currency,
+        escrowLocked: mockWalletData.escrowLocked,
+        pendingSettlement: mockWalletData.pendingSettlement,
+        runwayDays: mockWalletData.runwayDays,
+        lastRecharge: mockWalletData.lastRecharge as Date | null,
+        lastRechargeAmount: mockWalletData.lastRechargeAmount as number | null,
+        projectedBurn30Days: mockWalletData.projectedBurn30Days as number | null,
+        suggestedRecharge: mockWalletData.suggestedRecharge as number | null,
+        totalTDSDeducted: mockWalletData.totalTDSDeducted as number | null,
+        totalGSTPaid: mockWalletData.totalGSTPaid as number | null,
+      };
 
   // Live mode renders real GET /wallet/escrow rows (escrowRows); mock mode keeps the polished
   // mockEscrowItems demo dataset. escrowActiveCount feeds the summary card above the tabs.
@@ -699,8 +737,11 @@ export default function BrandWalletPage() {
                       </div>
                     </div>
 
-                    {/* Suggested Recharge based on Pipeline Burn */}
-                    {wallet.runwayDays < 45 && (
+                    {/* Suggested Recharge based on Pipeline Burn — no backend
+                        source for a burn projection yet (B42), so this nudge
+                        only renders in mock/demo mode, never with a fabricated
+                        number in live mode. */}
+                    {!isApiLive() && wallet.suggestedRecharge != null && wallet.runwayDays < 45 && (
                       <div className="rounded-lg border border-stage-negotiating-border bg-amber-50 p-3">
                         <div className="flex items-start gap-3">
                           <AlertCircle className="h-5 w-5 text-stage-negotiating-fg flex-shrink-0 mt-0.5" />
@@ -709,7 +750,7 @@ export default function BrandWalletPage() {
                               Based on your pipeline, we recommend recharging:
                             </p>
                             <button
-                              onClick={() => changeAddAmount(wallet.suggestedRecharge.toString())}
+                              onClick={() => changeAddAmount(String(wallet.suggestedRecharge))}
                               className="text-lg font-bold text-amber-700 hover:underline"
                             >
                               {formatCurrency(wallet.suggestedRecharge)}
@@ -858,8 +899,10 @@ export default function BrandWalletPage() {
             </CardHeader>
             <CardContent className="relative">
               <p className="text-sm text-muted-foreground">
-                Last recharge: {formatCurrency(wallet.lastRechargeAmount)} on{' '}
-                {formatDate(wallet.lastRecharge)}
+                {wallet.lastRechargeAmount != null && wallet.lastRecharge
+                  ? <>Last recharge: {formatCurrency(wallet.lastRechargeAmount)} on{' '}
+                    {formatDate(wallet.lastRecharge)}</>
+                  : 'No recharge yet'}
               </p>
             </CardContent>
           </Card>
@@ -930,7 +973,9 @@ export default function BrandWalletPage() {
                 )}
               />
               <p className="text-xs text-muted-foreground">
-                Burn rate: {formatCurrency(wallet.projectedBurn30Days)}/mo
+                Burn rate: {wallet.projectedBurn30Days != null
+                  ? `${formatCurrency(wallet.projectedBurn30Days)}/mo`
+                  : 'Not enough data yet'}
               </p>
             </CardContent>
           </Card>

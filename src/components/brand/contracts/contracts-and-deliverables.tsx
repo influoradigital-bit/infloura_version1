@@ -313,7 +313,14 @@ interface ApiContractRow {
   creatorName?: string;
   creatorHandle?: string;
   creatorImage?: string;
-  status?: Contract['status'];
+  /**
+   * Raw backend ContractStatus (src/lib/types.ts) — DRAFT/PENDING_SIGNATURES/
+   * ACTIVE/COMPLETED/TERMINATED/DISPUTED. NOT the same vocabulary as this
+   * page's UI-only Contract['status'] (draft/pending_review/pending_signature/
+   * signed/expired/disputed). Must go through mapApiContractStatus() before
+   * use — see B37.
+   */
+  status?: string;
   brandSigned?: boolean;
   creatorSigned?: boolean;
   signedDate?: string;
@@ -324,6 +331,36 @@ interface ApiContractRow {
   escrowAmount?: number;
   createdAt?: string;
   hash?: string;
+}
+
+/**
+ * Translate the real backend ContractStatus (DRAFT/PENDING_SIGNATURES/ACTIVE/
+ * COMPLETED/TERMINATED/DISPUTED) into this page's UI-only Contract['status']
+ * vocabulary. B37: GET /contracts returns the former; this page's statusConfig
+ * map is keyed on the latter, so unmapped live rows (e.g. 'ACTIVE') looked up
+ * as `statusConfig[row.status]` were `undefined`, and `.icon` on that threw
+ * inside the list `.map()`, crashing the whole page. Any status not
+ * recognized here safely falls through to 'draft' rather than throwing.
+ */
+function mapApiContractStatus(status: string | undefined): Contract['status'] | undefined {
+  switch (status) {
+    case 'DRAFT':
+      return 'draft';
+    case 'PENDING_SIGNATURES':
+      return 'pending_signature';
+    case 'ACTIVE':
+      return 'signed';
+    case 'COMPLETED':
+      return 'signed';
+    case 'TERMINATED':
+      return 'expired';
+    case 'DISPUTED':
+      return 'disputed';
+    case undefined:
+      return undefined;
+    default:
+      return 'draft';
+  }
 }
 
 /**
@@ -346,7 +383,7 @@ function mergeContractRow(row: ApiContractRow, fallback?: Contract): Contract {
     creatorName: row.creatorName ?? fallback?.creatorName ?? 'Creator',
     creatorHandle: row.creatorHandle ?? fallback?.creatorHandle ?? '',
     creatorImage: row.creatorImage ?? fallback?.creatorImage ?? '',
-    status: row.status ?? fallback?.status ?? 'draft',
+    status: mapApiContractStatus(row.status) ?? fallback?.status ?? 'draft',
     brandSigned: row.brandSigned ?? fallback?.brandSigned ?? false,
     creatorSigned: row.creatorSigned ?? fallback?.creatorSigned ?? false,
     signedDate: row.signedDate ?? fallback?.signedDate,
@@ -391,6 +428,20 @@ const statusConfig = {
   expired: { label: 'Expired', color: 'border bg-stage-expired text-stage-expired-fg border-stage-expired-border', icon: AlertCircle },
   disputed: { label: 'Disputed', color: 'border bg-stage-disputed text-stage-disputed-fg border-stage-disputed-border', icon: AlertTriangle },
 };
+
+// B37 safety net: `contract.status` should always be a mapped, known key
+// (see mapApiContractStatus) by the time it reaches render, but this
+// guards the .map()/lookups below from ever throwing again if an
+// unrecognized value slips through.
+const UNKNOWN_STATUS_CONFIG = {
+  label: 'Unknown',
+  color: 'border bg-muted text-muted-foreground border-border',
+  icon: AlertCircle,
+};
+
+function getStatusConfig(status: Contract['status']): typeof UNKNOWN_STATUS_CONFIG {
+  return statusConfig[status] ?? UNKNOWN_STATUS_CONFIG;
+}
 
 const deliverableStatusConfig = {
   pending: { label: 'Pending', color: 'border bg-stage-draft text-stage-draft-fg border-stage-draft-border', icon: Clock },
@@ -719,7 +770,8 @@ export function ContractsAndDeliverables() {
                 )}
                 <div className="p-2 space-y-2">
                   {filteredContracts.map((contract) => {
-                    const StatusIcon = statusConfig[contract.status].icon;
+                    const contractStatusConfig = getStatusConfig(contract.status);
+                    const StatusIcon = contractStatusConfig.icon;
                     const completed = contract.deliverables.filter(d => d.status === 'approved').length;
                     const total = contract.deliverables.length;
                     
@@ -742,9 +794,9 @@ export function ContractsAndDeliverables() {
                             <h3 className="font-medium text-sm truncate">{contract.creatorName}</h3>
                             <p className="text-xs text-muted-foreground truncate">{contract.campaignName}</p>
                             <div className="flex items-center gap-2 mt-2">
-                              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${statusConfig[contract.status].color}`}>
+                              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${contractStatusConfig.color}`}>
                                 <StatusIcon className="w-3 h-3 mr-1" />
-                                {statusConfig[contract.status].label}
+                                {contractStatusConfig.label}
                               </Badge>
                               <span className="text-[10px] text-muted-foreground">{completed}/{total}</span>
                             </div>
@@ -776,8 +828,8 @@ export function ContractsAndDeliverables() {
                       <div>
                         <div className="flex items-center gap-2">
                           <h2 className="text-xl font-bold">{selectedContract.creatorName}</h2>
-                          <Badge variant="outline" className={statusConfig[selectedContract.status].color}>
-                            {statusConfig[selectedContract.status].label}
+                          <Badge variant="outline" className={getStatusConfig(selectedContract.status).color}>
+                            {getStatusConfig(selectedContract.status).label}
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">{selectedContract.creatorHandle}</p>

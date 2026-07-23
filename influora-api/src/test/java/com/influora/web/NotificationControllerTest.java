@@ -8,12 +8,15 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.influora.common.ApiResponse;
 import com.influora.domain.entity.EmailPreference;
+import com.influora.domain.entity.Notification;
 import com.influora.domain.enums.UserType;
 import com.influora.repository.EmailPreferenceRepository;
 import com.influora.repository.NotificationRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.notification.UnsubscribeTokenService;
+import com.influora.web.dto.notification.NotificationDtos.NotificationListResponse;
 import com.influora.web.dto.notification.NotificationDtos.PreferencesResponse;
 import com.influora.web.dto.notification.NotificationDtos.SetPreferenceRequest;
 import com.influora.web.dto.notification.NotificationDtos.SetPreferenceResponse;
@@ -26,6 +29,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 
 /**
@@ -58,6 +63,34 @@ class NotificationControllerTest {
     }
 
     @Test
+    @DisplayName("list: wraps NotificationListResponse in the standard {success,data} envelope")
+    void listWrapsResponseInEnvelope() {
+        Notification n =
+                Notification.builder()
+                        .id("01NOTIF000000000000001")
+                        .userId(USER_A)
+                        .eventType("escrow.funded")
+                        .title("Escrow funded")
+                        .body("Your funds are secured")
+                        .build();
+        when(notificationRepository.findByUserIdOrdered(eq(USER_A), any()))
+                .thenReturn(new PageImpl<>(List.of(n), PageRequest.of(0, 20), 1));
+        when(notificationRepository.countByUserIdAndIsReadFalse(USER_A)).thenReturn(1L);
+
+        ResponseEntity<ApiResponse<NotificationListResponse>> response =
+                controller.list(principal(USER_A), 0, 20);
+
+        assertThat(response.getBody()).isNotNull();
+        // [BUG FIX, feature-audit-brand-creator-2026-07-23.md P2] Previously returned the bare
+        // NotificationListResponse with no envelope at all -- src/lib/api.ts's http.request throws
+        // an ApiError on any 200 response missing success:true.
+        assertThat(response.getBody().success()).isTrue();
+        assertThat(response.getBody().data().notifications()).hasSize(1);
+        assertThat(response.getBody().data().notifications().get(0).eventType()).isEqualTo("escrow.funded");
+        assertThat(response.getBody().data().unreadCount()).isEqualTo(1L);
+    }
+
+    @Test
     @DisplayName("getPreferences: scopes the repository lookup to the authenticated user only")
     void getPreferencesScopedToCallingUser() {
         EmailPreference ownRow =
@@ -69,16 +102,21 @@ class NotificationControllerTest {
                         .build();
         when(emailPreferenceRepository.findByUserId(USER_A)).thenReturn(List.of(ownRow));
 
-        ResponseEntity<PreferencesResponse> response = controller.getPreferences(principal(USER_A));
+        ResponseEntity<ApiResponse<PreferencesResponse>> response =
+                controller.getPreferences(principal(USER_A));
 
         // Only USER_A's id is ever passed to the repository -- USER_B's data is never queried.
         verify(emailPreferenceRepository, times(1)).findByUserId(USER_A);
         verify(emailPreferenceRepository, never()).findByUserId(USER_B);
 
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().preferences()).hasSize(1);
-        assertThat(response.getBody().preferences().get(0).eventType()).isEqualTo("proposal.accepted");
-        assertThat(response.getBody().preferences().get(0).unsubscribed()).isTrue();
+        // [BUG FIX, feature-audit-brand-creator-2026-07-23.md P2] getPreferences now wraps its
+        // response in the standard {success,data,error} envelope like every other controller --
+        // this proves the wrap didn't change the data shape inside, just added the envelope.
+        assertThat(response.getBody().success()).isTrue();
+        assertThat(response.getBody().data().preferences()).hasSize(1);
+        assertThat(response.getBody().data().preferences().get(0).eventType()).isEqualTo("proposal.accepted");
+        assertThat(response.getBody().data().preferences().get(0).unsubscribed()).isTrue();
     }
 
     @Test
@@ -101,8 +139,8 @@ class NotificationControllerTest {
         when(emailPreferenceRepository.findByUserId(USER_A)).thenReturn(List.of(rowA));
         when(emailPreferenceRepository.findByUserId(USER_B)).thenReturn(List.of(rowB));
 
-        PreferencesResponse asA = controller.getPreferences(principal(USER_A)).getBody();
-        PreferencesResponse asB = controller.getPreferences(principal(USER_B)).getBody();
+        PreferencesResponse asA = controller.getPreferences(principal(USER_A)).getBody().data();
+        PreferencesResponse asB = controller.getPreferences(principal(USER_B)).getBody().data();
 
         assertThat(asA.preferences().get(0).unsubscribed()).isFalse();
         assertThat(asB.preferences().get(0).unsubscribed()).isTrue();

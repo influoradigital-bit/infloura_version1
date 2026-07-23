@@ -1571,6 +1571,9 @@ export default function CreatorChatPage() {
                       brandName={selectedDeal.brandName}
                       campaignName={selectedDeal.campaignName}
                       amount={selectedDeal.dealAmount}
+                      // C16: real signed contract total (server-summed) — takes
+                      // priority over the deal's dealValue, which can be null/stale.
+                      contractAmount={liveContract?.totalAmount ?? null}
                       status={contractStatus}
                       onStatusChange={(status) => updateContractStatus(selectedDeal.id, status)}
                     />

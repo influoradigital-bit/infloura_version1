@@ -13,6 +13,7 @@ import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.UtmCampaignRepository;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -117,7 +118,12 @@ public class CampaignLinkService {
                                                 "Collaboration not found",
                                                 HttpStatus.NOT_FOUND));
 
-        if (!collaboration.getCampaignId().equals(campaign.getId())) {
+        // [BUG FIX B18] Null-safe equality — was a direct .equals() call on the resolved
+        // collaboration's campaignId, which threw an unhandled NullPointerException (surfaced as a
+        // bare 500 INTERNAL_ERROR) instead of the intended 403 for any row with a null/inconsistent
+        // link, rather than trusting the nullable=false DB constraint to hold for every historical
+        // row.
+        if (!Objects.equals(collaboration.getCampaignId(), campaign.getId())) {
             throw new ApiException(
                     "COLLABORATION_CAMPAIGN_MISMATCH",
                     "This collaboration does not belong to the given campaign",
@@ -135,7 +141,8 @@ public class CampaignLinkService {
         // Collaboration.creatorId references users(id); CreatorProfile.userId is the matching
         // reference — this is the join used throughout the codebase to go from a collaboration's
         // creator to their creator profile (see V6 FK style).
-        if (!creator.getUserId().equals(collaboration.getCreatorId())) {
+        // [BUG FIX B18] Same null-safe equality fix as the campaign-mismatch check above.
+        if (!Objects.equals(creator.getUserId(), collaboration.getCreatorId())) {
             throw new ApiException(
                     "CREATOR_COLLABORATION_MISMATCH",
                     "This creator does not match the given collaboration",
