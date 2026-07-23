@@ -19,7 +19,6 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   api,
   ApiError,
-  isApiLive,
   type CreatorDisputeRow,
   type Deal,
   type DisputeLifecycleStatus,
@@ -40,8 +39,9 @@ const LIFECYCLE_LABEL: Record<DisputeLifecycleStatus, string> = {
  * List open/resolved disputes + open a new dispute on an eligible funded deal.
  * No refund/release/money-movement UI (v1 status-only).
  *
- * Live list is partial (GET /deals DISPUTED filter) until GET /creator/disputes
- * ships — honesty banner when `isApiLive()` or rows lack disputeStatus.
+ * Live list calls the real GET /creator/disputes (CreatorDisputeController,
+ * 2026-07-23) — full detail (reason, review stage, resolution) every time,
+ * no partial-data fallback needed.
  */
 export default function CreatorDisputesPage() {
   const [disputes, setDisputes] = React.useState<CreatorDisputeRow[]>([]);
@@ -92,9 +92,6 @@ export default function CreatorDisputesPage() {
     void refreshEligible();
   }, [refreshList, refreshEligible]);
 
-  const hasPartialData =
-    isApiLive() || disputes.some((d) => d.disputeStatus === undefined);
-
   const canSubmit =
     Boolean(selectedDealId) && reason.trim().length >= 10 && !submitting;
 
@@ -130,22 +127,6 @@ export default function CreatorDisputesPage() {
             Resolution is admin-mediated — no automatic refund or release in v1.
           </p>
         </div>
-
-        {hasPartialData && (
-          <Alert className="mb-5 border-amber-300 bg-amber-50">
-            <AlertTriangle className="h-4 w-4 text-amber-700" />
-            <AlertTitle className="text-amber-900">Showing partial data</AlertTitle>
-            <AlertDescription className="text-amber-800">
-              There is no dispute-list endpoint for creators yet, so this only shows which deals
-              are currently marked disputed — not the full reason, review stage, or resolution.
-              Full detail needs{' '}
-              <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-xs">
-                GET /creator/disputes
-              </code>{' '}
-              on the backend.
-            </AlertDescription>
-          </Alert>
-        )}
 
         <OpenDisputeForm
           eligibleDeals={eligibleDeals}

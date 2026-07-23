@@ -38,7 +38,11 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import {
+  Home,
   Briefcase,
+  Megaphone,
+  Sparkles,
+  BarChart3,
   Wallet,
   User,
   Bell,
@@ -58,11 +62,19 @@ interface CreatorLayoutProps {
 }
 
 /**
- * 3-item navigation. Inbox + Active + Deal Room collapsed into one Deals
- * page (filtered by status). Profile + Settings live in the avatar menu.
+ * 6-item navigation (was a 2-item Deals + Wallet nav that left ~8 fully-built
+ * creator pages orphaned — no sidebar link, only reachable by direct URL).
+ * Inbox + Active + Deal Room stay collapsed into one Deals page (filtered by
+ * status). Profile, Public Page, and Settings live in the avatar menu, not
+ * here. Reviews, Coupons, Affiliate, and Disputes stay off the sidebar too —
+ * they're reachable from the dashboard's quick-links, not primary nav.
  */
 const navItems = [
+  { label: 'Home', href: '/creator/dashboard', icon: Home },
   { label: 'Deals', href: '/creator/deals', icon: Briefcase },
+  { label: 'Campaigns', href: '/creator/campaigns', icon: Megaphone },
+  { label: 'Co-pilot', href: '/creator/copilot', icon: Sparkles },
+  { label: 'Analytics', href: '/creator/analytics', icon: BarChart3 },
   { label: 'Wallet', href: '/creator/wallet', icon: Wallet },
 ];
 

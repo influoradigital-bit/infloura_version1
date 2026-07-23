@@ -23,9 +23,11 @@ interface DailySuggestionSectionProps {
  *  - the "skip for now" session-local collapse of `BusinessAccountRequired`
  *    so the rest of the dashboard never blocks on it (spec §3.3).
  *
- * Mounted directly above `<HypeInboxCard>` on the creator dashboard
- * (src/pages/creator-deals.tsx) — not in creator-layout.tsx, which only
- * renders `{children}` and has no knowledge of dashboard content.
+ * Mounted on its own route, src/pages/creator-copilot.tsx (/creator/copilot,
+ * Ananya A2) — not in creator-layout.tsx, which only renders `{children}`
+ * and has no knowledge of page content. Previously lived inline on the
+ * creator Deals page (src/pages/creator-deals.tsx); Deals now just links out
+ * to the Co-pilot route instead of carrying a second full copy of this.
  */
 export function DailySuggestionSection({ className }: DailySuggestionSectionProps) {
   const { toast } = useToast();

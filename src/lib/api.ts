@@ -3219,11 +3219,12 @@ export type DisputeLifecycleStatus =
  * `disputeStatus`/`openedAt`/`reason` are always populated, so the page's
  * "partial data" banner no longer fires in live mode.
  *
- * Creator side: still derived from disputed deals (`Deal.status === 'DISPUTED'`)
- * via `disputedDealsAsRows`, so the dispute-detail fields stay undefined there
- * and the page shows its "partial data" banner — no join data is fabricated.
- * `GET /creator/disputes` (CreatorDisputeController) now exists with the same
- * enriched shape as the brand endpoint; wiring it is a follow-up, not done here.
+ * Creator side (2026-07-23): now wired to the real `GET /creator/disputes`
+ * (CreatorDisputeController → DisputeService#listDisplayForCreator, scoped
+ * server-side to the calling creator via `creatorContext.requireCreator` +
+ * `collaboration.creatorId = principal.getUserId()`), whose response matches
+ * this shape field-for-field the same way the brand endpoint does — the
+ * page's "partial data" banner no longer fires in live mode.
  */
 export interface DisputeRow {
   collaborationId: string;
@@ -3240,21 +3241,7 @@ export interface DisputeRow {
 export type BrandDisputeRow = DisputeRow;
 export type CreatorDisputeRow = DisputeRow;
 
-function disputedDealsAsRows(role: Role): Promise<DisputeRow[]> {
-  return Promise.resolve(deals.list(role, 'all')).then((rows) =>
-    rows
-      .filter((d) => d.status === 'DISPUTED')
-      .map((d) => ({
-        collaborationId: d.id,
-        campaignName: d.campaignName,
-        counterpartyName: d.counterpartyName,
-        dealValue: d.dealValue,
-        currency: d.currency,
-      })),
-  );
-}
-
-/** Demo fixtures (mock mode only) — live mode derives partial rows from disputed deals. */
+/** Demo fixtures (mock mode only) — live mode calls the real GET /{role}/disputes(/list) endpoint. */
 const mockDisputeRows = (role: Role): DisputeRow[] => [
   {
     collaborationId: 'deal-disputed-1',
@@ -3278,9 +3265,16 @@ const mockEligibleDeals: Deal[] = [
 ];
 
 export const creatorDisputes = {
-  /** Live: derived from /deals (partial, no GET /creator/disputes yet). Mock: demo rows. */
+  /**
+   * GET /creator/disputes (CreatorDisputeController.java, 2026-07-23) — real dispute list with
+   * display fields (campaign name, brand name, deal value), scoped to the calling creator
+   * server-side via DisputeService#listDisplayForCreator. Response shape (DisputeListItemResponse)
+   * matches CreatorDisputeRow field-for-field, so no client-side mapping is needed. Mock: demo rows.
+   */
   list: (): Promise<CreatorDisputeRow[]> =>
-    isLive() ? disputedDealsAsRows('creator') : mockOr(mockDisputeRows('creator')),
+    isLive()
+      ? http.request<CreatorDisputeRow[]>('GET', '/creator/disputes', { role: 'creator' })
+      : mockOr(mockDisputeRows('creator')),
 
   /** Eligible = funded escrow, not already disputed/completed/cancelled. */
   listEligibleDeals: async (): Promise<Deal[]> => {

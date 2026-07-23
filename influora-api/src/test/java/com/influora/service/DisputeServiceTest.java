@@ -5,12 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
 import com.influora.domain.entity.AdminUser;
+import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Dispute;
 import com.influora.domain.entity.Workspace;
@@ -572,5 +574,90 @@ class DisputeServiceTest {
         verify(escrowService, never()).adminRefundForDispute(any());
         verify(escrowService, never()).adminSplitForDispute(any(), any());
         verify(disputeRepository, never()).saveAndFlush(any());
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // GAP-2026-07-23 — GET /api/v1/creator/disputes (CreatorDisputeController ->
+    // DisputeService#listDisplayForCreator). Covers the happy path plus tenant isolation: the
+    // repository query is always parameterized with the CALLER's own principal.getUserId(), never
+    // a value the client could redirect, so one creator can never pull another creator's disputes
+    // through this endpoint (mirrors the IDOR discipline already covered for openDispute above).
+    // -------------------------------------------------------------------------------------------
+
+    private static Dispute openDispute(String disputeId, String collaborationId, String reason) {
+        return Dispute.open(disputeId, collaborationId, DisputeOpenerType.CREATOR, CREATOR_USER_ID, reason);
+    }
+
+    @Test
+    @DisplayName("listDisplayForCreator: happy path returns the caller's own dispute rows")
+    void listDisplayForCreatorHappyPath() {
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+
+        Collaboration collab = inProgressDeal(CREATOR_USER_ID);
+        Dispute dispute = openDispute(DISPUTE_ID, DEAL_ID, "Deliverables not as agreed");
+        Campaign campaign =
+                Campaign.builder().workspaceId(WORKSPACE_ID).title("Summer Fashion Campaign").build();
+        Workspace brandWorkspace =
+                Workspace.newBrand(WORKSPACE_ID, "Luxe Apparel", "luxe-apparel", "Beauty", "SMB");
+
+        when(disputeRepository.findWithCollaborationByCreatorUserId(CREATOR_USER_ID))
+                .thenReturn(List.<Object[]>of(new Object[] {dispute, collab}));
+        when(campaignRepository.findById(collab.getCampaignId())).thenReturn(Optional.of(campaign));
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(brandWorkspace));
+
+        var rows = service.listDisplayForCreator(principal);
+
+        assertEquals(1, rows.size());
+        var row = rows.get(0);
+        assertEquals(DEAL_ID, row.collaborationId());
+        assertEquals("Summer Fashion Campaign", row.campaignName());
+        assertEquals("Luxe Apparel", row.counterpartyName());
+        assertEquals("OPEN", row.disputeStatus());
+        assertEquals("Deliverables not as agreed", row.reason());
+        verify(creatorContext).requireCreator(principal);
+    }
+
+    @Test
+    @DisplayName(
+            "listDisplayForCreator: tenant isolation — only ever queries by the caller's own"
+                    + " principal id, so another creator's disputes can never leak through")
+    void listDisplayForCreatorTenantIsolation() {
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+
+        Collaboration ownCollab = inProgressDeal(CREATOR_USER_ID);
+        Dispute ownDispute = openDispute(DISPUTE_ID, DEAL_ID, "My own dispute");
+        Campaign ownCampaign =
+                Campaign.builder().workspaceId(WORKSPACE_ID).title("My Campaign").build();
+
+        // A different creator's dispute row, only ever returned by the repository if queried with
+        // OTHER_CREATOR_ID — this stub must never be hit for a request authenticated as
+        // CREATOR_USER_ID.
+        String foreignDealId = "01HFOREIGNDEAL1234567";
+        String foreignDisputeId = "01HFOREIGNDISPUTE1234";
+        Collaboration foreignCollab = inProgressDeal(OTHER_CREATOR_ID);
+        Dispute foreignDispute = openDispute(foreignDisputeId, foreignDealId, "Someone else's dispute");
+        when(disputeRepository.findWithCollaborationByCreatorUserId(CREATOR_USER_ID))
+                .thenReturn(List.<Object[]>of(new Object[] {ownDispute, ownCollab}));
+        // Deliberately unstubbed-strictness escape: this stub proves that IF the service were ever
+        // queried with a foreign id (it must not be), the foreign creator's dispute data exists and
+        // would be visible — making the `never()` assertion below meaningful rather than vacuous.
+        lenient()
+                .when(disputeRepository.findWithCollaborationByCreatorUserId(OTHER_CREATOR_ID))
+                .thenReturn(List.<Object[]>of(new Object[] {foreignDispute, foreignCollab}));
+        when(campaignRepository.findById(ownCollab.getCampaignId())).thenReturn(Optional.of(ownCampaign));
+        when(workspaceRepository.findById(WORKSPACE_ID))
+                .thenReturn(Optional.of(Workspace.newBrand(WORKSPACE_ID, "Brand", "brand", "Beauty", "SMB")));
+
+        var rows = service.listDisplayForCreator(principal);
+
+        assertEquals(1, rows.size());
+        assertEquals(DEAL_ID, rows.get(0).collaborationId());
+        // Never called with a foreign id, and the foreign dispute's data never appears.
+        verify(disputeRepository, never()).findWithCollaborationByCreatorUserId(OTHER_CREATOR_ID);
+        assertEquals(
+                0,
+                rows.stream()
+                        .filter(r -> r.collaborationId().equals(foreignDealId))
+                        .count());
     }
 }

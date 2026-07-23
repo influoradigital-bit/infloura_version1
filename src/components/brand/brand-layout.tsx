@@ -15,6 +15,12 @@ import {
   HelpCircle,
   Plus,
   MessageCircle,
+  MessageSquare,
+  KanbanSquare,
+  FileText,
+  BarChart3,
+  Star,
+  AlertTriangle,
   User,
   Sparkles,
 } from 'lucide-react';
@@ -61,17 +67,51 @@ import { IconBadge } from '@/components/shared/icon-badge';
 import { InfluoraLogo } from '@/components/shared/influora-logo';
 import { getBrandNavIconVariant } from '@/lib/icon-theme';
 
+interface BrandNavItem {
+  label: string;
+  href: string;
+  icon: typeof Home;
+}
+
+interface BrandNavGroup {
+  label: string;
+  items: BrandNavItem[];
+}
+
 /**
- * 5-item navigation. Contracts live inside Deal Room (P2.1). Settings is in
- * the avatar menu. Deals replaces the old "Deal Room" label for clarity.
+ * 12-item grouped navigation (was a 6-item flat list that left 6 fully-built,
+ * confirmed-working pages orphaned — Messages/Pipeline/Contracts/Analytics/
+ * Reviews/Disputes were only reachable by direct URL). Settings stays in the
+ * avatar menu, not here.
+ *
+ * MAIN mirrors the day-to-day brand workflow; MANAGE holds the ops/oversight
+ * surfaces. "Deals" now points at `/brand/deals` (`DealRoomDashboard`) —
+ * the actively-maintained Deal Room — not the older `/brand/chat` page,
+ * which `/brand/messages` now covers for pure messaging.
  */
-const navItems = [
-  { label: 'Home', href: '/brand/dashboard', icon: Home },
-  { label: 'Meera', href: '/brand/meera', icon: Sparkles },
-  { label: 'Campaigns', href: '/brand/campaigns', icon: Megaphone },
-  { label: 'Creators', href: '/brand/discover', icon: Users2 },
-  { label: 'Deals', href: '/brand/chat', icon: MessageCircle },
-  { label: 'Wallet', href: '/brand/wallet', icon: Wallet },
+const navGroups: BrandNavGroup[] = [
+  {
+    label: 'Main',
+    items: [
+      { label: 'Home', href: '/brand/dashboard', icon: Home },
+      { label: 'Meera', href: '/brand/meera', icon: Sparkles },
+      { label: 'Campaigns', href: '/brand/campaigns', icon: Megaphone },
+      { label: 'Creators', href: '/brand/discover', icon: Users2 },
+      { label: 'Deals', href: '/brand/deals', icon: MessageCircle },
+      { label: 'Messages', href: '/brand/messages', icon: MessageSquare },
+      { label: 'Wallet', href: '/brand/wallet', icon: Wallet },
+    ],
+  },
+  {
+    label: 'Manage',
+    items: [
+      { label: 'Pipeline', href: '/brand/pipeline', icon: KanbanSquare },
+      { label: 'Contracts', href: '/brand/contracts', icon: FileText },
+      { label: 'Analytics', href: '/brand/analytics', icon: BarChart3 },
+      { label: 'Reviews', href: '/brand/reviews', icon: Star },
+      { label: 'Disputes', href: '/brand/disputes', icon: AlertTriangle },
+    ],
+  },
 ];
 
 interface BrandLayoutProps {
@@ -114,14 +154,9 @@ export function BrandLayout({ children }: BrandLayoutProps) {
     if (href === '/brand/discover') {
       return pathname.startsWith('/brand/discover') || pathname.startsWith('/brand/creators');
     }
-    // Deals nav covers chat, contracts and messages — they share the same surface
-    if (href === '/brand/chat') {
-      return (
-        pathname.startsWith('/brand/chat') ||
-        pathname.startsWith('/brand/contracts') ||
-        pathname.startsWith('/brand/messages')
-      );
-    }
+    // Deals (/brand/deals) covers its own deep-link variant (/brand/deals/:id)
+    // only — Contracts and Messages are now separate nav items, each with
+    // their own real page, not sub-surfaces of Deals.
     return pathname.startsWith(href);
   };
 
@@ -175,41 +210,49 @@ export function BrandLayout({ children }: BrandLayoutProps) {
             </Button>
           </div>
 
-          {/* Nav items */}
-          <nav role="navigation" className="flex-1 px-3 py-2">
-            <div className="flex flex-col gap-0.5">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.href);
-                return (
-                  <Tooltip key={item.href}>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={() => handleNavigate(item.href)}
-                        className={cn(
-                          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                          active
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
-                        )}
-                      >
-                        <IconBadge
-                          icon={Icon}
-                          variant={active ? 'primary' : getBrandNavIconVariant(item.href)}
-                          size="sm"
-                          active={active}
-                          rounded="lg"
-                        />
-                        <span>{item.label}</span>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="lg:hidden">
-                      {item.label}
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })}
-            </div>
+          {/* Nav items — grouped (Main / Manage), scrollable so 12 items never
+              get clipped on shorter viewports */}
+          <nav role="navigation" className="flex-1 overflow-y-auto px-3 py-2">
+            {navGroups.map((group) => (
+              <div key={group.label} className="mb-3 last:mb-0">
+                <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                  {group.label}
+                </p>
+                <div className="flex flex-col gap-0.5">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.href);
+                    return (
+                      <Tooltip key={item.href}>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => handleNavigate(item.href)}
+                            className={cn(
+                              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                              active
+                                ? 'bg-primary/10 text-primary'
+                                : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+                            )}
+                          >
+                            <IconBadge
+                              icon={Icon}
+                              variant={active ? 'primary' : getBrandNavIconVariant(item.href)}
+                              size="sm"
+                              active={active}
+                              rounded="lg"
+                            />
+                            <span>{item.label}</span>
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="lg:hidden">
+                          {item.label}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
 
           {/* Sidebar bottom: user + logout */}
@@ -403,34 +446,41 @@ export function BrandLayout({ children }: BrandLayoutProps) {
                   New Campaign
                 </Button>
               </div>
-              <nav className="px-3 py-1">
-                <div className="flex flex-col gap-0.5">
-                  {navItems.map((item) => {
-                    const Icon = item.icon;
-                    const active = isActive(item.href);
-                    return (
-                      <button
-                        key={item.href}
-                        onClick={() => handleNavigate(item.href)}
-                        className={cn(
-                          'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                          active
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                        )}
-                      >
-                        <IconBadge
-                          icon={Icon}
-                          variant={active ? 'primary' : getBrandNavIconVariant(item.href)}
-                          size="sm"
-                          active={active}
-                          rounded="lg"
-                        />
-                        <span>{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+              <nav className="max-h-[calc(100vh-9rem)] overflow-y-auto px-3 py-1">
+                {navGroups.map((group) => (
+                  <div key={group.label} className="mb-3 last:mb-0">
+                    <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                      {group.label}
+                    </p>
+                    <div className="flex flex-col gap-0.5">
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        const active = isActive(item.href);
+                        return (
+                          <button
+                            key={item.href}
+                            onClick={() => handleNavigate(item.href)}
+                            className={cn(
+                              'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                              active
+                                ? 'bg-primary/10 text-primary'
+                                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                            )}
+                          >
+                            <IconBadge
+                              icon={Icon}
+                              variant={active ? 'primary' : getBrandNavIconVariant(item.href)}
+                              size="sm"
+                              active={active}
+                              rounded="lg"
+                            />
+                            <span>{item.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </nav>
             </SheetContent>
           </Sheet>

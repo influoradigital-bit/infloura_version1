@@ -63,6 +63,7 @@ import CreatorPortfolioPublicPage from '@/pages/creator-portfolio-public';
 import CreatorAnalyticsPage from '@/pages/creator-analytics';
 import CreatorDashboardPage from '@/pages/creator-dashboard';
 import CreatorCampaignsPage from '@/pages/creator-campaigns';
+import CreatorCopilotPage from '@/pages/creator-copilot';
 import CreatorCampaignDetailPage from '@/pages/creator-campaign-detail';
 import CreatorDisputesPage from '@/pages/creator-disputes';
 import CreatorReviewsPage from '@/pages/creator-reviews';
@@ -394,6 +395,14 @@ export default function App() {
         {/* Legacy redirects — Inbox + Active now live inside /creator/deals */}
         <Route path="/creator/inbox" element={<Navigate to="/creator/deals?status=new" replace />} />
         <Route path="/creator/active" element={<Navigate to="/creator/deals?status=in_progress" replace />} />
+        <Route
+          path="/creator/copilot"
+          element={
+            <CreatorProtectedRoute>
+              <CreatorCopilotPage />
+            </CreatorProtectedRoute>
+          }
+        />
         <Route
           path="/creator/wallet"
           element={

@@ -26,7 +26,6 @@ import { mapDealToDealsPageRow } from '@/lib/creator-deal-mappers';
 import { getInitials } from '@/lib/helpers';
 import { type HypeInvite } from '@/lib/demo-data';
 import { HypeInboxCard } from '@/components/creator/hype-inbox-card';
-import { DailySuggestionSection } from '@/components/creator/copilot/DailySuggestionSection';
 import { useToast } from '@/hooks/use-toast';
 
 /**
@@ -421,8 +420,21 @@ export default function CreatorDealsPage() {
           </div>
         </div>
 
-        {/* Creator AI Co-pilot — daily suggestion, mounted above HypeInboxCard per spec §3.2 */}
-        <DailySuggestionSection className="mb-3" />
+        {/* Creator AI Co-pilot — the full daily-suggestion card now lives at its own
+            route (/creator/copilot, Ananya A2); this is just a slim entry point so
+            Deals doesn't carry a second full copy of it. */}
+        <Card
+          onClick={() => navigate('/creator/copilot')}
+          className="mb-3 cursor-pointer transition-all hover:shadow-sm"
+        >
+          <CardContent className="flex items-center justify-between gap-3 py-3">
+            <div className="flex items-center gap-2.5">
+              <Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
+              <p className="text-sm font-medium">Get today&rsquo;s content idea from Co-pilot</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </CardContent>
+        </Card>
 
         {/* Hype invites — one-tap accept, shown alongside new proposals */}
         {(activeFilter === 'all' || activeFilter === 'new') &&

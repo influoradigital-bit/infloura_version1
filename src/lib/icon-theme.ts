@@ -7,9 +7,15 @@ export const brandNavIconVariant: Record<string, IconBadgeVariant> = {
   '/brand/campaigns': 'outreach',
   '/brand/discover': 'contracted',
   '/brand/chat': 'negotiating',
+  '/brand/deals': 'negotiating',
+  '/brand/messages': 'outreach',
   '/brand/contracts': 'review',
   '/brand/wallet': 'approved',
   '/brand/settings': 'muted',
+  '/brand/pipeline': 'progress',
+  '/brand/analytics': 'info',
+  '/brand/reviews': 'approved',
+  '/brand/disputes': 'disputed',
 };
 
 /** Pastel icon badge variant per creator sidebar route */
