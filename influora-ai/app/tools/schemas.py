@@ -138,8 +138,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "from the conversation so the brand opens a complete draft, not an "
             "empty shell. campaign_type defaults to STANDARD when omitted -- only "
             "set it when the brand explicitly wants a HYPE/DIRECT/REVIEW-shaped "
-            "campaign. NEVER pass a budget or dates here -- those stay human-only "
-            "and are set later in the campaign form."
+            "campaign. For HYPE, you may also pass source_reel_url and "
+            "format_lanes (content you composed with the brand) -- never "
+            "per_reel_rate or slot_cap, those are human-only. NEVER pass a "
+            "budget or dates here -- those stay human-only and are set later in "
+            "the campaign form."
         ),
         "input_schema": {
             "type": "object",
@@ -261,6 +264,24 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "target_audience in favor of the template's own content, "
                         "so do not also guess those fields yourself when a "
                         "template_id is set. Omit for a from-scratch campaign."
+                    ),
+                },
+                "source_reel_url": {
+                    "type": "string",
+                    "description": (
+                        "HYPE campaigns only. The brand's existing reel URL that "
+                        "creators will remix -- only the brand knows this, so ask "
+                        "for it explicitly rather than guessing. Content only; "
+                        "never a money or date field."
+                    ),
+                },
+                "format_lanes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "HYPE campaigns only. The remix format lanes you composed "
+                        "with the brand (e.g. 'Remix the hook', 'Duet reaction'). "
+                        "Content only; never a money or date field."
                     ),
                 },
             },

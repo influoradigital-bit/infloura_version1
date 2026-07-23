@@ -161,6 +161,21 @@ export function CreateCampaignResult({ data, className }: CreateCampaignResultPr
           Draft
         </span>
       </div>
+      {/*
+        Deep-link routing by type (Meera completion-flow build, 2026-07-23):
+        `/brand/campaigns/:id/edit` (BrandEditCampaignPage) fetches the
+        campaign and branches on campaignType itself — STANDARD/OPEN/DIRECT
+        get the step wizard, HYPE gets the dedicated Hype resume form. So this
+        one link is already correct for both draft types; no per-type
+        branching needed here.
+
+        `CreateCampaignPayload` (src/lib/meera-api.ts) is only
+        { campaignId, status, serverBudget } — it carries no proposed
+        budget/date values from Meera, so there is nothing to append as
+        `?budgetHint=&start=&end=` without fabricating numbers she never
+        sent. If/when the backend DTO grows those fields, append them here
+        the same way the STANDARD wizard consumes them (campaign-form.tsx).
+      */}
       <Link
         to={`/brand/campaigns/${campaignId}/edit`}
         className="mt-2 inline-block text-[10px] font-medium text-meera-accent underline underline-offset-2"

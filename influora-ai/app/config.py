@@ -66,8 +66,24 @@ def _get_optional_float(name: str) -> float | None:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.07.23.10"
-# ^ bumped for the create_campaign draft-completeness fix (Tier 0 #2 + Tier 1,
+PROMPT_VERSION = "meera-2026.07.24.11"
+# ^ bumped for the Meera campaign-completion flow build (Vikram, 2026-07-24,
+# wiki/build/meera-completion-flow-2026-07-23.md): persona.py gained a
+# "Completing a campaign after create_campaign" section (STANDARD Option B --
+# derive the next field to ask from the DRAFT STATE the tool returned, one
+# field per turn, budget-then-dates, honest "drafted, not live" completion
+# CTA; full conversational HYPE -- explicit-signal-only, compose hashtag +
+# format lanes, then sourceReelUrl -> perReelRate -> slotCap -> confirm 72h
+# window one field per turn, say the rate x slots math out loud once as
+# advisory copy, "open it to launch the blitz" CTA, never "it's live"). The
+# create_campaign tool schema gained two FLAT optional content fields,
+# source_reel_url and format_lanes (no combinators, no money/date fields --
+# per_reel_rate/slot_cap stay human-only, enforced in
+# CreateCampaignExecutor.java not JSON Schema). Both persona and schema are
+# part of Block A's cached prefix, so this bump is required per this file's
+# own rule above.
+#
+# Prior bump: the create_campaign draft-completeness fix (Tier 0 #2 + Tier 1,
 # Ash-approved plan 2026-07-23): campaign_type is now OPTIONAL on the
 # create_campaign tool schema (added STANDARD, dropped it from `required` —
 # this is the root-cause fix for the HYPE-default invisible-draft bug) and 7

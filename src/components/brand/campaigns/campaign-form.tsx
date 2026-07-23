@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
@@ -139,13 +139,46 @@ const steps: { id: Step; label: string; description: string }[] = [
   { id: 'review', label: 'Review', description: 'Final review' },
 ];
 
+// Slider covers [1000, 500000] in steps of 1000 (see the budget Slider below) —
+// clamp + round any hint-derived value into that same grid so it never lands
+// off the track.
+function clampToBudgetStep(n: number): number {
+  const stepped = Math.round(n / 1000) * 1000;
+  return Math.min(500000, Math.max(1000, stepped));
+}
+
 export function CampaignForm({ campaignId }: { campaignId?: string }) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { addCampaign } = useCampaignStore();
+  const [searchParams] = useSearchParams();
   const [currentStep, setCurrentStep] = React.useState<Step>('basics');
   const [formData, setFormData] = React.useState<CampaignFormData>(initialFormData);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+
+  // Meera completion-flow hints (Ash §7.2): a create_campaign draft can deep-link
+  // here with `budgetHint`/`start`/`end`. Dates are safe to auto-fill — the human
+  // still walks through Continue/Publish. Budget is NOT: a hint must never
+  // masquerade as a human-confirmed number, so we seed the slider with it but
+  // gate the budget step on an explicit touch/confirm (see budgetConfirmed below).
+  const budgetHint = React.useMemo(() => {
+    const raw = searchParams.get('budgetHint');
+    const n = raw ? Number(raw) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const dateHints = React.useMemo(() => {
+    const parse = (key: string) => {
+      const raw = searchParams.get(key);
+      if (!raw) return undefined;
+      const d = new Date(raw);
+      return Number.isNaN(d.getTime()) ? undefined : d;
+    };
+    return { start: parse('start'), end: parse('end') };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [budgetConfirmed, setBudgetConfirmed] = React.useState(!budgetHint);
+  const confirmBudgetTouch = () => setBudgetConfirmed(true);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [newRequirement, setNewRequirement] = React.useState('');
   const [newHashtag, setNewHashtag] = React.useState('');
@@ -209,6 +242,30 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
     };
   }, [campaignId]);
 
+  // Seed the budget/date hints once the (possible) campaign fetch above has
+  // settled, so we never clobber a real loaded value with the query-param hint.
+  // Dates fill in directly (advisory, safe per Ash §7.2). Budget is seeded onto
+  // the slider so the human sees it, but `budgetConfirmed` stays false until
+  // they actively touch it — see validateStep('budget') below.
+  const hintsAppliedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (isLoading) return;
+    if (hintsAppliedRef.current) return;
+    hintsAppliedRef.current = true;
+    if (!budgetHint && !dateHints.start && !dateHints.end) return;
+    setFormData((prev) => ({
+      ...prev,
+      ...(budgetHint
+        ? {
+            budgetMin: clampToBudgetStep(budgetHint * 0.85),
+            budgetMax: clampToBudgetStep(budgetHint * 1.15),
+          }
+        : {}),
+      ...(dateHints.start && !prev.startDate ? { startDate: dateHints.start } : {}),
+      ...(dateHints.end && !prev.endDate ? { endDate: dateHints.end } : {}),
+    }));
+  }, [isLoading, budgetHint, dateHints]);
+
   const updateFormData = (updates: Partial<CampaignFormData>) => {
     setFormData((prev) => ({ ...prev, ...updates }));
     // Clear related errors
@@ -266,6 +323,13 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
         }
         if (formData.budgetMin > formData.budgetMax) {
           newErrors.budget = 'Minimum budget cannot exceed maximum';
+        }
+        // Masquerade guard (Ash §7.2): a Meera budgetHint pre-loads the slider so
+        // the human sees a starting point, but it must never silently pass as a
+        // confirmed number. Block Continue/Publish until they've actively touched
+        // the slider (or hit "Use this") — see confirmBudgetTouch.
+        if (budgetHint && !budgetConfirmed) {
+          newErrors.budget = "Confirm your budget before continuing — Meera's number is just a starting point.";
         }
         break;
     }
@@ -694,6 +758,11 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                   </div>
 
                   <div className="space-y-6">
+                    {(dateHints.start || dateHints.end) && (
+                      <p className="text-xs text-muted-foreground">
+                        Dates below are pre-filled from your Meera conversation — adjust if needed.
+                      </p>
+                    )}
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
                         <Label>Start Date</Label>
@@ -805,6 +874,39 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                         </div>
                       </div>
 
+                      {budgetHint && (
+                        <div
+                          className={cn(
+                            'flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-xs',
+                            budgetConfirmed
+                              ? 'border-border bg-muted/40 text-muted-foreground'
+                              : 'border-primary/40 bg-primary/5 text-foreground'
+                          )}
+                        >
+                          <span>
+                            Meera suggested a pool of{' '}
+                            <span className="font-semibold">₹{budgetHint.toLocaleString('en-IN')}</span> —
+                            not confirmed yet. Drag the slider or use her number below.
+                          </span>
+                          {!budgetConfirmed && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                updateFormData({
+                                  budgetMin: clampToBudgetStep(budgetHint * 0.85),
+                                  budgetMax: clampToBudgetStep(budgetHint * 1.15),
+                                });
+                                confirmBudgetTouch();
+                              }}
+                            >
+                              Use Meera&apos;s suggestion
+                            </Button>
+                          )}
+                        </div>
+                      )}
+
                       <div className="rounded-lg border border-border p-4">
                         <div className="flex items-center justify-between mb-4">
                           <span className="text-2xl font-bold">
@@ -813,15 +915,21 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                             {formData.currency === 'INR' ? '₹' : formData.currency === 'USD' ? '$' : formData.currency === 'EUR' ? '€' : '£'}
                             {formData.budgetMax.toLocaleString('en-IN')}
                           </span>
+                          {budgetHint && !budgetConfirmed && (
+                            <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                              Suggested — unconfirmed
+                            </Badge>
+                          )}
                         </div>
                         <Slider
                           min={1000}
                           max={500000}
                           step={1000}
                           value={[formData.budgetMin, formData.budgetMax]}
-                          onValueChange={([min, max]) =>
-                            updateFormData({ budgetMin: min, budgetMax: max })
-                          }
+                          onValueChange={([min, max]) => {
+                            updateFormData({ budgetMin: min, budgetMax: max });
+                            confirmBudgetTouch();
+                          }}
                           className="mb-2"
                         />
                         <div className="flex justify-between text-xs text-muted-foreground">

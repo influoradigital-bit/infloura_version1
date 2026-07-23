@@ -191,6 +191,13 @@ public class CreateCampaignExecutor {
         // TargetAudienceDto.interests, never treated as verified demographics.
         List<String> aiTargetAudience = stringListArg(input, "target_audience");
 
+        // HYPE content fields (Ash's HYPE completion spec §3, Vikram build 2026-07-23) -- FLAT,
+        // content-only schema additions (schemas.py PART C: no combinators, no money). Meera is
+        // allowed to author the source reel + remix format lanes; perReelRate/slotCap/liveUntil
+        // stay human-only and are NEVER touched here (guardrail: no AI money/date write).
+        String aiSourceReelUrl = stringArg(input, "source_reel_url");
+        List<String> aiFormatLanes = stringListArg(input, "format_lanes");
+
         // Wave 1b (Priya A3 + Ash's STANDARD-enum ruling): template_id present -> the template
         // row is the authority for campaign_type (may be STANDARD); any AI-supplied campaign_type
         // is ignored. template_id absent -> unchanged, AI-supplied value (or STANDARD fallback).
@@ -276,6 +283,33 @@ public class CreateCampaignExecutor {
                 campaignBuilder.targetAudienceJson(
                         JsonLists.toJsonObject(
                                 new CampaignDtos.TargetAudienceDto(null, null, null, aiTargetAudience, null)));
+            }
+
+            // HYPE completion (Ash §3 / build plan PART D): when the draft resolves to HYPE and
+            // there's no template, persist a PARTIAL HypeConfig with only the content Meera is
+            // allowed to author -- sourceReelUrl, formatLanes, and the hashtag she composed (first
+            // of aiHashtags, if any). perReelRate/slotCap/slotsFilled/liveUntil are left UNSET
+            // (null) here on purpose: the human sets rate + slots and launches from the hype edit
+            // form (Ananya, src/pages/brand-new-hype-campaign.tsx), which PATCH-merges over this
+            // partial via CampaignService#mergeHype. Field names match CampaignDtos.HypeConfigDto
+            // byte-for-byte, which itself matches src/lib/types.ts:216-226's HypeConfig interface,
+            // so the FE hype edit form reads this straight off the draft. NEVER set
+            // perReelRate/slotCap/budgetMin/budgetMax from AI input anywhere in this class.
+            if (campaignType == CampaignIntentType.HYPE
+                    && (aiSourceReelUrl != null || !aiFormatLanes.isEmpty() || !aiHashtags.isEmpty())) {
+                String composedHashtag = aiHashtags.isEmpty() ? null : aiHashtags.get(0);
+                CampaignDtos.HypeConfigDto partialHype =
+                        new CampaignDtos.HypeConfigDto(
+                                aiSourceReelUrl,
+                                null, // audioTrack -- not authored by Meera
+                                composedHashtag,
+                                aiFormatLanes.isEmpty() ? null : aiFormatLanes,
+                                null, // perReelRate -- HUMAN ONLY, never AI-set
+                                "INR",
+                                null, // slotCap -- HUMAN ONLY, never AI-set
+                                null, // slotsFilled -- unset until launch
+                                null); // liveUntil -- HUMAN ONLY, set on launch
+                campaignBuilder.hypeConfigJson(JsonLists.toJsonObject(partialHype));
             }
         }
 

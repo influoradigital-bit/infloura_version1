@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Hash, IndianRupee, Link2, Loader2, Music2, Plus, Users, X, Zap } from 'lucide-react';
 
 import { api, ApiError } from '@/lib/api';
+import type { Campaign } from '@/lib/types';
 import { cn, formatINR } from '@/lib/utils';
 import { validateCampaignTitle } from '@/lib/campaign-validation';
 import { useToast } from '@/hooks/use-toast';
@@ -21,6 +22,14 @@ import { SlotProgressBar } from '@/components/ui/slot-progress-bar';
  *
  * Distinct from the standard wizard: a single focused form because Hype has
  * no negotiation, no per-creator terms — just rate × slots.
+ *
+ * Edit/resume mode (Meera completion-flow build, 2026-07-23): when a
+ * `campaignId` prop is passed (by `BrandEditCampaignPage` branching on
+ * campaignType === 'HYPE'), this loads the existing draft — Meera's
+ * create_campaign tool may have already filled sourceReelUrl/hashtag/
+ * formatLanes — and lets the human fill the still-empty money fields
+ * (perReelRate, slotCap) before an explicit Launch. Submitting in this mode
+ * UPDATEs the draft instead of creating a new campaign.
  */
 
 const SUGGESTED_LANES = ['Remix the hook', 'Duet reaction', 'Original spin', 'Voiceover take', 'Tutorial angle'];
@@ -48,13 +57,59 @@ const initialForm: HypeFormState = {
   slotCap: '100',
 };
 
-export default function BrandNewHypeCampaignPage() {
+export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: string } = {}) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [form, setForm] = React.useState<HypeFormState>(initialForm);
   const [errors, setErrors] = React.useState<Partial<Record<keyof HypeFormState, string>>>({});
   const [submitting, setSubmitting] = React.useState(false);
   const [customLane, setCustomLane] = React.useState('');
+
+  const isEditing = !!campaignId;
+
+  // Same load-gate pattern as CampaignForm (campaign-form.tsx): never render a
+  // submittable form until the draft has loaded, so a save can't overwrite it
+  // with blank defaults.
+  const [isLoading, setIsLoading] = React.useState<boolean>(!!campaignId);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!campaignId) return;
+    let cancelled = false;
+    setIsLoading(true);
+    setLoadError(null);
+    (async () => {
+      try {
+        const c = await api.campaigns.get(campaignId);
+        if (cancelled) return;
+        if (c) {
+          setForm({
+            title: c.title ?? '',
+            description: c.description ?? '',
+            sourceReelUrl: c.hype?.sourceReelUrl ?? '',
+            audioTrack: c.hype?.audioTrack ?? '',
+            // Stored with a leading '#' (see handleSubmit below); strip it back
+            // out so it matches what the bare-text input displays.
+            hashtag: (c.hype?.hashtag ?? '').replace(/^#/, ''),
+            formatLanes: c.hype?.formatLanes?.length ? c.hype.formatLanes : initialForm.formatLanes,
+            // perReelRate/slotCap are the human-only fields Meera never sets —
+            // leave blank (not 0) so the placeholder shows and validation
+            // still requires a real, actively-typed value.
+            perReelRate: c.hype?.perReelRate ? String(c.hype.perReelRate) : '',
+            slotCap: c.hype?.slotCap ? String(c.hype.slotCap) : initialForm.slotCap,
+          });
+        }
+        setIsLoading(false);
+      } catch (e) {
+        if (cancelled) return;
+        setLoadError(e instanceof ApiError ? e.message : 'Could not load this draft.');
+        setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId]);
 
   const update = (patch: Partial<HypeFormState>) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -111,7 +166,12 @@ export default function BrandNewHypeCampaignPage() {
     setSubmitting(true);
     try {
       const hashtag = form.hashtag.startsWith('#') ? form.hashtag : `#${form.hashtag}`;
-      await api.campaigns.create({
+      // Same shape whether this is a fresh launch or resuming a Meera draft —
+      // liveUntil/slotsFilled are always computed fresh from "now" because the
+      // 72h window starts at the human's explicit Launch action, not at draft
+      // creation. Typed as Partial<Campaign> so it stays assignable to both
+      // create() and update() without TS widening the literal fields below.
+      const payload: Partial<Campaign> = {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
         campaignType: 'HYPE',
@@ -137,7 +197,13 @@ export default function BrandNewHypeCampaignPage() {
           startDate: new Date(),
           endDate: new Date(Date.now() + WINDOW_HOURS * 60 * 60 * 1000),
         },
-      });
+      };
+
+      if (isEditing && campaignId) {
+        await api.campaigns.update(campaignId, payload);
+      } else {
+        await api.campaigns.create(payload);
+      }
       navigate('/brand/campaigns');
     } catch (err) {
       // Previously the failure was swallowed — the button just re-enabled with no
@@ -156,11 +222,38 @@ export default function BrandNewHypeCampaignPage() {
     }
   };
 
+  // While an edit fetch is in flight (or failed), never show a submittable
+  // form — mirrors CampaignForm's guard (campaign-form.tsx) against a save
+  // overwriting the draft with blank defaults.
+  if (isEditing && (isLoading || loadError)) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 p-6 text-center">
+        {loadError ? (
+          <>
+            <p className="text-sm font-medium text-destructive-foreground">Could not load this draft</p>
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+            <Button variant="outline" asChild>
+              <Link to="/brand/campaigns">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to campaigns
+              </Link>
+            </Button>
+          </>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading draft…
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl p-6">
       <Button variant="ghost" size="sm" asChild className="mb-4 -ml-2 gap-1">
-        <Link to="/brand/campaigns/new">
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Campaign types
+        <Link to={isEditing ? '/brand/campaigns' : '/brand/campaigns/new'}>
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> {isEditing ? 'Campaigns' : 'Campaign types'}
         </Link>
       </Button>
 
@@ -170,12 +263,20 @@ export default function BrandNewHypeCampaignPage() {
             <Badge className="gap-1 border-hype-border bg-hype text-hype-foreground hover:bg-hype">
               <Zap className="h-3 w-3" aria-hidden="true" /> Hype Campaign
             </Badge>
+            {isEditing && (
+              <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                Meera draft
+              </Badge>
+            )}
             <HypeLiveIndicator hoursLeft={WINDOW_HOURS} />
           </div>
-          <h1 className="mt-2 text-2xl font-semibold">Launch a 72-hour blitz</h1>
+          <h1 className="mt-2 text-2xl font-semibold">
+            {isEditing ? 'Review your Hype draft' : 'Launch a 72-hour blitz'}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Creators remix your source reel at a flat rate until slots fill or the window closes.
-            First-come, one-tap accept — no negotiation.
+            {isEditing
+              ? "Meera drafted the content below. Set your per-reel rate and slot cap, then launch — nothing goes live until you do."
+              : 'Creators remix your source reel at a flat rate until slots fill or the window closes. First-come, one-tap accept — no negotiation.'}
           </p>
         </div>
       </div>
@@ -390,7 +491,7 @@ export default function BrandNewHypeCampaignPage() {
               ) : (
                 <Zap className="h-4 w-4" aria-hidden="true" />
               )}
-              Launch Hype Campaign
+              {isEditing ? 'Review → Launch' : 'Launch Hype Campaign'}
             </Button>
           </div>
         </div>
