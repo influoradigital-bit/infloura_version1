@@ -63,9 +63,14 @@ export default function BrandSettingsPage() {
         setSettings((prev) => ({
           ...prev,
           workspaceName: ws.name,
-          email: ws.email ?? prev.email,
-          phone: ws.phone ?? prev.phone,
-          website: ws.websiteUrl ?? prev.website,
+          // Live-mode hydration: a null field means the workspace genuinely has no
+          // value on file — fall back to '' (honest empty), NOT prev.* which is the
+          // mock seed (admin@techbrands.in / +91 98765 43210 / www.techbrands.in).
+          // Keeping the seed leaked those placeholders into the live form and into the
+          // "You" member row (which renders `settings.email || 'No email on file'`).
+          email: ws.email ?? '',
+          phone: ws.phone ?? '',
+          website: ws.websiteUrl ?? '',
         }));
       })
       .catch((err) => {
@@ -98,9 +103,11 @@ export default function BrandSettingsPage() {
       setSettings((prev) => ({
         ...prev,
         workspaceName: updated.name,
-        email: updated.email ?? prev.email,
-        phone: updated.phone ?? prev.phone,
-        website: updated.websiteUrl ?? prev.website,
+        // Same honest-empty rule as the load path — a cleared field comes back null
+        // and must not fall back to the mock seed.
+        email: updated.email ?? '',
+        phone: updated.phone ?? '',
+        website: updated.websiteUrl ?? '',
       }));
       toast({ title: 'Workspace updated', description: 'Your workspace information has been saved.' });
     } catch (err) {
@@ -247,6 +254,7 @@ export default function BrandSettingsPage() {
                     value={settings.email}
                     onChange={(e) => setSettings({ ...settings, email: e.target.value })}
                     disabled={workspaceInfoLoading}
+                    placeholder="No email on file"
                     className="mt-2"
                   />
                   <p className="text-xs text-muted-foreground mt-1">Used for billing & workspace contact</p>
