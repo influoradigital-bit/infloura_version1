@@ -8,6 +8,15 @@ on:
   push:
     branches:
       - main
+      # Same branch publish-images.yml builds+deploys from — so the tool-schema
+      # validity guard (no anyOf/oneOf → Anthropic 400) and the blank-turn
+      # truncation guard run BEFORE an image can ship from this branch, not only
+      # on PRs. A bad schema pushed straight to the deploy branch must fail here
+      # first.
+      - feat/creator-taxonomy-keyword-patch
+    paths:
+      - 'influora-ai/**'
+      - '.github/workflows/ai-tests.yml'
 
 jobs:
   test:

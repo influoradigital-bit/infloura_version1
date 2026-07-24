@@ -1,0 +1,41 @@
+name: Meera Live Smoke (post-deploy)
+
+# A one-turn LIVE health check for the Meera reasoning path — run AFTER a deploy.
+# It drives a real HYPE create_campaign turn end-to-end against a running
+# environment and FAILS if the turn comes back a silent blank / error (the
+# ~28% blank-turn defect, an anyOf-400 that takes Meera fully down, an
+# unreachable/misconfigured Anthropic key, or an on-behalf-scope regression).
+#
+# Deliberately NOT on push/PR: it needs a LIVE deployed target + a working
+# Anthropic key + demo credentials, and it spends a Meera credit per run. The
+# deterministic pre-deploy guards live in ai-tests.yml
+# (tests/tools/test_tool_schema_anthropic_valid.py + tests/providers/
+# test_stream_truncation_guard.py). This is the integration backstop those
+# can't be: run it by hand from the Actions tab after each Hostinger deploy.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'API base URL (…/api/v1) of the deployed environment to smoke'
+        type: string
+        required: true
+        default: 'http://200.141.1.6/api/v1'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    name: One live Meera turn
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Drive one live Meera turn
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          # Demo creds are the smoke default; override via repo secrets if the
+          # target environment uses different smoke credentials.
+          MEERA_SMOKE_EMAIL: ${{ secrets.MEERA_SMOKE_EMAIL || 'demo.brand@influora.com' }}
+          MEERA_SMOKE_PASSWORD: ${{ secrets.MEERA_SMOKE_PASSWORD || 'Demo@Brand123' }}
+        run: node scripts/meera-turn-smoke.mjs
