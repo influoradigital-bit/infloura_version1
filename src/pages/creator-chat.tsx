@@ -37,12 +37,15 @@ import { cn, formatINR } from '@/lib/utils';
 import {
   api,
   isApiLive,
+  ApiError,
   type Deal,
   type DealMessage,
   type MessageKind,
   type ContractApiRecord,
   type ContractStatus,
+  type CreatorDeliverableListItem,
 } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -546,6 +549,7 @@ const calculateEarnings = (grossAmount: number) => {
 
 export default function CreatorChatPage() {
   const liveApi = isApiLive();
+  const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const dealId = searchParams.get('deal');
   const tabFromUrl = searchParams.get('tab');
@@ -680,6 +684,26 @@ export default function CreatorChatPage() {
     void fetchLiveContract();
   }, [fetchLiveContract]);
 
+  // C19: real deliverable rows feed the submission dialog (was a hardcoded fake array).
+  // The chat page can only LIST them — rows are created server-side when the contract is
+  // generated, so an empty list here means "no contract yet, nothing to submit".
+  const loadDeliverables = React.useCallback(async () => {
+    if (!liveApi || !selectedDeal) {
+      setLiveDeliverables([]);
+      return;
+    }
+    try {
+      setLiveDeliverables(await api.creatorDeliverables.listForDeal(selectedDeal.id));
+    } catch (err) {
+      console.error('Failed to load deliverables', err);
+      setLiveDeliverables([]);
+    }
+  }, [liveApi, selectedDeal?.id]);
+
+  React.useEffect(() => {
+    void loadDeliverables();
+  }, [loadDeliverables]);
+
   React.useEffect(() => {
     if (dealId) {
       setSelectedDealId(dealId);
@@ -696,6 +720,9 @@ export default function CreatorChatPage() {
   const [showCounterForm, setShowCounterForm] = React.useState(false);
   const [isSubmittingCounter, setIsSubmittingCounter] = React.useState(false);
   const [showDeliverableDialog, setShowDeliverableDialog] = React.useState(false);
+  // Real deliverable rows for the selected collaboration — GET /creator/deliverables?collaboration_id=.
+  // Empty until a contract materializes the rows (ContractService.materializeDeliverables).
+  const [liveDeliverables, setLiveDeliverables] = React.useState<CreatorDeliverableListItem[]>([]);
   const [counterAmount, setCounterAmount] = React.useState('');
   const [counterMessage, setCounterMessage] = React.useState('');
   const [showRevisionHandler, setShowRevisionHandler] = React.useState(false);
@@ -765,12 +792,41 @@ export default function CreatorChatPage() {
   };
 
   const handleSubmitCounterForm = async (data: CounterProposalFormData) => {
+    if (!selectedDeal) return;
     setIsSubmittingCounter(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setShowCounterForm(false);
-    setIsSubmittingCounter(false);
-    // In production: add counter proposal to timeline, update deal status
+    try {
+      if (liveApi) {
+        // The counter DTO carries only amount + message + structured deliverables — no
+        // dedicated deadline/terms fields — so fold those into the message (nothing dropped).
+        const message = [
+          data.message,
+          data.terms && `Terms: ${data.terms}`,
+          data.deadline && `Requested deadline: ${data.deadline}`,
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+        await api.deals.counter(
+          selectedDeal.id,
+          { amount: data.proposedAmount, message: message || undefined },
+          'creator',
+          // Fresh key per submit so a same-amount re-counter is a real event, not a no-op (Kabir).
+          `${selectedDeal.id}-counter-${Date.now()}`,
+        );
+        await loadDeals();
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      setShowCounterForm(false);
+    } catch (err) {
+      console.error('Failed to submit counter offer', err);
+      toast({
+        title: 'Could not send counter offer',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmittingCounter(false);
+    }
   };
 
   const handleSubmitDeliverable = () => {
@@ -779,11 +835,21 @@ export default function CreatorChatPage() {
 
   const handleSubmitDeliverableForm = async (data: DeliverableSubmissionData) => {
     setIsSubmittingDeliverable(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setShowDeliverableDialog(false);
-    setIsSubmittingDeliverable(false);
-    // In production: add deliverable to timeline, update deal status
+    try {
+      if (liveApi) {
+        // Two steps: upload the file to the deliverable-specific multipart route (part name
+        // `files`), THEN submit. Submitting with no uploaded version returns 400 NO_CONTENT.
+        await api.creatorDeliverables.upload(data.deliverableId, [data.file], { caption: data.caption });
+        await api.deliverables.submit(data.deliverableId, { finalCaption: data.caption });
+        await loadDeliverables();
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      // Note: do NOT close the dialog or catch here — DeliverableSubmission awaits this
+      // handler, closes itself on success, and shows its own destructive toast on failure.
+    } finally {
+      setIsSubmittingDeliverable(false);
+    }
   };
 
   const handleStartRevision = async (revisionNotes: string) => {
@@ -1749,10 +1815,21 @@ export default function CreatorChatPage() {
       <DeliverableSubmission
         open={showDeliverableDialog}
         onOpenChange={setShowDeliverableDialog}
-        deliverables={[
-          { id: 'reel-1', title: 'Instagram Reel #1', description: 'High-quality reel with trending audio', completed: true },
-          { id: 'reel-2', title: 'Instagram Reel #2', description: 'Follow-up reel with product showcase', completed: false },
-        ]}
+        deliverables={
+          liveApi
+            ? liveDeliverables.map((d) => ({
+                id: d.id,
+                title: d.title,
+                description: d.description,
+                completed: d.completed,
+                currentRevision: d.currentRevision ?? undefined,
+                maxRevisions: d.maxRevisions ?? undefined,
+              }))
+            : [
+                { id: 'reel-1', title: 'Instagram Reel #1', description: 'High-quality reel with trending audio', completed: true },
+                { id: 'reel-2', title: 'Instagram Reel #2', description: 'Follow-up reel with product showcase', completed: false },
+              ]
+        }
         onSubmit={handleSubmitDeliverableForm}
         isSubmitting={isSubmittingDeliverable}
       />
