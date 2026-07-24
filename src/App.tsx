@@ -63,6 +63,7 @@ import CreatorPortfolioPublicPage from '@/pages/creator-portfolio-public';
 import CreatorAnalyticsPage from '@/pages/creator-analytics';
 import CreatorDashboardPage from '@/pages/creator-dashboard';
 import CreatorCampaignsPage from '@/pages/creator-campaigns';
+import CreatorApplicationsPage from '@/pages/creator-applications';
 import CreatorCopilotPage from '@/pages/creator-copilot';
 import CreatorCampaignDetailPage from '@/pages/creator-campaign-detail';
 import CreatorDisputesPage from '@/pages/creator-disputes';
@@ -465,6 +466,14 @@ export default function App() {
           element={
             <CreatorProtectedRoute>
               <CreatorCampaignDetailPage />
+            </CreatorProtectedRoute>
+          }
+        />
+        <Route
+          path="/creator/applications"
+          element={
+            <CreatorProtectedRoute>
+              <CreatorApplicationsPage />
             </CreatorProtectedRoute>
           }
         />

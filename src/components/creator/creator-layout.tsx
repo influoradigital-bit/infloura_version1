@@ -58,6 +58,7 @@ import {
   AlertTriangle,
   Ticket,
   TrendingUp,
+  ClipboardList,
 } from 'lucide-react';
 import { InfluoraLogo } from '@/components/shared/influora-logo';
 
@@ -91,6 +92,7 @@ const navGroups: CreatorNavGroup[] = [
       { label: 'Home', href: '/creator/dashboard', icon: Home },
       { label: 'Deals', href: '/creator/deals', icon: Briefcase },
       { label: 'Campaigns', href: '/creator/campaigns', icon: Megaphone },
+      { label: 'Applications', href: '/creator/applications', icon: ClipboardList },
       { label: 'Co-pilot', href: '/creator/copilot', icon: Sparkles },
       { label: 'Analytics', href: '/creator/analytics', icon: BarChart3 },
       { label: 'Wallet', href: '/creator/wallet', icon: Wallet },
