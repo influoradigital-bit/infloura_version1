@@ -32,8 +32,10 @@ class TestTruncateForTts:
         assert len(result) <= TTS_MAX_CHARS + 3
 
     def test_truncation_adds_ellipsis(self):
-        """When truncating mid-word, should add ellipsis."""
-        long_text = "x" * 300
+        """When truncating mid-word, should add ellipsis. Uses a string LONGER
+        than TTS_MAX_CHARS so it actually truncates (was hardcoded 300, stale
+        since TTS_MAX_CHARS was raised 200 -> 500 in 7cb3737 'speak full replies')."""
+        long_text = "x" * (TTS_MAX_CHARS + 100)
         result = _truncate_for_tts(long_text)
         assert result.endswith("...")
 
@@ -45,6 +47,9 @@ class TestTruncateForTts:
         """Whitespace-only should be handled gracefully."""
         assert _truncate_for_tts("   ").strip() == ""
 
-    def test_max_chars_constant_is_200(self):
-        """Verify the constant is set to ~200 as per spec."""
-        assert TTS_MAX_CHARS == 200
+    def test_max_chars_constant_matches_code(self):
+        """TTS_MAX_CHARS was deliberately raised 200 -> 500 in 7cb3737 ('speak
+        full replies', voice.py:31-34 comment); this test was never updated and
+        asserted the stale 200. Pin it to the intended 500 — a change here should
+        be a conscious spec decision, not a silent drift."""
+        assert TTS_MAX_CHARS == 500
