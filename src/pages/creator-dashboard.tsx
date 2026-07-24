@@ -39,7 +39,7 @@ import {
 } from '@/lib/creator-deal-mappers';
 import { mockDeals } from '@/pages/creator-deals';
 import { useAuthStore } from '@/lib/store';
-import { cn, formatINR } from '@/lib/utils';
+import { cn, formatINR, publicProfileUrl, publicProfileLabel } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
 // Rollup helpers — all numbers derive from existing clients (no new backend).
@@ -183,7 +183,7 @@ const quickLinks = [
   },
   {
     label: 'Your public page',
-    description: 'Edit and share your influora.com profile',
+    description: 'Edit and share your public profile',
     href: '/creator/portfolio',
     icon: Globe,
   },
@@ -192,7 +192,7 @@ const quickLinks = [
 /**
  * "Your public page" — the growth nudge. Answers "who's looking at me" using
  * the live /me/portfolio/analytics reach numbers, and makes sharing the
- * influora.com/@handle link one tap (native share sheet on mobile, clipboard
+ * public profile link one tap (native share sheet on mobile, clipboard
  * copy elsewhere). Reach stats render only when analytics loaded; the share
  * action always works from the handle alone.
  */
@@ -204,7 +204,7 @@ function PublicPageCard({
   analytics: PortfolioAnalytics | null;
 }) {
   const [copied, setCopied] = React.useState(false);
-  const publicUrl = `${window.location.origin}/@${username}`;
+  const publicUrl = publicProfileUrl(username);
 
   const share = React.useCallback(async () => {
     if (navigator.share) {
@@ -245,7 +245,7 @@ function PublicPageCard({
             className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
           >
             <Globe className="h-4 w-4" aria-hidden />
-            influora.com/@{username}
+            {publicProfileLabel(username)}
           </a>
           <div className="flex gap-2">
             <Button size="sm" onClick={share} className="gap-1.5">

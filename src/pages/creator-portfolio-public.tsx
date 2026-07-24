@@ -47,7 +47,7 @@ import {
 } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 
-import { cn, formatINR } from '@/lib/utils';
+import { cn, formatINR, publicProfileLabel } from '@/lib/utils';
 import {
   api,
   ApiError,
@@ -59,7 +59,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 
 /**
- * Public Creator Portfolio Page  —  influora.com/@:username
+ * Public Creator Portfolio Page  —  <origin>/@:username (influora.in in prod)
  * Spec: docs/CREATOR-PORTFOLIO-PAGE.md
  *
  * No auth required. Indexable. Mobile-first.
@@ -496,7 +496,7 @@ export default function CreatorPortfolioPublicPage() {
             — verified creator profiles for brands.
           </p>
           <p className="mt-1 text-[10px] text-muted-foreground">
-            influora.com/@{page.username}
+            {publicProfileLabel(page.username)}
           </p>
         </footer>
       </main>
