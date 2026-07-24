@@ -74,36 +74,6 @@ def _skip_if_fixtures_pending(dataset: str) -> None:
         )
 
 
-# Per-CASE pending fixtures. Unlike PENDING_DATASETS (a whole feature awaiting
-# its FIRST fixtures), these are individual golden cases added to an
-# ALREADY-recorded dataset whose fixtures aren't captured yet. The cases stay in
-# the golden set (coverage intent preserved — here, the influencer-marketing and
-# b2b-saas niches, both squarely relevant to Influora), every OTHER case is still
-# scored and must pass, and the moment a fixture IS recorded
-# (`cd influora-ai && python -m pytest tests/evals -k <dataset> --live --record`,
-# see evals/README.md — needs a live Gemini key) the entry here becomes stale and
-# `test_no_stale_pending_cases` fails until it's removed. So a pending case can
-# never silently escape enforcement.
-PENDING_CASES: dict[str, set[str]] = {
-    "analyze_site_classify": {
-        "as-011-influencer-marketing-saas",
-        "as-012-b2b-saas-analytics",
-    },
-}
-
-
-def _case_id_of(missing_entry: str) -> str:
-    """`report.missing_fixtures` entries are '<case_id>: <hash>.json'."""
-    return missing_entry.split(":", 1)[0].strip()
-
-
-def _unexpected_missing(dataset: str, missing: list[str]) -> list[str]:
-    """Missing fixtures that are NOT an accepted per-case pending — these must
-    still fail loudly (a real deleted/changed fixture, not a known gap)."""
-    pending = PENDING_CASES.get(dataset, set())
-    return [m for m in missing if _case_id_of(m) not in pending]
-
-
 # ---------------------------------------------------------------------------
 # End-to-end: every dataset must run green offline out of the box.
 # ---------------------------------------------------------------------------
@@ -114,18 +84,12 @@ def test_offline_run_is_green(dataset: str):
     _skip_if_fixtures_pending(dataset)
     report = run_dataset(dataset, make_offline_caller(dataset))
     assert isinstance(report, EvalReport)
-    unexpected = _unexpected_missing(dataset, report.missing_fixtures)
-    assert not unexpected, (
-        f"{dataset}: missing fixtures {unexpected} — a golden case's input changed "
-        "without re-recording (--live --record), or a fixture was deleted. (Known "
-        f"per-case pending for this dataset: {sorted(PENDING_CASES.get(dataset, set()))})"
+    assert not report.missing_fixtures, (
+        f"{dataset}: missing fixtures {report.missing_fixtures} — a golden case's "
+        "input changed without re-recording (--live --record), or a fixture was deleted"
     )
     assert not report.errors, f"{dataset}: case errors {report.errors}"
-    # Assert the threshold signal directly rather than report.passed: `passed`
-    # also folds in missing_fixtures, which for this dataset are the accepted
-    # per-case pending ones (allowed above). failures==[] is the real quality
-    # gate over the cases that DID score.
-    assert not report.failures, f"{dataset}: thresholds failed: {report.failures}"
+    assert report.passed, f"{dataset}: thresholds failed: {report.failures}"
 
 
 @pytest.mark.parametrize("dataset", ALL_DATASETS)
@@ -141,35 +105,7 @@ def test_every_case_was_scored_not_silently_skipped():
         if dataset in PENDING_DATASETS and not _fixtures_present(dataset):
             continue
         report = run_dataset(dataset, make_offline_caller(dataset))
-        # Every NON-pending case must be scored; the per-case pending set is the
-        # only allowed shortfall, and it's kept honest by test_no_stale_pending_cases.
-        expected = len(load_dataset(dataset)) - len(PENDING_CASES.get(dataset, set()))
-        assert len(report.case_scores) == expected, (
-            f"{dataset}: scored {len(report.case_scores)}, expected {expected} "
-            f"(total {len(load_dataset(dataset))} minus {len(PENDING_CASES.get(dataset, set()))} pending)"
-        )
-
-
-def test_no_stale_pending_cases():
-    """Self-cleaning invariant: a case in PENDING_CASES must ACTUALLY be missing
-    its fixture. The moment someone records it (--live --record), it stops being
-    missing and this fails until it's removed from PENDING_CASES — so a pending
-    entry can never silently keep a real, recorded case out of enforcement, and
-    the pending list can't rot. Mirrors the harness's own 'no silent skip' rule."""
-    for dataset, pending in PENDING_CASES.items():
-        assert pending, f"{dataset}: empty PENDING_CASES entry — drop the key instead"
-        assert _dataset_present(dataset), f"{dataset}: PENDING_CASES names a missing dataset"
-        report = run_dataset(dataset, make_offline_caller(dataset))
-        actually_missing = {_case_id_of(m) for m in report.missing_fixtures}
-        recorded_but_pending = pending - actually_missing
-        assert not recorded_but_pending, (
-            f"{dataset}: these cases now HAVE fixtures — remove them from PENDING_CASES: "
-            f"{sorted(recorded_but_pending)}"
-        )
-        # And every pending id must be a real golden case (guards typos).
-        golden_ids = {c["id"] for c in load_dataset(dataset)}
-        unknown = pending - golden_ids
-        assert not unknown, f"{dataset}: PENDING_CASES names non-existent cases: {sorted(unknown)}"
+        assert len(report.case_scores) == len(load_dataset(dataset)), dataset
 
 
 # ---------------------------------------------------------------------------
