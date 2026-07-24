@@ -13,6 +13,7 @@ import com.influora.repository.CampaignRepository;
 import com.influora.repository.CampaignSpecs;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CampaignMapper.CampaignMetrics;
+import com.influora.web.dto.campaign.CampaignDtos.BudgetDto;
 import com.influora.web.dto.campaign.CampaignDtos.CampaignPatchRequest;
 import com.influora.web.dto.campaign.CampaignDtos.CampaignResponse;
 import com.influora.web.dto.campaign.CampaignDtos.CampaignWriteRequest;
@@ -20,6 +21,7 @@ import com.influora.web.dto.campaign.CampaignDtos.DeleteResponse;
 import com.influora.web.dto.campaign.CampaignDtos.DuplicateResponse;
 import com.influora.web.dto.campaign.CampaignDtos.HypeConfigDto;
 import com.influora.web.dto.campaign.CampaignDtos.TimelineDto;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -128,6 +130,13 @@ public class CampaignService {
                 campaignType == CampaignIntentType.HYPE
                         ? JsonLists.toJsonObject(normalizeHype(req.hype()))
                         : null;
+        // [SEC: Kabir follow-up] For HYPE the budget is DERIVED, never client-supplied — see
+        // hypeDerivedBudget. validateHypeConfig has already guaranteed perReelRate/slotCap are
+        // present and positive for a HYPE create, so this always resolves to rate x slots.
+        BudgetDto effectiveBudget =
+                campaignType == CampaignIntentType.HYPE
+                        ? hypeDerivedBudget(req.hype(), req.budget())
+                        : req.budget();
 
         Campaign campaign =
                 Campaign.builder()
@@ -138,9 +147,9 @@ public class CampaignService {
                         .status(status)
                         .campaignType(campaignType)
                         .hypeConfigJson(hypeConfigJson)
-                        .budgetMin(req.budget().min())
-                        .budgetMax(req.budget().max())
-                        .currency(req.budget().currency())
+                        .budgetMin(effectiveBudget.min())
+                        .budgetMax(effectiveBudget.max())
+                        .currency(effectiveBudget.currency())
                         .startDate(req.timeline().startDate())
                         .endDate(req.timeline().endDate())
                         .applicationDeadline(req.applicationDeadline())
@@ -223,21 +232,38 @@ public class CampaignService {
         // optional (audioTrack/currency/slotsFilled/liveUntil) — malformed input on those optional
         // fields no longer sails through silently either.
         String hypeConfigJson = null;
-        if (req.hype() != null && campaign.getCampaignType() == CampaignIntentType.HYPE) {
+        BudgetDto effectiveBudget = req.budget();
+        if (campaign.getCampaignType() == CampaignIntentType.HYPE) {
             HypeConfigDto existingHype =
                     JsonLists.objectFromJson(campaign.getHypeConfigJson(), HypeConfigDto.class);
-            HypeConfigDto mergedHype = mergeHype(existingHype, req.hype());
-            validator.validateHypeConfig(campaign.getCampaignType(), mergedHype);
-            hypeConfigJson = JsonLists.toJsonObject(normalizeHype(mergedHype));
+            HypeConfigDto mergedHype =
+                    req.hype() != null ? mergeHype(existingHype, req.hype()) : existingHype;
+
+            // [SEC: Kabir follow-up] Validate whenever the patch touches hype at all — AND
+            // unconditionally at the ->ACTIVE edge, even for a patch that sends no hype block.
+            // Publishing is the moment budgetMax becomes real money (brand publish fee base +
+            // EscrowService.deriveFundAmount), so a HYPE campaign must not go live on a partial
+            // Meera draft whose perReelRate/slotCap are still null and whose budget therefore
+            // could not be derived below.
+            if (req.hype() != null || transitioningToActive) {
+                validator.validateHypeConfig(campaign.getCampaignType(), mergedHype);
+            }
+            if (req.hype() != null) {
+                hypeConfigJson = JsonLists.toJsonObject(normalizeHype(mergedHype));
+            }
+
+            // Derived from the MERGED config regardless of whether this patch carried a hype
+            // block, so a budget-only PATCH cannot decouple budgetMax from rate x slots either.
+            effectiveBudget = hypeDerivedBudget(mergedHype, req.budget());
         }
 
         campaign.applyPatch(
                 req.title(),
                 req.description(),
                 req.status(),
-                req.budget() != null ? req.budget().min() : null,
-                req.budget() != null ? req.budget().max() : null,
-                req.budget() != null ? req.budget().currency() : null,
+                effectiveBudget != null ? effectiveBudget.min() : null,
+                effectiveBudget != null ? effectiveBudget.max() : null,
+                effectiveBudget != null ? effectiveBudget.currency() : null,
                 req.timeline() != null ? req.timeline().startDate() : null,
                 req.timeline() != null ? req.timeline().endDate() : null,
                 req.applicationDeadline(),
@@ -355,6 +381,40 @@ public class CampaignService {
                 hype.slotCap(),
                 hype.slotsFilled() != null ? hype.slotsFilled() : 0,
                 hype.liveUntil());
+    }
+
+    /**
+     * [SEC: Kabir follow-up, meera-completion-flow review] For a HYPE campaign the budget is a
+     * DERIVED quantity, not an independent input: the campaign advertises {@code slotCap} slots at
+     * a flat {@code perReelRate} each, so the only coherent pool amount is rate x slots.
+     *
+     * <p>Previously {@code budget.min}/{@code budget.max} were stored from the client verbatim and
+     * only checked for {@code min > 0 && max >= min}, while {@code validateHypeConfig} only checked
+     * {@code perReelRate > 0 && slotCap > 0} — neither side ever cross-checked the other. Since
+     * {@code BrandCampaignFeeService.chargeOnPublish} and {@code EscrowService.deriveFundAmount}
+     * both use {@code budgetMax} as their base, a hand-crafted request (Meera cannot reach these
+     * fields — it never sets rate/slots/budget) could advertise 100 slots x Rs.3500 while funding
+     * escrow and paying the publish fee on Rs.1000.
+     *
+     * <p>Re-deriving server-side rather than merely asserting equality makes the mismatch
+     * unrepresentable instead of merely rejected, and is a no-op for the real form, which already
+     * submits {@code min == max == rate x slots} (brand-new-hype-campaign.tsx).
+     *
+     * <p>Returns {@code clientBudget} untouched when the money slots are still null — that is the
+     * partial HYPE draft Meera persists ({@code CreateCampaignExecutor}), which has nothing to
+     * derive from yet and is separately blocked from reaching {@code ACTIVE} in {@link #update}.
+     */
+    private static BudgetDto hypeDerivedBudget(HypeConfigDto hype, BudgetDto clientBudget) {
+        if (hype == null || hype.perReelRate() == null || hype.slotCap() == null) {
+            return clientBudget;
+        }
+        BigDecimal total = hype.perReelRate().multiply(BigDecimal.valueOf(hype.slotCap()));
+        String currency =
+                clientBudget != null && clientBudget.currency() != null
+                                && !clientBudget.currency().isBlank()
+                        ? clientBudget.currency()
+                        : hype.currency() != null && !hype.currency().isBlank() ? hype.currency() : "INR";
+        return new BudgetDto(total, total, currency);
     }
 
     /**

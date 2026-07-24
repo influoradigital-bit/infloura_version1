@@ -523,6 +523,110 @@ class CampaignServiceTest {
         verify(campaignRepository).save(any(Campaign.class));
     }
 
+    // ---------------------------------------------------------------------------------------
+    // [SEC: Kabir follow-up, meera-completion-flow review] HYPE budget integrity.
+    //
+    // budgetMax is the base for BOTH BrandCampaignFeeService.chargeOnPublish and
+    // EscrowService.deriveFundAmount, while perReelRate x slotCap is what the campaign advertises
+    // to creators. Nothing used to tie the two together: validateBudget only checked
+    // min > 0 && max >= min, validateHypeConfig only checked rate > 0 && slots > 0. A hand-crafted
+    // request could therefore advertise 100 slots x Rs.500 while escrowing Rs.1000. (Meera cannot
+    // reach these fields — it never sets rate/slots/budget — so this is human tamper only.)
+    // CampaignService now re-derives the HYPE budget server-side instead of trusting the client.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "[SEC] create(): HYPE budget is re-derived from perReelRate x slotCap — a client budget"
+                    + " contradicting the advertised slots is ignored, never persisted")
+    void testHypeCreateReDerivesBudgetFromRateTimesSlots() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(principal.getUserId()).thenReturn(USER_ID);
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // writeRequest() carries budget (min 10, max 100) while validHype() advertises
+        // 100 slots x Rs.500 — exactly the mismatch a raw request would exploit.
+        CampaignResponse response =
+                service.create(principal, writeRequest(CampaignIntentType.HYPE, validHype()));
+
+        assertEquals(0, BigDecimal.valueOf(50_000).compareTo(response.budget().max()));
+        assertEquals(0, BigDecimal.valueOf(50_000).compareTo(response.budget().min()));
+    }
+
+    @Test
+    @DisplayName(
+            "[SEC] update(): a budget-only PATCH on a HYPE campaign cannot decouple budgetMax from"
+                    + " perReelRate x slotCap — the escrow/publish-fee base stays rate x slots")
+    void testHypeUpdateBudgetOnlyPatchCannotUnderfundEscrow() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        Campaign campaign = hypeCampaign(validHype()); // 100 slots x Rs.500
+        when(campaignRepository.findByIdForUpdate(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // The tamper: fund Rs.1000 while still advertising 100 x Rs.500. Sends NO hype block,
+        // so it also covers the path that skips the hype merge entirely.
+        CampaignResponse response =
+                service.update(
+                        principal,
+                        CAMPAIGN_ID,
+                        patchRequest(null, null, new BudgetDto(BigDecimal.ONE, BigDecimal.valueOf(1000), "INR")));
+
+        assertEquals(0, BigDecimal.valueOf(50_000).compareTo(campaign.getBudgetMax()));
+        assertEquals(0, BigDecimal.valueOf(50_000).compareTo(response.budget().max()));
+    }
+
+    @Test
+    @DisplayName(
+            "[SEC] update(): a HYPE draft whose perReelRate/slotCap are still null (Meera's partial"
+                    + " config) cannot be flipped to ACTIVE — budgetMax would be underivable")
+    void testPartialHypeDraftCannotBePublished() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(workspace.getVerificationStatus()).thenReturn(VerificationStatus.VERIFIED);
+
+        // Exactly the shape CreateCampaignExecutor persists: content only, money slots null.
+        HypeConfigDto partial =
+                new HypeConfigDto(
+                        "https://instagram.com/reel/abc123",
+                        null,
+                        "#GlowDropChallenge",
+                        java.util.List.of("Remix the hook"),
+                        null,
+                        "INR",
+                        null,
+                        null,
+                        null);
+        Campaign campaign = hypeCampaign(partial);
+        when(campaignRepository.findByIdForUpdate(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.update(
+                                        principal,
+                                        CAMPAIGN_ID,
+                                        patchRequest(CampaignStatus.ACTIVE, null, null)));
+
+        assertEquals("VALIDATION_ERROR", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(campaignRepository, never()).save(any(Campaign.class));
+        verify(brandCampaignFeeService, never()).chargeOnPublish(any(Campaign.class), anyString());
+    }
+
+    private static CampaignPatchRequest patchRequest(
+            CampaignStatus status, HypeConfigDto hype, BudgetDto budget) {
+        return new CampaignPatchRequest(
+                null, null, null, status, hype, budget, null, null, null, null, null, null, null,
+                null, null, null);
+    }
+
     private static Campaign hypeCampaign(HypeConfigDto hype) {
         return Campaign.builder()
                 .id(CAMPAIGN_ID)
