@@ -39,6 +39,16 @@ import { CollaborationTimeline } from '@/components/brand/timeline/collaboration
 import { api, isApiLive, ApiError, type Deal, type CampaignAnalytics } from '@/lib/api';
 import type { Campaign as ApiCampaign } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 // ─── Live-mode status buckets ────────────────────────────────────────────────
 // `Deal` (src/lib/api.ts) is the real backend equivalent of a "bid" (early stage,
@@ -518,6 +528,7 @@ export default function BrandCampaignDetailPage() {
   const [notFound, setNotFound] = React.useState(false);
   const [reloadToken, setReloadToken] = React.useState(0);
   const [mutatingId, setMutatingId] = React.useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (!liveApi || !id) return;
@@ -706,6 +717,70 @@ export default function BrandCampaignDetailPage() {
     setCounterMessage('');
   };
 
+  // ── Header action-menu handlers. These were dead controls (no onClick) — now wired to the
+  // same api.campaigns.* the campaigns list uses, with loading + toast on failure. ──
+  const handleDuplicateCampaign = async () => {
+    if (!id) return;
+    setMutatingId(id);
+    try {
+      await api.campaigns.duplicate(id);
+      toast({ title: 'Campaign duplicated', description: 'A copy was created in your campaigns list.' });
+      navigate('/brand/campaigns');
+    } catch (e) {
+      toast({
+        title: 'Could not duplicate campaign',
+        description: e instanceof ApiError ? e.message : 'Try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  const handleToggleCampaignStatus = async (next: 'ACTIVE' | 'PAUSED') => {
+    if (!id) return;
+    setMutatingId(id);
+    try {
+      await api.campaigns.update(id, { status: next });
+      toast({ title: next === 'PAUSED' ? 'Campaign paused' : 'Campaign resumed' });
+      if (liveApi) setReloadToken((k) => k + 1);
+    } catch (e) {
+      toast({
+        title: 'Could not update campaign',
+        description: e instanceof ApiError ? e.message : 'Try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  const handleDeleteCampaign = async () => {
+    if (!id) return;
+    setMutatingId(id);
+    try {
+      await api.campaigns.delete(id);
+      toast({ title: 'Campaign deleted' });
+      navigate('/brand/campaigns');
+    } catch (e) {
+      const isPermission =
+        e instanceof ApiError &&
+        (e.status === 403 || e.message.includes('Insufficient workspace permissions'));
+      toast({
+        title: isPermission ? "You can't delete this campaign" : 'Could not delete campaign',
+        description: isPermission
+          ? 'Only the workspace Owner or Admin can delete a campaign. Ask an Owner/Admin, or pause it instead.'
+          : e instanceof ApiError
+            ? e.message
+            : 'Try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setMutatingId(null);
+      setDeleteOpen(false);
+    }
+  };
+
   // ── Completed campaign analytics — real (`liveAnalytics`, creator-reported) in live mode,
   // mock fixture otherwise. No live equivalent exists for AI post-mortem/peer-benchmark
   // fields (verified: no such endpoint in influora-api) — those render an honest "not
@@ -798,12 +873,17 @@ export default function BrandCampaignDetailPage() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {!isCompleted && (
-                  <Button variant="outline" size="sm" className="hidden sm:flex">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="hidden sm:flex"
+                    onClick={() => navigate(`/brand/campaigns/${id}/edit`)}
+                  >
                     <Edit className="h-4 w-4 mr-1.5" />
                     Edit
                   </Button>
                 )}
-                <Button variant="outline" size="sm" className="gap-1.5">
+                <Button variant="outline" size="sm" className="gap-1.5" disabled title="Report export isn't available yet">
                   <Download className="h-4 w-4" />
                   <span className="hidden sm:inline">Export</span>
                 </Button>
@@ -814,23 +894,65 @@ export default function BrandCampaignDetailPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem><Copy className="mr-2 h-4 w-4" />Duplicate Campaign</DropdownMenuItem>
-                    <DropdownMenuItem><Download className="mr-2 h-4 w-4" />Export Full Report</DropdownMenuItem>
+                    <DropdownMenuItem disabled={mutatingId === id} onClick={handleDuplicateCampaign}>
+                      <Copy className="mr-2 h-4 w-4" />Duplicate Campaign
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled title="Report export isn't available yet">
+                      <Download className="mr-2 h-4 w-4" />Export Full Report
+                    </DropdownMenuItem>
                     {!isCompleted && (
                       <>
                         <DropdownMenuSeparator />
-                        {campaign.status === 'ACTIVE'
-                          ? <DropdownMenuItem><Pause className="mr-2 h-4 w-4" />Pause Campaign</DropdownMenuItem>
-                          : <DropdownMenuItem><Play className="mr-2 h-4 w-4" />Resume Campaign</DropdownMenuItem>
-                        }
+                        {campaign.status === 'ACTIVE' ? (
+                          <DropdownMenuItem
+                            disabled={mutatingId === id}
+                            onClick={() => handleToggleCampaignStatus('PAUSED')}
+                          >
+                            <Pause className="mr-2 h-4 w-4" />Pause Campaign
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            disabled={mutatingId === id}
+                            onClick={() => handleToggleCampaignStatus('ACTIVE')}
+                          >
+                            <Play className="mr-2 h-4 w-4" />Resume Campaign
+                          </DropdownMenuItem>
+                        )}
                       </>
                     )}
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-destructive-foreground">
+                    <DropdownMenuItem
+                      className="text-destructive-foreground"
+                      disabled={mutatingId === id}
+                      onClick={() => setDeleteOpen(true)}
+                    >
                       <Trash2 className="mr-2 h-4 w-4" />Delete Campaign
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete campaign?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This permanently deletes &ldquo;{campaign.title}&rdquo;. This can&rsquo;t be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={mutatingId === id}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        disabled={mutatingId === id}
+                        onClick={(e) => {
+                          e.preventDefault(); // keep dialog open until the request resolves
+                          void handleDeleteCampaign();
+                        }}
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </div>
           </div>

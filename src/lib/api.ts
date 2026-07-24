@@ -700,6 +700,32 @@ export interface WorkspaceMeUpdatePayload {
   logoUrl?: string;
 }
 
+/** One row of GET /workspace/members — MemberResponse (WorkspaceMemberDtos.java:22). */
+export interface WorkspaceMemberRow {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  /** MemberRole: OWNER | ADMIN | MANAGER | MEMBER | VIEWER */
+  role: string;
+  /** Matches the backend record component name `active` (MemberResponse — not `isActive`). */
+  active: boolean;
+}
+
+export const workspaceMembers = {
+  /**
+   * GET /workspace/members (WorkspaceMemberController.java:74) — the only endpoint that exposes
+   * roles (there is no "my role" endpoint; `/workspaces/me` carries none). Match the row whose
+   * userId === localStorage 'brand_user_id' to learn the caller's own role for UX gating.
+   * Server still enforces every action — this is defense-in-depth for the UI, never the control.
+   */
+  list: () =>
+    isLive()
+      ? http.request<WorkspaceMemberRow[]>('GET', '/workspace/members')
+      : mockOr<WorkspaceMemberRow[]>([
+          { id: 'm_1', workspaceId: 'ws_1', userId: 'u_1', role: 'OWNER', active: true },
+        ]),
+};
+
 export const workspaces = {
   /** GET /workspaces/slug-check?slug= */
   checkSlug: (slug: string) =>
@@ -3763,6 +3789,7 @@ export const creatorCopilot = {
 export const api = {
   auth,
   workspaces,
+  workspaceMembers,
   onboarding,
   campaigns,
   creators,

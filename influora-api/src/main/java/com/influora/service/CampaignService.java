@@ -293,7 +293,11 @@ public class CampaignService {
     public DeleteResponse delete(AuthPrincipal principal, String campaignId) {
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
         var member = brandContext.requireMember(principal, workspace.getId());
-        brandContext.requireRole(member, MemberRole.OWNER);
+        // Align with every other destructive brand action (escrow release, payout, member removal,
+        // wallet top-up are all OWNER+ADMIN). Campaign delete was an OWNER-only outlier — stricter
+        // than moving real money — with no justifying test/comment. Deleting a DRAFT is reversible
+        // in practice (re-createable) and less impactful than a payout, so OWNER+ADMIN is correct.
+        brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN);
 
         Campaign campaign = loadOwned(campaignId, workspace.getId());
         validator.ensureDeletable(campaign.getStatus());
