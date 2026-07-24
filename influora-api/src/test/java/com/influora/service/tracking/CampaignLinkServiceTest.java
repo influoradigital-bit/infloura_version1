@@ -331,6 +331,223 @@ class CampaignLinkServiceTest {
     }
 
     // ------------------------------------------------------------------
+    // Security: baseUrl scheme validation (Kabir red-team gate, validateBaseUrl)
+    //
+    // [ZERO-COVERAGE FIX, Kavya QA] validateBaseUrl (the http/https allowlist added to close the
+    // stored open-redirect / stored-XSS gap) had no regression coverage — a revert of the gate
+    // would not fail CI. validateBaseUrl is private, so it is exercised end-to-end through the
+    // public createTrackingLink path, exactly like every other test in this class. Each negative
+    // case resolves campaign/collaboration/creator successfully (mockValidResolutionChain) so the
+    // rejection is proven to come from validateBaseUrl itself, not an earlier not-found/mismatch
+    // check.
+    // ------------------------------------------------------------------
+
+    private void mockValidResolutionChain() {
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign()));
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(collaboration()));
+        when(creatorProfileRepository.findById(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(creatorProfile(CREATOR_USER_ID, "Priya Sharma")));
+        when(utmCampaignRepository.findByCampaignIdAndCreatorProfileId(CAMPAIGN_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.empty());
+    }
+
+    @Test
+    @DisplayName("createTrackingLink: rejects javascript: scheme as INVALID_TRACKING_URL")
+    void testRejectsJavascriptScheme() {
+        mockValidResolutionChain();
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.createTrackingLink(
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        COLLAB_ID,
+                                        CREATOR_PROFILE_ID,
+                                        "javascript:alert(1)",
+                                        "instagram"));
+
+        assertEquals("INVALID_TRACKING_URL", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(utmCampaignRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTrackingLink: rejects data: scheme as INVALID_TRACKING_URL")
+    void testRejectsDataScheme() {
+        mockValidResolutionChain();
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.createTrackingLink(
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        COLLAB_ID,
+                                        CREATOR_PROFILE_ID,
+                                        "data:text/html,x",
+                                        "instagram"));
+
+        assertEquals("INVALID_TRACKING_URL", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(utmCampaignRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTrackingLink: rejects ftp: scheme as INVALID_TRACKING_URL")
+    void testRejectsFtpScheme() {
+        mockValidResolutionChain();
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.createTrackingLink(
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        COLLAB_ID,
+                                        CREATOR_PROFILE_ID,
+                                        "ftp://example.com",
+                                        "instagram"));
+
+        assertEquals("INVALID_TRACKING_URL", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(utmCampaignRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTrackingLink: rejects protocol-relative/schemeless baseUrl as INVALID_TRACKING_URL")
+    void testRejectsProtocolRelativeUrl() {
+        mockValidResolutionChain();
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.createTrackingLink(
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        COLLAB_ID,
+                                        CREATOR_PROFILE_ID,
+                                        "//example.com",
+                                        "instagram"));
+
+        assertEquals("INVALID_TRACKING_URL", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(utmCampaignRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTrackingLink: rejects a blank/whitespace baseUrl as INVALID_TRACKING_URL")
+    void testRejectsBlankBaseUrl() {
+        mockValidResolutionChain();
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.createTrackingLink(
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        COLLAB_ID,
+                                        CREATOR_PROFILE_ID,
+                                        "   ",
+                                        "instagram"));
+
+        assertEquals("INVALID_TRACKING_URL", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(utmCampaignRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTrackingLink: rejects an unparseable baseUrl as INVALID_TRACKING_URL")
+    void testRejectsUnparseableBaseUrl() {
+        mockValidResolutionChain();
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.createTrackingLink(
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        COLLAB_ID,
+                                        CREATOR_PROFILE_ID,
+                                        "http://[bad",
+                                        "instagram"));
+
+        assertEquals("INVALID_TRACKING_URL", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(utmCampaignRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTrackingLink: accepts a case-insensitive https scheme (hTTpS://)")
+    void testAcceptsCaseInsensitiveHttpsScheme() {
+        mockValidResolutionChain();
+        when(utmCampaignRepository.save(any(UtmCampaign.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UtmCampaign result =
+                service.createTrackingLink(
+                        WORKSPACE_ID,
+                        CAMPAIGN_ID,
+                        COLLAB_ID,
+                        CREATOR_PROFILE_ID,
+                        "hTTpS://Example.com",
+                        "instagram");
+
+        assertEquals(
+                "hTTpS://Example.com?utm_source=instagram&utm_medium=influencer"
+                        + "&utm_campaign=summer-sale-2026&utm_content=priya-sharma",
+                result.getFullTrackingUrl());
+    }
+
+    @Test
+    @DisplayName("createTrackingLink: accepts an http baseUrl with a port, query string, and fragment")
+    void testAcceptsUrlWithPortQueryAndFragment() {
+        mockValidResolutionChain();
+        when(utmCampaignRepository.save(any(UtmCampaign.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UtmCampaign result =
+                service.createTrackingLink(
+                        WORKSPACE_ID,
+                        CAMPAIGN_ID,
+                        COLLAB_ID,
+                        CREATOR_PROFILE_ID,
+                        "http://localhost:8080/path?a=1&b=2#frag",
+                        "instagram");
+
+        assertEquals(
+                "http://localhost:8080/path?a=1&b=2#frag&utm_source=instagram&utm_medium=influencer"
+                        + "&utm_campaign=summer-sale-2026&utm_content=priya-sharma",
+                result.getFullTrackingUrl());
+    }
+
+    @Test
+    @DisplayName("createTrackingLink: accepts an https baseUrl that already has query params")
+    void testAcceptsHttpsUrlWithExistingQueryParams() {
+        mockValidResolutionChain();
+        when(utmCampaignRepository.save(any(UtmCampaign.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UtmCampaign result =
+                service.createTrackingLink(
+                        WORKSPACE_ID,
+                        CAMPAIGN_ID,
+                        COLLAB_ID,
+                        CREATOR_PROFILE_ID,
+                        "https://brand.example.com/product?utm=x&y=2",
+                        "instagram");
+
+        assertEquals(
+                "https://brand.example.com/product?utm=x&y=2&utm_source=instagram&utm_medium=influencer"
+                        + "&utm_campaign=summer-sale-2026&utm_content=priya-sharma",
+                result.getFullTrackingUrl());
+    }
+
+    // ------------------------------------------------------------------
     // recordClick: counter increments
     // ------------------------------------------------------------------
 

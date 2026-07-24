@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
+import { cn, isSafeHttpUrl } from '@/lib/utils';
 import type { CreatorCouponResponse } from '@/lib/api';
 
 interface CreatorCampaignCardProps {
@@ -54,6 +54,15 @@ export function CreatorCampaignCard({ coupon, className }: CreatorCampaignCardPr
       ? `${coupon.usageCount} / ${coupon.usageLimit} used`
       : `${coupon.usageCount} used`;
 
+  // Prefer the click-tracked redirect URL (counts the click) over the raw
+  // brand-site tracking URL — falls back gracefully until the backend ships
+  // `redirectUrl` for every coupon (see CreatorCouponResponse in lib/api.ts).
+  // `trackingUrl` is brand-supplied and unvalidated — a `javascript:...` (or
+  // other dangerous-scheme) value must never reach an <a href> or the
+  // clipboard, so only an http(s) URL is treated as usable.
+  const rawShareUrl = coupon.redirectUrl ?? coupon.trackingUrl;
+  const shareUrl = isSafeHttpUrl(rawShareUrl) ? rawShareUrl! : undefined;
+
   return (
     <Card className={cn('p-6', className)}>
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -86,22 +95,22 @@ export function CreatorCampaignCard({ coupon, className }: CreatorCampaignCardPr
       </div>
 
       {/* Tracking Link — only rendered when the backend actually returned one */}
-      {coupon.trackingUrl && (
+      {shareUrl && (
         <div className="mb-4">
           <Label className="text-xs text-muted-foreground">YOUR TRACKING LINK</Label>
           <div className="mt-1 flex items-center gap-2">
-            <Input readOnly value={coupon.trackingUrl} className="font-mono text-sm" />
+            <Input readOnly value={shareUrl} className="font-mono text-sm" />
             <Button
               type="button"
               variant="outline"
               size="icon"
               aria-label="Copy tracking link"
-              onClick={() => copyToClipboard(coupon.trackingUrl!, 'link')}
+              onClick={() => copyToClipboard(shareUrl, 'link')}
             >
               {copiedLink ? <Check className="h-4 w-4 text-success-foreground" /> : <Copy className="h-4 w-4" />}
             </Button>
             <Button type="button" variant="outline" size="icon" aria-label="Open tracking link" asChild>
-              <a href={coupon.trackingUrl} target="_blank" rel="noreferrer">
+              <a href={shareUrl} target="_blank" rel="noreferrer">
                 <ExternalLink className="h-4 w-4" />
               </a>
             </Button>

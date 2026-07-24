@@ -2,6 +2,7 @@ package com.influora.web.dto.tracking;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -44,11 +45,20 @@ public final class TrackingDtos {
      * record simply never got that treatment. {@code @NotBlank} + {@code @Valid} on the controller
      * parameter (see {@code CampaignTrackingController#createTrackingLink}) now rejects a
      * missing/blank field with a validation {@code 400} before the service is ever called.
+     *
+     * <p>[SECURITY, Kabir red-team] {@code baseUrl} additionally carries an http/https scheme
+     * allowlist via {@code @Pattern} — a defense-in-depth layer only. The authoritative gate is
+     * {@code CampaignLinkService#validateBaseUrl}, which runs in the service so it is enforced
+     * regardless of caller; without it a brand could persist {@code javascript:}/{@code data:}
+     * (or any non-http(s)) value into {@code UtmCampaign.fullTrackingUrl}, later served back out
+     * via the public {@code GET /track/click/{id}} redirect and the creator coupon-card href — a
+     * stored open-redirect / stored-XSS primitive.
      */
     public record CreateTrackingLinkRequest(
             @NotBlank String collaborationId,
             @NotBlank String creatorProfileId,
-            @NotBlank String baseUrl,
+            @NotBlank @Pattern(regexp = "^(?i)https?://\\S+$", message = "baseUrl must be an http or https URL")
+                    String baseUrl,
             @NotBlank String platform) {}
 
     /** Brand-facing view of a {@code UtmCampaign} row — created by or already existing for the campaign. */

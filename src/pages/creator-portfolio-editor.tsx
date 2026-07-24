@@ -38,7 +38,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
+import { cn, publicProfileUrl } from '@/lib/utils';
 import {
   api,
   ApiError,
@@ -119,7 +119,7 @@ export default function CreatorPortfolioEditorPage() {
     );
   }
 
-  const publicUrl = `${typeof window !== 'undefined' ? window.location.origin : 'https://influora.com'}/@${page.username}`;
+  const publicUrl = publicProfileUrl(page.username);
 
   const update = (patch: Partial<PortfolioPage>) => {
     setPage((prev) => (prev ? { ...prev, ...patch } : prev));

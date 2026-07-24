@@ -31,7 +31,7 @@ import {
   RefreshCw,
   Users,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, publicProfileLabel } from '@/lib/utils';
 import { api, ApiError, type CreatorProfileSelfResponse, type CreatorProfilePatchPayload } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 
@@ -194,7 +194,7 @@ export default function CreatorProfilePage() {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">Your public page is live</p>
               <p className="text-xs text-muted-foreground truncate">
-                influora.com/@{publicUsername} — share it in your Instagram bio
+                {publicProfileLabel(publicUsername)} — share it in your Instagram bio
               </p>
             </div>
             <span className="text-xs font-medium text-primary group-hover:underline shrink-0">View →</span>

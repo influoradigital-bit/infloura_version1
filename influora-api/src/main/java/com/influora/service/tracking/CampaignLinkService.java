@@ -11,6 +11,8 @@ import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.UtmCampaignRepository;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
@@ -161,6 +163,14 @@ public class CampaignLinkService {
             CreatorProfile creator,
             String baseUrl,
             String platform) {
+        // [SECURITY, Kabir red-team] baseUrl is brand-supplied and is persisted verbatim into
+        // UtmCampaign.fullTrackingUrl, which is later served back out via the public
+        // GET /track/click/{id} 302 redirect and the creator coupon-card href. Without a scheme
+        // gate a brand could store `javascript:...`, `data:...`, or any non-http(s) value — a
+        // stored open-redirect / stored-XSS primitive. This is the authoritative write-time gate:
+        // it runs here so it is enforced regardless of caller, not just at the DTO layer.
+        validateBaseUrl(baseUrl);
+
         String utmSource = platform == null ? "" : platform.toLowerCase();
         String utmMedium = "influencer";
         String utmCampaign = SlugUtils.slugify(campaign.getTitle());
@@ -207,6 +217,36 @@ public class CampaignLinkService {
 
     private static String encode(String value) {
         return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Enforce an http/https scheme allowlist on a brand-supplied {@code baseUrl} before it is ever
+     * concatenated into {@code fullTrackingUrl} or persisted. Rejects {@code javascript:}, {@code
+     * data:}, {@code ftp:}, {@code mailto:}, schemeless/relative values, and unparseable strings
+     * with a clean {@code 400 INVALID_TRACKING_URL} rather than letting them reach the DB and later
+     * get served via the public click-redirect / coupon-card href.
+     *
+     * @throws ApiException {@code INVALID_TRACKING_URL} (400) if {@code baseUrl} is not a
+     *     parseable absolute http/https URL
+     */
+    private static void validateBaseUrl(String baseUrl) {
+        URI uri;
+        try {
+            uri = new URI(baseUrl);
+        } catch (URISyntaxException e) {
+            throw new ApiException(
+                    "INVALID_TRACKING_URL",
+                    "baseUrl must be a valid http or https URL",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        String scheme = uri.getScheme();
+        if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+            throw new ApiException(
+                    "INVALID_TRACKING_URL",
+                    "baseUrl must use the http or https scheme",
+                    HttpStatus.BAD_REQUEST);
+        }
     }
 
     /**
