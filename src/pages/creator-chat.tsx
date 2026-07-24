@@ -44,6 +44,9 @@ import {
   type ContractApiRecord,
   type ContractStatus,
   type CreatorDeliverableListItem,
+  type ShipmentApiRecord,
+  type ShipmentApiStatus,
+  type ShipmentCondition,
 } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -128,6 +131,30 @@ const creatorPhaseToPanel: Record<DealPhase, CreatorToolsPanel> = {
   deliver: 'deliverables',
   pay: 'payments',
 };
+
+/**
+ * Maps the backend `ShipmentApiStatus` (5 states, `wiki/decisions/shipment-backend-design-2026-07-24.md`)
+ * onto the local `ShipmentStatus` UI enum from `components/shared/shipment-card.tsx` (6 states,
+ * includes an `in_transit`/`out_for_delivery` split the backend doesn't model). Since the backend
+ * only exposes SHIPPED as a single "it's on its way" state, it maps to the UI's `delivered` state —
+ * that's the one that surfaces the "Mark as Received" action, and the backend's own transition rule
+ * (`SHIPPED → RECEIVED/DAMAGED` is exactly "confirm receipt while shipped") matches that UI trigger.
+ */
+function mapShipmentApiStatusToUiStatus(status: ShipmentApiStatus): ShipmentStatus {
+  switch (status) {
+    case 'AWAITING_ADDRESS':
+    case 'ADDRESS_PROVIDED':
+      return 'created';
+    case 'SHIPPED':
+      return 'delivered';
+    case 'RECEIVED':
+      return 'received';
+    case 'DAMAGED':
+      return 'damaged';
+    default:
+      return 'created';
+  }
+}
 
 // ============================================================================
 // Types
@@ -736,40 +763,161 @@ export default function CreatorChatPage() {
   const [showReceiptConfirmation, setShowReceiptConfirmation] = React.useState(false);
   const [shippingAddress, setShippingAddress] = React.useState<ShippingAddressData | null>(null);
   const [shipmentStatus, setShipmentStatus] = React.useState<ShipmentStatus>('created');
-  // Demo: pretend brand has dispatched a shipment after address is given
-  const [hasShipment, setHasShipment] = React.useState(true);
   const [isSavingAddress, setIsSavingAddress] = React.useState(false);
   const [isConfirmingReceipt, setIsConfirmingReceipt] = React.useState(false);
 
-  // NEEDS BACKEND: there is no shipping-address or shipment endpoint. Checked
-  // src/lib/api.ts (no shipping/shipment/receipt methods anywhere) and the
-  // Spring backend (no Shipment entity, repository, or controller — only
-  // dead ShipmentCreatedEvent/ShipmentReceivedEvent notification records that
-  // are never published anywhere). `DealMessageKind.shipment` exists as an
-  // enum value but nothing produces messages of that kind either. Until
-  // Vikram ships a real POST /deals/:id/shipping-address (or equivalent),
-  // this stays a client-only simulation so the demo flow keeps working —
-  // it is NOT wired to anything real and must not be reported as such.
+  // Real shipment record — GET /deals/:id/shipment (Priya's design 2026-07-24,
+  // wiki/decisions/shipment-backend-design-2026-07-24.md). `shippingAddress` and
+  // `shipmentStatus` above are synced FROM this once liveApi is on (effect below);
+  // in mock/demo mode they stay purely local, set by the handlers directly.
+  const [liveShipment, setLiveShipment] = React.useState<ShipmentApiRecord | null>(null);
+
+  const fetchLiveShipment = React.useCallback(async () => {
+    if (!liveApi || !selectedDeal) {
+      setLiveShipment(null);
+      return;
+    }
+    try {
+      const record = await api.shipments.get('creator', selectedDeal.id);
+      setLiveShipment(record);
+    } catch (err) {
+      console.error('Failed to load shipment status', err);
+      setLiveShipment(null);
+    }
+  }, [liveApi, selectedDeal?.id]);
+
+  React.useEffect(() => {
+    void fetchLiveShipment();
+  }, [fetchLiveShipment]);
+
+  // Reflect the real record into the address/status state the render tree already
+  // reads. AWAITING_ADDRESS (no row yet) keeps shippingAddress null so the "Add
+  // Shipping Address" prompt still shows.
+  React.useEffect(() => {
+    if (!liveApi || !liveShipment) return;
+    if (liveShipment.status === 'AWAITING_ADDRESS') {
+      setShippingAddress(null);
+    } else {
+      setShippingAddress({
+        fullName: liveShipment.recipientName ?? '',
+        phone: liveShipment.phone ?? '',
+        addressLine1: liveShipment.addressLine1 ?? '',
+        addressLine2: liveShipment.addressLine2 ?? '',
+        city: liveShipment.city ?? '',
+        state: liveShipment.state ?? '',
+        pincode: liveShipment.pincode ?? '',
+      });
+    }
+    setShipmentStatus(mapShipmentApiStatusToUiStatus(liveShipment.status));
+  }, [liveApi, liveShipment]);
+
+  // Whether the brand has actually dispatched the product (vs. only an address being
+  // on file) — derived from the real status rather than tracked as separate state.
+  const hasShipment = liveApi
+    ? liveShipment?.status === 'SHIPPED' || liveShipment?.status === 'RECEIVED' || liveShipment?.status === 'DAMAGED'
+    : true; // mock/demo mode: keep the prior "brand always already shipped" assumption so the click-through demo still works
+
+  // Display fields ShipmentCard needs beyond status/address. Priya's Shipment entity has
+  // no `items`/`estimatedDelivery` fields at all (single `productName` string, no ETA) —
+  // those two stay demo placeholders in both modes until a future schema addition;
+  // courier/tracking/notes come from the real record once liveApi is on.
+  const shipmentDisplay = React.useMemo(() => {
+    if (liveApi) {
+      return {
+        items: [{ name: liveShipment?.productName || 'Product', quantity: 1 }],
+        courier: liveShipment?.carrier || 'Courier pending',
+        trackingNumber: liveShipment?.trackingNumber || 'Pending',
+        trackingUrl: liveShipment?.trackingUrl || undefined,
+        notes: liveShipment?.conditionNote || undefined,
+      };
+    }
+    return {
+      items: [{ name: 'Summer Dress (Floral, Size M)', quantity: 1 }, { name: 'Brand Lookbook', quantity: 1 }],
+      courier: 'Delhivery',
+      trackingNumber: 'DLV789456123',
+      trackingUrl: 'https://www.delhivery.com/track',
+      notes: 'Please unbox on camera if you can. Care: dry-clean only.',
+    };
+  }, [liveApi, liveShipment]);
+
+  // Wired to POST /deals/:id/shipping-address (creator-only; backend rejects with
+  // 409 SHIPMENT_ALREADY_SHIPPED once the brand has shipped). Mock mode keeps the
+  // old client-only simulation so the demo flow still works offline.
   const handleSubmitShippingAddress = async (data: ShippingAddressData) => {
+    if (!selectedDeal) return;
     setIsSavingAddress(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setShippingAddress(data);
-    setIsSavingAddress(false);
-    setShowShippingAddressForm(false);
+    try {
+      if (liveApi) {
+        // ShippingAddressData carries a `landmark` field the backend DTO doesn't
+        // model (Priya's doc has no landmark column) — fold it into addressLine2
+        // rather than drop it.
+        const addressLine2 =
+          [data.addressLine2, data.landmark ? `Landmark: ${data.landmark}` : null]
+            .filter(Boolean)
+            .join(' · ') || undefined;
+        const record = await api.shipments.submitAddress(selectedDeal.id, {
+          recipientName: data.fullName,
+          phone: data.phone,
+          addressLine1: data.addressLine1,
+          addressLine2,
+          city: data.city,
+          state: data.state,
+          pincode: data.pincode,
+        });
+        setLiveShipment(record);
+      } else {
+        await new Promise((r) => setTimeout(r, 600));
+      }
+      setShippingAddress(data);
+      setShowShippingAddressForm(false);
+    } catch (err) {
+      console.error('Failed to submit shipping address', err);
+      toast({
+        title: 'Could not save shipping address',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingAddress(false);
+    }
   };
 
   const handleMarkReceived = () => {
     setShowReceiptConfirmation(true);
   };
 
-  // NEEDS BACKEND: same gap as handleSubmitShippingAddress above — no
-  // confirm-receipt endpoint exists. Left as a client-only simulation.
+  // Wired to POST /deals/:id/shipment/confirm-receipt (creator-only; backend rejects
+  // with 409 SHIPMENT_NOT_SHIPPED unless currently SHIPPED). Mock mode keeps the old
+  // client-only simulation so the demo flow still works offline.
   const handleConfirmReceipt = async (data: ReceiptData) => {
+    if (!selectedDeal) return;
     setIsConfirmingReceipt(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setShipmentStatus(data.condition === 'good' ? 'received' : 'damaged');
-    setIsConfirmingReceipt(false);
-    setShowReceiptConfirmation(false);
+    try {
+      if (liveApi) {
+        // Backend models exactly two conditions (GOOD/DAMAGED, doc §4); this dialog
+        // additionally offers "wrong_item" with no server equivalent — fold it into
+        // DAMAGED and preserve the distinction in the note rather than dropping it.
+        const condition: ShipmentCondition = data.condition === 'good' ? 'GOOD' : 'DAMAGED';
+        const note =
+          data.condition === 'wrong_item' ? `Wrong item received: ${data.notes}` : data.notes || undefined;
+        const record = await api.shipments.confirmReceipt(selectedDeal.id, { condition, note });
+        setLiveShipment(record);
+        setShipmentStatus(mapShipmentApiStatusToUiStatus(record.status));
+      } else {
+        await new Promise((r) => setTimeout(r, 600));
+        setShipmentStatus(data.condition === 'good' ? 'received' : 'damaged');
+      }
+      setShowReceiptConfirmation(false);
+    } catch (err) {
+      console.error('Failed to confirm receipt', err);
+      toast({
+        title: 'Could not confirm receipt',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsConfirmingReceipt(false);
+    }
   };
 
   const handleSendMessage = async () => {
@@ -1631,23 +1779,27 @@ export default function CreatorChatPage() {
               </div>
             )}
 
-            {/* Phase 5: Shipment Card */}
+            {/* Phase 5: Shipment Card — status/address are real (GET /deals/:id/shipment)
+                when liveApi is on; items/estimatedDelivery stay placeholders (no backend
+                field for either) and courier/tracking/notes come from the real record
+                once the brand has shipped. See shipmentDisplay above. */}
             {selectedDeal.status === 'in_progress' && shippingAddress && hasShipment && (
               <ShipmentCard
                 perspective="creator"
                 status={shipmentStatus}
-                items={[{ name: 'Summer Dress (Floral, Size M)', quantity: 1 }, { name: 'Brand Lookbook', quantity: 1 }]}
-                courier="Delhivery"
-                trackingNumber="DLV789456123"
-                trackingUrl="https://www.delhivery.com/track"
+                items={shipmentDisplay.items}
+                courier={shipmentDisplay.courier}
+                trackingNumber={shipmentDisplay.trackingNumber}
+                trackingUrl={shipmentDisplay.trackingUrl}
                 estimatedDelivery={new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()}
-                notes="Please unbox on camera if you can. Care: dry-clean only."
+                notes={shipmentDisplay.notes}
                 onMarkReceived={handleMarkReceived}
               />
             )}
 
-            {/* Demo: simulate shipment status progression */}
-            {selectedDeal.status === 'in_progress' && shippingAddress && hasShipment && shipmentStatus === 'created' && (
+            {/* Demo-only: simulate shipment status progression. Real mode has no client-side
+                "mark delivered" action — status only advances via the real GET/brand-ship flow. */}
+            {!liveApi && selectedDeal.status === 'in_progress' && shippingAddress && hasShipment && shipmentStatus === 'created' && (
               <div className="flex justify-center">
                 <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => setShipmentStatus('delivered')}>
                   (Demo) Simulate delivery

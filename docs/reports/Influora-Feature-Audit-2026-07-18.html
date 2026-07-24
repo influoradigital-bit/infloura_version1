@@ -37,7 +37,10 @@
   .bignum{font-size:44px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;color:var(--accent-ink)}
   .bignum small{font-size:18px;font-weight:600}
   .bar{flex:1 1 260px;height:10px;background:var(--code-bg);border-radius:5px;overflow:hidden}
-  .bar i{display:block;height:100%;width:78.4%;background:linear-gradient(90deg,var(--accent),var(--ok))}
+  .bar i{display:block;height:100%;width:80.4%;background:linear-gradient(90deg,var(--accent),var(--ok))}
+  .correction{margin:16px 0;padding:12px 16px;border-left:4px solid var(--ok);background:rgba(0,180,120,.08);border-radius:6px;font-size:14px;line-height:1.55}
+  .correction b{color:var(--ok)}
+  .was{text-decoration:line-through;opacity:.6}
   .counts{display:flex;gap:8px;flex-wrap:wrap;font-size:12.5px;font-weight:600}
   .counts span{padding:3px 10px;border-radius:99px}
   .c-ok{background:var(--ok-bg);color:var(--ok)} .c-warn{background:var(--warn-bg);color:var(--warn)}
@@ -79,7 +82,7 @@
 </header>
 
 <div class="scorebar">
-  <div class="bignum">78.4<small>%</small></div>
+  <div class="bignum">80.4<small>%</small></div>
   <div class="bar"><i></i></div>
   <div class="counts">
     <span class="c-ok">32 aligned</span>
@@ -89,13 +92,23 @@
     <span class="c-mut">51 features</span>
   </div>
 </div>
-<p class="method">Score = aligned 1.0 · partial 0.5 · broken/missing 0.0 → 40.0 / 51 = 78.4%. Every verdict carries file:line evidence; expand any row.</p>
+<p class="method">Score = aligned 1.0 · partial 0.5 · broken/missing 0.0 → 41.0 / 51 = 80.4%. Every verdict carries file:line evidence; expand any row.</p>
+
+<div class="correction">
+  <b>⟳ Post-audit corrections — 2026-07-21 (Ash).</b> Reconciled against verified code after later fixes landed. Four rows were STALE at audit time and are corrected below (each row keeps its original text struck through). Two AI rows upgraded Partial→Aligned on the same code-verified basis this report already uses (score recomputed 40.0→41.0 / 51). <b>Caveat unchanged:</b> "Aligned" here means code-path-verified, not live-key-verified — no AI or payment path has yet run against real Razorpay / Claude / Sarvam keys.
+  <ul style="margin:8px 0 0 0;padding-left:18px">
+    <li><b>Meera chat streaming (SSE)</b> — no longer dormant; the <code>reply==null</code> gate is gone (streaming-first fix landed).</li>
+    <li><b>Tool-use loop</b> — <code>MeeraChatAiClient.java</code> (the <code>onbehalf_jwt=""</code> caller) was <b>deleted</b>; tools no longer 401.</li>
+    <li><b>Voice route</b> — TTS cap is <b>500</b> chars, not 200; and <code>lang_detected</code> now threads into <code>/voice/speak</code> (Hinglish in → Hinglish out).</li>
+    <li><b>Not in this audit but now shipped (not live-verified):</b> real Razorpay checkout launcher (<code>src/lib/razorpay.ts</code>, was the funding-flow "known gap"); campaign-template digest now reaches Meera's prompt (Phase-1).</li>
+  </ul>
+</div>
 
 <div class="domains">
   <div class="dom"><b>Brand</b><div class="pct">70.8%</div><div class="mini"><i style="width:70.8%"></i></div><div class="n">8.5 / 12 · 1 broken</div></div>
   <div class="dom"><b>Creator</b><div class="pct">79.2%</div><div class="mini"><i style="width:79.2%"></i></div><div class="n">9.5 / 12 · 1 broken</div></div>
   <div class="dom"><b>Admin</b><div class="pct">83.3%</div><div class="mini"><i style="width:83.3%"></i></div><div class="n">7.5 / 9</div></div>
-  <div class="dom"><b>AI / Meera</b><div class="pct">81.3%</div><div class="mini"><i style="width:81.3%"></i></div><div class="n">6.5 / 8</div></div>
+  <div class="dom"><b>AI / Meera</b><div class="pct">93.8%</div><div class="mini"><i style="width:93.8%"></i></div><div class="n">7.5 / 8</div></div>
   <div class="dom"><b>Security</b><div class="pct">80.0%</div><div class="mini"><i style="width:80%"></i></div><div class="n">8.0 / 10 · 1 broken</div></div>
 </div>
 
@@ -269,35 +282,36 @@
 </details>
 
 <details class="f">
-  <summary><span class="pill s-partial">Partial</span><span class="chip">AI</span><span class="fname">Meera chat streaming (SSE)</span><span class="score">0.5</span></summary>
+  <summary><span class="pill s-aligned">Aligned</span><span class="chip">AI</span><span class="fname">Meera chat streaming (SSE)</span><span class="score">1.0</span></summary>
   <div class="body">
-    <p class="note">Browser→Python live streaming is fully built but dormant — the active flow returns a synchronous reply and the client fakes token-reveal locally.</p>
+    <p class="note"><b>[CORRECTED 2026-07-21]</b> The streaming-first fix landed: <code>MeeraChatPanel</code> no longer gates on <code>reply==null</code> (its comments now read "never gates the reply" / "strictly additive"). Browser→Python SSE is the live path, not dormant. <span class="was">Original: "live streaming fully built but dormant — the active flow returns a synchronous reply and the client fakes token-reveal locally."</span></p>
     <ul class="chain">
       <li>FE SSE client — useMeeraStream.ts:256-359 (frames, heartbeat, abort)</li>
-      <li class="fail">Never invoked — MeeraChatPanel.tsx:288-291 renders turnRes.reply and returns; stream.open only if reply == null (never on current backend)</li>
-      <li>Gateway — MeeraController.java:91-122 mints stream token + returns placeholder reply</li>
+      <li class="was">Original fail: MeeraChatPanel.tsx:288-291 stream.open only if reply==null — that gate is now removed</li>
+      <li>Gateway — MeeraController.java:91-122 mints stream token</li>
       <li>AI SSE route — influora-ai/app/routes/chat.py:71-302 real text/event-stream; provider stream claude.py:120-195</li>
     </ul>
+    <p class="note"><b>Not live-verified:</b> code-path only, no live Claude-key SSE round-trip yet (same caveat as every AI row).</p>
   </div>
 </details>
 
 <details class="f">
-  <summary><span class="pill s-partial">Partial</span><span class="chip">AI</span><span class="fname">Tool-use loop</span><span class="score">0.5</span></summary>
+  <summary><span class="pill s-aligned">Aligned</span><span class="chip">AI</span><span class="fname">Tool-use loop</span><span class="score">1.0</span></summary>
   <div class="body">
-    <p class="note">Loop logic is correct, but the only live caller strips the on-behalf JWT, so tool forwards 401 and degrade to plain text.</p>
+    <p class="note"><b>[CORRECTED 2026-07-21]</b> The <code>onbehalf_jwt=""</code> caller <code>MeeraChatAiClient.java</code> was <b>deleted</b> (verified absent) as part of the streaming-first fix — the browser now carries the on-behalf JWT into the SSE path, so <code>/internal/meera/*</code> forwards authorize instead of 401. <span class="was">Original: "the only live caller strips the on-behalf JWT, so tool forwards 401 and degrade to plain text."</span></p>
     <ul class="chain">
-      <li>Tools defined — app/tools/schemas.py:61-143 (5 tools, tiers, idempotent set)</li>
-      <li>Loop — app/tools/loop.py:131-253 (forwards with idempotency key, caps iterations, consumes tool_result :238-253)</li>
-      <li class="fail">Live auth — MeeraChatAiClient.java:44 sends onbehalf_jwt="" → every Spring /internal/meera/* forward 401s</li>
-      <li class="fail">Consumer discards tool_result anyway — MeeraChatAiClient.java:183</li>
+      <li>Tools defined — app/tools/schemas.py (5 Spring tools + local analyze_site/present_options)</li>
+      <li>Loop — app/tools/loop.py forwards with idempotency key, caps iterations, consumes tool_result</li>
+      <li class="was">Original fail: MeeraChatAiClient.java:44 onbehalf_jwt="" / :183 discards tool_result — file deleted, no longer applies</li>
     </ul>
+    <p class="note"><b>Not live-verified:</b> code-path only, no live tool round-trip against real Spring + Claude keys yet.</p>
   </div>
 </details>
 
 <details class="f">
   <summary><span class="pill s-partial">Partial</span><span class="chip">AI</span><span class="fname">Meera UI stages</span><span class="score">0.5</span></summary>
   <div class="body">
-    <p class="note">Stages correctly render real tool-result DTOs, but no tool_result ever arrives in live mode — only MOCK_* drives them.</p>
+    <p class="note"><b>[PARTIALLY CORRECTED 2026-07-21 — kept Partial]</b> The two upstream blockers this depended on are now fixed (streaming no longer dormant; tool-loop no longer 401s). Whether a live <code>tool_result</code> actually reaches the stages needs a live-key E2E to confirm — so this stays Partial pending that run, not because the code is known-broken. <span class="was">Original: "no tool_result ever arrives in live mode — only MOCK_* drives them."</span></p>
     <ul class="chain">
       <li>Real-data narrowing — StageMatching.tsx:127-176; ToolResultRenderer.tsx:236-265 on real DTO shapes (meera-api.ts:164-251)</li>
       <li>Plumbing — MeeraChatPanel.tsx:316-320 → useMeeraStage.ts:38-45 → LivingCanvas.tsx:93-107</li>
@@ -424,7 +438,8 @@
   </ul></div></details>
 <details class="f"><summary><span class="pill s-aligned">Aligned</span><span class="chip">AI</span><span class="fname">Voice route (STT → cleanup → TTS)</span><span class="score">1.0</span></summary>
   <div class="body"><ul class="chain">
-    <li>voice.py:155-306 — service-token auth, gate, Sarvam STT, Gemini cleanup w/ fallback, 200-char TTS cap, every stage degrades to text</li>
+    <li>voice.py:155-306 — service-token auth, gate, Sarvam STT, Gemini cleanup w/ fallback, <b>500-char</b> TTS cap <span class="was">[was 200]</span>, every stage degrades to text</li>
+    <li><b>[CORRECTED 2026-07-21]</b> <code>lang_detected</code> now threads /voice/transcribe → /voice/speak (Hinglish in → Hinglish out); omitted when undefined so the en-IN server default applies. Not live-verified (no Sarvam audio round-trip).</li>
   </ul></div></details>
 <details class="f"><summary><span class="pill s-aligned">Aligned</span><span class="chip">AI</span><span class="fname">Brand safety route (GARM)</span><span class="score">1.0</span></summary>
   <div class="body"><ul class="chain">

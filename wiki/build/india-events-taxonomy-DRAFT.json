@@ -1,0 +1,137 @@
+{
+  "_DRAFT_WARNING": "DRAFT ONLY — NOT the real influora-api/src/main/resources/trendspark/theme-taxonomy.json, NOT a real file in that directory, NOT wired into any service, NOT for deployment. Author: Vikram (Backend). This file is the physically-separated 'india_events' block that previously lived inside wiki/build/theme-taxonomy-expansion-DRAFT.json — split out per Priya's 2026-07-22 ruling (wiki/build/theme-taxonomy-priya-review.md, change 1 + 4): 'move the entire india_events block out of the DRAFT into a new file... theme-taxonomy.json receives ONLY the +20 keyword patch.'",
+
+  "_status": "TIER-2 — REFERENCE-ONLY. No consumer exists; not loaded by any service. Inert. This is data, not a build. It carries zero runtime effect and must not be treated as ready to wire up.",
+
+  "_gate": "Gated on Priya's explicit sign-off before ANY Tier-2 code is written against this file. Per Priya's ruling §'SCOPE FENCE', prerequisites before any Tier-2 code: (a) niche_alias mapping table [Nisha+Aditya, Priya-approve], (b) real festival-priority-scores.json [Nisha, replaces the placeholder priority_scores below], (c) region schema proposal if state-level matching is in scope [Vikram, Priya-approve], (d) JPA/Flyway translation of any schema (this codebase is Spring Boot + JPA + Flyway, not Prisma/Postgres DDL). CreatorNudgeService stays FROZEN until a separately-scoped Tier-2 plan clears Priya's sign-off.",
+
+  "_why_separate_file": "Physical separation, not just a comment. influora-api/src/main/resources/trendspark/theme-taxonomy.json is a locked, triple-embedded (ThemeMatchService.java, influora-ai/app/prompt/trend_tag.py THEME_SET, trendspark/n8n/theme-tagger.js), CI-drift-checked (tagger-sync.test.js / trendspark-tagger-sync.yml) vocabulary. Bolting a 65-tag second axis onto it would make every future india_events edit a diff against the CI-watched file — noise, merge-conflict surface, and an invitation to accidentally touch themes[]. When the Tier-2 consumer is eventually built, it loads this file independently with clean ownership and never has to reason about the locked vocab at all.",
+
+  "_source": "wiki/build/theme-taxonomy-expansion-strategy.md (Nisha, hierarchy/grouping/naming) + wiki/build/theme-taxonomy-seo-validation.md (Aditya, seo field on tags where he supplied search-volume data)",
+  "_priority_scores_are_placeholders": "Nisha's doc (§6) says she owns wiki/processes/festival-priority-scores.json and it does not exist yet. Every priority_scores value below is Vikram's ESTIMATE for illustration only — replace with Nisha's real file before any consumer is built. Placeholders are acceptable ONLY because nothing reads them today.",
+  "_naming_open_items": [
+    "ganesh-chaturthi vs ganpati — Aditya: ganpati (246k/mo, Maharashtra-dominant) vs ganesh-chaturthi (368k/mo overall). Nisha's doc used ganesh-chaturthi. Keeping ganesh-chaturthi as primary id per Nisha's naming-convention rule (avoid regional colloquial per §1), NOT renaming — but flagging since Aditya's brief explicitly asked this be confirmed.",
+    "raksha-bandhan vs rakhi — Aditya: rakhi (823k/mo) has HIGHER volume than raksha-bandhan (550k/mo). Nisha's doc explicitly excludes 'rakhi' as 'colloquial' (§1). Keeping raksha-bandhan as primary id, but this is a real SEO-vs-convention tension worth Nisha/Aditya sign-off, not a Priya architectural question.",
+    "karwa-chauth (Nisha's spelling) vs karva chauth (Aditya's spelling, also the existing keyword_to_theme_mappings key). Standardized on karwa-chauth as the india_events id below; kept 'karva chauth' as an seo.variant on that tag so no search volume is lost."
+  ],
+
+  "india_events": {
+    "_status": "PROPOSAL — additive only, zero runtime effect until code is written to read this block and a scoped Tier-2 plan clears Priya's sign-off (see wiki/build/theme-taxonomy-implementation.md).",
+
+    "groups": {
+      "festivals": {
+        "pan_india": ["diwali", "holi", "navratri", "janmashtami", "eid-ul-fitr", "eid-ul-adha", "raksha-bandhan", "dussehra", "maha-shivratri", "dhanteras", "karwa-chauth", "guru-nanak-jayanti", "navreh"],
+        "regional_south": ["onam", "pongal", "ugadi", "vishu", "puthandu"],
+        "regional_west": ["ganesh-chaturthi", "gudi-padwa", "garba"],
+        "regional_north": ["lohri", "baisakhi", "chhath"],
+        "regional_east": ["durga-puja", "bihu"],
+        "multi_region": ["makar-sankranti"],
+        "commercial_festivals": ["akshaya-tritiya"]
+      },
+      "regions": {
+        "states": ["tamil-nadu", "kerala", "karnataka", "telangana-ap", "maharashtra", "gujarat", "rajasthan", "punjab", "west-bengal", "bihar-up", "goa", "kashmir"],
+        "zones": ["northeast", "pan-india"]
+      },
+      "seasons": {
+        "weather": ["winter", "summer", "heatwave", "monsoon", "ne-monsoon"],
+        "agri_cycles": ["harvest"]
+      },
+      "events": {
+        "sports": ["ipl", "cricket"],
+        "civic": ["budget-day", "republic-day", "independence-day"],
+        "education": ["exam-season", "results-season"],
+        "lifestyle": ["wedding-season"],
+        "entertainment": ["movie-release", "ott-release"]
+      },
+      "commercial": {
+        "e_commerce": ["great-indian-festival", "big-billion-days", "prime-day", "end-of-season-sale", "black-friday", "year-end-sale"],
+        "traditional": ["gold-buying"]
+      }
+    },
+    "_groups_count_note": "festivals=28 (26 from Nisha's core list + guru-nanak-jayanti + navreh, both from her own vernacular-mapping table, to hit her stated '28'), regions=14, seasons=6, events=10 (Nisha's doc lists both 'ipl' AND 'cricket' under events.sports despite her naming rule in §1 saying 'ipl not cricket-season' — kept both as written, flagged, her stated total was 9 not 10), commercial=7. Total unique tags = 65.",
+
+    "tags": [
+      { "id": "diwali", "category": "festivals", "subcategory": "pan-india", "region": "pan-india", "activates": ["home", "beauty", "fashion", "finance", "food", "devotional", "gifting"], "priority_scores": {"home": 10, "beauty": 8, "fashion": 8, "food": 6, "finance": 5, "devotional": 4, "gifting": 3}, "status": "active", "seo": {"primary_keyword": "diwali", "volume_per_month": 2450000, "regional_variant": {"keyword": "deepavali", "volume_per_month": 450000, "region": "south-india"}, "long_tail": [{"keyword": "diwali outfit", "volume": 165000, "intent": "commercial"}, {"keyword": "diwali gifts", "volume": 201000, "intent": "transactional"}, {"keyword": "diwali recipes", "volume": 135000, "intent": "informational"}], "peak_months": [9, 10, 11]} },
+      { "id": "holi", "category": "festivals", "subcategory": "pan-india", "region": "pan-india", "activates": ["beauty", "fashion", "food", "comedy"], "priority_scores": {"beauty": 8, "fashion": 7, "food": 5, "comedy": 6}, "status": "active", "seo": {"primary_keyword": "holi", "volume_per_month": 1350000, "long_tail": [{"keyword": "holi outfit", "volume": 74000, "intent": "commercial"}, {"keyword": "holi colors", "volume": 110000, "intent": "informational"}], "peak_months": [2, 3]} },
+      { "id": "navratri", "category": "festivals", "subcategory": "pan-india", "region": "pan-india", "activates": ["fashion", "beauty", "devotional", "food"], "priority_scores": {"fashion": 9, "beauty": 7, "devotional": 6, "food": 4}, "status": "active", "seo": {"primary_keyword": "navratri", "volume_per_month": 823000, "long_tail": [{"keyword": "navratri dress", "volume": 165000, "intent": "commercial"}, {"keyword": "garba dress", "volume": 201000, "intent": "commercial"}, {"keyword": "navratri makeup", "volume": 49000, "intent": "informational"}], "peak_months": [8, 9, 10]} },
+      { "id": "janmashtami", "category": "festivals", "subcategory": "pan-india", "region": "pan-india", "activates": ["devotional", "food", "home"], "priority_scores": {"devotional": 9, "food": 5, "home": 4}, "status": "active", "seo": null },
+      { "id": "eid-ul-fitr", "category": "festivals", "subcategory": "pan-india", "region": "pan-india", "activates": ["fashion", "beauty", "food", "devotional", "gifting"], "priority_scores": {"fashion": 8, "beauty": 6, "food": 6, "devotional": 5, "gifting": 4}, "status": "active", "seo": {"primary_keyword": "eid", "volume_per_month": 1230000, "regional_variant": {"keyword": "eid mubarak", "volume_per_month": 673000}, "long_tail": [{"keyword": "eid outfit", "volume": 135000, "intent": "commercial"}, {"keyword": "eid mehndi design", "volume": 165000, "intent": "informational"}], "peak_months": "lunar calendar, ~1 month before Eid"} },
+      { "id": "eid-ul-adha", "category": "festivals", "subcategory": "pan-india", "region": "pan-india", "activates": ["food", "devotional", "gifting"], "priority_scores": {"food": 7, "devotional": 6, "gifting": 4}, "status": "active", "seo": null },
+      { "id": "raksha-bandhan", "category": "festivals", "subcategory": "pan-india", "region": "pan-india", "activates": ["gifting", "fashion", "food"], "priority_scores": {"gifting": 9, "fashion": 5, "food": 4}, "status": "active", "seo": {"primary_keyword": "raksha bandhan", "volume_per_month": 550000, "regional_variant": {"keyword": "rakhi", "volume_per_month": 823000, "note": "higher volume than the formal name — see naming open item"}, "long_tail": [{"keyword": "rakhi design", "volume": 165000, "intent": "commercial"}, {"keyword": "rakhi gift ideas", "volume": 49000, "intent": "transactional"}], "peak_months": [7, 8]} },
+      { "id": "dussehra", "category": "festivals", "subcategory": "pan-india", "region": "pan-india", "activates": ["devotional", "fashion", "food"], "priority_scores": {"devotional": 8, "fashion": 5, "food": 4}, "status": "active", "seo": null },
+      { "id": "maha-shivratri", "category": "festivals", "subcategory": "pan-india", "region": "pan-india", "activates": ["devotional"], "priority_scores": {"devotional": 10}, "status": "active", "seo": null },
+      { "id": "dhanteras", "category": "festivals", "subcategory": "pan-india", "region": "pan-india", "activates": ["finance", "gifting", "home"], "priority_scores": {"finance": 9, "gifting": 6, "home": 4}, "status": "active", "seo": null },
+      { "id": "karwa-chauth", "category": "festivals", "subcategory": "pan-india", "region": "pan-india", "activates": ["devotional", "beauty", "fashion", "food"], "priority_scores": {"devotional": 7, "beauty": 7, "fashion": 5, "food": 4}, "status": "active", "seo": {"primary_keyword": "karva chauth", "volume_per_month": 450000, "variant_spelling": "karwa-chauth used as this tag's id; 'karva chauth' is the higher-traffic spelling per Aditya and the existing keyword_to_theme_mappings key — both should resolve to this tag", "long_tail": [{"keyword": "karva chauth mehndi", "volume": 110000, "intent": "informational"}, {"keyword": "karva chauth outfit", "volume": 33000, "intent": "commercial"}], "peak_months": [10, 11]} },
+      { "id": "guru-nanak-jayanti", "category": "festivals", "subcategory": "pan-india", "region": "punjab", "activates": ["devotional", "food"], "priority_scores": {"devotional": 8, "food": 4}, "status": "active", "seo": null, "notes": "From Nisha's vernacular table (Punjab row), not her main pan-india list — folded in to reconcile her stated count of 28." },
+      { "id": "navreh", "category": "festivals", "subcategory": "pan-india", "region": "kashmir", "activates": ["devotional", "home"], "priority_scores": {"devotional": 7, "home": 4}, "status": "active", "seo": {"note": "Aditya flagged this LOW-volume/niche (Kashmiri-only per Nisha) — keep only if creator demand, per Nisha §5 maintenance criteria."} },
+      { "id": "onam", "category": "festivals", "subcategory": "regional-south", "region": "kerala", "activates": ["food", "fashion", "home"], "priority_scores": {"food": 10, "fashion": 6, "home": 5}, "status": "active", "seo": {"primary_keyword": "onam", "volume_per_month": 301000, "long_tail": [{"keyword": "onam sadhya", "volume": 74000, "intent": "informational"}, {"keyword": "onam dress", "volume": 22000, "intent": "commercial"}], "peak_months": [8]} },
+      { "id": "pongal", "category": "festivals", "subcategory": "regional-south", "region": "tamil-nadu", "activates": ["food", "devotional", "home"], "priority_scores": {"food": 10, "devotional": 5, "home": 4}, "status": "active", "seo": {"primary_keyword": "pongal", "volume_per_month": 246000, "long_tail": [{"keyword": "pongal recipe", "volume": 90000, "intent": "informational"}, {"keyword": "pongal kolam", "volume": 18000, "intent": "informational"}], "peak_months": [1]} },
+      { "id": "ugadi", "category": "festivals", "subcategory": "regional-south", "region": "telangana-ap", "activates": ["food", "devotional"], "priority_scores": {"food": 7, "devotional": 6}, "status": "active", "seo": null, "notes": "Shared same-day cluster with gudi-padwa/navreh/cheti-chand — see worked example in implementation.md" },
+      { "id": "vishu", "category": "festivals", "subcategory": "regional-south", "region": "kerala", "activates": ["devotional", "food"], "priority_scores": {"devotional": 7, "food": 5}, "status": "active", "seo": null },
+      { "id": "puthandu", "category": "festivals", "subcategory": "regional-south", "region": "tamil-nadu", "activates": ["devotional", "food"], "priority_scores": {"devotional": 7, "food": 5}, "status": "active", "seo": null },
+      { "id": "ganesh-chaturthi", "category": "festivals", "subcategory": "regional-west", "region": "maharashtra", "activates": ["devotional", "home", "food"], "priority_scores": {"devotional": 9, "home": 6, "food": 4}, "status": "active", "seo": {"primary_keyword": "ganesh chaturthi", "volume_per_month": 368000, "regional_variant": {"keyword": "ganpati", "volume_per_month": 246000, "region": "maharashtra"}, "long_tail": [{"keyword": "ganpati decoration", "volume": 135000, "intent": "commercial"}, {"keyword": "ganesh visarjan", "volume": 60000, "intent": "informational"}], "peak_months": [8, 9]} },
+      { "id": "gudi-padwa", "category": "festivals", "subcategory": "regional-west", "region": "maharashtra", "activates": ["fashion", "devotional", "food"], "priority_scores": {"fashion": 6, "devotional": 6, "food": 4}, "status": "active", "seo": null, "notes": "Same-day cluster with ugadi/navreh — see worked example" },
+      { "id": "garba", "category": "festivals", "subcategory": "regional-west", "region": "gujarat", "activates": ["fashion", "beauty"], "priority_scores": {"fashion": 9, "beauty": 6}, "status": "active", "seo": {"primary_keyword": "garba dress", "volume_per_month": 201000, "peak_months": [8, 9]} },
+      { "id": "lohri", "category": "festivals", "subcategory": "regional-north", "region": "punjab", "activates": ["comedy", "food", "home"], "priority_scores": {"comedy": 6, "food": 6, "home": 4}, "status": "active", "seo": null },
+      { "id": "baisakhi", "category": "festivals", "subcategory": "regional-north", "region": "punjab", "activates": ["food", "fashion"], "priority_scores": {"food": 6, "fashion": 5}, "status": "active", "seo": null },
+      { "id": "chhath", "category": "festivals", "subcategory": "regional-north", "region": "bihar-up", "activates": ["devotional", "food"], "priority_scores": {"devotional": 9, "food": 5}, "status": "active", "seo": null },
+      { "id": "durga-puja", "category": "festivals", "subcategory": "regional-east", "region": "west-bengal", "activates": ["fashion", "devotional", "food"], "priority_scores": {"fashion": 8, "devotional": 7, "food": 5}, "status": "active", "seo": {"primary_keyword": "durga puja", "volume_per_month": 450000, "long_tail": [{"keyword": "durga puja outfit", "volume": 33000, "intent": "commercial"}, {"keyword": "pujo look", "volume": 8100, "intent": "commercial"}], "peak_months": [9, 10]} },
+      { "id": "bihu", "category": "festivals", "subcategory": "regional-east", "region": "northeast", "activates": ["food", "fashion"], "priority_scores": {"food": 6, "fashion": 5}, "status": "active", "seo": null, "notes": "3 variants (Rongali/Bohag Apr, Kati Oct, Magh Jan) — Nisha's doc flags this, not modeled as 3 separate tags in this draft" },
+      { "id": "makar-sankranti", "category": "festivals", "subcategory": "multi-region", "region": "pan-india", "activates": ["food", "home"], "priority_scores": {"food": 6, "home": 4}, "status": "active", "seo": null, "notes": "Generic pan-India harvest fallback — a Tamil Nadu creator should get 'pongal' instead, per Nisha's regional-priority rule" },
+      { "id": "akshaya-tritiya", "category": "festivals", "subcategory": "commercial-festival", "region": "pan-india", "activates": ["finance"], "priority_scores": {"finance": 9}, "status": "active", "seo": null },
+
+      { "id": "tamil-nadu", "category": "regions", "subcategory": "states", "activates": [], "status": "active", "seo": {"regional_keywords": [{"keyword": "tamil wedding", "volume": 60000}, {"keyword": "tamil saree", "volume": 18000}]} },
+      { "id": "kerala", "category": "regions", "subcategory": "states", "activates": [], "status": "active", "seo": {"regional_keywords": [{"keyword": "kerala saree", "volume": 22000}, {"keyword": "kerala food", "volume": 33000}]} },
+      { "id": "karnataka", "category": "regions", "subcategory": "states", "activates": [], "status": "active", "seo": null },
+      { "id": "telangana-ap", "category": "regions", "subcategory": "states", "activates": [], "status": "active", "seo": null },
+      { "id": "maharashtra", "category": "regions", "subcategory": "states", "activates": [], "status": "active", "seo": {"regional_keywords": [{"keyword": "marathi wedding", "volume": 33000}, {"keyword": "maharashtrian saree", "volume": 8100}]} },
+      { "id": "gujarat", "category": "regions", "subcategory": "states", "activates": [], "status": "active", "seo": null },
+      { "id": "rajasthan", "category": "regions", "subcategory": "states", "activates": [], "status": "active", "seo": null },
+      { "id": "punjab", "category": "regions", "subcategory": "states", "activates": [], "status": "active", "seo": {"regional_keywords": [{"keyword": "punjabi suit", "volume": 165000}, {"keyword": "punjabi wedding", "volume": 90000}]} },
+      { "id": "west-bengal", "category": "regions", "subcategory": "states", "activates": [], "status": "active", "seo": {"regional_keywords": [{"keyword": "bengali saree", "volume": 49000}, {"keyword": "bengali jewellery", "volume": 12000}]} },
+      { "id": "bihar-up", "category": "regions", "subcategory": "states", "activates": [], "status": "active", "seo": null },
+      { "id": "goa", "category": "regions", "subcategory": "states", "activates": [], "status": "active", "seo": null },
+      { "id": "kashmir", "category": "regions", "subcategory": "states", "activates": [], "status": "active", "seo": null },
+      { "id": "northeast", "category": "regions", "subcategory": "zones", "activates": [], "status": "active", "seo": null, "notes": "Grouped per Nisha: Assam/Meghalaya/Nagaland/Tripura/Arunachal/Manipur/Mizoram/Sikkim — 'no creator differentiates beyond Northeast in practice'" },
+      { "id": "pan-india", "category": "regions", "subcategory": "zones", "activates": [], "status": "active", "seo": null, "notes": "Fallback region for creators with no regional specificity" },
+
+      { "id": "winter", "category": "seasons", "subcategory": "weather", "activates": ["beauty", "fashion"], "priority_scores": {"beauty": 6, "fashion": 6}, "status": "active", "seo": {"related_keywords": [{"keyword": "winter skincare", "volume": 90000}]} },
+      { "id": "summer", "category": "seasons", "subcategory": "weather", "activates": ["fashion", "beauty"], "priority_scores": {"fashion": 7, "beauty": 6}, "status": "active", "seo": {"related_keywords": [{"keyword": "summer dress", "volume": 201000}, {"keyword": "summer skincare", "volume": 90000}]} },
+      { "id": "heatwave", "category": "seasons", "subcategory": "weather", "activates": ["beauty", "travel"], "priority_scores": {"beauty": 6, "travel": 5}, "status": "active", "seo": null, "notes": "Activates hydration/cooling/travel content, peaks May per Nisha" },
+      { "id": "monsoon", "category": "seasons", "subcategory": "weather", "activates": ["food", "travel", "fashion", "beauty"], "priority_scores": {"food": 7, "travel": 6, "fashion": 5, "beauty": 5}, "status": "active", "seo": {"related_keywords": [{"keyword": "monsoon outfit", "volume": 110000}, {"keyword": "monsoon skincare", "volume": 60000}, {"keyword": "monsoon makeup", "volume": 33000}]} },
+      { "id": "ne-monsoon", "category": "seasons", "subcategory": "weather", "activates": ["food", "home"], "priority_scores": {"food": 6, "home": 4}, "status": "active", "seo": null, "notes": "Oct-Nov, distinct from 'monsoon' for Tamil Nadu/coastal South — TN's primary rain season is this, not the Jun-Sep SW monsoon" },
+      { "id": "harvest", "category": "seasons", "subcategory": "agri-cycles", "activates": ["food"], "priority_scores": {"food": 6}, "status": "active", "seo": null, "notes": "Jan cluster (Pongal/Makar Sankranti/Lohri) + Apr cluster (Baisakhi/Bihu) — an umbrella season tag layered under the specific festival tags, not a replacement for them" },
+
+      { "id": "ipl", "category": "events", "subcategory": "sports", "activates": ["comedy", "fashion"], "priority_scores": {"comedy": 6, "fashion": 4}, "status": "active", "seo": {"primary_keyword": "ipl", "volume_per_month": 5500000, "long_tail": [{"keyword": "ipl jersey", "volume": 165000, "intent": "commercial"}], "peak_months": [3, 4, 5]} },
+      { "id": "cricket", "category": "events", "subcategory": "sports", "activates": ["comedy"], "priority_scores": {"comedy": 5}, "status": "active", "seo": null, "notes": "Overlaps with 'ipl' — Nisha's own naming rule (§1) says use 'ipl' not a generic cricket tag; kept both per her literal JSON block, flagged for her to resolve" },
+      { "id": "budget-day", "category": "events", "subcategory": "civic", "activates": ["finance"], "priority_scores": {"finance": 8}, "status": "active", "seo": null },
+      { "id": "republic-day", "category": "events", "subcategory": "civic", "activates": ["fashion", "devotional"], "priority_scores": {"fashion": 4, "devotional": 5}, "status": "active", "seo": null },
+      { "id": "independence-day", "category": "events", "subcategory": "civic", "activates": ["fashion", "devotional"], "priority_scores": {"fashion": 4, "devotional": 5}, "status": "active", "seo": null },
+      { "id": "exam-season", "category": "events", "subcategory": "education", "activates": ["education"], "priority_scores": {"education": 8}, "status": "active", "seo": null },
+      { "id": "results-season", "category": "events", "subcategory": "education", "activates": ["education"], "priority_scores": {"education": 8}, "status": "active", "seo": null },
+      { "id": "wedding-season", "category": "events", "subcategory": "lifestyle", "activates": ["beauty", "fashion", "home"], "priority_scores": {"beauty": 9, "fashion": 8, "home": 4}, "status": "active", "seo": {"related_keywords": [{"keyword": "wedding outfit", "volume": 246000}, {"keyword": "bridal makeup", "volume": 301000}, {"keyword": "wedding guest dress", "volume": 135000}], "peak_months": [11, 12, 1, 2]} },
+      { "id": "movie-release", "category": "events", "subcategory": "entertainment", "activates": ["entertainment"], "priority_scores": {"entertainment": 7}, "status": "active", "seo": null },
+      { "id": "ott-release", "category": "events", "subcategory": "entertainment", "activates": ["entertainment"], "priority_scores": {"entertainment": 6}, "status": "active", "seo": null },
+
+      { "id": "great-indian-festival", "category": "commercial", "subcategory": "e-commerce", "activates": ["shopping", "tech", "fashion"], "priority_scores": {"shopping": 8, "tech": 6, "fashion": 5}, "status": "active", "seo": null, "notes": "Amazon brand name kept per Nisha's naming rule (§1) — creators search the brand name, not 'festive sale'" },
+      { "id": "big-billion-days", "category": "commercial", "subcategory": "e-commerce", "activates": ["shopping", "tech", "fashion"], "priority_scores": {"shopping": 8, "tech": 6, "fashion": 5}, "status": "active", "seo": null, "notes": "Flipkart brand name" },
+      { "id": "prime-day", "category": "commercial", "subcategory": "e-commerce", "activates": ["shopping", "tech"], "priority_scores": {"shopping": 7, "tech": 6}, "status": "active", "seo": null },
+      { "id": "end-of-season-sale", "category": "commercial", "subcategory": "e-commerce", "activates": ["shopping", "fashion"], "priority_scores": {"shopping": 6, "fashion": 5}, "status": "active", "seo": null },
+      { "id": "black-friday", "category": "commercial", "subcategory": "e-commerce", "activates": ["shopping", "tech"], "priority_scores": {"shopping": 6, "tech": 5}, "status": "active", "seo": null },
+      { "id": "year-end-sale", "category": "commercial", "subcategory": "e-commerce", "activates": ["shopping"], "priority_scores": {"shopping": 6}, "status": "active", "seo": {"related_keywords": [{"keyword": "new year outfit", "volume": 165000}, {"keyword": "new year makeup", "volume": 74000}], "peak_months": [12]} },
+      { "id": "gold-buying", "category": "commercial", "subcategory": "traditional", "activates": ["finance"], "priority_scores": {"finance": 9}, "status": "active", "seo": null, "notes": "Dhanteras/Akshaya Tritiya jewelry-buying moment, platform-neutral per Nisha's naming rule" }
+    ],
+
+    "gap_candidates": [
+      { "id": "poila-boishakh", "region": "west-bengal", "reason": "Bengali New Year, Apr 15 — add if Bengali creator demand emerges (Nisha §4)" },
+      { "id": "carnival", "region": "goa", "reason": "Feb-Mar, pre-Lent — add if Goa travel/party creators emerge" },
+      { "id": "tulip-festival", "region": "kashmir", "reason": "Apr, tourism — add if Kashmir travel creators emerge" },
+      { "id": "pushkar-camel-fair", "region": "rajasthan", "reason": "Oct-Nov — add if Rajasthan travel creators emerge" },
+      { "id": "teej", "region": "rajasthan", "reason": "Aug monsoon festival, women-focused, Aditya flags 45k searches/mo — SEO case is stronger than the other gap candidates" },
+      { "id": "hornbill-festival", "region": "northeast", "reason": "Dec 1-10, Nagaland — mentioned in Nisha's vernacular table, not in her main 28-tag list" },
+      { "id": "losar", "region": "northeast", "reason": "Sikkim-specific, conditional per Nisha ('if Sikkim coded separately')" },
+      { "id": "christmas", "region": "goa", "reason": "Mentioned for Goa in Nisha's vernacular table, not in her main 28-tag list; likely also pan-India-relevant if added" }
+    ],
+    "_gap_candidates_note": "Explicitly NOT added as active tags, per Nisha's own decision rule (§4): 'Add these only if creator profiles in the DB show regional concentration. Don't pre-build tags for zero creators.' Listed here for visibility only."
+  }
+}

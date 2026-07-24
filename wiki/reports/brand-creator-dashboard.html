@@ -1,0 +1,251 @@
+<title>Influora — Brand & Creator Feature Status</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f6f6fa; --panel:#ffffff; --panel-2:#fbfbfe; --ink:#1a1b2e; --ink-2:#565873;
+    --line:#e6e6f0; --accent:#5b5bd6; --accent-soft:#ecebfb;
+    --ok:#1f8f5f; --ok-bg:#e6f5ee; --warn:#b9791a; --warn-bg:#fbf0dd; --bad:#cc3b3b; --bad-bg:#fbe6e6;
+    --track:#e6e6f0; --mono-ink:#3a3c57;
+    --shadow:0 1px 2px rgba(26,27,46,.05),0 8px 24px -12px rgba(26,27,46,.12);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#101018; --panel:#181925; --panel-2:#1e1f2d; --ink:#ececf5; --ink-2:#a2a3bd;
+      --line:#292a3a; --accent:#8f8ff0; --accent-soft:#23233a;
+      --ok:#4cc98d; --ok-bg:#132a20; --warn:#e0a94a; --warn-bg:#2c2213; --bad:#f0736f; --bad-bg:#2e1717;
+      --track:#292a3a; --mono-ink:#b9bad4;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f6fa; --panel:#ffffff; --panel-2:#fbfbfe; --ink:#1a1b2e; --ink-2:#565873;
+    --line:#e6e6f0; --accent:#5b5bd6; --accent-soft:#ecebfb;
+    --ok:#1f8f5f; --ok-bg:#e6f5ee; --warn:#b9791a; --warn-bg:#fbf0dd; --bad:#cc3b3b; --bad-bg:#fbe6e6;
+    --track:#e6e6f0; --mono-ink:#3a3c57;
+    --shadow:0 1px 2px rgba(26,27,46,.05),0 8px 24px -12px rgba(26,27,46,.12);
+  }
+  :root[data-theme="dark"]{
+    --bg:#101018; --panel:#181925; --panel-2:#1e1f2d; --ink:#ececf5; --ink-2:#a2a3bd;
+    --line:#292a3a; --accent:#8f8ff0; --accent-soft:#23233a;
+    --ok:#4cc98d; --ok-bg:#132a20; --warn:#e0a94a; --warn-bg:#2c2213; --bad:#f0736f; --bad-bg:#2e1717;
+    --track:#292a3a; --mono-ink:#b9bad4;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -14px rgba(0,0,0,.6);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;line-height:1.5;}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 20px 80px}
+  .mono{font-family:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace}
+  .tnum{font-variant-numeric:tabular-nums}
+
+  /* header */
+  header{display:flex;gap:28px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+    padding:26px 28px;background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+  .eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700;margin:0 0 6px}
+  h1{margin:0;font-size:26px;letter-spacing:-.02em;font-weight:800;text-wrap:balance}
+  .sub{margin:8px 0 0;color:var(--ink-2);font-size:13.5px}
+  .verdict{display:inline-flex;align-items:center;gap:7px;margin-top:12px;padding:5px 11px;border-radius:999px;
+    background:var(--bad-bg);color:var(--bad);font-weight:700;font-size:12.5px;border:1px solid color-mix(in srgb,var(--bad) 30%,transparent)}
+  .ring{--pct:73.5;position:relative;width:132px;height:132px;flex:0 0 auto}
+  .ring::before{content:"";position:absolute;inset:0;border-radius:50%;
+    background:conic-gradient(var(--accent) calc(var(--pct)*1%),var(--track) 0)}
+  .ring::after{content:"";position:absolute;inset:12px;border-radius:50%;background:var(--panel)}
+  .ring b{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1}
+  .ring b i{font-style:normal;font-size:30px;font-weight:800;letter-spacing:-.03em}
+  .ring b span{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);font-weight:700}
+
+  /* tiles */
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0 8px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 16px 14px;box-shadow:var(--shadow)}
+  .tile .n{font-size:26px;font-weight:800;letter-spacing:-.02em}
+  .tile .l{font-size:12px;color:var(--ink-2);margin-top:2px;font-weight:600}
+  .tile .bar{height:4px;border-radius:3px;margin-top:10px;background:var(--track);overflow:hidden}
+  .tile .bar i{display:block;height:100%}
+  .t-ok .n{color:var(--ok)} .t-ok .bar i{background:var(--ok)}
+  .t-warn .n{color:var(--warn)} .t-warn .bar i{background:var(--warn)}
+  .t-bad .n{color:var(--bad)} .t-bad .bar i{background:var(--bad)}
+  .t-tot .n{color:var(--accent)} .t-tot .bar i{background:var(--accent)}
+
+  /* section */
+  section{margin-top:30px}
+  .sh{display:flex;align-items:baseline;gap:10px;margin:0 2px 12px}
+  .sh h2{margin:0;font-size:15px;font-weight:800;letter-spacing:-.01em}
+  .sh .c{font-size:12px;color:var(--ink-2);font-weight:600}
+  .sh .rule{flex:1;height:1px;background:var(--line)}
+
+  /* filter */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin:4px 2px 0}
+  .chip{font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;padding:6px 13px;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel);color:var(--ink-2);transition:.15s}
+  .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+  .chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* rows */
+  .rows{display:flex;flex-direction:column;gap:8px}
+  .row{display:grid;grid-template-columns:6px 1fr auto;gap:0;align-items:stretch;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+  .row .stripe{background:var(--track)}
+  .row.ok .stripe{background:var(--ok)} .row.warn .stripe{background:var(--warn)} .row.bad .stripe{background:var(--bad)}
+  .row .body{padding:12px 4px 12px 15px;min-width:0}
+  .row .name{font-weight:700;font-size:14px}
+  .row .ev{margin-top:3px;font-size:12px;color:var(--mono-ink)}
+  .row .ev .path{color:var(--ink-2)}
+  .row .side{display:flex;align-items:center;gap:10px;padding:12px 15px 12px 8px}
+  .area{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--ink-2);
+    background:var(--panel-2);border:1px solid var(--line);padding:3px 8px;border-radius:6px;white-space:nowrap}
+  .pill{font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:999px;white-space:nowrap;letter-spacing:.02em}
+  .p-ok{background:var(--ok-bg);color:var(--ok)} .p-warn{background:var(--warn-bg);color:var(--warn)} .p-bad{background:var(--bad-bg);color:var(--bad)}
+  .row[hidden]{display:none}
+
+  /* demo panel */
+  .demo{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow)}
+  .demo h3{margin:18px 0 8px;font-size:13px;letter-spacing:.02em}
+  .demo h3:first-child{margin-top:0}
+  .demo ul{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+  .demo li{font-size:13px;padding-left:18px;position:relative;color:var(--ink)}
+  .demo li::before{content:"";position:absolute;left:2px;top:8px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
+  .demo li.crit::before{background:var(--bad)}
+  .demo code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--mono-ink);background:var(--panel-2);padding:1px 5px;border-radius:5px;border:1px solid var(--line)}
+  .note{color:var(--ink-2);font-size:12.5px;margin:14px 2px 0;line-height:1.6}
+  footer{margin-top:34px;color:var(--ink-2);font-size:12px;border-top:1px solid var(--line);padding-top:16px}
+  @media(max-width:720px){
+    .tiles{grid-template-columns:repeat(2,1fr)}
+    .row{grid-template-columns:6px 1fr}
+    .row .side{grid-column:2;padding:0 15px 12px;justify-content:flex-start}
+  }
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Live QA · influora-test · 200.141.1.6</p>
+      <h1>Brand &amp; Creator — Feature Status</h1>
+      <p class="sub">Online-only test, 22 Jul 2026 · 51 features · 55 endpoints swept · full campaign lifecycle exercised · admin excluded (MFA)</p>
+      <span class="verdict">● Not production-ready — 3 blockers</span>
+    </div>
+    <div class="ring" role="img" aria-label="73.5 percent weighted completion">
+      <b><i class="tnum">73<small style="font-size:16px">%</small></i><span>Weighted</span></b>
+    </div>
+  </header>
+
+  <div class="tiles">
+    <div class="tile t-ok"><div class="n tnum">33</div><div class="l">Working</div><div class="bar"><i style="width:65%"></i></div></div>
+    <div class="tile t-warn"><div class="n tnum">9</div><div class="l">Partial</div><div class="bar"><i style="width:18%"></i></div></div>
+    <div class="tile t-bad"><div class="n tnum">9</div><div class="l">Broken</div><div class="bar"><i style="width:18%"></i></div></div>
+    <div class="tile t-tot"><div class="n tnum">51</div><div class="l">Checked</div><div class="bar"><i style="width:100%"></i></div></div>
+  </div>
+
+  <div class="filters" role="group" aria-label="Filter by status">
+    <button class="chip" aria-pressed="true" data-f="all">All</button>
+    <button class="chip" aria-pressed="false" data-f="bad">Broken</button>
+    <button class="chip" aria-pressed="false" data-f="warn">Partial</button>
+    <button class="chip" aria-pressed="false" data-f="ok">Working</button>
+  </div>
+
+  <section>
+    <div class="sh"><h2>Blockers &amp; high-severity</h2><span class="c">worst first</span><span class="rule"></span></div>
+    <div class="rows" id="list">
+      <div class="row bad" data-s="bad"><div class="stripe"></div><div class="body"><div class="name">Brand create-campaign (UI) — cannot create a campaign</div><div class="ev">End Date picker writes to Start Date; wizard stuck at Budget. Backend create works. <span class="path">campaign-form.tsx · End Date Popover</span></div></div><div class="side"><span class="area">Brand</span><span class="pill p-bad">Broken</span></div></div>
+
+      <div class="row bad" data-s="bad"><div class="stripe"></div><div class="body"><div class="name">Brand dashboard shows fabricated data</div><div class="ev">Wallet 404 makes <span class="path">Promise.all</span> fail-fast → discards good calls → mock actions/pipeline/wallet + error toast. <span class="path">dashboard-page.tsx:150</span></div></div><div class="side"><span class="area">Brand</span><span class="pill p-bad">Broken</span></div></div>
+
+      <div class="row bad" data-s="bad"><div class="stripe"></div><div class="body"><div class="name">Creator profile page is 100% fake</div><div class="ev">Renders "Priya Sharma / 125K / 45 collabs", makes no API call, ignores real <span class="path">/me/creator-profile</span>. <span class="path">creator-profile.tsx:43</span></div></div><div class="side"><span class="area">Creator</span><span class="pill p-bad">Broken</span></div></div>
+
+      <div class="row bad" data-s="bad"><div class="stripe"></div><div class="body"><div class="name">Creator wallet shows fabricated money</div><div class="ev">Real <span class="path">/wallet</span> empty, but UI shows ₹4,25,000 earned + fake BoAt/Mamaearth/Nykaa payouts. <span class="path">creator-wallet.tsx:89,97</span></div></div><div class="side"><span class="area">Creator</span><span class="pill p-bad">Broken</span></div></div>
+
+      <div class="row bad" data-s="bad"><div class="stripe"></div><div class="body"><div class="name">Brand wallet 404 — demo workspace has no wallet</div><div class="ev"><span class="path">/wallet → 404 WALLET_NOT_FOUND</span>; page shows mock TDS ₹1,48,500 / GST ₹2,67,300. Fresh registrations DO get a wallet.</div></div><div class="side"><span class="area">Brand</span><span class="pill p-bad">Broken</span></div></div>
+
+      <div class="row bad" data-s="bad"><div class="stripe"></div><div class="body"><div class="name">Featured creators endpoint throws</div><div class="ev"><span class="path">/creators/featured → 500</span> even with valid params — real unhandled exception. <span class="path">CreatorDiscoveryService.getFeatured:284</span></div></div><div class="side"><span class="area">Brand</span><span class="pill p-bad">Broken</span></div></div>
+
+      <div class="row bad" data-s="bad"><div class="stripe"></div><div class="body"><div class="name">Brand transactional email is dead</div><div class="ev">Welcome/reset emails fail <span class="path">535 IP not whitelisted</span> (MSG91 SMTP from 200.141.1.6).</div></div><div class="side"><span class="area">Platform</span><span class="pill p-bad">Broken</span></div></div>
+
+      <div class="row bad" data-s="bad"><div class="stripe"></div><div class="body"><div class="name">API returns 500 for client errors</div><div class="ev"><span class="path">GlobalExceptionHandler</span> doesn't map unknown-route / missing-param / wrong-method → all become 500 instead of 404/400. Repo-wide.</div></div><div class="side"><span class="area">Platform</span><span class="pill p-bad">Broken</span></div></div>
+
+      <div class="row bad" data-s="bad"><div class="stripe"></div><div class="body"><div class="name">Shopify OAuth start broken</div><div class="ev"><span class="path">/shopify/oauth/authorize → 500</span> — store integration entry point fails (broken or unconfigured).</div></div><div class="side"><span class="area">Brand</span><span class="pill p-bad">Broken</span></div></div>
+
+      <div class="row warn" data-s="warn"><div class="stripe"></div><div class="body"><div class="name">Fake "Hype" deal in creator inbox</div><div class="ev"><span class="path">demoHypeCampaign</span> "Glow Drop Challenge" renders over the real empty deals list with a live Accept button. <span class="path">demo-data.ts</span></div></div><div class="side"><span class="area">Creator</span><span class="pill p-warn">Partial</span></div></div>
+
+      <div class="row warn" data-s="warn"><div class="stripe"></div><div class="body"><div class="name">Creator deliverables — 500 on missing param</div><div class="ev"><span class="path">/creator/deliverables</span> requires <span class="path">collaboration_id</span>; missing → 500 (should be 400). Works with param.</div></div><div class="side"><span class="area">Creator</span><span class="pill p-warn">Partial</span></div></div>
+
+      <div class="row warn" data-s="warn"><div class="stripe"></div><div class="body"><div class="name">Creator Instagram/Meta OAuth callback</div><div class="ev"><span class="path">/meta/oauth/authorize → 200</span> but <span class="path">/callback → 500</span> on missing params (same handler gap). Co-pilot gated on this.</div></div><div class="side"><span class="area">Creator</span><span class="pill p-warn">Partial</span></div></div>
+
+      <div class="row warn" data-s="warn"><div class="stripe"></div><div class="body"><div class="name">Meera brand chat — profile loads, live reply untested</div><div class="ev"><span class="path">/meera/brand-profile → 200</span>, <span class="path">/meera/credits → 200</span>; full AI chat/stream/voice not exercised.</div></div><div class="side"><span class="area">Brand</span><span class="pill p-warn">Partial</span></div></div>
+
+      <div class="row warn" data-s="warn"><div class="stripe"></div><div class="body"><div class="name">Brand messages / analytics / settings (UI)</div><div class="ev">Not walked in-browser; code carries <span class="path">mockConversations</span> / <span class="path">demoCreators</span> fallbacks. Verify live before launch.</div></div><div class="side"><span class="area">Brand</span><span class="pill p-warn">Partial</span></div></div>
+
+      <div class="row warn" data-s="warn"><div class="stripe"></div><div class="body"><div class="name">Creator analytics scores + onboarding (UI)</div><div class="ev"><span class="path">/creator/analytics/me/scores → 404</span>; onboarding wizard not walked (POST-only endpoints).</div></div><div class="side"><span class="area">Creator</span><span class="pill p-warn">Partial</span></div></div>
+
+      <div class="row warn" data-s="warn"><div class="stripe"></div><div class="body"><div class="name">Creator login badge mislabel</div><div class="ev">Creator sign-in page shows a "Brand workspace" chip. Cosmetic.</div></div><div class="side"><span class="area">Creator</span><span class="pill p-warn">Partial</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sh"><h2>Working — verified live</h2><span class="c">200 / real data</span><span class="rule"></span></div>
+    <div class="rows" id="list2">
+      <div class="row ok" data-s="ok"><div class="stripe"></div><div class="body"><div class="name">Campaign lifecycle: brand → creator (end-to-end)</div><div class="ev">create → discover → apply → deal → <span class="path">accept → TERMS_AGREED</span>. Validation solid (deadline&lt;start, 409 double-apply).</div></div><div class="side"><span class="area">Platform</span><span class="pill p-ok">Working</span></div></div>
+
+      <div class="row ok" data-s="ok"><div class="stripe"></div><div class="body"><div class="name">Brand create-campaign (backend/API)</div><div class="ev"><span class="path">POST /campaigns → 201</span> ACTIVE. Only the UI date picker blocks it.</div></div><div class="side"><span class="area">Brand</span><span class="pill p-ok">Working</span></div></div>
+
+      <div class="row ok" data-s="ok"><div class="stripe"></div><div class="body"><div class="name">Auth &amp; role isolation</div><div class="ev">Brand + creator login 200; every cross-role endpoint correctly 403s. Register+OTP flow works (dev OTP logged).</div></div><div class="side"><span class="area">Platform</span><span class="pill p-ok">Working</span></div></div>
+
+      <div class="row ok" data-s="ok"><div class="stripe"></div><div class="body"><div class="name">Brand: campaigns list · discover · search</div><div class="ev"><span class="path">/campaigns · /creators · /creators/search → 200</span>; real empty state + 7 seeded creators.</div></div><div class="side"><span class="area">Brand</span><span class="pill p-ok">Working</span></div></div>
+
+      <div class="row ok" data-s="ok"><div class="stripe"></div><div class="body"><div class="name">Brand: contracts · disputes · reviews · billing</div><div class="ev"><span class="path">/contracts · /brand/disputes · /brand/reviews/received · /billing/* → 200</span></div></div><div class="side"><span class="area">Brand</span><span class="pill p-ok">Working</span></div></div>
+
+      <div class="row ok" data-s="ok"><div class="stripe"></div><div class="body"><div class="name">Brand: workspace · notifications · templates · store status</div><div class="ev"><span class="path">/workspace/members · /notifications · /campaign-templates · /integrations/store/status → 200</span></div></div><div class="side"><span class="area">Brand</span><span class="pill p-ok">Working</span></div></div>
+
+      <div class="row ok" data-s="ok"><div class="stripe"></div><div class="body"><div class="name">Creator wallet (backend) — has a real wallet</div><div class="ev"><span class="path">/wallet · /wallet/balance · /wallet/transactions · /wallet/payout-methods → 200</span>. No 404 cascade like brand.</div></div><div class="side"><span class="area">Creator</span><span class="pill p-ok">Working</span></div></div>
+
+      <div class="row ok" data-s="ok"><div class="stripe"></div><div class="body"><div class="name">Creator: profile API · analytics · co-pilot</div><div class="ev"><span class="path">/me/creator-profile · /creator/analytics/me/metrics · /creator/copilot/suggestion/today → 200</span> (co-pilot correctly gated on Instagram).</div></div><div class="side"><span class="area">Creator</span><span class="pill p-ok">Working</span></div></div>
+
+      <div class="row ok" data-s="ok"><div class="stripe"></div><div class="body"><div class="name">Creator: campaigns · apply · deals · contracts</div><div class="ev"><span class="path">/creator/campaigns · /apply · /deals · /contracts → 200/201</span> — discovery &amp; application verified live.</div></div><div class="side"><span class="area">Creator</span><span class="pill p-ok">Working</span></div></div>
+
+      <div class="row ok" data-s="ok"><div class="stripe"></div><div class="body"><div class="name">Creator: coupons · disputes · affiliate · invoices · fees · reviews</div><div class="ev"><span class="path">/creator/coupons · /disputes · /affiliate-earnings · /campaign-invoices · /platform-fee · /reviews/received → 200</span></div></div><div class="side"><span class="area">Creator</span><span class="pill p-ok">Working</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sh"><h2>Demo / mock / seed data — inventory only</h2><span class="c">nothing deleted</span><span class="rule"></span></div>
+    <div class="demo">
+      <h3>Live-visible mock leaks (confirmed on the deployment)</h3>
+      <ul>
+        <li>Brand dashboard — <code>mockActionItems / mockWallet / mockPipeline</code> (dashboard-page.tsx:46)</li>
+        <li>Brand wallet — <code>mockWalletData</code> TDS ₹1,48,500 / GST ₹2,67,300 (brand-wallet.tsx:118)</li>
+        <li class="crit">Creator profile — <code>mockProfile</code> "Priya Sharma", renders with no API call (creator-profile.tsx:43)</li>
+        <li>Creator wallet — <code>mockEarningsData / mockPayouts</code> BoAt · Mamaearth · Nykaa (creator-wallet.tsx:89)</li>
+        <li>Deals + landing — <code>demoHypeCampaign</code> "Glow Drop Challenge" (demo-data.ts)</li>
+        <li>Brand analytics — <code>demoCreators</code> (brand-analytics.tsx:49)</li>
+      </ul>
+      <h3>DB seed — live in prod (security)</h3>
+      <ul>
+        <li class="crit">5 seed creators via <code>V7__seed_discoverable_creators.sql</code>, shared password <code>Password@123</code>, runs every environment — the "7 creators" in brand discovery</li>
+        <li class="crit">Cleanup migration <code>V72__remove_seed_creators.sql</code> is referenced but was never written → seed logins stay live in prod</li>
+        <li><code>demo.brand@influora.com</code> / <code>demo.creator@influora.com</code> — live accounts with no source-controlled definition (DB-provisioned)</li>
+        <li>Dead exports <code>demoAdmin*</code> in demo-data.ts — no importers, safe to delete</li>
+      </ul>
+      <p class="note"><b>Not covered:</b> Admin surface (blocked on MFA) · money tail (escrow → deliverables → payout; accepted deal has no value) · brand Messages/Analytics/Settings/Meera-chat UI · creator co-pilot/deal-room/deliverables/onboarding UI.
+      <br><b>Test artifacts created this session (flag for cleanup):</b> campaign <code>01KY523ES7ZW…</code>, collaboration <code>01KY52585H…</code>, brand <code>qa-brand-1784723196@example.com</code>.</p>
+    </div>
+  </section>
+
+  <footer>
+    Weighted completion = Σ(status)/count where working=1, partial=0.5, broken=0 → 37.5 / 51 = 73.5%. The score is endpoint-inclusive; three of the broken items block the primary brand journey, so treat the headline number alongside the blocker list. Method: live HTTP + in-browser UI/network inspection + Hostinger-MCP container-log correlation. Source: <span class="mono">wiki/reports/brand-creator-final-report.md</span>.
+  </footer>
+</div>
+
+<script>
+  (function(){
+    var chips=document.querySelectorAll('.chip');
+    var rows=document.querySelectorAll('.row');
+    chips.forEach(function(c){
+      c.addEventListener('click',function(){
+        chips.forEach(function(x){x.setAttribute('aria-pressed','false')});
+        c.setAttribute('aria-pressed','true');
+        var f=c.dataset.f;
+        rows.forEach(function(r){ r.hidden = !(f==='all' || r.dataset.s===f); });
+      });
+    });
+  })();
+</script>

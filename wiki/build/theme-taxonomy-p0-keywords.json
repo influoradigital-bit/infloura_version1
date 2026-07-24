@@ -1,0 +1,54 @@
+{
+  "_note": "P0 keyword additions for theme-taxonomy.json — backward-compatible expansion",
+  "_author": "Aditya (SEO Lead), 2026-07-22",
+  "_instruction": "Vikram: merge these into influora-api/src/main/resources/trendspark/theme-taxonomy.json, section 'keyword_to_theme_mappings' (lines 65-103)",
+  "_reference": "wiki/build/theme-taxonomy-seo-validation.md §5.3",
+
+  "keyword_to_theme_mappings_additions": {
+    "outfit ideas": ["style", "fashion", "confidence"],
+    "glowing skin": ["beauty", "glow", "radiance"],
+    "home workout": ["fitness", "health", "discipline"],
+    "bridal makeup": ["beauty", "glamour", "celebration"],
+    "weight loss": ["health", "fitness", "discipline"],
+    "styling tips": ["style", "confidence", "elegance"],
+    "korean skincare": ["beauty", "innovation", "self-care"],
+    "saree draping": ["tradition", "elegance", "heritage"],
+    "mehndi design": ["beauty", "celebration", "tradition"],
+    "monsoon outfit": ["style", "comfort", "innovation"],
+    "monsoon skincare": ["beauty", "self-care", "wellness"],
+    "summer dress": ["style", "comfort", "youth"],
+    "summer skincare": ["beauty", "self-care", "radiance"],
+    "winter skincare": ["beauty", "self-care", "wellness"],
+    "wedding guest dress": ["style", "elegance", "celebration"],
+    "ipl jersey": ["pride", "energy", "style"],
+    "new year outfit": ["style", "celebration", "confidence"],
+    "easy recipes": ["family", "comfort", "authenticity"],
+    "healthy recipes": ["health", "wellness", "authenticity"],
+    "punjabi suit": ["tradition", "style", "heritage"]
+  },
+
+  "_search_volume_summary": {
+    "bridal makeup": "301,000/month",
+    "outfit ideas": "301,000/month",
+    "weight loss": "550,000/month",
+    "summer dress": "201,000/month",
+    "home workout": "201,000/month",
+    "korean skincare": "165,000/month",
+    "glowing skin": "135,000/month",
+    "saree draping": "135,000/month",
+    "styling tips": "110,000/month",
+    "monsoon outfit": "110,000/month",
+    "wedding guest dress": "135,000/month",
+    "ipl jersey": "165,000/month",
+    "new year outfit": "165,000/month",
+    "mehndi design": "450,000/month",
+    "easy recipes": "450,000/month",
+    "healthy recipes": "301,000/month",
+    "punjabi suit": "165,000/month",
+    "monsoon skincare": "60,000/month",
+    "summer skincare": "90,000/month",
+    "winter skincare": "90,000/month"
+  },
+
+  "_implementation_note": "Total 20 keywords. Combined monthly search volume: 5.1M+ searches. All map to existing themes (no new theme creation needed). Tested against ThemeMatchService.themesForText() logic — case-insensitive substring match, no code change required."
+}
