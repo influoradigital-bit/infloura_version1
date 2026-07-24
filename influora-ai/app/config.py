@@ -263,13 +263,38 @@ class Settings:
     tool_loop_max_iterations: int = field(
         default_factory=lambda: _get_int("TOOL_LOOP_MAX_ITERATIONS", 6)
     )
-    # Output-token ceiling per Meera chat turn. Meera's persona wants ONE-to-TWO
-    # short sentences (spoken back-and-forth); the old default of 1024 left room
-    # for ~750-word essays, which is why replies ran long and the voice read
-    # forever. 384 is a hard backstop that still fits narration + a tool_use
-    # block, while the persona does the primary shaping. Env-overridable.
+    # Output-token ceiling per Meera chat turn. IMPORTANT: this is a BACKSTOP,
+    # not the mechanism that shapes reply length -- Meera's persona (see
+    # persona.py's "HARD LENGTH LIMIT" rails) is what keeps spoken replies to
+    # ONE-to-TWO short sentences, and does the real work. This constant only
+    # needs to be wide enough that a legitimate tool call never gets cut off
+    # mid-JSON.
+    #
+    # P1 BLANK TURN defect (2026-07-24, wiki/ai-review/meera-blank-turn-ai-
+    # review.md): 384 was picked purely as a spoken-length ruler and was never
+    # re-derived once create_campaign grew to 15 properties (schemas.py). Tool
+    # JSON is never spoken, so a narration-sized ceiling is the wrong ruler for
+    # it -- a fully-composed HYPE create_campaign call is ~245-365 output
+    # tokens of JSON alone, which sat 384 exactly on the truncation boundary.
+    # A max_tokens cut mid `input_json_delta` silently discarded the entire
+    # tool call (claude.py) with no error, no log -- ~28% of turns went
+    # completely blank. 1536 clears every known tool payload with headroom;
+    # F1 (claude.py) + F2 (loop.py) make a cut structurally non-silent even if
+    # this ceiling is later outgrown again. MUST be pinned explicitly in
+    # env.example and every deploy env artifact -- do not let it silently fall
+    # back to a code default again.
     meera_chat_max_tokens: int = field(
-        default_factory=lambda: _get_int("MEERA_CHAT_MAX_TOKENS", 384)
+        default_factory=lambda: _get_int("MEERA_CHAT_MAX_TOKENS", 1536)
+    )
+    # Wider one-shot ceiling for loop.py's single server-side retry after a
+    # truncated tool-planning turn comes back empty (F2). Tool JSON is not
+    # spoken, so the narration-length rationale above does not apply to a
+    # retry that exists purely to let one tool call finish. This retry is
+    # provably pre-tool-forward (no tool_start emitted yet, nothing sent to
+    # Spring, no Idempotency-Key consumed), so widening the ceiling here
+    # cannot double-execute or double-spend anything.
+    meera_chat_max_tokens_retry: int = field(
+        default_factory=lambda: _get_int("MEERA_CHAT_MAX_TOKENS_RETRY", 2048)
     )
 
     # --- SSE ---

@@ -372,6 +372,19 @@ def build_block_c_messages(conversation: list[dict[str, Any]]) -> list[dict[str,
     for turn in conversation:
         role = turn.get("role")
         content = turn.get("content", "")
+        # P1 BLANK TURN fix (F4a, 2026-07-24, wiki/ai-review/meera-blank-turn-ai-review.md).
+        # Drop empty/whitespace-only user & plain-assistant turns from the replayed history.
+        # A blank turn (from a truncated/empty model turn, before the F1/F2 fixes, or from an
+        # older client) that got persisted as `{"role":"assistant","content":""}` is invalid
+        # mid-history and made every SUBSEQUENT turn in that thread come back empty — the
+        # observed 6-in-one-thread clustering. Assistant turns carrying `tool_calls` are kept
+        # even when their text is blank (the tool_use blocks are the real content).
+        if (
+            role in ("user", "assistant")
+            and not turn.get("tool_calls")
+            and (not isinstance(content, str) or not content.strip())
+        ):
+            continue
         if role == "user":
             wrapped = _wrap_untrusted("user_message", content)
             messages.append({"role": "user", "content": wrapped})

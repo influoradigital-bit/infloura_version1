@@ -181,6 +181,17 @@ function writeCachedTranscript(conversationId: string, messages: RenderedMessage
   }
 }
 
+/**
+ * F5a/F5b (Ash — wiki/ai-review/meera-blank-turn-ai-review.md) — client-side
+ * safety net for a turn that streams zero tokens: version skew before
+ * Vikram's server-side `empty_response` fallback lands, or a connection drop
+ * mid-stream. Same copy as Spring's own empty_response path so both surfaces
+ * read identically to the brand. Rendered through the ordinary MessageBubble
+ * with no error styling — it's a recoverable, honest message, not a failure,
+ * and the composer stays open so the brand can just retype.
+ */
+const MEERA_EMPTY_TURN_FALLBACK = "Sorry, I lost my train of thought there. Say that again?"
+
 /** Left panel: sticky header + turn-driven conversation (live AI stream, or the scripted mock fallback) + composer. */
 export function MeeraChatPanel({
   onFunctionCall,
@@ -440,11 +451,18 @@ export function MeeraChatPanel({
   const handleLiveSend = (text: string, lang?: string) => {
     if (!conversationId || phase !== 'awaiting-input' || paused || creditsExhausted) return
 
+    // F5b — never replay an empty/whitespace-only bubble back into the model
+    // as history. A blank turn (this defect) or any other empty entry would
+    // land as `{"role":"assistant","content":""}` mid-history, which is
+    // invalid and poisons every subsequent turn on the thread (Ash traced 6
+    // of 7 observed failures to exactly this).
     const history = [
-      ...messages.map((m) => ({
-        role: m.role === 'brand' ? 'user' : 'assistant',
-        content: m.text,
-      })),
+      ...messages
+        .filter((m) => m.text.trim() !== '')
+        .map((m) => ({
+          role: m.role === 'brand' ? 'user' : 'assistant',
+          content: m.text,
+        })),
       { role: 'user', content: text },
     ]
 
@@ -455,14 +473,25 @@ export function MeeraChatPanel({
 
     const assistantMessageId = makeId('meera')
     let assistantText = ''
+    // F5a — the bubble is no longer created unconditionally up front (that's
+    // what let a blank turn sit as a dead, permanently-empty bubble forever).
+    // It's created lazily, the moment there's real content to show it with —
+    // either the full sync reply below, or the first streamed token/tool
+    // event further down. `onDone` is the backstop: if nothing ever arrives,
+    // it adds the fallback bubble itself.
+    let assistantBubbleAdded = false
 
     meeraApi
       .sendTurn(conversationId, text)
       .then((turnRes) => {
-        setMessages((prev) => [...prev, { id: assistantMessageId, role: 'meera', text: '' }])
-
         if (turnRes.reply != null) {
-          revealReply(assistantMessageId, turnRes.reply, lang)
+          // Guard the synchronous path too — an empty/whitespace `reply`
+          // (the same server-side truncation defect, just on the sync leg)
+          // must not animate an empty bubble forever either.
+          const replyText = turnRes.reply.trim() === '' ? MEERA_EMPTY_TURN_FALLBACK : turnRes.reply
+          assistantBubbleAdded = true
+          setMessages((prev) => [...prev, { id: assistantMessageId, role: 'meera', text: '' }])
+          revealReply(assistantMessageId, replyText, lang)
           return
         }
 
@@ -497,7 +526,15 @@ export function MeeraChatPanel({
             setAwaitingFirstToken(false)
             assistantText += event.text
             const renderedText = assistantText
-            setMessages((prev) => prev.map((m) => (m.id === assistantMessageId ? { ...m, text: renderedText } : m)))
+            // F5a — the bubble is born here, on the first real token, instead
+            // of existing (empty) before the stream opened.
+            setMessages((prev) => {
+              if (!assistantBubbleAdded) {
+                assistantBubbleAdded = true
+                return [...prev, { id: assistantMessageId, role: 'meera', text: renderedText }]
+              }
+              return prev.map((m) => (m.id === assistantMessageId ? { ...m, text: renderedText } : m))
+            })
           },
           onToolResult: (event) => {
             // Render the 5 stage tools AND the display-only present_options
@@ -511,27 +548,27 @@ export function MeeraChatPanel({
             // between matching/funding with no Living Canvas stage of its
             // own — advance() below simply no-ops for it via
             // stageForFunctionCall, so this is the only place its result
-            // becomes visible).
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMessageId
-                  ? {
-                      ...m,
-                      toolResults: [
-                        ...(m.toolResults ?? []),
-                        {
-                          id: makeId('tool'),
-                          name: event.name,
-                          status: event.status,
-                          data: event.data,
-                          errorMessage:
-                            event.status === 'error' ? toolErrorMessage(event.data) : undefined,
-                        },
-                      ],
-                    }
-                  : m,
-              ),
-            )
+            // becomes visible). A tool_result can in principle arrive before
+            // any token (F5a) — lazily create the bubble here too so the
+            // result never gets silently dropped for lack of somewhere to
+            // attach to.
+            const toolResult = {
+              id: makeId('tool'),
+              name: event.name,
+              status: event.status,
+              data: event.data,
+              errorMessage: event.status === 'error' ? toolErrorMessage(event.data) : undefined,
+            }
+            setMessages((prev) => {
+              const exists = prev.some((m) => m.id === assistantMessageId)
+              const base = exists
+                ? prev
+                : [...prev, { id: assistantMessageId, role: 'meera' as const, text: assistantText }]
+              if (!exists) assistantBubbleAdded = true
+              return base.map((m) =>
+                m.id === assistantMessageId ? { ...m, toolResults: [...(m.toolResults ?? []), toolResult] } : m,
+              )
+            })
 
             // Only the stage tools advance the Living Canvas; present_options is
             // display-only. Re-narrow inline so the type guard applies.
@@ -539,10 +576,32 @@ export function MeeraChatPanel({
               onFunctionCall(event.name, event.data)
             }
           },
-          onDone: () => {
+          onDone: (event) => {
             setAwaitingFirstToken(false)
             setLiveThinkingSteps([])
             setPhase('awaiting-input')
+
+            // F5a — the backstop. In the normal case (Vikram's server fix)
+            // `finish_reason: 'empty_response'` arrives with an honest
+            // fallback already streamed as tokens, so `assistantText` is
+            // non-empty and this is a no-op. This only fires for the residual
+            // case that fix can't cover client-side: version skew against an
+            // older AI-service build, or a connection drop that ended the
+            // stream with no tokens and no error event. Either way, the turn
+            // must not resolve to a dead, permanently-empty bubble — and the
+            // composer stays open (sendLocked only gates on phase/paused/
+            // credits) so the brand can just retype.
+            if (assistantText.trim() === '') {
+              assistantText = MEERA_EMPTY_TURN_FALLBACK
+              setMessages((prev) =>
+                assistantBubbleAdded
+                  ? prev.map((m) => (m.id === assistantMessageId ? { ...m, text: assistantText } : m))
+                  : [...prev, { id: assistantMessageId, role: 'meera', text: assistantText }],
+              )
+              assistantBubbleAdded = true
+            }
+            void event // finish_reason (stop | tool_use | max_tokens | empty_response once Vikram's fix ships) — the emptiness check above is the actual gate, so it stays correct across server versions without depending on this literal.
+
             // Voice is additive only — the bubble above is already fully
             // rendered by the time we speak it (Priya's voice handoff §5A.B).
             // `lang` (W3): the language detected on the user's own utterance
@@ -572,12 +631,15 @@ export function MeeraChatPanel({
                 setMessages((prev) => [...prev.filter((m) => m.id !== assistantMessageId), ...recovered])
               })
               .catch(() => {
+                // F5a — same lazy-bubble concern applies here: if the stream
+                // errored before any token/tool_result ever arrived, the
+                // bubble doesn't exist yet, so a plain `.map` would silently
+                // drop this fallback text instead of showing it.
+                const fallbackText = event.message ?? "Didn't catch that — try again?"
                 setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessageId
-                      ? { ...m, text: event.message ?? "Didn't catch that — try again?" }
-                      : m,
-                  ),
+                  prev.some((m) => m.id === assistantMessageId)
+                    ? prev.map((m) => (m.id === assistantMessageId ? { ...m, text: fallbackText } : m))
+                    : [...prev, { id: assistantMessageId, role: 'meera', text: fallbackText }],
                 )
               })
               .finally(() => setPhase('awaiting-input'))

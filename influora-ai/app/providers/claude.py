@@ -61,12 +61,22 @@ class CircuitBreaker:
 
 @dataclass
 class ClaudeStreamEvent:
-    type: str  # "text" | "tool_use" | "message_stop" | "usage"
+    type: str  # "text" | "tool_use" | "truncated" | "usage"
     text: str | None = None
     tool_name: str | None = None
     tool_input: dict[str, Any] | None = None
     tool_use_id: str | None = None
     usage: dict[str, Any] | None = None
+    # P1 BLANK TURN fix (2026-07-24, wiki/ai-review/meera-blank-turn-ai-review.md
+    # F1). Carries the Anthropic `stop_reason` through instead of discarding it
+    # (previously read at message_stop and thrown away) -- callers need it to
+    # tell a clean "end_turn" apart from a "max_tokens" cut.
+    stop_reason: str | None = None
+    # Set only on a "truncated" event: the tool name whose `tool_use` block was
+    # open but never closed (no content_block_stop) when the turn ended. The
+    # partial JSON itself is deliberately NOT carried here -- see the
+    # "truncated" emission below for why it must never be salvaged.
+    tool_name_partial: str | None = None
 
 
 @dataclass
@@ -177,6 +187,39 @@ class ClaudeProvider:
                     elif event.type == "message_stop":
                         final_message = await stream.get_final_message()
                         usage = getattr(final_message, "usage", None)
+                        stop_reason = getattr(final_message, "stop_reason", None)
+
+                        if current_tool is not None:
+                            # P1 BLANK TURN fix (F1): the API ended the turn
+                            # without ever sending content_block_stop for this
+                            # tool_use block -- classically a max_tokens cut
+                            # mid input_json_delta. Previously this whole tool
+                            # call was silently dropped: no event, no log, no
+                            # error, and the caller saw an empty turn with no
+                            # way to know why (~28% of Meera turns, traced
+                            # 2026-07-24). Do NOT parse/salvage
+                            # current_tool["partial_json"] here -- the
+                            # Anthropic SDK will happily hand back a
+                            # partial/best-effort object, and accepting it
+                            # would mean silently forwarding a half-built
+                            # create_campaign (or worse, a half-built
+                            # request_payment) as though the model had fully
+                            # committed to it. A truncated tool call MUST be
+                            # treated as "no tool call happened", loudly.
+                            logger.warning(
+                                "claude stream truncated mid tool_use tool=%s "
+                                "stop_reason=%s partial_json_len=%d",
+                                current_tool["name"],
+                                stop_reason,
+                                len(current_tool["partial_json"]),
+                            )
+                            yield ClaudeStreamEvent(
+                                type="truncated",
+                                stop_reason=stop_reason,
+                                tool_name_partial=current_tool["name"],
+                            )
+                            current_tool = None
+
                         yield ClaudeStreamEvent(
                             type="usage",
                             usage={
@@ -191,6 +234,7 @@ class ClaudeProvider:
                             }
                             if usage
                             else None,
+                            stop_reason=stop_reason,
                         )
             self._breaker.on_success()
         except CircuitOpenError:

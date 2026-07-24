@@ -146,6 +146,14 @@ services:
       # Cost guard on a public test box.
       AI_DAILY_SPEND_CEILING_USD: "5.0"
       AI_SPEND_KILL_SWITCH: "false"
+      # P1 BLANK TURN fix (2026-07-24, wiki/ai-review/meera-blank-turn-ai-
+      # review.md): THIS is the box neha's 28%-blank-turn capture came from.
+      # Previously UNSET here, silently inheriting the Python default (384),
+      # which sat exactly on create_campaign's tool-JSON truncation boundary.
+      # PINNED explicitly so it can never again silently fall back to a code
+      # default.
+      MEERA_CHAT_MAX_TOKENS: "1536"
+      MEERA_CHAT_MAX_TOKENS_RETRY: "2048"
     depends_on:
       - influora-api
 

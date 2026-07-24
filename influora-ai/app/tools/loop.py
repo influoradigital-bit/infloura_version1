@@ -38,6 +38,14 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ITERATIONS = 6
 
+# P1 BLANK TURN fix (2026-07-24, wiki/ai-review/meera-blank-turn-ai-review.md
+# F2). Priya's rail: the user always gets a real reply or an honest,
+# recoverable message -- never silence. Persona-consistent (spoken, one short
+# sentence, exactly ONE thing to do). This text is READ ALOUD by TTS (Sarvam),
+# so it deliberately carries no punctuation tricks, emoji, or symbols. Lives
+# in code, not persona.py -- PROMPT_VERSION does not need bumping for this.
+EMPTY_TURN_FALLBACK = "Sorry, I lost my train of thought there. Say that again?"
+
 
 @dataclass
 class LoopEvent:
@@ -53,6 +61,13 @@ class LoopEvent:
     error_code: str | None = None
     fallback: str | None = None
     usage: dict[str, Any] | None = None
+    # P1 BLANK TURN fix (F6 observability): the real Anthropic `stop_reason`
+    # for the turn that produced this "done" event (e.g. "end_turn",
+    # "max_tokens"), so chat.py can log it instead of it being invisible --
+    # the missing observability here is exactly what let a 28% blank-turn
+    # rate ship unnoticed. None on paths with no underlying provider turn
+    # (e.g. iteration_cap).
+    stop_reason: str | None = None
 
 
 class UnknownToolError(Exception):
@@ -94,6 +109,10 @@ class ToolLoopContext:
     # chat (short, spoken replies) — see settings.meera_chat_max_tokens. A hard
     # backstop; the persona does the primary length shaping.
     max_tokens: int = 1024
+    # P1 BLANK TURN fix (F2): wider ceiling for the ONE server-side retry that
+    # fires when a turn was truncated mid tool_use and came back with no
+    # usable text or tool calls. See settings.meera_chat_max_tokens_retry.
+    max_tokens_retry: int = 2048
     # NOTE: no service_token field here by design. The X-Meera-Service-Token
     # is minted fresh per outbound call inside SpringInternalClient
     # (app/auth/service_token_minter.py) — it is never threaded through from
@@ -118,6 +137,12 @@ async def run_tool_loop(
     tools = get_tool_schemas()
     iterations = 0
     final_usage: dict[str, Any] | None = None
+    # P1 BLANK TURN fix (F2): bounded to ONE retry across the entire loop call
+    # (not per while-iteration) -- a turn that keeps coming back truncated
+    # after already being retried once must fall through to the honest
+    # fallback, not loop forever burning tokens.
+    retried_empty = False
+    effective_max_tokens = ctx.max_tokens
 
     while True:
         iterations += 1
@@ -135,12 +160,16 @@ async def run_tool_loop(
 
         pending_tool_calls: list[dict[str, Any]] = []
         assistant_text_parts: list[str] = []
+        # P1 BLANK TURN fix (F1/F2): set when claude.py reconciles an unclosed
+        # tool_use block at message_stop (a max_tokens cut mid input_json_delta).
+        turn_truncated = False
+        turn_stop_reason: str | None = None
 
         async for event in claude.stream_turn(
             system_blocks=system_blocks,
             messages=messages,
             tools=tools,
-            max_tokens=ctx.max_tokens,
+            max_tokens=effective_max_tokens,
             is_cancelled=is_cancelled,
         ):
             if is_cancelled and is_cancelled():
@@ -158,8 +187,12 @@ async def run_tool_loop(
                         "input": event.tool_input or {},
                     }
                 )
+            elif event.type == "truncated":
+                turn_truncated = True
+                turn_stop_reason = event.stop_reason
             elif event.type == "usage":
                 final_usage = _accumulate_usage(final_usage, event.usage)
+                turn_stop_reason = event.stop_reason or turn_stop_reason
 
         assistant_text = "".join(assistant_text_parts)
 
@@ -167,7 +200,49 @@ async def run_tool_loop(
             # No tool calls this round -> final assistant text, we're done.
             if assistant_text:
                 messages.append({"role": "assistant", "content": assistant_text})
-            yield LoopEvent(type="done", finish_reason="stop", usage=final_usage)
+                yield LoopEvent(
+                    type="done", finish_reason="stop", usage=final_usage, stop_reason=turn_stop_reason
+                )
+                return
+
+            # ── EMPTY MODEL TURN (P1 BLANK TURN fix, F2) ────────────────────
+            # Zero text AND zero tool calls this round. Previously this fell
+            # straight through to `done finish_reason="stop"` -- a completely
+            # silent, indistinguishable-from-success blank turn (traced
+            # 2026-07-24, ~28% of Meera turns on large tool payloads like
+            # create_campaign). Two-stage recovery:
+            if turn_truncated and not retried_empty:
+                # The turn was cut mid tool_use and produced nothing usable.
+                # Retry ONCE with a wider ceiling. SAFE by construction: this
+                # point is provably pre-tool-forward -- no tool_start was
+                # emitted (that only happens once pending_tool_calls is
+                # non-empty, below), nothing was sent to Spring, no
+                # Idempotency-Key was consumed, nothing was persisted. There
+                # is nothing to double-execute or double-spend.
+                retried_empty = True
+                logger.warning(
+                    "meera empty turn after truncation stop_reason=%s -- "
+                    "retrying once at max_tokens=%d",
+                    turn_stop_reason,
+                    ctx.max_tokens_retry,
+                )
+                effective_max_tokens = ctx.max_tokens_retry
+                continue  # re-enters the while loop; `messages` is unchanged
+
+            # Retry already used (or the turn was empty for some other
+            # reason, not a known truncation) -- stream an honest, in-persona
+            # fallback instead of silence. finish_reason="empty_response" is
+            # a NEW, deliberately-distinct value (never "stop") so chat.py can
+            # refund the send-time charge instead of persisting/billing a
+            # non-answer (F7) and so this failure mode is visible in logs
+            # rather than indistinguishable from success.
+            yield LoopEvent(type="token", text=EMPTY_TURN_FALLBACK)
+            yield LoopEvent(
+                type="done",
+                finish_reason="empty_response",
+                usage=final_usage,
+                stop_reason=turn_stop_reason,
+            )
             return
 
         # Append the assistant turn (text + tool_use blocks) before resolving tools.

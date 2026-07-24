@@ -11,8 +11,15 @@ Event protocol (SSE `event:` types):
     tool_result  {"name": "...", "status": "ok"|"error",
                   "data": {...}}                           stage advance + live-canvas payload
     prompt_meta  {"prompt_version": "..."}
-    done         {"finish_reason": "stop"|"pending_human_confirm"|"iteration_cap"}
+    done         {"finish_reason": "stop"|"pending_human_confirm"|"iteration_cap"|"empty_response"}
     error        {"code": "...", "fallback": "text"}
+
+"empty_response" (P1 BLANK TURN fix, F2/F7, 2026-07-24): the tool loop
+exhausted its one bounded retry and still produced no usable text or tool
+call. A `token` event carrying an honest, in-persona fallback message IS
+streamed before this `done` (Priya's no-silence rail), so `final_text` below
+is non-empty -- but nothing is persisted and the send-time charge is
+refunded, never billed, for this finish_reason. See FALLBACK_FINISH_REASONS.
 
 Heartbeat `: ping` comment every ~15s keeps the connection warm through proxies.
 On client disconnect, in-flight provider calls are cancelled (no wasted tokens).
@@ -59,6 +66,16 @@ router = APIRouter()
 
 _claude_provider: ClaudeProvider | None = None
 _spring_client: SpringInternalClient | None = None
+
+# P1 BLANK TURN fix (F7, MUST ship in the same commit as loop.py's F2). These
+# are finish_reason values GENERATED SERVER-SIDE by run_tool_loop itself to
+# mean "the user got an honest apology streamed to them, not a real answer" --
+# never a client-influenced value, so this is not spoofable from the request
+# body. F2 makes `final_text` non-empty on these turns (the fallback message
+# IS streamed text), which would otherwise silently flip them from the
+# existing refund path into the persist-and-charge path below. Checked before
+# the `if final_text:` branch for exactly that reason.
+FALLBACK_FINISH_REASONS = {"empty_response"}
 
 
 def _get_claude() -> ClaudeProvider:
@@ -247,6 +264,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         onbehalf_jwt=onbehalf_jwt,
         max_iterations=settings.tool_loop_max_iterations,
         max_tokens=settings.meera_chat_max_tokens,
+        max_tokens_retry=settings.meera_chat_max_tokens_retry,
     )
 
     async def event_stream():
@@ -276,6 +294,11 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         assistant_text_accum: list[str] = []
         final_usage: dict[str, Any] | None = None
         finish_reason = "stop"
+        # P1 BLANK TURN fix (F6 observability): the real Anthropic stop_reason
+        # for the terminal turn, carried through loop.py/claude.py. Previously
+        # fetched and discarded at claude.py's message_stop -- logged into
+        # ai_spend below so a max_tokens rate per route is finally visible.
+        stop_reason: str | None = None
 
         async def release_charge(reason: str) -> None:
             """Refunds this turn's send-time charge after a genuine provider FAILURE. Never
@@ -350,6 +373,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                 elif event.type == "done":
                     finish_reason = event.finish_reason or "stop"
                     final_usage = event.usage
+                    stop_reason = event.stop_reason
                     yield sse_event("done", {"finish_reason": finish_reason})
                     break
                 elif event.type == "error":
@@ -403,6 +427,14 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                         "model": CLAUDE_MODEL,
                         "cost_usd": str(cost_usd),
                         "spend_today_usd": str(spend_today),
+                        # P1 BLANK TURN fix (F6): stop_reason + output_tokens
+                        # per turn -- previously invisible, which is why a 28%
+                        # blank-turn rate on max_tokens cuts shipped unnoticed.
+                        # A "max_tokens" rate per tool is the highest-value AI
+                        # health metric this service was missing.
+                        "stop_reason": stop_reason,
+                        "output_tokens": final_usage.get("output_tokens"),
+                        "finish_reason": finish_reason,
                     },
                 )
                 workspace_total = await get_workspace_total_today(workspace_id)
@@ -446,14 +478,25 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         # failure was clean or came after partial/complete output.
         final_text = "".join(assistant_text_accum)
 
-        if final_text:
+        # P1 BLANK TURN fix (F7, MUST ship in the same commit as loop.py's F2):
+        # loop.py's empty-turn guard streams an honest in-persona fallback
+        # message on finish_reason="empty_response", so `final_text` below can
+        # be non-empty even though nothing real was answered. `real_answer_text`
+        # is deliberately narrower than "final_text is truthy" so that case
+        # falls through to the tool_result_delivered / fallback-refund checks
+        # below instead of silently being persisted and charged like a normal
+        # reply -- that would be exactly the billing regression the guardrail
+        # must not introduce.
+        real_answer_text = final_text if finish_reason not in FALLBACK_FINISH_REASONS else ""
+
+        if real_answer_text:
             # Usable text reached the client -- persist and keep the charge, exactly like the
             # clean-success path, even when provider_failed is True (e.g. the stream completed
             # but a later cleanup/usage-accounting step threw).
             try:
                 await spring.persist_assistant_message(
                     conversation_id=body.get("conversation_id", ""),
-                    content=final_text,
+                    content=real_answer_text,
                     metadata={
                         "prompt_version": prompt.prompt_version,
                         "token_usage": final_usage,
@@ -476,10 +519,31 @@ async def chat(request: Request, authorization: str | None = Header(default=None
             # client this turn -- that's usable output the brand paid for, even with zero
             # narration. There's no assistant text to persist, but the charge must not be
             # refunded either: keep it, same as the text-delivered path above.
+            #
+            # This check is deliberately BEFORE the empty_response fallback check below: a
+            # multi-iteration turn can deliver a real tool_result in an earlier iteration and
+            # then go empty on a later narration-only iteration (finish_reason="empty_response").
+            # The brand already received genuine paid output that turn -- refunding anyway would
+            # make it free. Real delivered output always wins over a later empty tail.
             log_event(
                 logger, logging.INFO, "chat_turn_tool_result_only_charge_kept",
                 workspace_id=workspace_id, request_id=request_id,
             )
+            return
+
+        if finish_reason in FALLBACK_FINISH_REASONS:
+            # Neither real text nor a delivered tool_result reached the client this turn, and
+            # loop.py's empty-turn guard already exhausted its one retry and streamed the honest
+            # fallback message -- nothing to persist, and the send-time charge must be refunded,
+            # not billed for a non-answer. Logged as its own WARN event (not folded into the
+            # generic "empty_reply" reason below) so a `meera_empty_turn` rate is directly
+            # queryable -- the whole reason this defect shipped invisibly for a day.
+            log_event(
+                logger, logging.WARNING, "meera_empty_turn",
+                workspace_id=workspace_id, request_id=request_id,
+                fields={"finish_reason": finish_reason, "stop_reason": stop_reason},
+            )
+            await release_charge("empty_reply_fallback")
             return
 
         # NOTHING usable reached the client -- neither assistant text nor a delivered
