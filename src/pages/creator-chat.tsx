@@ -728,6 +728,8 @@ export default function CreatorChatPage() {
   const [showRevisionHandler, setShowRevisionHandler] = React.useState(false);
   const [selectedDeliverableForRevision, setSelectedDeliverableForRevision] = React.useState<string | null>(null);
   const [isSubmittingDeliverable, setIsSubmittingDeliverable] = React.useState(false);
+  const [isAcceptingProposal, setIsAcceptingProposal] = React.useState(false);
+  const [isDecliningProposal, setIsDecliningProposal] = React.useState(false);
 
   // Phase 5: Shipping flow state
   const [showShippingAddressForm, setShowShippingAddressForm] = React.useState(false);
@@ -739,6 +741,15 @@ export default function CreatorChatPage() {
   const [isSavingAddress, setIsSavingAddress] = React.useState(false);
   const [isConfirmingReceipt, setIsConfirmingReceipt] = React.useState(false);
 
+  // NEEDS BACKEND: there is no shipping-address or shipment endpoint. Checked
+  // src/lib/api.ts (no shipping/shipment/receipt methods anywhere) and the
+  // Spring backend (no Shipment entity, repository, or controller — only
+  // dead ShipmentCreatedEvent/ShipmentReceivedEvent notification records that
+  // are never published anywhere). `DealMessageKind.shipment` exists as an
+  // enum value but nothing produces messages of that kind either. Until
+  // Vikram ships a real POST /deals/:id/shipping-address (or equivalent),
+  // this stays a client-only simulation so the demo flow keeps working —
+  // it is NOT wired to anything real and must not be reported as such.
   const handleSubmitShippingAddress = async (data: ShippingAddressData) => {
     setIsSavingAddress(true);
     await new Promise((r) => setTimeout(r, 600));
@@ -751,6 +762,8 @@ export default function CreatorChatPage() {
     setShowReceiptConfirmation(true);
   };
 
+  // NEEDS BACKEND: same gap as handleSubmitShippingAddress above — no
+  // confirm-receipt endpoint exists. Left as a client-only simulation.
   const handleConfirmReceipt = async (data: ReceiptData) => {
     setIsConfirmingReceipt(true);
     await new Promise((r) => setTimeout(r, 600));
@@ -777,12 +790,52 @@ export default function CreatorChatPage() {
     }
   };
 
-  const handleAcceptProposal = (proposalId: string) => {
-    // In production: call API to accept proposal
+  const handleAcceptProposal = async (proposalId: string) => {
+    if (!selectedDeal) return;
+    setIsAcceptingProposal(true);
+    try {
+      if (liveApi) {
+        // POST /deals/:id/accept acts on the deal's current offer, not the
+        // individual message — proposalId (event.id) is only used for the
+        // click origin, the deal itself carries the state the backend needs.
+        await api.deals.accept(selectedDeal.id, 'creator');
+        await loadDeals();
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+    } catch (err) {
+      console.error('Failed to accept proposal', err);
+      toast({
+        title: 'Could not accept proposal',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAcceptingProposal(false);
+    }
   };
 
-  const handleDeclineProposal = (proposalId: string) => {
-    // In production: call API to decline proposal
+  const handleDeclineProposal = async (proposalId: string) => {
+    if (!selectedDeal) return;
+    setIsDecliningProposal(true);
+    try {
+      if (liveApi) {
+        // POST /deals/:id/reject — same deal-level scoping as accept above.
+        await api.deals.reject(selectedDeal.id, undefined, 'creator');
+        await loadDeals();
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+    } catch (err) {
+      console.error('Failed to decline proposal', err);
+      toast({
+        title: 'Could not decline proposal',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDecliningProposal(false);
+    }
   };
 
   const handleSendCounter = () => {
@@ -853,8 +906,15 @@ export default function CreatorChatPage() {
   };
 
   const handleStartRevision = async (revisionNotes: string) => {
+    // No dedicated "start revision" endpoint exists (or is needed) — a revision
+    // is just a re-submission of the same deliverable row via
+    // creatorDeliverables.upload + deliverables.submit, which
+    // handleSubmitDeliverableForm already wires to the real API. This handler
+    // stays a pure local UI transition: close the feedback dialog and open the
+    // real submission form so the creator can upload the revised file.
+    // revisionNotes isn't sent anywhere today — there's no field for it in
+    // DeliverableSubmissionData/the submit DTO, so it's dropped here.
     setShowRevisionHandler(false);
-    // In production: switch to submission form for revision
     setShowDeliverableDialog(true);
   };
 
@@ -1388,27 +1448,44 @@ export default function CreatorChatPage() {
 
                         {event.metadata?.status === 'pending' && (
                           <div className="flex gap-2 mt-4">
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               className="flex-1"
                               onClick={() => handleAcceptProposal(event.id)}
+                              disabled={isAcceptingProposal || isDecliningProposal}
                             >
-                              Accept
+                              {isAcceptingProposal ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                                  Accepting...
+                                </>
+                              ) : (
+                                'Accept'
+                              )}
                             </Button>
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
+                            <Button
+                              size="sm"
+                              variant="outline"
                               className="flex-1"
                               onClick={() => setShowCounterForm(true)}
+                              disabled={isAcceptingProposal || isDecliningProposal}
                             >
                               Counter
                             </Button>
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               variant="ghost"
                               onClick={() => handleDeclineProposal(event.id)}
+                              disabled={isAcceptingProposal || isDecliningProposal}
                             >
-                              Decline
+                              {isDecliningProposal ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                                  Declining...
+                                </>
+                              ) : (
+                                'Decline'
+                              )}
                             </Button>
                           </div>
                         )}

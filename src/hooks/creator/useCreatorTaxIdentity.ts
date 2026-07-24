@@ -1,22 +1,26 @@
 /**
  * useCreatorTaxIdentity — GSTIN/PAN capture submit state
  * ----------------------------------------------------------------------------
- * `creatorTaxIdentity.submit()` (src/lib/api.ts) always rejects with a typed
- * `NOT_IMPLEMENTED` ApiError — there is no backend endpoint yet for a creator
- * to submit tax identity (D14-B schema-captures GSTIN/PAN on `CreatorProfile`,
- * but only an internal auto-provisioning path writes it today). This hook
- * exposes `notImplemented` so `TaxIdentityForm` can show an honest gap state
- * instead of a fabricated success, matching `useAffiliateEarnings.ts`'s
- * `notImplemented` convention.
+ * `creatorTaxIdentity.submit()` (src/lib/api.ts) now hits the real
+ * `POST /me/tax-identity` endpoint. On success it returns the persisted,
+ * masked record (`gstin`, `maskedPan`, `taxRegistrationStatus`) which this
+ * hook exposes as `saved` so the form can render a confirmation state. On a
+ * 400 (`INVALID_GSTIN` / `INVALID_PAN` / `TAX_IDENTITY_REQUIRED`) or other
+ * `ApiError`, the message is surfaced via `error`.
  */
 
 import { useCallback, useState } from 'react';
-import { ApiError, creatorTaxIdentity, type CreatorTaxIdentitySubmission } from '@/lib/api';
+import {
+  ApiError,
+  creatorTaxIdentity,
+  type CreatorTaxIdentityResponse,
+  type CreatorTaxIdentitySubmission,
+} from '@/lib/api';
 
 export interface UseCreatorTaxIdentityResult {
   submitting: boolean;
-  /** True once a submit attempt has hit the missing-endpoint case. */
-  notImplemented: boolean;
+  /** The persisted record after a successful submit, or null before/after failure. */
+  saved: CreatorTaxIdentityResponse | null;
   error: string | null;
   submit: (body: CreatorTaxIdentitySubmission) => Promise<void>;
   reset: () => void;
@@ -24,21 +28,18 @@ export interface UseCreatorTaxIdentityResult {
 
 export function useCreatorTaxIdentity(): UseCreatorTaxIdentityResult {
   const [submitting, setSubmitting] = useState(false);
-  const [notImplemented, setNotImplemented] = useState(false);
+  const [saved, setSaved] = useState<CreatorTaxIdentityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const submit = useCallback(async (body: CreatorTaxIdentitySubmission) => {
     setSubmitting(true);
     setError(null);
-    setNotImplemented(false);
     try {
-      await creatorTaxIdentity.submit(body);
+      const result = await creatorTaxIdentity.submit(body);
+      setSaved(result);
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'NOT_IMPLEMENTED') {
-        setNotImplemented(true);
-      } else {
-        setError(err instanceof ApiError ? err.message : 'Failed to submit tax identity');
-      }
+      setSaved(null);
+      setError(err instanceof ApiError ? err.message : 'Failed to submit tax identity');
     } finally {
       setSubmitting(false);
     }
@@ -46,11 +47,11 @@ export function useCreatorTaxIdentity(): UseCreatorTaxIdentityResult {
 
   const reset = useCallback(() => {
     setSubmitting(false);
-    setNotImplemented(false);
+    setSaved(null);
     setError(null);
   }, []);
 
-  return { submitting, notImplemented, error, submit, reset };
+  return { submitting, saved, error, submit, reset };
 }
 
 export default useCreatorTaxIdentity;

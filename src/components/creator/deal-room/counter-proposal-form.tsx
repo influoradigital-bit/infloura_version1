@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { ChevronRight, X, Loader2 } from 'lucide-react';
 import { cn, formatINR } from '@/lib/utils';
+import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,13 +55,33 @@ export function CounterProposalForm({
     { num: 4, title: 'Message', subtitle: 'Send your counter offer' },
   ];
 
+  // Live platform fee — GET /creator/platform-fee (api.wallet.platformFee). Defaults to the
+  // 15% global default (1500 bps) while loading so the breakdown never shows a stale 10%.
+  // Per Priya: only the platform-fee deduction is real/knowable client-side — the earlier
+  // GST-on-fee and TDS lines were speculative and have been removed.
+  const [feeBps, setFeeBps] = React.useState(1500);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const fee = await api.wallet.platformFee();
+        if (!cancelled && fee) setFeeBps(fee.feeBps);
+      } catch (err) {
+        // Non-blocking — keep the 15% default if the fetch fails.
+        console.error('Failed to load platform fee', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const feePercentLabel = (feeBps / 100).toFixed(feeBps % 100 === 0 ? 0 : 1);
+
   // Calculate earnings breakdown
   const calculateEarnings = (amount: number) => {
-    const platformFee = amount * 0.1;
-    const gstOnFee = platformFee * 0.18;
-    const tds = amount * 0.1;
-    const netEarnings = amount - platformFee - gstOnFee - tds;
-    return { platformFee, gstOnFee, tds, netEarnings };
+    const platformFee = (amount * feeBps) / 10000;
+    const netEarnings = amount - platformFee;
+    return { platformFee, netEarnings };
   };
 
   const earnings = calculateEarnings(formData.proposedAmount);
@@ -184,16 +205,8 @@ export function CounterProposalForm({
                     <span className="font-semibold">{formatINR(formData.proposedAmount)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Platform Fee (10%):</span>
+                    <span className="text-muted-foreground">Platform Fee ({feePercentLabel}%):</span>
                     <span className="text-stage-disputed-fg">-{formatINR(earnings.platformFee)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">GST on Fee (18%):</span>
-                    <span className="text-stage-disputed-fg">-{formatINR(earnings.gstOnFee)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">TDS (10%):</span>
-                    <span className="text-stage-disputed-fg">-{formatINR(earnings.tds)}</span>
                   </div>
                   <div className="flex justify-between border-t border-stage-negotiating-border pt-1.5 font-semibold text-amber-900">
                     <span>You Receive:</span>

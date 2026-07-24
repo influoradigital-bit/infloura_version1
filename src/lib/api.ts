@@ -2411,27 +2411,34 @@ export const creatorInvoicing = {
 
 /**
  * Creator tax-identity (GSTIN/PAN) capture — D14-B schema-captures this on
- * `CreatorProfile.gstin`/`.pan`/`.taxRegistrationStatus` (see `CreatorProfile#applyTaxIdentity`),
- * but there is **no HTTP endpoint** for a creator to submit it yet — `applyTaxIdentity` is only
- * called internally by `CampaignServiceInvoiceService` to auto-provision `creatorInvoiceCode` on
- * first Doc#2 issuance (Vikram's self-flagged note in SHARED_CONTEXT.md — no GST-onboarding flow
- * exists). `MeCreatorProfileController`'s `CreatorProfilePatchRequest` has no gstin/pan fields
- * either. Per TECH-STACK.md rule #7, this always rejects with a typed NOT_IMPLEMENTED rather than
- * fabricating a PATCH path — same discipline as `affiliateEarnings` before Wave D shipped.
+ * `CreatorProfile.gstin`/`.pan`/`.taxRegistrationStatus` (see `CreatorProfile#applyTaxIdentity`).
+ * Vikram shipped the real endpoint 2026-07-24 — `POST /me/tax-identity` (creator-scoped),
+ * validates GSTIN/PAN format server-side and 400s with `INVALID_GSTIN` / `INVALID_PAN` /
+ * `TAX_IDENTITY_REQUIRED`. Success returns the persisted, masked record.
  */
 export interface CreatorTaxIdentitySubmission {
   gstin?: string;
   pan?: string;
 }
 
+/** Response shape of `POST /me/tax-identity` — PAN is always masked, never returned in full. */
+export interface CreatorTaxIdentityResponse {
+  gstin: string | null;
+  maskedPan: string | null;
+  taxRegistrationStatus: string | null;
+}
+
+const maskPan = (pan: string): string => pan.replace(/.(?=.{4})/g, '*');
+
 export const creatorTaxIdentity = {
-  submit: (_body: CreatorTaxIdentitySubmission) =>
-    Promise.reject<void>(
-      new ApiError(
-        'NOT_IMPLEMENTED',
-        'Tax-identity capture has no backend endpoint yet (D14-B — GST onboarding flow not built)',
-      ),
-    ),
+  submit: (body: CreatorTaxIdentitySubmission) =>
+    isLive()
+      ? http.request<CreatorTaxIdentityResponse>('POST', '/me/tax-identity', { role: 'creator', body })
+      : mockOr<CreatorTaxIdentityResponse>({
+          gstin: body.gstin ?? null,
+          maskedPan: body.pan ? maskPan(body.pan) : null,
+          taxRegistrationStatus: body.gstin ? 'GST_REGISTERED' : body.pan ? 'PAN_ONLY' : null,
+        }),
 };
 
 // ---------------------------------------------------------------------------

@@ -1,14 +1,12 @@
 /**
- * TaxIdentityForm — creator GSTIN/PAN capture (D14-B)
+ * TaxIdentityForm — creator GSTIN/PAN capture (D14-B / C32)
  * ----------------------------------------------------------------------------
  * Schema-side, `CreatorProfile.gstin`/`.pan`/`.taxRegistrationStatus` exist
- * (D14-B migration, `CreatorTaxRegistrationStatus`), but there is no HTTP
- * endpoint yet for a creator to submit them — `applyTaxIdentity` is only
- * called internally today (see `useCreatorTaxIdentity.ts`). This form is
- * fully validated and submit-wired to `creatorTaxIdentity.submit()`, which
- * always rejects with a typed `NOT_IMPLEMENTED`; on that response we show an
- * honest "not live yet" banner rather than a fabricated success toast
- * (TECH-STACK.md rule #7, same discipline as `AffiliateEarningsView.tsx`).
+ * (D14-B migration, `CreatorTaxRegistrationStatus`). Vikram shipped the real
+ * `POST /me/tax-identity` endpoint 2026-07-24 — this form submits to it via
+ * `useCreatorTaxIdentity()` and renders the persisted, masked record
+ * (GSTIN + masked PAN) on success, or the server's field/format error on a
+ * 400 (`INVALID_GSTIN` / `INVALID_PAN` / `TAX_IDENTITY_REQUIRED`).
  *
  * Validation patterns mirror the backend exactly — `OnboardingDtos.KycRequest`
  * / `MoneyDtos.WalletTopUpRequest` `@Pattern` regexes.
@@ -18,7 +16,7 @@ import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AlertTriangle, Loader2, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -67,7 +65,7 @@ export interface TaxIdentityFormProps {
 }
 
 export function TaxIdentityForm({ onSubmitted }: TaxIdentityFormProps) {
-  const { submitting, notImplemented, error, submit, reset: resetSubmitState } = useCreatorTaxIdentity();
+  const { submitting, saved, error, submit, reset: resetSubmitState } = useCreatorTaxIdentity();
 
   const form = useForm<TaxIdentityFormValues>({
     resolver: zodResolver(taxIdentitySchema),
@@ -82,12 +80,51 @@ export function TaxIdentityForm({ onSubmitted }: TaxIdentityFormProps) {
     onSubmitted?.();
   };
 
+  if (saved) {
+    return (
+      <div className="space-y-4">
+        <Alert id="tax-identity-status">
+          <CheckCircle2 className="text-stage-approved-fg" aria-hidden="true" />
+          <AlertTitle>Tax details saved</AlertTitle>
+          <AlertDescription>
+            <div className="space-y-1 mt-1">
+              {saved.gstin && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">GSTIN</span>
+                  <span className="font-medium">{saved.gstin}</span>
+                </div>
+              )}
+              {saved.maskedPan && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">PAN</span>
+                  <span className="font-medium">{saved.maskedPan}</span>
+                </div>
+              )}
+            </div>
+          </AlertDescription>
+        </Alert>
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              form.reset();
+              resetSubmitState();
+            }}
+          >
+            Edit
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
         className="space-y-4"
-        aria-describedby={notImplemented || error ? 'tax-identity-status' : undefined}
+        aria-describedby={error ? 'tax-identity-status' : undefined}
       >
         <p className="text-sm text-muted-foreground">
           Add your GST registration and PAN so brands can bill you correctly and your invoices carry
@@ -139,25 +176,11 @@ export function TaxIdentityForm({ onSubmitted }: TaxIdentityFormProps) {
           )}
         />
 
-        {(notImplemented || error) && (
-          <Alert variant={notImplemented ? 'default' : 'destructive'} id="tax-identity-status">
-            {notImplemented ? (
-              <ShieldCheck aria-hidden="true" />
-            ) : (
-              <AlertTriangle aria-hidden="true" />
-            )}
-            <AlertTitle>{notImplemented ? 'Not live yet' : 'Couldn’t save'}</AlertTitle>
-            <AlertDescription>
-              {notImplemented ? (
-                <>
-                  Your details look valid, but tax-identity capture isn't wired up on the backend yet
-                  &mdash; GST onboarding is still in progress (D14-B). We'll save this once it ships;
-                  nothing was submitted.
-                </>
-              ) : (
-                error
-              )}
-            </AlertDescription>
+        {error && (
+          <Alert variant="destructive" id="tax-identity-status">
+            <AlertTriangle aria-hidden="true" />
+            <AlertTitle>Couldn&rsquo;t save</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
