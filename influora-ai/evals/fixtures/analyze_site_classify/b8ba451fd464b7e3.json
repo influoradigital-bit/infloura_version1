@@ -1,0 +1,23 @@
+{
+  "case_id": "as-011-influencer-marketing-saas",
+  "input": {
+    "page_text": "Influora — escrow-protected influencer marketing for Indian brands and creators. Discover verified creators, negotiate in one Deal Room, and pay through escrow. For example, launch a Rs 799 face serum with skincare creators in Mumbai, or run a 72-hour Hype Campaign where 100 creators remix one reel. Meera, your AI co-pilot, drafts the campaign. Free to start, pay only when a deal closes."
+  },
+  "output": {
+    "niche_tags": [
+      "influencer marketing platform",
+      "creator marketplace",
+      "escrow service",
+      "AI campaign management",
+      "Indian market focus"
+    ],
+    "tone_dial": {
+      "formality": 0.7,
+      "energy": 0.8,
+      "emoji_ok": false,
+      "cultural_context": "Indian"
+    },
+    "brand_color": null,
+    "product_catalog": []
+  }
+}

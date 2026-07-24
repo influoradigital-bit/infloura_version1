@@ -1,0 +1,23 @@
+{
+  "case_id": "as-012-b2b-saas-analytics",
+  "input": {
+    "page_text": "Metricly — product analytics for SaaS teams. Track activation, retention, funnels, and revenue in one dashboard. Connect your app in minutes with our SDK. Trusted by 2,000+ engineering and growth teams. Start free, no credit card required."
+  },
+  "output": {
+    "niche_tags": [
+      "SaaS",
+      "product analytics",
+      "data analytics",
+      "business intelligence",
+      "growth analytics platform"
+    ],
+    "tone_dial": {
+      "formality": 0.8,
+      "energy": 0.6,
+      "emoji_ok": false,
+      "cultural_context": "professional tech/SaaS"
+    },
+    "brand_color": null,
+    "product_catalog": []
+  }
+}
