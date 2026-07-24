@@ -12,17 +12,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import type { CreatorCampaignListItem } from '@/lib/api';
+import { getApplicationStatusBadgeProps } from '@/lib/application-status';
 import { cn, formatINR } from '@/lib/utils';
-
-const APPLICATION_STATUS_LABELS: Record<string, string> = {
-  APPLIED: 'Applied',
-  SHORTLISTED: 'Shortlisted',
-  IN_NEGOTIATION: 'In negotiation',
-  TERMS_AGREED: 'Terms agreed',
-  CONTRACT_PENDING: 'Contract pending',
-  CONTRACTED: 'Contracted',
-  INVITED: 'Invited',
-};
 
 function daysUntilDeadline(deadline: string | null): number | null {
   if (!deadline) return null;
@@ -125,9 +116,14 @@ export function CreatorBrowseCampaignCard({ campaign, className }: CreatorBrowse
                 <Link to={`/creator/campaigns/${campaign.id}`}>View details</Link>
               </Button>
               {campaign.applicationStatus ? (
-                <Badge variant="secondary">
-                  {APPLICATION_STATUS_LABELS[campaign.applicationStatus] ?? campaign.applicationStatus}
-                </Badge>
+                (() => {
+                  const badge = getApplicationStatusBadgeProps(campaign.applicationStatus);
+                  return (
+                    <Badge variant={badge.variant} className={badge.className}>
+                      {badge.label}
+                    </Badge>
+                  );
+                })()
               ) : (
                 <Button size="sm" asChild>
                   <Link to={`/creator/campaigns/${campaign.id}?apply=1`}>

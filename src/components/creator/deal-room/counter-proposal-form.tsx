@@ -44,6 +44,9 @@ export function CounterProposalForm({
   });
 
   const totalSteps = 4;
+  // Deadline must be today or later — a delivery date in the past is never valid.
+  const todayStr = React.useMemo(() => new Date().toISOString().split('T')[0], []);
+  const deadlineInPast = formData.deadline !== '' && formData.deadline < todayStr;
   const steps = [
     { num: 1, title: 'Review Proposal', subtitle: 'Check the details' },
     { num: 2, title: 'Your Rate', subtitle: 'Propose your amount' },
@@ -209,10 +212,17 @@ export function CounterProposalForm({
                 <Input
                   id="deadline"
                   type="date"
+                  min={todayStr}
                   value={formData.deadline}
                   onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
                   className="mt-2"
+                  aria-invalid={deadlineInPast}
                 />
+                {deadlineInPast && (
+                  <p className="text-xs text-stage-disputed-fg mt-1">
+                    Delivery deadline can&apos;t be in the past — pick today or a later date.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -283,7 +293,7 @@ export function CounterProposalForm({
             )}
             <div className="flex-1" />
             {step < totalSteps ? (
-              <Button onClick={handleNext} disabled={isSubmitting}>
+              <Button onClick={handleNext} disabled={isSubmitting || (step === 3 && deadlineInPast)}>
                 Next
                 <ChevronRight className="ml-2 h-4 w-4" />
               </Button>

@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { lazy, Suspense } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowUpRight,
@@ -48,11 +47,7 @@ import {
 } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 
-const PortfolioCanvasGate = lazy(() =>
-  import('@/components/3d/PortfolioCanvas').then((m) => ({ default: m.PortfolioCanvasGate })),
-);
 import { cn, formatINR } from '@/lib/utils';
-import { CanvasFallback } from '@/components/3d';
 import {
   api,
   ApiError,
@@ -182,14 +177,6 @@ export default function CreatorPortfolioPublicPage() {
 
   // Brand-acquisition deep-link: if not logged in, brand-login then back here with intent
   const inviteUrl = `/brand/login?inviteCreator=${encodeURIComponent(page.username)}`;
-  const portfolioCanvasStats = {
-    followers: totalFollowers(page),
-    engagement:
-      page.platforms.length > 0
-        ? page.platforms.reduce((sum, p) => sum + p.engagementRate, 0) / page.platforms.length
-        : 0,
-    collabs: page.stats.totalCollabs,
-  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -213,25 +200,26 @@ export default function CreatorPortfolioPublicPage() {
             SECTION 1 — HERO
         ============================================================ */}
         <section className="relative">
-          {/* 3D stats orbit — desktop hero */}
-          <div className="hidden lg:block h-[40vh] min-h-[240px] max-h-[400px] w-full overflow-hidden border-b border-border/40">
-            <Suspense fallback={<CanvasFallback variant="portfolio" className="min-h-0 h-full" />}>
-              <PortfolioCanvasGate avatarUrl={page.avatarUrl} stats={portfolioCanvasStats} />
-            </Suspense>
-          </div>
-
-          {/* Cover */}
+          {/* Hero cover — soft branded gradient with decorative glow (pure CSS, no WebGL) */}
           <div
             className={cn(
-              'h-32 sm:h-48 w-full',
-              !page.coverUrl && 'bg-gradient-to-br from-primary/30 via-primary/15 to-accent',
+              'relative h-36 sm:h-52 w-full overflow-hidden',
+              !page.coverUrl && 'bg-gradient-to-br from-primary/25 via-accent/40 to-primary/10',
             )}
             style={
               page.coverUrl
                 ? { backgroundImage: `url(${page.coverUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
                 : undefined
             }
-          />
+          >
+            {!page.coverUrl && (
+              <div aria-hidden className="pointer-events-none absolute inset-0">
+                <div className="absolute -top-16 -left-12 h-56 w-56 rounded-full bg-primary/30 blur-3xl" />
+                <div className="absolute -bottom-24 right-0 h-64 w-64 rounded-full bg-accent/50 blur-3xl" />
+                <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_20%_0%,rgba(255,255,255,0.35),transparent_55%)]" />
+              </div>
+            )}
+          </div>
 
           <div className="px-4 sm:px-6 -mt-12 sm:-mt-16">
             <Avatar className="h-24 w-24 sm:h-32 sm:w-32 ring-4 ring-background shadow-md">

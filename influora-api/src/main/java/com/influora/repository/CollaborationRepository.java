@@ -1,6 +1,7 @@
 package com.influora.repository;
 
 import com.influora.domain.entity.Collaboration;
+import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
 import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
@@ -99,6 +100,15 @@ public interface CollaborationRepository extends JpaRepository<Collaboration, St
     List<Collaboration> findByCreatorId(String creatorId);
 
     List<Collaboration> findByCreatorIdAndStatus(String creatorId, CollaborationStatus status);
+
+    /**
+     * "My Applications" page (my-applications-plan-2026-07-24.md) — source of truth is {@code
+     * source = APPLICATION}, never the loose {@code applicationStatus} mapping used by the browse
+     * path. {@code source} never mutates after creation, so this still returns a row after it
+     * progresses into a deal (SHORTLISTED/CONTRACTED/etc). Scoped by {@code creatorId} at the SQL
+     * level (derived query, not an in-memory filter over a broader finder) — Kabir R1.
+     */
+    List<Collaboration> findByCreatorIdAndSource(String creatorId, CollaborationSource source);
 
     /** Batch lookup powering the creator campaign browse list's per-row applicationStatus. */
     List<Collaboration> findByCreatorIdAndCampaignIdIn(String creatorId, List<String> campaignIds);

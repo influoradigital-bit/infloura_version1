@@ -298,12 +298,7 @@ class HttpClient {
       !!this.getToken(role),
     );
 
-    let envelope: ApiEnvelope<T>;
-    try {
-      envelope = (await res.json()) as ApiEnvelope<T>;
-    } catch {
-      throw new ApiError('NETWORK_ERROR', `Invalid JSON from ${path}`, res.status);
-    }
+    const envelope = await this.parseEnvelope<T>(res, path);
 
     if (!res.ok || !envelope.success) {
       throw new ApiError(
@@ -315,6 +310,30 @@ class HttpClient {
     }
 
     return envelope.data as T;
+  }
+
+  /**
+   * Parse the response body as the API envelope, or throw a clear, honest error when the
+   * body is not JSON. A non-JSON body almost never means "corrupt data" — it means the
+   * request never reached the API: a proxy/gateway HTML error page while the backend is
+   * restarting, a 502/503/504, or the network dropped. Surfacing that as a misleading
+   * "Invalid JSON" made a transient outage look like a data bug; instead we tell the user
+   * the server was briefly unavailable so the UI's "Try again" reads correctly.
+   */
+  private async parseEnvelope<T>(res: Response, path: string): Promise<ApiEnvelope<T>> {
+    const raw = await res.text();
+    try {
+      return JSON.parse(raw) as ApiEnvelope<T>;
+    } catch {
+      const unavailable = res.status === 0 || res.status === 502 || res.status === 503 || res.status === 504;
+      throw new ApiError(
+        unavailable ? 'SERVER_UNAVAILABLE' : 'BAD_RESPONSE',
+        unavailable
+          ? `The server was briefly unavailable (${res.status || 'no response'}). Please try again in a moment.`
+          : `Unexpected non-JSON response from the server (HTTP ${res.status}).`,
+        res.status,
+      );
+    }
   }
 
   /**
@@ -352,12 +371,7 @@ class HttpClient {
       role,
       !!this.getToken(role),
     );
-    let envelope: ApiEnvelope<T>;
-    try {
-      envelope = (await res.json()) as ApiEnvelope<T>;
-    } catch {
-      throw new ApiError('NETWORK_ERROR', `Invalid JSON from ${path}`, res.status);
-    }
+    const envelope = await this.parseEnvelope<T>(res, path);
     if (!res.ok || !envelope.success) {
       throw new ApiError(
         envelope.error?.code || 'UNKNOWN',
@@ -408,12 +422,7 @@ class HttpClient {
       !!this.getToken(role),
     );
     if (res.status === 204) return null;
-    let envelope: ApiEnvelope<T>;
-    try {
-      envelope = (await res.json()) as ApiEnvelope<T>;
-    } catch {
-      throw new ApiError('NETWORK_ERROR', `Invalid JSON from ${path}`, res.status);
-    }
+    const envelope = await this.parseEnvelope<T>(res, path);
     if (!res.ok || !envelope.success) {
       throw new ApiError(
         envelope.error?.code || 'UNKNOWN',
@@ -428,6 +437,16 @@ class HttpClient {
   async upload<T>(path: string, file: File, role: Role = 'brand'): Promise<T> {
     const formData = new FormData();
     formData.append('file', file);
+    return this.uploadForm<T>(path, formData, role);
+  }
+
+  /**
+   * Multipart POST with a caller-built {@link FormData} — used when the endpoint expects
+   * a non-`file` part name, multiple files, or extra form fields (e.g. the deliverable
+   * upload route whose part name is `files` (list) plus optional `thumbnail`/`caption`).
+   * Do NOT set a `Content-Type` header — the browser sets the multipart boundary itself.
+   */
+  async uploadForm<T>(path: string, formData: FormData, role: Role = 'brand'): Promise<T> {
     const token = this.getToken(role);
     const res = await this.fetchWithAuthRetry(
       `${API_BASE_URL}${path}`,
@@ -1197,14 +1216,19 @@ export const deals = {
         })
       : mockOr({ ok: true as const }),
 
-  /** POST /deals/:id/counter */
+  /**
+   * POST /deals/:id/counter. Pass a fresh `idempotencyKey` per user action — without it the
+   * server falls back to a key derived from `dealId + amount`, so two legitimate counters at
+   * the SAME amount on the same deal collide and the second silently no-ops (Kabir).
+   */
   counter: (
     id: string,
     payload: { amount: number; message?: string; deliverables?: Array<{ type: string; qty: number }> },
     role: Role = 'creator',
+    idempotencyKey?: string,
   ) =>
     isLive()
-      ? http.request<Deal>('POST', `/deals/${id}/counter`, { role, body: payload })
+      ? http.request<Deal>('POST', `/deals/${id}/counter`, { role, body: payload, idempotencyKey })
       : mockOr<{ id: string }>({ id }),
 
   /** POST /deals — brand creates a new proposal */
@@ -1654,14 +1678,20 @@ export const deliverables = {
           canRequestRevision: true,
         }),
 
-  /** POST /creator/deliverables/:id/submit  (CreatorDeliverableController.java:75 — creator-scoped, not a generic /deliverables route) */
-  submit: (id: string, payload: { fileUrls: string[]; notes?: string }) =>
+  /**
+   * POST /creator/deliverables/:id/submit — SubmitRequest(finalCaption, hashtags, notes), all
+   * optional (CreatorDeliverableDtos.java:50). The server requires files to have been uploaded
+   * FIRST via `creatorDeliverables.upload` (the multipart /upload route) — submitting with no
+   * uploaded version returns 400 NO_CONTENT. There is no `fileUrls` field on this endpoint.
+   */
+  submit: (id: string, payload: { finalCaption?: string; hashtags?: string[]; notes?: string } = {}) =>
     isLive()
-      ? http.request<{ status: DeliverableStatus }>('POST', `/creator/deliverables/${id}/submit`, {
-          role: 'creator',
-          body: payload,
-        })
-      : mockOr({ status: 'SUBMITTED' as DeliverableStatus }),
+      ? http.request<{ deliverableId: string; status: DeliverableStatus; message?: string }>(
+          'POST',
+          `/creator/deliverables/${id}/submit`,
+          { role: 'creator', body: payload },
+        )
+      : mockOr({ deliverableId: id, status: 'SUBMITTED' as DeliverableStatus }),
 
   /** POST /deliverables/:id/approve  (brand) */
   approve: (id: string) =>
@@ -3205,6 +3235,35 @@ export const affiliateEarnings = {
         }),
 };
 
+/**
+ * Row returned by `GET /creator/applications` (CreatorApplicationController, new
+ * 2026-07-24). Source of truth is `Collaboration` rows where `source = APPLICATION`
+ * (CTO arbitration, wiki/build/my-applications-plan-2026-07-24.md) — distinct from
+ * the loose `applicationStatus` on `CreatorCampaignListItem`, which only reflects
+ * the browse-campaigns path. `dealId` is the collaboration id and is always present
+ * (it's the same row, whatever stage it's in) — it's what the deal room route needs.
+ */
+export interface CreatorApplicationRow {
+  campaignId: string;
+  campaignTitle: string;
+  brandName: string;
+  brandLogoUrl?: string;
+  appliedAt: string;
+  status: string;
+  statusLabel: string;
+  agreedRate?: number;
+  currency?: string;
+  dealId: string;
+}
+
+export const creatorApplications = {
+  /** GET /creator/applications (CreatorApplicationController.java, new) — data=CreatorApplicationListItem[]. */
+  list: (): Promise<CreatorApplicationRow[]> =>
+    isLive()
+      ? http.request<CreatorApplicationRow[]>('GET', '/creator/applications', { role: 'creator' })
+      : mockOr<CreatorApplicationRow[]>([]),
+};
+
 export const creatorCampaigns = {
   /** GET /creator/campaigns (CreatorCampaignController.java:40) — data=items, envelope.meta=page info */
   browse: async (params: CreatorCampaignBrowseParams = {}) => {
@@ -3271,6 +3330,23 @@ export interface CreatorDeliverableMetricsPayload {
   saves?: number;
 }
 
+/** POST /creator/deliverables/:id/upload response — UploadResponse (CreatorDeliverableDtos.java:23). */
+export interface CreatorDeliverableUploadFile {
+  id: string;
+  fileType: string;
+  fileName: string;
+  url: string;
+  thumbnailUrl: string | null;
+  fileSize: number | null;
+  durationSeconds: number | null;
+}
+export interface CreatorDeliverableUploadResponse {
+  versionId: string;
+  versionNumber: number;
+  files: CreatorDeliverableUploadFile[];
+  status: CreatorDeliverableRowStatus;
+}
+
 export const creatorDeliverables = {
   /** GET /creator/deliverables?collaboration_id= (CreatorDeliverableController.java:44) */
   listForDeal: (collaborationId: string) =>
@@ -3279,6 +3355,38 @@ export const creatorDeliverables = {
           role: 'creator', query: { collaboration_id: collaborationId },
         })
       : mockOr<CreatorDeliverableListItem[]>([]),
+
+  /**
+   * POST /creator/deliverables/:id/upload — multipart (CreatorDeliverableController.java:55).
+   * Part name is `files` (list, required) + optional `thumbnail`; caption/hashtags/creatorNotes
+   * are optional form fields. Server validates MIME by magic bytes, caps size, scans for malware
+   * and sanitizes filenames — client-side checks are UX-only. Must run BEFORE `deliverables.submit`.
+   */
+  upload: (
+    deliverableId: string,
+    files: File[],
+    opts: { thumbnail?: File; caption?: string; hashtags?: string[]; creatorNotes?: string } = {},
+  ) => {
+    if (!isLive()) {
+      return mockOr<CreatorDeliverableUploadResponse>({
+        versionId: `mock_${deliverableId}`,
+        versionNumber: 1,
+        files: [],
+        status: 'DRAFT' as CreatorDeliverableRowStatus,
+      });
+    }
+    const formData = new FormData();
+    files.forEach((f) => formData.append('files', f));
+    if (opts.thumbnail) formData.append('thumbnail', opts.thumbnail);
+    if (opts.caption) formData.append('caption', opts.caption);
+    if (opts.creatorNotes) formData.append('creatorNotes', opts.creatorNotes);
+    (opts.hashtags ?? []).forEach((h) => formData.append('hashtags', h));
+    return http.uploadForm<CreatorDeliverableUploadResponse>(
+      `/creator/deliverables/${deliverableId}/upload`,
+      formData,
+      'creator',
+    );
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -3569,6 +3677,7 @@ export const api = {
   creatorCoupons,
   affiliateEarnings,
   creatorCampaigns,
+  creatorApplications,
   creatorDeliverables,
   creatorDisputes,
   brandDisputes,
