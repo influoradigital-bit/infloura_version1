@@ -5,6 +5,7 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.DealMessageStreamRegistry;
 import com.influora.service.DealService;
 import com.influora.service.DisputeService;
+import com.influora.service.ShipmentService;
 import com.influora.web.dto.dispute.DisputeDtos.DisputeResponse;
 import com.influora.web.dto.dispute.DisputeDtos.OpenDisputeRequest;
 import com.influora.web.dto.deal.DealDtos.CounterRequest;
@@ -15,6 +16,10 @@ import com.influora.web.dto.deal.DealDtos.OkResponse;
 import com.influora.web.dto.deal.DealDtos.RejectRequest;
 import com.influora.web.dto.deal.DealDtos.SendMessageRequest;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.DeliverableListItem;
+import com.influora.web.dto.shipment.ShipmentDtos.ConfirmReceiptRequest;
+import com.influora.web.dto.shipment.ShipmentDtos.MarkShippedRequest;
+import com.influora.web.dto.shipment.ShipmentDtos.ShipmentResponse;
+import com.influora.web.dto.shipment.ShipmentDtos.ShippingAddressRequest;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.util.List;
@@ -44,14 +49,17 @@ public class DealController {
     private final DealService dealService;
     private final DisputeService disputeService;
     private final DealMessageStreamRegistry messageStreamRegistry;
+    private final ShipmentService shipmentService;
 
     public DealController(
             DealService dealService,
             DisputeService disputeService,
-            DealMessageStreamRegistry messageStreamRegistry) {
+            DealMessageStreamRegistry messageStreamRegistry,
+            ShipmentService shipmentService) {
         this.dealService = dealService;
         this.disputeService = disputeService;
         this.messageStreamRegistry = messageStreamRegistry;
+        this.shipmentService = shipmentService;
     }
 
     @GetMapping
@@ -171,5 +179,42 @@ public class DealController {
             @Valid @RequestBody OpenDisputeRequest body) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.ok(disputeService.openDispute(principal, dealId, body)));
+    }
+
+    /**
+     * Product-seeding shipment / confirm-receipt (wiki/decisions/shipment-backend-design-2026-07-24.md
+     * §4). Creator submits/updates the shipping address; lazy-creates the {@code Shipment} row.
+     */
+    @PostMapping("/{id}/shipping-address")
+    public ResponseEntity<ApiResponse<ShipmentResponse>> submitShippingAddress(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String id,
+            @Valid @RequestBody ShippingAddressRequest body) {
+        return ResponseEntity.ok(ApiResponse.ok(shipmentService.submitAddress(principal, id, body)));
+    }
+
+    /** Brand marks the product shipped — publishes {@code ShipmentCreatedEvent} (design doc §4/§6). */
+    @PostMapping("/{id}/shipment")
+    public ResponseEntity<ApiResponse<ShipmentResponse>> markShipped(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String id,
+            @Valid @RequestBody MarkShippedRequest body) {
+        return ResponseEntity.ok(ApiResponse.ok(shipmentService.markShipped(principal, id, body)));
+    }
+
+    /** Creator confirms receipt — publishes {@code ShipmentReceivedEvent} (design doc §4/§6). */
+    @PostMapping("/{id}/shipment/confirm-receipt")
+    public ResponseEntity<ApiResponse<ShipmentResponse>> confirmReceipt(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String id,
+            @Valid @RequestBody ConfirmReceiptRequest body) {
+        return ResponseEntity.ok(ApiResponse.ok(shipmentService.confirmReceipt(principal, id, body)));
+    }
+
+    /** Dual-role read; returns a synthetic {@code AWAITING_ADDRESS} response if no row exists yet. */
+    @GetMapping("/{id}/shipment")
+    public ResponseEntity<ApiResponse<ShipmentResponse>> getShipment(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String id) {
+        return ResponseEntity.ok(ApiResponse.ok(shipmentService.getShipment(principal, id)));
     }
 }

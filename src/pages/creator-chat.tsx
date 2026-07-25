@@ -37,12 +37,18 @@ import { cn, formatINR } from '@/lib/utils';
 import {
   api,
   isApiLive,
+  ApiError,
   type Deal,
   type DealMessage,
   type MessageKind,
   type ContractApiRecord,
   type ContractStatus,
+  type CreatorDeliverableListItem,
+  type ShipmentApiRecord,
+  type ShipmentApiStatus,
+  type ShipmentCondition,
 } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -125,6 +131,30 @@ const creatorPhaseToPanel: Record<DealPhase, CreatorToolsPanel> = {
   deliver: 'deliverables',
   pay: 'payments',
 };
+
+/**
+ * Maps the backend `ShipmentApiStatus` (5 states, `wiki/decisions/shipment-backend-design-2026-07-24.md`)
+ * onto the local `ShipmentStatus` UI enum from `components/shared/shipment-card.tsx` (6 states,
+ * includes an `in_transit`/`out_for_delivery` split the backend doesn't model). Since the backend
+ * only exposes SHIPPED as a single "it's on its way" state, it maps to the UI's `delivered` state —
+ * that's the one that surfaces the "Mark as Received" action, and the backend's own transition rule
+ * (`SHIPPED → RECEIVED/DAMAGED` is exactly "confirm receipt while shipped") matches that UI trigger.
+ */
+function mapShipmentApiStatusToUiStatus(status: ShipmentApiStatus): ShipmentStatus {
+  switch (status) {
+    case 'AWAITING_ADDRESS':
+    case 'ADDRESS_PROVIDED':
+      return 'created';
+    case 'SHIPPED':
+      return 'delivered';
+    case 'RECEIVED':
+      return 'received';
+    case 'DAMAGED':
+      return 'damaged';
+    default:
+      return 'created';
+  }
+}
 
 // ============================================================================
 // Types
@@ -532,12 +562,13 @@ const getStatusBadge = (status: DealRoom['status']) => {
   return <Badge className={config.className}>{config.label}</Badge>;
 };
 
+// Single platform fee of 15% (feeBps 1500) — matches api.wallet.platformFee, the
+// counter-proposal form, and the actual escrow payout (creator nets 85% of gross).
+const PLATFORM_FEE_RATE = 0.15;
 const calculateEarnings = (grossAmount: number) => {
-  const platformFee = grossAmount * 0.10;
-  const gstOnFee = platformFee * 0.18;
-  const tds = grossAmount * 0.10;
-  const netEarnings = grossAmount - platformFee - gstOnFee - tds;
-  return { platformFee, gstOnFee, tds, netEarnings };
+  const platformFee = grossAmount * PLATFORM_FEE_RATE;
+  const netEarnings = grossAmount - platformFee;
+  return { platformFee, netEarnings };
 };
 
 // ============================================================================
@@ -546,6 +577,7 @@ const calculateEarnings = (grossAmount: number) => {
 
 export default function CreatorChatPage() {
   const liveApi = isApiLive();
+  const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const dealId = searchParams.get('deal');
   const tabFromUrl = searchParams.get('tab');
@@ -680,6 +712,26 @@ export default function CreatorChatPage() {
     void fetchLiveContract();
   }, [fetchLiveContract]);
 
+  // C19: real deliverable rows feed the submission dialog (was a hardcoded fake array).
+  // The chat page can only LIST them — rows are created server-side when the contract is
+  // generated, so an empty list here means "no contract yet, nothing to submit".
+  const loadDeliverables = React.useCallback(async () => {
+    if (!liveApi || !selectedDeal) {
+      setLiveDeliverables([]);
+      return;
+    }
+    try {
+      setLiveDeliverables(await api.creatorDeliverables.listForDeal(selectedDeal.id));
+    } catch (err) {
+      console.error('Failed to load deliverables', err);
+      setLiveDeliverables([]);
+    }
+  }, [liveApi, selectedDeal?.id]);
+
+  React.useEffect(() => {
+    void loadDeliverables();
+  }, [loadDeliverables]);
+
   React.useEffect(() => {
     if (dealId) {
       setSelectedDealId(dealId);
@@ -696,6 +748,9 @@ export default function CreatorChatPage() {
   const [showCounterForm, setShowCounterForm] = React.useState(false);
   const [isSubmittingCounter, setIsSubmittingCounter] = React.useState(false);
   const [showDeliverableDialog, setShowDeliverableDialog] = React.useState(false);
+  // Real deliverable rows for the selected collaboration — GET /creator/deliverables?collaboration_id=.
+  // Empty until a contract materializes the rows (ContractService.materializeDeliverables).
+  const [liveDeliverables, setLiveDeliverables] = React.useState<CreatorDeliverableListItem[]>([]);
   const [counterAmount, setCounterAmount] = React.useState('');
   const [counterMessage, setCounterMessage] = React.useState('');
   const [showRevisionHandler, setShowRevisionHandler] = React.useState(false);
@@ -709,40 +764,173 @@ export default function CreatorChatPage() {
   const [showReceiptConfirmation, setShowReceiptConfirmation] = React.useState(false);
   const [shippingAddress, setShippingAddress] = React.useState<ShippingAddressData | null>(null);
   const [shipmentStatus, setShipmentStatus] = React.useState<ShipmentStatus>('created');
-  // Demo: pretend brand has dispatched a shipment after address is given
-  const [hasShipment, setHasShipment] = React.useState(true);
   const [isSavingAddress, setIsSavingAddress] = React.useState(false);
   const [isConfirmingReceipt, setIsConfirmingReceipt] = React.useState(false);
 
-  // NEEDS BACKEND: there is no shipping-address or shipment endpoint. Checked
-  // src/lib/api.ts (no shipping/shipment/receipt methods anywhere) and the
-  // Spring backend (no Shipment entity, repository, or controller — only
-  // dead ShipmentCreatedEvent/ShipmentReceivedEvent notification records that
-  // are never published anywhere). `DealMessageKind.shipment` exists as an
-  // enum value but nothing produces messages of that kind either. Until
-  // Vikram ships a real POST /deals/:id/shipping-address (or equivalent),
-  // this stays a client-only simulation so the demo flow keeps working —
-  // it is NOT wired to anything real and must not be reported as such.
+  // Real shipment record — GET /deals/:id/shipment (Priya's design 2026-07-24,
+  // wiki/decisions/shipment-backend-design-2026-07-24.md). `shippingAddress` and
+  // `shipmentStatus` above are synced FROM this once liveApi is on (effect below);
+  // in mock/demo mode they stay purely local, set by the handlers directly.
+  const [liveShipment, setLiveShipment] = React.useState<ShipmentApiRecord | null>(null);
+  // Whether this backend actually serves the shipment endpoints. A 404 from
+  // GET /deals/:id/shipment means the shipment feature isn't deployed here — in
+  // that case we degrade gracefully: hide all shipment UI and never gate
+  // deliverable submission on a shipment that can never be created.
+  const [shipmentSupported, setShipmentSupported] = React.useState(true);
+
+  const fetchLiveShipment = React.useCallback(async () => {
+    if (!liveApi || !selectedDeal) {
+      setLiveShipment(null);
+      return;
+    }
+    try {
+      const record = await api.shipments.get('creator', selectedDeal.id);
+      setLiveShipment(record);
+      setShipmentSupported(true);
+    } catch (err) {
+      // 404 = shipment endpoints not deployed on this backend → hide the shipment
+      // step entirely rather than blocking the creator behind a gate they can't clear.
+      // Other errors (transient/5xx) leave the feature enabled but with no record.
+      if (err instanceof ApiError && err.status === 404) {
+        setShipmentSupported(false);
+      }
+      console.error('Failed to load shipment status', err);
+      setLiveShipment(null);
+    }
+  }, [liveApi, selectedDeal?.id]);
+
+  React.useEffect(() => {
+    void fetchLiveShipment();
+  }, [fetchLiveShipment]);
+
+  // Reflect the real record into the address/status state the render tree already
+  // reads. AWAITING_ADDRESS (no row yet) keeps shippingAddress null so the "Add
+  // Shipping Address" prompt still shows.
+  React.useEffect(() => {
+    if (!liveApi || !liveShipment) return;
+    if (liveShipment.status === 'AWAITING_ADDRESS') {
+      setShippingAddress(null);
+    } else {
+      setShippingAddress({
+        fullName: liveShipment.recipientName ?? '',
+        phone: liveShipment.phone ?? '',
+        addressLine1: liveShipment.addressLine1 ?? '',
+        addressLine2: liveShipment.addressLine2 ?? '',
+        city: liveShipment.city ?? '',
+        state: liveShipment.state ?? '',
+        pincode: liveShipment.pincode ?? '',
+      });
+    }
+    setShipmentStatus(mapShipmentApiStatusToUiStatus(liveShipment.status));
+  }, [liveApi, liveShipment]);
+
+  // Whether the brand has actually dispatched the product (vs. only an address being
+  // on file) — derived from the real status rather than tracked as separate state.
+  const hasShipment = liveApi
+    ? liveShipment?.status === 'SHIPPED' || liveShipment?.status === 'RECEIVED' || liveShipment?.status === 'DAMAGED'
+    : true; // mock/demo mode: keep the prior "brand always already shipped" assumption so the click-through demo still works
+
+  // Display fields ShipmentCard needs beyond status/address. Priya's Shipment entity has
+  // no `items`/`estimatedDelivery` fields at all (single `productName` string, no ETA) —
+  // those two stay demo placeholders in both modes until a future schema addition;
+  // courier/tracking/notes come from the real record once liveApi is on.
+  const shipmentDisplay = React.useMemo(() => {
+    if (liveApi) {
+      return {
+        items: [{ name: liveShipment?.productName || 'Product', quantity: 1 }],
+        courier: liveShipment?.carrier || 'Courier pending',
+        trackingNumber: liveShipment?.trackingNumber || 'Pending',
+        trackingUrl: liveShipment?.trackingUrl || undefined,
+        notes: liveShipment?.conditionNote || undefined,
+      };
+    }
+    return {
+      items: [{ name: 'Summer Dress (Floral, Size M)', quantity: 1 }, { name: 'Brand Lookbook', quantity: 1 }],
+      courier: 'Delhivery',
+      trackingNumber: 'DLV789456123',
+      trackingUrl: 'https://www.delhivery.com/track',
+      notes: 'Please unbox on camera if you can. Care: dry-clean only.',
+    };
+  }, [liveApi, liveShipment]);
+
+  // Wired to POST /deals/:id/shipping-address (creator-only; backend rejects with
+  // 409 SHIPMENT_ALREADY_SHIPPED once the brand has shipped). Mock mode keeps the
+  // old client-only simulation so the demo flow still works offline.
   const handleSubmitShippingAddress = async (data: ShippingAddressData) => {
+    if (!selectedDeal) return;
     setIsSavingAddress(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setShippingAddress(data);
-    setIsSavingAddress(false);
-    setShowShippingAddressForm(false);
+    try {
+      if (liveApi) {
+        // ShippingAddressData carries a `landmark` field the backend DTO doesn't
+        // model (Priya's doc has no landmark column) — fold it into addressLine2
+        // rather than drop it.
+        const addressLine2 =
+          [data.addressLine2, data.landmark ? `Landmark: ${data.landmark}` : null]
+            .filter(Boolean)
+            .join(' · ') || undefined;
+        const record = await api.shipments.submitAddress(selectedDeal.id, {
+          recipientName: data.fullName,
+          phone: data.phone,
+          addressLine1: data.addressLine1,
+          addressLine2,
+          city: data.city,
+          state: data.state,
+          pincode: data.pincode,
+        });
+        setLiveShipment(record);
+      } else {
+        await new Promise((r) => setTimeout(r, 600));
+      }
+      setShippingAddress(data);
+      setShowShippingAddressForm(false);
+    } catch (err) {
+      console.error('Failed to submit shipping address', err);
+      toast({
+        title: 'Could not save shipping address',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingAddress(false);
+    }
   };
 
   const handleMarkReceived = () => {
     setShowReceiptConfirmation(true);
   };
 
-  // NEEDS BACKEND: same gap as handleSubmitShippingAddress above — no
-  // confirm-receipt endpoint exists. Left as a client-only simulation.
+  // Wired to POST /deals/:id/shipment/confirm-receipt (creator-only; backend rejects
+  // with 409 SHIPMENT_NOT_SHIPPED unless currently SHIPPED). Mock mode keeps the old
+  // client-only simulation so the demo flow still works offline.
   const handleConfirmReceipt = async (data: ReceiptData) => {
+    if (!selectedDeal) return;
     setIsConfirmingReceipt(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setShipmentStatus(data.condition === 'good' ? 'received' : 'damaged');
-    setIsConfirmingReceipt(false);
-    setShowReceiptConfirmation(false);
+    try {
+      if (liveApi) {
+        // Backend models exactly two conditions (GOOD/DAMAGED, doc §4); this dialog
+        // additionally offers "wrong_item" with no server equivalent — fold it into
+        // DAMAGED and preserve the distinction in the note rather than dropping it.
+        const condition: ShipmentCondition = data.condition === 'good' ? 'GOOD' : 'DAMAGED';
+        const note =
+          data.condition === 'wrong_item' ? `Wrong item received: ${data.notes}` : data.notes || undefined;
+        const record = await api.shipments.confirmReceipt(selectedDeal.id, { condition, note });
+        setLiveShipment(record);
+        setShipmentStatus(mapShipmentApiStatusToUiStatus(record.status));
+      } else {
+        await new Promise((r) => setTimeout(r, 600));
+        setShipmentStatus(data.condition === 'good' ? 'received' : 'damaged');
+      }
+      setShowReceiptConfirmation(false);
+    } catch (err) {
+      console.error('Failed to confirm receipt', err);
+      toast({
+        title: 'Could not confirm receipt',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsConfirmingReceipt(false);
+    }
   };
 
   const handleSendMessage = async () => {
@@ -818,12 +1006,41 @@ export default function CreatorChatPage() {
   };
 
   const handleSubmitCounterForm = async (data: CounterProposalFormData) => {
+    if (!selectedDeal) return;
     setIsSubmittingCounter(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setShowCounterForm(false);
-    setIsSubmittingCounter(false);
-    // In production: add counter proposal to timeline, update deal status
+    try {
+      if (liveApi) {
+        // The counter DTO carries only amount + message + structured deliverables — no
+        // dedicated deadline/terms fields — so fold those into the message (nothing dropped).
+        const message = [
+          data.message,
+          data.terms && `Terms: ${data.terms}`,
+          data.deadline && `Requested deadline: ${data.deadline}`,
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+        await api.deals.counter(
+          selectedDeal.id,
+          { amount: data.proposedAmount, message: message || undefined },
+          'creator',
+          // Fresh key per submit so a same-amount re-counter is a real event, not a no-op (Kabir).
+          `${selectedDeal.id}-counter-${Date.now()}`,
+        );
+        await loadDeals();
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      setShowCounterForm(false);
+    } catch (err) {
+      console.error('Failed to submit counter offer', err);
+      toast({
+        title: 'Could not send counter offer',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmittingCounter(false);
+    }
   };
 
   const handleSubmitDeliverable = () => {
@@ -832,11 +1049,21 @@ export default function CreatorChatPage() {
 
   const handleSubmitDeliverableForm = async (data: DeliverableSubmissionData) => {
     setIsSubmittingDeliverable(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setShowDeliverableDialog(false);
-    setIsSubmittingDeliverable(false);
-    // In production: add deliverable to timeline, update deal status
+    try {
+      if (liveApi) {
+        // Two steps: upload the file to the deliverable-specific multipart route (part name
+        // `files`), THEN submit. Submitting with no uploaded version returns 400 NO_CONTENT.
+        await api.creatorDeliverables.upload(data.deliverableId, [data.file], { caption: data.caption });
+        await api.deliverables.submit(data.deliverableId, { finalCaption: data.caption });
+        await loadDeliverables();
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      // Note: do NOT close the dialog or catch here — DeliverableSubmission awaits this
+      // handler, closes itself on success, and shows its own destructive toast on failure.
+    } finally {
+      setIsSubmittingDeliverable(false);
+    }
   };
 
   const handleStartRevision = async (revisionNotes: string) => {
@@ -1162,7 +1389,7 @@ export default function CreatorChatPage() {
           </div>
           
           <div className="flex items-center gap-2">
-            {selectedDeal.status === 'in_progress' && !shippingAddress && (
+            {selectedDeal.status === 'in_progress' && shipmentSupported && !shippingAddress && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1173,7 +1400,7 @@ export default function CreatorChatPage() {
                 <span className="hidden sm:inline">Add Shipping Address</span>
               </Button>
             )}
-            {selectedDeal.status === 'in_progress' && shippingAddress && shipmentStatus !== 'received' && (
+            {selectedDeal.status === 'in_progress' && shipmentSupported && shippingAddress && shipmentStatus !== 'received' && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1349,7 +1576,7 @@ export default function CreatorChatPage() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Usage Rights</span>
-                            <span>{String(event.metadata?.usageRights)}</span>
+                            <span>{String(event.metadata?.usageRights ?? 'Not specified')}</span>
                           </div>
                         </div>
 
@@ -1357,26 +1584,26 @@ export default function CreatorChatPage() {
                         <div className="mt-3 pt-3 border-t border-stage-outreach-border">
                           <p className="text-xs text-muted-foreground mb-2">Your Earnings Breakdown</p>
                           <div className="space-y-1 text-xs">
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Gross Amount</span>
-                              <span>{formatINR(Number(event.metadata?.amount))}</span>
-                            </div>
-                            <div className="flex justify-between text-stage-disputed-fg">
-                              <span>Platform Fee (10%)</span>
-                              <span>-{formatINR(Number(event.metadata?.platformFee))}</span>
-                            </div>
-                            <div className="flex justify-between text-stage-disputed-fg">
-                              <span>GST on Fee (18%)</span>
-                              <span>-{formatINR(Number(event.metadata?.gstOnFee))}</span>
-                            </div>
-                            <div className="flex justify-between text-stage-disputed-fg">
-                              <span>TDS (10%)</span>
-                              <span>-{formatINR(Number(event.metadata?.tds))}</span>
-                            </div>
-                            <div className="flex justify-between font-semibold text-stage-approved-fg pt-1 border-t">
-                              <span>You Receive</span>
-                              <span>{formatINR(Number(event.metadata?.netEarnings))}</span>
-                            </div>
+                            {(() => {
+                              const gross = Number(event.metadata?.amount);
+                              const earnings = calculateEarnings(gross);
+                              return (
+                                <>
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Gross Amount</span>
+                                    <span>{formatINR(gross)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-stage-disputed-fg">
+                                    <span>Platform Fee (15%)</span>
+                                    <span>-{formatINR(earnings.platformFee)}</span>
+                                  </div>
+                                  <div className="flex justify-between font-semibold text-stage-approved-fg pt-1 border-t">
+                                    <span>You Receive</span>
+                                    <span>{formatINR(earnings.netEarnings)}</span>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
 
@@ -1460,7 +1687,7 @@ export default function CreatorChatPage() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Usage Rights</span>
-                            <span>{String(event.metadata?.usageRights)}</span>
+                            <span>{String(event.metadata?.usageRights ?? 'Not specified')}</span>
                           </div>
                         </div>
 
@@ -1550,7 +1777,7 @@ export default function CreatorChatPage() {
             ))}
 
             {/* Phase 5: Shipping Address prompt (after contract, before shipment) */}
-            {selectedDeal.status === 'in_progress' && !shippingAddress && (
+            {selectedDeal.status === 'in_progress' && shipmentSupported && !shippingAddress && (
               <div className="flex justify-center">
                 <div className="w-full max-w-md border-2 border-dashed border-stage-outreach-border bg-stage-outreach rounded-lg p-4 text-center">
                   <MapPin className="h-6 w-6 mx-auto text-stage-outreach-fg mb-2" />
@@ -1565,23 +1792,27 @@ export default function CreatorChatPage() {
               </div>
             )}
 
-            {/* Phase 5: Shipment Card */}
-            {selectedDeal.status === 'in_progress' && shippingAddress && hasShipment && (
+            {/* Phase 5: Shipment Card — status/address are real (GET /deals/:id/shipment)
+                when liveApi is on; items/estimatedDelivery stay placeholders (no backend
+                field for either) and courier/tracking/notes come from the real record
+                once the brand has shipped. See shipmentDisplay above. */}
+            {selectedDeal.status === 'in_progress' && shipmentSupported && shippingAddress && hasShipment && (
               <ShipmentCard
                 perspective="creator"
                 status={shipmentStatus}
-                items={[{ name: 'Summer Dress (Floral, Size M)', quantity: 1 }, { name: 'Brand Lookbook', quantity: 1 }]}
-                courier="Delhivery"
-                trackingNumber="DLV789456123"
-                trackingUrl="https://www.delhivery.com/track"
+                items={shipmentDisplay.items}
+                courier={shipmentDisplay.courier}
+                trackingNumber={shipmentDisplay.trackingNumber}
+                trackingUrl={shipmentDisplay.trackingUrl}
                 estimatedDelivery={new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()}
-                notes="Please unbox on camera if you can. Care: dry-clean only."
+                notes={shipmentDisplay.notes}
                 onMarkReceived={handleMarkReceived}
               />
             )}
 
-            {/* Demo: simulate shipment status progression */}
-            {selectedDeal.status === 'in_progress' && shippingAddress && hasShipment && shipmentStatus === 'created' && (
+            {/* Demo-only: simulate shipment status progression. Real mode has no client-side
+                "mark delivered" action — status only advances via the real GET/brand-ship flow. */}
+            {!liveApi && selectedDeal.status === 'in_progress' && shippingAddress && hasShipment && shipmentStatus === 'created' && (
               <div className="flex justify-center">
                 <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => setShipmentStatus('delivered')}>
                   (Demo) Simulate delivery
@@ -1728,16 +1959,8 @@ export default function CreatorChatPage() {
                         <span>{formatINR(selectedDeal.dealAmount)}</span>
                       </div>
                       <div className="flex justify-between text-stage-disputed-fg">
-                        <span>Platform Fee (10%)</span>
+                        <span>Platform Fee (15%)</span>
                         <span>-{formatINR(earnings.platformFee)}</span>
-                      </div>
-                      <div className="flex justify-between text-stage-disputed-fg">
-                        <span>GST on Fee (18%)</span>
-                        <span>-{formatINR(earnings.gstOnFee)}</span>
-                      </div>
-                      <div className="flex justify-between text-stage-disputed-fg">
-                        <span>TDS (10%)</span>
-                        <span>-{formatINR(earnings.tds)}</span>
                       </div>
                       <div className="flex justify-between font-semibold text-stage-approved-fg pt-2 border-t">
                         <span>You Receive</span>
@@ -1826,10 +2049,21 @@ export default function CreatorChatPage() {
       <DeliverableSubmission
         open={showDeliverableDialog}
         onOpenChange={setShowDeliverableDialog}
-        deliverables={[
-          { id: 'reel-1', title: 'Instagram Reel #1', description: 'High-quality reel with trending audio', completed: true },
-          { id: 'reel-2', title: 'Instagram Reel #2', description: 'Follow-up reel with product showcase', completed: false },
-        ]}
+        deliverables={
+          liveApi
+            ? liveDeliverables.map((d) => ({
+                id: d.id,
+                title: d.title,
+                description: d.description,
+                completed: d.completed,
+                currentRevision: d.currentRevision ?? undefined,
+                maxRevisions: d.maxRevisions ?? undefined,
+              }))
+            : [
+                { id: 'reel-1', title: 'Instagram Reel #1', description: 'High-quality reel with trending audio', completed: true },
+                { id: 'reel-2', title: 'Instagram Reel #2', description: 'Follow-up reel with product showcase', completed: false },
+              ]
+        }
         onSubmit={handleSubmitDeliverableForm}
         isSubmitting={isSubmittingDeliverable}
       />

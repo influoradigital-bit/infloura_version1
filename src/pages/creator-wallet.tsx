@@ -81,6 +81,13 @@ const EMPTY_EARNINGS = {
 };
 
 /**
+ * Minimum withdrawal in INR. MUST mirror `WalletService.MIN_CREATOR_WITHDRAWAL`
+ * (currently ₹500.00) on the backend — a lower client floor lets a withdraw pass
+ * the UI only to be rejected server-side with `MINIMUM_WITHDRAWAL`.
+ */
+const MIN_WITHDRAWAL_INR = 500;
+
+/**
  * Generic status-badge tone by substring match against whatever status string the
  * backend sends on a `WalletTransactionRow` (e.g. "COMPLETED", "PROCESSING", "FAILED").
  * Not tied to a fixed enum — real backend statuses vary by transaction type.
@@ -433,7 +440,7 @@ export default function CreatorWalletPage() {
 
   const handleWithdraw = async () => {
     const amount = parseFloat(withdrawAmount);
-    if (!amount || amount < 100) return;
+    if (!amount || amount < MIN_WITHDRAWAL_INR) return;
     setIsWithdrawing(true);
     setWithdrawError(null);
     if (!liveApi) {
@@ -493,6 +500,12 @@ export default function CreatorWalletPage() {
       setSettingPrimaryId(null);
     }
   };
+
+  // Destination shown in the Withdraw dialog: the creator's real primary payout
+  // method (falls back to the first on file). Never hardcode a demo VPA here — the
+  // creator must see exactly where their money is going.
+  const primaryPayoutMethod =
+    payoutMethods.find((m) => m.isPrimary) ?? payoutMethods[0] ?? null;
 
   return (
     <CreatorLayout>
@@ -591,7 +604,7 @@ export default function CreatorWalletPage() {
                   {payoutTransactions.map((payout) => (
                     <Card
                       key={payout.id}
-                      className="cursor-pointer hover:shadow-md transition-all"
+                      className="cursor-pointer transition-shadow hover:shadow-md"
                       onClick={() => setSelectedPayout(payout)}
                     >
                       <CardContent className="p-4">
@@ -973,7 +986,7 @@ export default function CreatorWalletPage() {
                 />
               </div>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Min: ₹100</span>
+                <span className="text-muted-foreground">Min: {formatINR(MIN_WITHDRAWAL_INR)}</span>
                 <Button 
                   variant="link" 
                   className="h-auto p-0 text-xs"
@@ -984,22 +997,38 @@ export default function CreatorWalletPage() {
               </div>
             </div>
 
-            {/* Payout Method */}
+            {/* Payout Method — the creator's real primary method, never a hardcoded VPA */}
             <div className="space-y-2">
               <Label>Payout Method</Label>
-              <Card className="border-violet-200 bg-violet-50">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-full bg-stage-approved flex items-center justify-center">
-                      <span className="text-stage-approved-fg font-bold text-sm">₹</span>
+              {primaryPayoutMethod ? (
+                <Card className="border-violet-200 bg-violet-50">
+                  <CardContent className="p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-stage-approved flex items-center justify-center">
+                        {primaryPayoutMethod.type === 'UPI' ? (
+                          <span className="text-stage-approved-fg font-bold text-sm">₹</span>
+                        ) : (
+                          <Building className="h-4 w-4 text-blue-700" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">
+                          {primaryPayoutMethod.type === 'UPI' ? 'UPI' : 'Bank Account'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{primaryPayoutMethod.displayMask}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium text-sm">UPI</p>
-                      <p className="text-xs text-muted-foreground">priya@okaxis</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="border-dashed">
+                  <CardContent className="p-3">
+                    <p className="text-sm text-muted-foreground">
+                      No payout method on file. Add a bank account or UPI in Settings before withdrawing.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* Fees */}
@@ -1033,7 +1062,7 @@ export default function CreatorWalletPage() {
             </Button>
             <Button 
               onClick={handleWithdraw}
-              disabled={isWithdrawing || !withdrawAmount || parseFloat(withdrawAmount) < 100 || parseFloat(withdrawAmount) > earnings.availableBalance}
+              disabled={isWithdrawing || !withdrawAmount || parseFloat(withdrawAmount) < MIN_WITHDRAWAL_INR || parseFloat(withdrawAmount) > earnings.availableBalance || (liveApi && !primaryPayoutMethod)}
               className="bg-primary hover:bg-primary/90"
             >
               {isWithdrawing ? (

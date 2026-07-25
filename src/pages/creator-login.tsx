@@ -121,12 +121,12 @@ export default function CreatorLoginPage() {
             />
             <span className="text-sm text-muted-foreground">Remember me</span>
           </label>
-          <button
-            type="button"
+          <Link
+            to="/creator/forgot-password"
             className="text-sm text-primary hover:underline transition-colors"
           >
             Forgot password?
-          </button>
+          </Link>
         </div>
 
         <Button

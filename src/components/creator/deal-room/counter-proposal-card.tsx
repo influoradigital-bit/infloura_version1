@@ -30,14 +30,10 @@ export function CounterProposalCard({
   onDecline,
   onReply,
 }: CounterProposalCardProps) {
-  // Calculate creator's net earnings
-  const calculateEarnings = (gross: number) => {
-    const platformFee = gross * 0.1;
-    const gstOnFee = platformFee * 0.18;
-    const tds = gross * 0.1;
-    const netEarnings = gross - platformFee - gstOnFee - tds;
-    return netEarnings;
-  };
+  // Creator's net earnings — single 15% platform fee (feeBps 1500), net = 85% of
+  // gross. Consistent with api.wallet.platformFee, the counter-proposal form, and
+  // the actual escrow payout.
+  const calculateEarnings = (gross: number) => gross - gross * 0.15;
 
   const netEarnings = calculateEarnings(amount);
 
@@ -131,16 +127,8 @@ export function CounterProposalCard({
             <span>{formatINR(amount)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Platform Fee (10%):</span>
-            <span className="text-stage-disputed-fg">-{formatINR(amount * 0.1)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">GST on Fee (18%):</span>
-            <span className="text-stage-disputed-fg">-{formatINR(amount * 0.1 * 0.18)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">TDS (10%):</span>
-            <span className="text-stage-disputed-fg">-{formatINR(amount * 0.1)}</span>
+            <span className="text-muted-foreground">Platform Fee (15%):</span>
+            <span className="text-stage-disputed-fg">-{formatINR(amount * 0.15)}</span>
           </div>
           <div className="flex justify-between font-semibold border-t pt-1.5">
             <span>You Receive:</span>

@@ -8,7 +8,6 @@ import {
   FileSignature,
   Globe,
   IndianRupee,
-  Loader2,
   Megaphone,
   MessageCircle,
   Share2,
@@ -19,7 +18,7 @@ import {
 } from 'lucide-react';
 
 import { CreatorLayout } from '@/components/creator/creator-layout';
-import { FadeUp, StaggerContainer, StaggerItem } from '@/components/motion';
+import { FadeUp } from '@/components/motion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -362,7 +361,7 @@ export default function CreatorDashboardPage() {
   return (
     <CreatorLayout>
       <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
-        <FadeUp>
+        <FadeUp y={0}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold text-foreground sm:text-3xl">
@@ -398,8 +397,8 @@ export default function CreatorDashboardPage() {
           </Alert>
         )}
 
-        <StaggerContainer className="grid gap-4 sm:grid-cols-3">
-          <StaggerItem>
+        <FadeUp y={0} className="grid gap-4 sm:grid-cols-3">
+          <div>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -424,9 +423,9 @@ export default function CreatorDashboardPage() {
                 )}
               </CardContent>
             </Card>
-          </StaggerItem>
+          </div>
 
-          <StaggerItem>
+          <div>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -449,9 +448,9 @@ export default function CreatorDashboardPage() {
                 )}
               </CardContent>
             </Card>
-          </StaggerItem>
+          </div>
 
-          <StaggerItem>
+          <div>
             <Card
               className={cn(
                 pending.total > 0 && !loading && 'border-warning/40 bg-warning/5',
@@ -478,17 +477,27 @@ export default function CreatorDashboardPage() {
                 )}
               </CardContent>
             </Card>
-          </StaggerItem>
-        </StaggerContainer>
+          </div>
+        </FadeUp>
+
+        {/* Placeholder for the sections that mount only after the fetch resolves
+            (public-page card / action breakdown) — reserving their space keeps
+            the page from reflowing downward when the data lands. */}
+        {loading && (
+          <div className="space-y-6" aria-hidden>
+            <Skeleton className="h-44 w-full rounded-xl" />
+            <Skeleton className="h-36 w-full rounded-xl" />
+          </div>
+        )}
 
         {!loading && username && (
-          <FadeUp delay={0.05}>
+          <FadeUp y={0} delay={0.05}>
             <PublicPageCard username={username} analytics={analytics} />
           </FadeUp>
         )}
 
         {!loading && pending.total > 0 && (
-          <FadeUp delay={0.05}>
+          <FadeUp y={0} delay={0.05}>
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-medium">Action breakdown</CardTitle>
@@ -544,7 +553,7 @@ export default function CreatorDashboardPage() {
           </FadeUp>
         )}
 
-        <FadeUp delay={0.1}>
+        <FadeUp y={0} delay={0.1}>
           <div>
             <h2 className="mb-3 text-sm font-medium text-muted-foreground">Quick links</h2>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -574,7 +583,7 @@ export default function CreatorDashboardPage() {
         </FadeUp>
 
         {isEmptyCreator && (
-          <FadeUp delay={0.15}>
+          <FadeUp y={0} delay={0.15}>
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center py-12 text-center">
                 <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
@@ -604,7 +613,7 @@ export default function CreatorDashboardPage() {
         )}
 
         {!loading && !isEmptyCreator && pending.total === 0 && (
-          <FadeUp delay={0.15}>
+          <FadeUp y={0} delay={0.15}>
             <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
               <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
               All caught up — check back when brands reach out or deadlines approach.
@@ -612,12 +621,6 @@ export default function CreatorDashboardPage() {
           </FadeUp>
         )}
 
-        {loading && (
-          <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            Syncing wallet & deals…
-          </div>
-        )}
       </div>
     </CreatorLayout>
   );

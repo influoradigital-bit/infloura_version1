@@ -700,6 +700,32 @@ export interface WorkspaceMeUpdatePayload {
   logoUrl?: string;
 }
 
+/** One row of GET /workspace/members — MemberResponse (WorkspaceMemberDtos.java:22). */
+export interface WorkspaceMemberRow {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  /** MemberRole: OWNER | ADMIN | MANAGER | MEMBER | VIEWER */
+  role: string;
+  /** Matches the backend record component name `active` (MemberResponse — not `isActive`). */
+  active: boolean;
+}
+
+export const workspaceMembers = {
+  /**
+   * GET /workspace/members (WorkspaceMemberController.java:74) — the only endpoint that exposes
+   * roles (there is no "my role" endpoint; `/workspaces/me` carries none). Match the row whose
+   * userId === localStorage 'brand_user_id' to learn the caller's own role for UX gating.
+   * Server still enforces every action — this is defense-in-depth for the UI, never the control.
+   */
+  list: () =>
+    isLive()
+      ? http.request<WorkspaceMemberRow[]>('GET', '/workspace/members')
+      : mockOr<WorkspaceMemberRow[]>([
+          { id: 'm_1', workspaceId: 'ws_1', userId: 'u_1', role: 'OWNER', active: true },
+        ]),
+};
+
 export const workspaces = {
   /** GET /workspaces/slug-check?slug= */
   checkSlug: (slug: string) =>
@@ -1451,6 +1477,113 @@ function parseDealMessageSseFrame(rawFrame: string): DealMessageSseFrame | null 
   if (dataLines.length === 0) return null;
   return { event, data: dataLines.join('\n') };
 }
+
+// ---------------------------------------------------------------------------
+// Shipments (product-seeding deals — Priya's design 2026-07-24,
+// wiki/decisions/shipment-backend-design-2026-07-24.md)
+// ---------------------------------------------------------------------------
+
+/**
+ * Server-side lifecycle. `AWAITING_ADDRESS` is synthetic — returned by GET
+ * when no `Shipment` row exists yet for the collaboration (the row is
+ * lazy-created on first address submit). Named `ShipmentApiStatus` (not
+ * `ShipmentStatus`) to avoid colliding with the unrelated local UI enum of
+ * the same name in `src/components/shared/shipment-card.tsx`.
+ */
+export type ShipmentApiStatus =
+  | 'AWAITING_ADDRESS'
+  | 'ADDRESS_PROVIDED'
+  | 'SHIPPED'
+  | 'RECEIVED'
+  | 'DAMAGED';
+
+export type ShipmentCondition = 'GOOD' | 'DAMAGED';
+
+/**
+ * `GET /deals/:id/shipment` response. Mirrors the `Shipment` entity (§1 of
+ * the design doc). Every field besides `status` is nullable until the
+ * corresponding transition happens (address fields until `ADDRESS_PROVIDED`,
+ * carrier/tracking until `SHIPPED`, `receivedCondition`/`conditionNote` until
+ * receipt is confirmed) — including the synthetic `AWAITING_ADDRESS` case,
+ * where the whole record besides `status` is absent.
+ */
+export interface ShipmentApiRecord {
+  id?: string;
+  collaborationId?: string;
+  status: ShipmentApiStatus;
+  recipientName?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  phone?: string | null;
+  productName?: string | null;
+  carrier?: string | null;
+  trackingNumber?: string | null;
+  trackingUrl?: string | null;
+  conditionNote?: string | null;
+  receivedCondition?: ShipmentCondition | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Body for `POST /deals/:id/shipping-address` — creator-supplied delivery address. */
+export interface ShipmentAddressSubmission {
+  recipientName: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  pincode: string;
+  phone: string;
+}
+
+/**
+ * Body for `POST /deals/:id/shipment/confirm-receipt`. The design doc specifies
+ * exactly two conditions (`GOOD`/`DAMAGED`) on the wire; the creator-facing
+ * `ReceiptConfirmation` component additionally offers a `wrong_item` option with
+ * no server-side equivalent — callers must fold `wrong_item` into `DAMAGED` and
+ * carry the distinction in `note` (e.g. prefix "Wrong item received: ..."), since
+ * the doc is silent on a third condition and DAMAGED is the safest server shape.
+ */
+export interface ShipmentReceiptSubmission {
+  condition: ShipmentCondition;
+  note?: string;
+}
+
+export const shipments = {
+  /** GET /deals/:id/shipment — dual-role (brand or creator); returns synthetic AWAITING_ADDRESS if no row yet. */
+  get: (role: Role, dealId: string) =>
+    isLive()
+      ? http.request<ShipmentApiRecord>('GET', `/deals/${dealId}/shipment`, { role })
+      : mockOr<ShipmentApiRecord>({ status: 'AWAITING_ADDRESS' }),
+
+  /** POST /deals/:id/shipping-address — creator only. Rejected (409 SHIPMENT_ALREADY_SHIPPED) once SHIPPED. */
+  submitAddress: (dealId: string, address: ShipmentAddressSubmission) =>
+    isLive()
+      ? http.request<ShipmentApiRecord>('POST', `/deals/${dealId}/shipping-address`, {
+          role: 'creator',
+          body: address,
+        })
+      : mockOr<ShipmentApiRecord>({
+          status: 'ADDRESS_PROVIDED',
+          ...address,
+        }),
+
+  /** POST /deals/:id/shipment/confirm-receipt — creator only. Rejected (409 SHIPMENT_NOT_SHIPPED) unless currently SHIPPED. */
+  confirmReceipt: (dealId: string, body: ShipmentReceiptSubmission) =>
+    isLive()
+      ? http.request<ShipmentApiRecord>('POST', `/deals/${dealId}/shipment/confirm-receipt`, {
+          role: 'creator',
+          body,
+        })
+      : mockOr<ShipmentApiRecord>({
+          status: body.condition === 'GOOD' ? 'RECEIVED' : 'DAMAGED',
+          receivedCondition: body.condition,
+          conditionNote: body.note ?? null,
+        }),
+};
 
 // ---------------------------------------------------------------------------
 // Contracts
@@ -3656,11 +3789,13 @@ export const creatorCopilot = {
 export const api = {
   auth,
   workspaces,
+  workspaceMembers,
   onboarding,
   campaigns,
   creators,
   deals,
   messages,
+  shipments,
   contracts,
   deliverables,
   config,

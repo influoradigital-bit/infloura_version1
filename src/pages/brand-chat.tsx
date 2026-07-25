@@ -1369,7 +1369,7 @@ export default function BrandChatPage() {
                             </div>
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">Usage Rights</span>
-                              <span>{event.data?.usageRights}</span>
+                              <span>{event.data?.usageRights ?? 'Not specified'}</span>
                             </div>
                           </div>
                           

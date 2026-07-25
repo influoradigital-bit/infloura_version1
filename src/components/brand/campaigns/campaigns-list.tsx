@@ -53,6 +53,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Zap } from 'lucide-react';
 import { HypeCampaignCard } from '@/components/brand/hype-campaign-card';
 import { demoHypeCampaign } from '@/lib/demo-data';
@@ -218,6 +228,36 @@ export function CampaignsList() {
   const [statusOverrides, setStatusOverrides] = React.useState<Record<string, CampaignStatus>>({});
   const [hiddenIds, setHiddenIds] = React.useState<Set<string>>(new Set());
   const [pendingActionId, setPendingActionId] = React.useState<string | null>(null);
+  // Delete goes through a confirm dialog (deleting was previously immediate + irreversible).
+  const [deleteTarget, setDeleteTarget] = React.useState<CampaignRow | null>(null);
+  // Caller's own workspace role, for UX gating of Edit/Delete. Null = unknown (loading or the
+  // members fetch failed) — we fail OPEN in that case (let the server enforce + show its clear
+  // error) rather than wrongly disabling a real Owner's buttons on a flaky request.
+  const [myRole, setMyRole] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!liveApi) return;
+    let cancelled = false;
+    api.workspaceMembers
+      .list()
+      .then((members) => {
+        if (cancelled) return;
+        const myId = localStorage.getItem('brand_user_id');
+        setMyRole(members.find((m) => m.userId === myId)?.role ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setMyRole(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [liveApi]);
+
+  // Backend gates: edit = OWNER/ADMIN/MANAGER, delete = OWNER/ADMIN. Disable ONLY when we KNOW
+  // the role is insufficient; when unknown (null) leave enabled so the server stays the source
+  // of truth. These are UX hints — never the security boundary.
+  const canEdit = !liveApi || myRole == null || ['OWNER', 'ADMIN', 'MANAGER'].includes(myRole);
+  const canDelete = !liveApi || myRole == null || ['OWNER', 'ADMIN'].includes(myRole);
 
   React.useEffect(() => {
     if (!liveApi) return;
@@ -307,9 +347,18 @@ export function CampaignsList() {
       setHiddenIds((prev) => new Set(prev).add(campaign.id));
       toast({ title: 'Campaign deleted', description: `"${campaign.title}" was removed.` });
     } catch (e) {
+      // A permission failure (403) previously showed only a generic, easy-to-miss toast, so a
+      // blocked delete looked like a dead button. Surface exactly why + what to do instead.
+      const isPermission =
+        e instanceof ApiError &&
+        (e.status === 403 || e.message.includes('Insufficient workspace permissions'));
       toast({
-        title: 'Could not delete campaign',
-        description: e instanceof ApiError ? e.message : 'Try again in a moment.',
+        title: isPermission ? "You can't delete this campaign" : 'Could not delete campaign',
+        description: isPermission
+          ? 'Only the workspace Owner or Admin can delete a campaign. Ask an Owner/Admin, or pause it instead.'
+          : e instanceof ApiError
+            ? e.message
+            : 'Try again in a moment.',
         variant: 'destructive',
       });
     } finally {
@@ -645,12 +694,19 @@ export function CampaignsList() {
                           View Details
                         </Link>
                       </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link to={`/brand/campaigns/${campaign.id}/edit`}>
+                      {canEdit ? (
+                        <DropdownMenuItem asChild>
+                          <Link to={`/brand/campaigns/${campaign.id}/edit`}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit
+                          </Link>
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem disabled title="Only the Owner, Admin, or Manager can edit a campaign">
                           <Edit className="mr-2 h-4 w-4" />
                           Edit
-                        </Link>
-                      </DropdownMenuItem>
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
                         disabled={pendingActionId === campaign.id}
                         onClick={() => handleDuplicate(campaign)}
@@ -679,8 +735,9 @@ export function CampaignsList() {
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="text-destructive-foreground"
-                        disabled={pendingActionId === campaign.id}
-                        onClick={() => handleDelete(campaign)}
+                        disabled={!canDelete || pendingActionId === campaign.id}
+                        title={!canDelete ? 'Only the workspace Owner or Admin can delete a campaign' : undefined}
+                        onClick={() => setDeleteTarget(campaign)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Delete
@@ -806,12 +863,19 @@ export function CampaignsList() {
                           View Details
                         </Link>
                       </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link to={`/brand/campaigns/${campaign.id}/edit`}>
+                      {canEdit ? (
+                        <DropdownMenuItem asChild>
+                          <Link to={`/brand/campaigns/${campaign.id}/edit`}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit
+                          </Link>
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem disabled title="Only the Owner, Admin, or Manager can edit a campaign">
                           <Edit className="mr-2 h-4 w-4" />
                           Edit
-                        </Link>
-                      </DropdownMenuItem>
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
                         disabled={pendingActionId === campaign.id}
                         onClick={() => handleDuplicate(campaign)}
@@ -840,8 +904,9 @@ export function CampaignsList() {
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="text-destructive-foreground"
-                        disabled={pendingActionId === campaign.id}
-                        onClick={() => handleDelete(campaign)}
+                        disabled={!canDelete || pendingActionId === campaign.id}
+                        title={!canDelete ? 'Only the workspace Owner or Admin can delete a campaign' : undefined}
+                        onClick={() => setDeleteTarget(campaign)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Delete
@@ -854,6 +919,33 @@ export function CampaignsList() {
           </div>
         </Card>
       )}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete campaign?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes &ldquo;{deleteTarget?.title}&rdquo;. This can&rsquo;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pendingActionId === deleteTarget?.id}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={pendingActionId === deleteTarget?.id}
+              onClick={async (e) => {
+                e.preventDefault(); // keep the dialog open until the request resolves
+                const target = deleteTarget;
+                if (!target) return;
+                await handleDelete(target);
+                setDeleteTarget(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

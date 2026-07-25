@@ -54,3 +54,17 @@ _export/
 .claude/scratchpad-*.log
 # Agent git worktrees (throwaway parallel checkouts — never commit)
 .claude/worktrees/
+
+# Local env with secrets — never commit (use .env.example as the template)
+.env.unix
+influora-api/.env.unix
+
+# Root-level build/dev logs (transient)
+/*.log
+
+# Python bytecode caches
+__pycache__/
+*.pyc
+
+# Live infra access + credentials — never commit
+deploy/hostinger/ACCESS-GUIDE.md

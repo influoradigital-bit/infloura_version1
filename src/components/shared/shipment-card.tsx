@@ -5,6 +5,7 @@ import { Truck, Package, ExternalLink, CheckCircle2, Clock, AlertCircle, MapPin 
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { isSafeHttpUrl } from '@/lib/utils';
 
 export type ShipmentStatus = 'created' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'received' | 'damaged';
 
@@ -116,9 +117,9 @@ export function ShipmentCard({
 
           {/* Actions */}
           <div className="flex gap-2">
-            {trackingUrl && (
+            {isSafeHttpUrl(trackingUrl) && (
               <Button asChild variant="outline" size="sm" className="flex-1 gap-1.5">
-                <a href={trackingUrl} target="_blank" rel="noreferrer">
+                <a href={trackingUrl} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="h-3.5 w-3.5" /> Track Live
                 </a>
               </Button>

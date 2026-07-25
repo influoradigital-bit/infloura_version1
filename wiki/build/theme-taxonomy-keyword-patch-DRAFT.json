@@ -1,0 +1,82 @@
+{
+  "_DRAFT_WARNING": "DRAFT ONLY — NOT the real influora-api/src/main/resources/trendspark/theme-taxonomy.json. Author: Vikram (Backend). Isolated per Priya's 2026-07-22 ruling (wiki/build/theme-taxonomy-priya-review.md, change 3): 'Ship theme-taxonomy.json (+20 keywords) as its own PR now — after change 2 [the fashion off-vocab fix]. Backward-compatible, zero-schema, already-wired. Independent of everything else in this ruling.' This is the ENTIRE Tier-1 shippable — nothing else from the taxonomy-expansion effort ships in this PR.",
+
+  "_status": "GREEN — approved by Priya to ship now, as its own standalone PR, once merged into the real file.",
+
+  "_target_file": "influora-api/src/main/resources/trendspark/theme-taxonomy.json",
+  "_target_section": "keyword_to_theme_mappings (the only section this patch touches — themes[] and niche_to_theme_mappings are untouched, no other section of the real file is affected)",
+
+  "_apply_instructions": [
+    "Replace the real file's 'keyword_to_theme_mappings' object with the 'keyword_to_theme_mappings' object below (36 pre-existing entries, verbatim + 20 new entries from Aditya's P0 batch, with the one off-vocab fix applied). The object below now contains ONLY string -> array-of-strings entries (57 of them) — safe to copy verbatim as-is; a prior draft of this file had a stray '_comment_below' string key sitting inside this object, which is fixed (moved to the top-level '_notes' field below) and no longer present.",
+    "No code changes required. ThemeMatchService.themesForText() (case-insensitive substring match against this map) is already generic over its contents — verified by Aditya against the live implementation before this patch was drafted.",
+    "No schema changes. No other file in the repo needs to change for this patch alone (contrast with india_events, which needs a JPA/Flyway migration + new service before anything reads it — see wiki/build/india-events-taxonomy-DRAFT.json).",
+    "Prerequisite already satisfied in this deliverable: the 'fashion' off-vocab bug (Priya's ruling change 2) is fixed below — 'outfit ideas' now maps to ['style','glamour','confidence'], all three members of the closed 40-item themes[] vocabulary. Exact word choice ('glamour' vs another in-vocab alternative) is Nisha/Aditya's content call per Priya — flag for their sign-off before merging if they want a different in-vocab replacement."
+  ],
+
+  "_change_summary": "37 -> 57 entries (+20). Verified against the live influora-api/src/main/resources/trendspark/theme-taxonomy.json: the pre-existing map has 37 entries, not 36 — the earlier draft's count was off by one (pre-existing doc error, corrected here). Source of the +20: wiki/build/theme-taxonomy-p0-keywords.json (Aditya, P0 batch). One value changed from Aditya's source: 'outfit ideas' — his doc has ['style','fashion','confidence'] ('fashion' is off-vocab, silently dropped by ThemeMatchService's knownThemes.contains(theme) fail-closed guard); this patch ships ['style','glamour','confidence'] instead so the keyword contributes all 3 themes as intended, not 2.",
+
+  "keyword_to_theme_mappings": {
+    "action film": ["action", "strength", "energy", "power"],
+    "sports film": ["strength", "victory", "pride", "discipline"],
+    "romance": ["beauty", "joy", "celebration", "elegance"],
+    "family drama": ["family", "togetherness", "tradition", "heritage"],
+    "cricket": ["pride", "victory", "energy", "strength"],
+    "football": ["strength", "energy", "victory", "pride"],
+    "festival": ["festive", "celebration", "joy", "tradition"],
+    "wedding": ["celebration", "family", "tradition", "joy"],
+    "diwali": ["festive", "light", "celebration", "family", "tradition"],
+    "holi": ["festive", "celebration", "joy", "tradition"],
+    "eid": ["festive", "family", "tradition", "celebration", "devotion"],
+    "navratri": ["festive", "celebration", "tradition", "spirituality", "devotion"],
+    "durga puja": ["festive", "celebration", "tradition", "spirituality", "devotion"],
+    "raksha bandhan": ["family", "togetherness", "tradition", "celebration"],
+    "karva chauth": ["tradition", "devotion", "celebration", "family"],
+    "bhai dooj": ["family", "togetherness", "tradition", "celebration"],
+    "ganesh chaturthi": ["festive", "celebration", "tradition", "spirituality", "devotion"],
+    "onam": ["festive", "celebration", "tradition", "family"],
+    "pongal": ["festive", "celebration", "tradition", "family"],
+    "new year": ["celebration", "joy", "energy", "innovation"],
+    "republic day": ["pride", "tradition", "heritage", "celebration"],
+    "independence day": ["pride", "tradition", "heritage", "celebration"],
+    "champions trophy": ["pride", "victory", "energy", "strength"],
+    "world cup": ["pride", "victory", "energy", "strength"],
+    "olympics": ["strength", "victory", "pride", "discipline"],
+    "beauty": ["beauty", "glow", "elegance", "confidence"],
+    "fitness": ["strength", "health", "energy", "discipline"],
+    "yoga": ["calm", "peace", "discipline", "wellness"],
+    "glow": ["beauty", "glow", "radiance", "confidence"],
+    "skincare": ["beauty", "glow", "self-care", "radiance"],
+    "workout": ["strength", "energy", "discipline", "fitness"],
+    "gym": ["strength", "power", "discipline", "energy"],
+    "traditional": ["tradition", "heritage", "authenticity", "elegance"],
+    "ethnic": ["tradition", "heritage", "elegance", "celebration"],
+    "bridal": ["celebration", "beauty", "elegance", "tradition"],
+    "fashion week": ["style", "glamour", "innovation", "elegance"],
+    "award show": ["glamour", "celebration", "style", "luxury"],
+
+    "outfit ideas": ["style", "glamour", "confidence"],
+    "glowing skin": ["beauty", "glow", "radiance"],
+    "home workout": ["fitness", "health", "discipline"],
+    "bridal makeup": ["beauty", "glamour", "celebration"],
+    "weight loss": ["health", "fitness", "discipline"],
+    "styling tips": ["style", "confidence", "elegance"],
+    "korean skincare": ["beauty", "innovation", "self-care"],
+    "saree draping": ["tradition", "elegance", "heritage"],
+    "mehndi design": ["beauty", "celebration", "tradition"],
+    "monsoon outfit": ["style", "comfort", "innovation"],
+    "monsoon skincare": ["beauty", "self-care", "wellness"],
+    "summer dress": ["style", "comfort", "youth"],
+    "summer skincare": ["beauty", "self-care", "radiance"],
+    "winter skincare": ["beauty", "self-care", "wellness"],
+    "wedding guest dress": ["style", "elegance", "celebration"],
+    "ipl jersey": ["pride", "energy", "style"],
+    "new year outfit": ["style", "celebration", "confidence"],
+    "easy recipes": ["family", "comfort", "authenticity"],
+    "healthy recipes": ["health", "wellness", "authenticity"],
+    "punjabi suit": ["tradition", "style", "heritage"]
+  },
+
+  "_notes": "P0 additions per Aditya (wiki/build/theme-taxonomy-p0-keywords.json) — 20 keywords, zero new themes, backward-compatible. Tested by Aditya against ThemeMatchService.themesForText() (case-insensitive substring match) — no code change required to consume these. One value changed from Aditya's source ('outfit ideas') — see _change_summary above. (Moved here from a stray '_comment_below' key that previously sat inside the 'keyword_to_theme_mappings' object between 'award show' and 'outfit ideas' — that string value broke Jackson's Map<String, List<String>> deserialization in ThemeMatchService.TaxonomyFile, tripping the fail-closed catch(IOException) in loadTaxonomy() and silently disabling theme matching app-wide, both knownThemes and keywordToThemeMappings. Flagged by Kavya/Meera QA on 2026-07-22; fixed here by relocating the note out of the typed map into this sibling top-level field, which JsonIgnoreProperties(ignoreUnknown = true) on TaxonomyFile safely ignores.",
+
+  "_pending_signoff": "Nisha/Aditya sign-off on the 'outfit ideas' -> 'glamour' replacement (or their preferred in-vocab alternative) before this patch merges. Not a blocker for QA/build-verify review — the JSON is valid and in-vocab either way; this is a content-governance nicety, not a correctness gate."
+}

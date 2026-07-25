@@ -62,7 +62,9 @@ export function CreatorDealContractTab({
   // and to an honest "—" only when neither is available (rather than the
   // previous silent "₹0" from a null amount).
   const effectiveAmount = contractAmount ?? amount ?? null;
-  const netEarnings = effectiveAmount != null ? Math.round(effectiveAmount * 0.79) : null;
+  // 15% platform fee (feeBps 1500) — creator nets 85% of gross, consistent with
+  // api.wallet.platformFee, the counter-proposal form, and the actual payout.
+  const netEarnings = effectiveAmount != null ? Math.round(effectiveAmount * 0.85) : null;
   const liveApi = isApiLive();
 
   // FE-6: live mode uses the real presigned R2 URL (GET /contracts/:id/pdf-download-url,
