@@ -1563,7 +1563,7 @@ export default function CreatorChatPage() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Usage Rights</span>
-                            <span>{String(event.metadata?.usageRights)}</span>
+                            <span>{String(event.metadata?.usageRights ?? 'Not specified')}</span>
                           </div>
                         </div>
 
@@ -1674,7 +1674,7 @@ export default function CreatorChatPage() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Usage Rights</span>
-                            <span>{String(event.metadata?.usageRights)}</span>
+                            <span>{String(event.metadata?.usageRights ?? 'Not specified')}</span>
                           </div>
                         </div>
 

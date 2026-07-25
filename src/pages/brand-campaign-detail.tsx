@@ -1878,7 +1878,7 @@ export default function BrandCampaignDetailPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Your Counter Amount (USD)</label>
+                <label className="text-sm font-medium">Your Counter Amount (₹)</label>
                 <Input type="number" placeholder="e.g. 2500" value={counterAmount} onChange={(e) => setCounterAmount(e.target.value)} />
               </div>
               <div className="space-y-2">

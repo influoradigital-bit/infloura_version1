@@ -299,7 +299,7 @@ export default function CreatorPortfolioPublicPage() {
               <TrustStat
                 value={
                   <span className="inline-flex items-center gap-1">
-                    {page.stats.avgRating.toFixed(1)}
+                    {page.stats.avgRating != null ? page.stats.avgRating.toFixed(1) : '—'}
                     <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
                   </span>
                 }
@@ -613,7 +613,7 @@ function PlatformStatCard({ stats }: { stats: PortfolioPlatformStats }) {
           </div>
           <div className="flex items-baseline justify-between">
             <span className="text-xs text-muted-foreground">Engagement Rate</span>
-            <span className="text-sm font-semibold">{stats.engagementRate.toFixed(1)}%</span>
+            <span className="text-sm font-semibold">{stats.engagementRate != null ? `${stats.engagementRate.toFixed(1)}%` : '—'}</span>
           </div>
           {typeof stats.avgReach === 'number' && (
             <div className="flex items-baseline justify-between">
