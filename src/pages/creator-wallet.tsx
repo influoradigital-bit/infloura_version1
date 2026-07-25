@@ -604,7 +604,7 @@ export default function CreatorWalletPage() {
                   {payoutTransactions.map((payout) => (
                     <Card
                       key={payout.id}
-                      className="cursor-pointer hover:shadow-md transition-all"
+                      className="cursor-pointer transition-shadow hover:shadow-md"
                       onClick={() => setSelectedPayout(payout)}
                     >
                       <CardContent className="p-4">

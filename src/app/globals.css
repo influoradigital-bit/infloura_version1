@@ -289,10 +289,22 @@
   }
   html {
     @apply bg-background;
+    /* Reserve the scrollbar gutter permanently: classic Windows scrollbars take
+       layout space, so without this every route/dialog that toggles the page
+       scrollbar shifts all centered (mx-auto) content ~15px sideways. */
+    scrollbar-gutter: stable;
   }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+  /* react-remove-scroll (inside Radix Dialog/Sheet/Select) pads the body by the
+     scrollbar width on lock. The gutter above already keeps layout stable, so
+     that compensation IS the shift now — cancel it. Extra `html` raises
+     specificity over the library's injected body[data-scroll-locked] rules. */
+  html body[data-scroll-locked] {
+    padding-right: 0 !important;
+    margin-right: 0 !important;
   }
 }
 
