@@ -43,13 +43,14 @@ class DealControllerTest {
     @Mock private DealService dealService;
     @Mock private com.influora.service.DisputeService disputeService;
     @Mock private DealMessageStreamRegistry messageStreamRegistry;
+    @Mock private com.influora.service.ShipmentService shipmentService;
     @Mock private AuthPrincipal principal;
 
     private DealController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new DealController(dealService, disputeService, messageStreamRegistry);
+        controller = new DealController(dealService, disputeService, messageStreamRegistry, shipmentService);
     }
 
     @Test
