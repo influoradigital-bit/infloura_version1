@@ -284,6 +284,30 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
       : [...array, item];
   };
 
+  // Toggle a value in one of the multi-select array fields. Uses the functional
+  // setState form so several toggles landing in the same render batch can't clobber
+  // each other — the previous inline `updateFormData({ field: toggleArrayItem(formData.field, x) })`
+  // read a stale `formData` snapshot, dropping all-but-the-last selection when
+  // toggles were batched (e.g. picking Reel + Story in quick succession).
+  const toggleArrayField = (
+    field: 'objectives' | 'platforms' | 'contentTypes',
+    item: string,
+  ) => {
+    setFormData(
+      (prev) =>
+        ({
+          ...prev,
+          [field]: toggleArrayItem(prev[field] as string[], item),
+        }) as CampaignFormData,
+    );
+    setErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
   const validateStep = (step: Step): boolean => {
     const newErrors: Record<string, string> = {};
 
@@ -624,11 +648,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                                 : 'outline'
                             }
                             className="cursor-pointer"
-                            onClick={() =>
-                              updateFormData({
-                                objectives: toggleArrayItem(formData.objectives, objective),
-                              })
-                            }
+                            onClick={() => toggleArrayField('objectives', objective)}
                           >
                             {objective}
                           </Badge>
@@ -673,11 +693,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                         {platformOptions.map((platform) => (
                           <div
                             key={platform.value}
-                            onClick={() =>
-                              updateFormData({
-                                platforms: toggleArrayItem(formData.platforms, platform.value),
-                              })
-                            }
+                            onClick={() => toggleArrayField('platforms', platform.value)}
                             className={cn(
                               'flex cursor-pointer items-center gap-3 rounded-lg border-2 p-3 transition-colors',
                               formData.platforms.includes(platform.value)
@@ -712,14 +728,7 @@ export function CampaignForm({ campaignId }: { campaignId?: string }) {
                         {contentTypeOptions.map((content) => (
                           <div
                             key={content.value}
-                            onClick={() =>
-                              updateFormData({
-                                contentTypes: toggleArrayItem(
-                                  formData.contentTypes,
-                                  content.value
-                                ),
-                              })
-                            }
+                            onClick={() => toggleArrayField('contentTypes', content.value)}
                             className={cn(
                               'flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 p-4 text-center transition-colors',
                               formData.contentTypes.includes(content.value)
