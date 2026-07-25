@@ -115,4 +115,4 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:latest
             ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:${{ github.sha }}
 
-# retrigger 2026-07-25: api job failed transiently on c4b7081; re-running the build
+# retrigger 2026-07-25 (2): first re-run was orphaned in the queue by the GitHub Actions outage
