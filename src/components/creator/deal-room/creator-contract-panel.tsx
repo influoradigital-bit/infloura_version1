@@ -203,22 +203,14 @@ export function CreatorContractPanel({
                 <span className="font-medium">₹{(meta?.amount || 50000).toLocaleString('en-IN')}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-700">Platform Fee (10%)</span>
-                <span className="font-medium text-stage-disputed-fg">-₹{Math.round((meta?.amount || 50000) * 0.1).toLocaleString('en-IN')}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-700">GST on Fee (18%)</span>
-                <span className="font-medium text-stage-disputed-fg">-₹{Math.round((meta?.amount || 50000) * 0.1 * 0.18).toLocaleString('en-IN')}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-700">TDS (10%)</span>
-                <span className="font-medium text-stage-disputed-fg">-₹{Math.round((meta?.amount || 50000) * 0.1).toLocaleString('en-IN')}</span>
+                <span className="text-gray-700">Platform Fee (15%)</span>
+                <span className="font-medium text-stage-disputed-fg">-₹{Math.round((meta?.amount || 50000) * 0.15).toLocaleString('en-IN')}</span>
               </div>
               <Separator className="my-2" />
               <div className="flex justify-between">
                 <span className="font-semibold text-gray-900">You Receive</span>
                 <span className="font-bold text-lg text-stage-approved-fg">
-                  ₹{Math.round((meta?.amount || 50000) * 0.79).toLocaleString('en-IN')}
+                  ₹{Math.round((meta?.amount || 50000) * 0.85).toLocaleString('en-IN')}
                 </span>
               </div>
               <p className="text-xs text-gray-500 mt-2">

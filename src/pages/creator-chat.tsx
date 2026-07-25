@@ -562,12 +562,13 @@ const getStatusBadge = (status: DealRoom['status']) => {
   return <Badge className={config.className}>{config.label}</Badge>;
 };
 
+// Single platform fee of 15% (feeBps 1500) — matches api.wallet.platformFee, the
+// counter-proposal form, and the actual escrow payout (creator nets 85% of gross).
+const PLATFORM_FEE_RATE = 0.15;
 const calculateEarnings = (grossAmount: number) => {
-  const platformFee = grossAmount * 0.10;
-  const gstOnFee = platformFee * 0.18;
-  const tds = grossAmount * 0.10;
-  const netEarnings = grossAmount - platformFee - gstOnFee - tds;
-  return { platformFee, gstOnFee, tds, netEarnings };
+  const platformFee = grossAmount * PLATFORM_FEE_RATE;
+  const netEarnings = grossAmount - platformFee;
+  return { platformFee, netEarnings };
 };
 
 // ============================================================================
@@ -1571,26 +1572,26 @@ export default function CreatorChatPage() {
                         <div className="mt-3 pt-3 border-t border-stage-outreach-border">
                           <p className="text-xs text-muted-foreground mb-2">Your Earnings Breakdown</p>
                           <div className="space-y-1 text-xs">
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Gross Amount</span>
-                              <span>{formatINR(Number(event.metadata?.amount))}</span>
-                            </div>
-                            <div className="flex justify-between text-stage-disputed-fg">
-                              <span>Platform Fee (10%)</span>
-                              <span>-{formatINR(Number(event.metadata?.platformFee))}</span>
-                            </div>
-                            <div className="flex justify-between text-stage-disputed-fg">
-                              <span>GST on Fee (18%)</span>
-                              <span>-{formatINR(Number(event.metadata?.gstOnFee))}</span>
-                            </div>
-                            <div className="flex justify-between text-stage-disputed-fg">
-                              <span>TDS (10%)</span>
-                              <span>-{formatINR(Number(event.metadata?.tds))}</span>
-                            </div>
-                            <div className="flex justify-between font-semibold text-stage-approved-fg pt-1 border-t">
-                              <span>You Receive</span>
-                              <span>{formatINR(Number(event.metadata?.netEarnings))}</span>
-                            </div>
+                            {(() => {
+                              const gross = Number(event.metadata?.amount);
+                              const earnings = calculateEarnings(gross);
+                              return (
+                                <>
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Gross Amount</span>
+                                    <span>{formatINR(gross)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-stage-disputed-fg">
+                                    <span>Platform Fee (15%)</span>
+                                    <span>-{formatINR(earnings.platformFee)}</span>
+                                  </div>
+                                  <div className="flex justify-between font-semibold text-stage-approved-fg pt-1 border-t">
+                                    <span>You Receive</span>
+                                    <span>{formatINR(earnings.netEarnings)}</span>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
 
@@ -1946,16 +1947,8 @@ export default function CreatorChatPage() {
                         <span>{formatINR(selectedDeal.dealAmount)}</span>
                       </div>
                       <div className="flex justify-between text-stage-disputed-fg">
-                        <span>Platform Fee (10%)</span>
+                        <span>Platform Fee (15%)</span>
                         <span>-{formatINR(earnings.platformFee)}</span>
-                      </div>
-                      <div className="flex justify-between text-stage-disputed-fg">
-                        <span>GST on Fee (18%)</span>
-                        <span>-{formatINR(earnings.gstOnFee)}</span>
-                      </div>
-                      <div className="flex justify-between text-stage-disputed-fg">
-                        <span>TDS (10%)</span>
-                        <span>-{formatINR(earnings.tds)}</span>
                       </div>
                       <div className="flex justify-between font-semibold text-stage-approved-fg pt-2 border-t">
                         <span>You Receive</span>
