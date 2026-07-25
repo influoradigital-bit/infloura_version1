@@ -772,6 +772,11 @@ export default function CreatorChatPage() {
   // `shipmentStatus` above are synced FROM this once liveApi is on (effect below);
   // in mock/demo mode they stay purely local, set by the handlers directly.
   const [liveShipment, setLiveShipment] = React.useState<ShipmentApiRecord | null>(null);
+  // Whether this backend actually serves the shipment endpoints. A 404 from
+  // GET /deals/:id/shipment means the shipment feature isn't deployed here — in
+  // that case we degrade gracefully: hide all shipment UI and never gate
+  // deliverable submission on a shipment that can never be created.
+  const [shipmentSupported, setShipmentSupported] = React.useState(true);
 
   const fetchLiveShipment = React.useCallback(async () => {
     if (!liveApi || !selectedDeal) {
@@ -781,7 +786,14 @@ export default function CreatorChatPage() {
     try {
       const record = await api.shipments.get('creator', selectedDeal.id);
       setLiveShipment(record);
+      setShipmentSupported(true);
     } catch (err) {
+      // 404 = shipment endpoints not deployed on this backend → hide the shipment
+      // step entirely rather than blocking the creator behind a gate they can't clear.
+      // Other errors (transient/5xx) leave the feature enabled but with no record.
+      if (err instanceof ApiError && err.status === 404) {
+        setShipmentSupported(false);
+      }
       console.error('Failed to load shipment status', err);
       setLiveShipment(null);
     }
@@ -1377,7 +1389,7 @@ export default function CreatorChatPage() {
           </div>
           
           <div className="flex items-center gap-2">
-            {selectedDeal.status === 'in_progress' && !shippingAddress && (
+            {selectedDeal.status === 'in_progress' && shipmentSupported && !shippingAddress && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1388,7 +1400,7 @@ export default function CreatorChatPage() {
                 <span className="hidden sm:inline">Add Shipping Address</span>
               </Button>
             )}
-            {selectedDeal.status === 'in_progress' && shippingAddress && shipmentStatus !== 'received' && (
+            {selectedDeal.status === 'in_progress' && shipmentSupported && shippingAddress && shipmentStatus !== 'received' && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1765,7 +1777,7 @@ export default function CreatorChatPage() {
             ))}
 
             {/* Phase 5: Shipping Address prompt (after contract, before shipment) */}
-            {selectedDeal.status === 'in_progress' && !shippingAddress && (
+            {selectedDeal.status === 'in_progress' && shipmentSupported && !shippingAddress && (
               <div className="flex justify-center">
                 <div className="w-full max-w-md border-2 border-dashed border-stage-outreach-border bg-stage-outreach rounded-lg p-4 text-center">
                   <MapPin className="h-6 w-6 mx-auto text-stage-outreach-fg mb-2" />
@@ -1784,7 +1796,7 @@ export default function CreatorChatPage() {
                 when liveApi is on; items/estimatedDelivery stay placeholders (no backend
                 field for either) and courier/tracking/notes come from the real record
                 once the brand has shipped. See shipmentDisplay above. */}
-            {selectedDeal.status === 'in_progress' && shippingAddress && hasShipment && (
+            {selectedDeal.status === 'in_progress' && shipmentSupported && shippingAddress && hasShipment && (
               <ShipmentCard
                 perspective="creator"
                 status={shipmentStatus}
