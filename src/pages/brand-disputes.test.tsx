@@ -101,7 +101,15 @@ describe('BrandDisputesPage', () => {
     expect(listMock).toHaveBeenCalledTimes(2);
   });
 
-  it('shows partial-data banner when disputeStatus is missing', async () => {
+  /**
+   * Rewritten 2026-07-26, mirroring the creator-side change. This asserted a "Showing partial
+   * data" banner whose copy claimed no brand dispute-list endpoint existed — closed by P2-14
+   * (`GET /brand/disputes/list`). The banner was also unreachable: the DTO builds `disputeStatus`
+   * from `dispute.getStatus().name()` (non-null enum) and the mock rows hardcode it, so the
+   * condition was false in both live and mock mode. Banner removed; this now pins the defensive
+   * render path that survives it.
+   */
+  it('renders a neutral Disputed badge when a row carries no disputeStatus', async () => {
     listMock.mockResolvedValue([
       {
         collaborationId: 'deal-x',
@@ -115,8 +123,9 @@ describe('BrandDisputesPage', () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/Showing partial data/i)).toBeInTheDocument();
+      expect(screen.getByText('Partial Campaign')).toBeInTheDocument();
     });
-    expect(screen.getByText(/GET \/brand\/disputes/)).toBeInTheDocument();
+    expect(screen.getByText('Disputed')).toBeInTheDocument();
+    expect(screen.queryByText(/Showing partial data/i)).not.toBeInTheDocument();
   });
 });

@@ -98,11 +98,25 @@ const RES = path.join(__dirname, '..', '..', 'influora-api', 'src', 'main', 'res
 const taxonomy = JSON.parse(fs.readFileSync(path.join(RES, 'theme-taxonomy.json'), 'utf8'));
 const rulebook = JSON.parse(fs.readFileSync(path.join(RES, 'campaign-rulebook.json'), 'utf8'));
 
-// ── tiny assertion harness: collect every failure, report all at once ────────
-const failures = [];
+/**
+ * Each drift check is a vitest case.
+ *
+ * This file was originally a standalone Node script with its own collect-and-report harness that
+ * ended in `process.exit(0|1)`. Because its name matches vitest's default `*.test.js` glob, the
+ * runner picked it up, executed it, and then died on the `process.exit` — "process.exit
+ * unexpectedly called with 0" — so the WHOLE suite went red even though all 11 checks passed. It
+ * also reported "no tests", because it never registered any.
+ *
+ * Converting rather than excluding is deliberate: this guard is only worth having if it runs on
+ * every push, and excluding it would have left a drift check that fires nowhere. One case per
+ * check also means a real failure now names the specific drift instead of a bulk stderr dump.
+ *
+ * If a check fails: re-sync theme-tagger.js, the inline Code node in trend-pull-workflow.json,
+ * and/or the JSON configs so all three agree. Do NOT change tagger behaviour to satisfy a check —
+ * if the vocab genuinely changed, propagate it to every copy.
+ */
 function check(label, fn) {
-  try { fn(); }
-  catch (e) { failures.push(`${label}\n    ${e.message.replace(/\n/g, '\n    ')}`); }
+  it(label, fn);
 }
 const sortedKeys = (o) => Object.keys(o).sort();
 
@@ -178,15 +192,5 @@ check('C1 · every KEYWORD/NICHE/campaign theme is inside THEMES', () => {
   assert.ok(offenders.length === 0, `off-vocab theme reference(s):\n      ${offenders.join('\n      ')}`);
 });
 
-// ── report ───────────────────────────────────────────────────────────────────
-const TOTAL = 11;
-if (failures.length === 0) {
-  console.log(`ALL PASS · Trend-Spark tagger vocab in sync across node ⇄ module ⇄ JSON configs (${TOTAL} checks)`);
-  process.exit(0);
-}
-console.error(`\n${failures.length} of ${TOTAL} DRIFT CHECK(S) FAILED:\n`);
-for (const f of failures) console.error(`  ❌ ${f}\n`);
-console.error('Fix: re-sync theme-tagger.js, the inline Code node in trend-pull-workflow.json, and/or');
-console.error('     the JSON configs so all three agree. Do not change tagger behavior to satisfy a check —');
-console.error('     if the vocab genuinely changed, propagate it to every copy.\n');
-process.exit(1);
+// The collect-and-report tail that used to live here (and its process.exit calls) is gone —
+// vitest reports per-case now, and calling process.exit from a test file kills the whole run.

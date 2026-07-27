@@ -338,7 +338,19 @@ describe('CreatorDisputesPage', () => {
     expect(listMock).toHaveBeenCalledTimes(2);
   });
 
-  it('shows partial-data banner when disputeStatus is missing', async () => {
+  /**
+   * Rewritten 2026-07-26. This case used to assert a "Showing partial data" banner naming
+   * `GET /creator/disputes` as a missing backend endpoint. That endpoint shipped on 2026-07-23
+   * (CreatorDisputeController → DisputeService#listDisplayForCreator), and every row it returns
+   * carries `disputeStatus` — the DTO builds it from `dispute.getStatus().name()`, a non-null
+   * enum. So the creator page deliberately has no partial-data fallback banner, and the old
+   * assertion was testing for UI that describes a gap which no longer exists.
+   *
+   * What IS still worth pinning is the defensive render path: `disputeStatus` is optional on
+   * `DisputeRow`, so DisputeCard falls back to a neutral "Disputed" badge rather than rendering
+   * an empty one or throwing on `LIFECYCLE_LABEL[undefined]`.
+   */
+  it('renders a neutral Disputed badge when a row carries no disputeStatus', async () => {
     listMock.mockResolvedValue([
       {
         collaborationId: 'deal-partial',
@@ -352,9 +364,10 @@ describe('CreatorDisputesPage', () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/Showing partial data/i)).toBeInTheDocument();
+      expect(screen.getByText('Partial Campaign')).toBeInTheDocument();
     });
-    expect(screen.getByText(/GET \/creator\/disputes/)).toBeInTheDocument();
     expect(screen.getByText('Disputed')).toBeInTheDocument();
+    // The creator endpoint is real, so no "backend gap" banner should be shown.
+    expect(screen.queryByText(/Showing partial data/i)).not.toBeInTheDocument();
   });
 });

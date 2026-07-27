@@ -24,9 +24,16 @@ const LIFECYCLE_LABEL: Record<DisputeLifecycleStatus, string> = {
  * (POST /deals/{dealId}/disputes); this page only lists what's already open
  * or resolved. Live mode calls the real GET /brand/disputes/list
  * (BrandDisputeController, P2-14 — see src/lib/api.ts), which returns full
- * display fields (status, opened date, reason), so the "partial data" banner
- * below only fires if the backend ever omits `disputeStatus` (defensive, not
- * expected in normal operation).
+ * display fields (status, opened date, reason).
+ *
+ * The "Showing partial data" banner that used to sit here was removed
+ * 2026-07-26. Its copy told the brand "There is no dispute-list endpoint for
+ * brands yet ... full detail needs GET /brand/disputes on the backend" — a gap
+ * closed by P2-14. It was also unreachable: `DisputeListItemResponse` builds
+ * `disputeStatus` from `dispute.getStatus().name()` (a non-null enum) and the
+ * mock rows hardcode it too, so the condition was false in BOTH modes. A row
+ * that somehow arrives without a status still renders safely — DisputeCard
+ * falls back to a neutral "Disputed" badge.
  *
  * No <BrandLayout> wrap here — the route (App.tsx) already applies it via
  * BrandLayoutWrapper. (brand-reviews.tsx self-wraps too, which double-nests
@@ -56,10 +63,6 @@ export default function BrandDisputesPage() {
     void refresh();
   }, [refresh]);
 
-  // Live-mode rows never carry `disputeStatus` (see api.ts gap note) — detect
-  // that case to show the "partial data" banner rather than assuming demo mode.
-  const hasPartialData = disputes.some((d) => d.disputeStatus === undefined);
-
   return (
     <div className="container mx-auto max-w-3xl px-4 py-6">
         <div className="mb-6">
@@ -69,22 +72,6 @@ export default function BrandDisputesPage() {
             relevant deal room.
           </p>
         </div>
-
-        {hasPartialData && (
-          <Alert className="mb-5 border-amber-300 bg-amber-50">
-            <AlertTriangle className="h-4 w-4 text-amber-700" />
-            <AlertTitle className="text-amber-900">Showing partial data</AlertTitle>
-            <AlertDescription className="text-amber-800">
-              There is no dispute-list endpoint for brands yet, so this only shows which deals are
-              currently marked disputed — not the reason, review stage, or resolution. Full detail
-              needs{' '}
-              <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-xs">
-                GET /brand/disputes
-              </code>{' '}
-              on the backend.
-            </AlertDescription>
-          </Alert>
-        )}
 
         {error && (
           <Alert variant="destructive" className="mb-5">
