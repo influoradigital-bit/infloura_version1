@@ -181,6 +181,14 @@ interface DealRoom {
   contractId?: string;
   contractStatus?: ContractStatus;
   escrowFunded: boolean;
+  /**
+   * Raw backend collaboration status, straight off `Deal.status`. The coarse
+   * `status` above is lossy on purpose (13 backend states collapsed into 6 UI
+   * buckets), so anything that has to agree with a backend precondition reads
+   * this instead — see `dealAllowsProposalResponse`. Undefined in mock mode,
+   * where there is no backend row behind the room.
+   */
+  collaborationStatus?: CollaborationStatus;
 }
 
 interface ChatTimelineEvent {
@@ -481,6 +489,54 @@ function mapDealStatusToRoomStatus(status: CollaborationStatus): DealRoom['statu
   }
 }
 
+/**
+ * The exact `CollaborationStatus` set `Collaboration.canAccept()` permits
+ * (Collaboration.java:185-190). `canCounter()` delegates to it verbatim, so the
+ * same list governs Counter. Anything outside it makes POST /deals/:id/accept
+ * fail with a 409 `DEAL_NOT_ACCEPTABLE` (DealService.doAccept).
+ */
+const ACCEPTABLE_COLLABORATION_STATUSES: readonly CollaborationStatus[] = [
+  'INVITED',
+  'APPLIED',
+  'SHORTLISTED',
+  'IN_NEGOTIATION',
+];
+
+/**
+ * CR-02 — whether the DEAL is still in a state where an offer may be accepted or
+ * countered. The proposal card's own `metadata.status === 'pending'` is not
+ * enough on its own: it describes the message, not the collaboration, and a row
+ * written before Vikram's `settleLatestProposal` fix (or one moved along by any
+ * other path — brand-side accept, contract creation, cancellation) still says
+ * "pending" long after the deal itself has left the negotiating stage. Gating on
+ * message status alone is what let a CONTRACTED deal render Accept and 409.
+ *
+ * Deliberately one named helper rather than an inline check: the brand-side deal
+ * room and the deals-list quick actions have the same stale-offer exposure and
+ * must reuse this, not re-derive it. Kept module-local for now because this file
+ * is a route module — exporting a non-component from one disables Fast Refresh
+ * for the whole page (react-refresh/only-export-components). When CR-07 wires the
+ * brand room up, lift this into lib/creator-deal-mappers.ts alongside the other
+ * shared status logic rather than re-exporting it from here.
+ */
+function dealAllowsProposalResponse(deal: DealRoom | null | undefined): boolean {
+  if (!deal) return false;
+  // Live mode carries the raw backend status, so this is an exact mirror of
+  // canAccept() with zero mapping loss.
+  if (deal.collaborationStatus) {
+    return ACCEPTABLE_COLLABORATION_STATUSES.includes(deal.collaborationStatus);
+  }
+  // Mock/demo mode has no backend row. `mapDealStatusToRoomStatus` above happens
+  // to collapse precisely those four statuses onto 'new_proposal' + 'negotiating'
+  // (TERMS_AGREED lands in 'contracted', which is what makes the coarse status
+  // usable here), so it is a faithful stand-in. Note this is NOT true of the
+  // shared `mapCollaborationStatusToChatPage` in lib/creator-deal-mappers.ts,
+  // which folds TERMS_AGREED into 'negotiating' — if this page is ever switched
+  // to that mapper, this fallback must go and `collaborationStatus` become
+  // required.
+  return deal.status === 'new_proposal' || deal.status === 'negotiating';
+}
+
 function initialsFromName(name: string): string {
   return (name || '?')
     .split(' ')
@@ -520,6 +576,7 @@ function mapDealToRoom(d: Deal): DealRoom {
     contractId: d.contractId,
     contractStatus: d.contractStatus,
     escrowFunded: d.escrowFunded,
+    collaborationStatus: d.status,
   };
 }
 
@@ -571,6 +628,86 @@ const calculateEarnings = (grossAmount: number) => {
   return { platformFee, netEarnings };
 };
 
+/**
+ * CR-03 — outcome of the last accept/decline attempt, pinned to the proposal card
+ * that produced it. A toast alone is the wrong instrument here: it is transient,
+ * capped at one on screen, and the creator is very likely looking at the button
+ * they just pressed rather than the corner of the viewport. This state is never
+ * auto-cleared on a timer — only a new attempt replaces it, and switching rooms
+ * hides it (see `dealId`).
+ */
+interface ProposalActionFeedback {
+  /**
+   * Deal room the attempt happened in. The render is gated on this matching the
+   * currently-selected deal, which scopes the banner to one room WITHOUT an
+   * effect that clears state on `selectedDeal.id` — clearing in an effect costs a
+   * second render pass and trips react-hooks/set-state-in-effect.
+   */
+  dealId: string;
+  /** `event.id` of the proposal card the attempt originated from. */
+  proposalId: string;
+  tone: 'success' | 'error';
+  message: string;
+  /** True for the 409s that mean "stale card" — those get a Refresh affordance. */
+  stale: boolean;
+}
+
+/**
+ * Turns an accept/decline rejection into copy the creator can act on.
+ *
+ * A 409 is emphatically not "please try again" — the deal has genuinely moved on
+ * and retrying will fail identically forever, so each server code from
+ * DealService.doAccept/reject gets its own explanation. Anything else keeps the
+ * server's own message when there is one (`ApiError.message`) and falls back to a
+ * retry prompt only for genuinely transient failures.
+ */
+function describeProposalActionError(
+  err: unknown,
+  action: 'accept' | 'decline',
+): { message: string; stale: boolean } {
+  if (err instanceof ApiError && err.status === 409) {
+    switch (err.code) {
+      case 'DEAL_NOT_ACCEPTABLE':
+        return {
+          message:
+            'This deal has already moved past the offer stage — it can no longer be accepted. Refresh to see where it stands now.',
+          stale: true,
+        };
+      // Currently UNREACHABLE from this screen and kept deliberately: the Decline
+      // button is gated on canAccept(), which is strictly narrower than the
+      // backend's canReject(), so any deal that could produce this code has
+      // already had its button hidden (see the gate in the timeline below).
+      // Retained as defence in depth — the gate depends on `collaborationStatus`
+      // being fresh, and a stale deals-list response is exactly the case where a
+      // request slips through. Delete this only alongside the gate itself.
+      case 'DEAL_NOT_REJECTABLE':
+        return {
+          message:
+            'This deal is already closed, so it can no longer be declined. Refresh to see its current state.',
+          stale: true,
+        };
+      case 'CANNOT_ACCEPT_OWN_OFFER':
+        return {
+          message:
+            'You made the last offer, so the brand has to accept it. Send a new counter if you want to change the terms.',
+          stale: false,
+        };
+      default:
+        return { message: err.message, stale: true };
+    }
+  }
+  if (err instanceof ApiError) {
+    return { message: err.message, stale: false };
+  }
+  return {
+    message:
+      action === 'accept'
+        ? 'Could not accept this proposal. Check your connection and try again.'
+        : 'Could not decline this proposal. Check your connection and try again.',
+    stale: false,
+  };
+}
+
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -618,26 +755,46 @@ export default function CreatorChatPage() {
   const [messagesLoading, setMessagesLoading] = React.useState(false);
   const [messagesError, setMessagesError] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
-    if (!liveApi || !selectedDeal) return;
-    let cancelled = false;
-    setMessagesLoading(true);
-    setMessagesError(null);
-    (async () => {
+  /**
+   * Monotonic token guarding "latest request wins". This replaces the per-effect
+   * `cancelled` closure flag, which could only protect the effect that created
+   * it — now that the Refresh affordance can also trigger a load, two in-flight
+   * fetches can race, and a slow response for a previously-selected deal must
+   * never overwrite a newer one.
+   */
+  const messagesRequestRef = React.useRef(0);
+
+  /**
+   * Reload the message thread for one deal. Extracted from the mount effect so
+   * mutations can refresh the timeline, not just a deal switch — mirrors
+   * brand-chat.tsx's `loadMessages`. (Partial CR-09: the accept/decline handlers
+   * still only call loadDeals(); wiring those is Wave 2.)
+   */
+  const loadMessages = React.useCallback(
+    async (dealId: string) => {
+      if (!liveApi) return;
+      const token = ++messagesRequestRef.current;
+      setMessagesLoading(true);
+      setMessagesError(null);
       try {
-        const remote = await api.messages.list('creator', selectedDeal.id);
-        if (!cancelled) setLiveMessages(remote);
+        const remote = await api.messages.list('creator', dealId);
+        if (messagesRequestRef.current === token) setLiveMessages(remote);
       } catch (err) {
         console.error('Failed to load messages', err);
-        if (!cancelled) setMessagesError('Failed to load messages for this deal.');
+        if (messagesRequestRef.current === token) {
+          setMessagesError('Failed to load messages for this deal.');
+        }
       } finally {
-        if (!cancelled) setMessagesLoading(false);
+        if (messagesRequestRef.current === token) setMessagesLoading(false);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [liveApi, selectedDeal?.id]);
+    },
+    [liveApi],
+  );
+
+  React.useEffect(() => {
+    if (!liveApi || !selectedDeal) return;
+    void loadMessages(selectedDeal.id);
+  }, [liveApi, selectedDeal?.id, loadMessages]);
 
   // Mark the thread read once opened (mirrors creator-deals.tsx openDeal flow).
   React.useEffect(() => {
@@ -795,6 +952,10 @@ export default function CreatorChatPage() {
   const [isSubmittingDeliverable, setIsSubmittingDeliverable] = React.useState(false);
   const [isAcceptingProposal, setIsAcceptingProposal] = React.useState(false);
   const [isDecliningProposal, setIsDecliningProposal] = React.useState(false);
+  // CR-03 — persistent per-card outcome of the last accept/decline. See
+  // ProposalActionFeedback for why a toast on its own was not enough.
+  const [proposalFeedback, setProposalFeedback] =
+    React.useState<ProposalActionFeedback | null>(null);
 
   // Phase 5: Shipping flow state
   const [showShippingAddressForm, setShowShippingAddressForm] = React.useState(false);
@@ -990,6 +1151,7 @@ export default function CreatorChatPage() {
 
   const handleAcceptProposal = async (proposalId: string) => {
     if (!selectedDeal) return;
+    setProposalFeedback(null);
     setIsAcceptingProposal(true);
     try {
       if (liveApi) {
@@ -1001,11 +1163,27 @@ export default function CreatorChatPage() {
       } else {
         await new Promise((resolve) => setTimeout(resolve, 800));
       }
+      // CR-03 — success previously produced no feedback whatsoever: the buttons
+      // just vanished, which on a slow deals refresh is indistinguishable from a
+      // dead button. Confirm explicitly, on the card and in a toast.
+      setProposalFeedback({
+        dealId: selectedDeal.id,
+        proposalId,
+        tone: 'success',
+        message: 'Proposal accepted. The brand can now send the contract for signing.',
+        stale: false,
+      });
+      toast({
+        title: 'Proposal accepted',
+        description: 'Terms are agreed — the brand will send the contract next.',
+      });
     } catch (err) {
       console.error('Failed to accept proposal', err);
+      const { message, stale } = describeProposalActionError(err, 'accept');
+      setProposalFeedback({ dealId: selectedDeal.id, proposalId, tone: 'error', message, stale });
       toast({
         title: 'Could not accept proposal',
-        description: err instanceof ApiError ? err.message : 'Please try again.',
+        description: message,
         variant: 'destructive',
       });
     } finally {
@@ -1015,6 +1193,7 @@ export default function CreatorChatPage() {
 
   const handleDeclineProposal = async (proposalId: string) => {
     if (!selectedDeal) return;
+    setProposalFeedback(null);
     setIsDecliningProposal(true);
     try {
       if (liveApi) {
@@ -1024,11 +1203,24 @@ export default function CreatorChatPage() {
       } else {
         await new Promise((resolve) => setTimeout(resolve, 800));
       }
+      setProposalFeedback({
+        dealId: selectedDeal.id,
+        proposalId,
+        tone: 'success',
+        message: 'Proposal declined. The brand has been notified.',
+        stale: false,
+      });
+      toast({
+        title: 'Proposal declined',
+        description: 'The brand has been notified that you are not taking this deal.',
+      });
     } catch (err) {
       console.error('Failed to decline proposal', err);
+      const { message, stale } = describeProposalActionError(err, 'decline');
+      setProposalFeedback({ dealId: selectedDeal.id, proposalId, tone: 'error', message, stale });
       toast({
         title: 'Could not decline proposal',
-        description: err instanceof ApiError ? err.message : 'Please try again.',
+        description: message,
         variant: 'destructive',
       });
     } finally {
@@ -1317,6 +1509,15 @@ export default function CreatorChatPage() {
   const hasContract = liveApi
     ? Boolean(selectedDeal.contractId)
     : dealHasContract(selectedDeal.id, selectedDeal.status);
+  // CR-02 — the second half of the Accept/Counter/Decline gate. The card's own
+  // metadata.status only says whether THIS message was settled; this says whether
+  // the DEAL will still take the action. Both must hold.
+  const canRespondToProposal = dealAllowsProposalResponse(selectedDeal);
+  // CR-03 — scope the accept/decline banner to the room that produced it. Derived
+  // rather than cleared in an effect on selectedDeal.id: same result, one render
+  // pass instead of two, and no setState-in-effect.
+  const feedbackForThisRoom =
+    proposalFeedback?.dealId === selectedDeal.id ? proposalFeedback : null;
 
   const deliverableItems =
     selectedDeal.deliverablesTotal > 0
@@ -1599,6 +1800,10 @@ export default function CreatorChatPage() {
                             className={cn(
                               event.metadata?.status === 'accepted' && 'border-green-500 text-stage-approved-fg',
                               event.metadata?.status === 'countered' && 'border-amber-500 text-stage-negotiating-fg',
+                              // 'rejected' is written by DealService.settleLatestProposal
+                              // on the reject path (CR-02, backend half) — without this it
+                              // rendered as an unstyled default badge.
+                              event.metadata?.status === 'rejected' && 'border-destructive text-destructive',
                               event.metadata?.status === 'pending' && 'border-blue-500 text-stage-outreach-fg'
                             )}
                           >
@@ -1648,7 +1853,23 @@ export default function CreatorChatPage() {
                           </div>
                         </div>
 
-                        {event.metadata?.status === 'pending' && (
+                        {/* CR-02 — both conditions are required. `metadata.status`
+                            alone described the message, not the collaboration, so a
+                            CONTRACTED deal whose proposal row was never settled still
+                            offered all three buttons and 409'd on Accept.
+
+                            All THREE buttons — including Decline — are scoped to the
+                            live offer via canAccept(), even though the backend's
+                            canReject() is broader (it permits rejecting anything short
+                            of COMPLETED/CANCELLED/DISPUTED). That asymmetry is
+                            deliberate, per CTO ruling on this ticket: declining a
+                            PROPOSAL is meaningless once that offer is off the table,
+                            whereas canReject() governs withdrawing from the DEAL — a
+                            categorically different action that does not belong on a
+                            proposal card. Deal-level withdrawal is intentionally not
+                            surfaced here and is pending its own flow. Do not "fix"
+                            this by widening the Decline gate to canReject(). */}
+                        {event.metadata?.status === 'pending' && canRespondToProposal && (
                           <div className="flex gap-2 mt-4">
                             <Button
                               size="sm"
@@ -1689,6 +1910,70 @@ export default function CreatorChatPage() {
                                 'Decline'
                               )}
                             </Button>
+                          </div>
+                        )}
+
+                        {/* Stale card: the message still claims to be open but the deal
+                            has moved on. Say so instead of leaving a silent gap where
+                            three buttons used to be. */}
+                        {event.metadata?.status === 'pending' && !canRespondToProposal && (
+                          <p className="mt-4 text-xs text-muted-foreground">
+                            This offer is no longer open — the deal has already moved on.
+                            Nothing more to do here.
+                          </p>
+                        )}
+
+                        {/* CR-03 — persistent outcome of the last accept/decline on THIS
+                            card. Survives until the next attempt, unlike the toast that
+                            accompanies it, so the creator never has to have been looking
+                            at the corner of the viewport to learn what happened.
+
+                            Deliberately NOT a live region, matching the share block in
+                            creator-portfolio-public.tsx. Both paths here also fire a
+                            toast, and a Radix toast is structurally a live region — so
+                            "banner announces, toast stays silent" is not achievable
+                            without deleting the toast, which is the immediate feedback
+                            CR-03 exists to provide. The choice is therefore "both
+                            announce" or "toast announces", and it is the latter
+                            app-wide: one announcer pattern, so banner-plus-toast does
+                            not get relitigated per surface. This banner keeps its
+                            visual and navigational value and is still read on demand. */}
+                        {feedbackForThisRoom?.proposalId === event.id && (
+                          <div
+                            className={cn(
+                              'mt-3 flex items-start gap-2 rounded-md border p-2.5 text-xs',
+                              feedbackForThisRoom.tone === 'error'
+                                ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                                : 'border-stage-approved-border bg-stage-approved text-stage-approved-fg',
+                            )}
+                          >
+                            {feedbackForThisRoom.tone === 'error' ? (
+                              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" />
+                            ) : (
+                              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-px" />
+                            )}
+                            <div className="space-y-1.5">
+                              <p>{feedbackForThisRoom.message}</p>
+                              {feedbackForThisRoom.stale && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-[11px]"
+                                  // Both halves are required. loadDeals() refreshes
+                                  // collaborationStatus, which self-heals the action
+                                  // gate; loadMessages() refreshes metadata.status,
+                                  // without which this card keeps its "Pending" badge
+                                  // directly above the "no longer open" notice — the
+                                  // exact contradiction CR-03 exists to remove.
+                                  onClick={() => {
+                                    void loadDeals();
+                                    void loadMessages(selectedDeal.id);
+                                  }}
+                                >
+                                  Refresh deal
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         )}
                       </CardContent>

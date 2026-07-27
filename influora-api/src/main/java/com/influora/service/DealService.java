@@ -281,6 +281,12 @@ public class DealService {
         appendSystemMessage(
                 collaboration.getId(),
                 actorLabel + " rejected: " + TextSanitizer.sanitizePlainText(reason));
+        // CR-02 — same reason as the accept path: a declined offer must stop rendering as
+        // actionable. [C1] canReject() also permits withdrawal from TERMS_AGREED/CONTRACTED, so
+        // this deliberately no-ops on a card already settled as "accepted" rather than rewriting
+        // agreed history — settleStatus enforces that; the system message above carries the
+        // withdrawal.
+        settleLatestProposal(collaboration.getId(), "rejected");
         return OkResponse.success();
     }
 
@@ -502,6 +508,9 @@ public class DealService {
         collaborationRepository.save(collaboration);
         String actorLabel = role == UserType.CREATOR ? "Creator" : "Brand";
         appendSystemMessage(collaboration.getId(), actorLabel + " accepted the proposal");
+        // CR-02 — settle the proposal card that produced this accept. Must run AFTER the
+        // transition above, so the card is only marked accepted once the deal really is.
+        settleLatestProposal(collaboration.getId(), "accepted");
 
         // W3-1 — #4 "brand accepts creator's counter-bid" / #11 "creator accepts proposal"
         // (07-NOTIFICATION-SYSTEM-SPEC.md §3.1/§3.2). Best-effort — a lookup failure here must
@@ -570,6 +579,15 @@ public class DealService {
         }
         collaboration.transitionTo(CollaborationStatus.IN_NEGOTIATION);
         collaborationRepository.save(collaboration);
+        // [H1] Settle the offer this counter supersedes BEFORE persisting the new one — ordering
+        // is load-bearing, since settleLatestProposal resolves "the newest proposal" and the new
+        // card must not exist yet. Without this every superseded card stayed "pending" and kept
+        // its live Accept/Counter/Decline buttons: after three counters the deal was still
+        // IN_NEGOTIATION with four actionable cards. POST /deals/{id}/accept carries no proposal
+        // id (see api.deals.accept), so accepting is always "accept whatever is current" —
+        // clicking Accept on a stale 40,000 card would have agreed to the current 25,000 offer.
+        // "countered" is styled by the SPA and is != "pending", so the stale cards go inert.
+        settleLatestProposal(collaboration.getId(), "countered");
         persistProposalMessage(
                 collaboration,
                 principal.getUserId(),
@@ -724,6 +742,26 @@ public class DealService {
         if (deadline != null && !deadline.isBlank()) {
             metadata.put("deadline", deadline);
         }
+        // Snapshot the usage rights as they stand for THIS offer. The SPA renders the card from
+        // message metadata (creator-chat.tsx), and until now this key was never written, so every
+        // proposal card read "Usage Rights: Not specified" no matter what the brand submitted —
+        // the value was only ever on the Collaboration, never on the message.
+        //
+        // Read from the collaboration rather than taking a parameter: both call sites
+        // (createProposal, doCounter) apply their usage-rights term to the entity BEFORE calling
+        // this, so the field already holds the value as of this offer.
+        //
+        // Snapshot, not a live lookup, because usage rights are renegotiable per counter — the
+        // card is a historical record of what was offered at the time. Rendering the deal's
+        // current value instead would retroactively rewrite what older cards claim was on the
+        // table, which is exactly the kind of evidence-trail rewriting settleStatus() exists to
+        // prevent. Existing rows are immutable history and are deliberately NOT backfilled, so
+        // the key is absent on pre-2026-07-27 messages and the renderer keeps its `?? 'Not
+        // specified'` fallback.
+        String usageRights = collaboration.getUsageRights();
+        if (usageRights != null && !usageRights.isBlank()) {
+            metadata.put("usageRights", usageRights);
+        }
         DealMessage proposal =
                 DealMessage.create(
                         Ulids.newUlid(),
@@ -733,6 +771,51 @@ public class DealService {
                         senderType,
                         TextSanitizer.sanitizePlainText(message),
                         writeJson(metadata));
+        dealMessageRepository.save(proposal);
+    }
+
+    /**
+     * CR-02 — settles the most recent proposal card's {@code metadata.status} once the offer it
+     * represents is no longer on the table ({@code "accepted"} / {@code "rejected"} /
+     * {@code "countered"}).
+     *
+     * <p>{@link #persistProposalMessage} stamps {@code "pending"} at creation and, until this
+     * existed, nothing ever rewrote it — so every proposal card stayed "pending" forever. The SPA
+     * gates its Accept/Counter/Decline buttons on {@code metadata.status === 'pending'}
+     * (creator-chat.tsx), so it kept offering those actions on an already-agreed deal and the
+     * second click came back 409. The 409 itself is CORRECT and stays: {@code
+     * Collaboration.canAccept()} is the authority on what may be accepted. The stale card is the
+     * bug, not the guard.
+     *
+     * <p>[C2] This participates in the caller's transaction — it is NOT best-effort, and must not
+     * be commented as though it were. An earlier revision wrapped this in try/catch claiming a
+     * failure here could not roll back an already-successful accept. That was simply false:
+     * {@code proposal} is a managed entity, so Hibernate dirty-checking issues the UPDATE at
+     * commit-time flush no matter what this method catches, and a flush failure throws at commit
+     * OUTSIDE any try here; a {@code DataAccessException} from the save would meanwhile have
+     * already marked the transaction rollback-only, turning a swallowed error into
+     * {@code UnexpectedRollbackException}. Either way the caller gets a 500 with the deal unmoved
+     * while the log insists the transition succeeded — the log lying during the incident it exists
+     * to explain. Atomic is also the behaviour we actually want: on a payment evidence trail, a
+     * card whose badge disagrees with the deal's real state is the CR-02 bug returning as a silent
+     * failure mode. If this cannot be written, the accept should fail and be retried.
+     *
+     * <p>The read-modify-write and the pending-only rule both live in {@link
+     * DealMessage#settleStatus} so no caller can rewrite {@code amount} or re-stamp an already
+     * settled card — see the ruling documented there.
+     */
+    private void settleLatestProposal(String collaborationId, String status) {
+        // Same lookup doAccept already ran for its "can't accept your own offer" guard; within one
+        // transaction the persistence context returns that same managed instance, so this is not a
+        // second round trip in the accept path and reject/counter get the lookup they lack.
+        Optional<DealMessage> latest =
+                dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        collaborationId, DealMessageKind.proposal);
+        if (latest.isEmpty()) {
+            return;
+        }
+        DealMessage proposal = latest.get();
+        proposal.settleStatus(status);
         dealMessageRepository.save(proposal);
     }
 
