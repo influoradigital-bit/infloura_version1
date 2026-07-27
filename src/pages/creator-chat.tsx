@@ -647,6 +647,43 @@ export default function CreatorChatPage() {
     });
   }, [liveApi, selectedDeal?.id, selectedDeal?.unreadCount]);
 
+  // Realtime messaging — mirrors brand-chat.tsx's stream effect against the same
+  // GET /deals/:dealId/messages/stream endpoint (DealController.java:132). Without this the
+  // creator only saw the brand's replies after a reload or a deal switch, so during a live
+  // negotiation the brand appeared to have gone silent while its messages were already
+  // persisted server-side.
+  //
+  // Dedupe by id is mandatory: DealService publishes on send to every open emitter for the deal
+  // including the sender's own, and handleSendMessage below already appends what
+  // api.messages.send returns — without the guard the creator would see own-messages twice.
+  //
+  // Keyed on selectedDeal?.id (not the object) so a deals-list refresh returning a new object
+  // for the same deal doesn't tear down and reopen the connection. Cleanup fires on both id
+  // change and unmount, so a previous deal's stream can never write into the newly selected one.
+  React.useEffect(() => {
+    if (!liveApi || !selectedDeal) return;
+    const dealId = selectedDeal.id;
+
+    const handle = api.messages.stream('creator', dealId, {
+      onMessage: (incoming) => {
+        setLiveMessages((prev) =>
+          prev.some((m) => m.id === incoming.id) ? prev : [...prev, incoming],
+        );
+        // No manual scroll here — the `events` effect below already scrolls whenever the
+        // derived timeline changes, and `events` is computed from `liveMessages`.
+      },
+      onError: () => {
+        // Graceful degrade: a dropped stream is silent and non-fatal — the fetch-on-load path
+        // above still delivers messages, so rendering and sending must never depend on this.
+        console.debug('[creator-chat] deal message stream error/closed for deal', dealId);
+      },
+    });
+
+    return () => {
+      handle.close();
+    };
+  }, [liveApi, selectedDeal?.id]);
+
   const [message, setMessage] = React.useState('');
   const [messageRefreshKey, setMessageRefreshKey] = React.useState(0);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -1010,18 +1047,22 @@ export default function CreatorChatPage() {
     setIsSubmittingCounter(true);
     try {
       if (liveApi) {
-        // The counter DTO carries only amount + message + structured deliverables — no
-        // dedicated deadline/terms fields — so fold those into the message (nothing dropped).
-        const message = [
-          data.message,
-          data.terms && `Terms: ${data.terms}`,
-          data.deadline && `Requested deadline: ${data.deadline}`,
-        ]
+        // `deadline` is a real CounterRequest field since the DTO was aligned with
+        // CreateDealRequest (2026-07-26), so it no longer rides in the message prose.
+        //
+        // `terms` deliberately stays in the message: the form asks "Any Changes to Terms?" as
+        // free text, so it is NOT the usage-rights term. Mapping it onto `usageRights` would
+        // overwrite the deal's actual rights with a sentence like "can we do 3 reels instead".
+        const message = [data.message, data.terms && `Terms: ${data.terms}`]
           .filter(Boolean)
           .join('\n\n');
         await api.deals.counter(
           selectedDeal.id,
-          { amount: data.proposedAmount, message: message || undefined },
+          {
+            amount: data.proposedAmount,
+            message: message || undefined,
+            deadline: data.deadline || undefined,
+          },
           'creator',
           // Fresh key per submit so a same-amount re-counter is a real event, not a no-op (Kabir).
           `${selectedDeal.id}-counter-${Date.now()}`,

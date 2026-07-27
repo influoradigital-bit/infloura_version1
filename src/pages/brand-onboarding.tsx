@@ -23,7 +23,7 @@ const TOTAL_STEPS = 3;
  *
  * Deferred (collected just-in-time):
  *   - GSTIN/PAN KYC  → /brand/campaigns/new (api.onboarding.submitBrandKyc)
- *   - Wallet funding → first deal acceptance (api.wallet.recharge)
+ *   - Wallet funding → first deal acceptance (api.wallet.topUp)
  *   - Team invites   → /brand/settings  (post-onboarding)
  */
 export default function BrandOnboardingPage() {

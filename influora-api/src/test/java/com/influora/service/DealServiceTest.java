@@ -2,6 +2,7 @@ package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -33,7 +34,9 @@ import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.web.dto.deal.DealDtos.CounterRequest;
+import com.influora.web.dto.deal.DealDtos.CreateDealRequest;
 import com.influora.web.dto.deal.DealDtos.DealResponse;
+import com.influora.web.dto.deal.DealDtos.DeliverableSlot;
 import com.influora.web.dto.deal.DealDtos.OkResponse;
 import com.influora.web.dto.deal.DealDtos.RejectRequest;
 import com.influora.web.dto.deal.DealDtos.SendMessageRequest;
@@ -46,6 +49,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -128,6 +132,76 @@ class DealServiceTest {
                 Workspace.newBrand(WORKSPACE_ID, "Test Brand", "test-brand", "Beauty", "10-50");
         when(brandPrincipal.getUserType()).thenReturn(UserType.BRAND);
         when(brandContext.requireBrandWorkspace(brandPrincipal)).thenReturn(workspace);
+    }
+
+    // ---------------------------------------------------------------------
+    // createProposal — visibility gate (SEC 2026-07-26)
+    //
+    // Until the direct-offer UI was wired, POST /deals had zero callers and resolved the target
+    // with a bare findById — so it would happily send a priced offer to a creator who had turned
+    // discoverability off, or who moderation had suspended. POST /creators/{id}/invite blocked
+    // both. These two tests pin the two entry points to the same rule.
+    //
+    // The happy path is deliberately not asserted here: it runs on into toDealResponse, whose
+    // mock surface (messages, contract, escrow, deliverables, counterparty lookup) is wide enough
+    // that an unrunnable test is a liability — Maven was unavailable when this was written. Cover
+    // it when the suite can actually be executed.
+    // ---------------------------------------------------------------------
+
+    private CreateDealRequest proposalRequest() {
+        return new CreateDealRequest(
+                CAMPAIGN_ID, CREATOR_PROFILE_ID, new BigDecimal("25000"), null, null, null, "Work with us");
+    }
+
+    /**
+     * Only what the rejection path actually touches — {@code requireWorkspaceCampaign} loads by id
+     * then compares workspaceId itself, and the creator lookup happens before any principal
+     * userId read, so stubbing more here would trip Mockito's strict-stub check.
+     */
+    private void stubProposalCampaign() {
+        stubBrandWorkspace();
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+    }
+
+    @Test
+    @DisplayName("createProposal: creator who turned discoverability off is not offerable — 404")
+    void testCreateProposalRejectsNonDiscoverableCreator() {
+        stubProposalCampaign();
+        // Both lookup legs miss: the discoverable-filtered query finds nothing, and the userId
+        // fallback is filtered out by isDiscoverable().
+        when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.empty());
+        when(creatorProfileRepository.findByUserId(CREATOR_PROFILE_ID)).thenReturn(Optional.empty());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.createProposal(brandPrincipal, proposalRequest()));
+
+        assertEquals("CREATOR_NOT_FOUND", ex.getCode());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+    }
+
+    @Test
+    @DisplayName("createProposal: suspended creator receives no offer even while discoverable — 404")
+    void testCreateProposalRejectsSuspendedCreator() {
+        stubProposalCampaign();
+        CreatorProfile suspended =
+                CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator");
+        suspended.suspend("Policy violation", "admin_1");
+        // Still discoverable, so the first query returns it and Optional.or() short-circuits (no
+        // findByUserId fallback stub here — it is never reached). The suspension filter is what
+        // must reject, which is exactly the leg a discoverability-only check would have missed.
+        when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(suspended));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.createProposal(brandPrincipal, proposalRequest()));
+
+        assertEquals("CREATOR_NOT_FOUND", ex.getCode());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
     }
 
     @Test
@@ -228,11 +302,64 @@ class DealServiceTest {
                             return action.get();
                         });
 
-        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null);
+        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null);
         DealResponse response = service.counter(brandPrincipal, DEAL_ID, body, null);
 
         assertEquals(CollaborationStatus.IN_NEGOTIATION, response.status());
         assertEquals(new BigDecimal("25000"), response.dealValue());
+    }
+
+    @Test
+    @DisplayName("counter: usageRights persists onto the deal and deadline lands in the proposal")
+    void testCounterPersistsAlignedTerms() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any())).thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(idempotencyService.executeOnce(anyString(), eq(WORKSPACE_ID), eq("deal.counter"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        CounterRequest body =
+                new CounterRequest(
+                        new BigDecimal("25000"),
+                        "Revised terms",
+                        List.of(new DeliverableSlot("REEL", 2)),
+                        "2026-08-15",
+                        "6 months");
+        service.counter(brandPrincipal, DEAL_ID, body, null);
+
+        // usageRights is now a real column update, exactly as createProposal does it — before the
+        // DTOs were aligned a counter could not express it at all.
+        assertEquals("6 months", collaboration.getUsageRights());
+
+        ArgumentCaptor<DealMessage> saved = ArgumentCaptor.forClass(DealMessage.class);
+        verify(dealMessageRepository).save(saved.capture());
+        String metadata = saved.getValue().getMetadataJson();
+        // deadline used to be hardcoded null on the counter path, so it vanished on every
+        // counter; and deliverables were persisted as a bare COUNT, losing type and quantity.
+        assertTrue(metadata.contains("2026-08-15"), "deadline missing from proposal metadata");
+        assertTrue(metadata.contains("REEL"), "deliverable type missing from proposal metadata");
     }
 
     // ------------------------------------------------------------------

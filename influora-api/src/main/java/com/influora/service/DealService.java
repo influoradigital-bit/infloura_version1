@@ -131,19 +131,44 @@ public class DealService {
         return toDealResponse(collaboration, principal, principal.getUserType());
     }
 
+    /**
+     * Resolves the offer target for {@link #createProposal}, applying the SAME visibility rules
+     * {@code CreatorDiscoveryService.requireDiscoverableProfile} applies to {@code POST
+     * /creators/{id}/invite}.
+     *
+     * <p>[SEC 2026-07-26, CEO call] Until this existed {@code createProposal} used a bare {@code
+     * findById}, so a priced offer could be sent to a creator who had turned discoverability off
+     * or — worse — been suspended by moderation. Invite blocked exactly that; the two brand-side
+     * entry points into a Collaboration disagreed. The path had zero UI callers, which is why the
+     * gap survived: wiring the direct-offer UI is what would have made it reachable.
+     *
+     * <p>Suspension is non-negotiable (a suspended creator receives no offers from anyone).
+     * Discoverability is the creator's own choice and is respected the same way. Accepts either a
+     * CreatorProfile id or a userId, matching invite's tolerance — the request field is named
+     * {@code creatorId} but discovery hands the frontend a PROFILE id.
+     */
+    private CreatorProfile requireOfferableProfile(String creatorIdOrUserId) {
+        return creatorProfileRepository
+                .findByIdAndDiscoverableTrue(creatorIdOrUserId)
+                .or(
+                        () ->
+                                creatorProfileRepository
+                                        .findByUserId(creatorIdOrUserId)
+                                        .filter(CreatorProfile::isDiscoverable))
+                .filter(profile -> !profile.isSuspended())
+                .orElseThrow(
+                        () ->
+                                new ApiException(
+                                        "CREATOR_NOT_FOUND",
+                                        "Creator not found",
+                                        HttpStatus.NOT_FOUND));
+    }
+
     @Transactional
     public DealResponse createProposal(AuthPrincipal principal, CreateDealRequest body) {
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
         Campaign campaign = requireWorkspaceCampaign(workspace.getId(), body.campaignId());
-        CreatorProfile creator =
-                creatorProfileRepository
-                        .findById(body.creatorId())
-                        .orElseThrow(
-                                () ->
-                                        new ApiException(
-                                                "CREATOR_NOT_FOUND",
-                                                "Creator not found",
-                                                HttpStatus.NOT_FOUND));
+        CreatorProfile creator = requireOfferableProfile(body.creatorId());
         validateProposalAmount(campaign, body.amount());
 
         if (collaborationRepository.existsByCampaignIdAndCreatorId(
@@ -536,6 +561,13 @@ public class DealService {
             CounterRequest body,
             DealSenderType senderType) {
         collaboration.updateAgreedRate(body.amount());
+        // Aligned with createProposal 2026-07-26: a counter that revises usage rights now updates
+        // the deal's terms instead of leaving the original proposal's value standing. Blank is
+        // treated as "not renegotiating this term", so a counter that only moves the price keeps
+        // whatever usage rights were already agreed rather than clearing them.
+        if (body.usageRights() != null && !body.usageRights().isBlank()) {
+            collaboration.setUsageRights(TextSanitizer.sanitizePlainText(body.usageRights()));
+        }
         collaboration.transitionTo(CollaborationStatus.IN_NEGOTIATION);
         collaborationRepository.save(collaboration);
         persistProposalMessage(
@@ -545,7 +577,7 @@ public class DealService {
                 body.amount(),
                 body.message(),
                 body.deliverables(),
-                null);
+                body.deadline());
 
         // W3-1 — #10 "creator sends counter-bid" (07-NOTIFICATION-SYSTEM-SPEC.md §3.2). No
         // equivalent notification event exists for a brand counter (spec only models this
@@ -679,10 +711,17 @@ public class DealService {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("amount", amount);
         metadata.put("status", "pending");
-        if (deliverables != null) {
-            metadata.put("deliverables", deliverables.size());
+        if (deliverables != null && !deliverables.isEmpty()) {
+            // Store the slots themselves, not just how many there were. Until 2026-07-26 this was
+            // `deliverables.size()`, so a proposal for "2 Reels + 1 Story" persisted as the
+            // integer 3 and the deal room could never render what was actually offered — the
+            // types and quantities the brand chose were dropped at the persistence layer. Nothing
+            // consumed the old count (no reader in the API or the SPA), so this is a safe shape
+            // change rather than a breaking one.
+            metadata.put("deliverables", deliverables);
+            metadata.put("deliverableCount", deliverables.size());
         }
-        if (deadline != null) {
+        if (deadline != null && !deadline.isBlank()) {
             metadata.put("deadline", deadline);
         }
         DealMessage proposal =

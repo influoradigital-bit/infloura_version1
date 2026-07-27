@@ -432,13 +432,20 @@ export function CreatorDiscovery() {
   
   // Structured Proposal State
   const [proposalStep, setProposalStep] = React.useState<'campaign' | 'proposal' | 'confirm'>('campaign');
+  /**
+   * Terms collected by the 'proposal' step. Every field here is one the server actually honours.
+   *
+   * `exclusivity` and `revisionCap` were removed 2026-07-26 (CEO call). Both had real, working
+   * controls in the proposal step and appeared in the review summary — they just reached nothing:
+   * the backend discarded `exclusivity` (one occurrence in the whole API, the DTO field) and
+   * never accepted a revision cap at all. Live inputs wired to nothing are worse than absent
+   * ones, because the brand believes it bought the term.
+   */
   const [proposalData, setProposalData] = React.useState({
     deliverables: [{ type: 'REEL', count: 1 }],
     budget: 0,
     deadline: '',
     usageRights: '3_MONTHS',
-    exclusivity: false,
-    revisionCap: 2,
   });
 
   const handleOpenInvite = (creator: CreatorProfile) => {
@@ -452,8 +459,6 @@ export function CreatorDiscovery() {
       budget: creator.averageRate || 50000,
       deadline: '',
       usageRights: '3_MONTHS',
-      exclusivity: false,
-      revisionCap: 2,
     });
     setInviteMessage('');
   };
@@ -481,11 +486,40 @@ export function CreatorDiscovery() {
     setIsSubmitting(true);
     try {
       if (liveApi) {
-        await api.creators.invite(inviteCreator.id, selectedCampaign, inviteMessage || undefined);
-        toast({
-          title: 'Invitation sent',
-          description: `${inviteCreator.displayName} has been invited to the campaign.`,
-        });
+        // One modal, two fidelities (CTO call 2026-07-26). Both endpoints are campaign-scoped and
+        // write the SAME Collaboration row keyed on (campaignId, creatorId) — they 409 against
+        // each other — so exactly one fires per submit, chosen by whether the brand actually
+        // priced the offer:
+        //   budget > 0 → POST /deals       — lands IN_NEGOTIATION with agreedRate set, writes a
+        //                                    proposal message, fires ProposalSentEvent.
+        //   budget = 0 → POST /creators/:id/invite — lands INVITED, no terms, no notification.
+        // Until now this branch always took the invite path and silently discarded every term the
+        // two preceding steps collected.
+        if (proposalData.budget > 0) {
+          await api.deals.create({
+            campaignId: selectedCampaign,
+            // CreatorProfile id — what `creators.search` returns and what the server resolves.
+            creatorId: inviteCreator.id,
+            amount: proposalData.budget,
+            // Local shape uses `count`; the API contract is `qty` (DealDtos.DeliverableSlot).
+            deliverables: proposalData.deliverables
+              .filter((d) => d.type && d.count > 0)
+              .map((d) => ({ type: d.type, qty: d.count })),
+            deadline: proposalData.deadline || undefined,
+            usageRights: proposalData.usageRights || undefined,
+            message: inviteMessage || undefined,
+          });
+          toast({
+            title: 'Offer sent',
+            description: `${inviteCreator.displayName} received your offer of ${formatINR(proposalData.budget)}.`,
+          });
+        } else {
+          await api.creators.invite(inviteCreator.id, selectedCampaign, inviteMessage || undefined);
+          toast({
+            title: 'Invitation sent',
+            description: `${inviteCreator.displayName} has been invited to the campaign.`,
+          });
+        }
       } else {
         await new Promise((resolve) => setTimeout(resolve, 800));
       }
@@ -496,9 +530,21 @@ export function CreatorDiscovery() {
       setProposalStep('campaign');
       navigate('/brand/chat');
     } catch (e) {
+      const priced = proposalData.budget > 0;
+      // Both paths share the (campaignId, creatorId) uniqueness constraint, so this is the most
+      // likely failure once a creator has been approached before — say what actually happened
+      // rather than a generic retry prompt the brand can't act on.
       const message =
-        e instanceof ApiError ? e.message : 'Could not send invitation. Try again.';
-      toast({ title: 'Invite failed', description: message, variant: 'destructive' });
+        e instanceof ApiError && e.code === 'COLLABORATION_EXISTS'
+          ? `${inviteCreator.displayName} is already on this campaign. Open the deal room to continue there.`
+          : e instanceof ApiError
+            ? e.message
+            : `Could not send the ${priced ? 'offer' : 'invitation'}. Try again.`;
+      toast({
+        title: priced ? 'Offer failed' : 'Invite failed',
+        description: message,
+        variant: 'destructive',
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -1481,36 +1527,14 @@ export function CreatorDiscovery() {
                     </Select>
                   </div>
 
-                  {/* Revision Cap */}
-                  <div className="space-y-2">
-                    <Label>Revisions Included</Label>
-                    <Select 
-                      value={proposalData.revisionCap.toString()}
-                      onValueChange={(value) => setProposalData({ ...proposalData, revisionCap: parseInt(value) })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">1 Revision</SelectItem>
-                        <SelectItem value="2">2 Revisions</SelectItem>
-                        <SelectItem value="3">3 Revisions</SelectItem>
-                        <SelectItem value="5">5 Revisions</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Exclusivity */}
-                  <div className="flex items-center gap-2">
-                    <Checkbox 
-                      id="exclusivity"
-                      checked={proposalData.exclusivity}
-                      onCheckedChange={(checked) => setProposalData({ ...proposalData, exclusivity: !!checked })}
-                    />
-                    <Label htmlFor="exclusivity" className="text-sm cursor-pointer">
-                      Require exclusivity (no competitor collabs during campaign)
-                    </Label>
-                  </div>
+                  {/* Removed 2026-07-26 (CEO call): "Revisions Included" and "Require
+                      exclusivity". Both were live controls the brand could set that reached
+                      nothing — POST /deals discarded `exclusivity` server-side (it appeared in
+                      exactly one place in the backend, the DTO field) and never accepted a
+                      revision cap at all. A brand ticking "no competitor collabs" and believing
+                      it bought exclusivity is a dispute we would lose. They return as real
+                      contract clauses, with an enforcement window and breach handling, after
+                      escrow/Route ships. */}
 
                   {/* Personal Message */}
                   <div className="space-y-2">
@@ -1557,14 +1581,6 @@ export function CreatorDiscovery() {
                       <div>
                         <p className="text-muted-foreground">Usage Rights</p>
                         <p className="font-medium">{proposalData.usageRights.replace('_', ' ')}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Revisions</p>
-                        <p className="font-medium">{proposalData.revisionCap}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Exclusivity</p>
-                        <p className="font-medium">{proposalData.exclusivity ? 'Yes' : 'No'}</p>
                       </div>
                     </div>
                     {inviteMessage && (

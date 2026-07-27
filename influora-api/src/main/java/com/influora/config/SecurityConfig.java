@@ -79,6 +79,11 @@ public class SecurityConfig {
                                         .permitAll()
                                         .requestMatchers(HttpMethod.GET, "/auth/verify-email")
                                         .permitAll()
+                                        // Read by the signup pages before any account exists, to
+                                        // decide whether to render the email-OTP step. Carries no
+                                        // secret — only the flag AuthService already enforces.
+                                        .requestMatchers(HttpMethod.GET, "/config/public")
+                                        .permitAll()
                                         .requestMatchers(HttpMethod.GET, "/workspaces/slug-check")
                                         .permitAll()
                                         // Razorpay webhook: trust boundary is HMAC signature verification

@@ -19,10 +19,21 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+/**
+ * Terms the deal-room proposal collects. `exclusivity` and `revisionCap` were removed
+ * 2026-07-26 (CEO call) for the same reason they were removed from the discovery modal: live
+ * controls bound to terms the platform does not enforce anywhere. The backend never accepted
+ * either one, so a brand setting them bought nothing.
+ *
+ * `budget` is the CREATOR PAYOUT and the only figure sent to the server (as the counter
+ * `amount`). Everything else here is descriptive: `POST /deals/:id/counter` accepts only
+ * amount/message/deliverables, so deadline, usage rights and custom clauses travel in the
+ * message body — visible to the creator in the thread rather than silently dropped.
+ */
 export interface ProposalFormData {
   // Step 1: Deliverables
   deliverables: Array<{ id: string; type: string; count: number }>;
-  // Step 2: Budget
+  // Step 2: Budget — creator payout
   budget: number;
   // Step 3: Timeline
   deadline: string;
@@ -30,8 +41,6 @@ export interface ProposalFormData {
   usageRightsDuration: string;
   usageRightsAddOns: string[];
   // Step 5: Terms
-  exclusivity: string;
-  revisionCap: number;
   customClauses: string;
 }
 
@@ -40,6 +49,12 @@ interface ProposalFormProps {
   onSubmit: (data: ProposalFormData) => void;
   onClose: () => void;
   isSubmitting?: boolean;
+  /**
+   * Real platform fee percent for this workspace (GET /brand/platform-fee). Defaults to the
+   * platform's own default rather than the 10% this form used to hardcode — that number was
+   * simply wrong (application.yml PLATFORM_FEE_PERCENT is 15) and under-quoted the brand's cost.
+   */
+  platformFeePercent?: number;
 }
 
 const deliverableTypes = [
@@ -62,15 +77,27 @@ const usageRightsDurations = [
   { value: 'perpetual', label: 'Perpetual' },
 ];
 
+/**
+ * Usage-rights add-ons. The `+N%` price uplifts these used to advertise were removed
+ * 2026-07-26: nothing charged them. They inflated the "Total You Pay" line while the amount
+ * actually sent to the server was the base budget alone, so the brand was quoted a number the
+ * platform never collected. They survive as descriptive terms carried in the proposal message.
+ */
 const addOnOptions = [
-  { id: 'whitelisting', label: 'Whitelisting/Paid Ads', price: 30 },
-  { id: 'extended', label: 'Extended Duration', price: 20 },
-  { id: 'perpetual', label: 'Perpetual Usage', price: 50 },
-  { id: 'repurposing', label: 'Repurposing Rights', price: 25 },
-  { id: 'exclusive', label: 'Exclusive Content', price: 40 },
+  { id: 'whitelisting', label: 'Whitelisting/Paid Ads' },
+  { id: 'extended', label: 'Extended Duration' },
+  { id: 'perpetual', label: 'Perpetual Usage' },
+  { id: 'repurposing', label: 'Repurposing Rights' },
+  { id: 'exclusive', label: 'Exclusive Content' },
 ];
 
-export function ProposalForm({ creatorName, onSubmit, onClose, isSubmitting = false }: ProposalFormProps) {
+export function ProposalForm({
+  creatorName,
+  onSubmit,
+  onClose,
+  isSubmitting = false,
+  platformFeePercent = 15,
+}: ProposalFormProps) {
   const [step, setStep] = React.useState(1);
   const [formData, setFormData] = React.useState<ProposalFormData>({
     deliverables: [{ id: uniqueId('del'), type: 'Instagram Reel', count: 1 }],
@@ -78,8 +105,6 @@ export function ProposalForm({ creatorName, onSubmit, onClose, isSubmitting = fa
     deadline: '',
     usageRightsDuration: '6-months',
     usageRightsAddOns: [],
-    exclusivity: 'none',
-    revisionCap: 2,
     customClauses: '',
   });
 
@@ -108,15 +133,11 @@ export function ProposalForm({ creatorName, onSubmit, onClose, isSubmitting = fa
     onSubmit(formData);
   };
 
-  // Calculate add-on fees
-  const addOnFee = formData.usageRightsAddOns.reduce((sum, addonId) => {
-    const addon = addOnOptions.find((a) => a.id === addonId);
-    return sum + ((addon?.price || 0) * formData.budget) / 100;
-  }, 0);
-
-  const platformFee = (formData.budget * 10) / 100;
+  // Cost breakdown. Only figures the platform actually charges appear here: the creator payout,
+  // the real workspace platform fee, and GST on that fee.
+  const platformFee = (formData.budget * platformFeePercent) / 100;
   const gstOnFee = (platformFee * 18) / 100;
-  const totalCost = formData.budget + addOnFee + platformFee + gstOnFee;
+  const totalCost = formData.budget + platformFee + gstOnFee;
 
   return (
     <div className="fixed inset-0 z-50">
@@ -278,14 +299,8 @@ export function ProposalForm({ creatorName, onSubmit, onClose, isSubmitting = fa
                       <span>Creator Payout:</span>
                       <span className="font-semibold">₹{formData.budget.toLocaleString('en-IN')}</span>
                     </div>
-                    {addOnFee > 0 && (
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>Add-ons ({formData.usageRightsAddOns.length}):</span>
-                        <span>₹{Math.round(addOnFee).toLocaleString('en-IN')}</span>
-                      </div>
-                    )}
                     <div className="flex justify-between text-muted-foreground">
-                      <span>Platform Fee (10%):</span>
+                      <span>Platform Fee ({platformFeePercent}%):</span>
                       <span>₹{Math.round(platformFee).toLocaleString('en-IN')}</span>
                     </div>
                     <div className="flex justify-between text-muted-foreground">
@@ -377,9 +392,6 @@ export function ProposalForm({ creatorName, onSubmit, onClose, isSubmitting = fa
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium">{addon.label}</p>
                       </div>
-                      <Badge variant="outline" className="shrink-0">
-                        +{addon.price}%
-                      </Badge>
                     </div>
                   ))}
                 </div>
@@ -392,38 +404,16 @@ export function ProposalForm({ creatorName, onSubmit, onClose, isSubmitting = fa
             <div className="space-y-6">
               <div>
                 <h3 className="font-semibold mb-2">Final Terms</h3>
-                <p className="text-sm text-muted-foreground mb-4">Set revision limits and special terms</p>
+                <p className="text-sm text-muted-foreground mb-4">Anything else the creator should agree to</p>
               </div>
 
-              {/* Exclusivity */}
-              <div>
-                <Label className="text-sm mb-2 block">Exclusivity</Label>
-                <Select value={formData.exclusivity} onValueChange={(val) => setFormData({ ...formData, exclusivity: val })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No exclusivity</SelectItem>
-                    <SelectItem value="3-months">3 months exclusive</SelectItem>
-                    <SelectItem value="6-months">6 months exclusive</SelectItem>
-                    <SelectItem value="perpetual">Perpetual exclusive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Revision Cap */}
-              <div>
-                <Label className="text-sm mb-2 block">Max Revisions: {formData.revisionCap}</Label>
-                <Input
-                  type="range"
-                  min="1"
-                  max="5"
-                  value={formData.revisionCap}
-                  onChange={(e) => setFormData({ ...formData, revisionCap: parseInt(e.target.value) })}
-                  className="w-full"
-                />
-                <p className="text-xs text-muted-foreground mt-2">Creator gets {formData.revisionCap} revision(s) before final approval</p>
-              </div>
+              {/* Removed 2026-07-26 (CEO call): the "Exclusivity" select and "Max Revisions"
+                  slider. Neither term is accepted by any endpoint — POST /deals/:id/counter takes
+                  amount, message and deliverables only — so both were live controls a brand could
+                  set that bound nobody to anything. Revisions in particular are already modelled
+                  server-side on the deliverable (currentRevision/maxRevisions); when the cap comes
+                  back it binds to that, not to a second proposal-level field. Exclusivity returns
+                  as a contract clause with an enforcement window after escrow/Route. */}
 
               {/* Custom Clauses */}
               <div>

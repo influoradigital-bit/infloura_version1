@@ -39,6 +39,21 @@ public final class DealDtos {
             ContractStatus contractStatus,
             boolean escrowFunded) {}
 
+    /**
+     * Brand-initiated priced offer. {@code creatorId} is a CreatorProfile id (a userId is also
+     * accepted — see {@code DealService.requireOfferableProfile}), NOT a User id despite the name.
+     *
+     * <p>{@code exclusivity} was removed 2026-07-26 (CEO call). It had exactly one occurrence in
+     * the whole backend — this field — and was never persisted, read, or surfaced in the contract:
+     * {@code Collaboration.propose} never received it and {@code persistProposalMessage} wasn't
+     * passed it either. Accepting it made the API advertise a commercial term we do not enforce,
+     * so a brand could believe it bought exclusivity while the creator was free to post for a
+     * competitor. It comes back as a real contract clause — with a date range and breach handling
+     * — after escrow/Route, not as a checkbox.
+     *
+     * <p>Note {@code deliverables} and {@code deadline} survive only inside the proposal MESSAGE
+     * metadata; {@code usageRights} is the one term persisted onto the Collaboration itself.
+     */
     public record CreateDealRequest(
             @NotBlank String campaignId,
             @NotBlank String creatorId,
@@ -46,15 +61,29 @@ public final class DealDtos {
             List<DeliverableSlot> deliverables,
             String deadline,
             String usageRights,
-            Boolean exclusivity,
             @Size(max = 2000) String message) {}
 
     public record DeliverableSlot(@NotBlank String type, @NotNull Integer qty) {}
 
+    /**
+     * A counter-offer from either party. Aligned with {@link CreateDealRequest} on 2026-07-26:
+     * {@code deadline} and {@code usageRights} were added so the two negotiation entry points
+     * model the same terms.
+     *
+     * <p>Before that, a counter could only carry amount/message/deliverables, so every frontend
+     * that let a user revise a deadline or usage rights concatenated them into {@code message} as
+     * free text — see the identical workarounds that used to sit in {@code creator-chat.tsx} and
+     * {@code brand-chat.tsx}. Terms a party actually negotiated were therefore unreadable to the
+     * server and unusable by the contract generator. {@code usageRights} is now persisted onto
+     * the Collaboration exactly as {@code createProposal} persists it; {@code deadline} rides in
+     * the proposal message metadata (there is still no deadline column on Collaboration).
+     */
     public record CounterRequest(
             @NotNull @DecimalMin("0.01") BigDecimal amount,
             @Size(max = 2000) String message,
-            List<DeliverableSlot> deliverables) {}
+            List<DeliverableSlot> deliverables,
+            String deadline,
+            String usageRights) {}
 
     public record RejectRequest(@Size(max = 500) String reason) {}
 

@@ -129,10 +129,9 @@ export function ProposalCard({
             <p className="text-xs text-muted-foreground">Deliverables</p>
             <p className="text-lg font-semibold">{totalDeliverables}</p>
           </div>
-          <div className="p-2 rounded-lg bg-muted/50 text-center">
-            <p className="text-xs text-muted-foreground">Revisions</p>
-            <p className="text-lg font-semibold">{data.revisionCap}</p>
-          </div>
+          {/* "Revisions" tile removed 2026-07-26 alongside the proposal form's revision slider —
+              no endpoint accepted the value, so the card was reporting a term nobody agreed to.
+              Revision limits live on the deliverable server-side (currentRevision/maxRevisions). */}
           <div className="p-2 rounded-lg bg-muted/50 text-center">
             <p className="text-xs text-muted-foreground">Duration</p>
             <p className="text-lg font-semibold whitespace-nowrap text-sm">
@@ -177,11 +176,8 @@ export function ProposalCard({
                 ))}
               </div>
             )}
-            {data.exclusivity !== 'none' && (
-              <div className="text-xs text-muted-foreground">
-                Exclusivity: {data.exclusivity === '3-months' ? '3 months' : data.exclusivity === '6-months' ? '6 months' : 'Perpetual'}
-              </div>
-            )}
+            {/* Exclusivity line removed 2026-07-26 — the term was never persisted or enforced,
+                so restating it on the card implied an agreement that did not exist. */}
           </div>
         </div>
 
