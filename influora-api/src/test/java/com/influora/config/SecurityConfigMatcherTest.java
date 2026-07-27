@@ -7,6 +7,7 @@ import com.influora.domain.enums.UserType;
 import com.influora.security.AuthPrincipal;
 import com.influora.security.AuthRateLimitFilter;
 import com.influora.security.InternalServiceTokenFilter;
+import com.influora.security.JsonAuthErrorHandler;
 import com.influora.security.JwtAuthenticationFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import java.lang.reflect.Field;
@@ -59,7 +60,8 @@ class SecurityConfigMatcherTest {
                 new SecurityConfig(
                         mock(JwtAuthenticationFilter.class),
                         mock(AuthRateLimitFilter.class),
-                        mock(InternalServiceTokenFilter.class));
+                        mock(InternalServiceTokenFilter.class),
+                        mock(JsonAuthErrorHandler.class));
         setField(
                 securityConfig,
                 "contentSecurityPolicy",

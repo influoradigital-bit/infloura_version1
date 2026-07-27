@@ -167,6 +167,36 @@ export class ApiError extends Error {
 // Low-level HTTP client
 // ---------------------------------------------------------------------------
 
+/**
+ * How long before a token's `exp` we proactively renew it. Wide enough to absorb client/server
+ * clock skew and a slow request, narrow enough that we are not refreshing on every call.
+ */
+const TOKEN_REFRESH_SKEW_MS = 60_000;
+
+/**
+ * Reads the `exp` claim (seconds since epoch) out of a JWT without verifying it.
+ *
+ * Verification is emphatically the server's job — this is used only to decide *when* to ask for
+ * a new token, never to decide whether the current one is trusted. A forged `exp` can at worst
+ * make the client refresh earlier or later than ideal; the server still rejects a bad token.
+ *
+ * Returns null for anything that is not a JWT carrying a numeric `exp` — notably the mock-mode
+ * tokens (`mock_brand_token`), which must not trigger refresh attempts.
+ */
+function decodeJwtExpSeconds(token: string): number | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    // base64url → base64, then pad to a multiple of 4 for atob.
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    const claims = JSON.parse(atob(padded)) as { exp?: unknown };
+    return typeof claims.exp === 'number' ? claims.exp : null;
+  } catch {
+    return null;
+  }
+}
+
 class HttpClient {
   /** Dedupes concurrent 401s for the same role into a single `/auth/refresh` call (H-19). */
   private refreshPromises: Partial<Record<Role, Promise<string | null>>> = {};
@@ -239,9 +269,39 @@ class HttpClient {
   }
 
   /**
+   * Refreshes the access token BEFORE a request when it is about to expire.
+   *
+   * The reactive 401 path below is a safety net, not a strategy: it only helps once the server
+   * has already rejected a request, and it is defeated entirely if the server answers expiry
+   * with anything other than 401 — which is exactly what happened until 2026-07-26, when Spring
+   * returned a bodyless 403 for unauthenticated requests and no refresh ever fired.
+   *
+   * Refreshing ahead of expiry removes that dependency: the user's session renews silently for
+   * as long as the 30-day refresh cookie lives, regardless of how the server phrases a rejection.
+   *
+   * Returns the new token if one was fetched, else null (caller keeps the existing header).
+   * Deliberately quiet on failure — `refreshAccessToken` already fails closed, and a failed
+   * proactive refresh simply falls through to the request, the 401, and the reactive path.
+   */
+  private async ensureFreshToken(role: Role): Promise<string | null> {
+    const token = this.getToken(role);
+    if (!token) return null;
+    const exp = decodeJwtExpSeconds(token);
+    // Not a JWT (mock-mode tokens like `mock_brand_token`) or no `exp` claim — nothing to
+    // anticipate, so leave it alone and let the reactive path handle any rejection.
+    if (exp === null) return null;
+    if (exp * 1000 - Date.now() > TOKEN_REFRESH_SKEW_MS) return null;
+    return this.refreshAccessToken(role);
+  }
+
+  /**
    * Runs `fetch`; on a 401 (and only once per call) attempts a refresh + retry with the
    * new token. If refresh fails, clears the stale token and returns the original 401
    * response so the caller's normal envelope-error handling takes over.
+   *
+   * Note the retry is 401-only by design. A 403 means "authenticated but not permitted" — the
+   * OWNER/ADMIN role gates on campaign actions, for instance — and refreshing changes nothing,
+   * so retrying those would loop on requests the server is correctly refusing.
    */
   private async fetchWithAuthRetry(
     url: string,
@@ -250,6 +310,15 @@ class HttpClient {
     hasAuthHeader: boolean,
     retried = false,
   ): Promise<Response> {
+    if (hasAuthHeader && !retried) {
+      const fresh = await this.ensureFreshToken(role);
+      if (fresh) {
+        init = {
+          ...init,
+          headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${fresh}` },
+        };
+      }
+    }
     const res = await fetch(url, init);
     if (res.status === 401 && hasAuthHeader && !retried) {
       const newToken = await this.refreshAccessToken(role);
