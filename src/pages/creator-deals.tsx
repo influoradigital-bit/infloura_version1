@@ -22,7 +22,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { cn, formatINR } from '@/lib/utils';
 import { api, ApiError, type DealStatusFilter } from '@/lib/api';
-import { mapDealToDealsPageRow } from '@/lib/creator-deal-mappers';
+import {
+  mapDealToDealsPageRow,
+  type CreatorDealsPageRow,
+} from '@/lib/creator-deal-mappers';
 import { getInitials } from '@/lib/helpers';
 import { type HypeInvite } from '@/lib/demo-data';
 import { HypeInboxCard } from '@/components/creator/hype-inbox-card';
@@ -49,34 +52,13 @@ type StatusChip = {
   match: (d: DealRoom) => boolean;
 };
 
-interface DealRoom {
-  id: string;
-  brandId: string;
-  brandName: string;
-  brandLogo?: string;
-  brandVerified: boolean;
-  brandRating?: number;
-  brandPaymentSpeed?: string;
-  campaignTitle: string;
-  status:
-    | 'new'
-    | 'negotiating'
-    | 'contracted'
-    | 'in_progress'
-    | 'review'
-    | 'completed';
-  budget: number;
-  deliverables: Array<{ type: string; count: number }>;
-  deadline: string;
-  lastMessage?: string;
-  lastMessageAt?: Date;
-  unreadCount: number;
-  deliverablesDone: number;
-  deliverablesTotal: number;
-  receivedAt?: Date;
-  expiresAt?: Date;
-  escrowFunded: boolean;
-}
+/**
+ * CR-05 — the row shape (and with it the `status` union) is owned by
+ * `lib/creator-deal-mappers.ts`, which also owns the single
+ * `CollaborationStatus -> stage` switch that `creator-chat.tsx` reads. This page used to
+ * re-declare both locally, which is how the deal room drifted onto a different mapping.
+ */
+type DealRoom = CreatorDealsPageRow;
 
 const STATUS_CHIPS: StatusChip[] = [
   { id: 'all',         label: 'All',           match: () => true },

@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { Deal } from '@/lib/api';
-import { mapDealToDealsPageRow } from '@/lib/creator-deal-mappers';
+import type { CollaborationStatus } from '@/lib/types';
+import {
+  mapCollaborationStatusToDealStage,
+  mapDealToChatRoom,
+  mapDealToDealsPageRow,
+  type DealStage,
+} from '@/lib/creator-deal-mappers';
 import { getInitials } from '@/lib/helpers';
 
 /**
@@ -85,5 +91,75 @@ describe('getInitials (null-safe hardening)', () => {
   it('still produces initials for real names', () => {
     expect(getInitials('Demo Brand Co')).toBe('DB');
     expect(getInitials('Nykaa')).toBe('N');
+  });
+});
+
+/**
+ * CR-05 regression guard.
+ *
+ * The bug: `creator-deals.tsx` and `creator-chat.tsx` each derived a coarse stage from
+ * `Deal.status` using their own switch, and the two disagreed on APPLIED, SHORTLISTED,
+ * TERMS_AGREED and DISPUTED. `liveDeal` above — a real captured payload — is TERMS_AGREED,
+ * so the same collaboration read "Negotiating" in the list and "Contracted" in its own room.
+ *
+ * The structural half of the fix is that only one switch now exists and both pages import
+ * it, which no test can meaningfully re-assert. What a test CAN pin is the switch's contents
+ * against the backend, so an edit to it has to be a deliberate one.
+ */
+describe('mapCollaborationStatusToDealStage (CR-05 — one mapping, mirroring the server)', () => {
+  // Mirrors the three backend DISPLAY mappers — DashboardService.bucketFor:126,
+  // AdminCampaignService:307, CreatorApplicationMapper:40 — which all agree TERMS_AGREED is
+  // still pre-contract. Note the server is NOT unanimous: DealService.statusesForFilter:1030
+  // (the filter path) and AdminBrandService:94 put TERMS_AGREED on the contracted side. The
+  // badge follows the display mappers; the filter disagreement is tracked as CR-13. See the
+  // header comment on mapCollaborationStatusToDealStage for the full argument.
+  //
+  // 'new' is the one UI-only split of the server's NEGOTIATING bucket, and the filter path is
+  // what legitimises it: statusesForFilter("new") is exactly [INVITED] for creators.
+  const expected: Record<CollaborationStatus, DealStage> = {
+    INVITED: 'new',
+    APPLIED: 'negotiating',
+    SHORTLISTED: 'negotiating',
+    IN_NEGOTIATION: 'negotiating',
+    TERMS_AGREED: 'negotiating',
+    CONTRACT_PENDING: 'contracted',
+    CONTRACTED: 'contracted',
+    IN_PROGRESS: 'in_progress',
+    REVIEW_PENDING: 'review',
+    REVISION_REQUESTED: 'review',
+    COMPLETED: 'completed',
+    CANCELLED: 'completed',
+    DISPUTED: 'completed',
+  };
+
+  it.each(Object.entries(expected))('maps %s -> %s', (status, stage) => {
+    expect(mapCollaborationStatusToDealStage(status as CollaborationStatus)).toBe(stage);
+  });
+
+  it('covers every status in the backend enum — no silent default fallthrough', () => {
+    // If CollaborationStatus.java gains a state, this table must gain a row too rather than
+    // letting it land on the `default:` arm unnoticed.
+    expect(Object.keys(expected)).toHaveLength(13);
+  });
+
+  it('keeps TERMS_AGREED out of "contracted" — no contract row exists yet', () => {
+    // DealService.doAccept transitions to TERMS_AGREED, and
+    // CollaborationLifecycleService.BEFORE_CONTRACT_PENDING lists TERMS_AGREED as a state a
+    // contract may still advance FROM. The deal room used to claim 'contracted' here, which
+    // is the exact divergence CR-05 reported.
+    expect(mapCollaborationStatusToDealStage('TERMS_AGREED')).toBe('negotiating');
+  });
+
+  it('gives the deals list and the deal room the same stage for one deal', () => {
+    expect(mapDealToChatRoom(liveDeal).status).toBe(mapDealToDealsPageRow(liveDeal).status);
+  });
+});
+
+describe('mapDealToChatRoom (CR-02 gate input)', () => {
+  it('carries the raw collaborationStatus through untouched', () => {
+    // `dealAllowsProposalResponse` in creator-chat.tsx mirrors Collaboration.canAccept()
+    // against this field, not the coarse stage. Dropping it here silently disables
+    // Accept/Counter/Decline on every deal.
+    expect(mapDealToChatRoom(liveDeal).collaborationStatus).toBe('TERMS_AGREED');
   });
 });

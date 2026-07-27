@@ -38,11 +38,9 @@ import {
   api,
   isApiLive,
   ApiError,
-  type Deal,
   type DealMessage,
   type MessageKind,
   type ContractApiRecord,
-  type ContractStatus,
   type CreatorDeliverableListItem,
   type ShipmentApiRecord,
   type ShipmentApiStatus,
@@ -88,6 +86,10 @@ import {
   formatMessageTimestamp,
   getPersistedMessages,
 } from '@/lib/creator-deal-messages';
+import {
+  mapDealToChatRoom,
+  type CreatorChatDealRoom,
+} from '@/lib/creator-deal-mappers';
 import {
   dealHasContract,
   getAllContractStatuses,
@@ -160,36 +162,14 @@ function mapShipmentApiStatusToUiStatus(status: ShipmentApiStatus): ShipmentStat
 // Types
 // ============================================================================
 
-interface DealRoom {
-  id: string;
-  brandName: string;
-  brandLogo: string;
-  brandInitials: string;
-  campaignName: string;
-  status: 'new_proposal' | 'negotiating' | 'contracted' | 'in_progress' | 'review' | 'completed';
-  dealAmount: number;
-  lastMessage: string;
-  lastMessageTime: string;
-  unreadCount: number;
-  deliverablesDone: number;
-  deliverablesTotal: number;
-  /**
-   * Real backend fields (DealDtos.java:38-40) — the honest source for
-   * contract state in live mode; undefined/false in mock mode (mock rooms
-   * keep using the creator-contract-store demo backbone instead).
-   */
-  contractId?: string;
-  contractStatus?: ContractStatus;
-  escrowFunded: boolean;
-  /**
-   * Raw backend collaboration status, straight off `Deal.status`. The coarse
-   * `status` above is lossy on purpose (13 backend states collapsed into 6 UI
-   * buckets), so anything that has to agree with a backend precondition reads
-   * this instead — see `dealAllowsProposalResponse`. Undefined in mock mode,
-   * where there is no backend row behind the room.
-   */
-  collaborationStatus?: CollaborationStatus;
-}
+/**
+ * CR-05 — this room's view model and, critically, its `status` derivation now come from
+ * `lib/creator-deal-mappers.ts`, the same module `creator-deals.tsx` reads. This file used
+ * to declare its own shape AND its own `CollaborationStatus -> status` switch, which
+ * disagreed with the deals list on four statuses (TERMS_AGREED above all) — so accepting a
+ * proposal made the list say "Negotiating" while the room said "Contracted".
+ */
+type DealRoom = CreatorChatDealRoom;
 
 interface ChatTimelineEvent {
   id: string;
@@ -228,6 +208,12 @@ function toLibTimelineEvent(event: ChatTimelineEvent): LibTimelineEvent {
 // Mock Data - Creator Perspective (Brands they work with)
 // ============================================================================
 
+/**
+ * Every mock room carries an explicit `collaborationStatus` alongside its coarse `status`,
+ * exactly as a live room does. Without it `dealAllowsProposalResponse` (CR-02) would refuse
+ * every mock proposal, and demo mode would stop exercising the real gate. The pairs below
+ * are the ones the shared mapper produces, so mock and live cannot drift apart either.
+ */
 const mockDealRooms: DealRoom[] = [
   {
     id: '1',
@@ -236,6 +222,7 @@ const mockDealRooms: DealRoom[] = [
     brandInitials: 'SC',
     campaignName: 'Summer Fashion 2024',
     status: 'in_progress',
+    collaborationStatus: 'IN_PROGRESS',
     dealAmount: 50000,
     lastMessage: 'Great work on the first reel! Ready for the next one?',
     lastMessageTime: '2 hours ago',
@@ -250,7 +237,8 @@ const mockDealRooms: DealRoom[] = [
     brandLogo: '',
     brandInitials: 'TG',
     campaignName: 'Product Launch Q1',
-    status: 'new_proposal',
+    status: 'new',
+    collaborationStatus: 'INVITED',
     dealAmount: 75000,
     lastMessage: 'We loved your tech reviews! Here is our proposal...',
     lastMessageTime: '5 hours ago',
@@ -266,6 +254,7 @@ const mockDealRooms: DealRoom[] = [
     brandInitials: 'FL',
     campaignName: 'Wellness Campaign',
     status: 'negotiating',
+    collaborationStatus: 'IN_NEGOTIATION',
     dealAmount: 35000,
     lastMessage: 'Can we discuss the timeline for deliverables?',
     lastMessageTime: '1 day ago',
@@ -281,6 +270,7 @@ const mockDealRooms: DealRoom[] = [
     brandInitials: 'BG',
     campaignName: 'Skincare Series',
     status: 'contracted',
+    collaborationStatus: 'CONTRACTED',
     dealAmount: 45000,
     lastMessage: 'Contract signed! Looking forward to working together.',
     lastMessageTime: '2 days ago',
@@ -296,6 +286,7 @@ const mockDealRooms: DealRoom[] = [
     brandInitials: 'HD',
     campaignName: 'Interior Design Tips',
     status: 'review',
+    collaborationStatus: 'REVIEW_PENDING',
     dealAmount: 28000,
     lastMessage: 'Submitted the final video for review.',
     lastMessageTime: '3 days ago',
@@ -463,32 +454,6 @@ const mockTimelineEvents: ChatTimelineEvent[] = [
 // map onto the DealRoom / ChatTimelineEvent shapes this page already renders.
 // ============================================================================
 
-function mapDealStatusToRoomStatus(status: CollaborationStatus): DealRoom['status'] {
-  switch (status) {
-    case 'INVITED':
-    case 'APPLIED':
-    case 'SHORTLISTED':
-      return 'new_proposal';
-    case 'IN_NEGOTIATION':
-      return 'negotiating';
-    case 'TERMS_AGREED':
-    case 'CONTRACT_PENDING':
-    case 'CONTRACTED':
-      return 'contracted';
-    case 'IN_PROGRESS':
-      return 'in_progress';
-    case 'REVIEW_PENDING':
-    case 'REVISION_REQUESTED':
-    case 'DISPUTED':
-      return 'review';
-    case 'COMPLETED':
-    case 'CANCELLED':
-      return 'completed';
-    default:
-      return 'new_proposal';
-  }
-}
-
 /**
  * The exact `CollaborationStatus` set `Collaboration.canAccept()` permits
  * (Collaboration.java:185-190). `canCounter()` delegates to it verbatim, so the
@@ -518,66 +483,45 @@ const ACCEPTABLE_COLLABORATION_STATUSES: readonly CollaborationStatus[] = [
  * for the whole page (react-refresh/only-export-components). When CR-07 wires the
  * brand room up, lift this into lib/creator-deal-mappers.ts alongside the other
  * shared status logic rather than re-exporting it from here.
+ *
+ * CR-05 — this now reads `collaborationStatus` and nothing else. It used to fall back to
+ * the coarse `status` when the raw one was absent, which only worked because this file's
+ * private mapper put TERMS_AGREED in 'contracted'. The shared mapper (correctly, per the
+ * server) puts TERMS_AGREED in 'negotiating', so that fallback would now answer "yes, you
+ * may still accept" for an already-accepted deal and re-open CR-02. Mock rooms carry an
+ * explicit `collaborationStatus` instead, so demo mode exercises the identical gate.
  */
 function dealAllowsProposalResponse(deal: DealRoom | null | undefined): boolean {
-  if (!deal) return false;
-  // Live mode carries the raw backend status, so this is an exact mirror of
-  // canAccept() with zero mapping loss.
-  if (deal.collaborationStatus) {
-    return ACCEPTABLE_COLLABORATION_STATUSES.includes(deal.collaborationStatus);
-  }
-  // Mock/demo mode has no backend row. `mapDealStatusToRoomStatus` above happens
-  // to collapse precisely those four statuses onto 'new_proposal' + 'negotiating'
-  // (TERMS_AGREED lands in 'contracted', which is what makes the coarse status
-  // usable here), so it is a faithful stand-in. Note this is NOT true of the
-  // shared `mapCollaborationStatusToChatPage` in lib/creator-deal-mappers.ts,
-  // which folds TERMS_AGREED into 'negotiating' — if this page is ever switched
-  // to that mapper, this fallback must go and `collaborationStatus` become
-  // required.
-  return deal.status === 'new_proposal' || deal.status === 'negotiating';
+  if (!deal?.collaborationStatus) return false;
+  // An exact mirror of canAccept() against the raw backend status — zero mapping loss.
+  return ACCEPTABLE_COLLABORATION_STATUSES.includes(deal.collaborationStatus);
 }
 
-function initialsFromName(name: string): string {
-  return (name || '?')
-    .split(' ')
-    .filter(Boolean)
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-}
-
-function relativeTimeFromIso(iso?: string): string {
-  if (!iso) return '';
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const mins = Math.round(diffMs / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
-
-/** Deal (api.deals.list) -> local DealRoom shape this page already renders. */
-function mapDealToRoom(d: Deal): DealRoom {
-  return {
-    id: d.id,
-    brandName: d.counterpartyName,
-    brandLogo: d.counterpartyAvatar ?? '',
-    brandInitials: initialsFromName(d.counterpartyName),
-    campaignName: d.campaignName,
-    status: mapDealStatusToRoomStatus(d.status),
-    dealAmount: d.dealValue,
-    lastMessage: d.lastMessage ?? '',
-    lastMessageTime: relativeTimeFromIso(d.lastMessageAt),
-    unreadCount: d.unreadCount,
-    deliverablesDone: d.deliverablesDone,
-    deliverablesTotal: d.deliverablesTotal,
-    contractId: d.contractId,
-    contractStatus: d.contractStatus,
-    escrowFunded: d.escrowFunded,
-    collaborationStatus: d.status,
-  };
+/**
+ * Might this incoming frame mean the COLLABORATION's status changed, and not just the
+ * message list?
+ *
+ * The message registry only carries message-shaped events — no frame states the
+ * collaboration's own status — while the CR-02 gate reads `collaborationStatus` off the
+ * deal. So arrival of a frame that *implies* a transition has to trigger a deal refetch.
+ *
+ * The obvious predicate — "a settled proposal card arrived" — is not enough, and the gap is
+ * not hypothetical. `DealService.settleLatestProposal` no-ops when the deal has no proposal
+ * card at all, and an INVITED deal built by `Collaboration.invite(...)` has none:
+ * `persistProposalMessage` only runs from `createProposal` and `doCounter`. So
+ * invite-then-accept moves INVITED -> TERMS_AGREED, invite-then-reject moves it to
+ * CANCELLED, and a first counter against an invite moves it to IN_NEGOTIATION — each with no
+ * settled card published. Gating the refetch on one would leave Accept/Counter/Decline
+ * rendering on a deal that can no longer take them: CR-02 again, through a different door.
+ *
+ * Every transition does, however, publish at least one `proposal` or `system` frame — accept
+ * and reject always append a system message (`appendSystemMessage`), counter always publishes
+ * the new proposal card. So that is the trigger. It costs at most one extra `GET /deals/:id`
+ * per frame and stays inside the existing registry contract, rather than widening it to carry
+ * collaboration status.
+ */
+function mayIndicateDealStatusChange(message: DealMessage): boolean {
+  return message.kind === 'proposal' || message.kind === 'system';
 }
 
 const MESSAGE_KIND_TO_EVENT_TYPE: Record<MessageKind, ChatTimelineEvent['type']> = {
@@ -608,7 +552,7 @@ function dealMessageToEvent(m: DealMessage): ChatTimelineEvent {
 
 const getStatusBadge = (status: DealRoom['status']) => {
   const statusConfig = {
-    new_proposal: { label: 'New Proposal', variant: 'outline' as const, className: 'border bg-stage-outreach text-stage-outreach-fg border-stage-outreach-border' },
+    new: { label: 'New Proposal', variant: 'outline' as const, className: 'border bg-stage-outreach text-stage-outreach-fg border-stage-outreach-border' },
     negotiating: { label: 'Negotiating', variant: 'outline' as const, className: 'border bg-stage-negotiating text-stage-negotiating-fg border-stage-negotiating-border' },
     contracted: { label: 'Contracted', variant: 'outline' as const, className: 'border bg-stage-contracted text-stage-contracted-fg border-stage-contracted-border' },
     in_progress: { label: 'In Progress', variant: 'outline' as const, className: 'border bg-stage-progress text-stage-progress-fg border-stage-progress-border' },
@@ -732,7 +676,7 @@ export default function CreatorChatPage() {
     setDealsError(null);
     try {
       const remote = await api.deals.list('creator', 'all');
-      setDealRooms(remote.map(mapDealToRoom));
+      setDealRooms(remote.map(mapDealToChatRoom));
     } catch (err) {
       console.error('Failed to load deal rooms', err);
       setDealsError('Failed to load your deals. Please try again.');
@@ -744,6 +688,73 @@ export default function CreatorChatPage() {
   React.useEffect(() => {
     loadDeals();
   }, [loadDeals]);
+
+  /**
+   * Per-deal monotonic tokens for {@link refreshDeal}. Same "latest request wins" contract
+   * as `messagesRequestRef`, but keyed by deal id: two refreshes of DIFFERENT deals are
+   * both legitimate and must both land, while a slow response for one deal must never
+   * overwrite a newer response for that same deal. A single shared counter would drop the
+   * former; no counter at all would let the latter happen.
+   */
+  const dealRefreshRefs = React.useRef(new Map<string, number>());
+
+  /**
+   * Re-read ONE deal's metadata — `GET /deals/:id` — and upsert it into the list.
+   *
+   * CR-09 needs the accept/decline/counter handlers to refresh the deal so the CR-02 gate
+   * (`collaborationStatus`) reflects the transition the server just made. `loadDeals()` does
+   * that, but it also flips `dealsLoading`, and the render guard below returns a full-page
+   * spinner whenever that is true — so acting on a proposal blanked the entire room for the
+   * duration of the round-trip. That is CR-21, and this closes it for every mutation path:
+   * nothing here touches `dealsLoading` or `dealsError`, so the room stays on screen and
+   * simply updates in place.
+   *
+   * `loadDeals()` survives for the two things it is actually for — first paint and the
+   * error-state Retry — where a page-level spinner is the honest thing to show.
+   */
+  const refreshDeal = React.useCallback(
+    async (id: string) => {
+      if (!liveApi) return;
+      const token = (dealRefreshRefs.current.get(id) ?? 0) + 1;
+      dealRefreshRefs.current.set(id, token);
+      /** Has a newer refresh of THIS deal started since we issued ours? */
+      const isSupersededRefresh = (dealId: string) =>
+        dealRefreshRefs.current.get(dealId) !== token;
+      try {
+        const fresh = await api.deals.get('creator', id);
+        if (isSupersededRefresh(id)) return;
+        if (!fresh) return;
+        const room = mapDealToChatRoom(fresh);
+        setDealRooms((prev) =>
+          prev.some((d) => d.id === room.id)
+            ? prev.map((d) => (d.id === room.id ? room : d))
+            : [room, ...prev],
+        );
+      } catch (err) {
+        // Log unconditionally — a request really did fail and that is worth diagnosing even
+        // if its result is no longer wanted.
+        console.error('Failed to refresh deal', id, err);
+        // W2-L1 — the success path's staleness guard applies to the failure path too, and
+        // used to be missing here. A slow refresh that fails AFTER a newer refresh of the
+        // same deal already succeeded has nothing to report: what is on screen is current,
+        // and "Couldn't refresh this deal" would flatly contradict it.
+        if (isSupersededRefresh(id)) return;
+        // Otherwise never silent: the visible consequence of a failed refresh is that the
+        // Accept/Counter/Decline buttons keep rendering on a deal that has already moved on,
+        // which is precisely the confusion CR-02 was about. Say so rather than leaving the
+        // creator to discover it via a 409.
+        toast({
+          title: 'Couldn’t refresh this deal',
+          description:
+            err instanceof ApiError
+              ? err.message
+              : 'Your action went through, but this deal’s status may be out of date. Refresh to be sure.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [liveApi, toast],
+  );
 
   const selectedDeal = React.useMemo(
     () => dealRooms.find((d) => d.id === selectedDealId) ?? dealRooms[0] ?? null,
@@ -767,8 +778,8 @@ export default function CreatorChatPage() {
   /**
    * Reload the message thread for one deal. Extracted from the mount effect so
    * mutations can refresh the timeline, not just a deal switch — mirrors
-   * brand-chat.tsx's `loadMessages`. (Partial CR-09: the accept/decline handlers
-   * still only call loadDeals(); wiring those is Wave 2.)
+   * brand-chat.tsx's `loadMessages`. CR-09 is now closed: accept, decline and counter all
+   * call this alongside `refreshDeal`, so the timeline moves when the creator acts.
    */
   const loadMessages = React.useCallback(
     async (dealId: string) => {
@@ -791,6 +802,33 @@ export default function CreatorChatPage() {
     [liveApi],
   );
 
+  /**
+   * CR-09 — what every deal mutation (accept / decline / counter) does afterwards.
+   *
+   * The bug: these handlers called `loadDeals()` and nothing else. The deal row updated but
+   * the message list did not, so the creator pressed Accept and the timeline sat there —
+   * no settled proposal card, no "Creator accepted the proposal" system message
+   * (DealService.appendSystemMessage writes one), no visible movement at all.
+   *
+   * Two independent reads because they are two independent resources, and each half fixes a
+   * different half of the symptom:
+   *   - `refreshDeal`  — the deal's `collaborationStatus`, which drives the CR-02
+   *                      Accept/Counter/Decline gate. Narrow, no page spinner (CR-21).
+   *   - `loadMessages` — the timeline itself, which is what CR-09 is actually about.
+   *
+   * This is the FALLBACK path, not the mechanism. Once CR-08 publishes accept/decline/counter
+   * over SSE the stream will usually win the race and this becomes a no-op that confirms what
+   * is already on screen — which is fine, and the reason the merge is an idempotent upsert
+   * rather than an append. Neither call rejects (both surface their own failures), so
+   * Promise.all here is a concurrency device, not an error path.
+   */
+  const afterDealMutation = React.useCallback(
+    async (dealId: string) => {
+      await Promise.all([refreshDeal(dealId), loadMessages(dealId)]);
+    },
+    [refreshDeal, loadMessages],
+  );
+
   React.useEffect(() => {
     if (!liveApi || !selectedDeal) return;
     void loadMessages(selectedDeal.id);
@@ -810,9 +848,29 @@ export default function CreatorChatPage() {
   // negotiation the brand appeared to have gone silent while its messages were already
   // persisted server-side.
   //
-  // Dedupe by id is mandatory: DealService publishes on send to every open emitter for the deal
-  // including the sender's own, and handleSendMessage below already appends what
-  // api.messages.send returns — without the guard the creator would see own-messages twice.
+  // Merging is UPSERT BY ID — replace when the id is already present, append when it is not.
+  // Neither half is optional:
+  //
+  //   - Append-only would duplicate. DealService publishes on send to every open emitter for
+  //     the deal including the sender's own, and handleSendMessage below already appends what
+  //     api.messages.send returns, so the creator would see own-messages twice.
+  //   - Ignore-if-present (what this used to do) drops updates. Accept and counter do not only
+  //     create messages, they MUTATE the proposal card: DealService.settleLatestProposal
+  //     rewrites the ORIGINAL card's metadata.status to 'accepted'/'countered'/'rejected' and
+  //     CR-08 republishes it under its original id. Skipping it because "I already have that
+  //     id" would silently discard exactly the update that retires the Accept buttons — a
+  //     straight reintroduction of CR-02.
+  //
+  // The whole merge is therefore idempotent, which is required regardless of CR-08: SSE
+  // redelivers on reconnect, and a full refetch replaces the array wholesale. Both paths
+  // converge on the same list.
+  //
+  // Frames are applied one at a time, in arrival order, with no buffering — deliberately.
+  // CR-08 publishes the settled/superseded card FIRST and the system message (or the new
+  // pending card, on a counter) second, so that the room never shows an "accepted"/"countered"
+  // line above a card still rendering live buttons. Batching or reordering here would throw
+  // that guarantee away. Each `setLiveMessages` below is a functional update, so React may
+  // coalesce the renders but the updates still run in the order the frames arrived.
   //
   // Keyed on selectedDeal?.id (not the object) so a deals-list refresh returning a new object
   // for the same deal doesn't tear down and reopen the connection. Cleanup fires on both id
@@ -823,9 +881,23 @@ export default function CreatorChatPage() {
 
     const handle = api.messages.stream('creator', dealId, {
       onMessage: (incoming) => {
-        setLiveMessages((prev) =>
-          prev.some((m) => m.id === incoming.id) ? prev : [...prev, incoming],
-        );
+        setLiveMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === incoming.id);
+          if (idx === -1) return [...prev, incoming];
+          const next = prev.slice();
+          next[idx] = incoming;
+          return next;
+        });
+        // No frame carries the collaboration's own status, so re-read the deal whenever one
+        // arrives that could imply a transition — see `mayIndicateDealStatusChange` for why
+        // "a settled card arrived" is the wrong, too-narrow trigger. Fired per frame and NOT
+        // coalesced: a counter publishes two frames and therefore two GETs, which the
+        // per-deal token in `refreshDeal` resolves last-write-wins. Narrow by construction —
+        // one `GET /deals/:id`, and nothing here touches `dealsLoading`, so a frame never
+        // blanks the room (CR-21).
+        if (mayIndicateDealStatusChange(incoming)) {
+          void refreshDeal(dealId);
+        }
         // No manual scroll here — the `events` effect below already scrolls whenever the
         // derived timeline changes, and `events` is computed from `liveMessages`.
       },
@@ -839,7 +911,7 @@ export default function CreatorChatPage() {
     return () => {
       handle.close();
     };
-  }, [liveApi, selectedDeal?.id]);
+  }, [liveApi, selectedDeal?.id, refreshDeal]);
 
   const [message, setMessage] = React.useState('');
   const [messageRefreshKey, setMessageRefreshKey] = React.useState(0);
@@ -1159,7 +1231,7 @@ export default function CreatorChatPage() {
         // individual message — proposalId (event.id) is only used for the
         // click origin, the deal itself carries the state the backend needs.
         await api.deals.accept(selectedDeal.id, 'creator');
-        await loadDeals();
+        await afterDealMutation(selectedDeal.id);
       } else {
         await new Promise((resolve) => setTimeout(resolve, 800));
       }
@@ -1199,7 +1271,7 @@ export default function CreatorChatPage() {
       if (liveApi) {
         // POST /deals/:id/reject — same deal-level scoping as accept above.
         await api.deals.reject(selectedDeal.id, undefined, 'creator');
-        await loadDeals();
+        await afterDealMutation(selectedDeal.id);
       } else {
         await new Promise((resolve) => setTimeout(resolve, 800));
       }
@@ -1259,7 +1331,7 @@ export default function CreatorChatPage() {
           // Fresh key per submit so a same-amount re-counter is a real event, not a no-op (Kabir).
           `${selectedDeal.id}-counter-${Date.now()}`,
         );
-        await loadDeals();
+        await afterDealMutation(selectedDeal.id);
       } else {
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
@@ -1959,15 +2031,20 @@ export default function CreatorChatPage() {
                                   size="sm"
                                   variant="outline"
                                   className="h-6 px-2 text-[11px]"
-                                  // Both halves are required. loadDeals() refreshes
-                                  // collaborationStatus, which self-heals the action
-                                  // gate; loadMessages() refreshes metadata.status,
+                                  // Both halves are required, and `afterDealMutation` is
+                                  // exactly both: the deal refresh restores
+                                  // collaborationStatus, which self-heals the action gate,
+                                  // and the message refresh restores metadata.status,
                                   // without which this card keeps its "Pending" badge
-                                  // directly above the "no longer open" notice — the
-                                  // exact contradiction CR-03 exists to remove.
+                                  // directly above the "no longer open" notice — the exact
+                                  // contradiction CR-03 exists to remove.
+                                  //
+                                  // Was `loadDeals()` here, which flips dealsLoading and so
+                                  // replaced the whole room — including this button and the
+                                  // message it belongs to — with a full-page spinner
+                                  // (CR-21). Refreshing one deal keeps the card on screen.
                                   onClick={() => {
-                                    void loadDeals();
-                                    void loadMessages(selectedDeal.id);
+                                    void afterDealMutation(selectedDeal.id);
                                   }}
                                 >
                                   Refresh deal

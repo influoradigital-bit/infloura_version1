@@ -278,15 +278,25 @@ public class DealService {
         collaborationRepository.save(collaboration);
         String reason = body != null && body.reason() != null ? body.reason() : "Deal rejected";
         String actorLabel = role == UserType.CREATOR ? "Creator" : "Brand";
-        appendSystemMessage(
-                collaboration.getId(),
-                actorLabel + " rejected: " + TextSanitizer.sanitizePlainText(reason));
+        DealMessage systemMessage =
+                appendSystemMessage(
+                        collaboration.getId(),
+                        actorLabel + " rejected: " + TextSanitizer.sanitizePlainText(reason));
         // CR-02 — same reason as the accept path: a declined offer must stop rendering as
         // actionable. [C1] canReject() also permits withdrawal from TERMS_AGREED/CONTRACTED, so
         // this deliberately no-ops on a card already settled as "accepted" rather than rewriting
         // agreed history — settleStatus enforces that; the system message above carries the
         // withdrawal.
-        settleLatestProposal(collaboration.getId(), "rejected");
+        Optional<DealMessage> settledCard = settleLatestProposal(collaboration.getId(), "rejected");
+
+        // CR-08 — same shape and same ordering rationale as doAccept: settled card first so it is
+        // inert before "… rejected: …" lands, then the system message. On the [C1] withdrawal case
+        // settleStatus no-oped, so what is republished here is the card's UNCHANGED already-settled
+        // state — an upsert of identical content, which is harmless and doubles as a resync for a
+        // subscriber that missed the original accept frame.
+        settledCard.ifPresent(
+                card -> publishToStream(collaboration.getId(), toMessageResponse(card)));
+        publishToStream(collaboration.getId(), toMessageResponse(systemMessage));
         return OkResponse.success();
     }
 
@@ -395,18 +405,46 @@ public class DealService {
         DealMessageResponse response = toMessageResponse(message);
         // Realtime fan-out (SSE) — same DTO shape as the response returned to the sender, so
         // both parties' open GET /deals/{dealId}/messages/stream connections render it
-        // identically. Best-effort: a registry publish failure must never fail the send itself,
-        // which has already fully succeeded above (message is persisted regardless).
-        try {
-            messageStreamRegistry.publish(collaboration.getId(), response);
-        } catch (RuntimeException e) {
-            log.error(
-                    "SSE publish failed for collaboration {} — message itself already persisted",
-                    collaboration.getId(),
-                    e);
-        }
+        // identically.
+        publishToStream(collaboration.getId(), response);
 
         return response;
+    }
+
+    /**
+     * CR-08 — single fan-out call site for every timeline row the deal room needs to see in
+     * realtime. Publishes {@code response} to {@code GET /deals/{dealId}/messages/stream} using the
+     * exact DTO shape {@link #listMessages} returns, so a subscriber renders a pushed row
+     * identically to a refetched one.
+     *
+     * <p><b>Deliberately best-effort, and that is a different question from the CR-02 [C2]
+     * ruling.</b> Unlike {@link #settleLatestProposal} — which writes to {@code deal_messages} and
+     * therefore MUST be atomic with the caller's transaction — this touches nothing durable.
+     * {@link DealMessageStreamRegistry} is an in-memory {@code ConcurrentHashMap} of live {@link
+     * org.springframework.web.servlet.mvc.method.annotation.SseEmitter}s; the message is already
+     * persisted before we get here and a subscriber that misses a frame refetches
+     * {@code GET /deals/{dealId}/messages} on its next reconnect. A dead or slow emitter must never
+     * roll back an accept, so the catch here is load-bearing rather than a swallowed error, and the
+     * log line above is the only signal it produces.
+     *
+     * <p><b>Known limitation — this runs pre-commit.</b> Every caller is inside the caller's
+     * {@code @Transactional} boundary, so a subscriber can observe a row that a later rollback
+     * erases. That is not new with CR-08: {@link #sendMessage} has published from inside its
+     * transaction since the stream shipped, and the same registry is the delivery path. Moving the
+     * fan-out to an {@code afterCommit} synchronization is the correct fix and is deliberately NOT
+     * done here — it is a behavioural change to the existing send path and belongs in its own
+     * ticket. See the CR-08 report.
+     */
+    private void publishToStream(String collaborationId, DealMessageResponse response) {
+        try {
+            messageStreamRegistry.publish(collaborationId, response);
+        } catch (RuntimeException e) {
+            log.error(
+                    "SSE publish failed for collaboration {} — the message is already persisted and"
+                            + " the action stands",
+                    collaborationId,
+                    e);
+        }
     }
 
     /**
@@ -507,10 +545,23 @@ public class DealService {
         collaboration.transitionTo(CollaborationStatus.TERMS_AGREED);
         collaborationRepository.save(collaboration);
         String actorLabel = role == UserType.CREATOR ? "Creator" : "Brand";
-        appendSystemMessage(collaboration.getId(), actorLabel + " accepted the proposal");
+        DealMessage systemMessage =
+                appendSystemMessage(collaboration.getId(), actorLabel + " accepted the proposal");
         // CR-02 — settle the proposal card that produced this accept. Must run AFTER the
         // transition above, so the card is only marked accepted once the deal really is.
-        settleLatestProposal(collaboration.getId(), "accepted");
+        Optional<DealMessage> settledCard = settleLatestProposal(collaboration.getId(), "accepted");
+
+        // CR-08 — until now doAccept persisted both rows above and published neither, so the
+        // counterparty's open deal room showed nothing until a manual reload. Publish order is
+        // load-bearing and is NOT persistence order: the settled card goes first so a subscriber
+        // applying these in sequence never has "Creator accepted the proposal" sitting above a card
+        // still offering live Accept/Counter/Decline buttons. The card is an UPSERT keyed on its
+        // ORIGINAL id (settleLatestProposal returns the same managed entity, post-settle), so the
+        // client replaces the row it already holds rather than appending a duplicate; the system
+        // message is genuinely new and appends.
+        settledCard.ifPresent(
+                card -> publishToStream(collaboration.getId(), toMessageResponse(card)));
+        publishToStream(collaboration.getId(), toMessageResponse(systemMessage));
 
         // W3-1 — #4 "brand accepts creator's counter-bid" / #11 "creator accepts proposal"
         // (07-NOTIFICATION-SYSTEM-SPEC.md §3.1/§3.2). Best-effort — a lookup failure here must
@@ -587,15 +638,27 @@ public class DealService {
         // id (see api.deals.accept), so accepting is always "accept whatever is current" —
         // clicking Accept on a stale 40,000 card would have agreed to the current 25,000 offer.
         // "countered" is styled by the SPA and is != "pending", so the stale cards go inert.
-        settleLatestProposal(collaboration.getId(), "countered");
-        persistProposalMessage(
-                collaboration,
-                principal.getUserId(),
-                senderType,
-                body.amount(),
-                body.message(),
-                body.deliverables(),
-                body.deadline());
+        Optional<DealMessage> supersededCard =
+                settleLatestProposal(collaboration.getId(), "countered");
+        DealMessage newProposal =
+                persistProposalMessage(
+                        collaboration,
+                        principal.getUserId(),
+                        senderType,
+                        body.amount(),
+                        body.message(),
+                        body.deliverables(),
+                        body.deadline());
+
+        // CR-08 — publish the superseded card BEFORE the new one. This mirrors the [H1] persistence
+        // ordering above for the same reason, one layer up: a subscriber that applied these in the
+        // opposite order would briefly render TWO cards both offering Accept, and since POST
+        // /deals/{id}/accept carries no proposal id, accepting the stale one would have agreed to
+        // the new amount. The first publish is an upsert on the superseded card's ORIGINAL id
+        // (status now "countered", so the SPA renders it inert); the second is a genuinely new row.
+        supersededCard.ifPresent(
+                card -> publishToStream(collaboration.getId(), toMessageResponse(card)));
+        publishToStream(collaboration.getId(), toMessageResponse(newProposal));
 
         // W3-1 — #10 "creator sends counter-bid" (07-NOTIFICATION-SYSTEM-SPEC.md §3.2). No
         // equivalent notification event exists for a brand counter (spec only models this
@@ -718,7 +781,13 @@ public class DealService {
         }
     }
 
-    private void persistProposalMessage(
+    /**
+     * CR-08 — returns the persisted proposal card (it used to return {@code void}) so {@link
+     * #doCounter} can publish the new offer over SSE. {@link #createProposal} ignores the return:
+     * a brand-side proposal is the first event on a brand-new Collaboration, so there is no open
+     * deal room subscribed to it yet.
+     */
+    private DealMessage persistProposalMessage(
             Collaboration collaboration,
             String senderId,
             DealSenderType senderType,
@@ -772,6 +841,7 @@ public class DealService {
                         TextSanitizer.sanitizePlainText(message),
                         writeJson(metadata));
         dealMessageRepository.save(proposal);
+        return proposal;
     }
 
     /**
@@ -803,8 +873,14 @@ public class DealService {
      * <p>The read-modify-write and the pending-only rule both live in {@link
      * DealMessage#settleStatus} so no caller can rewrite {@code amount} or re-stamp an already
      * settled card — see the ruling documented there.
+     *
+     * <p>CR-08 — returns the settled card (empty only when the deal has no proposal card at all) so
+     * the caller can republish it over SSE. The returned instance is the SAME managed entity that
+     * was just settled, so {@code getId()} is its ORIGINAL persisted id and {@code
+     * getMetadataJson()} is already post-settle. Publishing it is an UPDATE to a row the client
+     * already has, not a new message — see {@link #publishToStream}'s callers.
      */
-    private void settleLatestProposal(String collaborationId, String status) {
+    private Optional<DealMessage> settleLatestProposal(String collaborationId, String status) {
         // Same lookup doAccept already ran for its "can't accept your own offer" guard; within one
         // transaction the persistence context returns that same managed instance, so this is not a
         // second round trip in the accept path and reject/counter get the lookup they lack.
@@ -812,15 +888,21 @@ public class DealService {
                 dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
                         collaborationId, DealMessageKind.proposal);
         if (latest.isEmpty()) {
-            return;
+            return Optional.empty();
         }
         DealMessage proposal = latest.get();
         proposal.settleStatus(status);
         dealMessageRepository.save(proposal);
+        return latest;
     }
 
-    private void appendSystemMessage(String collaborationId, String content) {
-        dealMessageRepository.save(
+    /**
+     * CR-08 — returns the persisted row (it used to return {@code void}) so the lifecycle paths can
+     * hand it to {@link #publishToStream}. The returned instance carries the id and {@code
+     * createdAt} that were actually written, which is what a subscriber needs to place the row.
+     */
+    private DealMessage appendSystemMessage(String collaborationId, String content) {
+        DealMessage message =
                 DealMessage.create(
                         Ulids.newUlid(),
                         collaborationId,
@@ -828,7 +910,9 @@ public class DealService {
                         "system",
                         DealSenderType.system,
                         TextSanitizer.sanitizePlainText(content),
-                        null));
+                        null);
+        dealMessageRepository.save(message);
+        return message;
     }
 
     private DealResponse toDealResponse(

@@ -12,9 +12,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
+import type { DealMessage, DealMessageStreamHandlers } from '@/lib/api';
 import BrandChatPage from './brand-chat';
 
 const toastMock = vi.fn();
@@ -24,21 +25,33 @@ vi.mock('@/hooks/use-toast', () => ({
 }));
 
 const dealsList = vi.fn();
+const dealsGet = vi.fn();
 const dealsCounter = vi.fn();
+const dealsAccept = vi.fn();
 const messagesList = vi.fn();
 const brandPlatformFee = vi.fn();
+
+/**
+ * Handlers the page passed to `messages.stream`, so a test can push SSE frames at the room the
+ * way CR-08's publishes will. Captured rather than stubbed away — W2-C1 lives entirely in what
+ * `onMessage` does with a frame.
+ */
+let streamHandlers: DealMessageStreamHandlers | null = null;
+const messagesStream = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
   const deals = {
     list: (...a: unknown[]) => dealsList(...a),
+    get: (...a: unknown[]) => dealsGet(...a),
     counter: (...a: unknown[]) => dealsCounter(...a),
+    accept: (...a: unknown[]) => dealsAccept(...a),
   };
   const messages = {
     list: (...a: unknown[]) => messagesList(...a),
     markRead: vi.fn().mockResolvedValue({ ok: true }),
     send: vi.fn(),
-    stream: () => ({ close: vi.fn() }),
+    stream: (...a: unknown[]) => messagesStream(...a),
   };
   const deliverables = {
     list: vi.fn().mockResolvedValue([]),
@@ -114,9 +127,18 @@ async function openAndCompleteWizard(user: ReturnType<typeof userEvent.setup>) {
 describe('BrandChatPage — deal-room proposal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    streamHandlers = null;
+    messagesStream.mockImplementation(
+      (_role: string, _dealId: string, handlers: DealMessageStreamHandlers) => {
+        streamHandlers = handlers;
+        return { close: vi.fn() };
+      },
+    );
+    dealsGet.mockResolvedValue(DEAL);
     dealsList.mockResolvedValue([DEAL]);
     messagesList.mockResolvedValue([]);
     dealsCounter.mockResolvedValue({ id: 'deal_1' });
+    dealsAccept.mockResolvedValue({ id: 'deal_1', status: 'TERMS_AGREED' });
     brandPlatformFee.mockResolvedValue({
       feeBps: 1500, feePercent: 15, source: 'GLOBAL_DEFAULT', copy: '',
     });
@@ -171,5 +193,221 @@ describe('BrandChatPage — deal-room proposal', () => {
     await waitFor(() => expect(dealsList).toHaveBeenCalled());
     await waitFor(() => expect(screen.getAllByText(/Aarti Menon/i).length).toBeGreaterThan(0));
     expect(screen.queryAllByRole('button', { name: /Send Proposal/i })).toHaveLength(0);
+  });
+});
+
+/**
+ * CR-07 — Accept and Counter on the proposal card.
+ *
+ * Both buttons shipped as bare `<Button>` elements with styling and no `onClick` whatsoever:
+ * not disabled, not gated, no handler that threw or swallowed anything — clicking them was a
+ * no-op. Separately, the live-mode feed rendered every message as a plain text bubble, so a
+ * creator's counter (a real `kind: 'proposal'` message) arrived without its terms and without
+ * the buttons at all.
+ */
+function proposalMessage(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'msg_p1',
+    dealId: 'deal_1',
+    kind: 'proposal',
+    senderId: 'cr_1',
+    senderType: 'creator',
+    content: 'Counter proposal — ₹50,000',
+    metadata: {
+      amount: 50000,
+      deliverables: [{ type: 'Instagram Reel', qty: 1 }],
+      usageRights: '6 months',
+      status: 'pending',
+    },
+    createdAt: new Date('2026-07-20T11:00:00Z').toISOString(),
+    readBy: [],
+    ...overrides,
+  };
+}
+
+describe('BrandChatPage — responding to a proposal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    streamHandlers = null;
+    messagesStream.mockImplementation(
+      (_role: string, _dealId: string, handlers: DealMessageStreamHandlers) => {
+        streamHandlers = handlers;
+        return { close: vi.fn() };
+      },
+    );
+    dealsGet.mockResolvedValue(DEAL);
+    dealsList.mockResolvedValue([DEAL]);
+    messagesList.mockResolvedValue([proposalMessage()]);
+    dealsCounter.mockResolvedValue({ id: 'deal_1' });
+    dealsAccept.mockResolvedValue({ id: 'deal_1', status: 'TERMS_AGREED' });
+    brandPlatformFee.mockResolvedValue({
+      feeBps: 1500, feePercent: 15, source: 'GLOBAL_DEFAULT', copy: '',
+    });
+  });
+
+  it('accepts the creator\'s offer as the brand', async () => {
+    const user = userEvent.setup();
+    renderChat();
+
+    await user.click(await screen.findByRole('button', { name: /^Accept$/i }));
+
+    await waitFor(() => expect(dealsAccept).toHaveBeenCalledTimes(1));
+    // Deal-level, role-tagged: DealService.accept resolves the offer on the table itself, and
+    // 403'd every brand caller before B-4 made it role-aware.
+    expect(dealsAccept.mock.calls[0]).toEqual(['deal_1', 'brand']);
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Proposal accepted' }),
+      );
+    });
+  });
+
+  it('surfaces a failed accept instead of leaving the click silent', async () => {
+    const { ApiError } = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+    dealsAccept.mockRejectedValue(
+      new ApiError('DEAL_NOT_ACCEPTABLE', 'This deal cannot be accepted in its current state', 409),
+    );
+    const user = userEvent.setup();
+    renderChat();
+
+    await user.click(await screen.findByRole('button', { name: /^Accept$/i }));
+
+    await waitFor(() => expect(toastMock).toHaveBeenCalled());
+    const call = toastMock.mock.calls.at(-1)?.[0];
+    expect(call.title).toBe('Could not accept proposal');
+    expect(call.variant).toBe('destructive');
+    // The banner persists on the card after the toast has gone.
+    expect(await screen.findByText(/moved past the offer stage/i)).toBeTruthy();
+  });
+
+  it('offers Counter but not Accept on the brand\'s own offer', async () => {
+    // CANNOT_ACCEPT_OWN_OFFER (DealService.doAccept): only the counterparty may accept the
+    // offer currently on the table, so Accept must not be rendered at all here.
+    messagesList.mockResolvedValue([proposalMessage({ senderType: 'brand', senderId: 'u_1' })]);
+    renderChat();
+
+    await waitFor(() => expect(messagesList).toHaveBeenCalled());
+    const counterButtons = await screen.findAllByRole('button', { name: /^Counter$/i });
+    expect(counterButtons.length).toBe(1);
+    expect(screen.queryByRole('button', { name: /^Accept$/i })).toBeNull();
+  });
+
+  it('hides both controls once the deal has left negotiation', async () => {
+    dealsList.mockResolvedValue([{ ...DEAL, status: 'CONTRACTED' }]);
+    renderChat();
+
+    await waitFor(() => expect(messagesList).toHaveBeenCalled());
+    // The card still says "pending" — settleLatestProposal only runs on accept/reject — so the
+    // deal's own status is what has to close the buttons down.
+    expect(await screen.findByText(/no longer on the table/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Accept$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Counter$/i })).toBeNull();
+  });
+
+  /**
+   * W2-C1 regression guard.
+   *
+   * The stream merge used to be ignore-if-present, which was correct while only `sendMessage`
+   * published and messages were immutable. CR-08 republishes the SETTLED proposal card under
+   * its ORIGINAL id with mutated metadata, and DealMessageStreamRegistry keys emitters by deal
+   * id with no role partition, so this room receives the creator's frames too. Discarding the
+   * known id threw away the very update that retires Accept — the brand then saw "Creator
+   * accepted the proposal" above a Pending card with a live Accept beneath it, and clicking it
+   * 409'd DEAL_NOT_ACCEPTABLE. That is CR-02, reopened.
+   */
+  it('replaces a settled card republished under its original id, retiring the buttons', async () => {
+    renderChat();
+    expect(await screen.findByRole('button', { name: /^Accept$/i })).toBeTruthy();
+
+    // Frame 1, exactly as CR-08 publishes it: same id, mutated metadata, settled.
+    const settled = proposalMessage({
+      metadata: {
+        amount: 50000,
+        deliverables: [{ type: 'Instagram Reel', qty: 1 }],
+        usageRights: '6 months',
+        status: 'accepted',
+      },
+    }) as unknown as DealMessage;
+    await act(async () => {
+      streamHandlers?.onMessage(settled);
+    });
+
+    // Replaced in place, not appended alongside: one card, now reading Accepted.
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Accept$/i })).toBeNull());
+    expect(screen.queryByRole('button', { name: /^Counter$/i })).toBeNull();
+    expect(screen.getAllByText(/^Accepted$/)).toHaveLength(1);
+  });
+
+  /**
+   * W2-H1 regression guard — the half the card alone cannot cover.
+   *
+   * `settleLatestProposal` no-ops when a deal has no proposal card, so an INVITED deal accepted
+   * off the invite reaches TERMS_AGREED with nothing to settle and only a system frame is
+   * published. Without a deal refetch, `rawStatus` stays IN_NEGOTIATION forever and the gate
+   * keeps both buttons alive on a closed deal.
+   */
+  it('re-reads the deal on a system frame, closing the gate with the card untouched', async () => {
+    dealsGet.mockResolvedValue({ ...DEAL, status: 'TERMS_AGREED' });
+    renderChat();
+    expect(await screen.findByRole('button', { name: /^Accept$/i })).toBeTruthy();
+
+    const systemFrame = {
+      id: 'msg_sys1',
+      dealId: 'deal_1',
+      kind: 'system',
+      senderId: 'system',
+      senderType: 'system',
+      content: 'Creator accepted the proposal',
+      createdAt: new Date('2026-07-20T11:05:00Z').toISOString(),
+      readBy: [],
+    } as unknown as DealMessage;
+    await act(async () => {
+      streamHandlers?.onMessage(systemFrame);
+    });
+
+    await waitFor(() => expect(dealsGet).toHaveBeenCalledWith('brand', 'deal_1'));
+    // The card still says Pending — nothing settled it — so only the deal's own status can
+    // close this down.
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Accept$/i })).toBeNull());
+    expect(screen.queryByRole('button', { name: /^Counter$/i })).toBeNull();
+    expect(screen.getAllByText(/^Pending$/)).toHaveLength(1);
+  });
+
+  it('surfaces a failed deal refresh instead of leaving a stale gate silent', async () => {
+    dealsGet.mockRejectedValue(new Error('network down'));
+    renderChat();
+    await screen.findByRole('button', { name: /^Accept$/i });
+
+    await act(async () => {
+      streamHandlers?.onMessage({
+        id: 'msg_sys1',
+        dealId: 'deal_1',
+        kind: 'system',
+        senderId: 'system',
+        senderType: 'system',
+        content: 'Creator accepted the proposal',
+        createdAt: new Date('2026-07-20T11:05:00Z').toISOString(),
+        readBy: [],
+      } as unknown as DealMessage);
+    });
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Could not refresh this deal', variant: 'destructive' }),
+      );
+    });
+  });
+
+  it('opens the proposal wizard when Counter is clicked', async () => {
+    const user = userEvent.setup();
+    renderChat();
+
+    await user.click(await screen.findByRole('button', { name: /^Counter$/i }));
+
+    // Counter IS the five-step wizard — the same form that POSTs /deals/:id/counter.
+    expect(
+      await screen.findByRole('heading', { name: /Send Proposal to Aarti Menon/i }),
+    ).toBeTruthy();
   });
 });

@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +36,7 @@ import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.web.dto.deal.DealDtos.CounterRequest;
 import com.influora.web.dto.deal.DealDtos.CreateDealRequest;
+import com.influora.web.dto.deal.DealDtos.DealMessageResponse;
 import com.influora.web.dto.deal.DealDtos.DealResponse;
 import com.influora.web.dto.deal.DealDtos.DeliverableSlot;
 import com.influora.web.dto.deal.DealDtos.OkResponse;
@@ -428,7 +430,12 @@ class DealServiceTest {
 
         assertEquals(CollaborationStatus.TERMS_AGREED, response.status());
         verify(collaborationRepository).save(any(Collaboration.class));
-        verify(dealMessageRepository).save(any(DealMessage.class));
+        // [CR-08 baseline fix] This asserted a single save and had been RED since Wave 1 landed
+        // CR-02: doAccept now writes twice — the system message, then the settled proposal card
+        // (settleLatestProposal). Two saves is the correct post-CR-02 behaviour, so the assertion
+        // was stale, not the production code. Distinct from testAcceptHappyPath, which stubs no
+        // proposal card at all and so genuinely saves once.
+        verify(dealMessageRepository, times(2)).save(any(DealMessage.class));
     }
 
     @Test
@@ -612,6 +619,188 @@ class DealServiceTest {
         var inOrder = org.mockito.Mockito.inOrder(dealMessageRepository, messageStreamRegistry);
         inOrder.verify(dealMessageRepository).save(any(DealMessage.class));
         inOrder.verify(messageStreamRegistry).publish(eq(DEAL_ID), eq(response));
+    }
+
+    // ------------------------------------------------------------------
+    // CR-08 — accept/decline/counter must reach the counterparty's OPEN deal room.
+    //
+    // Before this, DealService published to the SSE registry from exactly one place (sendMessage),
+    // so the proposal lifecycle actions persisted their rows and pushed nothing: a creator
+    // accepted and the brand's open room showed stale, still-actionable cards until a manual
+    // reload. These pin BOTH halves of the contract with Ananya's frontend:
+    //   1. WHAT is published — a settled card goes out under its ORIGINAL persisted id with
+    //      post-settle metadata, so the client's upsert-by-id replaces the row it already holds
+    //      instead of appending a duplicate. A new id here would be the bug.
+    //   2. In WHAT ORDER — settled/superseded card first, so a client applying the frames in
+    //      sequence never renders an inconsistent room.
+    // ------------------------------------------------------------------
+
+    private static final String PROPOSAL_MSG_ID = "01HMSGPENDINGCARD0001";
+
+    /**
+     * A proposal card as it actually sits in {@code deal_messages} while an offer is live —
+     * {@code status: "pending"} with a real amount. {@link #proposalMessage} deliberately carries
+     * NULL metadata (it only exists to identify who made the last offer), and settleStatus no-ops
+     * on null metadata, so it cannot exercise the settle-and-republish path at all.
+     */
+    private static DealMessage pendingProposalMessage(String senderId, DealSenderType senderType) {
+        return DealMessage.create(
+                PROPOSAL_MSG_ID,
+                DEAL_ID,
+                DealMessageKind.proposal,
+                senderId,
+                senderType,
+                "Offer on the table",
+                "{\"amount\":25000.00,\"status\":\"pending\"}");
+    }
+
+    @Test
+    @DisplayName(
+            "accept: publishes the settled card under its ORIGINAL id, then the system message")
+    void testAcceptPublishesSettledCardThenSystemMessage() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        DEAL_ID, DealMessageKind.proposal))
+                .thenReturn(Optional.of(pendingProposalMessage(CREATOR_USER_ID, DealSenderType.creator)));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any()))
+                .thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(idempotencyService.executeOnce(
+                        eq("deal-accept:" + DEAL_ID), eq(WORKSPACE_ID), eq("deal.accept"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        service.accept(brandPrincipal, DEAL_ID, null);
+
+        ArgumentCaptor<DealMessageResponse> published =
+                ArgumentCaptor.forClass(DealMessageResponse.class);
+        verify(messageStreamRegistry, times(2)).publish(eq(DEAL_ID), published.capture());
+        List<DealMessageResponse> frames = published.getAllValues();
+
+        // Frame 1 — the settled card. Its id MUST be the id already on the client, otherwise the
+        // upsert appends a second copy of the same offer instead of replacing the live one.
+        assertEquals(PROPOSAL_MSG_ID, frames.get(0).id());
+        assertEquals(DealMessageKind.proposal, frames.get(0).kind());
+        assertEquals("accepted", frames.get(0).metadata().get("status"));
+
+        // Frame 2 — the system message, and it lands AFTER the card is already inert.
+        assertEquals(DealMessageKind.system, frames.get(1).kind());
+        assertEquals(DealSenderType.system, frames.get(1).senderType());
+        assertTrue(
+                frames.get(1).content().contains("accepted the proposal"),
+                "system message content: " + frames.get(1).content());
+    }
+
+    @Test
+    @DisplayName("reject: publishes the settled card (status rejected), then the system message")
+    void testRejectPublishesSettledCardThenSystemMessage() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        DEAL_ID, DealMessageKind.proposal))
+                .thenReturn(Optional.of(pendingProposalMessage(BRAND_USER_ID, DealSenderType.brand)));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"));
+
+        ArgumentCaptor<DealMessageResponse> published =
+                ArgumentCaptor.forClass(DealMessageResponse.class);
+        verify(messageStreamRegistry, times(2)).publish(eq(DEAL_ID), published.capture());
+        List<DealMessageResponse> frames = published.getAllValues();
+
+        assertEquals(PROPOSAL_MSG_ID, frames.get(0).id());
+        assertEquals("rejected", frames.get(0).metadata().get("status"));
+        assertEquals(DealMessageKind.system, frames.get(1).kind());
+        assertTrue(
+                frames.get(1).content().contains("Not a fit"),
+                "system message content: " + frames.get(1).content());
+    }
+
+    @Test
+    @DisplayName("counter: publishes the superseded card INERT before the new proposal card")
+    void testCounterPublishesSupersededCardBeforeNewCard() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        DEAL_ID, DealMessageKind.proposal))
+                .thenReturn(Optional.of(pendingProposalMessage(CREATOR_USER_ID, DealSenderType.creator)));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any()))
+                .thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(idempotencyService.executeOnce(anyString(), eq(WORKSPACE_ID), eq("deal.counter"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        service.counter(
+                brandPrincipal,
+                DEAL_ID,
+                new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null),
+                null);
+
+        ArgumentCaptor<DealMessageResponse> published =
+                ArgumentCaptor.forClass(DealMessageResponse.class);
+        verify(messageStreamRegistry, times(2)).publish(eq(DEAL_ID), published.capture());
+        List<DealMessageResponse> frames = published.getAllValues();
+
+        // Frame 1 — the superseded card, same id, now inert. This MUST precede frame 2: two cards
+        // both reading "pending" on the client, even briefly, means a click on the stale one
+        // accepts the new amount (POST /deals/{id}/accept carries no proposal id).
+        assertEquals(PROPOSAL_MSG_ID, frames.get(0).id());
+        assertEquals("countered", frames.get(0).metadata().get("status"));
+
+        // Frame 2 — the new offer: a genuinely NEW row (distinct id), still pending.
+        assertEquals(DealMessageKind.proposal, frames.get(1).kind());
+        assertTrue(
+                !PROPOSAL_MSG_ID.equals(frames.get(1).id()),
+                "the new proposal must not reuse the superseded card's id");
+        assertEquals("pending", frames.get(1).metadata().get("status"));
+        assertEquals(DealSenderType.brand, frames.get(1).senderType());
     }
 
     // ------------------------------------------------------------------
