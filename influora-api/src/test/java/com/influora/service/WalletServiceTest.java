@@ -370,16 +370,41 @@ class WalletServiceTest {
         verify(razorpayXClient, never()).initiatePayout(any(), any(), any(), any());
     }
 
+    /**
+     * Rewritten 2026-07-26. This asserted that {@code getBalance} throws WALLET_NOT_FOUND for a
+     * missing wallet — behaviour that was deliberately changed: {@code getBalance} now goes
+     * through {@link WalletService#getOrCreateWorkspaceWallet}, which lazily creates the row so a
+     * fresh brand's dashboard shows a zero balance instead of 404ing. The test failed with an NPE
+     * rather than an assertion mismatch only because the unstubbed {@code save(...)} returned null.
+     *
+     * Both halves of that contract are now pinned, because the split is the point: display reads
+     * create, money-moving reads still refuse. Losing the second half would let a missing wallet be
+     * silently papered over as "zero balance" on a spend path, i.e. treated as affordable.
+     */
     @Test
-    @DisplayName("getBalance: throws WALLET_NOT_FOUND for missing workspace")
-    void testGetBalanceThrowsForMissingWallet() {
+    @DisplayName("getBalance: lazily creates a zero-balance wallet instead of 404ing")
+    void testGetBalanceLazilyCreatesWallet() {
+        when(walletRepository.findByOwnerId(WORKSPACE_ID)).thenReturn(Optional.empty());
+        when(walletRepository.save(any(Wallet.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        WalletBalanceResponse balance = walletService.getBalance(WORKSPACE_ID);
+
+        assertEquals(0, BigDecimal.ZERO.compareTo(balance.balance()));
+        verify(walletRepository).save(any(Wallet.class));
+    }
+
+    @Test
+    @DisplayName("requireWorkspaceWallet: still throws WALLET_NOT_FOUND — money paths must not auto-create")
+    void testRequireWorkspaceWalletThrowsForMissingWallet() {
         when(walletRepository.findByOwnerId(WORKSPACE_ID)).thenReturn(Optional.empty());
 
         ApiException ex = assertThrows(ApiException.class, () ->
-                walletService.getBalance(WORKSPACE_ID));
+                walletService.requireWorkspaceWallet(WORKSPACE_ID));
 
         assertEquals("WALLET_NOT_FOUND", ex.getCode());
         assertEquals(404, ex.getStatus().value());
+        // A missing wallet means "cannot afford"; creating one here would fabricate affordability.
+        verify(walletRepository, never()).save(any(Wallet.class));
     }
 
     @Test

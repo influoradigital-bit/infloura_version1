@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
 import com.influora.common.PageMeta;
+import com.influora.domain.enums.UserType;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.BrandContextService;
 import com.influora.service.CreatorContextService;
@@ -77,6 +78,11 @@ class WalletControllerTest {
   @Test
   @DisplayName("GET /wallet/transactions delegates to service with paging params")
   void testTransactionsDelegatesToService() {
+    // Required: transactions() branches on getUserType(). Unstubbed it returns null, which is not
+    // CREATOR, so the controller took the BRAND path and NPE'd on the unstubbed
+    // requireBrandWorkspace(...).getId(). Every assertion below (requireCreator, ownerId =
+    // userId) describes the creator branch, so that is the branch to select.
+    when(principal.getUserType()).thenReturn(UserType.CREATOR);
     when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
     WalletTransactionRowResponse row =
         new WalletTransactionRowResponse(

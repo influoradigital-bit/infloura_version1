@@ -110,7 +110,10 @@ class MeeraVoiceAiClientTest {
         HttpPost sentRequest = requestCaptor.getValue();
         String authHeader = sentRequest.getFirstHeader("Authorization").getValue();
         assertTrue(authHeader.startsWith("Bearer "));
-        assertEquals("http://localhost:8000/voice/speak", sentRequest.getRequestUri());
+        // getRequestUri() is the HTTP request-target — the path only ("/voice/speak"). Asserting
+        // the absolute URL against it could never pass; getUri() is the accessor that carries
+        // scheme+host, and checking it also pins the configured base-url, not just the path.
+        assertEquals("http://localhost:8000/voice/speak", sentRequest.getUri().toString());
     }
 
     @Test

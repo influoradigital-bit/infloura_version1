@@ -59,24 +59,19 @@ class NotificationEventContractTest {
      */
     private static final Map<String, String> KNOWN_MISSING_PUBLISHERS =
             Map.ofEntries(
-                    Map.entry(
-                            "SubscriptionPaymentFailedEvent",
-                            "W1-6 routed subscription.activated/charged/halted (RazorpayWebhookController),"
-                                    + " but deliberately NOT subscription.pending -- that event's target"
-                                    + " (SubscriptionPaymentFailedEvent) was out of W1-6's declared scope (three"
-                                    + " named events only). The listener is wired ahead of that follow-up so it"
-                                    + " only needs to add the publishEvent call."),
+                    // Removed 2026-07-26 — the follow-ups these three described have shipped, and
+                    // this guard correctly flagged the entries as stale:
+                    //   SubscriptionPaymentFailedEvent → RazorpayWebhookController:382
+                    //                                    (subscription.pending is routed now)
+                    //   ShipmentCreatedEvent           → ShipmentService:316
+                    //   ShipmentReceivedEvent          → ShipmentService:341
+                    // The allowlist only earns its keep if entries leave it when the reason
+                    // expires; each was verified to have a real publisher before deletion.
                     Map.entry(
                             "KycApprovedEvent",
                             "No KYC review service/flow exists anywhere in this codebase yet (zero KYC"
                                     + " service classes) — the owning feature is unbuilt, not just unwired."),
                     Map.entry("KycRejectedEvent", "Same as KycApprovedEvent — no KYC review flow exists."),
-                    Map.entry(
-                            "ShipmentCreatedEvent",
-                            "No shipment feature/service exists anywhere in this codebase yet (zero"
-                                    + " Shipment* service classes)."),
-                    Map.entry(
-                            "ShipmentReceivedEvent", "Same as ShipmentCreatedEvent — no shipment feature exists."),
                     Map.entry(
                             "WalletLowBalanceEvent",
                             "No low-balance threshold check exists anywhere in this codebase — a new"

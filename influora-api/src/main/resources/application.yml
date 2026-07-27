@@ -83,6 +83,18 @@ influora:
   # W3-1 — base URL of the SPA, used to build absolute links embedded in transactional emails
   # (currently: password-reset link). Same default dev origin as influora.cors.allowed-origins.
   web-base-url: ${INFLUORA_WEB_BASE_URL:http://localhost:5173}
+  # Public origin of THIS API (not the SPA). Msg91EmailClient appends
+  # `server.servlet.context-path` + /notifications/unsubscribe-link to it when building the
+  # one-click unsubscribe URL embedded in transactional emails.
+  #
+  # Added 2026-07-26: `@Value("${influora.api.public-url}")` (Msg91EmailClient) had NO default and
+  # the key was defined nowhere, so constructing the msg91EmailClient bean threw
+  # "Could not resolve placeholder 'influora.api.public-url'" and the whole Spring context failed
+  # to load. That is a boot-blocker in any environment that does not set the env var — it surfaced
+  # as all three DatabaseConstraintIntegrationTest cases failing in Backend CI, which was the only
+  # thing booting a real context. Defaulted the same way web-base-url is.
+  api:
+    public-url: ${INFLUORA_API_PUBLIC_URL:http://localhost:8080}
   auth:
     require-email-verification: true
     require-email-otp-before-register: ${REQUIRE_EMAIL_OTP_BEFORE_REGISTER:false}
