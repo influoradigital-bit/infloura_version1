@@ -541,6 +541,29 @@ export default function BrandChatPage() {
     React.useState<Record<string, DealContractStatus>>(INITIAL_CONTRACT_STATUS);
   const [showProposalForm, setShowProposalForm] = React.useState(false);
   const [isSubmittingProposal, setIsSubmittingProposal] = React.useState(false);
+  /**
+   * Real workspace platform fee for the proposal form's cost breakdown. The form used to
+   * hardcode 10%; the platform default is 15% (application.yml PLATFORM_FEE_PERCENT), so brands
+   * were quoted a total below what they'd actually be charged. 15 is the fallback if the fetch
+   * fails, matching the server default rather than re-introducing a made-up number.
+   */
+  const [platformFeePercent, setPlatformFeePercent] = React.useState(15);
+
+  React.useEffect(() => {
+    if (!isApiLive()) return;
+    let cancelled = false;
+    api.wallet
+      .brandPlatformFee()
+      .then((fee) => {
+        if (!cancelled) setPlatformFeePercent(fee.feePercent);
+      })
+      .catch(() => {
+        /* keep the 15% default — a failed fee read must not block sending a proposal */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [deliverableStatuses, setDeliverableStatuses] = React.useState<Record<string, DealDeliverableItem['status']>>({});
 
   // FE-1..FE-5: live contract state for the selected deal — GET /contracts/:id
@@ -913,13 +936,84 @@ export default function BrandChatPage() {
     setDeliverableStatuses((prev) => ({ ...prev, [itemId]: 'revision' }));
   };
 
+  /**
+   * Composes the note that accompanies a proposal.
+   *
+   * `deadline` and `usageRights` are NOT in here — since CounterRequest was aligned with
+   * CreateDealRequest (2026-07-26) they travel as real fields the server reads and persists,
+   * rather than as prose the server can only store verbatim. What remains are the two terms with
+   * no column anywhere: usage-rights add-ons and free-text custom clauses.
+   */
+  const composeProposalMessage = (data: ProposalFormData): string => {
+    const lines = [`Updated proposal — ₹${data.budget.toLocaleString('en-IN')}`];
+    if (data.usageRightsAddOns.length) {
+      lines.push(`Add-ons: ${data.usageRightsAddOns.join(', ')}`);
+    }
+    if (data.customClauses.trim()) lines.push(`Additional terms: ${data.customClauses.trim()}`);
+    return lines.join('\n');
+  };
+
+  /**
+   * Sends the deal-room proposal as a COUNTER, not a new deal.
+   *
+   * By the time a deal room exists the Collaboration already exists, so `POST /deals` would 409
+   * `COLLABORATION_EXISTS` — `POST /deals/:id/counter` is the correct verb here (it's the same
+   * endpoint the counter modal on brand-campaign-detail uses). Until 2026-07-26 this handler was
+   * a `setTimeout(1500)` stub with a comment reading "In real app: ... call API": the brand
+   * filled in five steps, waited, and the modal closed having sent nothing at all.
+   */
   const handleSendProposal = async (data: ProposalFormData) => {
+    if (!selectedDeal) return;
+
+    if (!isApiLive()) {
+      // Demo mode keeps the original simulated delay — there is no server to counter against.
+      setIsSubmittingProposal(true);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      setShowProposalForm(false);
+      setIsSubmittingProposal(false);
+      return;
+    }
+
+    const dealId = selectedDeal.id;
     setIsSubmittingProposal(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setShowProposalForm(false);
-    setIsSubmittingProposal(false);
-    // In real app: add proposal to mockEvents or call API
+    try {
+      await api.deals.counter(
+        dealId,
+        {
+          amount: data.budget,
+          message: composeProposalMessage(data),
+          // Local shape is {id, type, count}; DealDtos.DeliverableSlot expects {type, qty}.
+          deliverables: data.deliverables
+            .filter((d) => d.type && d.count > 0)
+            .map((d) => ({ type: d.type, qty: d.count })),
+          deadline: data.deadline || undefined,
+          // '6-months' → '6 months', matching the human-readable form createProposal persists.
+          usageRights: data.usageRightsDuration.replace(/-/g, ' '),
+        },
+        'brand',
+        // Fresh key per submit — without it the server derives one from dealId + amount, so
+        // re-proposing at the same figure is swallowed as a replay (same fix as
+        // brand-campaign-detail.tsx).
+        `${dealId}-proposal-${Date.now()}`,
+      );
+      setShowProposalForm(false);
+      // Pull the new proposal message into the thread the brand is looking at.
+      await loadMessages(dealId);
+      toast({
+        title: 'Proposal sent',
+        description: `${selectedDeal.creatorName} received your updated terms.`,
+      });
+    } catch (e) {
+      const message =
+        e instanceof ApiError && e.code === 'DEAL_NOT_NEGOTIABLE'
+          ? 'This deal has moved past negotiation — terms can no longer be changed here.'
+          : e instanceof ApiError
+            ? e.message
+            : 'Could not send the proposal. Try again.';
+      toast({ title: 'Proposal failed', description: message, variant: 'destructive' });
+    } finally {
+      setIsSubmittingProposal(false);
+    }
   };
   
   const filteredDeals = dealRooms.filter(deal =>
@@ -965,6 +1059,19 @@ export default function BrandChatPage() {
   const canGenerateContract = Boolean(
     liveApiMode && selectedDeal && !selectedDeal.contractId && selectedDeal.rawStatus === 'TERMS_AGREED',
   );
+
+  /**
+   * Mirrors `Collaboration.canCounter()` (= `canAccept()`) so the "Send Proposal" control only
+   * appears while the server would actually accept a counter. In demo mode there is no
+   * rawStatus to read and no server to reject, so the form stays available.
+   */
+  const canSendProposal =
+    !liveApiMode ||
+    (selectedDeal
+      ? ['INVITED', 'APPLIED', 'SHORTLISTED', 'IN_NEGOTIATION'].includes(
+          selectedDeal.rawStatus ?? '',
+        )
+      : false);
 
   const dealPhase = selectedDeal
     ? getDealPhase(selectedDeal.dealStatus, contractStatus)
@@ -1129,6 +1236,10 @@ export default function BrandChatPage() {
                       <span className="hidden sm:inline">Ship Product</span>
                     </Button>
                   )}
+                  {/* Counter is only legal in INVITED/APPLIED/SHORTLISTED/IN_NEGOTIATION
+                      (Collaboration.canCounter). Ungated, this button opened a five-step form on
+                      a contracted or completed deal that could only ever end in a 409. */}
+                  {canSendProposal && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -1138,6 +1249,7 @@ export default function BrandChatPage() {
                     <Plus className="h-4 w-4" />
                     <span className="hidden sm:inline">Send Proposal</span>
                   </Button>
+                  )}
                   <Button variant="ghost" size="icon" className="h-9 w-9">
                     <MoreVertical className="h-4 w-4" />
                   </Button>
@@ -1763,6 +1875,7 @@ export default function BrandChatPage() {
           onSubmit={handleSendProposal}
           onClose={() => setShowProposalForm(false)}
           isSubmitting={isSubmittingProposal}
+          platformFeePercent={platformFeePercent}
         />
       )}
 

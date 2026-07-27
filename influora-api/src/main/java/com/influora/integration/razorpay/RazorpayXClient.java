@@ -41,6 +41,16 @@ public class RazorpayXClient {
 
     private static final Logger log = LoggerFactory.getLogger(RazorpayXClient.class);
 
+    /**
+     * [FIX: IMPS cap, 2026-07-27] IMPS caps at ₹5,00,000 per transaction — RazorpayX rejects (or
+     * fails) any payout above that amount if sent with {@code mode=IMPS}. This used to be
+     * hardcoded to {@code "IMPS"} unconditionally in {@link #initiatePayout}, so any single payout
+     * over the cap would fail at the gateway with no amount-based fallback. NEFT has no
+     * per-transaction cap and has settled 24x7 same-day since RBI's December 2019 mandate, so it's
+     * the correct fallback above this ceiling — RTGS is unneeded extra complexity here.
+     */
+    static final BigDecimal IMPS_MAX_AMOUNT = new BigDecimal("500000.00");
+
     private final RazorpayProperties props;
     private final InfluoraEnvironment environment;
     // Built on first use, not in the constructor: HttpClient.build() spins up the underlying
@@ -119,7 +129,7 @@ public class RazorpayXClient {
         requestBody.put("fund_account_id", fundAccountId);
         requestBody.put("amount", amountInPaise);
         requestBody.put("currency", currency);
-        requestBody.put("mode", "IMPS");
+        requestBody.put("mode", resolvePayoutMode(amountInRupees));
         requestBody.put("purpose", "payout");
         requestBody.put("queue_if_low_balance", true);
         requestBody.put("reference_id", idempotencyKey);
@@ -283,6 +293,15 @@ public class RazorpayXClient {
             log.error("RazorpayX payout fetch failed: payoutId={}, error={}", payoutId, e.getMessage());
             throw new RazorpayIntegrationException("Failed to fetch RazorpayX payout", e);
         }
+    }
+
+    /**
+     * [FIX: IMPS cap, 2026-07-27] {@code IMPS} for anything at or under the ₹5,00,000 cap,
+     * {@code NEFT} above it. Package-private static so it's directly unit-testable without
+     * standing up the HTTP transport.
+     */
+    static String resolvePayoutMode(BigDecimal amountInRupees) {
+        return amountInRupees.compareTo(IMPS_MAX_AMOUNT) > 0 ? "NEFT" : "IMPS";
     }
 
     /**

@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
 import { createMockCreatorUser } from '@/lib/mock-user';
 import { AuthLoginShell } from '@/components/shared/auth-login-shell';
+import { EmailOtpGate } from '@/components/shared/email-otp-gate';
 import { api, ApiError, isApiLive } from '@/lib/api';
 
 function FieldError({ message }: { message?: string }) {
@@ -27,6 +28,23 @@ export default function CreatorRegisterPage() {
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [acceptTerms, setAcceptTerms] = React.useState(false);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+  // Email-OTP gate. `requireEmailOtp` mirrors the server flag that makes
+  // AuthService.creatorRegister reject unverified emails; `showOtp` is true only while the user
+  // is on the verification panel. Defaults to false so the form renders immediately and, if the
+  // config read is slow or fails, signup still works (the server would reject with a readable
+  // EMAIL_NOT_VERIFIED rather than the page hanging).
+  const [requireEmailOtp, setRequireEmailOtp] = React.useState(false);
+  const [showOtp, setShowOtp] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    api.config.public().then((cfg) => {
+      if (!cancelled) setRequireEmailOtp(cfg.requireEmailOtp);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const validate = () => {
     const errs: Record<string, string> = {};
@@ -51,10 +69,12 @@ export default function CreatorRegisterPage() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
-
+  /**
+   * The actual account creation. Split out of `handleRegister` so it can be invoked either
+   * straight from the form (OTP off) or from the OTP gate's `onVerified` (OTP on) — the payload
+   * is identical either way; only the moment it fires changes.
+   */
+  const submitRegistration = async () => {
     setIsLoading(true);
     setErrors({});
     try {
@@ -80,6 +100,35 @@ export default function CreatorRegisterPage() {
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Registration failed. Please try again.';
       setErrors({ form: message });
+      // Drop back to the form so the message is visible next to the fields it refers to.
+      setShowOtp(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+
+    // Server isn't enforcing verification — don't add a step to the funnel for nothing.
+    if (!requireEmailOtp) {
+      await submitRegistration();
+      return;
+    }
+
+    // Send the first code here rather than inside the gate, so a delivery failure (MSG91
+    // unconfigured → 503 EMAIL_DELIVERY_FAILED) surfaces on the form the user is already
+    // looking at instead of stranding them on an empty OTP panel.
+    setIsLoading(true);
+    setErrors({});
+    try {
+      await api.auth.sendCreatorEmailOtp(email);
+      setShowOtp(true);
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : 'Could not send the verification code. Try again.';
+      setErrors({ form: message });
     } finally {
       setIsLoading(false);
     }
@@ -96,6 +145,15 @@ export default function CreatorRegisterPage() {
         'Deal room in one place',
       ]}
     >
+      {showOtp ? (
+        <EmailOtpGate
+          email={email}
+          role="creator"
+          onVerified={submitRegistration}
+          onEditEmail={() => setShowOtp(false)}
+        />
+      ) : (
+      <>
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-foreground mb-2">Create your account</h1>
         <p className="text-muted-foreground">Start earning from brand collaborations</p>
@@ -242,6 +300,8 @@ export default function CreatorRegisterPage() {
           Are you a brand? Register here
         </Link>
       </div>
+      </>
+      )}
     </AuthLoginShell>
   );
 }

@@ -1,6 +1,7 @@
 package com.influora.integration.razorpay;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -112,6 +113,31 @@ class RazorpayXClientTest {
     @DisplayName("fetchPayout: unconfigured + prod fails fast instead of stubbing")
     void fetchPayout_unconfiguredProd_throws() {
         assertThrows(RazorpayIntegrationException.class, () -> prodClient.fetchPayout("payout_123"));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // [FIX: IMPS cap, 2026-07-27] resolvePayoutMode -- IMPS caps at ₹5,00,000/txn; anything above
+    // must fall back to NEFT instead of being sent as IMPS and failing at the gateway.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("resolvePayoutMode: at or under the ₹5,00,000 IMPS cap uses IMPS")
+    void resolvePayoutMode_underCap_usesImps() {
+        assertEquals("IMPS", RazorpayXClient.resolvePayoutMode(new BigDecimal("500.00")));
+        assertEquals("IMPS", RazorpayXClient.resolvePayoutMode(new BigDecimal("499999.99")));
+    }
+
+    @Test
+    @DisplayName("resolvePayoutMode: exactly ₹5,00,000 (the boundary) still uses IMPS")
+    void resolvePayoutMode_exactlyAtCap_usesImps() {
+        assertEquals("IMPS", RazorpayXClient.resolvePayoutMode(new BigDecimal("500000.00")));
+    }
+
+    @Test
+    @DisplayName("resolvePayoutMode: over the ₹5,00,000 IMPS cap falls back to NEFT")
+    void resolvePayoutMode_overCap_usesNeft() {
+        assertEquals("NEFT", RazorpayXClient.resolvePayoutMode(new BigDecimal("500000.01")));
+        assertEquals("NEFT", RazorpayXClient.resolvePayoutMode(new BigDecimal("1000000.00")));
     }
 
     private static MockEnvironment withProfiles(String... profiles) {

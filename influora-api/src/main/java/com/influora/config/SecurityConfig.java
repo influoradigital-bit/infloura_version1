@@ -2,6 +2,7 @@ package com.influora.config;
 
 import com.influora.security.AuthRateLimitFilter;
 import com.influora.security.InternalServiceTokenFilter;
+import com.influora.security.JsonAuthErrorHandler;
 import com.influora.security.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -24,6 +25,7 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtFilter;
     private final AuthRateLimitFilter rateLimitFilter;
     private final InternalServiceTokenFilter internalServiceTokenFilter;
+    private final JsonAuthErrorHandler jsonAuthErrorHandler;
 
     /**
      * Content-Security-Policy served with API responses. The primary CSP belongs on the SPA's own
@@ -37,10 +39,12 @@ public class SecurityConfig {
     public SecurityConfig(
             JwtAuthenticationFilter jwtFilter,
             AuthRateLimitFilter rateLimitFilter,
-            InternalServiceTokenFilter internalServiceTokenFilter) {
+            InternalServiceTokenFilter internalServiceTokenFilter,
+            JsonAuthErrorHandler jsonAuthErrorHandler) {
         this.jwtFilter = jwtFilter;
         this.rateLimitFilter = rateLimitFilter;
         this.internalServiceTokenFilter = internalServiceTokenFilter;
+        this.jsonAuthErrorHandler = jsonAuthErrorHandler;
     }
 
     @Bean
@@ -51,6 +55,15 @@ public class SecurityConfig {
         // against. Do NOT move authorization to a cookie without also enabling CSRF protection here.
         http.csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> {})
+                // Without this block Spring fell back to Http403ForbiddenEntryPoint, answering every
+                // UNAUTHENTICATED request — including one whose access token had merely expired —
+                // with 403 and an empty body. The SPA's refresh-and-retry interceptor keys on 401,
+                // so refresh never fired and users were forced to re-login on every token expiry
+                // while a 30-day refresh cookie sat unused. See JsonAuthErrorHandler.
+                .exceptionHandling(
+                        ex ->
+                                ex.authenticationEntryPoint(jsonAuthErrorHandler)
+                                        .accessDeniedHandler(jsonAuthErrorHandler))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(
                         headers ->
@@ -78,6 +91,11 @@ public class SecurityConfig {
                                         .requestMatchers(HttpMethod.POST, "/auth/brand/verify-email")
                                         .permitAll()
                                         .requestMatchers(HttpMethod.GET, "/auth/verify-email")
+                                        .permitAll()
+                                        // Read by the signup pages before any account exists, to
+                                        // decide whether to render the email-OTP step. Carries no
+                                        // secret — only the flag AuthService already enforces.
+                                        .requestMatchers(HttpMethod.GET, "/config/public")
                                         .permitAll()
                                         .requestMatchers(HttpMethod.GET, "/workspaces/slug-check")
                                         .permitAll()

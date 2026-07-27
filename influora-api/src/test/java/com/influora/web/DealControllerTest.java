@@ -160,7 +160,7 @@ class DealControllerTest {
     @Test
     @DisplayName("POST /deals/{id}/counter delegates with body and idempotency key")
     void testCounter() {
-        CounterRequest body = new CounterRequest(new BigDecimal("30000"), "How about this?", null);
+        CounterRequest body = new CounterRequest(new BigDecimal("30000"), "How about this?", null, null, null);
         DealResponse deal =
                 new DealResponse(
                         "deal1",

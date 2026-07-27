@@ -167,6 +167,36 @@ export class ApiError extends Error {
 // Low-level HTTP client
 // ---------------------------------------------------------------------------
 
+/**
+ * How long before a token's `exp` we proactively renew it. Wide enough to absorb client/server
+ * clock skew and a slow request, narrow enough that we are not refreshing on every call.
+ */
+const TOKEN_REFRESH_SKEW_MS = 60_000;
+
+/**
+ * Reads the `exp` claim (seconds since epoch) out of a JWT without verifying it.
+ *
+ * Verification is emphatically the server's job — this is used only to decide *when* to ask for
+ * a new token, never to decide whether the current one is trusted. A forged `exp` can at worst
+ * make the client refresh earlier or later than ideal; the server still rejects a bad token.
+ *
+ * Returns null for anything that is not a JWT carrying a numeric `exp` — notably the mock-mode
+ * tokens (`mock_brand_token`), which must not trigger refresh attempts.
+ */
+function decodeJwtExpSeconds(token: string): number | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    // base64url → base64, then pad to a multiple of 4 for atob.
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    const claims = JSON.parse(atob(padded)) as { exp?: unknown };
+    return typeof claims.exp === 'number' ? claims.exp : null;
+  } catch {
+    return null;
+  }
+}
+
 class HttpClient {
   /** Dedupes concurrent 401s for the same role into a single `/auth/refresh` call (H-19). */
   private refreshPromises: Partial<Record<Role, Promise<string | null>>> = {};
@@ -239,9 +269,39 @@ class HttpClient {
   }
 
   /**
+   * Refreshes the access token BEFORE a request when it is about to expire.
+   *
+   * The reactive 401 path below is a safety net, not a strategy: it only helps once the server
+   * has already rejected a request, and it is defeated entirely if the server answers expiry
+   * with anything other than 401 — which is exactly what happened until 2026-07-26, when Spring
+   * returned a bodyless 403 for unauthenticated requests and no refresh ever fired.
+   *
+   * Refreshing ahead of expiry removes that dependency: the user's session renews silently for
+   * as long as the 30-day refresh cookie lives, regardless of how the server phrases a rejection.
+   *
+   * Returns the new token if one was fetched, else null (caller keeps the existing header).
+   * Deliberately quiet on failure — `refreshAccessToken` already fails closed, and a failed
+   * proactive refresh simply falls through to the request, the 401, and the reactive path.
+   */
+  private async ensureFreshToken(role: Role): Promise<string | null> {
+    const token = this.getToken(role);
+    if (!token) return null;
+    const exp = decodeJwtExpSeconds(token);
+    // Not a JWT (mock-mode tokens like `mock_brand_token`) or no `exp` claim — nothing to
+    // anticipate, so leave it alone and let the reactive path handle any rejection.
+    if (exp === null) return null;
+    if (exp * 1000 - Date.now() > TOKEN_REFRESH_SKEW_MS) return null;
+    return this.refreshAccessToken(role);
+  }
+
+  /**
    * Runs `fetch`; on a 401 (and only once per call) attempts a refresh + retry with the
    * new token. If refresh fails, clears the stale token and returns the original 401
    * response so the caller's normal envelope-error handling takes over.
+   *
+   * Note the retry is 401-only by design. A 403 means "authenticated but not permitted" — the
+   * OWNER/ADMIN role gates on campaign actions, for instance — and refreshing changes nothing,
+   * so retrying those would loop on requests the server is correctly refusing.
    */
   private async fetchWithAuthRetry(
     url: string,
@@ -250,6 +310,15 @@ class HttpClient {
     hasAuthHeader: boolean,
     retried = false,
   ): Promise<Response> {
+    if (hasAuthHeader && !retried) {
+      const fresh = await this.ensureFreshToken(role);
+      if (fresh) {
+        init = {
+          ...init,
+          headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${fresh}` },
+        };
+      }
+    }
     const res = await fetch(url, init);
     if (res.status === 401 && hasAuthHeader && !retried) {
       const newToken = await this.refreshAccessToken(role);
@@ -646,6 +715,32 @@ export const auth = {
       ? http.request<{ emailVerified: boolean; message: string }>('POST', '/auth/brand/verify-email', {
           body: { email, otp },
         })
+      : mockOr({ emailVerified: true, message: 'Verified' }),
+
+  /**
+   * POST /auth/creator/send-email-otp — AuthController.java:81. The controller delegates to the
+   * SAME `BrandEmailOtpService` the brand path uses (one challenge table, one rate limiter), so
+   * the request/response shapes are identical to `sendBrandEmailOtp`; only the route differs.
+   * Kept as a separate method rather than a `role` parameter to mirror how every other auth call
+   * in this file is split brand/creator.
+   */
+  sendCreatorEmailOtp: (email: string) =>
+    isLive()
+      ? http.request<{ message: string; expiresIn: number; maskedEmail: string }>(
+          'POST',
+          '/auth/creator/send-email-otp',
+          { body: { email }, role: 'creator' },
+        )
+      : mockOr({ message: 'OTP sent', expiresIn: 300, maskedEmail: email }),
+
+  /** POST /auth/creator/verify-email — AuthController.java:87, same service as the brand path. */
+  verifyCreatorEmail: (email: string, otp: string) =>
+    isLive()
+      ? http.request<{ emailVerified: boolean; message: string }>(
+          'POST',
+          '/auth/creator/verify-email',
+          { body: { email, otp }, role: 'creator' },
+        )
       : mockOr({ emailVerified: true, message: 'Verified' }),
 
   /** POST /auth/forgot-password */
@@ -1246,10 +1341,22 @@ export const deals = {
    * POST /deals/:id/counter. Pass a fresh `idempotencyKey` per user action — without it the
    * server falls back to a key derived from `dealId + amount`, so two legitimate counters at
    * the SAME amount on the same deal collide and the second silently no-ops (Kabir).
+   *
+   * `deadline` and `usageRights` were added 2026-07-26 to match `deals.create`'s payload. Before
+   * that, CounterRequest carried amount/message/deliverables only, so every caller that let a
+   * user revise a deadline or usage rights concatenated them into `message` as prose the server
+   * could not read. Send them as fields now — `usageRights` is persisted onto the deal exactly as
+   * `deals.create` persists it, and `deadline` lands in the proposal message metadata.
    */
   counter: (
     id: string,
-    payload: { amount: number; message?: string; deliverables?: Array<{ type: string; qty: number }> },
+    payload: {
+      amount: number;
+      message?: string;
+      deliverables?: Array<{ type: string; qty: number }>;
+      deadline?: string;
+      usageRights?: string;
+    },
     role: Role = 'creator',
     idempotencyKey?: string,
   ) =>
@@ -1257,15 +1364,33 @@ export const deals = {
       ? http.request<Deal>('POST', `/deals/${id}/counter`, { role, body: payload, idempotencyKey })
       : mockOr<{ id: string }>({ id }),
 
-  /** POST /deals — brand creates a new proposal */
+  /**
+   * POST /deals — brand sends a PRICED offer (DealController.create → DealService.createProposal).
+   *
+   * Relationship to `creators.invite`: both are campaign-scoped and both create the same
+   * `Collaboration` row keyed on (campaignId, creatorId), so they 409 `COLLABORATION_EXISTS`
+   * against each other. They differ only in fidelity — invite lands `INVITED` with no terms and
+   * fires no notification; this lands `IN_NEGOTIATION` with `agreedRate` set, writes a proposal
+   * message, and fires `ProposalSentEvent`. Callers pick one per submit, never both.
+   *
+   * `creatorId` is a CreatorProfile id (what `creators.search` returns), not a User id — a userId
+   * is tolerated server-side but profile id is the contract.
+   *
+   * Only `usageRights` is persisted onto the Collaboration; `deliverables` and `deadline` live in
+   * the proposal message's metadata. `exclusivity` was removed 2026-07-26 — the server accepted
+   * and silently discarded it, so offering the toggle told brands we enforce something we don't.
+   *
+   * No `Idempotency-Key`: the (campaignId, creatorId) unique constraint already prevents a
+   * duplicate row, so a double-submit is a 409, not corruption (explicit CEO call not to
+   * gold-plate this before launch).
+   */
   create: (payload: {
     campaignId: string;
     creatorId: string;
     amount: number;
-    deliverables: Array<{ type: string; qty: number }>;
-    deadline: string;
-    usageRights: string;
-    exclusivity: boolean;
+    deliverables?: Array<{ type: string; qty: number }>;
+    deadline?: string;
+    usageRights?: string;
     message?: string;
   }) =>
     isLive()
@@ -1952,6 +2077,16 @@ export interface RazorpayConfigResponse {
   keyId: string;
 }
 
+/** GET /config/public — PublicConfigController.PublicConfigResponse. */
+export interface PublicConfigResponse {
+  /**
+   * Mirror of the server's `influora.auth.require-email-otp-before-register`. When true,
+   * `AuthService.brandRegister`/`creatorRegister` reject any registration whose email has not
+   * completed OTP verification, so the signup pages must run the OTP step first.
+   */
+  requireEmailOtp: boolean;
+}
+
 export const config = {
   /** GET /config/razorpay — source of the `key` param for `window.Razorpay(...)`. */
   razorpay: () =>
@@ -1959,6 +2094,24 @@ export const config = {
       ? http.request<RazorpayConfigResponse>('GET', '/config/razorpay')
       // Mock mode never talks to a real Razorpay account — this key is not live/usable.
       : mockOr<RazorpayConfigResponse>({ keyId: 'rzp_test_mock' }),
+
+  /**
+   * GET /config/public — the one unauthenticated config read (SecurityConfig permitAll), because
+   * the signup pages need it before a token exists.
+   *
+   * Fails CLOSED to `requireEmailOtp: false`: if this call fails the user still gets a working
+   * signup form, and a server that actually requires OTP will reject the registration with a
+   * readable `EMAIL_NOT_VERIFIED` error. The opposite default would hard-block signup whenever
+   * config is briefly unreachable.
+   */
+  public: async (): Promise<PublicConfigResponse> => {
+    if (!isLive()) return mockOr<PublicConfigResponse>({ requireEmailOtp: false });
+    try {
+      return await http.request<PublicConfigResponse>('GET', '/config/public');
+    } catch {
+      return { requireEmailOtp: false };
+    }
+  },
 };
 
 export const wallet = {
@@ -1986,13 +2139,9 @@ export const wallet = {
           razorpayOrderId: 'order_mock', status: 'PENDING',
         }),
 
-  /** POST /wallet/recharge  (brand) */
-  recharge: (amount: number, paymentMethod: 'upi' | 'card' | 'netbanking') =>
-    isLive()
-      ? http.request<{ transactionId: string; status: string }>('POST', '/wallet/recharge', {
-          body: { amount, paymentMethod },
-        })
-      : mockOr({ transactionId: 'tx_new', status: 'PENDING' }),
+  // `recharge` (POST /wallet/recharge) was removed 2026-07-26: no Java controller has ever
+  // exposed that path — api-contract.test.ts listed it under KNOWN_PHANTOM_PATHS — and it had no
+  // callers. Brand wallet funding is `topUp` above (POST /wallet/topup, WalletController.java:94).
 
   /** GET /creator/platform-fee (CreatorPlatformFeeController) — global fee for transparency UI. */
   platformFee: () =>
@@ -2002,6 +2151,23 @@ export const wallet = {
         )
       : mockOr<{ feeBps: number; feePercent: number; source: string }>({
           feeBps: 1500, feePercent: 15, source: 'GLOBAL_DEFAULT',
+        }),
+
+  /**
+   * GET /brand/platform-fee (BrandPlatformFeeController.java:29) — the brand-side counterpart,
+   * which additionally returns `copy` (server-authored disclosure text).
+   *
+   * Added 2026-07-26: the endpoint had existed with no client, so the deal-room proposal form
+   * hardcoded "Platform Fee (10%)" while the real default is 15% (application.yml
+   * PLATFORM_FEE_PERCENT). A brand budgeting off that number under-quoted its own cost.
+   */
+  brandPlatformFee: () =>
+    isLive()
+      ? http.request<{ feeBps: number; feePercent: number; source: string; copy: string }>(
+          'GET', '/brand/platform-fee',
+        )
+      : mockOr<{ feeBps: number; feePercent: number; source: string; copy: string }>({
+          feeBps: 1500, feePercent: 15, source: 'GLOBAL_DEFAULT', copy: '',
         }),
 
   /**

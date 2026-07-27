@@ -112,6 +112,24 @@ describe('FundEscrowButton', () => {
     expect(fundEscrowMock).toHaveBeenCalledTimes(1);
   });
 
+  it('[FIX: double-charge, 2026-07-26] never opens Checkout when the server funds immediately from the wallet', async () => {
+    fundEscrowMock.mockResolvedValueOnce({
+      escrowHoldId: 'hold_1c',
+      amount: 5000,
+      currency: 'INR',
+      status: 'FUNDED',
+    });
+
+    const user = userEvent.setup();
+    render(<FundEscrowButton campaignId="camp_1" displayAmount={5000} />);
+
+    await user.click(screen.getByRole('button'));
+
+    await waitFor(() => expect(screen.getByRole('button')).toHaveTextContent(/secured/i));
+    expect(openCheckoutMock).not.toHaveBeenCalled();
+    expect(getEscrowStatusMock).not.toHaveBeenCalled();
+  });
+
   it('dismissing the ESCROW-fund Checkout moves no money and returns to a clean idle state', async () => {
     fundEscrowMock.mockResolvedValueOnce({
       escrowHoldId: 'hold_2',

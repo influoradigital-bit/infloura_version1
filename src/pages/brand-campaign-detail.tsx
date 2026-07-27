@@ -697,7 +697,17 @@ export default function BrandCampaignDetailPage() {
       if (!amount || Number.isNaN(amount)) return;
       setMutatingId(selectedBid.id);
       try {
-        await api.deals.counter(selectedBid.id, { amount, message: counterMessage || undefined }, 'brand');
+        await api.deals.counter(
+          selectedBid.id,
+          { amount, message: counterMessage || undefined },
+          'brand',
+          // Fresh key per submit. Without one the server derives a key from dealId + amount
+          // (DealService.counter:290), so a brand re-countering at the SAME figure collides with
+          // its own earlier counter and IdempotencyService replays the first result — the second
+          // counter silently no-ops with a 200 and never reaches the thread. Mirrors the
+          // creator-side call in creator-chat.tsx.
+          `${selectedBid.id}-counter-${Date.now()}`,
+        );
         setReloadToken((k) => k + 1);
       } catch (e) {
         toast({

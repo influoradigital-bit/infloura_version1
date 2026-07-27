@@ -26,7 +26,6 @@ import com.influora.domain.enums.ReleaseCondition;
 import com.influora.domain.enums.TxnDirection;
 import com.influora.domain.enums.TxnReferenceType;
 import com.influora.domain.enums.WalletTransactionType;
-import com.influora.integration.razorpay.RazorpayClient;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.ContractRepository;
@@ -36,6 +35,8 @@ import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.escrow.EscrowBackend;
+import com.influora.service.escrow.LedgerEscrowBackend;
 import com.influora.service.notification.event.PayoutReleasedEvent;
 import java.math.BigDecimal;
 import java.util.List;
@@ -72,7 +73,6 @@ class EscrowServiceReleaseTest {
   @Mock private WalletService walletService;
   @Mock private BrandContextService brandContext;
   @Mock private CreatorContextService creatorContext;
-  @Mock private RazorpayClient razorpayClient;
   @Mock private AuthPrincipal principal;
   @Mock private WorkspaceMember member;
   @Mock private CampaignServiceInvoiceService campaignServiceInvoiceService;
@@ -85,6 +85,8 @@ class EscrowServiceReleaseTest {
 
   @BeforeEach
   void setUp() {
+    EscrowBackend escrowBackend =
+        new LedgerEscrowBackend(ledgerService, platformWalletService, platformFeeService, walletService);
     service =
         new EscrowService(
             escrowHoldRepository,
@@ -93,18 +95,15 @@ class EscrowServiceReleaseTest {
             collaborationRepository,
             contractRepository,
             disputeRepository,
-            ledgerService,
-            platformWalletService,
-            platformFeeService,
             walletService,
             brandContext,
             creatorContext,
-            razorpayClient,
             campaignServiceInvoiceService,
             deliverableRepository,
             workspaceRepository,
             eventPublisher,
-            collaborationLifecycleService);
+            collaborationLifecycleService,
+            escrowBackend);
   }
 
   @Test

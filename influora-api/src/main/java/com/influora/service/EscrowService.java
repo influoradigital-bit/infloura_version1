@@ -20,8 +20,6 @@ import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.ReleaseCondition;
 import com.influora.domain.enums.TxnReferenceType;
-import com.influora.domain.enums.WalletTransactionType;
-import com.influora.integration.razorpay.RazorpayClient;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.ContractRepository;
@@ -31,6 +29,7 @@ import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.escrow.EscrowBackend;
 import com.influora.service.notification.event.EscrowFundedEvent;
 import com.influora.service.notification.event.PayoutReleasedEvent;
 import com.influora.web.dto.money.MoneyDtos.EscrowFundResponse;
@@ -80,18 +79,15 @@ public class EscrowService {
     private final CollaborationRepository collaborationRepository;
     private final ContractRepository contractRepository;
     private final DisputeRepository disputeRepository;
-    private final WalletLedgerService ledgerService;
-    private final PlatformWalletService platformWalletService;
-    private final PlatformFeeService platformFeeService;
     private final WalletService walletService;
     private final BrandContextService brandContext;
     private final CreatorContextService creatorContext;
-    private final RazorpayClient razorpayClient;
     private final CampaignServiceInvoiceService campaignServiceInvoiceService;
     private final DeliverableRepository deliverableRepository;
     private final WorkspaceRepository workspaceRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final CollaborationLifecycleService collaborationLifecycleService;
+    private final EscrowBackend escrowBackend;
 
     public EscrowService(
             EscrowHoldRepository escrowHoldRepository,
@@ -100,45 +96,44 @@ public class EscrowService {
             CollaborationRepository collaborationRepository,
             ContractRepository contractRepository,
             DisputeRepository disputeRepository,
-            WalletLedgerService ledgerService,
-            PlatformWalletService platformWalletService,
-            PlatformFeeService platformFeeService,
             WalletService walletService,
             BrandContextService brandContext,
             CreatorContextService creatorContext,
-            RazorpayClient razorpayClient,
             CampaignServiceInvoiceService campaignServiceInvoiceService,
             DeliverableRepository deliverableRepository,
             WorkspaceRepository workspaceRepository,
             ApplicationEventPublisher eventPublisher,
-            CollaborationLifecycleService collaborationLifecycleService) {
+            CollaborationLifecycleService collaborationLifecycleService,
+            EscrowBackend escrowBackend) {
         this.escrowHoldRepository = escrowHoldRepository;
         this.milestoneRepository = milestoneRepository;
         this.campaignRepository = campaignRepository;
         this.collaborationRepository = collaborationRepository;
         this.contractRepository = contractRepository;
         this.disputeRepository = disputeRepository;
-        this.ledgerService = ledgerService;
-        this.platformWalletService = platformWalletService;
-        this.platformFeeService = platformFeeService;
         this.walletService = walletService;
         this.brandContext = brandContext;
         this.creatorContext = creatorContext;
-        this.razorpayClient = razorpayClient;
         this.campaignServiceInvoiceService = campaignServiceInvoiceService;
         this.deliverableRepository = deliverableRepository;
         this.workspaceRepository = workspaceRepository;
         this.eventPublisher = eventPublisher;
         this.collaborationLifecycleService = collaborationLifecycleService;
+        this.escrowBackend = escrowBackend;
     }
 
     /** Paged brand-scoped escrow hold list — GET /wallet/escrow (mirrors {@code WalletService.PagedWalletTransactions}). */
     public record PagedEscrowHolds(List<EscrowStatusResponse> items, PageMeta meta) {}
 
     /**
-     * Creates (or replays, if {@code idempotencyKey} was already used) a PENDING escrow hold and
-     * a Razorpay order for the human to confirm. The hold only becomes FUNDED once
-     * {@code confirmFunded} runs against a verified webhook — never here.
+     * Creates (or replays, if {@code idempotencyKey} was already used) an escrow hold and funds
+     * it immediately from the brand's platform wallet. {@code [FIX: double-charge, 2026-07-26]}
+     * this method requires {@code wallet.getBalance() >= amount} below before a hold is even
+     * created, so the money is always already in the wallet by the time this runs — there is no
+     * legitimate path here where a fresh Razorpay payment is still needed. It used to create a
+     * Razorpay order regardless and let the frontend open a second Checkout for the same amount,
+     * which double-charged the brand once confirmFunded's webhook debited the wallet on top of
+     * that second payment. See {@link #applyFunding} for the actual funding transition.
      *
      * @param amount ALWAYS server-derived by the caller (controller) before this method is
      *     invoked — see {@code deriveFundAmount}. This method re-validates it is positive but the
@@ -216,9 +211,18 @@ public class EscrowService {
                         .build();
         escrowHoldRepository.save(hold);
 
-        var order = razorpayClient.createOrder(amount, currency, hold.getId());
+        // [FIX: double-charge, 2026-07-26] The balance check above (wallet.getBalance() >=
+        // amount) means every call reaching this line already has the money sitting in the
+        // brand's platform wallet — there is no code path in this method where escrow gets
+        // funded by a FRESH Razorpay payment instead of an already-topped-up wallet. This used
+        // to call `razorpayClient.createOrder(...)` here regardless, and the frontend opened a
+        // SECOND Razorpay Checkout for the same amount on top of the wallet debit that follows
+        // — the brand paid twice for one hold. Fund immediately from the wallet balance (same
+        // ledger movement `confirmFunded` used to apply off a webhook) and skip the gateway
+        // entirely; no orderId is returned because no Checkout step is needed.
+        applyFunding(hold, null);
 
-        return new EscrowFundResponse(hold.getId(), amount, currency, order.orderId(), hold.getStatus());
+        return new EscrowFundResponse(hold.getId(), amount, currency, null, hold.getStatus());
     }
 
     /**
@@ -316,9 +320,19 @@ public class EscrowService {
 
         validateWebhookAmount(hold, webhookAmountInPaise, webhookCurrency);
 
-        Wallet brandWallet = walletService.requireWorkspaceWallet(hold.getWorkspaceId());
-        Wallet clearingWallet = platformWalletService.requireClearingWallet();
+        return applyFunding(hold, gatewayRef);
+    }
 
+    /**
+     * The one place a PENDING hold actually transitions to FUNDED: posts the ledger movement
+     * (brand wallet → platform clearing wallet), marks the hold/milestone funded, and fires the
+     * funded-notification best-effort. Shared by {@link #confirmFunded} (webhook-verified gateway
+     * payment) and {@link #initiateFund}'s immediate wallet-funded path (2026-07-26 fix) — both
+     * apply the exact same movement, the only difference is what {@code gatewayRef} is (a
+     * verified Razorpay payment id, or {@code null} when the money was already sitting in the
+     * wallet and no gateway call was made).
+     */
+    private EscrowHold applyFunding(EscrowHold hold, String gatewayRef) {
         // [SEC: Kabir OWASP CRITICAL] The ledger's own idempotency key must be derived from this
         // hold's server-generated id, never the raw client `Idempotency-Key` header
         // (hold.getIdempotencyKey()) — that header is shared, unscoped input and a client reusing
@@ -326,20 +340,18 @@ public class EscrowService {
         // short-circuit return the wrong movement's rows. Same "<feature>:<id>" convention as
         // release/refund below.
         String ledgerIdempotencyKey = "escrow-fund:" + hold.getId();
-        var posting =
-                ledgerService.post(
-                        brandWallet.getId(),
-                        clearingWallet.getId(),
-                        hold.getAmount(),
-                        hold.getCurrency(),
-                        WalletTransactionType.ESCROW_HOLD,
-                        TxnReferenceType.ESCROW_HOLD,
-                        hold.getId(),
-                        "Escrow fund for campaign " + hold.getCampaignId(),
-                        ledgerIdempotencyKey,
-                        gatewayRef);
+        var outcome =
+                escrowBackend.fund(
+                        new EscrowBackend.FundCommand(
+                                hold.getWorkspaceId(),
+                                hold.getId(),
+                                hold.getAmount(),
+                                hold.getCurrency(),
+                                "Escrow fund for campaign " + hold.getCampaignId(),
+                                ledgerIdempotencyKey,
+                                gatewayRef));
 
-        hold.markFunded(posting.debitLeg().getId());
+        hold.markFunded(outcome.fundTxnId());
         escrowHoldRepository.save(hold);
 
         if (hold.getMilestoneId() != null) {
@@ -502,42 +514,30 @@ public class EscrowService {
         // of the (nonexistent, by design) more-specific method.
         assertReleaseConditionSatisfied(milestone);
 
-        Wallet clearingWallet = platformWalletService.requireClearingWallet();
-        Wallet payeeWallet = walletService.requireOrCreateUserWallet(payeeUserId);
-
-        var feeDeduction =
-                platformFeeService.deductAtRelease(
-                        clearingWallet,
-                        milestone.getId(),
-                        payeeUserId,
-                        hold.getAmount(),
-                        hold.getCurrency(),
-                        hold.getId());
-
         String idempotencyKey = "release:" + hold.getId();
-        var posting =
-                ledgerService.post(
-                        clearingWallet.getId(),
-                        payeeWallet.getId(),
-                        feeDeduction.netAmount(),
-                        hold.getCurrency(),
-                        WalletTransactionType.ESCROW_RELEASE,
-                        TxnReferenceType.MILESTONE,
-                        milestone.getId(),
-                        "Milestone release for contract " + milestone.getContractId(),
-                        idempotencyKey,
-                        null);
+        var outcome =
+                escrowBackend.release(
+                        new EscrowBackend.ReleaseCommand(
+                                hold.getId(),
+                                payeeUserId,
+                                hold.getAmount(),
+                                hold.getCurrency(),
+                                milestone.getId(),
+                                TxnReferenceType.MILESTONE,
+                                milestone.getId(),
+                                "Milestone release for contract " + milestone.getContractId(),
+                                idempotencyKey));
 
-        hold.markReleased(posting.creditLeg().getId());
+        hold.markReleased(outcome.releaseTxnId());
         escrowHoldRepository.save(hold);
-        milestone.markReleased(posting.creditLeg().getId(), idempotencyKey);
+        milestone.markReleased(outcome.releaseTxnId(), idempotencyKey);
         milestoneRepository.save(milestone);
 
         // D14 Doc#2 — creator service invoice. [B8 fix] createAtRelease now runs in its OWN
         // (REQUIRES_NEW) transaction and this call is defensively wrapped too — a PDF/R2/creator-
         // profile hiccup there must never roll back the release/ledger-posting above, which has
         // already committed-equivalent state in THIS transaction by this point.
-        safelyCreateServiceInvoice(hold, collaboration, posting.creditLeg().getId());
+        safelyCreateServiceInvoice(hold, collaboration, outcome.releaseTxnId());
 
         // [B3] Notify — the release actually happened (not the idempotent no-op branch above).
         publishPayoutReleasedEvent(workspaceId, milestone, collaboration, hold);
@@ -568,24 +568,18 @@ public class EscrowService {
 
         requireStatus(hold, EscrowStatus.FUNDED, "refund");
 
-        Wallet clearingWallet = platformWalletService.requireClearingWallet();
-        Wallet brandWallet = walletService.requireWorkspaceWallet(workspaceId);
-
         String idempotencyKey = "refund:" + hold.getId();
-        var posting =
-                ledgerService.post(
-                        clearingWallet.getId(),
-                        brandWallet.getId(),
-                        hold.getAmount(),
-                        hold.getCurrency(),
-                        WalletTransactionType.ESCROW_REFUND,
-                        TxnReferenceType.ESCROW_HOLD,
-                        hold.getId(),
-                        "Escrow refund for campaign " + hold.getCampaignId(),
-                        idempotencyKey,
-                        null);
+        var outcome =
+                escrowBackend.refund(
+                        new EscrowBackend.RefundCommand(
+                                workspaceId,
+                                hold.getId(),
+                                hold.getAmount(),
+                                hold.getCurrency(),
+                                "Escrow refund for campaign " + hold.getCampaignId(),
+                                idempotencyKey));
 
-        hold.markRefunded(posting.creditLeg().getId());
+        hold.markRefunded(outcome.refundTxnId());
         escrowHoldRepository.save(hold);
 
         if (hold.getMilestoneId() != null) {
@@ -593,7 +587,7 @@ public class EscrowService {
                     .findById(hold.getMilestoneId())
                     .ifPresent(
                             milestone -> {
-                                milestone.markRefunded(posting.creditLeg().getId(), idempotencyKey);
+                                milestone.markRefunded(outcome.refundTxnId(), idempotencyKey);
                                 milestoneRepository.save(milestone);
                             });
         }
@@ -692,41 +686,30 @@ public class EscrowService {
     public List<EscrowStatusResponse> adminReleaseForDispute(String collaborationId) {
         Collaboration collaboration = requireCollaboration(collaborationId);
         String payeeUserId = collaboration.getCreatorId();
-        Wallet clearingWallet = platformWalletService.requireClearingWallet();
-        Wallet payeeWallet = walletService.requireOrCreateUserWallet(payeeUserId);
 
         List<EscrowStatusResponse> results = new ArrayList<>();
         for (EscrowHold hold : requireFrozenHoldsForCollaboration(collaborationId)) {
-            var feeDeduction =
-                    platformFeeService.deductAtRelease(
-                            clearingWallet,
-                            referenceIdFor(hold),
-                            payeeUserId,
-                            hold.getAmount(),
-                            hold.getCurrency(),
-                            hold.getId());
-
             String idempotencyKey = "dispute-release:" + hold.getId();
-            var posting =
-                    ledgerService.post(
-                            clearingWallet.getId(),
-                            payeeWallet.getId(),
-                            feeDeduction.netAmount(),
-                            hold.getCurrency(),
-                            WalletTransactionType.ESCROW_RELEASE,
-                            TxnReferenceType.ESCROW_HOLD,
-                            hold.getId(),
-                            "Dispute-resolved release for collaboration " + collaborationId,
-                            idempotencyKey,
-                            null);
+            var outcome =
+                    escrowBackend.release(
+                            new EscrowBackend.ReleaseCommand(
+                                    hold.getId(),
+                                    payeeUserId,
+                                    hold.getAmount(),
+                                    hold.getCurrency(),
+                                    referenceIdFor(hold),
+                                    TxnReferenceType.ESCROW_HOLD,
+                                    hold.getId(),
+                                    "Dispute-resolved release for collaboration " + collaborationId,
+                                    idempotencyKey));
 
-            hold.markReleased(posting.creditLeg().getId());
+            hold.markReleased(outcome.releaseTxnId());
             escrowHoldRepository.save(hold);
-            markMilestoneReleasedIfPresent(hold, posting.creditLeg().getId(), idempotencyKey);
+            markMilestoneReleasedIfPresent(hold, outcome.releaseTxnId(), idempotencyKey);
 
             // D14 Doc#2 — same atomic-with-release wiring as the happy-path release() above.
             // [B8 fix] see safelyCreateServiceInvoice javadoc.
-            safelyCreateServiceInvoice(hold, collaboration, posting.creditLeg().getId());
+            safelyCreateServiceInvoice(hold, collaboration, outcome.releaseTxnId());
             publishPayoutReleasedEvent(hold.getWorkspaceId(), milestoneForHoldOrNull(hold), collaboration, hold);
 
             results.add(toStatusResponse(hold));
@@ -741,28 +724,23 @@ public class EscrowService {
     @Transactional
     public List<EscrowStatusResponse> adminRefundForDispute(String collaborationId) {
         requireCollaboration(collaborationId);
-        Wallet clearingWallet = platformWalletService.requireClearingWallet();
 
         List<EscrowStatusResponse> results = new ArrayList<>();
         for (EscrowHold hold : requireFrozenHoldsForCollaboration(collaborationId)) {
-            Wallet brandWallet = walletService.requireWorkspaceWallet(hold.getWorkspaceId());
             String idempotencyKey = "dispute-refund:" + hold.getId();
-            var posting =
-                    ledgerService.post(
-                            clearingWallet.getId(),
-                            brandWallet.getId(),
-                            hold.getAmount(),
-                            hold.getCurrency(),
-                            WalletTransactionType.ESCROW_REFUND,
-                            TxnReferenceType.ESCROW_HOLD,
-                            hold.getId(),
-                            "Dispute-resolved refund for collaboration " + collaborationId,
-                            idempotencyKey,
-                            null);
+            var outcome =
+                    escrowBackend.refund(
+                            new EscrowBackend.RefundCommand(
+                                    hold.getWorkspaceId(),
+                                    hold.getId(),
+                                    hold.getAmount(),
+                                    hold.getCurrency(),
+                                    "Dispute-resolved refund for collaboration " + collaborationId,
+                                    idempotencyKey));
 
-            hold.markRefunded(posting.creditLeg().getId());
+            hold.markRefunded(outcome.refundTxnId());
             escrowHoldRepository.save(hold);
-            markMilestoneRefundedIfPresent(hold, posting.creditLeg().getId(), idempotencyKey);
+            markMilestoneRefundedIfPresent(hold, outcome.refundTxnId(), idempotencyKey);
             results.add(toStatusResponse(hold));
         }
         return results;
@@ -803,13 +781,9 @@ public class EscrowService {
         }
         Collaboration collaboration = requireCollaboration(collaborationId);
         String payeeUserId = collaboration.getCreatorId();
-        Wallet clearingWallet = platformWalletService.requireClearingWallet();
-        Wallet payeeWallet = walletService.requireOrCreateUserWallet(payeeUserId);
 
         List<EscrowStatusResponse> results = new ArrayList<>();
         for (EscrowHold hold : requireFrozenHoldsForCollaboration(collaborationId)) {
-            Wallet brandWallet = walletService.requireWorkspaceWallet(hold.getWorkspaceId());
-
             BigDecimal creatorAmount =
                     hold.getAmount()
                             .multiply(creatorSplitPercent)
@@ -819,42 +793,31 @@ public class EscrowService {
             String releaseIdempotencyKey = "dispute-split-release:" + hold.getId();
             String creditLegId = null;
             if (creatorAmount.signum() > 0) {
-                var feeDeduction =
-                        platformFeeService.deductAtRelease(
-                                clearingWallet,
-                                referenceIdFor(hold),
-                                payeeUserId,
-                                creatorAmount,
-                                hold.getCurrency(),
-                                hold.getId());
-                var releasePosting =
-                        ledgerService.post(
-                                clearingWallet.getId(),
-                                payeeWallet.getId(),
-                                feeDeduction.netAmount(),
-                                hold.getCurrency(),
-                                WalletTransactionType.ESCROW_RELEASE,
-                                TxnReferenceType.ESCROW_HOLD,
-                                hold.getId(),
-                                "Dispute-resolved split release for collaboration " + collaborationId,
-                                releaseIdempotencyKey,
-                                null);
-                creditLegId = releasePosting.creditLeg().getId();
+                var releaseOutcome =
+                        escrowBackend.release(
+                                new EscrowBackend.ReleaseCommand(
+                                        hold.getId(),
+                                        payeeUserId,
+                                        creatorAmount,
+                                        hold.getCurrency(),
+                                        referenceIdFor(hold),
+                                        TxnReferenceType.ESCROW_HOLD,
+                                        hold.getId(),
+                                        "Dispute-resolved split release for collaboration " + collaborationId,
+                                        releaseIdempotencyKey));
+                creditLegId = releaseOutcome.releaseTxnId();
             }
 
             if (brandAmount.signum() > 0) {
                 String refundIdempotencyKey = "dispute-split-refund:" + hold.getId();
-                ledgerService.post(
-                        clearingWallet.getId(),
-                        brandWallet.getId(),
-                        brandAmount,
-                        hold.getCurrency(),
-                        WalletTransactionType.ESCROW_REFUND,
-                        TxnReferenceType.ESCROW_HOLD,
-                        hold.getId(),
-                        "Dispute-resolved split refund for collaboration " + collaborationId,
-                        refundIdempotencyKey,
-                        null);
+                escrowBackend.refund(
+                        new EscrowBackend.RefundCommand(
+                                hold.getWorkspaceId(),
+                                hold.getId(),
+                                brandAmount,
+                                hold.getCurrency(),
+                                "Dispute-resolved split refund for collaboration " + collaborationId,
+                                refundIdempotencyKey));
             }
 
             hold.markReleased(creditLegId != null ? creditLegId : "dispute-split:" + hold.getId());

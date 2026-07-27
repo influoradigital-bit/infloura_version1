@@ -16,7 +16,6 @@ import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MilestoneStatus;
-import com.influora.integration.razorpay.RazorpayClient;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.ContractRepository;
@@ -26,6 +25,8 @@ import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.escrow.EscrowBackend;
+import com.influora.service.escrow.LedgerEscrowBackend;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -68,7 +69,6 @@ class DisputeEscrowConcurrencyTest {
     @Mock private WalletService walletService;
     @Mock private BrandContextService brandContext;
     @Mock private CreatorContextService creatorContext;
-    @Mock private RazorpayClient razorpayClient;
     @Mock private AuthPrincipal principal;
     @Mock private WorkspaceMember member;
     @Mock private CampaignServiceInvoiceService campaignServiceInvoiceService;
@@ -81,6 +81,8 @@ class DisputeEscrowConcurrencyTest {
 
     @BeforeEach
     void setUp() {
+        EscrowBackend escrowBackend =
+                new LedgerEscrowBackend(ledgerService, platformWalletService, platformFeeService, walletService);
         escrowService =
                 new EscrowService(
                         escrowHoldRepository,
@@ -89,18 +91,15 @@ class DisputeEscrowConcurrencyTest {
                         collaborationRepository,
                         contractRepository,
                         disputeRepository,
-                        ledgerService,
-                        platformWalletService,
-                        platformFeeService,
                         walletService,
                         brandContext,
                         creatorContext,
-                        razorpayClient,
                         campaignServiceInvoiceService,
                         deliverableRepository,
                         workspaceRepository,
                         eventPublisher,
-                        collaborationLifecycleService);
+                        collaborationLifecycleService,
+                        escrowBackend);
     }
 
     @Test

@@ -12,8 +12,8 @@ import {
 } from '@/components/ui/select';
 import { Eye, EyeOff, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { InfluoraLogo } from '@/components/shared/influora-logo';
+import { EmailOtpGate } from '@/components/shared/email-otp-gate';
 import { api, ApiError } from '@/lib/api';
-import { hasBrandToken } from '@/lib/auth-session';
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
@@ -39,6 +39,24 @@ export default function BrandRegisterPage() {
 
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Email-OTP gate. This page is the signup CTA linked from the landing page, every /features
+  // page, both how-it-works pages and the blog — so it, not the onboarding wizard, is where
+  // verification has to happen. `requireEmailOtp` mirrors the server flag enforced by
+  // AuthService.brandRegister; it defaults false so a slow or failed config read never blocks
+  // signup (the server would reject with a readable EMAIL_NOT_VERIFIED instead).
+  const [requireEmailOtp, setRequireEmailOtp] = useState(false);
+  const [showOtp, setShowOtp] = useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    api.config.public().then((cfg) => {
+      if (!cancelled) setRequireEmailOtp(cfg.requireEmailOtp);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const validateStep1 = () => {
     const errs: Record<string, string> = {};
@@ -80,10 +98,11 @@ export default function BrandRegisterPage() {
     if (validateStep1()) setStep(2);
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validateStep2()) return;
-
+  /**
+   * The actual account creation. Split out of `handleRegister` so it can fire either straight
+   * from step 2 (OTP off) or from the OTP gate's `onVerified` (OTP on).
+   */
+  const submitRegistration = async () => {
     setLoading(true);
     setErrors({});
 
@@ -104,10 +123,38 @@ export default function BrandRegisterPage() {
         acceptedTerms: agreeToTerms,
       });
 
-      navigate(hasBrandToken() ? '/brand/onboarding' : '/brand/onboarding');
+      navigate('/brand/onboarding');
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : 'Registration failed. Please try again.';
+      setErrors({ form: message });
+      // Back to the form so the error sits next to the fields it refers to.
+      setShowOtp(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validateStep2()) return;
+
+    if (!requireEmailOtp) {
+      await submitRegistration();
+      return;
+    }
+
+    // Send the first code from here so a delivery failure (MSG91 unconfigured → 503
+    // EMAIL_DELIVERY_FAILED) surfaces on the form rather than stranding the user on an empty
+    // OTP panel with no code coming.
+    setLoading(true);
+    setErrors({});
+    try {
+      await api.auth.sendBrandEmailOtp(email);
+      setShowOtp(true);
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : 'Could not send the verification code. Try again.';
       setErrors({ form: message });
     } finally {
       setLoading(false);
@@ -129,6 +176,15 @@ export default function BrandRegisterPage() {
       <div className="flex-1 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
           <div className="bg-card border border-border shadow-sm rounded-2xl p-8 backdrop-blur-sm">
+            {showOtp ? (
+              <EmailOtpGate
+                email={email}
+                role="brand"
+                onVerified={submitRegistration}
+                onEditEmail={() => setShowOtp(false)}
+              />
+            ) : (
+            <>
             <div className="mb-8">
               <h1 className="text-3xl font-bold text-foreground mb-2">Create Account</h1>
               <p className="text-muted-foreground">
@@ -366,6 +422,8 @@ export default function BrandRegisterPage() {
                 Sign in
               </button>
             </div>
+            </>
+            )}
           </div>
         </div>
       </div>

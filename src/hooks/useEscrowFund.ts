@@ -209,8 +209,21 @@ export function useEscrowFund(): UseEscrowFundResult {
 
         // Store server-confirmed values
         setServerAmount(response.amount);
-        setRazorpayOrderId(response.razorpayOrderId);
         setEscrowHoldId(response.escrowHoldId);
+
+        // [FIX: double-charge, 2026-07-26] The server now funds escrow immediately from the
+        // wallet balance it already required (see EscrowService.initiateFund) instead of
+        // creating a second Razorpay order for the same amount — so most responses arrive
+        // already FUNDED, with no razorpayOrderId at all. Only fall into the Checkout leg when
+        // the server actually handed back an order to pay (kept for backward-compat with any
+        // older/edge server that still returns PENDING + an order).
+        if (response.status === 'FUNDED' || !response.razorpayOrderId) {
+          setRazorpayOrderId(null);
+          setStatus('funded');
+          return;
+        }
+
+        setRazorpayOrderId(response.razorpayOrderId);
         setStatus('awaiting_payment');
 
         // Note: Caller is responsible for opening Razorpay Checkout

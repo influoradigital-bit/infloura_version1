@@ -1,5 +1,17 @@
 /**
- * tagger-sync.test.js — drift guard for the Trend-Spark theme-tagger vocab.
+ * tagger-sync.check.js — drift guard for the Trend-Spark theme-tagger vocab.
+ *
+ * NOT a vitest test, and deliberately NOT named `*.test.js`. This is a standalone, dependency-free
+ * Node script run directly by .github/workflows/trendspark-tagger-sync.yml
+ * (`node trendspark/n8n/tagger-sync.check.js`) — no npm install, no test runner.
+ *
+ * It was called `tagger-sync.test.js` until 2026-07-26, which meant vitest's default `*.test.js`
+ * glob claimed it: the runner executed the script, hit `process.exit(0)` on success, and aborted
+ * the entire suite with "process.exit unexpectedly called with 0" — one green script turning the
+ * whole run red. Converting it to vitest cases looked like the fix, but broke the workflow above,
+ * which needs it to run under plain `node` with no runner in scope. Renaming fixes both: vitest
+ * ignores it, and the workflow keeps its fast dependency-free check. If you ever want it inside
+ * `npm test` as well, add a thin vitest wrapper that shells out — do not rename this file back.
  *
  * The same closed vocabulary lives in THREE places and used to be hand-synced:
  *   (S)  influora-api/src/main/resources/trendspark/theme-taxonomy.json

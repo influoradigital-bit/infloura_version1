@@ -18,7 +18,16 @@ export default defineConfig({
     // .claude/worktrees/* are sibling git worktrees with their own node_modules;
     // vitest's default include would run those duplicate test copies too (they
     // fail with dup-React "Invalid hook call"), so exclude the whole .claude tree.
-    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**', '**/.claude/**'],
+    // `*.live.test.ts` runs under vitest.live.config.ts instead — those tests need
+    // VITE_API_MODE=live, which the `define` below makes impossible to override per-file.
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/e2e/**',
+      '**/.claude/**',
+      '**/*.live.test.ts',
+      '**/*.live.test.tsx',
+    ],
     testTimeout: 15_000,
     env: {
       VITE_API_MODE: 'mock',

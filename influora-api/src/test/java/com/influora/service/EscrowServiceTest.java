@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,11 +15,11 @@ import com.influora.common.InsufficientFundsException;
 import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.PaymentMilestone;
 import com.influora.domain.entity.Wallet;
+import com.influora.domain.entity.WalletTransaction;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.UserType;
-import com.influora.integration.razorpay.RazorpayClient;
 import com.influora.domain.entity.Contract;
 import com.influora.domain.enums.ContractStatus;
 import com.influora.repository.CampaignRepository;
@@ -31,6 +32,8 @@ import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.EscrowService.PagedEscrowHolds;
+import com.influora.service.escrow.EscrowBackend;
+import com.influora.service.escrow.LedgerEscrowBackend;
 import com.influora.web.dto.money.MoneyDtos.EscrowStatusResponse;
 import java.math.BigDecimal;
 import java.util.List;
@@ -70,7 +73,6 @@ class EscrowServiceTest {
     @Mock private WalletService walletService;
     @Mock private BrandContextService brandContext;
     @Mock private CreatorContextService creatorContext;
-    @Mock private RazorpayClient razorpayClient;
     @Mock private AuthPrincipal principal;
     @Mock private WorkspaceMember workspaceMember;
     @Mock private CampaignServiceInvoiceService campaignServiceInvoiceService;
@@ -83,6 +85,8 @@ class EscrowServiceTest {
 
     @BeforeEach
     void setUp() {
+        EscrowBackend escrowBackend =
+                new LedgerEscrowBackend(ledgerService, platformWalletService, platformFeeService, walletService);
         service =
                 new EscrowService(
                         escrowHoldRepository,
@@ -91,18 +95,15 @@ class EscrowServiceTest {
                         collaborationRepository,
                         contractRepository,
                         disputeRepository,
-                        ledgerService,
-                        platformWalletService,
-                        platformFeeService,
                         walletService,
                         brandContext,
                         creatorContext,
-                        razorpayClient,
                         campaignServiceInvoiceService,
                         deliverableRepository,
                         workspaceRepository,
                         eventPublisher,
-                        collaborationLifecycleService);
+                        collaborationLifecycleService,
+                        escrowBackend);
     }
 
     private EscrowHold fundedHold() {
@@ -342,6 +343,32 @@ class EscrowServiceTest {
         };
     }
 
+    /**
+     * [FIX: double-charge, 2026-07-26] initiateFund now funds immediately from the wallet (no
+     * Razorpay order) once the balance check passes — stubs the {@code applyFunding} dependencies
+     * (clearing wallet + ledger post) that every successful initiateFund call now reaches.
+     */
+    private void stubWalletFunding() {
+        when(platformWalletService.requireClearingWallet())
+                .thenReturn(
+                        new Wallet() {
+                            @Override
+                            public String getId() {
+                                return "01HCLEARING1234567890";
+                            }
+
+                            @Override
+                            public String getCurrency() {
+                                return "INR";
+                            }
+                        });
+        WalletTransaction debitLeg = WalletTransaction.builder().id("wtx-debit-1").build();
+        WalletTransaction creditLeg = WalletTransaction.builder().id("wtx-credit-1").build();
+        when(ledgerService.post(
+                        any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new WalletLedgerService.LedgerPostingResult(debitLeg, creditLeg));
+    }
+
     @Test
     @DisplayName(
             "initiateFund: throws InsufficientFundsException with the exact server-computed"
@@ -397,13 +424,14 @@ class EscrowServiceTest {
         when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY))
                 .thenReturn(Optional.empty());
         when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(wallet);
-        when(razorpayClient.createOrder(eq(requiredAmount), eq("INR"), any()))
-                .thenReturn(new RazorpayClient.OrderResult("order-1", "created"));
+        stubWalletFunding();
 
         service.initiateFund(
                 principal, WORKSPACE_ID, CAMPAIGN_ID, null, requiredAmount, "INR", FUND_IDEMPOTENCY_KEY);
 
-        verify(escrowHoldRepository).save(any(EscrowHold.class));
+        // Saved twice: once creating the PENDING hold, once more after applyFunding marks it
+        // FUNDED — both in the same call now that funding happens immediately, no gateway round trip.
+        verify(escrowHoldRepository, times(2)).save(any(EscrowHold.class));
     }
 
     // ------------------------------------------------------------------------------------------
@@ -518,8 +546,7 @@ class EscrowServiceTest {
         when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY))
                 .thenReturn(Optional.empty());
         when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(wallet);
-        when(razorpayClient.createOrder(eq(requiredAmount), eq("INR"), any()))
-                .thenReturn(new RazorpayClient.OrderResult("order-2", "created"));
+        stubWalletFunding();
 
         service.initiateFund(
                 principal,
@@ -530,7 +557,9 @@ class EscrowServiceTest {
                 "INR",
                 FUND_IDEMPOTENCY_KEY);
 
-        verify(escrowHoldRepository).save(any(EscrowHold.class));
+        // Saved twice: once creating the PENDING hold, once more after applyFunding marks it
+        // FUNDED — both in the same call now that funding happens immediately, no gateway round trip.
+        verify(escrowHoldRepository, times(2)).save(any(EscrowHold.class));
     }
 
     @Test
@@ -544,13 +573,14 @@ class EscrowServiceTest {
         when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY))
                 .thenReturn(Optional.empty());
         when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(wallet);
-        when(razorpayClient.createOrder(eq(requiredAmount), eq("INR"), any()))
-                .thenReturn(new RazorpayClient.OrderResult("order-3", "created"));
+        stubWalletFunding();
 
         service.initiateFund(
                 principal, WORKSPACE_ID, CAMPAIGN_ID, null, requiredAmount, "INR", FUND_IDEMPOTENCY_KEY);
 
-        verify(escrowHoldRepository).save(any(EscrowHold.class));
+        // Saved twice: once creating the PENDING hold, once more after applyFunding marks it
+        // FUNDED — both in the same call now that funding happens immediately, no gateway round trip.
+        verify(escrowHoldRepository, times(2)).save(any(EscrowHold.class));
         verify(milestoneRepository, never()).findByIdAndWorkspaceId(any(), any());
         verify(contractRepository, never()).findById(any());
     }

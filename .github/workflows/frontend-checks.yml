@@ -14,11 +14,16 @@ on:
       - 'tsconfig.json'
       - 'vite.config.ts'
       - 'vitest.config.ts'
+      - 'vitest.live.config.ts'
       - '.github/workflows/frontend-checks.yml'
   push:
     branches:
       - main
       - 'feature/**'
+      # 'feature/**' does NOT match 'feat/...'. Every working branch here is named feat/*, so
+      # this gate silently never ran on a single one of them — it only ever fired on main and
+      # on PRs. trendspark-tagger-sync.yml already carries both prefixes; this now matches.
+      - 'feat/**'
 
 jobs:
   frontend:
@@ -42,6 +47,14 @@ jobs:
 
       - name: Unit tests + FE↔BE contract test
         run: npm test
+
+      # Separate config because the base one pins VITE_API_MODE=mock through a transform-time
+      # `define` that no per-file stub can override — so the client's live-mode branches (auth
+      # headers, token refresh, envelope errors) are untestable under it. Without this step the
+      # live suite would exist and never run, which is the exact failure mode it was written to
+      # catch: expired tokens were never refreshed and no mock-mode test could have seen it.
+      - name: Live-mode client tests (stubbed fetch, no network)
+        run: npm run test:live
 
       - name: Production build
         run: npm run build
