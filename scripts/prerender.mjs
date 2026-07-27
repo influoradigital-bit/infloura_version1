@@ -140,24 +140,47 @@ async function maybeStartServer() {
   const child = spawn(
     npmCmd,
     ['run', 'preview', '--', '--port', String(PREVIEW_PORT), '--strictPort'],
-    { stdio: 'pipe', shell: process.platform === 'win32' },
+    {
+      stdio: 'pipe',
+      shell: process.platform === 'win32',
+      // POSIX: put the child in its OWN process group so killTree can signal the whole group.
+      // See the killTree comment below for why signalling just the pid is not enough.
+      detached: process.platform !== 'win32',
+    },
   );
   child.stdout?.on('data', () => {});
   child.stderr?.on('data', () => {});
 
-  // On Windows, `npm.cmd` runs under a shell wrapper — killing the spawned
-  // PID alone leaves the actual `vite preview` node process (its
-  // grandchild) running and holding the port. `taskkill /T` kills the whole
-  // process tree. On POSIX, plain child.kill() is sufficient.
+  // Killing the spawned pid alone is NOT sufficient on either platform — `npm run preview`
+  // always has the real `vite preview` process as a GRANDCHILD (Windows: under the npm.cmd shell
+  // wrapper; POSIX: npm spawns `sh -c "vite preview …"` which spawns vite).
+  //
+  // The POSIX half of this was previously `child.kill()` with a comment asserting that was
+  // "sufficient". It is not, and the consequence was CI-only: the orphaned grandchild inherits
+  // the step's stdout/stderr, so GitHub Actions never sees EOF and the "Production build" step
+  // ran until the job timeout on EVERY push — typecheck/tests/live-tests all passed in ~45s and
+  // then the job hung for an hour. It passed locally on Windows the whole time, because
+  // `taskkill /T` does kill the tree.
+  //
+  // `detached: true` above makes the child a process-group leader (pgid == pid), so the negative
+  // pid signals every process in that group.
   const killTree = () => {
     if (process.platform === 'win32' && child.pid) {
       spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-    } else {
+      return;
+    }
+    if (child.pid) {
       try {
-        child.kill();
+        process.kill(-child.pid, 'SIGTERM');
+        return;
       } catch {
-        /* already gone */
+        /* group already gone, or never became a leader — fall through */
       }
+    }
+    try {
+      child.kill();
+    } catch {
+      /* already gone */
     }
   };
 
