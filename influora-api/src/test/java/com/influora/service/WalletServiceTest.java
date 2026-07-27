@@ -385,12 +385,16 @@ class WalletServiceTest {
     @DisplayName("getBalance: lazily creates a zero-balance wallet instead of 404ing")
     void testGetBalanceLazilyCreatesWallet() {
         when(walletRepository.findByOwnerId(WORKSPACE_ID)).thenReturn(Optional.empty());
-        when(walletRepository.save(any(Wallet.class))).thenAnswer(inv -> inv.getArgument(0));
+        // Untyped any() rather than any(Wallet.class): JpaRepository declares save as the generic
+        // <S extends Wallet> S save(S), and matching the erased bridge against a Class token made
+        // Mockito reject the real Wallet with PotentialStubbingProblem. The assertion below still
+        // proves a genuine zero-balance Wallet flowed through.
+        when(walletRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         WalletBalanceResponse balance = walletService.getBalance(WORKSPACE_ID);
 
         assertEquals(0, BigDecimal.ZERO.compareTo(balance.balance()));
-        verify(walletRepository).save(any(Wallet.class));
+        verify(walletRepository).save(any());
     }
 
     @Test
@@ -404,7 +408,8 @@ class WalletServiceTest {
         assertEquals("WALLET_NOT_FOUND", ex.getCode());
         assertEquals(404, ex.getStatus().value());
         // A missing wallet means "cannot afford"; creating one here would fabricate affordability.
-        verify(walletRepository, never()).save(any(Wallet.class));
+        // Untyped any() for the same generic-bridge reason as the test above.
+        verify(walletRepository, never()).save(any());
     }
 
     @Test
