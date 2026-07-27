@@ -104,12 +104,21 @@ export interface MeeraBrandProfile {
   analysisError: string | null;
 }
 
-/** Escrow fund response (02 section 1.4) */
+/**
+ * Escrow fund response (02 section 1.4).
+ * [FIX: double-charge, 2026-07-26] `razorpayOrderId` is now optional — the
+ * server funds escrow immediately from the wallet balance it already
+ * required (EscrowService.initiateFund) instead of creating a second
+ * Razorpay order for the same amount, so the common response is
+ * `status: 'FUNDED'` with no order at all. `undefined` (the field is
+ * omitted, not sent as null — `@JsonInclude(NON_NULL)`) means "already
+ * funded, nothing to check out."
+ */
 export interface MeeraEscrowFundResponse {
   escrowHoldId: string;
   amount: number;
   currency: 'INR';
-  razorpayOrderId: string;
+  razorpayOrderId?: string;
   status: 'PENDING' | 'FUNDED';
 }
 
@@ -550,12 +559,13 @@ export const meeraApi = {
   ): Promise<MeeraEscrowFundResponse> => {
     if (!isApiLive()) {
       await delay(800);
+      // Mirrors the live server's actual behavior post-fix: escrow is funded immediately
+      // from the wallet balance it already required, no Razorpay order/Checkout step.
       return {
         escrowHoldId: `mock_escrow_${Date.now()}`,
         amount: 17250,
         currency: 'INR',
-        razorpayOrderId: `order_mock_${Date.now()}`,
-        status: 'PENDING',
+        status: 'FUNDED',
       };
     }
     return request<MeeraEscrowFundResponse>('POST', '/wallet/escrow/fund', {

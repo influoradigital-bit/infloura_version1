@@ -129,6 +129,31 @@ describe('useEscrowFund', () => {
   });
 
   // -------------------------------------------------------------------------
+  // 1b. [FIX: double-charge, 2026-07-26] Server funds immediately from the
+  // wallet — no Razorpay order, no Checkout, no poll.
+  // -------------------------------------------------------------------------
+  it('reaches "funded" immediately when the server responds FUNDED with no razorpayOrderId — never opens Checkout or polls', async () => {
+    fundEscrowMock.mockResolvedValueOnce({
+      escrowHoldId: 'hold_1b',
+      amount: 5000,
+      currency: 'INR',
+      status: 'FUNDED',
+    });
+
+    const { result } = renderHook(() => useEscrowFund());
+
+    await act(async () => {
+      await result.current.initiateFund('camp_1b', undefined, 5000);
+    });
+
+    expect(result.current.status).toBe('funded');
+    expect(result.current.razorpayOrderId).toBeNull();
+    expect(result.current.serverAmount).toBe(5000);
+    // Already funded synchronously — no verification poll was ever needed.
+    expect(getEscrowStatusMock).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
   // 2. Insufficient funds → server shortfall sizes the top-up, not the hint
   // -------------------------------------------------------------------------
   it('sizes the inline top-up from the SERVER shortfallAmount, never the client displayAmount hint', async () => {
