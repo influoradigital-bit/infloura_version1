@@ -13,7 +13,7 @@ on:
     paths:
       - 'trendspark/n8n/theme-tagger.js'
       - 'trendspark/n8n/trend-pull-workflow.json'
-      - 'trendspark/n8n/tagger-sync.test.js'
+      - 'trendspark/n8n/tagger-sync.check.js'
       - 'influora-api/src/main/resources/trendspark/theme-taxonomy.json'
       - 'influora-api/src/main/resources/trendspark/campaign-rulebook.json'
       - '.github/workflows/trendspark-tagger-sync.yml'
@@ -37,7 +37,7 @@ jobs:
           node-version: '20'
 
       - name: Vocab drift + closed-vocab integrity check
-        run: node trendspark/n8n/tagger-sync.test.js
+        run: node trendspark/n8n/tagger-sync.check.js
 
       - name: theme-tagger self-test (tagging behavior)
         run: node trendspark/n8n/theme-tagger.js

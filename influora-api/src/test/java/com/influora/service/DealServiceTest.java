@@ -154,12 +154,21 @@ class DealServiceTest {
     }
 
     /**
-     * Only what the rejection path actually touches — {@code requireWorkspaceCampaign} loads by id
-     * then compares workspaceId itself, and the creator lookup happens before any principal
-     * userId read, so stubbing more here would trip Mockito's strict-stub check.
+     * Only what the rejection path actually touches.
+     *
+     * Deliberately does NOT reuse {@link #stubBrandWorkspace()}: that helper also stubs {@code
+     * brandPrincipal.getUserType()}, which {@code createProposal} never reads — it calls {@code
+     * brandContext.requireBrandWorkspace(principal)} directly rather than going through {@code
+     * requireRole}. Under Mockito's default strict stubs that unused stub fails the test with
+     * UnnecessaryStubbingException, which is exactly how these two cases broke Backend CI.
+     *
+     * Likewise nothing here stubs the principal's userId: both cases throw inside {@code
+     * requireOfferableProfile}, before {@code persistProposalMessage} ever asks for it.
      */
     private void stubProposalCampaign() {
-        stubBrandWorkspace();
+        Workspace workspace =
+                Workspace.newBrand(WORKSPACE_ID, "Test Brand", "test-brand", "Beauty", "10-50");
+        when(brandContext.requireBrandWorkspace(brandPrincipal)).thenReturn(workspace);
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
     }
 

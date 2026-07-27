@@ -20,6 +20,10 @@ on:
     branches:
       - main
       - 'feature/**'
+      # 'feature/**' does NOT match 'feat/...'. Every working branch here is named feat/*, so
+      # this gate silently never ran on a single one of them — it only ever fired on main and
+      # on PRs. trendspark-tagger-sync.yml already carries both prefixes; this now matches.
+      - 'feat/**'
 
 jobs:
   frontend:
