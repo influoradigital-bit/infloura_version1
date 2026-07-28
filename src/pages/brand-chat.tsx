@@ -42,6 +42,8 @@ import {
   type ContractApiRecord,
   type ContractStatus,
 } from '@/lib/api';
+// CR-24 — the one switch over CollaborationStatus. See lib/deal-stage.ts.
+import { mapCollaborationStatusToDealStage } from '@/lib/deal-stage';
 import type { CollaborationStatus } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -161,28 +163,39 @@ interface ChatDealRoom {
 // deal-room-list shape). Deals with no equivalent dealStatus (CANCELLED,
 // DISPUTED) are filtered out — this list has no matching status chip for them.
 // ---------------------------------------------------------------------------
+/**
+ * CR-24 — derived from the shared `mapCollaborationStatusToDealStage`, not from a second
+ * private switch over `CollaborationStatus`.
+ *
+ * **This is a real behaviour change and it is the point of the ticket.** The deleted copy
+ * mapped `TERMS_AGREED -> 'contracted'` — character-for-character the mapping removed from
+ * `creator-chat.tsx` as the CR-05 defect. So the instant a creator pressed Accept, the creator
+ * saw "Negotiating" and the brand saw "Contracted" for the same deal, and no contract existed
+ * on either side. A TERMS_AGREED deal now reads **Negotiating** here, matching the creator, all
+ * three backend display mappers, and (since CR-13) the filter path.
+ *
+ * ⚠️ Brand-side badge copy changes for TERMS_AGREED deals — Kavya/Neha should confirm the chips
+ * and filters on this page against the new value. Priya flagged the brand vocabulary as needing
+ * its own QA pass; this is that pass's subject.
+ *
+ * The two deltas below are the brand's own perspective, expressed once and explained, rather
+ * than hidden inside a duplicated switch.
+ */
 function mapDealStatusToChatStatus(status: Deal['status']): ChatDealRoom['dealStatus'] | null {
-  switch (status) {
-    case 'INVITED':
-    case 'APPLIED':
-    case 'SHORTLISTED':
-    case 'IN_NEGOTIATION':
+  const stage = mapCollaborationStatusToDealStage(status);
+  switch (stage) {
+    // No 'new' bucket on this page: from the brand's side an INVITED deal is one they have
+    // already reached out on, so it belongs with the rest of the pre-contract work.
+    case 'new':
+    case 'negotiating':
       return 'negotiating';
-    case 'TERMS_AGREED':
-    case 'CONTRACT_PENDING':
-    case 'CONTRACTED':
-      return 'contracted';
-    case 'IN_PROGRESS':
-      return 'in_progress';
-    case 'REVIEW_PENDING':
-    case 'REVISION_REQUESTED':
-      return 'review';
-    case 'COMPLETED':
-      return 'completed';
-    case 'CANCELLED':
-    case 'DISPUTED':
-    default:
+    // Filtered out of the list entirely — unchanged behaviour. This deal-room list has no
+    // disputed chip, so a null row is dropped by `mapDealToChatRoom`. Giving the brand side a
+    // disputed bucket is CR-26's brand half and is not folded in here.
+    case 'disputed':
       return null;
+    default:
+      return stage;
   }
 }
 

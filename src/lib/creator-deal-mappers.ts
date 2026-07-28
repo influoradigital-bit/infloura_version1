@@ -66,52 +66,33 @@ import { formatMessageTimestamp } from '@/lib/creator-deal-messages';
  * legitimate: `statusesForFilter("new")` is exactly `[INVITED]` for the creator role, so the
  * "New" chip is server-backed rather than an invention.
  *
- * CANCELLED / DISPUTED have no server display bucket at all (`bucketFor` returns null —
- * they are excluded from the pipeline, and no status filter ever selects them). They are
- * parked in 'completed' because that is what the deals page has always done and what its
- * chips/empty states are built around. Known wart: the badge then reads "Done"/"Completed"
- * for a disputed deal. Fixing that needs a 7th bucket plus chip/filter/empty-state work
- * across both pages — tracked separately, deliberately not folded into CR-05.
+ * CR-26 — CANCELLED / DISPUTED now have their own `'disputed'` stage. They used to be parked
+ * in `'completed'`, so the badge read "Done" for a **disputed** deal — a user-facing
+ * misstatement, not a cosmetic one: it told a creator a deal they were actively contesting
+ * was finished. The 7th bucket, its chip, its filter and its empty state now exist, and the
+ * `--stage-disputed` design token (defined but unused since the palette shipped) finally has
+ * a consumer. `DealService.statusesForFilter` gained a matching `"disputed"` case so the chip
+ * is server-backed rather than a client-only invention.
+ *
+ * Still outstanding, deliberately: `DashboardService.bucketFor` returns null for both states,
+ * so they remain excluded from the dashboard PIPELINE. That is a different surface with its
+ * own semantics — a disputed deal arguably should not sit in a forecast — and changing it
+ * needs its own call. CR-26 is about not lying to the creator on the deals page.
  */
-export type DealStage =
-  | 'new'
-  | 'negotiating'
-  | 'contracted'
-  | 'in_progress'
-  | 'review'
-  | 'completed';
+// CR-24 — the type and the switch now live in `lib/deal-stage.ts`, a neutral module the brand
+// side can import without reaching into a file named "creator-*". Re-exported here so every
+// existing creator import keeps working unchanged. Read `deal-stage.ts` for the full rationale;
+// the long comment above is retained because it records WHY each grouping is what it is.
+export type { DealStage } from '@/lib/deal-stage';
+export { mapCollaborationStatusToDealStage } from '@/lib/deal-stage';
+
+import type { DealStage } from '@/lib/deal-stage';
+import { mapCollaborationStatusToDealStage } from '@/lib/deal-stage';
 
 export function parseDealAmount(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-/** The single source of truth for coarse deal stage. See {@link DealStage}. */
-export function mapCollaborationStatusToDealStage(status: CollaborationStatus): DealStage {
-  switch (status) {
-    case 'INVITED':
-      return 'new';
-    case 'APPLIED':
-    case 'SHORTLISTED':
-    case 'IN_NEGOTIATION':
-    case 'TERMS_AGREED':
-      return 'negotiating';
-    case 'CONTRACT_PENDING':
-    case 'CONTRACTED':
-      return 'contracted';
-    case 'IN_PROGRESS':
-      return 'in_progress';
-    case 'REVIEW_PENDING':
-    case 'REVISION_REQUESTED':
-      return 'review';
-    case 'COMPLETED':
-    case 'CANCELLED':
-    case 'DISPUTED':
-      return 'completed';
-    default:
-      return 'negotiating';
-  }
 }
 
 /** UI status for the unified creator-deals list page. */

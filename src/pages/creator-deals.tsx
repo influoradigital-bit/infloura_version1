@@ -10,6 +10,7 @@ import {
   Shield,
   Sparkles,
   AlertCircle,
+  AlertTriangle,
   ChevronRight,
   Loader2,
 } from 'lucide-react';
@@ -21,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { cn, formatINR } from '@/lib/utils';
-import { api, ApiError, type DealStatusFilter } from '@/lib/api';
+import { api, ApiError, type DealStatusFilter, type DealStatusQuery } from '@/lib/api';
 import {
   mapDealToDealsPageRow,
   type CreatorDealsPageRow,
@@ -50,6 +51,20 @@ type StatusChip = {
   id: DealStatusFilter;
   label: string;
   match: (d: DealRoom) => boolean;
+  /**
+   * CR-13 — what this chip actually sends as `?status=`, when that differs from its `id`.
+   *
+   * The "Active" chip means three stages (contracted / in_progress / review) but its `id` is
+   * the single value `in_progress`, which the server maps to `[IN_PROGRESS]` alone — so a
+   * signed, CONTRACTED deal was never returned and the tab rendered "Nothing active." with an
+   * active deal sitting right there. `DealService.statusesForFilter` now accepts a
+   * comma-separated union, so the chip asks for exactly what it means.
+   *
+   * Kept separate from `id` rather than renaming the id: `id` is also the key for
+   * `EmptyState` copy and the local `match` predicate, and overloading `in_progress` on the
+   * server to secretly mean three stages would surprise every other caller.
+   */
+  apiFilter?: DealStatusQuery;
 };
 
 /**
@@ -64,8 +79,12 @@ const STATUS_CHIPS: StatusChip[] = [
   { id: 'all',         label: 'All',           match: () => true },
   { id: 'new',         label: 'New',           match: (d) => d.status === 'new' },
   { id: 'negotiating', label: 'Negotiating',   match: (d) => d.status === 'negotiating' },
-  { id: 'in_progress', label: 'Active',        match: (d) => d.status === 'contracted' || d.status === 'in_progress' || d.status === 'review' },
+  // CR-13 — `apiFilter` is the union this chip has always *meant*; its `id` stays
+  // `in_progress` because that is the EmptyState key and the local predicate's name.
+  { id: 'in_progress', label: 'Active',        match: (d) => d.status === 'contracted' || d.status === 'in_progress' || d.status === 'review', apiFilter: 'contracted,in_progress,review' },
   { id: 'completed',   label: 'Completed',     match: (d) => d.status === 'completed' },
+  // CR-26 — CANCELLED/DISPUTED were previously badged "Done" and selected by no filter at all.
+  { id: 'disputed',    label: 'Disputed',      match: (d) => d.status === 'disputed' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -213,7 +232,9 @@ export default function CreatorDealsPage() {
     (async () => {
       setLoading(true);
       try {
-        const remote = await api.deals.list('creator', activeFilter);
+        // CR-13 — send the chip's `apiFilter` union when it has one, not its bare id.
+        const chip = STATUS_CHIPS.find((c) => c.id === activeFilter);
+        const remote = await api.deals.list('creator', chip?.apiFilter ?? activeFilter);
         // Array.isArray alone, deliberately no `.length > 0` -- a creator with genuinely zero
         // deals gets back a real empty array, which EmptyState already renders correctly.
         // Requiring non-empty treated that correct empty response the same as "API call didn't
@@ -676,6 +697,10 @@ function StatusPill({ status }: { status: DealRoom['status'] }) {
     in_progress: { label: 'Active',      cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
     review:      { label: 'In review',   cls: 'bg-orange-100 text-orange-700 border-orange-200' },
     completed:   { label: 'Done',        cls: 'bg-gray-100 text-gray-600 border-gray-200' },
+    // CR-26 — was folded into `completed` and rendered "Done" for a deal the creator is
+    // actively contesting. Uses the `--stage-disputed` token, defined since the palette
+    // shipped and until now unused.
+    disputed:    { label: 'Disputed',    cls: 'bg-stage-disputed text-stage-disputed-fg border-stage-disputed-border' },
   };
   const c = config[status];
   return (
@@ -697,6 +722,8 @@ function EmptyState({ filter }: { filter: DealStatusFilter }) {
     in_progress: { icon: AlertCircle, title: 'Nothing active',         body: 'Deals you\'re working on will show here.' },
     review:      { icon: AlertCircle, title: 'Nothing in review',      body: 'Submitted work awaiting brand approval will appear here.' },
     completed:   { icon: CheckCircle2, title: 'No completed deals yet', body: 'Past deals and earnings will show up here.' },
+    // CR-26 — deliberately reassuring rather than neutral: an empty Disputed tab is good news.
+    disputed:    { icon: AlertTriangle, title: 'Nothing disputed',      body: 'Deals that were cancelled or raised as a dispute will appear here.' },
   };
   const c = copy[filter];
   const Icon = c.icon;

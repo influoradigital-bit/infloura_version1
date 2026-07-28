@@ -128,8 +128,10 @@ describe('mapCollaborationStatusToDealStage (CR-05 — one mapping, mirroring th
     REVIEW_PENDING: 'review',
     REVISION_REQUESTED: 'review',
     COMPLETED: 'completed',
-    CANCELLED: 'completed',
-    DISPUTED: 'completed',
+    // CR-26 — was 'completed' for both, which rendered the badge "Done" on a deal the creator
+    // was actively contesting. They now have their own bucket.
+    CANCELLED: 'disputed',
+    DISPUTED: 'disputed',
   };
 
   it.each(Object.entries(expected))('maps %s -> %s', (status, stage) => {
@@ -152,6 +154,46 @@ describe('mapCollaborationStatusToDealStage (CR-05 — one mapping, mirroring th
 
   it('gives the deals list and the deal room the same stage for one deal', () => {
     expect(mapDealToChatRoom(liveDeal).status).toBe(mapDealToDealsPageRow(liveDeal).status);
+  });
+
+  /**
+   * CR-26 — a disputed deal must never read as finished.
+   *
+   * This is the assertion that matters to a person: the previous mapping told a creator whose
+   * deal was in dispute that it was "Done". Pinned separately from the table above so the
+   * intent survives even if the table is ever regenerated.
+   */
+  it('never reports a disputed or cancelled deal as completed', () => {
+    expect(mapCollaborationStatusToDealStage('DISPUTED')).not.toBe('completed');
+    expect(mapCollaborationStatusToDealStage('CANCELLED')).not.toBe('completed');
+    expect(mapCollaborationStatusToDealStage('DISPUTED')).toBe('disputed');
+  });
+});
+
+/**
+ * CR-24 — the brand side reads the SAME switch.
+ *
+ * `brand-chat.tsx` used to carry a private copy mapping `TERMS_AGREED -> 'contracted'`,
+ * character-for-character the mapping deleted from `creator-chat.tsx` as the CR-05 defect. The
+ * consequence was live: the moment a creator pressed Accept, the creator's room said
+ * "Negotiating" and the brand's room said "Contracted" for the same deal, with no contract
+ * existing on either side.
+ *
+ * The structural half — that only one switch exists — is pinned by `deal-stage.ts` being the
+ * only module that switches over `CollaborationStatus`. What is pinned here is the agreement
+ * itself, which is what a reader of either room actually experiences.
+ */
+describe('mapCollaborationStatusToDealStage (CR-24 — brand and creator agree)', () => {
+  it('puts TERMS_AGREED pre-contract, which is where the brand room now reads it too', () => {
+    expect(mapCollaborationStatusToDealStage('TERMS_AGREED')).toBe('negotiating');
+  });
+
+  it('is re-exported from creator-deal-mappers, so the creator imports are unchanged', async () => {
+    const shared = await import('@/lib/deal-stage');
+    const viaCreator = await import('@/lib/creator-deal-mappers');
+    expect(viaCreator.mapCollaborationStatusToDealStage).toBe(
+      shared.mapCollaborationStatusToDealStage,
+    );
   });
 });
 

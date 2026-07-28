@@ -558,6 +558,11 @@ const getStatusBadge = (status: DealRoom['status']) => {
     in_progress: { label: 'In Progress', variant: 'outline' as const, className: 'border bg-stage-progress text-stage-progress-fg border-stage-progress-border' },
     review: { label: 'Under Review', variant: 'outline' as const, className: 'border bg-stage-review text-stage-review-fg border-stage-review-border' },
     completed: { label: 'Completed', variant: 'outline' as const, className: 'border bg-stage-approved text-stage-approved-fg border-stage-approved-border' },
+    // CR-26 — CANCELLED/DISPUTED used to fall into 'completed' and render the green
+    // "Completed" badge on a deal the creator was contesting. This is the second surface
+    // that needed the 7th stage; the shared mapper's new 'disputed' return made the
+    // typechecker point straight at it.
+    disputed: { label: 'Disputed', variant: 'outline' as const, className: 'border bg-stage-disputed text-stage-disputed-fg border-stage-disputed-border' },
   };
   const config = statusConfig[status];
   return <Badge className={config.className}>{config.label}</Badge>;

@@ -47,6 +47,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -58,6 +59,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Task #9 — unified deal room backed by {@link Collaboration} + {@link DealMessage} timeline.
@@ -427,15 +430,39 @@ public class DealService {
      * roll back an accept, so the catch here is load-bearing rather than a swallowed error, and the
      * log line above is the only signal it produces.
      *
-     * <p><b>Known limitation — this runs pre-commit.</b> Every caller is inside the caller's
-     * {@code @Transactional} boundary, so a subscriber can observe a row that a later rollback
-     * erases. That is not new with CR-08: {@link #sendMessage} has published from inside its
-     * transaction since the stream shipped, and the same registry is the delivery path. Moving the
-     * fan-out to an {@code afterCommit} synchronization is the correct fix and is deliberately NOT
-     * done here — it is a behavioural change to the existing send path and belongs in its own
-     * ticket. See the CR-08 report.
+     * <p><b>CR-25 — this now runs AFTER COMMIT.</b> Previously every caller published from inside
+     * the caller's {@code @Transactional} boundary, so a subscriber could observe a row that a
+     * later rollback erased — a creator watching the room would see "Brand accepted the proposal"
+     * for an accept that never happened. That predated CR-08 ({@link #sendMessage} had published
+     * from inside its transaction since the stream shipped); CR-08 only widened the surface. The
+     * fan-out is now registered as an {@code afterCommit} synchronization, so a subscriber only
+     * ever sees committed state.
+     *
+     * <p>When no transaction is active the publish happens inline, unchanged — that keeps the
+     * method safe to call from a non-transactional context and keeps unit tests, which do not open
+     * a transaction, exercising the real publish path rather than silently dropping every frame.
      */
     private void publishToStream(String collaborationId, DealMessageResponse response) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            publishToStreamNow(collaborationId, response);
+                        }
+                    });
+            return;
+        }
+        publishToStreamNow(collaborationId, response);
+    }
+
+    /**
+     * The actual fan-out. Best-effort by design — see {@link #publishToStream}. A dead or slow
+     * emitter must never fail the action that produced the message, and after CR-25 it provably
+     * cannot: by the time this runs the transaction has already committed, so there is nothing
+     * left to roll back.
+     */
+    private void publishToStreamNow(String collaborationId, DealMessageResponse response) {
         try {
             messageStreamRegistry.publish(collaborationId, response);
         } catch (RuntimeException e) {
@@ -1027,32 +1054,109 @@ public class DealService {
                 parseReadBy(message.getReadByJson()));
     }
 
+    /**
+     * CR-13 — resolves a {@code ?status=} filter to the collaboration states it selects.
+     *
+     * <p><b>Accepts a comma-separated union</b> ({@code ?status=contracted,in_progress,review}),
+     * which is what the creator "Active" chip sends. Before this, that chip sent the single value
+     * {@code in_progress}, which mapped to {@code [IN_PROGRESS]} only — so a signed, CONTRACTED
+     * deal was invisible on the one tab a creator would look for it on, and the tab rendered
+     * "Nothing active." while an active deal existed. Union rather than overloading
+     * {@code in_progress} to mean three stages: {@code in_progress} keeps meaning exactly
+     * IN_PROGRESS, so no other caller is surprised by a name that quietly changed meaning.
+     *
+     * <p><b>TERMS_AGREED moved from {@code contracted} to {@code negotiating}.</b> Per Priya's
+     * ruling on CR-13, the FILTER path is the side that moves. Every DISPLAY mapper already agreed
+     * TERMS_AGREED is pre-contract — {@code DashboardService.bucketFor}, {@code
+     * AdminCampaignService}, {@code CreatorApplicationMapper}, and the frontend's single
+     * {@code mapCollaborationStatusToDealStage} — and this function was one of only two sites
+     * putting it on the far side of the line. It is structurally pre-contract: {@code doAccept}
+     * transitions to TERMS_AGREED and no contract row exists at that point. Consequence fixed: a
+     * TERMS_AGREED deal was badged "Negotiating" yet was NOT returned by the "Negotiating" chip,
+     * leaving it reachable only under "All".
+     *
+     * <p><b>APPLIED added to the creator's {@code negotiating} set</b> — the same defect, one row
+     * over, found while fixing the above. The display mappers put APPLIED in "negotiating", but no
+     * creator-role filter selected it at all: creator {@code new} is {@code [INVITED]} and
+     * {@code negotiating} did not list it, so a creator's own application was unreachable from
+     * every chip except "All". Left in {@code new} for the BRAND role, where an incoming
+     * application genuinely is new work. Strictly speaking this is beyond CR-13's literal text; it
+     * is the identical filter-vs-display divergence in the same switch and was not left behind.
+     *
+     * <p><b>Still selected by no filter: CANCELLED and DISPUTED.</b> That is CR-26, which needs a
+     * display bucket, a chip, and empty-state work on both pages — deliberately not folded in here.
+     *
+     * @return {@code null} to mean "no filtering" (the {@code all} case), never an empty list.
+     */
     private static List<CollaborationStatus> statusesForFilter(String filter, UserType role) {
-        if (filter == null || filter.isBlank() || "all".equalsIgnoreCase(filter)) {
+        if (filter == null || filter.isBlank()) {
             return null;
         }
-        return switch (filter.toLowerCase()) {
+        LinkedHashSet<CollaborationStatus> union = new LinkedHashSet<>();
+        for (String token : filter.split(",")) {
+            String key = token.trim().toLowerCase();
+            if (key.isEmpty()) {
+                continue;
+            }
+            // "all" anywhere in the union widens to everything — filtering on
+            // "all,negotiating" cannot sensibly mean less than "all".
+            if ("all".equals(key)) {
+                return null;
+            }
+            union.addAll(statusesForSingleFilter(key, filter, role));
+        }
+        // Only reachable for input that is entirely separators (","/", ,"). Treated as an
+        // explicit bad request rather than silently degrading to "all", which would show a
+        // creator every deal they own in response to a malformed query.
+        if (union.isEmpty()) {
+            throw new ApiException(
+                    "INVALID_STATUS_FILTER",
+                    "Unknown status filter: " + filter,
+                    HttpStatus.BAD_REQUEST);
+        }
+        return List.copyOf(union);
+    }
+
+    /**
+     * One token of {@link #statusesForFilter}. {@code rawFilter} is echoed in the error so a bad
+     * token inside a union reports the whole filter the caller actually sent.
+     */
+    private static List<CollaborationStatus> statusesForSingleFilter(
+            String key, String rawFilter, UserType role) {
+        return switch (key) {
             case "new" ->
                     role == UserType.CREATOR
                             ? List.of(CollaborationStatus.INVITED)
                             : List.of(CollaborationStatus.APPLIED, CollaborationStatus.INVITED);
             case "negotiating" ->
-                    List.of(CollaborationStatus.SHORTLISTED, CollaborationStatus.IN_NEGOTIATION);
+                    role == UserType.CREATOR
+                            ? List.of(
+                                    CollaborationStatus.APPLIED,
+                                    CollaborationStatus.SHORTLISTED,
+                                    CollaborationStatus.IN_NEGOTIATION,
+                                    CollaborationStatus.TERMS_AGREED)
+                            : List.of(
+                                    CollaborationStatus.SHORTLISTED,
+                                    CollaborationStatus.IN_NEGOTIATION,
+                                    CollaborationStatus.TERMS_AGREED);
             case "contracted" ->
-                    List.of(
-                            CollaborationStatus.TERMS_AGREED,
-                            CollaborationStatus.CONTRACT_PENDING,
-                            CollaborationStatus.CONTRACTED);
+                    List.of(CollaborationStatus.CONTRACT_PENDING, CollaborationStatus.CONTRACTED);
             case "in_progress" -> List.of(CollaborationStatus.IN_PROGRESS);
             case "review" ->
                     List.of(
                             CollaborationStatus.REVIEW_PENDING,
                             CollaborationStatus.REVISION_REQUESTED);
             case "completed" -> List.of(CollaborationStatus.COMPLETED);
+            // CR-26 — before this, CANCELLED and DISPUTED were selected by NO filter at all, so
+            // the only way to reach a disputed deal was the unfiltered "All" list, where it was
+            // additionally mislabelled "Done". Gives the new client-side "Disputed" chip a real
+            // server-backed filter instead of a client-only invention.
+            case "disputed" ->
+                    List.of(CollaborationStatus.CANCELLED, CollaborationStatus.DISPUTED);
             default ->
                     throw new ApiException(
                             "INVALID_STATUS_FILTER",
-                            "Unknown status filter: " + filter,
+                            "Unknown status filter: " + rawFilter,
                             HttpStatus.BAD_REQUEST);
         };
     }

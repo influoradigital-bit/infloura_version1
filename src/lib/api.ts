@@ -1293,7 +1293,20 @@ export type DealStatusFilter =
   | 'contracted'
   | 'in_progress'
   | 'review'
-  | 'completed';
+  | 'completed'
+  | 'disputed';     // CR-26 — CANCELLED + DISPUTED; previously selected by no filter at all
+
+/**
+ * CR-13 — what actually goes on the wire as `?status=`.
+ *
+ * `DealService.statusesForFilter` accepts a comma-separated union, which is how the creator
+ * "Active" chip asks for `contracted,in_progress,review` in one request. It used to send the
+ * single value `in_progress`, which the server maps to `[IN_PROGRESS]` only — so a signed,
+ * CONTRACTED deal never came back and the Active tab read "Nothing active." while an active
+ * deal existed. Kept distinct from `DealStatusFilter` so the single-value union stays the
+ * vocabulary for chips, empty states and local predicates.
+ */
+export type DealStatusQuery = DealStatusFilter | `${string},${string}`;
 
 export interface Deal {
   id: string;
@@ -1322,7 +1335,7 @@ export const deals = {
    * GET /deals?role=brand|creator&status=...
    * Single endpoint that powers brand Deal Room list AND creator unified Deals page.
    */
-  list: (role: Role, status: DealStatusFilter = 'all') =>
+  list: (role: Role, status: DealStatusQuery = 'all') =>
     isLive()
       ? http.request<Deal[]>('GET', '/deals', { role, query: { status } })
       : mockOr<Deal[]>([]),

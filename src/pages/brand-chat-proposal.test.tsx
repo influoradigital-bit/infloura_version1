@@ -410,4 +410,83 @@ describe('BrandChatPage — responding to a proposal', () => {
       await screen.findByRole('heading', { name: /Send Proposal to Aarti Menon/i }),
     ).toBeTruthy();
   });
+
+  /**
+   * CR-29 — the tripwire the W2-L1b / CR-23 staleness guard never had.
+   *
+   * CR-23 ported `isSupersededRefresh` into brand `refreshDeal`'s catch block so a slow,
+   * FAILING refresh cannot pop "Could not refresh this deal" after a newer refresh of the same
+   * deal has already succeeded — a toast that would flatly contradict what is on screen. The
+   * fix was reasoned and typechecked but not test-pinned: all 252 tests passed both with and
+   * without it, so reverting the guard broke nothing visible. This fails if you revert it.
+   *
+   * The distinction that makes the test meaningful: `console.error` is deliberately
+   * UNCONDITIONAL (a request really did fail, and that is worth diagnosing whether or not its
+   * result is still wanted) while only the user-facing toast is suppressed. Asserting just
+   * "no toast" would also pass if the whole catch block were deleted, so both halves are
+   * asserted.
+   */
+  it('suppresses the failure toast when a newer refresh already succeeded, but still logs', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Two refreshes of the SAME deal, resolved out of order: the older one rejects only after
+    // the newer one has already applied a result.
+    const deferred: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = [];
+    dealsGet.mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          deferred.push({ resolve, reject });
+        }),
+    );
+
+    renderChat();
+    await screen.findByRole('button', { name: /^Accept$/i });
+    const beforeFrames = deferred.length;
+
+    const systemFrame = (id: string) =>
+      ({
+        id,
+        dealId: 'deal_1',
+        kind: 'system',
+        senderId: 'system',
+        senderType: 'system',
+        content: 'Creator accepted the proposal',
+        createdAt: new Date('2026-07-20T11:05:00Z').toISOString(),
+        readBy: [],
+      }) as unknown as DealMessage;
+
+    // Frame 1 starts refresh A; frame 2 starts refresh B, which claims a newer token.
+    await act(async () => {
+      streamHandlers?.onMessage(systemFrame('msg_sys1'));
+    });
+    await waitFor(() => expect(deferred.length).toBeGreaterThan(beforeFrames));
+    const refreshA = deferred[deferred.length - 1];
+
+    await act(async () => {
+      streamHandlers?.onMessage(systemFrame('msg_sys2'));
+    });
+    await waitFor(() => expect(deferred.length).toBeGreaterThan(beforeFrames + 1));
+    const refreshB = deferred[deferred.length - 1];
+
+    // Newer refresh succeeds first; the older one fails afterwards.
+    await act(async () => {
+      refreshB.resolve({ ...DEAL, status: 'TERMS_AGREED' });
+    });
+    await act(async () => {
+      refreshA.reject(new Error('network down'));
+    });
+
+    // Logged — the failure is real and diagnosable.
+    await waitFor(() =>
+      expect(consoleError).toHaveBeenCalledWith(
+        'Failed to refresh deal',
+        'deal_1',
+        expect.any(Error),
+      ),
+    );
+    // But NOT toasted: what is on screen came from the newer, successful refresh.
+    expect(toastMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Could not refresh this deal' }),
+    );
+    consoleError.mockRestore();
+  });
 });
