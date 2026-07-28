@@ -380,6 +380,22 @@ class DealServiceTest {
     // ownership scoping pattern (requireOwnedCollaboration, brand scopeId = workspace id).
     // ------------------------------------------------------------------
 
+    /**
+     * The last offer on the table, as a real row in {@code deal_messages}.
+     *
+     * <p>CR-28 — this helper used to pass {@code null} metadata. {@code settleStatus} no-ops on
+     * null metadata, so every older accept/counter test built on it passed WITHOUT ever
+     * exercising the settle-and-republish path that CR-02 added: the assertions were real but
+     * the settle was silently skipped. Only the newer {@link #pendingProposalMessage} covered it.
+     * The risk was missing assertions rather than wrong ones — no false positive was ever traced
+     * to it — but a helper that quietly disables the code under test is a trap for the next test
+     * that reaches for it.
+     *
+     * <p>Fixed in the helper rather than at the three call sites, so a future test cannot
+     * reintroduce the gap by picking the wrong one. Ids stay distinct from
+     * {@link #PROPOSAL_MSG_ID} so the CR-08 publish-order tests, which assert on that exact id,
+     * are unaffected.
+     */
     private static DealMessage proposalMessage(String senderId, DealSenderType senderType) {
         return DealMessage.create(
                 "01HMSGLASTOFFER00000" + (senderType == DealSenderType.brand ? "1" : "2"),
@@ -388,7 +404,7 @@ class DealServiceTest {
                 senderId,
                 senderType,
                 "Offer on the table",
-                null);
+                "{\"amount\":25000.00,\"status\":\"pending\"}");
     }
 
     @Test
@@ -436,6 +452,25 @@ class DealServiceTest {
         // was stale, not the production code. Distinct from testAcceptHappyPath, which stubs no
         // proposal card at all and so genuinely saves once.
         verify(dealMessageRepository, times(2)).save(any(DealMessage.class));
+
+        // CR-28 — explicit proof the settle path actually RAN, which is the coverage this test
+        // silently lacked. `proposalMessage` used to carry null metadata, so settleStatus no-oped:
+        // the two saves above were the system message and an untouched card, and this assertion
+        // would have failed. Now the originating offer is genuinely marked accepted.
+        ArgumentCaptor<DealMessage> saved = ArgumentCaptor.forClass(DealMessage.class);
+        verify(dealMessageRepository, times(2)).save(saved.capture());
+        DealMessage settledCard =
+                saved.getAllValues().stream()
+                        .filter(m -> m.getKind() == DealMessageKind.proposal)
+                        .findFirst()
+                        .orElseThrow(
+                                () ->
+                                        new AssertionError(
+                                                "no proposal card was saved — the settle path did"
+                                                        + " not run"));
+        assertTrue(
+                settledCard.getMetadataJson().contains("\"status\":\"accepted\""),
+                "settled card metadata: " + settledCard.getMetadataJson());
     }
 
     @Test
