@@ -86,7 +86,7 @@ class DeliverableCleanupJobTest {
         when(disputeRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
                 .thenReturn(false);
         // Simulates a FROZEN (not FUNDED) hold — real repo query would find it via the full set.
-        when(escrowHoldRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
+        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(eq(COLLAB_ID), any()))
                 .thenReturn(true);
 
         job.cleanupAbandonedDrafts();
@@ -102,7 +102,7 @@ class DeliverableCleanupJobTest {
                 .thenReturn(List.of(abandonedDraft(FILES_JSON)));
         when(disputeRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
                 .thenReturn(false);
-        when(escrowHoldRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
+        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(eq(COLLAB_ID), any()))
                 .thenReturn(false);
 
         job.cleanupAbandonedDrafts();
@@ -110,7 +110,7 @@ class DeliverableCleanupJobTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Set<EscrowStatus>> statusesCaptor = ArgumentCaptor.forClass(Set.class);
         verify(escrowHoldRepository)
-                .existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), statusesCaptor.capture());
+                .existsForCollaborationIncludingMilestoneLink(eq(COLLAB_ID), statusesCaptor.capture());
         Set<EscrowStatus> statuses = statusesCaptor.getValue();
 
         assertTrue(statuses.contains(EscrowStatus.FUNDED));
@@ -127,7 +127,7 @@ class DeliverableCleanupJobTest {
                 .thenReturn(List.of(abandonedDraft(FILES_JSON)));
         when(disputeRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
                 .thenReturn(false);
-        when(escrowHoldRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
+        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(eq(COLLAB_ID), any()))
                 .thenReturn(false);
 
         job.cleanupAbandonedDrafts();
@@ -144,7 +144,7 @@ class DeliverableCleanupJobTest {
                 .thenReturn(List.of(d));
         when(disputeRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
                 .thenReturn(false);
-        when(escrowHoldRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
+        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(eq(COLLAB_ID), any()))
                 .thenReturn(false);
 
         job.cleanupAbandonedDrafts();
@@ -161,7 +161,7 @@ class DeliverableCleanupJobTest {
                 .thenReturn(List.of(d));
         when(disputeRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
                 .thenReturn(false);
-        when(escrowHoldRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
+        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(eq(COLLAB_ID), any()))
                 .thenReturn(false);
         doThrow(new RuntimeException("R2 down")).when(r2StorageService).deleteObject(anyString());
 
@@ -179,7 +179,7 @@ class DeliverableCleanupJobTest {
                 .thenReturn(List.of(d));
         when(disputeRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
                 .thenReturn(false);
-        when(escrowHoldRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
+        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(eq(COLLAB_ID), any()))
                 .thenReturn(false);
 
         job.cleanupAbandonedDrafts();
@@ -196,7 +196,7 @@ class DeliverableCleanupJobTest {
                 .thenReturn(List.of(d));
         when(disputeRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
                 .thenReturn(false);
-        when(escrowHoldRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
+        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(eq(COLLAB_ID), any()))
                 .thenReturn(false);
 
         job.cleanupAbandonedDrafts();
@@ -229,5 +229,53 @@ class DeliverableCleanupJobTest {
 
         verify(deliverableRepository, never())
                 .findByStatusInAndUpdatedAtBefore(any(), any(Instant.class));
+    }
+
+    @Test
+    @DisplayName(
+            "[SEC: CR-35 follow-on] the escrow guard uses the MILESTONE-AWARE lookup, never the"
+                    + " column-only one that is blind to ordinary brand-funded holds")
+    void escrowGuardUsesMilestoneAwareLookup() {
+        when(deliverableRepository.findByStatusInAndUpdatedAtBefore(any(), any(Instant.class)))
+                .thenReturn(List.of(abandonedDraft(FILES_JSON)));
+        when(disputeRepository.existsByCollaborationIdAndStatusIn(eq(COLLAB_ID), any()))
+                .thenReturn(false);
+        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(eq(COLLAB_ID), any()))
+                .thenReturn(false);
+
+        job.cleanupAbandonedDrafts();
+
+        verify(escrowHoldRepository).existsForCollaborationIncludingMilestoneLink(eq(COLLAB_ID), any());
+        // The tripwire. `existsByCollaborationIdAndStatusIn` matches ONLY the direct
+        // `collaboration_id` column, which is NULL on every hold the ordinary brand escrow flow
+        // creates — so it answered "no unreleased escrow" for exactly the collaborations this guard
+        // protects, and this job deleted creator media against funded/frozen/in-flight holds.
+        // Switching back to it must fail here, not silently start deleting again at 02:00.
+        verify(escrowHoldRepository, never()).existsByCollaborationIdAndStatusIn(anyString(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "[SEC: CR-35 follow-on] refuses to delete when the collaboration is unknown — fails"
+                    + " CLOSED rather than treating 'cannot tell' as 'nothing held'")
+    void refusesToDeleteWhenCollaborationIdIsMissing() {
+        Deliverable orphan =
+                Deliverable.builder()
+                        .id("01HDLV000000000000009")
+                        .collaborationId(null)
+                        .status(DeliverableStatus.REJECTED)
+                        .filesJson(FILES_JSON)
+                        .build();
+        when(deliverableRepository.findByStatusInAndUpdatedAtBefore(any(), any(Instant.class)))
+                .thenReturn(List.of(orphan));
+
+        job.cleanupAbandonedDrafts();
+
+        // Nothing deleted, and neither guard was even consulted — there is no id to consult them
+        // with. The failure mode this rules out is the one the original bug was made of: an
+        // unanswerable question being scored as a reassuring answer.
+        verify(r2StorageService, never()).deleteObject(anyString());
+        verify(escrowHoldRepository, never()).existsForCollaborationIncludingMilestoneLink(any(), any());
+        verify(disputeRepository, never()).existsByCollaborationIdAndStatusIn(any(), any());
     }
 }
