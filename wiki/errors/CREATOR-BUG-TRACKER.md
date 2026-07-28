@@ -892,3 +892,133 @@ CR-15 (bare-IP-over-HTTP) is a **separate** blocker from the one above, both nee
 > **Superseded:** the previous text here said Wave 1 was "committed locally and **not pushed**" with Wave 2 + CR-23 as "**uncommitted working-tree changes**". Both statements are now false — all of it is on the remote.
 >
 > **The branch-name wrinkle is real and unresolved.** Local work sat on `cr-08-deal-lifecycle-sse` (the subagent-created name noted previously) and Wave 3 was pushed from it via `git push origin HEAD:feat/creator-my-applications` — a clean fast-forward. The two names still point at the same commit and no work is at risk, but **anyone checking out `cr-08-deal-lifecycle-sse` is on a branch that does not exist on the remote and is not in the CI trigger list.** Work on `feat/creator-my-applications`.
+
+---
+
+## 10. Wave 6 Decision Record — 2026-07-28
+
+**Who ruled:** Priya (CTO) on the technical calls, Swapnil (CEO) on the business calls. Requested by the repo owner.
+
+> ⚠️ **Protocol:** this section is a *decision* record, not a status change. Per §6 only Tara edits §3 status cells and the §5 `Status:` lines. The status moves each ruling implies are listed in **§10.6 Handoff to Tara** — they have **not** been applied here. Totals in §3 are unchanged and still read **30 logged, 0 DONE**.
+
+Every one of these four was blocked on a human judgement, so the code was read before ruling rather than after. That reading changed three of the four answers, and turned up three defects this file did not know about.
+
+---
+
+### 10.1 CR-22 — Brand-side withdrawal flow · **RULING: NOT a design task yet. Backend first.**
+
+**Ruled by:** Priya (CTO). **New owner:** Vikram (backend). **Design deferred.**
+
+The ticket says CR-22 "needs a designed withdrawal flow". That premise is wrong, and shipping a design against the endpoint as it stands today would be actively dangerous.
+
+`Collaboration.canReject()` (`influora-api/.../domain/entity/Collaboration.java:196-200`) permits rejecting **anything except** `COMPLETED` / `CANCELLED` / `DISPUTED`. That includes `CONTRACTED`, `IN_PROGRESS` and `REVIEW_PENDING`. `DealService.reject()` (`DealService.java:270-304`) then:
+
+1. transitions straight to `CANCELLED`,
+2. appends a system message,
+3. no-ops the proposal-card settle (deliberate, and correctly commented at `:288-292`),
+4. **and does nothing else.**
+
+No escrow refund. No contract voiding. No deliverable reconciliation. No dispute path. **A brand can today `POST /deals/{id}/reject` on a signed contract with funded escrow and strand the money**, and the only reason no one has is that no UI calls it in that state. The `[C1]` comment in `reject()` acknowledges the withdrawal case exists but only addresses message metadata — it does not address funds.
+
+Designing an affordance for this endpoint would take a hole nobody can reach today and put a button on it.
+
+**Decision — CR-22 is split:**
+
+| | Scope | Owner | Order |
+|---|---|---|---|
+| **CR-22a** | Define what deal-level withdrawal *means* post-contract: escrow disposition, contract voiding, whether it becomes `DISPUTED` rather than `CANCELLED`, and who may do it. Then narrow `canReject()` or add the compensating logic. | **Vikram**, with Priya on the state model | **First** |
+| **CR-22b** | The designed affordance. | Unassigned (design) | **Blocked on 22a** |
+
+Until 22a lands, the CTO ruling recorded at `creator-chat.tsx:2016-2031` stands unchanged: withdrawal does not belong on the proposal card, and the Decline gate is **not** to be widened to `canReject()`.
+
+> **Cross-reference:** this is money-path, so it is in scope for the pending money-path review noted in `project_influora_consolidation`, not just for this tracker.
+
+---
+
+### 10.2 CR-27 — `creator-deals.tsx` under-offers actions · **RULING: WONTFIX as written. Keep the list narrow.**
+
+**Ruled by:** Swapnil (CEO), on Priya's technical framing. **Status → `BLOCKED` (decided, not deferred).**
+
+The ticket asks whether the deals list should offer Accept/Counter/Decline on `APPLIED` / `SHORTLISTED` / `IN_NEGOTIATION`, matching `canAccept()`. **No.**
+
+*Business reason (Swapnil):* `INVITED` is the one state where the whole decision fits on a card — a brand has offered terms and the creator says yes or no. The other three mean a negotiation is already underway. Accepting one from a list row, without the thread that produced the current number, is how a creator accepts the wrong offer. The room is where that decision belongs.
+
+*Technical reason (Priya), and it is the stronger one:* the obvious implementation is unsafe. After CR-13 the `negotiating` stage bucket contains `APPLIED`, `SHORTLISTED`, `IN_NEGOTIATION` **and `TERMS_AGREED`**. `TERMS_AGREED` fails `canAccept()`. So widening the gate to `status === 'negotiating'` would offer Accept on an already-accepted deal and 409 — **CR-02 reopened on a third surface.** A correct implementation would have to gate on the raw `collaborationStatus`, which `CreatorDealsPageRow` does not carry at all (`creator-deal-mappers.ts:104-125` — only `CreatorChatDealRoom:154` has it). So the "small fix" is: plumb a new field, add a third copy of `ACCEPTABLE_COLLABORATION_STATUSES`, and take on the exact drift risk that caused CR-05, CR-13 and CR-24.
+
+Cost is real, benefit is negative. **Closed as intentional.** The current gate — actions on `new` only — is correct and should be commented as a decision so the next reader does not re-open it as an oversight.
+
+---
+
+### 10.3 CR-30 — `brand-pipeline` + `deal-room-dashboard` · **RULING: split. One is a live bug, one is not a bug.**
+
+**Ruled by:** Priya (CTO). The ticket treats these as one product call. They are not the same question and only one of them is a product call.
+
+**`deal-room-dashboard.tsx:81` — NOT A DEFECT. Close it.**
+Its vocabulary is `proposed` / `accepted` / `rejected` / `negotiating` — a proposal vocabulary, not a lifecycle, exactly as the ticket says. Under that vocabulary `TERMS_AGREED → 'accepted'` is *literally correct*: the proposal was accepted. `CANCELLED`/`DISPUTED` → `'rejected'` is defensible in a 4-state UI with nowhere better to put them. There is no user-visible misstatement here and no drift risk worth the migration. **Keep the local switch, add a header comment stating it is a deliberate non-lifecycle vocabulary and pointing at `deal-stage.ts`.** No product call needed — I am making it.
+
+**`brand-pipeline.tsx:77-101` — a REAL divergence, and CR-24 made it live.**
+It maps `TERMS_AGREED → 'CONTRACTED'` (`:85-88`). That is character-for-character the mapping CR-05 deleted from `creator-chat.tsx` and CR-24 deleted from `brand-chat.tsx`. It is now the **last** surviving copy — which means CR-24 did not just leave it alone, it put brand-chat and brand-pipeline into direct contradiction. **Today, one `TERMS_AGREED` deal reads "Negotiating" in the brand deal room and sits in the "CONTRACTED" column of the brand pipeline board, for the same brand, in the same session.** That is CR-05's exact symptom, brand-internal. It is not latent and it is not a nice-to-have.
+
+**Decision:**
+
+| Row | Call | Owner |
+|---|---|---|
+| `TERMS_AGREED` → must move `CONTRACTED` → `NEGOTIATING` | **Not a product call — a correctness fix.** Ruled now. No contract row exists at `TERMS_AGREED`; every backend display mapper and the frontend's one mapper already agree. | **Ananya** |
+| `INVITED`/`APPLIED`/`SHORTLISTED` → `OUTREACH` as a column distinct from `NEGOTIATING` | **This one IS a genuine product call** — it is the only real conflict with `DealStage`, and the board's vocabulary may well be right. | **Swapnil: keep OUTREACH.** A brand pipeline that cannot separate "we reached out" from "we're mid-negotiation" is a worse board. Keep the column; derive it from `DealStage` plus one explicit documented delta, the pattern `brand-chat.tsx` uses. Do **not** collapse it. |
+
+So `brand-pipeline` migrates, with `OUTREACH` preserved as a declared delta and `TERMS_AGREED` corrected. Kavya must re-check that board's columns, counts and empty states — one deal legitimately moves column, and that movement *is* the fix.
+
+---
+
+### 10.4 CR-11 — White screen, not reproduced · **RULING: stop waiting for the console line.**
+
+**Ruled by:** Priya (CTO). **Status → `IN PROGRESS`, owner Ananya (not Neha).**
+
+CR-11 has been `BLOCKED` on "capture `[ErrorBoundary] Uncaught render error: …` at the moment of blanking, or find a reproducing account". Neha has already run all 5 filter chips, all 11 nav items and every deal-room panel without a crash. Asking her to keep clicking until it happens again is not a plan, and the ticket has now survived four passes on that basis.
+
+The blocker is treated as evidence-gathering. It is really **instrumentation**: the app cannot report its own crashes, so the only capture mechanism is a human happening to have devtools open at the right instant. That is the actual defect to fix.
+
+**Decision — replace the unblock condition:**
+1. `ErrorBoundary.tsx` posts the error, `componentStack`, `location.pathname` and the build hash to a real sink (server log endpoint is fine — no new vendor, so no Rohan/Swapnil budget call). Ship it; it stands on its own regardless of CR-11.
+2. Keep CR-10's fallback as-is — it already stops one throw being permanent, which is the part that made this "the whole app is dead".
+3. CR-11 stays open against the *report*, not against Neha's clicking. First captured stack names the throw site and the ticket becomes ordinary work.
+
+Neha is released from CR-11. She should spend that time on the 11 `IN VERIFY` tickets, which are testable on the box today.
+
+---
+
+### 10.5 New defects found while ruling — not previously in this file
+
+Per §6 ("if a fix creates a new defect, open a new `CR-xx` row"), three rows are proposed. **Tara to assign the real IDs and enter them in §3.** All three were found by reading the code the rulings depend on, not by testing.
+
+**Proposed CR-31 · 🟠 High · The deal-room SSE stream never reconnects, and a clean close is completely silent.**
+`api.messages.stream` (`src/lib/api.ts:1517-1589`) is a one-shot `fetch` + `ReadableStream` reader. It replaced raw `EventSource` for a correct reason — `EventSource` cannot send an `Authorization` header, and the token must not ride in the URL — but **it never reimplemented the automatic reconnect `EventSource` gave for free.** Worse: when the server closes the stream cleanly, `reader.read()` returns `done: true`, the loop `break`s, and the function returns having called **nothing** — not `onError`, not `onOpen`, no log. The consumer (`creator-chat.tsx:933-937`, and the brand equivalent) only wires `onError` to a `console.debug`.
+
+Net effect: an idle-timeout at Caddy, a backend restart, or any network blip leaves the deal room **permanently stale with zero trace anywhere** — no reconnect, no console line, no UI state. The creator sees a frozen room and has no way to know. The only recovery is switching deals or a manual Refresh.
+
+This lands squarely on CR-08, whose entire purpose was to make accept/decline/counter reach the other party in realtime. CR-08's publishes are correct; the transport under them silently gives up. **Owner: Ananya** (client reconnect with backoff + a visible "reconnecting" state; treat `done` as an error condition, not a normal exit).
+
+**Proposed CR-32 · 🟡 Medium · Second creator logout path never got CR-06's session clear.**
+`creator-layout.tsx:166-174` (sidebar logout) correctly calls `clearCreatorSession()`. `creator-settings.tsx:141-162` (Settings → Log out) calls `logout()` and then only `localStorage.removeItem('creator_token')` — leaving `creator_user_id`, `creator_email` and `creator_display_name` behind. `persistCreatorSession` writes `creator_display_name` only `if (displayName)` (`auth-session.ts:97`), so the next creator to sign in on that browser **without** a display name set inherits the previous creator's name in the shell until `/me/creator-profile` resolves — and permanently if it fails. Narrow, but it is precisely the identity-leak pattern the CR-06 CTO note said to eliminate at the root, reintroduced through a door CR-06 did not check. **Fix: call `clearCreatorSession()` here too. Owner: Ananya.**
+*(Checked and NOT a bug: the stale-onboarding path. `persistCreatorSession` removes `creator_onboarding_completed` when the server says false, and it runs inside `creatorLogin` before `creator-login.tsx:59` reads it — so the `|| localStorage.getItem(...)` fallback there cannot skip onboarding in live mode. Recorded so nobody re-files it.)*
+
+**Proposed CR-33 · 🟢 Low · Stale doc comments contradicting the code they sit on.**
+Two found in the paths reviewed: (a) `api.ts:662-664` — `creatorLogin`'s javadoc still says *"Creator has no `persistCreatorSession` helper... the caller stores the raw token"*, three lines above the body calling `persistCreatorSession(data)`; (b) `creator-deal-mappers.ts:150` — *"13 backend states collapsed into 6 UI stages"*, when CR-26 made it 7. Both are the failure mode `project_influora_stale_comment_audits` warns about: in this repo the comments lie, and these two lie about the exact fixes the last two waves shipped. **Owner: whoever next touches each file.**
+
+---
+
+### 10.6 Handoff to Tara — status moves these rulings imply
+
+Not applied. Tara to apply, recalculate §3 totals, and append to §7.
+
+| ID | From | To | Note |
+|---|---|---|---|
+| CR-22 | `OPEN` (unassigned) | Split → **CR-22a `ASSIGNED` (Vikram)**, **CR-22b `BLOCKED` on 22a** | Backend gap, not a design gap |
+| CR-27 | `OPEN` | **`BLOCKED`** — decided WONTFIX, do not re-open | §6 forbids deletion; blocked-with-reason is the recorded close |
+| CR-30 | `OPEN` (unassigned) | **`ASSIGNED` (Ananya)**, scope narrowed to `brand-pipeline.tsx` only | `deal-room-dashboard.tsx` dropped from scope as not-a-defect |
+| CR-11 | `BLOCKED` (Neha) | **`IN PROGRESS` (Ananya)** | Unblock condition replaced: instrument, don't wait |
+| CR-31/32/33 | — | **new rows, `OPEN`** | IDs to be assigned by Tara |
+
+**What this changes about the shape of the file:** §4's Wave 6 claim that "nothing here is blocked on engineering capacity" no longer holds. After these rulings, four of the five Wave 6 items are ordinary engineering work with named owners. **CR-15 (domain + TLS) is the only genuine Swapnil-gated blocker left**, unchanged from §8 — and unchanged is also the answer on the `publish-images.yml` auto-deploy line: **leave it in while the box is a test box**, and remove it the day Neha starts verifying against something a customer can see.
+
+— *Priya Sharma, CTO · Swapnil Maruti, CEO*
