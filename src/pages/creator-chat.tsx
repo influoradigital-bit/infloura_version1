@@ -1586,7 +1586,17 @@ export default function CreatorChatPage() {
   React.useEffect(() => {
     const viewport = messagesViewportRef.current;
     if (!viewport) return;
-    viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+    // `scrollTo` is feature-detected, with a plain `scrollTop` assignment as the fallback —
+    // which is what CR-04 prescribed in the first place; `scrollTo` is only preferred because
+    // it can animate. jsdom implements neither smooth behaviour nor `Element.scrollTo`, so the
+    // unguarded call threw inside this effect and took the whole page down under test. Caught
+    // by `creator-chat-refresh.test.tsx` the first time this page was ever rendered in a test.
+    // Both branches scroll exactly one element, which is the property CR-04 is actually about.
+    if (typeof viewport.scrollTo === 'function') {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+    } else {
+      viewport.scrollTop = viewport.scrollHeight;
+    }
   }, [events, openPanel]);
 
   // --- Guards (after all hooks, before dereferencing selectedDeal below) ---
