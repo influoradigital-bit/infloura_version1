@@ -377,6 +377,85 @@ class EscrowServiceTest {
     }
 
     // ------------------------------------------------------------------------------------------
+    // [Kavya QA, adjacent to CR-36] adminSplitForDispute: a 0% creatorSplitPercent settlement must
+    // end the hold REFUNDED with the REAL refund txn id, not RELEASED with a synthetic
+    // "dispute-split:<id>" string that corresponds to no ledger transaction at all. RELEASED means
+    // "the creator was paid" everywhere else this status is read (creator-facing payment state,
+    // reporting, released-volume analytics).
+    // ------------------------------------------------------------------------------------------
+
+    private EscrowHold frozenHoldForSplit() {
+        return EscrowHold.builder()
+                .id(ESCROW_HOLD_ID)
+                .workspaceId(WORKSPACE_ID)
+                .collaborationId(COLLAB_ID)
+                .campaignId("01HCAMPAIGN1234567AB")
+                .amount(BigDecimal.valueOf(5000))
+                .currency("INR")
+                .status(EscrowStatus.FROZEN)
+                .idempotencyKey("idem-split-1")
+                .build();
+    }
+
+    private void stubSplitLookup(EscrowHold hold, Collaboration collaboration) {
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(collaboration));
+        when(escrowHoldRepository.findByCollaborationIdAndStatus(COLLAB_ID, EscrowStatus.FROZEN))
+                .thenReturn(List.of(hold));
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+    }
+
+    @Test
+    @DisplayName(
+            "adminSplitForDispute: a 0% creatorSplitPercent settlement ends REFUNDED with the real"
+                    + " refund txn id -- NOT RELEASED with a synthetic id, since no ESCROW_RELEASE"
+                    + " ever posts when the creator's share is zero")
+    void adminSplitForDisputeZeroPercentEndsRefundedNotReleased() {
+        EscrowHold hold = frozenHoldForSplit();
+        Collaboration collaboration =
+                Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        stubSplitLookup(hold, collaboration);
+        Wallet clearingWallet = Wallet.forWorkspace("01HCLEARING1234567890", "platform-clearing");
+        Wallet brandWallet = Wallet.forWorkspace(WORKSPACE_ID, "brand");
+        when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(brandWallet);
+        when(ledgerService.post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(
+                        new WalletLedgerService.LedgerPostingResult(
+                                WalletTransaction.builder().id("wtx-split-refund-debit").build(),
+                                WalletTransaction.builder().id("wtx-split-refund-credit").build()));
+
+        List<EscrowStatusResponse> results = service.adminSplitForDispute(COLLAB_ID, BigDecimal.ZERO);
+
+        assertEquals(1, results.size());
+        assertEquals(EscrowStatus.REFUNDED, hold.getStatus());
+        assertEquals("wtx-split-refund-credit", hold.getReleaseTxnId());
+        // No release leg was ever attempted -- the creator's share was zero.
+        verify(platformFeeService, never()).deductAtRelease(any(), any(), any(), any(), any(), any());
+        verify(walletService, never()).requireOrCreateUserWallet(any());
+    }
+
+    @Test
+    @DisplayName(
+            "adminSplitForDispute: a normal (non-zero, non-100) split still ends RELEASED with the"
+                    + " real release txn id -- proves the 0% fix is narrow, not blanket")
+    void adminSplitForDisputeNormalSplitStillEndsReleased() {
+        EscrowHold hold = frozenHoldForSplit();
+        Collaboration collaboration =
+                Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        stubSplitLookup(hold, collaboration);
+        Wallet brandWallet = Wallet.forWorkspace(WORKSPACE_ID, "brand");
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(brandWallet);
+        stubSuccessfulReleaseLedgerCalls(CREATOR_USER_ID);
+
+        List<EscrowStatusResponse> results =
+                service.adminSplitForDispute(COLLAB_ID, BigDecimal.valueOf(60));
+
+        assertEquals(1, results.size());
+        assertEquals(EscrowStatus.RELEASED, hold.getStatus());
+        assertEquals("wtx-release-credit", hold.getReleaseTxnId());
+    }
+
+    // ------------------------------------------------------------------------------------------
     // [SEC: Wave-1 S5] deriveFundAmount -- milestone lookup must be workspace-scoped, not a bare
     // findById, or a caller could pass another workspace's milestoneId and learn its amount.
     // ------------------------------------------------------------------------------------------
@@ -745,6 +824,120 @@ class EscrowServiceTest {
         verify(escrowHoldRepository, times(2)).save(any(EscrowHold.class));
         verify(milestoneRepository, never()).findByIdAndWorkspaceId(any(), any());
         verify(contractRepository, never()).findById(any());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // [CR-36 residual, wiki/tech/escrow-cancelled-gate-spec.md] release() must refuse to pay a
+    // creator on a CANCELLED collaboration. refund() must NOT be blocked by the same status — that
+    // would strand every rupee held against a cancelled collaboration with no path to return it,
+    // the CR-35 class of bug. See EscrowService#assertReleaseNotBlockedByCancellation's javadoc.
+    // ------------------------------------------------------------------------------------------
+
+    private PaymentMilestone releasableMilestone() {
+        PaymentMilestone milestone =
+                PaymentMilestone.builder()
+                        .id(MILESTONE_ID)
+                        .contractId(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .amount(BigDecimal.valueOf(5000))
+                        .build();
+        milestone.markFunded(ESCROW_HOLD_ID);
+        return milestone;
+    }
+
+    private void stubSuccessfulReleaseLedgerCalls(String payeeUserId) {
+        Wallet clearingWallet = Wallet.forWorkspace("01HCLEARING1234567890", "platform-clearing");
+        Wallet payeeWallet = Wallet.forUser("01HPAYEEWALLET1234AB", payeeUserId);
+        when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
+        when(walletService.requireOrCreateUserWallet(payeeUserId)).thenReturn(payeeWallet);
+        when(platformFeeService.deductAtRelease(any(), any(), any(), any(), any(), any()))
+                .thenReturn(
+                        new PlatformFeeService.FeeDeductionResult(
+                                BigDecimal.valueOf(5000),
+                                1500,
+                                BigDecimal.valueOf(750),
+                                BigDecimal.valueOf(4250),
+                                null));
+        when(ledgerService.post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(
+                        new WalletLedgerService.LedgerPostingResult(
+                                WalletTransaction.builder().id("wtx-release-debit").build(),
+                                WalletTransaction.builder().id("wtx-release-credit").build()));
+    }
+
+    @Test
+    @DisplayName(
+            "[CR-36 residual] release: refuses to pay the creator with 409 COLLABORATION_CANCELLED"
+                    + " when the milestone's collaboration was cancelled -- no money moves")
+    void releaseRejectsCancelledCollaboration() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        PaymentMilestone milestone = releasableMilestone();
+        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        Collaboration cancelled =
+                Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        cancelled.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(cancelled));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.release(principal, WORKSPACE_ID, MILESTONE_ID));
+
+        assertEquals("COLLABORATION_CANCELLED", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        // No hold was ever locked/read and no ledger posting was attempted — the guard fires before
+        // either, so a cancelled deal can never even reach the FUNDED-status/dispute checks.
+        verify(escrowHoldRepository, never()).findByIdForUpdate(any());
+        verify(ledgerService, never())
+                .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "[CR-36 residual regression guard] refund: still succeeds on a CANCELLED collaboration --"
+                    + " refund is the remedy for a cancelled deal, not an abuse of one, and must stay"
+                    + " exempt from the release-only CANCELLED guard")
+    void refundStillSucceedsOnCancelledCollaboration() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        EscrowHold hold = fundedHold(); // carries collaborationId(COLLAB_ID)
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+        Collaboration cancelled =
+                Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        cancelled.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(cancelled));
+        Wallet clearingWallet = Wallet.forWorkspace("01HCLEARING1234567890", "platform-clearing");
+        Wallet brandWallet = Wallet.forWorkspace(WORKSPACE_ID, "brand");
+        when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(brandWallet);
+        when(ledgerService.post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(
+                        new WalletLedgerService.LedgerPostingResult(
+                                WalletTransaction.builder().id("wtx-refund-debit").build(),
+                                WalletTransaction.builder().id("wtx-refund-credit").build()));
+
+        EscrowStatusResponse response = service.refund(principal, WORKSPACE_ID, ESCROW_HOLD_ID);
+
+        assertEquals(EscrowStatus.REFUNDED, response.status());
+        verify(escrowHoldRepository).save(hold);
+    }
+
+    @Test
+    @DisplayName(
+            "[CR-36 residual] release: still succeeds on a healthy (non-cancelled, non-disputed)"
+                    + " collaboration -- proves the new guard is narrow, not blanket")
+    void releaseSucceedsOnHealthyCollaboration() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        PaymentMilestone milestone = releasableMilestone();
+        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        Collaboration healthy = Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(healthy));
+        EscrowHold hold = fundedHold();
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+        stubSuccessfulReleaseLedgerCalls(CREATOR_USER_ID);
+
+        EscrowStatusResponse response = service.release(principal, WORKSPACE_ID, MILESTONE_ID);
+
+        assertEquals(EscrowStatus.RELEASED, response.status());
+        verify(escrowHoldRepository).save(hold);
     }
 
     @Test

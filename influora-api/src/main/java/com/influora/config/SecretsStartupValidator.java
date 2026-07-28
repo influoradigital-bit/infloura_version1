@@ -162,6 +162,13 @@ public class SecretsStartupValidator {
     @Value("${influora.auth.admin-refresh-cookie.secure:true}")
     private boolean adminRefreshCookieSecure;
 
+    /**
+     * [SEC: Kabir CR-11 XFF re-review, M-3] Bound here for the same reason as the cookie flags
+     * above: nothing else stops a deploy from setting it wrong, and the consequence is silent.
+     */
+    @Value("${server.forward-headers-strategy:none}")
+    private String forwardHeadersStrategy;
+
     public SecretsStartupValidator(
             JwtProperties jwtProperties,
             MeeraStreamProperties meeraStreamProperties,
@@ -397,6 +404,40 @@ public class SecretsStartupValidator {
             problems
                     .append(
                             "  - influora.auth.admin-refresh-cookie.secure must be true outside dev\n");
+        }
+        validateForwardHeadersStrategy(problems);
+    }
+
+    /**
+     * [SEC: Kabir CR-11 XFF re-review, M-3] Refuses to boot outside dev on
+     * {@code server.forward-headers-strategy: framework}.
+     *
+     * <p>That single word in a compose file was the whole of Blocker-1. Spring's
+     * {@code ForwardedHeaderFilter} runs ahead of the Security chain, rewrites
+     * {@code getRemoteAddr()} to the client-spoofable LEFT-most {@code X-Forwarded-For} entry with
+     * no trusted-proxy validation, and strips the headers — defeating every IP-keyed rate-limit
+     * bucket (login brute-force included) and forging the client IP on every admin audit-log row.
+     * The fix was to switch to {@code native}; nothing stopped anyone switching it back, and a
+     * fully green test suite would survive the reintroduction because the defect lives in config,
+     * not code.
+     *
+     * <p>{@code none} is rejected too, and this is the part worth understanding: it is now
+     * <em>more</em> dangerous than it was before the fix, not less. With no valve resolving the
+     * peer, every request behind Caddy keys on Caddy's own container address — one shared bucket
+     * for the entire internet — and the hand-rolled allow-list that used to paper over that case is
+     * deliberately gone. A misconfiguration that used to degrade quietly now has to fail loudly.
+     */
+    private void validateForwardHeadersStrategy(StringBuilder problems) {
+        String strategy =
+                forwardHeadersStrategy == null ? "" : forwardHeadersStrategy.trim().toLowerCase();
+        if (!"native".equals(strategy)) {
+            problems
+                    .append("  - server.forward-headers-strategy must be `native` outside dev (got `")
+                    .append(forwardHeadersStrategy)
+                    .append(
+                            "`). `framework` trusts a client-spoofable X-Forwarded-For and defeats"
+                                + " every IP rate limit; `none` collapses all clients behind the"
+                                + " reverse proxy into one bucket.\n");
         }
     }
 

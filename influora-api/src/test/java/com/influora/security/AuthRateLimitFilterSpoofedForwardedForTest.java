@@ -27,13 +27,27 @@ import org.springframework.mock.web.MockHttpServletResponse;
  * {@code RemoteIpValve} resolves the peer with its own allow-list and a right-to-left walk), and
  * downstream {@code clientIp()} simply reads {@code getRemoteAddr()}.
  *
- * <p><b>What this test can and cannot prove.</b> It asserts the filter's own contract: the bucket
- * key follows {@code getRemoteAddr()} and NOTHING else, so no header a client controls can split or
- * refresh a bucket. It cannot exercise {@code RemoteIpValve} itself — that lives in the embedded
- * container, and this codebase has no {@code @SpringBootTest} harness for the filter chain (see the
- * sibling {@code AuthRateLimitFilter*BucketTest} classes, same reflection harness). Whether the
- * valve is wired correctly is a deploy-config property, verified by the runbook check, not here.
- * Recorded explicitly so nobody reads a green suite as proof the whole chain is safe.
+ * <p><b>What this test can and cannot prove — read this before trusting it.</b> It asserts the
+ * filter's own contract: the bucket key follows {@code getRemoteAddr()} and NOTHING else, so no
+ * header a client controls can split or refresh a bucket.
+ *
+ * <p><b>It would have PASSED on the vulnerable build.</b> [Kabir CR-11 XFF re-review, point 6.]
+ * The poisoning happened upstream, in {@code ForwardedHeaderFilter}, which is not in this harness;
+ * and with no trusted proxies configured the old {@code clientIp()} also fell through to the peer
+ * for these inputs. So this is a forward-looking guard on the filter's contract, NOT regression
+ * cover for Blocker-1 — it commemorates a bug it could not have caught. The commit that added it
+ * called it "revert-proven", which was true only of a hand-written stand-in for the old code, not
+ * of the real defect.
+ *
+ * <p>What actually protects Blocker-1 from returning is {@code SecretsStartupValidator}'s
+ * {@code forward-headers-strategy} check, which refuses to boot on {@code framework} — the defect
+ * lived in config, so the guard has to as well.
+ *
+ * <p>A real test of {@code RemoteIpValve} is cheaper than the original commit implied:
+ * {@code org.apache.catalina.filters.RemoteIpFilter} is the filter twin of the valve, shares its
+ * resolution code, is already on the classpath via {@code tomcat-embed-core}, and works with
+ * {@code MockHttpServletRequest} — no container, no Docker (which matters, since every
+ * {@code @SpringBootTest} here dies on testcontainers discovery). Worth doing; not done yet.
  *
  * <p>Run: {@code mvn -o test -Dtest=AuthRateLimitFilterSpoofedForwardedForTest}
  */

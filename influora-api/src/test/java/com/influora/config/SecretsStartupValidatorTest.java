@@ -136,6 +136,10 @@ class SecretsStartupValidatorTest {
         setField(validator, "env", env);
         setField(validator, "refreshCookieSecure", refreshCookieSecure);
         setField(validator, "adminRefreshCookieSecure", adminRefreshCookieSecure);
+        // [SEC: Kabir CR-11 XFF re-review, M-3] The value a correctly-configured deploy ships with
+        // (application.yml's default). Set here so the existing "boots clean in prod" cases stay
+        // about what they are about; the misconfiguration is asserted by its own test below.
+        setField(validator, "forwardHeadersStrategy", "native");
         return validator;
     }
 
@@ -150,6 +154,42 @@ class SecretsStartupValidatorTest {
     @DisplayName("validate: all real, distinct, valid secrets (including a real EC key) boots clean in prod")
     void testAllRealSecretsBootsCleanInProd() throws Exception {
         SecretsStartupValidator validator = buildValidator("prod");
+        assertDoesNotThrow(validator::validate);
+    }
+
+    @Test
+    @DisplayName(
+            "[SEC: Kabir CR-11 XFF re-review, M-3] forward-headers-strategy=framework fails closed"
+                    + " in prod — it was one word in a compose file and it defeated every IP limit")
+    void testFrameworkForwardHeadersStrategyFailsClosedInProd() throws Exception {
+        SecretsStartupValidator validator = buildValidator("prod");
+        setField(validator, "forwardHeadersStrategy", "framework");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("server.forward-headers-strategy"));
+    }
+
+    @Test
+    @DisplayName(
+            "[SEC: Kabir CR-11 XFF re-review, M-3] forward-headers-strategy=none ALSO fails closed"
+                    + " — it reads as the safe value and now collapses every client into one bucket")
+    void testNoneForwardHeadersStrategyFailsClosedInProd() throws Exception {
+        // `none` deserves its own case rather than riding on the `framework` one. It was this
+        // file's own former fail-safe default, so it is the value someone reaches for when
+        // "hardening" — and since the hand-rolled trusted-proxy list is deliberately gone, it no
+        // longer degrades quietly: every request behind Caddy keys on Caddy's container address.
+        SecretsStartupValidator validator = buildValidator("prod");
+        setField(validator, "forwardHeadersStrategy", "none");
+
+        assertThrows(IllegalStateException.class, validator::validate);
+    }
+
+    @Test
+    @DisplayName("dev is exempt — a local run has no reverse proxy in front of it")
+    void testForwardHeadersStrategyNotEnforcedInDev() throws Exception {
+        SecretsStartupValidator validator = buildValidator("dev");
+        setField(validator, "forwardHeadersStrategy", "none");
+
         assertDoesNotThrow(validator::validate);
     }
 

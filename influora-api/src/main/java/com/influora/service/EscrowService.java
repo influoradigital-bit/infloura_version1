@@ -550,6 +550,9 @@ public class EscrowService {
                                                 HttpStatus.NOT_FOUND));
         String payeeUserId = collaboration.getCreatorId();
 
+        // [CR-36 residual, escrow-cancelled-gate-spec] release-only guard — see its javadoc for
+        // why refund() below is deliberately NOT given this check.
+        assertReleaseNotBlockedByCancellation(collaboration);
         assertEscrowNotBlockedByDispute(collaboration);
 
         EscrowHold hold = requireHoldForUpdate(milestone.getEscrowHoldId());
@@ -894,19 +897,37 @@ public class EscrowService {
                 creditLegId = releaseOutcome.releaseTxnId();
             }
 
+            String refundLegId = null;
             if (brandAmount.signum() > 0) {
                 String refundIdempotencyKey = "dispute-split-refund:" + hold.getId();
-                escrowBackend.refund(
-                        new EscrowBackend.RefundCommand(
-                                hold.getWorkspaceId(),
-                                hold.getId(),
-                                brandAmount,
-                                hold.getCurrency(),
-                                "Dispute-resolved split refund for collaboration " + collaborationId,
-                                refundIdempotencyKey));
+                var refundOutcome =
+                        escrowBackend.refund(
+                                new EscrowBackend.RefundCommand(
+                                        hold.getWorkspaceId(),
+                                        hold.getId(),
+                                        brandAmount,
+                                        hold.getCurrency(),
+                                        "Dispute-resolved split refund for collaboration " + collaborationId,
+                                        refundIdempotencyKey));
+                refundLegId = refundOutcome.refundTxnId();
             }
 
-            hold.markReleased(creditLegId != null ? creditLegId : "dispute-split:" + hold.getId());
+            // [Kavya QA, adjacent to CR-36] A 0% creatorSplitPercent is a legitimate settlement —
+            // the creator gets nothing, the brand is refunded in full — and creatorSplitPercent
+            // validation above permits 0. On that path creatorAmount.signum() > 0 is false, no
+            // ESCROW_RELEASE ever posts, and creditLegId stays null. This used to still call
+            // hold.markReleased(...) with a synthetic "dispute-split:<id>" string that corresponds
+            // to NO ledger transaction at all — RELEASED means "the creator was paid" everywhere
+            // else this status is read (creator-facing payment state, reporting, released-volume
+            // analytics), so a 100%-to-brand split was recorded and audited as a release. The
+            // terminal status must track what actually happened: a real creator credit -> RELEASED
+            // with that credit's real txn id; no creator credit -> REFUNDED with the REAL refund
+            // txn id captured above (never a synthetic id).
+            if (creditLegId != null) {
+                hold.markReleased(creditLegId);
+            } else {
+                hold.markRefunded(refundLegId);
+            }
             escrowHoldRepository.save(hold);
             markMilestoneReleasedIfPresent(hold, creditLegId, releaseIdempotencyKey);
 
@@ -1209,6 +1230,31 @@ public class EscrowService {
                         () ->
                                 new ApiException(
                                         "ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND));
+    }
+
+    /**
+     * [CR-36 residual, {@code wiki/tech/escrow-cancelled-gate-spec.md}] Blocks {@link
+     * #releaseInternal} from paying a creator on a collaboration that has been cancelled. Release
+     * moves money FORWARD to the creator on a deal the platform has already marked dead — that is
+     * the actual defect this closes.
+     *
+     * <p><b>Deliberately NOT folded into {@link #assertEscrowNotBlockedByDispute}</b>, even though
+     * both guards sit in front of sibling methods on the same {@link Collaboration}. This check
+     * must NEVER be added to {@code refund()}. Refund sends the money back to the brand that funded
+     * it — it is the remedy for a cancelled collaboration, not an abuse of one. Blocking refund on
+     * CANCELLED would strand every rupee held against a cancelled collaboration with no code path
+     * left to return it, which is exactly the class of bug CR-35 was opened for. A guard that
+     * recreates the bug it was written to prevent is worse than no guard, so this stays its own
+     * method with its own name rather than becoming a CANCELLED branch inside the shared dispute
+     * check.
+     */
+    private void assertReleaseNotBlockedByCancellation(Collaboration collaboration) {
+        if (collaboration.getStatus() == CollaborationStatus.CANCELLED) {
+            throw new ApiException(
+                    "COLLABORATION_CANCELLED",
+                    "This deal was cancelled and its escrow can no longer be released to the creator",
+                    HttpStatus.CONFLICT);
+        }
     }
 
     private void assertEscrowNotBlockedByDispute(Collaboration collaboration) {

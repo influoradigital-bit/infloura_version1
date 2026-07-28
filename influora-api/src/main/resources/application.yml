@@ -139,12 +139,15 @@ influora:
   security:
     content-security-policy: >-
       ${CONTENT_SECURITY_POLICY:default-src 'none'; frame-ancestors 'none'; base-uri 'none'}
-    # [SEC: Wave-1 S6 / Kabir audit H-4] Comma-separated allow-list of trusted reverse-proxy
-    # socket addresses. See AuthRateLimitFilter#clientIp — empty by default (fail-safe): with no
-    # trusted proxy configured, X-Forwarded-For is ignored entirely and the raw socket peer is
-    # used as the rate-limit key. Set to the LB/ingress IP(s) in any real deploy that sits behind
-    # a reverse proxy.
-    trusted-proxies: ${TRUSTED_PROXIES:}
+    # [SEC: Kabir CR-11 XFF re-review, H-1] `trusted-proxies` is GONE. It used to live here telling
+    # operators to "set to the LB/ingress IP(s) in any real deploy" and cross-referencing
+    # AuthRateLimitFilter#clientIp, which no longer reads it. Trusted-proxy validation now lives in
+    # `server.tomcat.remoteip.internal-proxies` above. Deleting only the Java half left the half an
+    # operator actually reads to understand this system's posture — precisely the CR-33 artefact the
+    # fix commit invoked as its reason for deleting rather than leaving inert.
+    # The `TRUSTED_PROXIES` env var is still passed by deploy/hostinger/*.yml and is inert; it stays
+    # there so a rollback to an older image does not lose it. That reasoning does not extend to this
+    # binding, which is why this one is removed and that one is not.
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
   jwt:
