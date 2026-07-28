@@ -481,9 +481,19 @@ const ACCEPTABLE_COLLABORATION_STATUSES: readonly CollaborationStatus[] = [
  * room and the deals-list quick actions have the same stale-offer exposure and
  * must reuse this, not re-derive it. Kept module-local for now because this file
  * is a route module — exporting a non-component from one disables Fast Refresh
- * for the whole page (react-refresh/only-export-components). When CR-07 wires the
- * brand room up, lift this into lib/creator-deal-mappers.ts alongside the other
- * shared status logic rather than re-exporting it from here.
+ * for the whole page (react-refresh/only-export-components).
+ *
+ * ⚠️ CR-33 — this used to say "when CR-07 wires the brand room up, lift this into
+ * lib/creator-deal-mappers.ts". **CR-07 shipped in Wave 2 and the lift did not
+ * happen**, so that trigger fired unnoticed and `brand-chat.tsx` now carries its
+ * own copy of the same list. Two copies of one backend precondition is the exact
+ * shape of CR-05/CR-13/CR-24: if `Collaboration.canAccept()` changes, both must
+ * move or the two rooms disagree about whether an offer is still live. Filed as
+ * CR-34 (§10.5 of `wiki/errors/CREATOR-BUG-TRACKER.md`) rather than left as a
+ * conditional nobody is watching; `lib/deal-stage.ts` is the destination.
+ *
+ * Note the deals LIST is deliberately not a third copy — per the CR-27 ruling it
+ * offers actions on `new` only and does not need this predicate at all.
  *
  * CR-05 — this now reads `collaborationStatus` and nothing else. It used to fall back to
  * the coarse `status` when the raw one was absent, which only worked because this file's

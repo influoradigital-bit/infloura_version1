@@ -1023,6 +1023,19 @@ This lands squarely on CR-08, whose entire purpose was to make accept/decline/co
 **Proposed CR-33 · 🟢 Low · Stale doc comments contradicting the code they sit on.**
 Two found in the paths reviewed: (a) `api.ts:662-664` — `creatorLogin`'s javadoc still says *"Creator has no `persistCreatorSession` helper... the caller stores the raw token"*, three lines above the body calling `persistCreatorSession(data)`; (b) `creator-deal-mappers.ts:150` — *"13 backend states collapsed into 6 UI stages"*, when CR-26 made it 7. Both are the failure mode `project_influora_stale_comment_audits` warns about: in this repo the comments lie, and these two lie about the exact fixes the last two waves shipped. **Owner: whoever next touches each file.**
 
+> ✅ **FIXED**, and the sweep found two more of the same kind plus one genuinely untracked defect.
+> - **(a)** `creatorLogin`'s javadoc now describes what the body does, and records what it used to claim.
+> - **(b)** `creator-deal-mappers.ts` now says 7 and points at `deal-stage.ts` as the thing to recount rather than restating a number.
+> - **(c)** `deal-stage.ts`'s header said *"CR-24 remains open for those two"* — untrue since CR-30 was split out, and now doubly untrue since §10.3 ruled `deal-room-dashboard` **not a defect** while `brand-pipeline` stays open. Rewritten to the split, including the `TERMS_AGREED -> CONTRACTED` divergence §10.3 identified, so nobody "finishes the job" by collapsing the dashboard.
+> - **(d)** `creator-chat.tsx` said *"when CR-07 wires the brand room up, lift this into `creator-deal-mappers.ts`"*. **CR-07 shipped in Wave 2 and the lift never happened** — a conditional comment whose trigger fired unnoticed. `brand-chat.tsx` said the lift *"is tracked separately"*, which was simply false: no ticket covered it. Both now state the real position and cite CR-34 below.
+>
+> **The genuine finding underneath (d) is not a comment problem** — see CR-34.
+
+**Proposed CR-34 · 🟡 Medium · `ACCEPTABLE_COLLABORATION_STATUSES` is duplicated in both deal rooms, untracked.**
+`creator-chat.tsx` and `brand-chat.tsx` each carry their own copy of the exact status set `Collaboration.canAccept()` permits. Both are module-local for a real reason (exporting a non-component from a route module kills Fast Refresh for the page), but **two copies of one backend precondition is the same shape as CR-05, CR-13 and CR-24** — the defect class this file has now paid for three times. If `canAccept()` gains or loses a status, both copies must move or the two sides of one negotiation disagree about whether an offer is still live, which is CR-02's symptom with a different trigger.
+
+Surfaced only because CR-33's sweep read the comments claiming it was handled. It was not: the creator-side comment deferred it to CR-07 (shipped, lift skipped) and the brand-side comment asserted it was "tracked separately" (it wasn't). **Fix: lift both into `src/lib/deal-stage.ts`, which already exists as the neutral home for precisely this.** Not urgent — the two copies agree today — but it is a live drift risk with no owner. **Owner: Ananya.**
+
 ---
 
 ### 10.6 Handoff to Tara — status moves these rulings imply

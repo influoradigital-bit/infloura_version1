@@ -546,7 +546,15 @@ function formatDate(date: Date): string {
  * The creator room keeps its own copy of this list (creator-chat.tsx). Both are deliberately
  * module-local: these are route modules, and exporting a non-component from one disables Fast
  * Refresh for the whole page (react-refresh/only-export-components). Lifting both into
- * lib/creator-deal-mappers.ts is the right end state and is tracked separately.
+ * lib/deal-stage.ts — the neutral home that already exists for exactly this reason — is the
+ * right end state.
+ *
+ * ⚠️ Two copies of one backend precondition is the same shape as the defect behind CR-05,
+ * CR-13 and CR-24. If `Collaboration.canAccept()` gains or loses a status, BOTH copies must
+ * move or the two rooms will disagree about whether an offer is live.
+ *
+ * (CR-33 — this used to claim the lift "is tracked separately". It was not: no ticket covered
+ * it. Now filed as CR-34, §10.5 of `wiki/errors/CREATOR-BUG-TRACKER.md`.)
  */
 const ACCEPTABLE_COLLABORATION_STATUSES: readonly CollaborationStatus[] = [
   'INVITED',

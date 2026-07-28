@@ -659,9 +659,17 @@ export const auth = {
    * same way `creatorRegister` does — `http.request<T>()` only casts
    * `envelope.data as T`, so without this mapping `result.token` would be
    * `undefined` in live mode and `setToken('creator', undefined)` would break
-   * login. Creator has no `persistCreatorSession` helper (unlike brand's
-   * `persistBrandSession`); the caller stores the raw token via
-   * `api.auth.setToken('creator', result.token)`.
+   * login.
+   *
+   * CR-06 gave the creator flow its own `persistCreatorSession`, mirroring
+   * `persistBrandSession`, and it is called below — the identity fields are kept
+   * here rather than thrown away, which is what left the shell with no creator to
+   * display. The caller still stores the access token itself via
+   * `api.auth.setToken('creator', result.token)`; this helper deliberately does not
+   * touch the token.
+   *
+   * (CR-33 — this paragraph previously read "Creator has no `persistCreatorSession`
+   * helper... the caller stores the raw token", three lines above the call to it.)
    */
   creatorLogin: async (payload: LoginPayload): Promise<LoginResponse> => {
     if (!isLive()) {

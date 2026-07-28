@@ -147,9 +147,13 @@ export interface CreatorChatDealRoom {
   escrowFunded: boolean;
   /**
    * Raw backend collaboration status, straight off `Deal.status`. `status` above is lossy
-   * on purpose (13 backend states collapsed into 6 UI stages), so anything that has to
-   * agree with a backend precondition — `Collaboration.canAccept()`, above all — reads
-   * this instead. Undefined only where there is no backend row behind the room.
+   * on purpose (13 backend states collapsed into the 7 stages of {@link DealStage}), so
+   * anything that has to agree with a backend precondition — `Collaboration.canAccept()`,
+   * above all — reads this instead. Undefined only where there is no backend row behind
+   * the room.
+   *
+   * (CR-33 — said "6 UI stages" until CR-26 added the 7th, `disputed`. Counting the union
+   * in `deal-stage.ts` is the check; do not restate the number without recounting it.)
    */
   collaborationStatus?: CollaborationStatus;
 }

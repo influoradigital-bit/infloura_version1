@@ -25,16 +25,24 @@ import type { CollaborationStatus } from '@/lib/types';
  *     already reached out on, so it folds into 'negotiating'. It also drops 'disputed'
  *     (returns null and filters the row out) because that list has no disputed chip.
  *
- * Two brand surfaces are deliberately NOT migrated, because their vocabularies encode
- * distinctions `DealStage` cannot express — collapsing them onto this would change what those
- * boards show, which is a product call and needs its own QA pass (Priya's CR-24 scope note):
+ * Two brand surfaces were split out of CR-24 as **CR-30**, and the Wave 6 decision record
+ * (§10.3 of `wiki/errors/CREATOR-BUG-TRACKER.md`) then ruled on them separately — they are
+ * NOT one job:
  *   - `brand-pipeline.tsx` splits INVITED/APPLIED/SHORTLISTED into `OUTREACH`, separate from
  *     `NEGOTIATING` (IN_NEGOTIATION only). `DealStage` folds APPLIED/SHORTLISTED into
  *     'negotiating', so deriving would silently move deals between pipeline columns.
+ *     **Still outstanding.** `OUTREACH` was ruled worth keeping, so this migrates by deriving
+ *     from `DealStage` plus that one documented delta. Note it also still maps
+ *     `TERMS_AGREED -> CONTRACTED` — the last surviving copy of the CR-05/CR-24 defect, which
+ *     means brand-chat and brand-pipeline currently disagree about the same deal.
  *   - `deal-room-dashboard.tsx` uses a 4-state proposal vocabulary
  *     ('proposed'/'accepted'/'rejected'/'negotiating') that is not a lifecycle at all.
- * Do not read this module's existence as evidence that job is finished — CR-24 remains open
- * for those two.
+ *     **Ruled NOT a defect and closed** — under a proposal vocabulary `TERMS_AGREED ->
+ *     'accepted'` is literally correct. It keeps its local switch on purpose.
+ *
+ * So: do not read this module's existence as evidence the job is finished, and do not
+ * "finish" it by collapsing `deal-room-dashboard` onto this. (CR-33 — this paragraph
+ * previously pointed at CR-24 for both, which stopped being true when CR-30 was split out.)
  *
  * ---------------------------------------------------------------------------
  * Why TERMS_AGREED is pre-contract
