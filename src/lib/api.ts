@@ -58,6 +58,22 @@ export function isApiLive(): boolean {
 }
 
 /**
+ * CR-11 — resolves the `__APP_BUILD_ID__` Vite `define` (vite.config.ts) to a value that is
+ * safe to read from ANY test/build context, not just a real `vite build`.
+ *
+ * `typeof __APP_BUILD_ID__` rather than a bare reference: when the define replaces the
+ * identifier (a real Vite build, or `npm run dev`), this evaluates the substituted literal
+ * as intended. When nothing replaces it (vitest's configs — vitest.config.ts /
+ * vitest.live.config.ts — deliberately aren't touched for this ticket and carry no such
+ * `define`), the identifier is never declared as a runtime binding — `declare const` in
+ * vite-env.d.ts is type-only — so referencing it directly would throw `ReferenceError` the
+ * first time any test imports this module. `typeof` on an unresolvable identifier is the
+ * one JS construct that returns `'undefined'` instead of throwing, so this line is safe in
+ * both worlds without needing either vitest config to know about this build id at all.
+ */
+const APP_BUILD_ID: string = typeof __APP_BUILD_ID__ !== 'undefined' ? __APP_BUILD_ID__ : 'dev';
+
+/**
  * Fail-closed mock guard (Kabir A3). Mock mode (hardcoded `mock_brand_token` /
  * `mock_creator_token`, no credential check) is only ever acceptable in a
  * non-production build. If a production build somehow ships with
@@ -4128,6 +4144,97 @@ export const creatorCopilot = {
 };
 
 // ---------------------------------------------------------------------------
+// Client crash reporting (CR-11)
+// ---------------------------------------------------------------------------
+// wiki/tech/cr-11-client-error-contract.md — LOCKED contract, do not deviate from the
+// payload shape or the frontend rules documented there without Priya's sign-off.
+
+/** Raw fields `ErrorBoundary.componentDidCatch` has on hand; `report` fills in the rest. */
+export interface ClientErrorReportInput {
+  message: string;
+  stack: string | null;
+  componentStack: string | null;
+  /** `location.pathname` ONLY — never `search`/`hash`/`href` (contract: query strings here
+   *  carry `?deal=<id>` and OAuth callback params). Caller's responsibility to pass the
+   *  right value; this module does not read `window.location` itself. */
+  pathname: string;
+}
+
+/** Client-side caps from the contract table. A courtesy only — "the server re-truncates
+ *  everything" regardless of what arrives, so these exist to keep the request body small,
+ *  not to enforce the contract. */
+const CLIENT_ERROR_CAPS = {
+  message: 500,
+  stack: 4000,
+  componentStack: 4000,
+  pathname: 200,
+  buildId: 64,
+  userAgent: 300,
+} as const;
+
+function capString(value: string, max: number): string {
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+function capNullableString(value: string | null, max: number): string | null {
+  return value == null ? null : capString(value, max);
+}
+
+export const clientErrors = {
+  /**
+   * POST /client-errors — reports an uncaught render crash. Response is `202 Accepted`
+   * with an empty body (contract), so this deliberately does NOT go through `HttpClient`:
+   * `http.request` expects the standard `{ success, data, error }` envelope and would
+   * throw trying to parse an empty 202 body as JSON, which is exactly backwards for an
+   * endpoint whose entire job is to survive being unreachable.
+   *
+   * - Mock mode never touches the network — there is no mock backend for this endpoint
+   *   and this call site (a render crash) is the last place that should ever be blocked
+   *   on one existing.
+   * - Auth is optional server-side (contract). Attaches whichever role token happens to
+   *   be in `localStorage`, brand checked first: a render crash can happen logged out
+   *   entirely (the public portfolio page), or under either role, and this call site has
+   *   no other way to know which.
+   * - NEVER throws or rejects, by construction: mock-mode returns before touching
+   *   anything that could fail, and the live-mode path wraps `fetch` in try/catch and
+   *   resolves either way. `ErrorBoundary.componentDidCatch` (CR-11 rule 1) cannot survive
+   *   a throw from its own error-reporting side effect, so this guarantee is load-bearing,
+   *   not incidental — see ErrorBoundary.tsx's own belt-and-braces `.catch()` on the call.
+   */
+  report: (input: ClientErrorReportInput): Promise<void> => {
+    if (!isLive()) return Promise.resolve();
+    return (async () => {
+      try {
+        const token =
+          localStorage.getItem(TOKEN_KEYS.brand) ?? localStorage.getItem(TOKEN_KEYS.creator);
+        const body = {
+          message: capString(input.message, CLIENT_ERROR_CAPS.message),
+          stack: capNullableString(input.stack, CLIENT_ERROR_CAPS.stack),
+          componentStack: capNullableString(input.componentStack, CLIENT_ERROR_CAPS.componentStack),
+          pathname: capString(input.pathname, CLIENT_ERROR_CAPS.pathname),
+          buildId: capString(APP_BUILD_ID, CLIENT_ERROR_CAPS.buildId),
+          userAgent: capString(
+            typeof navigator !== 'undefined' ? navigator.userAgent : '',
+            CLIENT_ERROR_CAPS.userAgent,
+          ),
+        };
+        await fetch(`${API_BASE_URL}/client-errors`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(body),
+        });
+      } catch {
+        // Rule 5 (contract) — failure is silent. A crash reporter that surfaces its own
+        // errors to the user is worse than no crash reporter.
+      }
+    })();
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Default export — single facade
 // ---------------------------------------------------------------------------
 
@@ -4170,6 +4277,7 @@ export const api = {
   brandDisputes,
   trendspark,
   creatorCopilot,
+  clientErrors,
 };
 
 export default api;

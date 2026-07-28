@@ -1,6 +1,28 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { execSync } from 'child_process'
+
+/**
+ * CR-11 — `__APP_BUILD_ID__`, a Vite `define` (compile-time text substitution, not a
+ * runtime env var). Without it a minified stack trace posted to `/api/v1/client-errors`
+ * can't be tied back to the build that produced it, which is most of the value of
+ * capturing `stack`/`componentStack` at all (wiki/tech/cr-11-client-error-contract.md).
+ *
+ * Short git SHA at build time; falls back to a timestamp so a build taken outside a git
+ * checkout (a tarball export, a CI cache with `.git` stripped) still produces something
+ * rather than failing the build over a non-essential id. It is a build identifier, not a
+ * secret — safe to ship in the client bundle.
+ */
+function getAppBuildId(): string {
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim()
+  } catch {
+    return `t${Date.now()}`
+  }
+}
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode, command }) => {
@@ -32,6 +54,9 @@ export default defineConfig(({ mode, command }) => {
 
   return {
     plugins: [react()],
+    define: {
+      __APP_BUILD_ID__: JSON.stringify(getAppBuildId()),
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),

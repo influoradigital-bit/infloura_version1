@@ -1,4 +1,18 @@
 import React from 'react';
+import api from '@/lib/api';
+
+/**
+ * CR-11 — per-session dedupe for crash reports, keyed on `message + pathname`
+ * (wiki/tech/cr-11-client-error-contract.md, frontend rule 3: "a render loop must not
+ * become a self-inflicted request flood").
+ *
+ * Module-level, not component state: it must survive CR-10's `resetKey`-driven
+ * `hasError` reset (a fresh `componentDidCatch` on the same route after "Try again" is
+ * still the same crash) and it must cover every `ErrorBoundary` instance mounted during
+ * this session, not just one. It only clears on a real page reload, which is the correct
+ * boundary for "session" here — this is an SPA, so there is no other natural reset point.
+ */
+const reportedCrashKeys = new Set<string>();
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -48,6 +62,57 @@ export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, E
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     // eslint-disable-next-line no-console
     console.error('[ErrorBoundary] Uncaught render error:', error, errorInfo);
+    this.reportCrash(error, errorInfo);
+  }
+
+  /**
+   * CR-11 — fire-and-forget crash report to `POST /api/v1/client-errors`
+   * (wiki/tech/cr-11-client-error-contract.md). Every one of the contract's five
+   * "frontend rules (non-negotiable)" is implemented right here:
+   *
+   * 1. Never throws — the whole body is wrapped in try/catch. A throw inside
+   *    `componentDidCatch` itself is unrecoverable: there is no boundary around the
+   *    boundary, so this must not become the thing that finally takes the tab down.
+   * 2. Never blocks the fallback render — this is called from `componentDidCatch`
+   *    (a side effect), never awaited, and the render below does not depend on it.
+   * 3. Deduplicated per session on `message + pathname` via the module-level
+   *    `reportedCrashKeys` set, so a render loop that keeps re-throwing the same error
+   *    on the same route reports exactly once instead of once per re-render.
+   * 4. The existing `console.error` above is untouched.
+   * 5. Failure is silent — both here and in `api.clientErrors.report` itself.
+   *
+   * `pathname` is read straight off `window.location.pathname` — never `search`/`hash`/
+   * `href`, which carry `?deal=<id>` and OAuth callback params (contract, hard
+   * requirement).
+   */
+  private reportCrash(error: Error, errorInfo: React.ErrorInfo): void {
+    try {
+      const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+      const message = error.message || 'Unknown error';
+      // JSON.stringify of the pair, not a plain template-literal join: a plain
+      // `${message} ${pathname}` join is collidable (message "a b" @ "/c" produces the
+      // same string as message "a" @ "/b c"), which would under-report two distinct
+      // crashes as one. JSON-encoding each field keeps them unambiguous regardless of
+      // what characters either one contains.
+      const dedupeKey = JSON.stringify([message, pathname]);
+      if (reportedCrashKeys.has(dedupeKey)) return;
+      reportedCrashKeys.add(dedupeKey);
+
+      void api.clientErrors
+        .report({
+          message,
+          stack: error.stack ?? null,
+          componentStack: errorInfo.componentStack ?? null,
+          pathname,
+        })
+        .catch(() => {
+          // Belt-and-braces: `api.clientErrors.report` already never rejects (contract
+          // rule 5), but `componentDidCatch` must never throw under any circumstance,
+          // including a future change to that guarantee elsewhere.
+        });
+    } catch {
+      // Rule 1 — componentDidCatch (and everything it calls) must never throw.
+    }
   }
 
   componentDidUpdate(prevProps: ErrorBoundaryProps): void {

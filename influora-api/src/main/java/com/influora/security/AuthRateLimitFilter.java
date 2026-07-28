@@ -127,6 +127,16 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     @Value("${influora.tracking.rate-limit-per-window:30}")
     private int trackingLimit;
 
+    /**
+     * Requests per window, per IP, for the CR-11 client crash-report sink ({@code POST
+     * /client-errors}). IP-keyed like {@code tracking}/{@code sensitive}, not user-keyed — the
+     * contract requires this endpoint to work with no {@code Authorization} header at all (a crash
+     * on the public portfolio page or before login), so per-IP is the only identity available. See
+     * {@code ClientErrorController} and {@code wiki/tech/cr-11-client-error-contract.md}.
+     */
+    @Value("${influora.client-error.rate-limit-per-window:30}")
+    private int clientErrorLimit;
+
     /** Requests per window, per creator, for the deliverable upload/submit/metrics surface. */
     @Value("${influora.creator.deliverable-write-rate-limit-per-window:20}")
     private int creatorDeliverableWriteLimit;
@@ -297,6 +307,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         if (path.equals("/woocommerce/connect")) {
             return "meta-oauth";
         }
+        if (path.equals("/client-errors")) {
+            return "client-errors";
+        }
         if (path.equals("/creators/suggestions")) {
             // Kabir NEW-2: same query cost as GET /creators/search — must share that bucket.
             return "discovery-search";
@@ -354,6 +367,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             case "refresh" -> refreshLimit;
             case "meta-oauth" -> metaOAuthLimit;
             case "tracking" -> trackingLimit;
+            case "client-errors" -> clientErrorLimit;
             case "creator-deliverable-write" -> creatorDeliverableWriteLimit;
             case "brand-deliverable-review" -> brandDeliverableReviewLimit;
             case "contract-sign" -> contractSignLimit;

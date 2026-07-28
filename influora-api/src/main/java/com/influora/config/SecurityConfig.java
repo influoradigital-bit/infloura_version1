@@ -157,6 +157,14 @@ public class SecurityConfig {
                                         .permitAll()
                                         .requestMatchers(HttpMethod.POST, "/portfolio/*/contact")
                                         .permitAll()
+                                        // CR-11 client crash-report sink — the SPA's ErrorBoundary
+                                        // posts here, including from the public portfolio page or
+                                        // before login, where no JWT can exist yet. See
+                                        // ClientErrorController and
+                                        // wiki/tech/cr-11-client-error-contract.md (locked contract:
+                                        // auth optional, always 202, never a 4xx).
+                                        .requestMatchers(HttpMethod.POST, "/client-errors")
+                                        .permitAll()
                                         // Wave-1 S3 — AdminAuthController is @RequestMapping("/admin/auth")
                                         // and was unreachable unauthenticated (fell through to
                                         // anyRequest().authenticated()), so an admin could never obtain a
