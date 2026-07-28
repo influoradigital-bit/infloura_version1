@@ -5,7 +5,9 @@
 > **Maintainer (status updates):** **Tara** — see [§6 Tara's Update Protocol](#6-taras-update-protocol)
 > **Source of findings:** Neha (E2E), live logged-in walkthrough of `http://200.141.1.6` as `tejas.chache5@gmail.com`
 > **Opened:** 2026-07-27
-> **Last updated:** 2026-07-27 — by Tara (added §9 Deploy Blocker — explains why every `IN VERIFY` ticket is stuck: publish-images.yml doesn't trigger on `feat/creator-my-applications`, one-line fix needs Swapnil; recorded Wave 1 commit/branch state; added CR-29 [CR-23 fix has no test coverage]; noted CR-15 is a separate blocker from §9; totals 28 → 29; nothing advanced to DONE, nothing deployed)
+> **Last updated:** 2026-07-28 — **Wave 3/4 pass.** Eight `OPEN` Ananya tickets are code-complete → `IN QA` (CR-04, CR-06, CR-10, CR-12, CR-14, CR-16, CR-17, CR-20; commit `5b86a49`, pushed). **Four stale facts corrected:** (1) §9's deploy blocker is **RESOLVED** — `publish-images.yml` already carries `feat/creator-my-applications`, added in `04b7a53`; (2) the live box serves **Wave 2**, not the pre-Wave-1 bundle — Waves 1–2 ARE deployed and their 11 `IN VERIFY` tickets are testable now; (3) Wave 2 + CR-23 are committed and pushed, not uncommitted working-tree changes; (4) "0 DONE because nothing is deployed" no longer holds — the gap is QA/test time, not infrastructure. Every 🔴 Critical and 🟠 High ticket now has code. Totals unchanged at 29 logged, **0 DONE**.
+>
+> ⚠️ **Protocol exception, recorded:** this pass was written at the repo owner's explicit direction, **not by Tara**. §6 reserves §3 and the §5 `Status:` lines for Tara; that rule was knowingly overridden for this entry. Tara should re-review rather than assume this followed the normal route.
 
 **THIS IS THE SINGLE SOURCE OF TRUTH FOR ALL CREATOR-SIDE DEFECTS.**
 No creator bug is worked, closed, or re-opened anywhere else. One file. One status column.
@@ -49,23 +51,23 @@ Correcting the record before work starts — the generic company stack template 
 | CR-01 | 🔴 Critical | "Share page" button does nothing — creator can never share their page | Meera → Ananya | IN VERIFY |
 | CR-02 | 🔴 Critical | Contracted deal still offers Accept → 409 Conflict | Vikram + Ananya | IN VERIFY |
 | CR-03 | 🔴 Critical | The 409 failure is completely silent — no toast ever renders | Ananya | IN VERIFY |
-| CR-04 | 🟠 High | Top 106px of deal room clipped and unreachable — can't scroll | Ananya | OPEN |
+| CR-04 | 🟠 High | Top 106px of deal room clipped and unreachable — can't scroll | Ananya | IN QA |
 | CR-05 | 🟠 High | Same deal shows two different statuses on two pages | Ananya | IN VERIFY |
-| CR-06 | 🟠 High | Wrong identity in shell — "Creator Account" / "IN" / "@priya_sharma" | Ananya | OPEN |
+| CR-06 | 🟠 High | Wrong identity in shell — "Creator Account" / "IN" / "@priya_sharma" | Ananya | IN QA |
 | CR-07 | 🟠 High | Brand negotiation room: Accept + Counter are dead buttons | Ananya | IN VERIFY |
 | CR-08 | 🟠 High | Accept/decline/counter never reach the other party (no SSE publish) | Vikram | IN VERIFY |
 | CR-09 | 🟠 High | Creator accept/decline never refresh the message timeline | Ananya | IN VERIFY |
-| CR-10 | 🟠 High | One render error whites out the ENTIRE app permanently | Ananya | OPEN |
+| CR-10 | 🟠 High | One render error whites out the ENTIRE app permanently | Ananya | IN QA |
 | CR-11 | 🟡 Medium | White screen on tab sequence — **NOT REPRODUCED**, needs data | Neha | BLOCKED |
-| CR-12 | 🟡 Medium | All filter chip counts collapse to 0 when a filter is active | Ananya | OPEN |
+| CR-12 | 🟡 Medium | All filter chip counts collapse to 0 when a filter is active | Ananya | IN QA |
 | CR-13 | 🟡 Medium | "Active" tab hides contracted + in-review deals | Vikram + Ananya | OPEN |
-| CR-14 | 🟡 Medium | Public page renders "Synced NaNd ago" | Ananya | OPEN |
+| CR-14 | 🟡 Medium | Public page renders "Synced NaNd ago" | Ananya | IN QA |
 | CR-15 | 🟡 Medium | Public URL is a bare IP over HTTP — unusable as a shared link | Meera | BLOCKED |
-| CR-16 | 🟢 Low | Sidebar "Deals 3" badge is hardcoded | Ananya | OPEN |
-| CR-17 | 🟢 Low | Deal room height overflows layout by 8px | Ananya | OPEN |
+| CR-16 | 🟢 Low | Sidebar "Deals 3" badge is hardcoded | Ananya | IN QA |
+| CR-17 | 🟢 Low | Deal room height overflows layout by 8px | Ananya | IN QA |
 | CR-18 | 🟡 Medium | `usageRights` missing from proposal metadata — always "Not specified" | Priya (implemented) | IN VERIFY |
 | CR-19 | 🟡 Medium | N1: `settleStatus` BigDecimal→Double round-trip; two bare `ObjectMapper`s | Vikram | IN VERIFY |
-| CR-20 | 🟢 Low | N2: `loadMessages` lost unmount cancellation (no leak today, React 18+) | Ananya | OPEN |
+| CR-20 | 🟢 Low | N2: `loadMessages` lost unmount cancellation (no leak today, React 18+) | Ananya | IN QA |
 | CR-21 | 🟢 Low | N3: "Refresh deal" flashes the whole page (full-page spinner) | Ananya | IN VERIFY |
 | CR-22 | 🟡 Medium | Brand-side `canReject` withdrawal flow needs its own UI (not the proposal card) | Unassigned | OPEN |
 | CR-23 | 🟢 Low | Brand `refreshDeal` catch block missing the staleness guard (cf. creator-side W2-L1) | Priya | IN VERIFY |
@@ -76,7 +78,23 @@ Correcting the record before work starts — the generic company stack template 
 | CR-28 | 🟢 Low | Backend test helper hides the settle path (`proposalMessage` carries null metadata) | Vikram | OPEN |
 | CR-29 | 🟢 Low | CR-23's fix has no test coverage (superseded-failed-refresh scenario untested) | Unassigned | OPEN |
 
-**Totals:** 3 Critical · 7 High · 11 Medium · 8 Low = **29 logged** *(0 DONE — Wave 2 fixes are code-complete and QA-passed, but nothing has been deployed; nothing is verified on the live URL)*
+**Totals:** 3 Critical · 7 High · 11 Medium · 8 Low = **29 logged**, **0 DONE**
+
+**By status:** 8 `IN QA` · 11 `IN VERIFY` · 8 `OPEN` · 2 `BLOCKED`
+
+**Progress against the 29:**
+
+| Severity | Logged | Code written | Not started | Blocked |
+|---|---|---|---|---|
+| 🔴 Critical | 3 | **3** | 0 | 0 |
+| 🟠 High | 7 | **7** | 0 | 0 |
+| 🟡 Medium | 11 | 4 | 5 | 2 |
+| 🟢 Low | 8 | 5 | 3 | 0 |
+| **Total** | **29** | **19 (66%)** | **8** | **2** |
+
+**Every 🔴 Critical and 🟠 High ticket now has code.** Everything still unwritten is Medium or Low.
+
+> **0 DONE is still correct, and the reason has changed.** Per §2 only Neha's live re-test closes a ticket, and none has happened. But this is no longer an infrastructure problem — Waves 1–2 **are** deployed (see §9) and their 11 `IN VERIFY` tickets are testable today. What now stands between 0 DONE and ~10 DONE is Neha's time, not a blocked pipeline.
 
 ---
 
@@ -101,20 +119,34 @@ Ordered by business damage, not by severity label. Ship wave by wave.
 | CR-09 | Ananya |
 | CR-05 | Ananya |
 
-### 🌊 Wave 3 — Trust & stability
-| ID | Owner |
-|---|---|
-| CR-04 | Ananya |
-| CR-06 | Ananya |
-| CR-10 | Ananya |
-| CR-11 | Neha (investigation) |
+### 🌊 Wave 3 — Trust & stability · *code-complete 2026-07-28*
+| ID | Owner | State |
+|---|---|---|
+| CR-04 | Ananya | ✅ `IN QA` |
+| CR-06 | Ananya | ✅ `IN QA` |
+| CR-10 | Ananya | ✅ `IN QA` |
+| CR-11 | Neha (investigation) | 🚧 still `BLOCKED` — needs the console line or a reproducing account. CR-10's fix stops one throw being *permanent*; it does **not** identify the throw site. |
 
-### 🌊 Wave 4 — Correctness & polish
-| ID | Owner |
-|---|---|
-| CR-12, CR-13, CR-14, CR-16, CR-17 | Ananya (CR-13 needs Vikram first) |
+### 🌊 Wave 4 — Correctness & polish · *Ananya's share code-complete 2026-07-28*
+| ID | Owner | State |
+|---|---|---|
+| CR-12, CR-14, CR-16, CR-17 | Ananya | ✅ `IN QA` |
+| CR-13 | Vikram → Ananya | ⬜ still `OPEN` — **blocked on Vikram**; Priya ruled the backend filter path must move, so it was deliberately not worked around client-side in CR-12 |
+| CR-20 | Ananya | ✅ `IN QA` (logged after the original wave plan) |
+
+### 🌊 Wave 5 — Unstarted remainder *(added 2026-07-28)*
+Everything still `OPEN`. **No 🔴 Critical or 🟠 High tickets remain unwritten** — this is all Medium and Low.
+
+| ID | Owner | Blocker |
+|---|---|---|
+| CR-13 | Vikram + Ananya | Needs Vikram's `statusesForFilter` fix first |
+| CR-25, CR-28 | Vikram | None — ready to start |
+| CR-22, CR-24, CR-26, CR-29 | **Unassigned** | **Need an owner before they can move to `ASSIGNED`** |
+| CR-27 | **Unassigned** | Needs a **product call** on whether the list should expose negotiation-stage actions — not an automatic fix |
 
 **Pipeline for every ticket:** `Owner → Kavya (QA) → Meera (build/run) → Neha (live re-test) → Tara (mark DONE here)`
+
+> **Where the 8 `IN QA` tickets actually sit in that pipeline:** code done, and `typecheck`/`test`/`lint`/`build` all run and green (Meera's checks, self-run). **Kavya has not reviewed them**, and the images are published but **not pulled onto the box**, so Neha cannot re-test them yet. Next step is Kavya, then a VPS restart, then Neha.
 
 ---
 
@@ -191,7 +223,15 @@ Deal "QA E2E — Diwali Skincare Reels" renders **Contracted** and sits on step 
 ---
 
 ### CR-04 · 🟠 High · Top 106px of the deal room is clipped and unreachable
-**Owner:** Ananya · **Status:** OPEN
+**Owner:** Ananya · **Status:** IN QA
+
+**Wave 3 update (2026-07-28):** Fixed — **all three** contributing causes, not just the scroll call:
+> 1. `p-4` moved off the `ScrollArea` **root** onto the inner content div, plus `min-h-0`. Padding on the Radix Root inflates the scroll container itself (539px inside a 510px parent); padding belongs to the scrolled *content*, not the viewport.
+> 2. `scrollIntoView` replaced with a `scrollTo({top: scrollHeight})` on the Radix **viewport**, reached via a new optional `viewportRef` prop on `components/ui/scroll-area.tsx`. `scrollIntoView` scrolls every scrollable ancestor including `overflow:hidden` ones — that is what put 106px permanently beyond the user's reach. Assigning scroll position on the viewport cannot move an ancestor. The old `messagesEndRef` anchor div is deleted.
+> 3. `baseEventsForDeal` wrapped in `useMemo` keyed on the **resolved** deal id (`selectedDeal?.id`, not the `selectedDealId` state — that one holds whatever the URL asked for, which may not have loaded).
+>
+> `viewportRef` is additive and optional, so existing `ScrollArea` call sites (including brand pages) are untouched.
+> ⚠️ **Not verified in a browser** — this is a layout fix and nobody has seen it render. Kavya/Neha must confirm the top of the room is reachable and the thread still pins to the bottom on new messages.
 
 **Where:** `src/pages/creator-chat.tsx:1520-1521` and `:1256-1258`
 
@@ -227,7 +267,17 @@ wrapper div (:1520)  scrollHeight 616  clientHeight 510  overflow-y: hidden  scr
 ---
 
 ### CR-06 · 🟠 High · Wrong creator identity across the shell
-**Owner:** Ananya · **Status:** OPEN
+**Owner:** Ananya · **Status:** IN QA
+
+**Wave 3 update (2026-07-28):** Fixed at the root cause and along the whole chain. The CTO note was followed literally — **the literals are deleted, not repointed**:
+> - `lib/auth-session.ts` gains `persistCreatorSession` / `getCreatorSession` / `clearCreatorSession`. The creator flow had **no equivalent of `persistBrandSession`** — it kept the token and discarded the rest of the `TokenPair`, which is why there was no identity to show.
+> - `api.auth.creatorLogin` / `creatorRegister` now persist the session and return `email` + `displayName`; **both pages call `login()` in both modes**, closing the `if (!isApiLive())` gap at `creator-login.tsx:40-43`.
+> - New `hooks/use-creator-identity.ts` hydrates from the session, then from `GET /me/creator-profile`. Needed because the auth store is `partialize: () => ({})` (`lib/store.ts`) and therefore empties on every hard reload — fixing login alone would have left the bug on refresh.
+> - `'@priya_sharma'` and `'Creator Account'` are **gone**; `getInitials` lost its `'IN'` fallback and returns `null`. Unknown identity renders a neutral skeleton.
+> - `handleLogout` now clears the new keys, so the next person to open the browser cannot see the previous creator's name.
+>
+> **Verified:** neither `priya_sharma` nor `Creator Account` appears anywhere in the production bundle (`grep -c` → 0 for both). This directly answers the note below that the shipped bundle still contained the string.
+> ⚠️ **Not verified in a browser** — the skeleton states and the real-name render are unobserved.
 
 **Where:** `src/components/creator/creator-layout.tsx:229, :234, :242, :325`; **root cause** `src/pages/creator-login.tsx:40-43`
 
@@ -287,7 +337,12 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-10 · 🟠 High · One render error whites out the ENTIRE app
-**Owner:** Ananya · **Status:** OPEN
+**Owner:** Ananya · **Status:** IN QA
+
+**Wave 3 update (2026-07-28):** Fixed — `<ErrorBoundary>` moved **inside** `<BrowserRouter>` via a `RoutedErrorBoundary` wrapper that reads `useLocation().pathname` and passes it as a new `resetKey` prop; `componentDidUpdate` clears `hasError` when that key changes. `<Toaster>` and `<DemoModeBanner>` moved inside the Router with it so they keep rendering alongside the routes.
+> **`resetKey` rather than React's `key`, deliberately:** keying the boundary would remount the entire subtree on *every* navigation, discarding all component state on healthy routes to fix a case that almost never fires. The reset is also loop-safe — the guard requires `hasError`, which the `setState` immediately falsifies.
+> The fallback now offers **Try again** (local reset, re-renders the same route) alongside **Reload page**, and its copy no longer implies the whole app is dead. A deterministic throw simply returns the fallback, which is honest — every *other* route stays reachable, which is the actual fix.
+> ⚠️ **Not verified in a browser**, and note this does not identify CR-11's throw site — it only stops one throw being permanent.
 
 **Where:** `src/App.tsx:129-130`; `src/components/ErrorBoundary.tsx:20-59`
 
@@ -316,7 +371,10 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-12 · 🟡 Medium · Filter chip counts all collapse to 0
-**Owner:** Ananya · **Status:** OPEN
+**Owner:** Ananya · **Status:** IN QA
+
+**Wave 3 update (2026-07-28):** Fixed — the chip badges **and** the header summary (`newCount` / `activeCount` / `pendingPayout`, which had the identical defect) now read a separate unfiltered `api.deals.list('creator','all')`. Accept/decline update both arrays, so badges move with the row instead of going stale until remount. The counts fetch swallows its own errors on purpose: the list fetch already toasts, and a second toast for the badges would be noise on one outage — the badges hold their last value rather than lying with 0.
+> **Scope decision worth flagging to Kavya:** the list's own fetch stays **server-filtered**. Fetching once and filtering entirely client-side would have been simpler and would also have hidden CR-13's symptom on this page — but Priya ruled the filter path (`DealService.statusesForFilter`) is the side that must move, so masking it client-side was deliberately avoided. **Expect a visible consequence:** the Active chip may now read a non-zero count while the Active tab still renders "Nothing active." That *is* CR-13, now more visible rather than newly broken.
 
 **Where:** `src/pages/creator-deals.tsx:253-259` and `:217-251`
 
@@ -342,7 +400,10 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-14 · 🟡 Medium · Public page renders "Synced NaNd ago"
-**Owner:** Ananya · **Status:** OPEN
+**Owner:** Ananya · **Status:** IN QA
+
+**Wave 3 update (2026-07-28):** Fixed — `relativeTime` returns `null` for a missing or unparseable timestamp (`Number.isFinite` guard) and the caller drops the whole "Synced …" line rather than printing arithmetic wreckage. A *future* timestamp (clock skew between the sync job and the viewer) is clamped to 'just now' instead of rendering "-1h ago".
+> **Also corrected the lying type:** `PortfolioPlatformStats.lastSyncedAt` was declared `string` (non-nullable) while the live `GET /portfolio/:username` omits it for a platform that never completed a sync — which is precisely how the `NaN` arrived. Widened to `?: string | null`, so the guard is real code rather than something TypeScript considers unreachable.
 
 **Where:** `src/pages/creator-portfolio-public.tsx` (Platform Stats block)
 
@@ -359,7 +420,9 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 
 **Wave 1 update (Tara, 2026-07-27):** Blocked — awaiting a domain + TLS purchase decision from Swapnil (CEO); see the escalation already logged in §8. Note the interaction with CR-01: CR-01's `execCommand('copy')` fallback means the Share button itself now works over plain HTTP, but the link it copies is still `http://200.141.1.6/@handle` — still unusable in an Instagram bio and still unreachable from outside the local network. CR-01 being in `IN VERIFY` does not reduce the urgency of this blocker.
 
-> **Distinct from the §9 Deploy Blocker — read both, don't conflate them.** This ticket is blocked on a **domain + TLS decision** (there is no HTTPS to serve on, regardless of what's deployed). §9 is blocked on a **CI/CD workflow-branch decision** (the current build isn't reaching the box at all, even over plain HTTP). Fixing one does **not** fix the other: getting a domain+TLS does not make new images publish, and fixing the publish-images workflow does not conjure a domain or certificate. Both need a decision from Swapnil, but they are two separate asks.
+> **Distinct from the §9 Deploy Blocker — read both, don't conflate them.** This ticket is blocked on a **domain + TLS decision** (there is no HTTPS to serve on, regardless of what's deployed). §9 was blocked on a **CI/CD workflow-branch decision**. Fixing one does **not** fix the other.
+>
+> ⚠️ **Update 2026-07-28 — this prediction was borne out. §9 is now RESOLVED; CR-15 is NOT.** Images publish and Waves 1–2 are deployed, and the share URL is still `http://200.141.1.6/@tejas_creater`: still unlinkable in an Instagram bio, still unresolvable outside this network. **CR-15 is now the only remaining Swapnil-gated infrastructure blocker in this file**, and it is the one holding the organic acquisition loop shut (see §8).
 
 **Where:** `src/pages/creator-portfolio-public.tsx:89`; surfaced at `src/pages/creator-profile.tsx:197`
 
@@ -370,7 +433,9 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-16 · 🟢 Low · Sidebar "Deals 3" badge is hardcoded
-**Owner:** Ananya · **Status:** OPEN
+**Owner:** Ananya · **Status:** IN QA
+
+**Wave 3 update (2026-07-28):** Fixed — new `hooks/use-creator-unread-count.ts` sums the `unreadCount` the deals API already returns per deal, so no new backend was needed. Keyed on `location.pathname` so the badge settles after a deal room marks its messages read. Drives **both** the sidebar "Deals" badge and the header bell, which shared the same literal. Fails silently by design: this is chrome, and the pages themselves already surface deal-loading failures.
 
 **Where:** `src/components/creator/creator-layout.tsx:129, :203-207`
 
@@ -381,7 +446,10 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-17 · 🟢 Low · Deal room height overflows layout by 8px
-**Owner:** Ananya · **Status:** OPEN
+**Owner:** Ananya · **Status:** IN QA
+
+**Wave 3 update (2026-07-28):** Fixed with the shared token, not the local number — a new `--app-header-h: 3.5rem` in `src/app/globals.css` is consumed by **both** the layout header (`h-[var(--app-header-h)]`, visually identical to the old `h-14`) and the four deal-room `h-[calc(100vh-var(--app-header-h))]` roots. The two can no longer drift. Verified present in the built CSS.
+> **Deliberately left alone:** the fifth `h-[calc(100vh-4rem)]` in `creator-chat.tsx` (the ToolsSheet body) measures against the **sheet's own** header, not the app header, so it is a different context and out of this ticket's scope. It is under-sized rather than over-sized, so it cannot overflow — but it is unexamined and someone should confirm that deliberately rather than discover it.
 
 **Where:** `src/pages/creator-chat.tsx:1335` vs `src/components/creator/creator-layout.tsx:274`
 
@@ -420,7 +488,10 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-20 · 🟢 Low · N2: `loadMessages` lost unmount cancellation
-**Owner:** Ananya · **Status:** OPEN
+**Owner:** Ananya · **Status:** IN QA
+
+**Wave 3 update (2026-07-28):** Fixed — an `isMountedRef` now sits alongside the existing monotonic request token, combined into one `isCurrent()` predicate applied to all three branches (success, error, finally). A response is applied only if it is both the newest request **and** still wanted by a mounted component. `console.error` stays unconditional, matching the W2-L1 `refreshDeal` convention: a failed request is worth diagnosing whether or not its result is still wanted.
+> Still correctly characterised as **restoring a capability, not fixing a live defect** — no leak is observable under React 18+.
 
 **Where:** `src/pages/creator-chat.tsx` (`loadMessages` extraction, see CR-09)
 
@@ -560,6 +631,7 @@ Run whenever any of these happens:
 | 2026-07-27 | Tara | Wave 1 results recorded. CR-01, CR-02, CR-03: `OPEN` → `IN VERIFY` (Kavya QA PASS, code+build complete, per Kavya's routing). CR-09: `OPEN` → `IN PROGRESS` marked **PARTIAL** (timeline refresh wired to the new Refresh button only; accept/decline handlers still call only `loadDeals()`, remainder is Wave 2). CR-15: `OPEN` → `BLOCKED` (awaiting domain + TLS purchase decision from Swapnil). CR-11 unchanged, still `BLOCKED`. Added CR-18 (`usageRights` missing from proposal metadata, IN VERIFY, owner Priya), CR-19 (N1 — `settleStatus` BigDecimal→Double round-trip, IN PROGRESS, owner Vikram), CR-20 (N2 — `loadMessages` lost unmount cancellation, OPEN, owner Ananya), CR-21 (N3 — "Refresh deal" flashes whole page, OPEN, owner Ananya), CR-22 (brand-side `canReject` withdrawal flow, OPEN, unassigned). Totals recalculated: 3 Critical · 7 High · 8 Medium · 4 Low = 22 logged, **0 DONE**. Verification evidence recorded against Wave 1: `npm run typecheck` clean; `npm test` 227/227; `npm run lint` 403 problems (unchanged baseline, no new debt); `mvn -o compile` exit 0; Meera — `npm run build` PASS incl. `postbuild` prerender, 16/16 routes snapshotted, `mvn -o package -DskipTests` BUILD SUCCESS (`influora-api-0.1.0-SNAPSHOT.jar`, 83.8 MB); new bundle `index-Bu4yUEbB.js` at 2,691.33 kB vs deployed `index-NdzlUg4U.js` ~2.68 MB (~+10 KB, no material change); Kavya QA verdict PASS, cleared for Meera. **Nothing has been deployed** — `http://200.141.1.6` still serves the old bundle `index-NdzlUg4U.js`. No ticket is marked `DONE`; nothing has been verified in a live browser by Neha. |
 | 2026-07-27 | Tara | **Stale-row correction:** CR-19 was left `IN PROGRESS` after last pass; Vikram finished it since then. `IN PROGRESS` → `IN VERIFY`. He enabled `USE_BIG_DECIMAL_FOR_FLOATS` on `DealMessage.MAPPER` only, deliberately leaving `DealService.MAPPER` untouched (its read path feeds the response DTO and the flag would change API response bytes); defect reproduced empirically (`25000.00` → `25000.0`), fix verified against the real compiled entity. **Wave 2 results:** CR-05 `OPEN` → `IN VERIFY` (one shared `mapCollaborationStatusToDealStage` in `creator-deal-mappers.ts`, private per-page mappers deleted). CR-07 `OPEN` → `IN VERIFY` (both buttons wired, `renderProposalCard` now unified for demo+live, gate mirrors `doAccept`'s `CANNOT_ACCEPT_OWN_OFFER`; Neha still needs brand test credentials — blocker unchanged). CR-08 `OPEN` → `IN VERIFY` (`DealService` now publishes two SSE frames per accept/reject/counter — settled/superseded card first, then system message or new card). CR-09 `IN PROGRESS (partial)` → `IN VERIFY`, now **COMPLETE** (`afterDealMutation` = `Promise.all([refreshDeal, loadMessages])` on accept, decline, and counter). CR-21 `OPEN` → `IN VERIFY`, **closed incidentally** by CR-09's work (not worked directly) — `refreshDeal` never touches `dealsLoading`. Added a note to CR-13 (no status change): `DealService.statusesForFilter` and `AdminBrandService`'s javadoc disagree with three display mappers on where `TERMS_AGREED` sits; Priya ruled the filter path must move. Added six new tickets: CR-23 (brand `refreshDeal` catch block missing staleness guard, mirrors creator-side W2-L1, OPEN, owner Ananya, Low), CR-24 (brand-side status mapper unification across three surfaces, OPEN, unassigned, Medium, ruled OUT of Wave 2 by Priya), CR-25 (SSE publishes fire inside caller's `@Transactional`, pre-existing, OPEN, owner Vikram, Medium), CR-26 (`DISPUTED`/`CANCELLED` render as Done/Completed, no display bucket, OPEN, unassigned, Medium), CR-27 (`creator-deals.tsx` under-offers actions vs `Collaboration.canAccept()`, OPEN, unassigned, Low, possibly intentional), CR-28 (backend test helper `proposalMessage` carries null metadata and hides the settle path, OPEN, owner Vikram, Low). Totals recalculated: 3 Critical · 7 High · 11 Medium · 7 Low = **28 logged**, **0 DONE**. Verification evidence recorded against Wave 2: `npm run typecheck` clean; `npm test` **252/252, 27 files** (227 baseline + 5 CR-07 + 17 CR-05 + 3 remediation guards); `npm run lint` **403, exactly baseline**; `mvn -o test` **1486 tests, 0 failures, 0 errors, 3 skipped, BUILD SUCCESS**. Kavya QA: **FAIL** on first pass (Critical **W2-C1** — the brand room was a third SSE consumer still running ignore-if-present dedupe, which would have reopened CR-02 on the brand side the moment CR-08 shipped), then **PASS** after remediation. **Correction on the record:** Wave 1 was committed with a red backend test (`DealServiceTest.testBrandAcceptHappyPath` asserted one `save()` while CR-02 made `doAccept` save twice) — went unnoticed because Priya instructed `-DskipTests` for Wave 1's build check; fixed in Wave 2, the suite now runs on every wave. **Meera's Wave 2 build verification landed — ALL PASS:** `npm run build` PASS (Vite 4765 modules in 24.33s), then `postbuild` (`node scripts/prerender.mjs`) **16/16 routes snapshotted** — the genuine risk this wave, since three route-level page components plus a shared lib changed and a prerender can fail on code that typechecks cleanly; only warnings were the pre-existing duplicate-key `tsconfig.json` esbuild notice and Vite's standard >500 kB chunk advisory, neither a failure. `mvn -o package` run **WITHOUT `-DskipTests`** — BUILD SUCCESS in 26.8s, **1486 tests, 0 failures, 0 errors, 3 skipped**, same signature as the standalone `mvn -o test`, no regression; jar packaged and Spring Boot repackaged (`influora-api-0.1.0-SNAPSHOT.jar`). **This is the first wave where `mvn -o package` ran with tests**, closing the gap that let Wave 1's red test through undetected. Bundle: `index-8fhUJ8_B.js` at 2,697.80 kB (gzip 725.37 kB); CSS `index-CImlwGd-.css` 222.93 kB. Deltas: **+6.47 kB (+0.24%)** vs the Wave 1 build (`index-Bu4yUEbB.js`, 2,691.33 kB); **≈ +17.8 kB (≈ +0.66%)** vs the deployed `index-NdzlUg4U.js` — recorded as **approximate**, since the deployed reference is only known as "~2.68 MB", not an exact byte count. **NOT verified: anything in a browser.** **Nothing has been deployed** — `http://200.141.1.6` still serves the pre-Wave-1 bundle. No ticket is marked `DONE`; nothing has been verified in a live browser by Neha. **Record note:** `wiki/errors/SHARED_CONTEXT.md` now exists (created this pass, outside the original brief but consistent with company protocol) — it is left in place, but this tracker, not `SHARED_CONTEXT.md`, remains the single source of truth for creator-defect status; the two files must not be allowed to drift apart on ticket state. |
 | 2026-07-27 | Tara | **CR-23** `OPEN` → `IN VERIFY`. Fixed by Priya in `brand-chat.tsx`'s `refreshDeal` useCallback — creator-side `isSupersededRefresh` pattern ported verbatim (matches `creator-chat.tsx:721-753`): `console.error` stays unconditional, only the failure `toast(...)` is suppressed when superseded; staleness-check-before-early-return ordering matched to the creator copy (no behavioral change); comments cite **W2-L1b** so the twice-found defect stays traceable to two surfaces. Verification: `npm run typecheck` clean · `npm test` **252/252, 27 files** (unchanged — no test exercises a superseded *failed* refresh) · `npm run lint` **403, exactly baseline**. Caveats recorded on the ticket: not yet re-reviewed by Kavya (landed after her Wave 2 PASS; W2-L1b was raised as LOW/non-blocking so didn't get its own QA round — fold into next pass), no new test coverage for the specific scenario, and still nothing deployed. Totals unchanged: 3 Critical · 7 High · 11 Medium · 7 Low = **28 logged**, **0 DONE** — CR-01/02/03/05/07/08/09/18/19/21/23 all remain `IN VERIFY`; `http://200.141.1.6` still serves the pre-Wave-1 bundle. |
+| 2026-07-28 | Claude (at repo owner's direction — **not Tara**, see header) | **Wave 3/4 pass + four factual corrections.** **Status changes:** CR-04, CR-06, CR-10, CR-12, CR-14, CR-16, CR-17, CR-20 all `OPEN` → `IN QA` — code-complete in commit `5b86a49`, pushed to `origin/feat/creator-my-applications` (fast-forward `ad8d503..5b86a49`, 15 files, +679/−77). **CR-06** fixed at root cause: new `persistCreatorSession`/`getCreatorSession`/`clearCreatorSession` (the creator flow had no `persistBrandSession` equivalent), `login()` now called in both modes, new `useCreatorIdentity()` hydrating from session + `GET /me/creator-profile` (required because the auth store is `partialize: () => ({})` and empties on reload), and the `@priya_sharma` / `Creator Account` / `IN` literals **deleted** per the CTO note — verified absent from the production bundle. **CR-10** boundary moved inside `<BrowserRouter>` with a `resetKey` on pathname (prop not `key`, to avoid remounting healthy routes). **CR-04** all three causes: `p-4` off the ScrollArea root, `scrollIntoView` → viewport `scrollTo` via a new optional `viewportRef`, `baseEventsForDeal` memoized. **CR-12** badges + header summary read a separate unfiltered fetch; list stays server-filtered so CR-13 is not masked client-side against Priya's ruling — expect the Active chip to show a count while the Active tab is empty, which *is* CR-13. **CR-17** new shared `--app-header-h` token; ToolsSheet occurrence deliberately untouched. **CR-14** `relativeTime` guard + `lastSyncedAt` widened to `?: string \| null` (the type was lying about what the server sends). **CR-16** real unread total from the deals API. **CR-20** `isMountedRef` alongside the request token. **Verification:** `npm run typecheck` clean · `npm test` **252/252, 27 files** (exactly baseline — **no new tests added**) · `npm run lint` **403 problems (336 errors, 67 warnings), exactly baseline**, measured by stashing rather than trusting the recorded figure; two findings did land above baseline (a `setState`-in-effect error and an `exhaustive-deps` warning) and both were fixed rather than suppressed · `npm run build` PASS, **16/16 routes prerendered**, 4768 modules · bundle `index-DkEVH8Vd.js` 2,702.25 kB, **+4.45 kB (+0.16%)** vs Wave 2. **NOT verified: anything in a browser** — the Browser pane would not composite this session, so CR-04/06/12/17, all visual, are unobserved. **Four corrections to the existing record:** (1) **§9's deploy blocker is RESOLVED** by `04b7a53`, which added the exact one-line fix §9 prescribed — §9 rewritten with a superseded banner, original text retained per the append-only rule; (2) **the live box serves Wave 2, not the pre-Wave-1 bundle** — `index-B_x5CUtn.js`, 2,697,823 bytes, matching the recorded 2,697.80 kB, so **Waves 1–2 ARE deployed** and their 11 `IN VERIFY` tickets are testable now; (3) Wave 2 + CR-23 are committed and pushed, not uncommitted; (4) the "0 DONE because nothing is deployed" rationale no longer holds — the gap is QA and Neha's time. **Wave 3 images published but NOT pulled:** run `30343078697` built and pushed all three images successfully, but the VPS was **deliberately not restarted** (`VPS_restartProjectV1` on `influora-test`) because these 8 tickets have had no Kavya pass and a restart would swap the build out from under Neha. Totals unchanged: 3 Critical · 7 High · 11 Medium · 8 Low = **29 logged**, **0 DONE**; by status **8 `IN QA` · 11 `IN VERIFY` · 8 `OPEN` · 2 `BLOCKED`**. Every 🔴 Critical and 🟠 High ticket now has code; everything unwritten is Medium or Low. |
 | 2026-07-27 | Tara | Added **§9 Deploy Blocker** — the analysis of why nothing can go `DONE` had existed only in-session until now. Recorded: the live box is Hostinger VPS 1844961 running Docker Compose project `influora-test` (6 containers) pulling `ghcr.io/influoradigital-bit/influora-{api,ai,web}:latest`; `.github/workflows/publish-images.yml` doesn't trigger on `feat/creator-my-applications` (only `main` / `feat/creator-taxonomy-keyword-patch`); `workflow_dispatch` is unreachable because `origin/main` is a 1-file (`README.md`) branch with no workflow on it; merging to `main` is not a viable release valve (~108 unreviewed commits ahead); the one-line fix (add the branch to `push.branches`, precedented by `feat/creator-taxonomy-keyword-patch`'s existing entry) is safe on a push trigger (build-arg fallbacks match the live bundle's config) and rollback exists (images tagged both `:latest` and `:sha`); owner is Swapnil, this is a decision not an engineering task; editing the workflow file is blocked by this session's permission classifier. Recorded Wave 1's actual commit state (`21399b2`, `06c1bcb`, not pushed; Wave 2 + CR-23 uncommitted on top; branch also answers to `cr-08-deal-lifecycle-sse`, same commit, no work at risk). Added a note to CR-15 (no status change) distinguishing its domain+TLS blocker from §9's CI/CD blocker — fixing one does not fix the other. Added **CR-29** (🟢 Low, unassigned — CR-23's fix, and the creator-side W2-L1 fix it was ported from, have no test coverage for the superseded-failed-refresh scenario; contrast with Wave 2's three remediation guards, which do fail on revert). Totals recalculated: 3 Critical · 7 High · 11 Medium · 8 Low = **29 logged**, **0 DONE**. No ticket status changed in this pass; `http://200.141.1.6` still serves the pre-Wave-1 bundle. |
 
 ---
@@ -568,6 +640,10 @@ Run whenever any of these happens:
 
 **Escalating to Swapnil (CEO) — one item:**
 > **HTTPS migration (CR-01 + CR-15) is a business blocker, not a tech-debt item.** While the product runs on `http://` at a bare IP, no creator can share their public page and no shared link works in an Instagram bio. That removes the entire organic acquisition loop. This needs a domain + certificate decision from you before Wave 1 can complete.
+
+> ⚠️ **Update 2026-07-28 — this is now the ONLY infrastructure item awaiting you.** The second escalation (the §9 CI/CD deploy blocker) is **resolved** — `04b7a53` added the workflow branch line, images publish, and Waves 1–2 are deployed. HTTPS is what remains. CR-01's `execCommand` fallback means the Share button now *works*, but the link it copies is still `http://200.141.1.6/@handle` — so the acquisition loop is still shut, exactly as described above.
+>
+> **A second, smaller decision now sits with you as a side effect:** `publish-images.yml` currently redeploys the box Neha tests on **on every push to `feat/creator-my-applications`**. The workflow's own comment says to remove that line once Waves 1–2 ship — they have shipped. Leave it (fast iteration, but unreviewed work can land under Neha mid-test) or remove it (back to manual releases). Either is defensible; it should be chosen, not drifted into.
 
 **Architectural themes behind these 17 tickets** — worth fixing as patterns, not just instances:
 1. **Server state is written but never broadcast** (CR-08) and **client state is fetched but never refetched** (CR-09, CR-02). The deal room has no single "reload this deal's world" path. One `refreshDeal(dealId)` used by every mutation would collapse three tickets into one.
@@ -581,9 +657,25 @@ Run whenever any of these happens:
 
 ---
 
-## 9. Deploy Blocker — Gates Every `IN VERIFY` Ticket In This File
+## 9. Deploy Blocker — ✅ **RESOLVED 2026-07-28**
 
-**Read this before asking why any `IN VERIFY` ticket hasn't gone `DONE`.** Every single one of them — CR-01, CR-02, CR-03, CR-05, CR-07, CR-08, CR-09, CR-18, CR-19, CR-21, CR-23 — is stuck behind the same wall, described once here rather than repeated eleven times.
+> # ⚠️ THIS SECTION IS SUPERSEDED — READ THIS BOX FIRST
+>
+> **The deploy blocker described below no longer exists.** It was resolved by commit **`04b7a53`** ("ci: publish images on pushes to feat/creator-my-applications"), which added the exact one-line fix this section prescribed. Verified 2026-07-28 by reading `.github/workflows/publish-images.yml` — `feat/creator-my-applications` **is** in `push.branches`, carrying the predicted comment, and the `paths:` filter includes `src/**` and `influora-api/**`.
+>
+> **Consequences, all verified:**
+> 1. **Waves 1–2 ARE deployed.** `http://200.141.1.6` serves `index-B_x5CUtn.js` at **2,697,823 bytes**, which matches the recorded Wave 2 build (2,697.80 kB). The claim elsewhere in this file that the box still serves the pre-Wave-1 `index-NdzlUg4U.js` (~2.68 MB) is **wrong** — it has been superseded.
+> 2. **The 11 `IN VERIFY` tickets are testable right now.** Nothing infrastructural is stopping Neha. CR-07 remains blocked on **brand test credentials**, which is a separate and still-unresolved ask.
+> 3. **Wave 2 + the CR-23 fix are committed and pushed**, not uncommitted working-tree changes as recorded below.
+> 4. **The §9 → CR-15 distinction still holds, in the other direction.** CR-15 (domain + TLS) is **still blocked** and still needs Swapnil. Resolving §9 did not resolve it, exactly as this section predicted.
+>
+> **The exposure this section warned about is now live, not hypothetical.** *"Every future push to this branch redeploys the box Neha tests on, including half-finished work."* — that is now the operating reality. The Wave 3 push (`5b86a49`) triggered run `30343078697`, all three images built and pushed successfully. **The VPS has not pulled them**: publishing to GHCR and deploying are two separate steps, and nothing restarted the stack. The box therefore still serves Wave 2 while Wave 3 images sit in the registry. **A `VPS_restartProjectV1` on Docker Compose project `influora-test` is what would make Wave 3 live — deliberately NOT done**, because the eight Wave 3 tickets have had no Kavya pass and restarting would swap the build out from under Neha mid-session.
+>
+> **Still Swapnil's decision:** the workflow comment says to remove the branch line once Waves 1–2 ship. They have shipped. Leaving it in means every push auto-redeploys Neha's test box.
+
+**Historical record — the original analysis follows, retained per §6's append-only rule. It described the situation accurately as of 2026-07-27 and is preserved for that reason, but do not act on it.**
+
+**~~Read this before asking why any `IN VERIFY` ticket hasn't gone `DONE`.~~** ~~Every single one of them — CR-01, CR-02, CR-03, CR-05, CR-07, CR-08, CR-09, CR-18, CR-19, CR-21, CR-23 — is stuck behind the same wall, described once here rather than repeated eleven times.~~
 
 ### What is actually running
 `http://200.141.1.6` is Hostinger VPS id **1844961** (`srv1844961.hstgr.cloud`, Ubuntu 24.04). It runs a Docker Compose project named **`influora-test`** — 6 containers: `caddy`, `frontend`, `influora-api`, `influora-ai`, `mysql`, `redis`. A separate `n8n` project runs on the same box, unrelated to this app. The three app containers pull **`ghcr.io/influoradigital-bit/influora-{api,ai,web}:latest`**. Deploying is **not** copying files to a server — it means publishing new images to that registry and restarting the stack. Nobody can do that by hand without going through the pipeline below.
@@ -615,5 +707,19 @@ Add the active branch to the workflow's `push.branches` list:
 ### Not the same blocker as CR-15
 CR-15 (bare-IP-over-HTTP) is a **separate** blocker from the one above, both needing a Swapnil decision but neither substituting for the other: CR-15 needs a **domain + TLS** decision (there is nowhere to serve HTTPS regardless of what's deployed); this section needs a **CI/CD workflow-branch** decision (the current build isn't reaching the box at all, even over plain HTTP). Fixing one does not fix the other.
 
-### Current commit / branch state (for whoever picks this up)
-Wave 1 is committed locally and **not pushed**: `21399b2` ("Wave 1: creator deal room + public page critical fixes", 6 source files) and `06c1bcb` ("docs: creator bug tracker + Wave 1 E2E evidence"). Wave 2 and the CR-23 fix are **uncommitted working-tree changes** sitting on top of those two commits. The branch was also switched to `cr-08-deal-lifecycle-sse` mid-session by a subagent; both branch names currently point at the identical commit `06c1bcb`, so no work is at risk, but the branch name is not what someone would expect to see if they check out the repo cold.
+### Current commit / branch state — **UPDATED 2026-07-28**
+
+**Everything is committed and pushed to `origin/feat/creator-my-applications`.** Current tip:
+
+| Commit | What |
+|---|---|
+| `5b86a49` | **Wave 3/4** — the 8 Ananya tickets (CR-04/06/10/12/14/16/17/20), 15 files, +679/−77 |
+| `ad8d503` | docs: Wave 2 tracker update + deploy blocker record |
+| `04b7a53` | **ci: publish images on pushes to `feat/creator-my-applications`** ← the §9 fix |
+| `28603a6` | Wave 2: deal lifecycle SSE fan-out + status consistency |
+| `06c1bcb` | docs: creator bug tracker + Wave 1 E2E evidence |
+| `21399b2` | Wave 1: creator deal room + public page critical fixes |
+
+> **Superseded:** the previous text here said Wave 1 was "committed locally and **not pushed**" with Wave 2 + CR-23 as "**uncommitted working-tree changes**". Both statements are now false — all of it is on the remote.
+>
+> **The branch-name wrinkle is real and unresolved.** Local work sat on `cr-08-deal-lifecycle-sse` (the subagent-created name noted previously) and Wave 3 was pushed from it via `git push origin HEAD:feat/creator-my-applications` — a clean fast-forward. The two names still point at the same commit and no work is at risk, but **anyone checking out `cr-08-deal-lifecycle-sse` is on a branch that does not exist on the remote and is not in the CI trigger list.** Work on `feat/creator-my-applications`.
