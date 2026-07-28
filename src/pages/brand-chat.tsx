@@ -43,8 +43,9 @@ import {
   type ContractApiRecord,
   type ContractStatus,
 } from '@/lib/api';
-// CR-24 — the one switch over CollaborationStatus. See lib/deal-stage.ts.
-import { mapCollaborationStatusToDealStage } from '@/lib/deal-stage';
+// CR-24 — the one switch over CollaborationStatus. CR-34 — and the one mirror of
+// Collaboration.canAccept(), which this file used to duplicate. See lib/deal-stage.ts.
+import { allowsProposalResponse, mapCollaborationStatusToDealStage } from '@/lib/deal-stage';
 import type { CollaborationStatus } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -535,33 +536,6 @@ function formatTime(date: Date): string {
 function formatDate(date: Date): string {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
-
-/**
- * CR-07 — the exact `CollaborationStatus` set `Collaboration.canAccept()` permits
- * (Collaboration.java:185-190). `canCounter()` delegates to it verbatim, so the same list
- * governs both Accept and Counter on this screen. Anything outside it makes
- * `POST /deals/:id/accept` fail with a 409 `DEAL_NOT_ACCEPTABLE` (DealService.doAccept) and
- * `POST /deals/:id/counter` fail with `DEAL_NOT_NEGOTIABLE`.
- *
- * The creator room keeps its own copy of this list (creator-chat.tsx). Both are deliberately
- * module-local: these are route modules, and exporting a non-component from one disables Fast
- * Refresh for the whole page (react-refresh/only-export-components). Lifting both into
- * lib/deal-stage.ts — the neutral home that already exists for exactly this reason — is the
- * right end state.
- *
- * ⚠️ Two copies of one backend precondition is the same shape as the defect behind CR-05,
- * CR-13 and CR-24. If `Collaboration.canAccept()` gains or loses a status, BOTH copies must
- * move or the two rooms will disagree about whether an offer is live.
- *
- * (CR-33 — this used to claim the lift "is tracked separately". It was not: no ticket covered
- * it. Now filed as CR-34, §10.5 of `wiki/errors/CREATOR-BUG-TRACKER.md`.)
- */
-const ACCEPTABLE_COLLABORATION_STATUSES: readonly CollaborationStatus[] = [
-  'INVITED',
-  'APPLIED',
-  'SHORTLISTED',
-  'IN_NEGOTIATION',
-];
 
 /**
  * W2-H1 — whether an incoming stream frame could mean the COLLABORATION moved, and therefore
@@ -1388,9 +1362,7 @@ export default function BrandChatPage() {
    * appears while the server would actually accept a counter. Demo mode has no server to reject,
    * so the wizard stays reachable there regardless of the room's status.
    */
-  const canSendProposal =
-    !liveApiMode ||
-    (selectedDeal ? ACCEPTABLE_COLLABORATION_STATUSES.includes(selectedDeal.rawStatus) : false);
+  const canSendProposal = !liveApiMode || allowsProposalResponse(selectedDeal?.rawStatus);
 
   /**
    * CR-07 — the same `Collaboration.canAccept()` mirror, applied to the Accept/Counter pair on a
@@ -1398,9 +1370,7 @@ export default function BrandChatPage() {
    * CollaborationStatus too), because unlike "Send Proposal" — which demo mode leaves open so the
    * wizard is always explorable — an Accept offered on a contracted demo deal is simply wrong.
    */
-  const canRespondToProposal = selectedDeal
-    ? ACCEPTABLE_COLLABORATION_STATUSES.includes(selectedDeal.rawStatus)
-    : false;
+  const canRespondToProposal = allowsProposalResponse(selectedDeal?.rawStatus);
 
   /**
    * CR-07 — id of the newest proposal message in the thread. Accept is only ever offered on this

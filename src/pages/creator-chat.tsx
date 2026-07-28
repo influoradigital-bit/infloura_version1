@@ -81,7 +81,9 @@ import { ShippingAddressForm, type ShippingAddressData } from '@/components/crea
 import { ReceiptConfirmation, type ReceiptData } from '@/components/creator/deal-room/receipt-confirmation';
 import { ShipmentCard, type ShipmentStatus } from '@/components/shared/shipment-card';
 import { MapPin, Truck } from 'lucide-react';
-import type { TimelineEvent as LibTimelineEvent, TimelineEventMetadata, CollaborationStatus } from '@/lib/types';
+// CR-34 — `CollaborationStatus` is no longer imported here: the only value-level use was the
+// local canAccept() mirror, which now lives in lib/deal-stage.ts. It survives in prose below.
+import type { TimelineEvent as LibTimelineEvent, TimelineEventMetadata } from '@/lib/types';
 import {
   addPersistedMessage,
   formatMessageTimestamp,
@@ -91,6 +93,9 @@ import {
   mapDealToChatRoom,
   type CreatorChatDealRoom,
 } from '@/lib/creator-deal-mappers';
+// CR-34 — the shared mirror of Collaboration.canAccept(), previously duplicated here and in
+// brand-chat.tsx. See lib/deal-stage.ts.
+import { allowsProposalResponse } from '@/lib/deal-stage';
 import {
   dealHasContract,
   getAllContractStatuses,
@@ -456,19 +461,6 @@ const mockTimelineEvents: ChatTimelineEvent[] = [
 // ============================================================================
 
 /**
- * The exact `CollaborationStatus` set `Collaboration.canAccept()` permits
- * (Collaboration.java:185-190). `canCounter()` delegates to it verbatim, so the
- * same list governs Counter. Anything outside it makes POST /deals/:id/accept
- * fail with a 409 `DEAL_NOT_ACCEPTABLE` (DealService.doAccept).
- */
-const ACCEPTABLE_COLLABORATION_STATUSES: readonly CollaborationStatus[] = [
-  'INVITED',
-  'APPLIED',
-  'SHORTLISTED',
-  'IN_NEGOTIATION',
-];
-
-/**
  * CR-02 — whether the DEAL is still in a state where an offer may be accepted or
  * countered. The proposal card's own `metadata.status === 'pending'` is not
  * enough on its own: it describes the message, not the collaboration, and a row
@@ -477,25 +469,17 @@ const ACCEPTABLE_COLLABORATION_STATUSES: readonly CollaborationStatus[] = [
  * "pending" long after the deal itself has left the negotiating stage. Gating on
  * message status alone is what let a CONTRACTED deal render Accept and 409.
  *
- * Deliberately one named helper rather than an inline check: the brand-side deal
- * room and the deals-list quick actions have the same stale-offer exposure and
- * must reuse this, not re-derive it. Kept module-local for now because this file
- * is a route module — exporting a non-component from one disables Fast Refresh
- * for the whole page (react-refresh/only-export-components).
+ * CR-34 — the status list itself now lives in `lib/deal-stage.ts` and is shared with
+ * `brand-chat.tsx`, which used to keep its own copy. This stays as a thin, named
+ * `DealRoom`-shaped wrapper because the call site reads better for it; the rule it
+ * enforces is not defined here. **Do not reintroduce a local status list** — two
+ * copies of one backend precondition is the shape of CR-05/CR-13/CR-24, and it is
+ * what CR-34 was opened to remove.
  *
- * ⚠️ CR-33 — this used to say "when CR-07 wires the brand room up, lift this into
- * lib/creator-deal-mappers.ts". **CR-07 shipped in Wave 2 and the lift did not
- * happen**, so that trigger fired unnoticed and `brand-chat.tsx` now carries its
- * own copy of the same list. Two copies of one backend precondition is the exact
- * shape of CR-05/CR-13/CR-24: if `Collaboration.canAccept()` changes, both must
- * move or the two rooms disagree about whether an offer is still live. Filed as
- * CR-34 (§10.5 of `wiki/errors/CREATOR-BUG-TRACKER.md`) rather than left as a
- * conditional nobody is watching; `lib/deal-stage.ts` is the destination.
- *
- * Note the deals LIST is deliberately not a third copy — per the CR-27 ruling it
+ * Note the deals LIST is deliberately not a third caller — per the CR-27 ruling it
  * offers actions on `new` only and does not need this predicate at all.
  *
- * CR-05 — this now reads `collaborationStatus` and nothing else. It used to fall back to
+ * CR-05 — this reads `collaborationStatus` and nothing else. It used to fall back to
  * the coarse `status` when the raw one was absent, which only worked because this file's
  * private mapper put TERMS_AGREED in 'contracted'. The shared mapper (correctly, per the
  * server) puts TERMS_AGREED in 'negotiating', so that fallback would now answer "yes, you
@@ -503,9 +487,7 @@ const ACCEPTABLE_COLLABORATION_STATUSES: readonly CollaborationStatus[] = [
  * explicit `collaborationStatus` instead, so demo mode exercises the identical gate.
  */
 function dealAllowsProposalResponse(deal: DealRoom | null | undefined): boolean {
-  if (!deal?.collaborationStatus) return false;
-  // An exact mirror of canAccept() against the raw backend status — zero mapping loss.
-  return ACCEPTABLE_COLLABORATION_STATUSES.includes(deal.collaborationStatus);
+  return allowsProposalResponse(deal?.collaborationStatus);
 }
 
 /**

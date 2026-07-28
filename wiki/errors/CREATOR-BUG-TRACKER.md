@@ -1036,6 +1036,16 @@ Two found in the paths reviewed: (a) `api.ts:662-664` — `creatorLogin`'s javad
 
 Surfaced only because CR-33's sweep read the comments claiming it was handled. It was not: the creator-side comment deferred it to CR-07 (shipped, lift skipped) and the brand-side comment asserted it was "tracked separately" (it wasn't). **Fix: lift both into `src/lib/deal-stage.ts`, which already exists as the neutral home for precisely this.** Not urgent — the two copies agree today — but it is a live drift risk with no owner. **Owner: Ananya.**
 
+> ✅ **FIXED.** `ACCEPTABLE_COLLABORATION_STATUSES` and a new `allowsProposalResponse(status)` now live in `src/lib/deal-stage.ts`; both private copies are deleted. `grep -rn ACCEPTABLE_COLLABORATION_STATUSES src/` returns **one definition**.
+> - `creator-chat.tsx` keeps its `dealAllowsProposalResponse(deal)` wrapper — the call site reads better for it and its CR-02/CR-05 history is worth preserving — but it is now three lines delegating to the shared predicate. `brand-chat.tsx`'s two call sites (`canSendProposal`, `canRespondToProposal`) call the shared predicate directly.
+> - The predicate takes the **raw** `CollaborationStatus`, never a `DealStage`, and fails closed on `null`/`undefined`. Both matter: the stage vocabulary folds `TERMS_AGREED` in with genuinely-actionable states, and a room with no backend status behind it must not offer an action the server never agreed to.
+>
+> **Pinned by `src/lib/__tests__/deal-stage-accept.test.ts` (16 tests), with two guards proven by breaking them:**
+> 1. **Drift guard.** Adding `TERMS_AGREED` to the list — the tempting way to "fix" a missing button — fails **3** tests, including one that states the CR-27 trap explicitly (`TERMS_AGREED` and `IN_NEGOTIATION` both render "Negotiating"; only one can be accepted). Reverted, green again.
+> 2. **Exhaustiveness guard, which is new.** The partition is typed `Record<CollaborationStatus, boolean>`, so a 14th status breaks `npm run typecheck` until someone classifies it. Verified by adding a fake `'ARBITRATION'`: `error TS2741: Property 'ARBITRATION' is missing`. Neither `allowsProposalResponse` (an `.includes()`) nor `mapCollaborationStatusToDealStage` (has a `default:`) can catch that alone. `creator-deal-mappers.test.ts:119` already used this pattern for the stage mapper — this extends the same convention to the accept precondition.
+>
+> **Lint discipline, recorded:** removing the local array left `CollaborationStatus` imported but unused in `creator-chat.tsx`, taking lint to **404**. Found by measuring rather than assuming, and **fixed rather than suppressed** — back to **403 (336 errors, 67 warnings), exactly baseline**. Full verification: `npm run typecheck` clean · `npm test` **283/283 across 31 files** · `npm run build` PASS, 16/16 routes.
+
 ---
 
 ### 10.6 Handoff to Tara — status moves these rulings imply
