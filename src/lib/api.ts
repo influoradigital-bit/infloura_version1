@@ -34,6 +34,7 @@ import type {
 } from './types';
 import {
   persistBrandSession,
+  persistCreatorSession,
   type BackendTokenPair,
   type BrandSession,
 } from './auth-session';
@@ -579,7 +580,19 @@ const isLive = () => API_MODE === 'live';
 // ---------------------------------------------------------------------------
 
 export interface LoginPayload { email: string; password: string }
-export interface LoginResponse { token: string; userId: string; onboardingComplete: boolean }
+export interface LoginResponse {
+  token: string;
+  userId: string;
+  onboardingComplete: boolean;
+  /**
+   * CR-06 — the authenticated identity, carried through from the backend's
+   * `TokenPair.user` so the caller can populate the auth store instead of
+   * leaving `user` null and letting the shell fall back to a demo profile.
+   * Optional because mock mode has no real user behind it.
+   */
+  email?: string;
+  displayName?: string;
+}
 
 export interface BrandRegisterPayload {
   email: string;
@@ -659,10 +672,14 @@ export const auth = {
       body: payload,
       role: 'creator',
     });
+    // CR-06 — mirror the brand flow: keep the identity, not just the token.
+    const session = persistCreatorSession(data);
     return {
       token: data.accessToken,
-      userId: data.user.id,
-      onboardingComplete: data.onboardingCompleted ?? false,
+      userId: session.userId,
+      onboardingComplete: session.onboardingComplete,
+      email: session.email,
+      displayName: session.displayName,
     };
   },
 
@@ -692,10 +709,14 @@ export const auth = {
       body: payload,
       role: 'creator',
     });
+    // CR-06 — same identity capture as creatorLogin.
+    const session = persistCreatorSession(data);
     return {
       token: data.accessToken,
-      userId: data.user.id,
-      onboardingComplete: data.onboardingCompleted ?? false,
+      userId: session.userId,
+      onboardingComplete: session.onboardingComplete,
+      email: session.email,
+      displayName: session.displayName,
     };
   },
 
@@ -2773,7 +2794,14 @@ export interface PortfolioPlatformStats {
   followers: number;
   engagementRate: number;
   avgReach?: number;
-  lastSyncedAt: string; // ISO
+  /**
+   * ISO timestamp of the last platform sync. CR-14 — declared non-nullable
+   * here, but the live `GET /portfolio/:username` response omits it for a
+   * platform that has never completed a sync, which is how the public page
+   * came to render the literal "Synced NaNd ago". Typed to match what the
+   * server actually sends so the consumer's guard isn't dead code.
+   */
+  lastSyncedAt?: string | null;
 }
 
 export interface PortfolioCollab {

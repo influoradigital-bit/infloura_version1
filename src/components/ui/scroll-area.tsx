@@ -8,8 +8,21 @@ import { cn } from '@/lib/utils'
 function ScrollArea({
   className,
   children,
+  viewportRef,
   ...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
+  /**
+   * Escape hatch to the Radix viewport — the element that actually scrolls.
+   *
+   * Added for CR-04: scrolling a chat thread to the bottom via
+   * `element.scrollIntoView()` also scrolls every scrollable ANCESTOR,
+   * including `overflow:hidden` ones that the user has no way to scroll back.
+   * Holding the viewport directly lets a caller set `scrollTop` on exactly one
+   * element and touch nothing else. Optional — existing call sites are
+   * unaffected.
+   */
+  viewportRef?: React.Ref<HTMLDivElement>
+}) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
@@ -18,6 +31,7 @@ function ScrollArea({
     >
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
+        ref={viewportRef}
         className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
       >
         {children}

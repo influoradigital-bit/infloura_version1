@@ -2,6 +2,9 @@ import * as React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
+import { clearCreatorSession } from '@/lib/auth-session';
+import { useCreatorIdentity } from '@/hooks/use-creator-identity';
+import { useCreatorUnreadCount } from '@/hooks/use-creator-unread-count';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -112,11 +115,23 @@ const navGroups: CreatorNavGroup[] = [
 export function CreatorLayout({ children }: CreatorLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
+  const { logout } = useAuthStore();
   const [showLogoutDialog, setShowLogoutDialog] = React.useState(false);
 
-  const getInitials = (name?: string | null, fallback = 'IN') => {
-    if (!name?.trim()) return fallback;
+  // CR-06 — real identity or nothing. See `useCreatorIdentity` for why the
+  // 'Creator Account' / '@priya_sharma' / 'IN' fallbacks were removed rather
+  // than repointed.
+  const { identity } = useCreatorIdentity();
+
+  /**
+   * CR-06 — initials, or `null` when the name is unknown.
+   *
+   * The old signature was `getInitials(name, fallback = 'IN')`, which is why
+   * the live sidebar showed "IN" for every creator. A caller that doesn't know
+   * the name gets nothing back and renders a skeleton instead.
+   */
+  const getInitials = (name?: string | null): string | null => {
+    if (!name?.trim()) return null;
     return name
       .trim()
       .split(/\s+/)
@@ -125,8 +140,13 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
       .slice(0, 2)
       .toUpperCase();
   };
+  const initials = getInitials(identity.displayName);
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
-  const [unreadCount] = React.useState(3);
+  // CR-16 — was `React.useState(3)`: a hardcoded literal with no setter and no
+  // data source, rendering "Deals 3" on an account with 2 deals and 0 unread.
+  // Keyed on the pathname so the badge settles once a deal room marks its
+  // messages read.
+  const unreadCount = useCreatorUnreadCount(location.pathname);
 
   const pathname = location.pathname;
 
@@ -145,7 +165,11 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
 
   const handleLogout = () => {
     logout();
-    localStorage.removeItem('creator_token');
+    // CR-06 — clears the identity keys login now writes, not just the token.
+    // Leaving creator_email / creator_display_name behind would let the next
+    // person to open this browser see the previous creator's name in the shell
+    // before /me/creator-profile resolves.
+    clearCreatorSession();
     navigate('/creator/login');
   };
 
@@ -224,22 +248,38 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
               <DropdownMenuTrigger asChild>
                 <button className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 hover:bg-sidebar-accent transition-colors">
                   <Avatar className="h-7 w-7">
-                    <AvatarImage src={user?.avatarUrl} />
+                    <AvatarImage src={identity.avatarUrl ?? undefined} />
+                    {/* CR-06 — no 'IN' fallback. An unknown creator gets a blank
+                        tinted circle, not another user's initials. */}
                     <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                      {getInitials(user?.displayName)}
+                      {initials}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 text-left min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {user?.displayName || 'Creator Account'}
-                    </p>
+                    {/* CR-06 — a skeleton bar while the name is unknown. The old
+                        `|| 'Creator Account'` asserted an identity the app did
+                        not have. */}
+                    {identity.displayName ? (
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {identity.displayName}
+                      </p>
+                    ) : (
+                      <span className="block h-3.5 w-24 rounded bg-muted animate-pulse" />
+                    )}
                   </div>
                   <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" side="top" className="w-52">
+                {/* CR-06 — the '@priya_sharma' literal is deleted, not repointed.
+                    Shipping one creator's handle as another creator's fallback is
+                    an identity-leak pattern. Prefers the real @handle from
+                    /me/creator-profile, falls back to the session email, and
+                    renders a skeleton when it knows neither. */}
                 <DropdownMenuLabel className="font-medium text-xs text-muted-foreground">
-                  {user?.email || '@priya_sharma'}
+                  {identity.handle ?? identity.email ?? (
+                    <span className="block h-3 w-28 rounded bg-muted animate-pulse" />
+                  )}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => handleNavigate('/creator/profile')}>
@@ -271,7 +311,11 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
         {/* Main area */}
         <div className="flex flex-1 flex-col lg:ml-60">
           {/* Top header */}
-          <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 sm:px-6">
+          {/* CR-17 — height comes from the shared --app-header-h token (globals.css),
+              which the deal room's `h-[calc(100vh-var(--app-header-h))]` also reads.
+              Visually identical to the previous `h-14`; the point is that the two
+              can no longer disagree. */}
+          <header className="sticky top-0 z-40 flex h-[var(--app-header-h)] items-center justify-between border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 sm:px-6">
             {/* Mobile: hamburger + logo */}
             <div className="flex items-center gap-3 lg:hidden">
               <button
@@ -314,15 +358,20 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
                 <DropdownMenuTrigger asChild>
                   <button className="lg:hidden p-0.5 rounded-full hover:ring-2 hover:ring-ring transition-all">
                     <Avatar className="h-7 w-7">
+                      <AvatarImage src={identity.avatarUrl ?? undefined} />
+                      {/* CR-06 — see the desktop trigger above; no 'IN' fallback. */}
                       <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                        {getInitials(user?.displayName)}
+                        {initials}
                       </AvatarFallback>
                     </Avatar>
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
+                  {/* CR-06 — second copy of the same leak; same fix. */}
                   <DropdownMenuLabel className="text-xs text-muted-foreground">
-                    {user?.email || '@priya_sharma'}
+                    {identity.handle ?? identity.email ?? (
+                      <span className="block h-3 w-24 rounded bg-muted animate-pulse" />
+                    )}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => handleNavigate('/creator/profile')}>

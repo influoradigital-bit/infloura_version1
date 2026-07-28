@@ -734,6 +734,7 @@ function PlatformStatCard({ stats }: { stats: PortfolioPlatformStats }) {
   const Icon = stats.platform === 'INSTAGRAM' ? Instagram : stats.platform === 'YOUTUBE' ? Youtube : Globe;
   const reachLabel = stats.platform === 'YOUTUBE' ? 'Avg Views per Video' : 'Avg Reel Views';
   const followerLabel = stats.platform === 'YOUTUBE' ? 'Subscribers' : 'Followers';
+  const syncedLabel = relativeTime(stats.lastSyncedAt);
   return (
     <Card>
       <CardContent className="p-4">
@@ -769,10 +770,14 @@ function PlatformStatCard({ stats }: { stats: PortfolioPlatformStats }) {
             </div>
           )}
         </div>
-        <p className="mt-3 text-[10px] text-muted-foreground flex items-center gap-1">
-          <RefreshCw className="h-2.5 w-2.5" />
-          Synced {relativeTime(stats.lastSyncedAt)}
-        </p>
+        {/* CR-14 — the whole line is dropped when there is no usable sync
+            timestamp; it never falls through to "Synced NaNd ago". */}
+        {syncedLabel && (
+          <p className="mt-3 text-[10px] text-muted-foreground flex items-center gap-1">
+            <RefreshCw className="h-2.5 w-2.5" />
+            Synced {syncedLabel}
+          </p>
+        )}
       </CardContent>
     </Card>
   );
@@ -1070,8 +1075,25 @@ function monthYear(iso: string) {
   return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
 }
 
-function relativeTime(iso: string) {
-  const ms = Date.now() - new Date(iso).getTime();
+/**
+ * CR-14 — renders a relative "x ago" label, or `null` when the timestamp is
+ * missing/unparseable.
+ *
+ * The bug: a missing or invalid `lastSyncedAt` made `new Date(iso).getTime()`
+ * return NaN, which propagated through the day-difference arithmetic and
+ * shipped the literal string "Synced NaNd ago" onto the public page creators
+ * send to brands. Returning `null` lets the caller drop the line entirely
+ * rather than print arithmetic wreckage.
+ *
+ * A future timestamp (clock skew between the sync job and the viewer) also
+ * lands here — negative `ms` floors to a negative hour count, so it is clamped
+ * to 'just now' rather than rendering "-1h ago".
+ */
+function relativeTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return null;
+  const ms = Date.now() - then;
   const hours = Math.floor(ms / (1000 * 60 * 60));
   if (hours < 1) return 'just now';
   if (hours < 24) return `${hours}h ago`;

@@ -776,6 +776,25 @@ export default function CreatorChatPage() {
   const messagesRequestRef = React.useRef(0);
 
   /**
+   * CR-20 — unmount guard.
+   *
+   * The `cancelled` closure flag that the old inline fetch used did two jobs:
+   * ignore stale responses, and stop work after unmount. `messagesRequestRef`
+   * replaced the first (better — it also orders concurrent loads), but silently
+   * dropped the second. No leak is observable under React 18+, so this is
+   * restoring a capability rather than fixing a live defect; it is cheap and it
+   * stops the gap widening if a future `loadMessages` caller does more than
+   * `setState`.
+   */
+  const isMountedRef = React.useRef(true);
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  /**
    * Reload the message thread for one deal. Extracted from the mount effect so
    * mutations can refresh the timeline, not just a deal switch — mirrors
    * brand-chat.tsx's `loadMessages`. CR-09 is now closed: accept, decline and counter all
@@ -785,18 +804,23 @@ export default function CreatorChatPage() {
     async (dealId: string) => {
       if (!liveApi) return;
       const token = ++messagesRequestRef.current;
+      // CR-20 — a response is applied only if it is both the latest request
+      // (token) and still wanted by a mounted component (isMountedRef).
+      const isCurrent = () => isMountedRef.current && messagesRequestRef.current === token;
       setMessagesLoading(true);
       setMessagesError(null);
       try {
         const remote = await api.messages.list('creator', dealId);
-        if (messagesRequestRef.current === token) setLiveMessages(remote);
+        if (isCurrent()) setLiveMessages(remote);
       } catch (err) {
+        // Unconditional, matching the refreshDeal convention (W2-L1): a failed
+        // request is worth diagnosing whether or not its result is still wanted.
         console.error('Failed to load messages', err);
-        if (messagesRequestRef.current === token) {
+        if (isCurrent()) {
           setMessagesError('Failed to load messages for this deal.');
         }
       } finally {
-        if (messagesRequestRef.current === token) setMessagesLoading(false);
+        if (isCurrent()) setMessagesLoading(false);
       }
     },
     [liveApi],
@@ -915,7 +939,11 @@ export default function CreatorChatPage() {
 
   const [message, setMessage] = React.useState('');
   const [messageRefreshKey, setMessageRefreshKey] = React.useState(0);
-  const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  // CR-04 — the Radix ScrollArea viewport for the message thread. The
+  // auto-scroll effect drives this element's scrollTop directly instead of
+  // calling scrollIntoView, which would also scroll the overflow-hidden
+  // wrapper above it and clip the top of the room permanently out of reach.
+  const messagesViewportRef = React.useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [openPanel, setOpenPanel] = React.useState<CreatorToolsPanel>(null);
   const [contractStatusByDeal, setContractStatusByDeal] =
@@ -1472,11 +1500,32 @@ export default function CreatorChatPage() {
     deal.campaignName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const baseEventsForDeal = !selectedDeal
-    ? []
-    : selectedDeal.id === '1'
-      ? mockTimelineEvents
-      : mockTimelineEvents.slice(0, 3);
+  /**
+   * CR-04 — memoized on the deal id.
+   *
+   * This was a bare expression, so it produced a new array identity on every
+   * render. That array is a dependency of the `events` useMemo below, which is
+   * in turn a dependency of the auto-scroll effect — so both re-ran on EVERY
+   * render, including every keystroke in the message composer, and the effect
+   * re-scrolled the thread each time.
+   *
+   * `mockTimelineEvents.slice()` is only reachable in demo mode, but the
+   * identity churn it caused was not: the `events` memo and the scroll effect
+   * are shared by both modes.
+   */
+  // Deliberately the RESOLVED deal's id, not the `selectedDealId` state above:
+  // that one holds whatever the URL asked for, which may not correspond to a
+  // deal that actually loaded. `undefined` here correctly yields no events.
+  const resolvedDealId = selectedDeal?.id;
+  const baseEventsForDeal = React.useMemo(
+    () =>
+      !resolvedDealId
+        ? []
+        : resolvedDealId === '1'
+          ? mockTimelineEvents
+          : mockTimelineEvents.slice(0, 3),
+    [resolvedDealId],
+  );
 
   const events = React.useMemo(() => {
     if (!selectedDeal) return [];
@@ -1517,15 +1566,29 @@ export default function CreatorChatPage() {
     return sorted.map((event) => enrichContractEvent(event, selectedDeal));
   }, [liveApi, liveMessages, baseEventsForDeal, selectedDeal, messageRefreshKey, enrichContractEvent]);
 
+  /**
+   * CR-04 — pin the message thread to the bottom by scrolling exactly one
+   * element: the Radix viewport.
+   *
+   * This used to call `messagesEndRef.current.scrollIntoView()`. That scrolls
+   * every scrollable ancestor of the target, and the deal room's flex wrapper
+   * is `overflow-hidden` — it has no scrollbar and ignores the wheel, so the
+   * ~106px it got scrolled by were permanently unreachable by the user
+   * (measured live: scrollHeight 616, clientHeight 510, scrollTop 104.8, with
+   * the top of the room clipped off). Assigning `scrollTop` on the viewport
+   * cannot move an ancestor.
+   */
   React.useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const viewport = messagesViewportRef.current;
+    if (!viewport) return;
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
   }, [events, openPanel]);
 
   // --- Guards (after all hooks, before dereferencing selectedDeal below) ---
   if (dealsLoading) {
     return (
       <CreatorLayout>
-        <div className="flex h-[calc(100vh-4rem)] items-center justify-center bg-background">
+        <div className="flex h-[calc(100vh-var(--app-header-h))] items-center justify-center bg-background">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       </CreatorLayout>
@@ -1534,7 +1597,7 @@ export default function CreatorChatPage() {
   if (dealsError) {
     return (
       <CreatorLayout>
-        <div className="flex h-[calc(100vh-4rem)] flex-col items-center justify-center gap-3 bg-background text-center">
+        <div className="flex h-[calc(100vh-var(--app-header-h))] flex-col items-center justify-center gap-3 bg-background text-center">
           <AlertCircle className="h-8 w-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground max-w-xs">{dealsError}</p>
           <Button variant="outline" size="sm" onClick={() => loadDeals()}>
@@ -1547,7 +1610,7 @@ export default function CreatorChatPage() {
   if (!selectedDeal) {
     return (
       <CreatorLayout>
-        <div className="flex h-[calc(100vh-4rem)] flex-col items-center justify-center gap-2 bg-background text-center">
+        <div className="flex h-[calc(100vh-var(--app-header-h))] flex-col items-center justify-center gap-2 bg-background text-center">
           <MessageCircle className="h-10 w-10 text-muted-foreground/50" />
           <p className="font-medium">No deals yet</p>
           <p className="text-sm text-muted-foreground max-w-xs">
@@ -1605,7 +1668,11 @@ export default function CreatorChatPage() {
 
   return (
     <CreatorLayout>
-    <div className="flex h-[calc(100vh-4rem)] bg-background">
+    {/* CR-17 — height is derived from the shared --app-header-h token rather than a
+        hardcoded 4rem. The layout header is 3.5rem, so the old value made the deal
+        room 8px taller than the space available to it (measured live: main 664px in
+        a 720px viewport, deal room 656px), pushing the message composer off-screen. */}
+    <div className="flex h-[calc(100vh-var(--app-header-h))] bg-background">
       {/* Left Panel - Deal List */}
       <div className="w-80 border-r flex flex-col">
         <div className="p-4 border-b">
@@ -1791,8 +1858,14 @@ export default function CreatorChatPage() {
         </div>
 
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <ScrollArea className="flex-1 p-4">
-          <div className="space-y-4 max-w-3xl mx-auto">
+        {/* CR-04 — `p-4` moved OFF the ScrollArea root and onto the inner content
+            div, and `min-h-0` added.
+            Padding on the Radix Root inflates the scroll container itself: the root
+            measured 539px inside a 510px parent, guaranteeing the overflow that the
+            scrollIntoView call then scrolled into the unreachable wrapper above.
+            Padding belongs to the scrolled CONTENT, not to the scroll viewport. */}
+        <ScrollArea className="flex-1 min-h-0" viewportRef={messagesViewportRef}>
+          <div className="space-y-4 max-w-3xl mx-auto p-4">
             {liveApi && messagesLoading && (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -2222,7 +2295,8 @@ export default function CreatorChatPage() {
                 </Button>
               </div>
             )}
-            <div ref={messagesEndRef} />
+            {/* CR-04 — the old scroll-anchor div is gone; the auto-scroll effect
+                now drives the viewport's scrollTop directly (see messagesViewportRef). */}
           </div>
         </ScrollArea>
 

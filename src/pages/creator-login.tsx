@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
 import { createMockCreatorUser } from '@/lib/mock-user';
+import { buildCreatorUser } from '@/lib/creator-identity';
 import { AuthLoginShell } from '@/components/shared/auth-login-shell';
 import { DemoAccessPanel } from '@/components/shared/demo-access-panel';
 import { api, ApiError, isApiLive } from '@/lib/api';
@@ -37,10 +38,23 @@ export default function CreatorLoginPage() {
       const result = await api.auth.creatorLogin({ email, password });
       api.auth.setToken('creator', result.token);
 
-      if (!isApiLive()) {
-        // Mock mode only — populate a demo profile for the UI to render.
-        login(createMockCreatorUser());
-      }
+      // CR-06 — the auth store is populated in BOTH modes.
+      //
+      // This used to be `if (!isApiLive()) login(createMockCreatorUser())`, so on
+      // a live build `user` stayed null after every real login. Every
+      // `user?.displayName || 'Creator Account'` and `user?.email ||
+      // '@priya_sharma'` in the creator shell then rendered its demo default —
+      // Tejas logged in and saw Priya's handle. The profile page looked right
+      // only because it fetches independently of the store.
+      login(
+        isApiLive()
+          ? buildCreatorUser({
+              id: result.userId,
+              email: result.email ?? email,
+              displayName: result.displayName,
+            })
+          : createMockCreatorUser(),
+      );
 
       const onboardingCompleted =
         result.onboardingComplete || !!localStorage.getItem('creator_onboarding_completed');

@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -123,11 +123,27 @@ const AdminProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 // so any component using react-query would throw "No QueryClient set" at runtime.
 const queryClient = new QueryClient();
 
+/**
+ * CR-10 — the error boundary lives INSIDE `<BrowserRouter>` and resets on every
+ * navigation.
+ *
+ * It used to wrap the Router from the outside with no reset path, so a single
+ * transient throw on a single page unmounted the entire routing tree for the
+ * rest of the session: every following tab click re-rendered the same dead
+ * fallback because there was no Router left to route with. Mounted here, a
+ * throw takes out only the current route's render, and moving to any other
+ * route (or pressing "Try again") brings the app back.
+ */
+function RoutedErrorBoundary({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  return <ErrorBoundary resetKey={location.pathname}>{children}</ErrorBoundary>;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-    <ErrorBoundary>
     <BrowserRouter>
+    <RoutedErrorBoundary>
       <Routes>
         {/* Auth Routes */}
         <Route path="/brand/login" element={<BrandLoginPage />} />
@@ -581,13 +597,14 @@ export default function App() {
         <Route path="/:handle" element={<CreatorPortfolioPublicPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      {/* App-wide toast outlet — previously the <Toaster> was never mounted, so
+          every toast({variant:'destructive'}) call across ~17 components silently
+          rendered nothing. Mounted once here, all of them now surface.
+          Inside the Router (CR-10) so it keeps rendering alongside the routes. */}
+      <Toaster />
+      <DemoModeBanner />
+    </RoutedErrorBoundary>
     </BrowserRouter>
-    {/* App-wide toast outlet — previously the <Toaster> was never mounted, so
-        every toast({variant:'destructive'}) call across ~17 components silently
-        rendered nothing. Mounted once here, all of them now surface. */}
-    <Toaster />
-    <DemoModeBanner />
-    </ErrorBoundary>
     </QueryClientProvider>
   );
 }

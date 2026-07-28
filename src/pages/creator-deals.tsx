@@ -187,6 +187,18 @@ export default function CreatorDealsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [deals, setDeals] = React.useState<DealRoom[]>([]);
+  /**
+   * CR-12 — the unfiltered deal set, used ONLY for the chip badges and the
+   * header summary.
+   *
+   * The bug: `counts` was derived from `deals`, which the effect below refetches
+   * scoped to `activeFilter`. So the badges described the current filter's own
+   * result set — click "Active" and every chip, including "All", reported 0, and
+   * the header read "0 active". A creator with deals was told they had none.
+   * Badge numbers must not depend on which filter is selected, so they get their
+   * own unfiltered read.
+   */
+  const [allDeals, setAllDeals] = React.useState<DealRoom[]>([]);
   const [activeFilter, setActiveFilter] = React.useState<DealStatusFilter>('all');
   const [search, setSearch] = React.useState('');
   const [loading, setLoading] = React.useState(false);
@@ -232,13 +244,41 @@ export default function CreatorDealsPage() {
     };
   }, [activeFilter]);
 
+  /**
+   * CR-12 — one unfiltered read that backs every chip badge and the header
+   * summary. Deliberately separate from the list fetch above, which stays
+   * server-filtered: the list's source of truth is the API's own status
+   * mapping, and collapsing the two would paper over CR-13 (the server's
+   * `statusesForFilter` disagreeing with the chips about `TERMS_AGREED`)
+   * client-side instead of fixing it where Priya ruled it must be fixed.
+   */
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const remote = await api.deals.list('creator', 'all');
+        if (!cancelled && Array.isArray(remote)) {
+          setAllDeals(remote.map(mapDealToDealsPageRow));
+        }
+      } catch {
+        // Counts are an affordance, not the page. Swallowed on purpose: the
+        // list fetch above already toasts its own failure, and a second toast
+        // for the badges would be noise on the same underlying outage. The
+        // badges keep their last known value rather than lying with 0.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const counts = React.useMemo(() => {
     const map = new Map<DealStatusFilter, number>();
     STATUS_CHIPS.forEach((chip) => {
-      map.set(chip.id, deals.filter(chip.match).length);
+      map.set(chip.id, allDeals.filter(chip.match).length);
     });
     return map;
-  }, [deals]);
+  }, [allDeals]);
 
   const filtered = React.useMemo(() => {
     const chip = STATUS_CHIPS.find((c) => c.id === activeFilter) || STATUS_CHIPS[0];
@@ -262,11 +302,14 @@ export default function CreatorDealsPage() {
       });
   }, [deals, activeFilter, search]);
 
-  const newCount = deals.filter((d) => d.status === 'new').length;
-  const activeCount = deals.filter(
+  // CR-12 — header summary reads the unfiltered set for the same reason the
+  // badges do: "2 new · 1 active · ₹30,000 pending payout" describes the
+  // account, not the chip that happens to be selected.
+  const newCount = allDeals.filter((d) => d.status === 'new').length;
+  const activeCount = allDeals.filter(
     (d) => d.status === 'contracted' || d.status === 'in_progress' || d.status === 'review',
   ).length;
-  const pendingPayout = deals
+  const pendingPayout = allDeals
     .filter((d) => d.status === 'review' || d.status === 'in_progress')
     .reduce((sum, d) => sum + d.budget, 0);
 
@@ -294,9 +337,12 @@ export default function CreatorDealsPage() {
     setActionLoading(deal.id);
     try {
       await api.deals.accept(deal.id);
-      setDeals((prev) =>
-        prev.map((d) => (d.id === deal.id ? { ...d, status: 'negotiating' } : d)),
-      );
+      // CR-12 — both the list and the counts source are updated, so the badges
+      // move with the row instead of going stale until the next mount.
+      const toNegotiating = (d: DealRoom) =>
+        d.id === deal.id ? { ...d, status: 'negotiating' as const } : d;
+      setDeals((prev) => prev.map(toNegotiating));
+      setAllDeals((prev) => prev.map(toNegotiating));
       openDeal(deal.id);
     } catch (err) {
       // Previously a try/finally with NO catch — an accept failure was an unhandled
@@ -322,7 +368,9 @@ export default function CreatorDealsPage() {
     setActionLoading(deal.id);
     try {
       await api.deals.reject(deal.id);
+      // CR-12 — dropped from the counts source too, not just the visible list.
       setDeals((prev) => prev.filter((d) => d.id !== deal.id));
+      setAllDeals((prev) => prev.filter((d) => d.id !== deal.id));
     } catch (err) {
       // Was try/finally with no catch — a decline failure vanished silently.
       toast({
