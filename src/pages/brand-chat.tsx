@@ -38,6 +38,7 @@ import {
   isApiLive,
   ApiError,
   type DealMessage,
+  type DealMessageStreamStatus,
   type Deal,
   type ContractApiRecord,
   type ContractStatus,
@@ -693,6 +694,13 @@ export default function BrandChatPage() {
   const [liveMessages, setLiveMessages] = React.useState<DealMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = React.useState(false);
   const [messagesError, setMessagesError] = React.useState<string | null>(null);
+  /**
+   * CR-31 — realtime transport state for the selected room's stream. Seeded optimistically
+   * to 'open' for the same reasons as the creator room: the banner renders only when this is
+   * NOT 'open', so a truthful 'connecting' seed would flash on every healthy deal switch, and
+   * `messagesApi.stream` emits no status synchronously to seed it from.
+   */
+  const [streamStatus, setStreamStatus] = React.useState<DealMessageStreamStatus>('open');
 
   // B-1: live deliverables (GET /deals/:id/deliverables). Live mode only.
   const [liveDeliverables, setLiveDeliverables] = React.useState<DealDeliverableItem[]>([]);
@@ -1112,11 +1120,21 @@ export default function BrandChatPage() {
         // updater, which is not a safe place to observe from.
         setTimeout(scrollToBottom, 50);
       },
-      onError: () => {
-        // Graceful degrade: a dropped/failed stream is silent and non-fatal —
-        // the existing fetch-on-load path (loadMessages) already covers
-        // message delivery, so send/render must never be blocked by this.
-        console.debug('[brand-chat] deal message stream error/closed for deal', dealId);
+      onError: (err) => {
+        // Still non-fatal and still not a toast — send/render never depend on the stream.
+        // CR-31: this now fires per failed ATTEMPT and the transport retries, so it is a
+        // diagnostic line rather than the room's state. `streamStatus` is the state.
+        console.debug('[brand-chat] deal message stream error for deal', dealId, err);
+      },
+      onStatusChange: setStreamStatus,
+      onReconnect: () => {
+        // CR-31 — nothing published during the gap is recoverable from the transport, so
+        // re-read both: `loadMessages` restores the thread, `refreshDeal` restores
+        // `rawStatus`, which gates Accept/Counter here exactly as `collaborationStatus`
+        // does on the creator side. Messages alone would leave the CR-07 controls
+        // rendering on a deal that moved on while the stream was down.
+        void loadMessages(dealId);
+        void refreshDeal(dealId);
       },
     });
 
@@ -1126,7 +1144,7 @@ export default function BrandChatPage() {
     // `selectedDeal` itself is intentionally not a dep — only its id is, so a deal-list refresh
     // returning a new object for the same deal does not tear down and reopen the connection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDeal?.id, refreshDeal]);
+  }, [selectedDeal?.id, refreshDeal, loadMessages]);
 
   const handleSendMessage = async () => {
     if (!message.trim()) return;
@@ -1825,6 +1843,26 @@ export default function BrandChatPage() {
 
           {/* Always-visible chat feed — message events, proposals, contracts, deliverables, payments all render inline */}
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* CR-31 — the brand mirror of the creator room's banner. A dropped stream used to
+              be indistinguishable from a quiet negotiation. The transport retries by itself,
+              so 'reconnecting' stays understated; 'closed' means it gave up on a 401/403/404
+              and needs the brand to do something. `text-destructive-foreground`, not
+              `text-destructive` — the latter is a pale background token here. */}
+          {isApiLive() && streamStatus !== 'open' && (
+            <div
+              role="status"
+              className={cn(
+                'px-4 py-1.5 border-b text-xs text-center',
+                streamStatus === 'closed'
+                  ? 'bg-destructive/10 text-destructive-foreground'
+                  : 'bg-muted/50 text-muted-foreground',
+              )}
+            >
+              {streamStatus === 'closed'
+                ? 'Live updates are off for this deal. Reload to see new messages.'
+                : 'Reconnecting to live updates…'}
+            </div>
+          )}
           <ScrollArea className="flex-1 p-4">
             <div className="space-y-4 max-w-3xl mx-auto">
               {/* LIVE MODE (B-1): real messages from GET /deals/:id/messages. */}

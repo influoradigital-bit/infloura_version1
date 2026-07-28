@@ -1457,6 +1457,17 @@ export interface DealMessage {
   readBy: string[];
 }
 
+// CR-31 — deal-message stream reconnect tuning. Backoff doubles from BASE to MAX; a
+// connection that holds for STABLE_MS is treated as proof the backend recovered and resets
+// the ladder. MAX is deliberately well under a typical proxy idle-timeout so a room that
+// goes quiet overnight still reattaches on its own rather than waiting for a page reload.
+const STREAM_RECONNECT_BASE_MS = 1_000;
+const STREAM_RECONNECT_MAX_MS = 30_000;
+const STREAM_STABLE_MS = 10_000;
+
+/** HTTP statuses on which reconnecting the message stream cannot possibly help. */
+const TERMINAL_STREAM_STATUSES: readonly number[] = [401, 403, 404];
+
 export const messages = {
   /** GET /deals/:dealId/messages?before= */
   list: (role: Role, dealId: string, before?: string) =>
@@ -1505,22 +1516,68 @@ export const messages = {
    * uses the same ordinary role token (`brand_token`/`creator_token`) every
    * other brand/creator deal request uses.
    *
-   * Returns a handle whose `close()` aborts the underlying fetch — callers
-   * must call it on deal switch and on unmount to avoid leaking connections
-   * or letting a stale deal's stream write into the newly selected one.
+   * Returns a handle whose `close()` aborts the underlying fetch and cancels any
+   * pending reconnect — callers must call it on deal switch and on unmount to avoid
+   * leaking connections or letting a stale deal's stream write into the newly
+   * selected one.
    *
    * Never throws synchronously and never rejects the caller's render path:
    * connection failures, non-OK responses, and stream read errors all route
-   * through `handlers.onError` (optional) so a dropped/failed stream degrades
-   * silently to the existing fetch-on-load (`messages.list`) path.
+   * through `handlers.onError` (optional) so a failed stream degrades to the
+   * existing fetch-on-load (`messages.list`) path.
+   *
+   * ---------------------------------------------------------------------------
+   * CR-31 — this reconnects, and a clean close is a disconnect, not an exit
+   * ---------------------------------------------------------------------------
+   * Dropping `EventSource` for fetch (necessary — `EventSource` cannot send an
+   * `Authorization` header and the token must never ride in the URL) also dropped the
+   * automatic reconnect `EventSource` gives for free, and that was never reimplemented.
+   * Worse, the original read loop treated `done` as a normal return: when the server
+   * closed the stream cleanly — a Caddy idle-timeout, an API restart, any proxy hiccup —
+   * this function returned having called **nothing at all**. Not `onError`, not a log.
+   * The room went permanently deaf with no trace and no recovery short of switching
+   * deals, which silently undid CR-08's entire purpose.
+   *
+   * So: every way a connection can end now schedules a reconnect with exponential
+   * backoff + jitter, and `onStatusChange` exists so the room can say so out loud
+   * rather than looking healthy while receiving nothing.
+   *
+   * The stream carries no `Last-Event-ID` replay, so frames published during a gap are
+   * unrecoverable from the transport. `onReconnect` is the caller's cue to refetch —
+   * reconnecting without it would resume future frames while silently keeping the hole.
    */
   stream: (role: Role, dealId: string, handlers: DealMessageStreamHandlers): DealMessageStreamHandle => {
     const controller = new AbortController();
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    /** Consecutive failed/ended connections. Reset once a connection proves stable. */
+    let attempt = 0;
+    /** Has a connection ever opened? Distinguishes a first connect from a reconnect. */
+    let everOpened = false;
+    /** At most one 401-driven token refresh per connection generation. */
+    let authRetried = false;
 
-    void (async () => {
-      const token = localStorage.getItem(TOKEN_KEYS[role]);
+    const stopped = () => controller.signal.aborted;
+
+    const scheduleReconnect = () => {
+      if (stopped()) return;
+      attempt += 1;
+      const ceiling = Math.min(
+        STREAM_RECONNECT_BASE_MS * 2 ** (attempt - 1),
+        STREAM_RECONNECT_MAX_MS,
+      );
+      // Jittered across the top half of the window: when one API restart drops every open
+      // room at once, they must not all retry on the same tick and restart the stampede.
+      const delay = ceiling / 2 + Math.random() * (ceiling / 2);
+      handlers.onStatusChange?.('reconnecting');
+      retryTimer = setTimeout(() => void connect(), delay);
+    };
+
+    const connect = async (): Promise<void> => {
+      if (stopped()) return;
+
       let response: Response;
       try {
+        const token = localStorage.getItem(TOKEN_KEYS[role]);
         response = await fetch(`${API_BASE_URL}/deals/${dealId}/messages/stream`, {
           method: 'GET',
           headers: {
@@ -1531,21 +1588,51 @@ export const messages = {
           signal: controller.signal,
         });
       } catch (err) {
-        if (controller.signal.aborted) return;
+        if (stopped()) return;
         handlers.onError?.(
           err instanceof Error ? err : new Error('Deal message stream connection failed'),
         );
+        scheduleReconnect();
         return;
       }
 
-      if (controller.signal.aborted) return;
+      if (stopped()) return;
+
+      // 401 is the one rejection worth an instant retry: the access token simply expired
+      // while the room sat open. Ordinary requests get this for free from the H-19
+      // interceptor, which this raw fetch bypasses — so drive the same refresh explicitly.
+      // Guarded to once per generation: a 401 that survives a successful refresh means the
+      // session is genuinely gone, and falls through to the terminal branch below.
+      if (response.status === 401 && !authRetried) {
+        authRetried = true;
+        if (await http.bootstrap(role)) {
+          await connect();
+          return;
+        }
+      }
 
       if (!response.ok || !response.body) {
-        handlers.onError?.(new Error(`Deal message stream rejected (HTTP ${response.status})`));
+        const error = new Error(`Deal message stream rejected (HTTP ${response.status})`);
+        handlers.onError?.(error);
+        // 401/403/404 are verdicts, not blips. Retrying cannot change the answer and would
+        // hammer the API for as long as the room stays open, so this is where we stop.
+        if (TERMINAL_STREAM_STATUSES.includes(response.status)) {
+          handlers.onStatusChange?.('closed');
+        } else {
+          scheduleReconnect();
+        }
         return;
       }
 
+      const openedAt = Date.now();
+      const isReconnect = everOpened;
+      everOpened = true;
+      authRetried = false;
+      handlers.onStatusChange?.('open');
       handlers.onOpen?.();
+      // Anything published while we were down is gone — no replay on this transport. The
+      // caller refetches here or keeps the hole forever.
+      if (isReconnect) handlers.onReconnect?.();
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1577,32 +1664,75 @@ export const messages = {
           }
         }
       } catch (err) {
-        if (!controller.signal.aborted) {
-          handlers.onError?.(err instanceof Error ? err : new Error('Deal message stream interrupted'));
-        }
+        if (stopped()) return;
+        handlers.onError?.(
+          err instanceof Error ? err : new Error('Deal message stream interrupted'),
+        );
       }
-    })();
+
+      if (stopped()) return;
+      // The connection ended — cleanly via `done`, or by the read error just reported.
+      // A clean end is NOT success: the server closed a stream that is supposed to stay
+      // open, so the room is deaf from here. This is the exact path that used to return
+      // in silence (CR-31).
+      //
+      // Only a connection that held for a while counts as proof the backend is healthy;
+      // resetting on any open at all would turn an accept-then-immediately-close server
+      // into a tight reconnect loop at the base delay.
+      if (Date.now() - openedAt >= STREAM_STABLE_MS) attempt = 0;
+      scheduleReconnect();
+    };
+
+    void connect();
 
     return {
-      close: () => controller.abort(),
+      // No 'closed' status emitted here on purpose: this path is the caller closing its own
+      // stream (deal switch, unmount), it already knows, and telling it would mean a state
+      // update from an effect cleanup for no one's benefit.
+      close: () => {
+        controller.abort();
+        if (retryTimer) clearTimeout(retryTimer);
+      },
     };
   },
 };
 
+/**
+ * CR-31 — transport state of a deal-message stream.
+ *
+ * `'closed'` means the stream gave up and will not retry (a 401/403/404 verdict). It is
+ * never emitted for a caller-initiated `close()` — the caller already knows.
+ */
+export type DealMessageStreamStatus = 'open' | 'reconnecting' | 'closed';
+
 export interface DealMessageStreamHandlers {
   /** Called for each `deal-message` SSE event with the parsed DealMessage DTO. */
   onMessage: (message: DealMessage) => void;
-  /** Called once the connection is established (headers received), before any events. */
+  /** Called every time a connection is established (headers received), including reconnects. */
   onOpen?: () => void;
   /**
    * Called on connection failure, a non-OK response, or a stream read error.
    * Never throws internally — the caller decides whether/how to degrade.
+   *
+   * CR-31: this fires on every failed attempt, so it is a diagnostic channel, not a
+   * "the room is broken" signal. Drive user-facing state from `onStatusChange`.
    */
   onError?: (error: Error) => void;
+  /**
+   * CR-31 — transport state changes, so the room can show that it has stopped receiving
+   * instead of looking healthy while deaf.
+   */
+  onStatusChange?: (status: DealMessageStreamStatus) => void;
+  /**
+   * CR-31 — a connection opened after a previous one dropped. **Refetch here.** This
+   * transport has no `Last-Event-ID` replay, so frames published during the gap are gone;
+   * reconnecting without refetching resumes future messages and keeps the hole.
+   */
+  onReconnect?: () => void;
 }
 
 export interface DealMessageStreamHandle {
-  /** Aborts the underlying fetch and stops reading the stream. */
+  /** Aborts the underlying fetch, cancels any pending reconnect, and stops reading. */
   close: () => void;
 }
 

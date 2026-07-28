@@ -39,6 +39,7 @@ import {
   isApiLive,
   ApiError,
   type DealMessage,
+  type DealMessageStreamStatus,
   type MessageKind,
   type ContractApiRecord,
   type CreatorDeliverableListItem,
@@ -770,6 +771,17 @@ export default function CreatorChatPage() {
   const [liveMessages, setLiveMessages] = React.useState<DealMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = React.useState(false);
   const [messagesError, setMessagesError] = React.useState<string | null>(null);
+  /**
+   * CR-31 — realtime transport state for the selected room's stream.
+   *
+   * Seeded optimistically to 'open' rather than a 'connecting' value, for two reasons: the
+   * banner renders only when this is NOT 'open', so a truthful initial 'connecting' would
+   * flash "Reconnecting…" on every deal switch over a perfectly healthy connection; and
+   * `api.messages.stream` deliberately emits no status synchronously, so there is nothing to
+   * seed it from inside the effect without a setState in the effect body. A genuinely failed
+   * first connect corrects this within one backoff tick.
+   */
+  const [streamStatus, setStreamStatus] = React.useState<DealMessageStreamStatus>('open');
 
   /**
    * Monotonic token guarding "latest request wins". This replaces the per-effect
@@ -930,17 +942,29 @@ export default function CreatorChatPage() {
         // No manual scroll here — the `events` effect below already scrolls whenever the
         // derived timeline changes, and `events` is computed from `liveMessages`.
       },
-      onError: () => {
-        // Graceful degrade: a dropped stream is silent and non-fatal — the fetch-on-load path
-        // above still delivers messages, so rendering and sending must never depend on this.
-        console.debug('[creator-chat] deal message stream error/closed for deal', dealId);
+      onError: (err) => {
+        // Still non-fatal and still not a toast — rendering and sending never depend on the
+        // stream. But CR-31: this now fires per failed ATTEMPT and the transport retries, so
+        // it is a diagnostic line, not the room's state. `streamStatus` is the state.
+        console.debug('[creator-chat] deal message stream error for deal', dealId, err);
+      },
+      onStatusChange: setStreamStatus,
+      onReconnect: () => {
+        // CR-31 — the gap is unrecoverable from the transport (no Last-Event-ID replay), so
+        // anything published while we were down has to be re-read. Both halves are required
+        // for the same reason the SSE handler above does both: `loadMessages` restores the
+        // thread, and `refreshDeal` restores `collaborationStatus`, which gates
+        // Accept/Counter/Decline. Refetching only messages would leave the CR-02 buttons
+        // rendering on a deal that moved on while the stream was down.
+        void loadMessages(dealId);
+        void refreshDeal(dealId);
       },
     });
 
     return () => {
       handle.close();
     };
-  }, [liveApi, selectedDeal?.id, refreshDeal]);
+  }, [liveApi, selectedDeal?.id, refreshDeal, loadMessages]);
 
   const [message, setMessage] = React.useState('');
   const [messageRefreshKey, setMessageRefreshKey] = React.useState(0);
@@ -1873,6 +1897,28 @@ export default function CreatorChatPage() {
         </div>
 
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {/* CR-31 — say it out loud when the room has stopped receiving. The whole defect was
+            that a dropped stream looked identical to a quiet conversation: no reconnect, no
+            callback, no log. The transport retries on its own now, so 'reconnecting' is
+            informational and deliberately understated; 'closed' means it gave up (a 401/403/404
+            verdict) and the creator has to act, so that one gets the destructive treatment.
+            `text-destructive-foreground`, not `text-destructive` — the latter is a pale
+            background token in this theme and renders invisible on the banner. */}
+        {liveApi && streamStatus !== 'open' && (
+          <div
+            role="status"
+            className={cn(
+              'px-4 py-1.5 border-b text-xs text-center',
+              streamStatus === 'closed'
+                ? 'bg-destructive/10 text-destructive-foreground'
+                : 'bg-muted/50 text-muted-foreground',
+            )}
+          >
+            {streamStatus === 'closed'
+              ? 'Live updates are off for this deal. Use Refresh to see new messages.'
+              : 'Reconnecting to live updates…'}
+          </div>
+        )}
         {/* CR-04 — `p-4` moved OFF the ScrollArea root and onto the inner content
             div, and `min-h-0` added.
             Padding on the Radix Root inflates the scroll container itself: the root
