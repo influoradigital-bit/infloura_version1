@@ -67,10 +67,13 @@ import org.springframework.web.util.UriUtils;
  *       undecoded path; a request for {@code /wallet/%77ithdraw} would otherwise silently bypass
  *       every literal-path bucket match here. {@link #bucketFor} decodes the path before matching
  *       (Kabir NEW-1) so an encoded path segment cannot be used to dodge a bucket.
- *   <li><b>Trusted-proxy {@code X-Forwarded-For}</b> (Wave-1 S6 / Kabir audit H-4) — {@link
- *       #clientIp} only honors XFF when the direct socket peer is a configured trusted proxy
- *       ({@link #trustedProxiesRaw}); otherwise every IP-keyed bucket keys on the raw socket peer,
- *       so a spoofed XFF header can never be used to evade throttling.
+ *   <li><b>Spoofed {@code X-Forwarded-For}</b> (Kabir CR-11 endpoint red-team, Blocker-1) — client
+ *       IP resolution is delegated entirely to Tomcat's {@code RemoteIpValve}
+ *       ({@code forward-headers-strategy: native}), which validates the peer against
+ *       {@code internal-proxies} and walks XFF right-to-left. The hand-rolled allow-list that used
+ *       to live here read the LEFT-most entry and failed open under the {@code framework} strategy
+ *       the deploys had switched to — see {@link #clientIp} for exactly how. A spoofed XFF can no
+ *       longer move a request into a different or fresh bucket.
  * </ul>
  *
  * <p>Keyed by client IP + coarse endpoint bucket (or by user id for the buckets above). In-memory
@@ -201,20 +204,15 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     @Value("${influora.auth.rate-limit.window-seconds:60}")
     private long windowSeconds;
 
-    /**
-     * [SEC: Wave-1 S6 / Kabir audit H-4] Comma-separated allow-list of trusted reverse-proxy
-     * socket addresses (the L4 peer this app actually accepts connections from, e.g. the load
-     * balancer / ingress IP). {@code X-Forwarded-For} is honored ONLY when the direct socket peer
-     * is in this list. Empty by default: with no trusted proxy configured, the spoofable XFF
-     * header is ignored entirely and the socket peer address is used as the rate-limit key —
-     * fail-safe. Without this, any client could set {@code X-Forwarded-For: <random>} on every
-     * request and trivially evade every IP-keyed bucket above by rotating a header value,
-     * defeating the brute-force/enumeration/abuse defense this filter exists for.
-     */
-    @Value("${influora.security.trusted-proxies:}")
-    private String trustedProxiesRaw;
-
-    private volatile Set<String> trustedProxies;
+    // [SEC: Kabir CR-11 endpoint red-team, Blocker-1] `influora.security.trusted-proxies` and its
+    // cached Set are GONE, not merely unused. They were the hand-rolled allow-list that
+    // `ForwardedHeaderFilter` silently defeated, and leaving them here would leave a security
+    // control that reads as if it still protects something. Trusted-proxy validation now lives
+    // where it belongs: `server.tomcat.remoteip.internal-proxies` in application.yml.
+    //
+    // The env var `TRUSTED_PROXIES` is still set by deploy/hostinger/*.yml and is now inert. It is
+    // left in the compose files deliberately rather than removed in the same change — see the
+    // deploy note in that file — so a rollback to a prior image does not lose it.
 
     private final Map<String, Window> windows = new ConcurrentHashMap<>();
 
@@ -471,45 +469,40 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     }
 
     /**
-     * [SEC: Wave-1 S6 / Kabir audit H-4] {@code X-Forwarded-For} is trusted ONLY when the direct
-     * socket peer ({@link HttpServletRequest#getRemoteAddr()}) is a configured trusted proxy (see
-     * {@link #trustedProxiesRaw}). Otherwise the header is ignored and the socket peer is used —
-     * a spoofed XFF from an untrusted client can never move a request into a different (or fresh)
-     * rate-limit bucket. Fail-safe default: no trusted proxies configured => always use the peer.
+     * The rate-limit bucket key.
+     *
+     * [SEC: Kabir CR-11 endpoint red-team, Blocker-1] This used to hand-roll X-Forwarded-For
+     * parsing behind a comma-separated trusted-proxy allow-list. It was defeated by the deploys
+     * setting {@code SERVER_FORWARD_HEADERS_STRATEGY=framework}, and it failed OPEN:
+     *
+     * <ul>
+     *   <li>Spring's {@code ForwardedHeaderFilter} runs at {@code HIGHEST_PRECEDENCE}, ahead of the
+     *       Security chain at {@code -100}, and had already overwritten {@code getRemoteAddr()}
+     *       with the <em>left-most</em> XFF entry — the spoofable one, because Caddy appends the
+     *       true peer rather than replacing the header.
+     *   <li>The allow-list check then compared that spoofed value against itself, never matched,
+     *       and fell through to {@code return peer} — handing back the attacker's own header as the
+     *       bucket key. A different XFF per request meant no limit at all.
+     *   <li>It also strips the X-Forwarded-* headers, so nothing downstream could recover the truth.
+     * </ul>
+     *
+     * The blast radius was every IP-keyed bucket, login brute-force included — not just CR-11's
+     * endpoint, which is merely where it was found.
+     *
+     * The fix is upstream, in {@code application.yml}: {@code forward-headers-strategy: native}
+     * installs Tomcat's {@code RemoteIpValve}, which validates against {@code internal-proxies} and
+     * walks XFF RIGHT-TO-LEFT, landing on the entry our own proxy appended. A client-prepended
+     * entry can never win. So {@code getRemoteAddr()} is now the real client IP, and reading it
+     * directly is both correct and the only thing that stays correct if the topology changes —
+     * parsing the header here a second time would just be a second place to get it wrong.
+     *
+     * @see AdminAuditLogService#clientIp — same root cause, same fix, worse consequence (forged
+     *     forensic records rather than a rate-limit bypass).
      */
     private String clientIp(HttpServletRequest request) {
-        String peer = request.getRemoteAddr();
-        if (peer != null && trustedProxies().contains(peer)) {
-            String forwarded = request.getHeader("X-Forwarded-For");
-            if (forwarded != null && !forwarded.isBlank()) {
-                int comma = forwarded.indexOf(',');
-                String first = (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
-                if (!first.isEmpty()) {
-                    // Left-most XFF entry is the originating client as reported by our OWN
-                    // trusted proxy. Safe precisely because we only reach here when the socket
-                    // peer is that trusted proxy; an untrusted direct caller's XFF is never
-                    // consulted.
-                    return first;
-                }
-            }
-        }
-        return peer;
+        return request.getRemoteAddr();
     }
 
-    /** Lazily parses and caches the trusted-proxy allow-list from {@link #trustedProxiesRaw}. */
-    private Set<String> trustedProxies() {
-        Set<String> cached = trustedProxies;
-        if (cached == null) {
-            String raw = trustedProxiesRaw == null ? "" : trustedProxiesRaw;
-            cached =
-                    Arrays.stream(raw.split(","))
-                            .map(String::trim)
-                            .filter(s -> !s.isEmpty())
-                            .collect(Collectors.toUnmodifiableSet());
-            trustedProxies = cached;
-        }
-        return cached;
-    }
 
     private static final class Window {
         final long startSecond;

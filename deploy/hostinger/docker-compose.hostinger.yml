@@ -93,7 +93,12 @@ services:
       INFLUORA_WEB_BASE_URL: https://${APP_DOMAIN}
       CORS_ALLOWED_ORIGINS: https://${APP_DOMAIN}
       # ---- Behind Caddy (TLS terminates at the proxy) ----
-      SERVER_FORWARD_HEADERS_STRATEGY: framework
+      # [SEC: Kabir CR-11 red-team, Blocker-1] `framework` here defeated EVERY IP-keyed rate limit,
+      # login brute-force included: ForwardedHeaderFilter takes the left-most (client-spoofable)
+      # X-Forwarded-For entry, does no trusted-proxy validation, and strips the headers before the
+      # Security chain sees them. `native` uses Tomcat's RemoteIpValve, which validates against
+      # server.tomcat.remoteip.internal-proxies and walks XFF right-to-left. See application.yml.
+      SERVER_FORWARD_HEADERS_STRATEGY: native
       TRUSTED_PROXIES: ${TRUSTED_PROXIES}   # verify: docker network inspect (bridge gateway)
       AUTH_REFRESH_COOKIE_SECURE: "true"
       # ---- Signing secrets (all distinct, >=32 bytes) ----

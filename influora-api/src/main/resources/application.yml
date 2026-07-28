@@ -61,12 +61,34 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
-  # [SEC: Wave-1 S6] Off by default (fail-safe) — Spring/Tomcat's own X-Forwarded-* handling
-  # (scheme/host/port used for redirect URL generation etc.) must stay OFF unless this instance
-  # actually sits behind the SAME reverse proxy configured in influora.security.trusted-proxies
-  # below. Never set to `native` in this stack — the embedded Tomcat's native remote-ip valve is
-  # unmanaged by our trusted-proxy allow-list; use `framework` if/when a real deploy needs it.
-  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
+  # [SEC: Kabir CR-11 endpoint red-team, Blocker-1] `native`, NOT `framework`. This reverses the
+  # Wave-1 S6 guidance that used to sit here ("never set to `native` ... use `framework` if/when a
+  # real deploy needs it"), and the deploys had since set `framework`. That combination was
+  # exploitable:
+  #
+  #   `framework` installs Spring's ForwardedHeaderFilter, which (a) takes the LEFT-MOST
+  #   X-Forwarded-For entry — the one a client can freely spoof, since Caddy APPENDS the true peer
+  #   rather than replacing the header — (b) performs no trusted-proxy validation whatsoever, and
+  #   (c) STRIPS the X-Forwarded-* headers from the wrapped request. It runs at HIGHEST_PRECEDENCE,
+  #   ahead of the Security chain at -100. So by the time AuthRateLimitFilter ran, getRemoteAddr()
+  #   was already attacker-controlled AND the raw header was gone — no code downstream could
+  #   recover the real peer. Every IP-keyed bucket, including login brute-force, was defeated by
+  #   sending a different XFF per request. AdminAuditLogService recorded the same forged value as
+  #   a forensic record.
+  #
+  # The old comment's premise — that `native` is "unmanaged by our trusted-proxy allow-list" — was
+  # backwards. Tomcat's RemoteIpValve HAS an allow-list (`internal-proxies`), and it walks XFF
+  # RIGHT-TO-LEFT skipping known proxies, so it lands on the entry Caddy actually appended and a
+  # client-prepended entry can never win. `framework` is the one with no allow-list at all.
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:native}
+  tomcat:
+    remoteip:
+      # Tomcat's default already covers RFC1918 + loopback, which is every Docker bridge range this
+      # stack uses, so the out-of-the-box value is correct here and needs no per-deploy tuning.
+      # Overridable for a topology with a proxy outside those ranges. It is a REGEX, not a list —
+      # this is why the old comma-separated `influora.security.trusted-proxies` could not simply be
+      # handed to it.
+      internal-proxies: ${TOMCAT_INTERNAL_PROXIES:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|169\.254\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.1[6-9]{1}\.\d{1,3}\.\d{1,3}|172\.2[0-9]{1}\.\d{1,3}\.\d{1,3}|172\.3[0-1]{1}\.\d{1,3}\.\d{1,3}|0:0:0:0:0:0:0:1|::1}
   servlet:
     context-path: /api/v1
 

@@ -79,7 +79,9 @@ services:
       INFLUORA_API_PUBLIC_URL: http://200.141.1.6/api/v1
       INFLUORA_WEB_BASE_URL: http://200.141.1.6
       CORS_ALLOWED_ORIGINS: http://200.141.1.6
-      SERVER_FORWARD_HEADERS_STRATEGY: framework
+      # [SEC: Kabir CR-11 red-team, Blocker-1] See docker-compose.hostinger.yml for why this is
+      # `native` and not `framework`. Same defect applied to the test box.
+      SERVER_FORWARD_HEADERS_STRATEGY: native
       INTERNAL_REQUEST_HMAC_SECRET: ${INTERNAL_HMAC_KEY}
       INTERNAL_SERVICE_TOKEN_SECRET: ${SERVICE_TOKEN_SIGNING_KEY}
       BRAND_SAFETY_AI_BASE_URL: http://influora-ai:8000

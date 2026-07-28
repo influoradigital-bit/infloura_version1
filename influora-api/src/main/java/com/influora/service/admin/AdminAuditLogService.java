@@ -557,9 +557,22 @@ public class AdminAuditLogService {
      * malicious one) can set it on their own request to record a false IP for exactly the
      * actions (KYC reject, suspend, reinstate) this table exists to make accountable. Unlike
      * {@code AuthRateLimitFilter#clientIp} (rate-limit bucket keying, where the worst case of
-     * trusting the header is a bypass), a spoofed forensic record here is worse than an absent
-     * one. Use {@code getRemoteAddr()} only until infra documents a trusted-proxy topology and
-     * wires a {@code ForwardedHeaderFilter}/equivalent.
+     * trusting the header is a bypass), a spoofed forensic record here is worse than an absent one.
+     *
+     * <p>[SEC: Kabir CR-11 endpoint red-team, Blocker-1] The sentence that used to end this
+     * paragraph — "use {@code getRemoteAddr()} only until infra documents a trusted-proxy topology
+     * and wires a {@code ForwardedHeaderFilter}/equivalent" — had quietly become the description of
+     * a live vulnerability rather than a safe holding position. Infra DID wire the equivalent:
+     * the deploys set {@code SERVER_FORWARD_HEADERS_STRATEGY=framework}, whose
+     * {@code ForwardedHeaderFilter} rewrote {@code getRemoteAddr()} to the client-spoofable
+     * left-most {@code X-Forwarded-For} entry with no trusted-proxy validation. **Every IP written
+     * to this audit table was attacker-forgeable** — the exact outcome this comment set out to
+     * prevent, reached by satisfying its own stated precondition.
+     *
+     * <p>{@code getRemoteAddr()} is now correct again, and for a real reason rather than by
+     * accident: {@code forward-headers-strategy: native} resolves the peer through Tomcat's
+     * {@code RemoteIpValve}, which validates against {@code internal-proxies} and walks XFF
+     * right-to-left. Keep reading {@code getRemoteAddr()}; do NOT reintroduce header parsing here.
      */
     private static String clientIp(HttpServletRequest request) {
         return request.getRemoteAddr();
