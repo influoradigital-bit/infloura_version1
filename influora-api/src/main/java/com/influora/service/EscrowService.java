@@ -321,6 +321,30 @@ public class EscrowService {
                     "Escrow cannot be funded until the contract is fully signed by both parties",
                     HttpStatus.CONFLICT);
         }
+
+        // [CR-22a, Kabir finding #1] Previously nothing on this, the actual money-moving path,
+        // ever read CollaborationStatus — this gate (assertContractActiveForMilestone) only ever
+        // inspected the CONTRACT's two signature timestamps, so escrow could be funded for the
+        // FIRST time on a CANCELLED collaboration. `PaymentMilestone.collaborationId` is NOT NULL
+        // (V10), so this lookup always resolves. Locked (not a plain findById) for the same
+        // reason ContractService#generate/#doRecordSignature are: serializes this against a
+        // concurrent DealService#reject on the same collaboration row.
+        Collaboration collaboration =
+                collaborationRepository
+                        .findByIdForUpdate(milestone.getCollaborationId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "COLLABORATION_NOT_FOUND",
+                                                "Collaboration not found",
+                                                HttpStatus.NOT_FOUND));
+        if (collaboration.getStatus() == CollaborationStatus.CANCELLED) {
+            throw new ApiException(
+                    "COLLABORATION_CANCELLED",
+                    "This deal was cancelled and its escrow can no longer be funded",
+                    HttpStatus.CONFLICT);
+        }
+
         return milestone;
     }
 

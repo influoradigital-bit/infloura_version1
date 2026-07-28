@@ -360,6 +360,15 @@ class CreatorDeliverableServiceTest {
         verify(collaborationRepository, never()).findByIdAndCreatorId(any(), any());
     }
 
+    /** CR-22a — submitForReview's new CollaborationStatus guard needs a resolvable, non-CANCELLED row. */
+    private void stubActiveCollaboration() {
+        when(collaborationRepository.findById(COLLAB_ID))
+                .thenReturn(
+                        Optional.of(
+                                Collaboration.invite(
+                                        COLLAB_ID, "01HCAMPAIGN123456789A", CREATOR_USER_ID, null, "INR")));
+    }
+
     @Test
     @DisplayName("submit: DRAFT with files transitions to SUBMITTED")
     void testSubmitHappyPath() {
@@ -373,6 +382,7 @@ class CreatorDeliverableServiceTest {
                 null);
         when(deliverableRepository.findByIdAndCreatorUserId(DELIVERABLE_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(deliverable));
+        stubActiveCollaboration();
 
         SubmitResponse response =
                 service.submitForReview(
@@ -412,6 +422,7 @@ class CreatorDeliverableServiceTest {
                 null);
         when(deliverableRepository.findByIdAndCreatorUserId(DELIVERABLE_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(deliverable));
+        stubActiveCollaboration();
 
         service.submitForReview(
                 principal,
@@ -444,6 +455,7 @@ class CreatorDeliverableServiceTest {
         deliverable.applyUpload(2, "[{\"id\":\"f2\"}]", "v2", null, null);
         when(deliverableRepository.findByIdAndCreatorUserId(DELIVERABLE_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(deliverable));
+        stubActiveCollaboration();
 
         SubmitResponse response =
                 service.submitForReview(principal, DELIVERABLE_ID, new SubmitRequest(null, null, null));
@@ -467,11 +479,49 @@ class CreatorDeliverableServiceTest {
                         .build();
         when(deliverableRepository.findByIdAndCreatorUserId(DELIVERABLE_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(deliverable));
+        stubActiveCollaboration();
 
         SubmitResponse response =
                 service.submitForReview(principal, DELIVERABLE_ID, null);
 
         assertEquals(DeliverableStatus.SUBMITTED, response.status());
+    }
+
+    /**
+     * CR-22a, Kabir finding #1 — a CANCELLED collaboration must not accept new deliverable
+     * submissions. Not on the money-moving path itself (only #approve releases funds), but a
+     * creator continuing to "work" a dead deal is exactly the confusion the ruling calls out.
+     */
+    @Test
+    @DisplayName("submit: rejects with 409 COLLABORATION_CANCELLED when the collaboration was cancelled")
+    void testSubmitRejectsCancelledCollaboration() {
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        Deliverable deliverable = pendingDeliverable();
+        deliverable.applyUpload(
+                1,
+                "[{\"id\":\"f1\",\"fileType\":\"VIDEO\",\"fileName\":\"reel.mp4\",\"url\":\"https://x\"}]",
+                "Draft caption",
+                null,
+                null);
+        when(deliverableRepository.findByIdAndCreatorUserId(DELIVERABLE_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(deliverable));
+        Collaboration cancelled =
+                Collaboration.invite(COLLAB_ID, "01HCAMPAIGN123456789A", CREATOR_USER_ID, null, "INR");
+        cancelled.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(cancelled));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.submitForReview(
+                                        principal,
+                                        DELIVERABLE_ID,
+                                        new SubmitRequest("Final caption", null, null)));
+
+        assertEquals("COLLABORATION_CANCELLED", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        verify(deliverableRepository, never()).save(any());
     }
 
     @Test
@@ -482,6 +532,7 @@ class CreatorDeliverableServiceTest {
         deliverable.applyUpload(1, "[]", null, null, null);
         when(deliverableRepository.findByIdAndCreatorUserId(DELIVERABLE_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(deliverable));
+        stubActiveCollaboration();
 
         ApiException ex =
                 assertThrows(

@@ -10,11 +10,14 @@ import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
 import com.influora.config.R2Properties;
+import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.DeliverableType;
 import com.influora.integration.storage.R2StorageService;
+import com.influora.repository.CollaborationRepository;
 import com.influora.repository.DeliverableRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.web.dto.deliverable.BrandDeliverableDtos.DeliverableDetailResponse;
@@ -45,6 +48,7 @@ class BrandDeliverableServiceTest {
     @Mock private EscrowService escrowService;
     @Mock private CollaborationLifecycleService collaborationLifecycleService;
     @Mock private com.influora.service.meera.MeeraInteractionLogService meeraInteractionLogService;
+    @Mock private CollaborationRepository collaborationRepository;
 
     private BrandDeliverableService service;
     private Workspace workspace;
@@ -59,8 +63,18 @@ class BrandDeliverableServiceTest {
                         r2Properties,
                         escrowService,
                         collaborationLifecycleService,
-                        meeraInteractionLogService);
+                        meeraInteractionLogService,
+                        collaborationRepository);
         workspace = Workspace.newBrand(WORKSPACE_ID, "Acme Brand", "acme", "Fashion", "SMB");
+    }
+
+    /** CR-22a — approve()'s new CollaborationStatus guard needs a resolvable, non-CANCELLED row. */
+    private static Collaboration activeCollaboration() {
+        return Collaboration.invite(COLLAB_ID, "01HCAMPAIGN0000000001", "01HCREATOR00000000001", null, "INR");
+    }
+
+    private void stubActiveCollaboration() {
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(java.util.Optional.of(activeCollaboration()));
     }
 
     private static Deliverable submittedDeliverable() {
@@ -91,6 +105,7 @@ class BrandDeliverableServiceTest {
         Deliverable deliverable = submittedDeliverable();
         when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
                 .thenReturn(java.util.Optional.of(deliverable));
+        stubActiveCollaboration();
 
         ReviewResponse response = service.approve(principal, DELIVERABLE_ID);
 
@@ -135,6 +150,7 @@ class BrandDeliverableServiceTest {
         Deliverable deliverable = submittedDeliverableWithMilestone(milestoneId);
         when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
                 .thenReturn(java.util.Optional.of(deliverable));
+        stubActiveCollaboration();
         when(escrowService.tryReleaseOnApproval(WORKSPACE_ID, milestoneId)).thenReturn(true);
 
         ReviewResponse response = service.approve(principal, DELIVERABLE_ID);
@@ -150,6 +166,7 @@ class BrandDeliverableServiceTest {
         Deliverable deliverable = submittedDeliverable(); // no milestoneId set
         when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
                 .thenReturn(java.util.Optional.of(deliverable));
+        stubActiveCollaboration();
         when(escrowService.tryReleaseOnApproval(WORKSPACE_ID, null)).thenReturn(false);
 
         ReviewResponse response = service.approve(principal, DELIVERABLE_ID);
@@ -166,6 +183,7 @@ class BrandDeliverableServiceTest {
         Deliverable deliverable = submittedDeliverableWithMilestone(milestoneId);
         when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
                 .thenReturn(java.util.Optional.of(deliverable));
+        stubActiveCollaboration();
         when(escrowService.tryReleaseOnApproval(WORKSPACE_ID, milestoneId))
                 .thenThrow(
                         new ApiException(
@@ -187,11 +205,36 @@ class BrandDeliverableServiceTest {
         deliverable.applySubmit(null, null, null, DeliverableStatus.RESUBMITTED);
         when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
                 .thenReturn(java.util.Optional.of(deliverable));
+        stubActiveCollaboration();
 
         ReviewResponse response = service.approve(principal, DELIVERABLE_ID);
 
         assertEquals(DeliverableStatus.APPROVED, response.status());
         verify(deliverableRepository).save(any());
+    }
+
+    /**
+     * CR-22a, Kabir finding #1 — approve() fires tryReleaseOnApproval, real money leaving the
+     * clearing wallet, and previously had zero CollaborationStatus awareness.
+     */
+    @Test
+    @DisplayName("approve: rejects with 409 COLLABORATION_CANCELLED when the collaboration was cancelled")
+    void testApproveRejectsCancelledCollaboration() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        Deliverable deliverable = submittedDeliverable();
+        when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
+                .thenReturn(java.util.Optional.of(deliverable));
+        Collaboration cancelled = activeCollaboration();
+        cancelled.transitionTo(CollaborationStatus.CANCELLED);
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(java.util.Optional.of(cancelled));
+
+        ApiException ex =
+                assertThrows(ApiException.class, () -> service.approve(principal, DELIVERABLE_ID));
+
+        assertEquals("COLLABORATION_CANCELLED", ex.getCode());
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatus());
+        verify(deliverableRepository, never()).save(any());
+        verify(escrowService, never()).tryReleaseOnApproval(any(), any());
     }
 
     @Test

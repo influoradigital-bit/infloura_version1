@@ -266,11 +266,74 @@ public class DealService {
      * B-4 — role-aware: brand OR creator may reject/withdraw from the deal, mirroring {@link
      * #counter}'s dual-role auth + workspace/ownership scoping. Previously hard-gated {@code
      * creatorContext.requireCreator}, which 403'd every brand-side reject attempt.
+     *
+     * <p><b>CR-22a — narrowed to a pre-contract allowlist</b> (Priya's ruling, `CREATOR-BUG-
+     * TRACKER.md` §10.1/§10.7). {@link Collaboration#canReject()} used to be a denylist over the
+     * whole lifecycle, so this endpoint could unilaterally CANCEL a signed, escrow-funded deal
+     * with no compensating action anywhere. It now only admits the pre-contract negotiation
+     * states; {@code CONTRACT_PENDING} and beyond return 409 {@code DEAL_NOT_REJECTABLE}.
+     * Post-contract withdrawal is CR-22b (a separate, two-party termination flow) — out of scope
+     * here.
+     *
+     * <p><b>Kabir's finding #6 folded in here</b> (fixed in this method, not touched twice, per
+     * the ruling): this previously read the collaboration through a plain, non-locking finder
+     * and re-checked nothing before writing {@code CANCELLED} — a real lost-update race against
+     * {@code ContractService#doRecordSignature} (both starting from {@code CONTRACT_PENDING}
+     * before this narrowing; today the equivalent race is against a fresh
+     * {@code ContractService#generate}/{@code EscrowService#initiateFund} call starting from
+     * {@code TERMS_AGREED}, the highest status still in the allowlist). Fixed the same way {@code
+     * ContractService#generate} already serializes itself: {@link #doReject} takes a {@code
+     * PESSIMISTIC_WRITE} lock on the collaboration row ({@link CollaborationRepository
+     * #findByIdForUpdate}) BEFORE the {@code canReject()} check-then-write, so whichever
+     * transaction reaches the lock first serializes the other one behind it — the loser observes
+     * the winner's COMMITTED status, never a stale snapshot. This method is also now routed
+     * through {@link IdempotencyService}, mirroring {@link #accept}/{@link #counter} — which
+     * incidentally resolves finding #8 too: a retried reject after success now replays the prior
+     * 200 instead of a fresh 409.
      */
     @Transactional
-    public OkResponse reject(AuthPrincipal principal, String dealId, RejectRequest body) {
+    public OkResponse reject(
+            AuthPrincipal principal, String dealId, RejectRequest body, String idempotencyKey) {
         UserType role = requireRole(principal);
-        Collaboration collaboration = requireOwnedCollaboration(principal, dealId);
+        // Ownership/existence check ONLY, deliberately unlocked and deliberately not also
+        // re-running canReject() here: on a genuine retry of an already-succeeded reject, this
+        // deal is now CANCELLED, so an early canReject() check here would 409 before the
+        // idempotency wrapper below ever gets a chance to recognize the call as a replay — exactly
+        // the finding #8 failure mode this change is supposed to close. The real gate lives in
+        // doReject, under the row lock, where it belongs.
+        requireOwnedCollaboration(principal, dealId);
+        String scopeId =
+                role == UserType.CREATOR
+                        ? principal.getUserId()
+                        : brandContext.requireBrandWorkspace(principal).getId();
+        String key = resolveIdempotencyKey(idempotencyKey, "deal-reject:" + dealId);
+
+        try {
+            return idempotencyService.executeOnce(
+                    key, scopeId, "deal.reject", () -> doReject(dealId, role, body));
+        } catch (IdempotencyService.AlreadyInProgressException
+                | IdempotencyService.AlreadyCompletedException raced) {
+            // A prior call already reserved/completed this exact key — the effect already ran (or
+            // is running). Replay success rather than re-entering doReject, which would otherwise
+            // re-check canReject() against the now-CANCELLED row and 409.
+            return OkResponse.success();
+        }
+    }
+
+    /**
+     * Runs inside {@code executeOnce} (see {@link #reject}, Kabir finding #6). Re-resolves the
+     * collaboration by id under a {@code PESSIMISTIC_WRITE} lock — deliberately NOT reusing the
+     * unlocked instance {@link #reject} already read, since that read happened before the lock
+     * was acquired and may be stale by the time this runs.
+     */
+    private OkResponse doReject(String dealId, UserType role, RejectRequest body) {
+        Collaboration collaboration =
+                collaborationRepository
+                        .findByIdForUpdate(dealId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "DEAL_NOT_FOUND", "Deal not found", HttpStatus.NOT_FOUND));
         if (!collaboration.canReject()) {
             throw new ApiException(
                     "DEAL_NOT_REJECTABLE",
@@ -286,14 +349,15 @@ public class DealService {
                         collaboration.getId(),
                         actorLabel + " rejected: " + TextSanitizer.sanitizePlainText(reason));
         // CR-02 — same reason as the accept path: a declined offer must stop rendering as
-        // actionable. [C1] canReject() also permits withdrawal from TERMS_AGREED/CONTRACTED, so
-        // this deliberately no-ops on a card already settled as "accepted" rather than rewriting
-        // agreed history — settleStatus enforces that; the system message above carries the
-        // withdrawal.
+        // actionable. Pre-CR-22a, canReject() also permitted withdrawal from
+        // TERMS_AGREED/CONTRACTED, so this deliberately no-ops on a card already settled as
+        // "accepted" rather than rewriting agreed history — settleStatus enforces that; the
+        // system message above carries the withdrawal. Kept post-narrowing since TERMS_AGREED
+        // (an already-accepted, pre-contract state) is still in the allowlist.
         Optional<DealMessage> settledCard = settleLatestProposal(collaboration.getId(), "rejected");
 
         // CR-08 — same shape and same ordering rationale as doAccept: settled card first so it is
-        // inert before "… rejected: …" lands, then the system message. On the [C1] withdrawal case
+        // inert before "… rejected: …" lands, then the system message. On the withdrawal case
         // settleStatus no-oped, so what is republished here is the card's UNCHANGED already-settled
         // state — an upsert of identical content, which is harmless and doubles as a resync for a
         // subscriber that missed the original accept frame.

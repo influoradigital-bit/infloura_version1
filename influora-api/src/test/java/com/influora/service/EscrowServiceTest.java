@@ -647,6 +647,13 @@ class EscrowServiceTest {
         fullySigned.recordBrandSignature();
         fullySigned.recordCreatorSignature();
         when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(fullySigned));
+        // [CR-22a] assertContractActiveForMilestone now also locks + status-checks the
+        // collaboration behind the milestone — must resolve to a non-CANCELLED row.
+        when(collaborationRepository.findByIdForUpdate(COLLAB_ID))
+                .thenReturn(
+                        Optional.of(
+                                Collaboration.invite(
+                                        COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR")));
         when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY))
                 .thenReturn(Optional.empty());
         when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(wallet);
@@ -664,6 +671,57 @@ class EscrowServiceTest {
         // Saved twice: once creating the PENDING hold, once more after applyFunding marks it
         // FUNDED — both in the same call now that funding happens immediately, no gateway round trip.
         verify(escrowHoldRepository, times(2)).save(any(EscrowHold.class));
+    }
+
+    /**
+     * CR-22a, Kabir finding #1 — previously {@code assertContractActiveForMilestone} only ever
+     * checked the CONTRACT's two signature timestamps, so escrow could be funded for the FIRST
+     * time on a CANCELLED collaboration. Contract is fully signed here (so the pre-existing
+     * CONTRACT_NOT_ACTIVE gate above would NOT catch this) — the CollaborationStatus check is the
+     * only thing standing between this call and a real wallet debit.
+     */
+    @Test
+    @DisplayName(
+            "initiateFund: rejects funding with 409 COLLABORATION_CANCELLED when the milestone's"
+                    + " collaboration was cancelled, even though the contract is fully signed")
+    void initiateFundRejectsCancelledCollaborationEvenWhenContractActive() {
+        BigDecimal requiredAmount = BigDecimal.valueOf(5000);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestoneForContract(CONTRACT_ID)));
+        Contract fullySigned =
+                Contract.builder()
+                        .id(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .totalAmount(requiredAmount)
+                        .build();
+        fullySigned.recordBrandSignature();
+        fullySigned.recordCreatorSignature();
+        when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(fullySigned));
+        Collaboration cancelled =
+                Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        cancelled.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
+        when(collaborationRepository.findByIdForUpdate(COLLAB_ID))
+                .thenReturn(Optional.of(cancelled));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.initiateFund(
+                                        principal,
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        MILESTONE_ID,
+                                        requiredAmount,
+                                        "INR",
+                                        FUND_IDEMPOTENCY_KEY));
+
+        assertEquals("COLLABORATION_CANCELLED", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        verify(escrowHoldRepository, never()).save(any());
+        verify(walletService, never()).requireWorkspaceWallet(any());
     }
 
     @Test

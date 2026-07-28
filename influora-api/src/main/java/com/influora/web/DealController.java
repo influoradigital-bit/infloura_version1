@@ -95,8 +95,10 @@ public class DealController {
     public ResponseEntity<ApiResponse<OkResponse>> reject(
             @AuthenticationPrincipal AuthPrincipal principal,
             @PathVariable String id,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody(required = false) RejectRequest body) {
-        return ResponseEntity.ok(ApiResponse.ok(dealService.reject(principal, id, body)));
+        return ResponseEntity.ok(
+                ApiResponse.ok(dealService.reject(principal, id, body, idempotencyKey)));
     }
 
     @PostMapping("/{id}/counter")

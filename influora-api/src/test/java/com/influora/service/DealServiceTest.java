@@ -136,6 +136,23 @@ class DealServiceTest {
         when(brandContext.requireBrandWorkspace(brandPrincipal)).thenReturn(workspace);
     }
 
+    /**
+     * CR-22a — {@code reject} is now routed through {@code IdempotencyService.executeOnce}
+     * (Kabir finding #6), mirroring {@link #testCounterPublishesSupersededCardBeforeNewCard}'s
+     * pattern for {@code counter}: runs the supplied action as the (only, in these unit tests)
+     * race winner so the Mockito-default {@code null} doesn't silently swallow {@code doReject}'s
+     * real return value.
+     */
+    private void mockRejectIdempotencyExecuteOnce() {
+        when(idempotencyService.executeOnce(anyString(), anyString(), eq("deal.reject"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<OkResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+    }
+
     // ---------------------------------------------------------------------
     // createProposal — visibility gate (SEC 2026-07-26)
     //
@@ -480,16 +497,144 @@ class DealServiceTest {
         Collaboration collaboration = invitedDeal();
         when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
         when(collaborationRepository.save(any(Collaboration.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
 
-        OkResponse response = service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"));
+        OkResponse response =
+                service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"), null);
 
         assertEquals(true, response.ok());
         assertEquals(CollaborationStatus.CANCELLED, collaboration.getStatus());
         verify(dealMessageRepository).save(any(DealMessage.class));
+    }
+
+    /**
+     * CR-22a — {@code canReject()} narrowed from a denylist (everything except COMPLETED/
+     * CANCELLED/DISPUTED) to an allowlist ending at TERMS_AGREED. This is the ticket's central
+     * finding: pre-fix, this exact call would have transitioned a CONTRACT_PENDING deal (a
+     * durable Contract row already exists) straight to CANCELLED. Revert {@code
+     * Collaboration#canReject()} to the old denylist and this test is the one that must fail.
+     */
+    @Test
+    @DisplayName(
+            "reject: CR-22a — CONTRACT_PENDING (post-contract) returns 409 DEAL_NOT_REJECTABLE,"
+                    + " does not transition or save")
+    void testRejectRejectsPostContractStatus() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        collaboration.transitionTo(CollaborationStatus.CONTRACT_PENDING);
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
+        mockRejectIdempotencyExecuteOnce();
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.reject(
+                                        brandPrincipal, DEAL_ID, new RejectRequest("too late"), null));
+
+        assertEquals("DEAL_NOT_REJECTABLE", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        assertEquals(
+                CollaborationStatus.CONTRACT_PENDING,
+                collaboration.getStatus(),
+                "must not have been mutated");
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+    }
+
+    /**
+     * The other half of the allowlist boundary: TERMS_AGREED is the HIGHEST status still
+     * rejectable (it is {@code ContractService#generate}'s legal predecessor, not its output —
+     * no Contract row exists yet). Proves the cut line is exactly at CONTRACT_PENDING, not one
+     * status earlier by accident.
+     */
+    @Test
+    @DisplayName("reject: CR-22a — TERMS_AGREED (highest pre-contract status) is still rejectable")
+    void testRejectAllowsTermsAgreed() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        collaboration.transitionTo(CollaborationStatus.TERMS_AGREED);
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        OkResponse response =
+                service.reject(brandPrincipal, DEAL_ID, new RejectRequest("changed our mind"), null);
+
+        assertEquals(true, response.ok());
+        assertEquals(CollaborationStatus.CANCELLED, collaboration.getStatus());
+    }
+
+    /**
+     * Kabir finding #6 (the lost-update race) — the fix is a {@code PESSIMISTIC_WRITE} row lock
+     * taken via {@code findByIdForUpdate} INSIDE the idempotency-guarded action, mirroring {@code
+     * ContractService#generate}. A unit test cannot force the actual concurrent interleaving (see
+     * {@code ContractServiceTest#testConcurrentGenerateCallsAreSerializedByCollaborationLock} for
+     * why that needs real threads + a JDBC-level lock), but it CAN prove the lock is acquired at
+     * all — which a plain, non-locking {@code findByIdAndWorkspaceId}-only implementation would
+     * fail. Revert {@code doReject} back to reading through the unlocked instance and this is the
+     * test that catches it.
+     */
+    @Test
+    @DisplayName("reject: acquires a PESSIMISTIC_WRITE row lock on the collaboration before transitioning it")
+    void testRejectAcquiresRowLock() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"), null);
+
+        verify(collaborationRepository).findByIdForUpdate(DEAL_ID);
+    }
+
+    /**
+     * Kabir finding #8 — a retried reject after the first call already succeeded must replay the
+     * prior 200, not 409 DEAL_NOT_REJECTABLE (the old behavior: the deal is now CANCELLED, so a
+     * plain re-check of {@code canReject()} on retry would always 409). Simulates the retry by
+     * having the idempotency wrapper report the key as already COMPLETED — {@code doReject} must
+     * never even be invoked in that case.
+     */
+    @Test
+    @DisplayName(
+            "reject: a retried call after success replays 200 (not 409) — finding #8, resolved as a"
+                    + " side effect of routing through IdempotencyService")
+    void testRejectRetryAfterSuccessReplays200() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        collaboration.transitionTo(CollaborationStatus.CANCELLED); // as left by the first, successful call
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(idempotencyService.executeOnce(anyString(), anyString(), eq("deal.reject"), any()))
+                .thenThrow(new IdempotencyService.AlreadyCompletedException("deal-reject:" + DEAL_ID));
+
+        OkResponse response =
+                service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"), null);
+
+        assertEquals(true, response.ok());
+        verify(collaborationRepository, never()).findByIdForUpdate(any());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
     }
 
     @Test
@@ -518,11 +663,12 @@ class DealServiceTest {
         ApiException ex =
                 assertThrows(
                         ApiException.class,
-                        () -> service.reject(brandPrincipal, DEAL_ID, new RejectRequest("nope")));
+                        () -> service.reject(brandPrincipal, DEAL_ID, new RejectRequest("nope"), null));
 
         assertEquals("DEAL_NOT_FOUND", ex.getCode());
         assertEquals(404, ex.getStatus().value());
         verify(collaborationRepository, never()).save(any(Collaboration.class));
+        verify(idempotencyService, never()).executeOnce(anyString(), anyString(), anyString(), any());
     }
 
     @Test
@@ -754,6 +900,8 @@ class DealServiceTest {
         Collaboration collaboration = invitedDeal();
         when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
         when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
                         DEAL_ID, DealMessageKind.proposal))
                 .thenReturn(Optional.of(pendingProposalMessage(BRAND_USER_ID, DealSenderType.brand)));
@@ -761,8 +909,9 @@ class DealServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0));
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
 
-        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"));
+        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"), null);
 
         ArgumentCaptor<DealMessageResponse> published =
                 ArgumentCaptor.forClass(DealMessageResponse.class);
