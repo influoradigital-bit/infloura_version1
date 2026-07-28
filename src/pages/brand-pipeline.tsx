@@ -46,6 +46,12 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { deals as dealsApi, isApiLive, type Deal } from '@/lib/api';
+// CR-30 — this board derives its columns from the one shared switch over CollaborationStatus
+// instead of keeping a fourth private copy. See lib/brand-pipeline-stage.ts.
+import {
+  mapCollaborationStatusToPipelineStage,
+  type BrandPipelineStage,
+} from '@/lib/brand-pipeline-stage';
 
 interface Collaboration {
   id: string;
@@ -56,7 +62,8 @@ interface Collaboration {
   campaignTitle: string;
   budget: number;
   platforms: string[];
-  status: 'OUTREACH' | 'NEGOTIATING' | 'CONTRACTED' | 'IN_PROGRESS' | 'REVIEW' | 'SETTLED';
+  /** CR-30 — the board's own column vocabulary. See lib/brand-pipeline-stage.ts. */
+  status: BrandPipelineStage;
   slaHoursRemaining?: number; // SLA time remaining
   daysRemaining?: number;
   /** No DTO source on GET /deals — deals API carries no engagement metric. Only ever set in mock data; never rendered today. */
@@ -70,35 +77,24 @@ interface Collaboration {
 // ---------------------------------------------------------------------------
 // Live-mode mapping — Deal (src/lib/api.ts) -> Collaboration (this file's
 // board/list/timeline shape). Fields with no DTO source are left undefined
-// rather than fabricated (see Collaboration comments above). Deals with no
-// equivalent pipeline stage (CANCELLED, DISPUTED) are filtered out — this
-// 6-stage board has no "rejected" column to honestly place them in.
+// rather than fabricated (see Collaboration comments above).
 // ---------------------------------------------------------------------------
-function mapDealStatusToStage(status: Deal['status']): Collaboration['status'] | null {
-  switch (status) {
-    case 'INVITED':
-    case 'APPLIED':
-    case 'SHORTLISTED':
-      return 'OUTREACH';
-    case 'IN_NEGOTIATION':
-      return 'NEGOTIATING';
-    case 'TERMS_AGREED':
-    case 'CONTRACT_PENDING':
-    case 'CONTRACTED':
-      return 'CONTRACTED';
-    case 'IN_PROGRESS':
-      return 'IN_PROGRESS';
-    case 'REVIEW_PENDING':
-    case 'REVISION_REQUESTED':
-      return 'REVIEW';
-    case 'COMPLETED':
-      return 'SETTLED';
-    case 'CANCELLED':
-    case 'DISPUTED':
-    default:
-      return null;
-  }
-}
+
+/**
+ * CR-30 — the board's column mapping now lives in `lib/brand-pipeline-stage.ts`, derived from
+ * the shared `DealStage` instead of a fourth private switch over `CollaborationStatus`.
+ *
+ * ⚠️ **User-visible consequence, and it IS the fix: a `TERMS_AGREED` deal moves from the
+ * Contracted column to Negotiating.** This file held the last surviving copy of
+ * `TERMS_AGREED -> CONTRACTED` — the mapping CR-05 deleted from `creator-chat.tsx` and CR-24
+ * deleted from `brand-chat.tsx` — so the same deal read "Negotiating" in the brand deal room
+ * while sitting under **Contracted** here. The board was claiming a contract that did not
+ * exist; `doAccept` produces `TERMS_AGREED` and no contract row exists at that point.
+ *
+ * The `OUTREACH` column is kept (Wave 6 ruling, §10.3) as the one documented delta. See that
+ * module for both deltas and why the vocabulary stays while the derivation is shared.
+ */
+const mapDealStatusToStage = mapCollaborationStatusToPipelineStage;
 
 function relativeLastActivity(iso?: string): string {
   if (!iso) return '—';

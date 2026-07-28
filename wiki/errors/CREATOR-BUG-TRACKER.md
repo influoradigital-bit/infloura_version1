@@ -968,6 +968,19 @@ It maps `TERMS_AGREED → 'CONTRACTED'` (`:85-88`). That is character-for-charac
 
 So `brand-pipeline` migrates, with `OUTREACH` preserved as a declared delta and `TERMS_AGREED` corrected. Kavya must re-check that board's columns, counts and empty states — one deal legitimately moves column, and that movement *is* the fix.
 
+> ✅ **FIXED (brand-pipeline half; the dashboard half was closed as not-a-defect above).**
+> - New `src/lib/brand-pipeline-stage.ts` holds the board's vocabulary (`BrandPipelineStage`) and the one mapping onto it, derived from `mapCollaborationStatusToDealStage`. `brand-pipeline.tsx`'s private switch is deleted. **`TERMS_AGREED` now lands in `NEGOTIATING`**, so this board and the brand deal room finally agree about the same deal.
+> - `OUTREACH` is kept per the ruling, expressed as a single delta *inside the `negotiating` arm* — where the conflict actually is — so every other column stays honestly downstream of the shared switch. Same pattern as `brand-chat.tsx`.
+> - `CANCELLED`/`DISPUTED` still return `null` and are filtered out, but that is now a stage the board explicitly declines rather than a `default:` arm. The switch is exhaustive over `DealStage` with no `default:`, so a future stage cannot be silently swallowed.
+> - **Why a new lib module rather than a helper in the page:** a route module cannot export a non-component without disabling Fast Refresh for the whole page (`react-refresh/only-export-components`), so "testable" and "stays in the page" were mutually exclusive. Being private and untested is precisely what let this mapping survive three prior rounds of fixing the identical bug elsewhere.
+>
+> **Pinned by `src/lib/__tests__/brand-pipeline-stage.test.ts` (17 tests), both directions proven by breaking them:**
+> 1. Restoring `TERMS_AGREED -> CONTRACTED` — the original defect — fails **4** tests while 13 keep passing, including one asserting this board agrees with `brand-chat.tsx`.
+> 2. Collapsing the `OUTREACH` delta (the plausible future "simplification", since `DealStage` folds those statuses together) fails **3** tests while 14 keep passing.
+> Plus the `Record<CollaborationStatus, …>` exhaustiveness guard: a 14th status breaks typecheck until someone assigns it a column.
+>
+> ⚠️ **Still needs Kavya's eyes on the rendered board.** A `TERMS_AGREED` deal legitimately moves column, which shifts per-column counts and can empty or fill a column — the tests cover the mapping, not the chips, counts or empty states around it. Verification: `npm run typecheck` clean · `npm test` **300/300 across 32 files** · `npm run lint` **403, exactly baseline** · `npm run build` PASS, 16/16 routes. **Not verified in a browser.**
+
 ---
 
 ### 10.4 CR-11 — White screen, not reproduced · **RULING: stop waiting for the console line.**

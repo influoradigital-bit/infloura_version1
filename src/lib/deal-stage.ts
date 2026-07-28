@@ -26,23 +26,21 @@ import type { CollaborationStatus } from '@/lib/types';
  *     (returns null and filters the row out) because that list has no disputed chip.
  *
  * Two brand surfaces were split out of CR-24 as **CR-30**, and the Wave 6 decision record
- * (§10.3 of `wiki/errors/CREATOR-BUG-TRACKER.md`) then ruled on them separately — they are
- * NOT one job:
- *   - `brand-pipeline.tsx` splits INVITED/APPLIED/SHORTLISTED into `OUTREACH`, separate from
- *     `NEGOTIATING` (IN_NEGOTIATION only). `DealStage` folds APPLIED/SHORTLISTED into
- *     'negotiating', so deriving would silently move deals between pipeline columns.
- *     **Still outstanding.** `OUTREACH` was ruled worth keeping, so this migrates by deriving
- *     from `DealStage` plus that one documented delta. Note it also still maps
- *     `TERMS_AGREED -> CONTRACTED` — the last surviving copy of the CR-05/CR-24 defect, which
- *     means brand-chat and brand-pipeline currently disagree about the same deal.
- *   - `deal-room-dashboard.tsx` uses a 4-state proposal vocabulary
- *     ('proposed'/'accepted'/'rejected'/'negotiating') that is not a lifecycle at all.
- *     **Ruled NOT a defect and closed** — under a proposal vocabulary `TERMS_AGREED ->
- *     'accepted'` is literally correct. It keeps its local switch on purpose.
+ * (§10.3 of `wiki/errors/CREATOR-BUG-TRACKER.md`) then ruled on them separately — they were
+ * NOT one job, and both are now settled:
+ *   - `brand-pipeline.tsx` — ✅ **migrated (CR-30).** It derives from this module and keeps
+ *     exactly one documented delta: `APPLIED`/`SHORTLISTED` render as `OUTREACH` rather than
+ *     `NEGOTIATING`, because that board separates inbound interest from active negotiation and
+ *     the ruling kept that distinction. It also held the last copy of `TERMS_AGREED ->
+ *     CONTRACTED`, which is gone — brand-chat and brand-pipeline now agree.
+ *   - `deal-room-dashboard.tsx` — **ruled NOT a defect and closed.** Its 4-state
+ *     ('proposed'/'accepted'/'rejected'/'negotiating') is a proposal vocabulary, not a
+ *     lifecycle; under it `TERMS_AGREED -> 'accepted'` is literally correct. It keeps its
+ *     local switch on purpose. **Do not "finish the job" by collapsing it onto `DealStage`** —
+ *     there is no meaning-preserving mapping and it would be a regression, not a cleanup.
  *
- * So: do not read this module's existence as evidence the job is finished, and do not
- * "finish" it by collapsing `deal-room-dashboard` onto this. (CR-33 — this paragraph
- * previously pointed at CR-24 for both, which stopped being true when CR-30 was split out.)
+ * (CR-33 — this paragraph once pointed at CR-24 for both, which stopped being true when CR-30
+ * was split out of it.)
  *
  * ---------------------------------------------------------------------------
  * Why TERMS_AGREED is pre-contract
