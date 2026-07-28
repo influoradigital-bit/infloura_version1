@@ -136,6 +136,14 @@ describe('BrandRegisterPage — email OTP gate', () => {
     await user.type(boxes[0], '654321');
     await user.click(screen.getByRole('button', { name: /Verify email/i }));
 
+    // `user.click` only awaits the click's own synchronous dispatch, not the two chained
+    // network calls a real click here fires: verify, then (via `onVerified`) register. Checkpoint
+    // each hop explicitly — same pattern as the "sends and verifies" test above — instead of
+    // asking one `findByText` to cover both round trips plus the OTP-panel-to-form re-render in a
+    // single default-timeout poll; that single-poll version is what raced under load.
+    await waitFor(() => expect(verifyBrandEmail).toHaveBeenCalledWith('brand@example.com', '654321'));
+    await waitFor(() => expect(brandRegister).toHaveBeenCalledTimes(1));
+
     // Dropping back to the form is what puts the error next to the email field it refers to,
     // rather than stranding the user on a verified-but-dead OTP panel.
     expect(await screen.findByText(/already registered/i)).toBeInTheDocument();

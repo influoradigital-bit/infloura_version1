@@ -230,6 +230,16 @@ public class DisputeService {
                     HttpStatus.CONFLICT);
         }
 
+        // [FIX: escrow-frozen-hold-fix-spec, Fix 3] Recorded BEFORE the settlement call runs, not
+        // after — once adminReleaseForDispute/adminRefundForDispute/adminSplitForDispute actually
+        // settle a hold it leaves FROZEN (moves to RELEASED/REFUNDED), so checking afterward would
+        // always read "no frozen escrow" and defeat the point of this check.
+        // [SEC: Kabir gate on CR-35, HIGH-2] The COUNT, not a boolean. See countFrozenHolds' javadoc:
+        // a boolean is satisfied by one hold moving out of many, and reads false for a collaboration
+        // a first dispute already settled — letting a second dispute resolve and audit-log a
+        // movement that never happened, with no race required.
+        int frozenHoldsBefore = escrowService.countFrozenHolds(dispute.getCollaborationId());
+
         // [Task #5] Move the frozen escrow BEFORE persisting the resolved status (freeze-before-save
         // discipline, mirrored from openDispute/H-T34-1) — a thrown ApiException here (e.g. no
         // wallet, missing fee config) rolls the whole transaction back, so the dispute never ends up
@@ -256,6 +266,42 @@ public class DisputeService {
                             "INVALID_RESOLUTION",
                             "resolution must be a terminal RESOLVED_* status",
                             HttpStatus.BAD_REQUEST);
+        }
+
+        // [FIX: escrow-frozen-hold-fix-spec, Fix 3 — "make the invariant real"] The class/method
+        // javadoc above has always CLAIMED that a thrown exception here rolls the whole transaction
+        // back, so "the dispute never ends up marked resolved without the money having actually
+        // moved." That claim held for a thrown exception. It did NOT hold for an empty settlement
+        // list: if this collaboration had frozen escrow (checked above, before the settlement ran)
+        // and the settlement call still moved zero holds, the loop above simply completed with
+        // `settlements = []` and execution fell straight through to `dispute.resolve(...)` below —
+        // marking the dispute resolved, and `adminAuditLogService` logging ESCROW_RELEASE/
+        // ESCROW_REFUND, for a movement that never happened. That was the actual bug (CR-22a finding
+        // #2): the null-`collaboration_id` hold was just what triggered it; Fix 1 + Fix 2 above close
+        // that specific trigger, but without this check a *future* regression in the lookup would
+        // reopen the same silent-mis-statement failure mode. Refuse loudly instead.
+        //
+        // A collaboration with NO escrow at all (hadFrozenEscrow == false) is a legitimate case — a
+        // dispute opened on a deal whose escrow was never funded — and must still resolve cleanly;
+        // this branch is never taken for it, regardless of settlements being empty.
+        // [SEC: Kabir gate on CR-35, HIGH-2] Compare COUNTS, not emptiness. `settlements.isEmpty()`
+        // passes as soon as a single hold moves, so a partial settlement — some holds moved, others
+        // silently skipped because they slipped out of FROZEN between the read and the lock — would
+        // have sailed through and been audit-logged as a completed movement.
+        //
+        // Deliberately `<` and not `!=`: moving FEWER holds than were frozen is the invariant
+        // violation this guard exists for. Moving MORE can only mean a hold was frozen concurrently
+        // after the count was taken, which is not a mis-statement and must not spuriously 409 a
+        // legitimate resolution.
+        if (settlements.size() < frozenHoldsBefore) {
+            throw new ApiException(
+                    "DISPUTE_SETTLEMENT_EMPTY",
+                    "This collaboration had "
+                            + frozenHoldsBefore
+                            + " frozen escrow hold(s) but the settlement moved only "
+                            + settlements.size()
+                            + " — refusing to mark the dispute resolved without the money actually moving",
+                    HttpStatus.CONFLICT);
         }
 
         DisputeStatus previousStatus = dispute.getStatus();

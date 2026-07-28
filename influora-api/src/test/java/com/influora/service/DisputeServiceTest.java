@@ -543,6 +543,104 @@ class DisputeServiceTest {
                 .record(any(), any(), any(), eq("ESCROW"), any(), any(), any(), any());
     }
 
+    // -------------------------------------------------------------------------------------------
+    // [FIX: escrow-frozen-hold-fix-spec, Fix 3 — "make the invariant real"]
+    //
+    // DisputeService's own javadoc (class-level and on resolveDispute) has always claimed that
+    // "the dispute never ends up marked resolved without the money having actually moved" because
+    // a thrown exception during settlement rolls the whole transaction back. That was true for a
+    // THROWN exception. It was NOT true for an EMPTY settlement list: the pre-fix code let
+    // `settlements = []` fall straight through to `dispute.resolve(...)` and the audit log,
+    // marking the dispute resolved and logging ESCROW_RELEASE/ESCROW_REFUND for a movement that
+    // never happened. CR-22a finding #2's null-`collaboration_id` hold was just the trigger; this
+    // is the actual invariant that needed to exist and didn't.
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "FIX 3: refuses to resolve when the collaboration HAS frozen escrow but the settlement"
+                    + " moved zero holds — must fail (i.e. wrongly resolve) if Fix 3 is reverted")
+    void resolveRefusesWhenEscrowExistsButSettlementIsEmpty() {
+        Dispute dispute =
+                Dispute.open(DISPUTE_ID, DEAL_ID, DisputeOpenerType.BRAND, BRAND_USER_ID, "Issue");
+        when(disputeRepository.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute));
+        AdminUser admin = AdminUser.create(ADMIN_ID, "admin@test.com", "hash", AdminRole.ADMIN);
+        when(adminContext.requireRoleWithMfaSatisfied(
+                        principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN))
+                .thenReturn(admin);
+        // This collaboration DOES have frozen escrow right now (e.g. the exact CR-22a bug shape:
+        // a hold reachable only via the milestone fallback) ...
+        // [Kabir gate HIGH-2] Stubs the COUNT, not the boolean: the guard compares how many holds
+        // settled against how many were frozen, so that a PARTIAL settlement (some moved, some
+        // silently skipped) is caught too — `isEmpty()` passed as soon as a single hold moved.
+        when(escrowService.countFrozenHolds(DEAL_ID)).thenReturn(2);
+        // ... but whatever ran the settlement moved zero holds — the invariant violation Fix 3
+        // exists to catch. Reverting Fix 3 removes the `hadFrozenEscrow && settlements.isEmpty()`
+        // guard entirely, so `resolveDispute` would fall through to `dispute.resolve(...)` and
+        // `saveAndFlush` below instead of throwing — that is exactly what this test's assertions
+        // rule out.
+        when(escrowService.adminReleaseForDispute(DEAL_ID)).thenReturn(List.of());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.resolveDispute(
+                                        principal,
+                                        request,
+                                        DISPUTE_ID,
+                                        new ResolveDisputeRequest(
+                                                DisputeStatus.RESOLVED_CREATOR, "Creator upheld", null)));
+
+        assertEquals("DISPUTE_SETTLEMENT_EMPTY", ex.getCode());
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        // The dispute must never be persisted as resolved for this outcome — no version bump, no
+        // audit entry claiming a settlement that never happened.
+        verify(disputeRepository, never()).saveAndFlush(any());
+        assertEquals(DisputeStatus.OPEN, dispute.getStatus());
+        verify(adminAuditLogService, never())
+                .record(any(), any(), any(), eq("DISPUTE"), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "FIX 3 regression guard: a dispute on a collaboration with NO escrow at all still"
+                    + " resolves cleanly (empty settlement is legitimate when hasFrozenEscrow is false)")
+    void resolveStillSucceedsWhenNoEscrowExistedAtAll() {
+        Dispute dispute =
+                Dispute.open(DISPUTE_ID, DEAL_ID, DisputeOpenerType.BRAND, BRAND_USER_ID, "Issue");
+        when(disputeRepository.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute));
+        AdminUser admin = AdminUser.create(ADMIN_ID, "admin@test.com", "hash", AdminRole.ADMIN);
+        when(adminContext.requireRoleWithMfaSatisfied(
+                        principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN))
+                .thenReturn(admin);
+        // No escrow was ever funded on this collaboration — a dispute on an unfunded deal is a
+        // legitimate case that must still be resolvable. [Kabir gate HIGH-2] Zero frozen holds and
+        // zero settlements compare equal, so the guard is not taken.
+        when(escrowService.countFrozenHolds(DEAL_ID)).thenReturn(0);
+        when(escrowService.adminReleaseForDispute(DEAL_ID)).thenReturn(List.of());
+
+        var response =
+                service.resolveDispute(
+                        principal,
+                        request,
+                        DISPUTE_ID,
+                        new ResolveDisputeRequest(DisputeStatus.RESOLVED_CREATOR, "Creator upheld", null));
+
+        assertEquals("RESOLVED_CREATOR", response.status());
+        verify(disputeRepository).saveAndFlush(dispute);
+        verify(adminAuditLogService)
+                .record(
+                        eq(principal),
+                        eq(request),
+                        eq("UPDATE"),
+                        eq("DISPUTE"),
+                        eq(DISPUTE_ID),
+                        any(),
+                        any(),
+                        any());
+    }
+
     @Test
     @DisplayName(
             "Low finding: already-resolved dispute short-circuits to a clean 409, never touches"

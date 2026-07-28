@@ -142,6 +142,77 @@ describe('deal message stream reconnect (CR-31)', () => {
     handle.close();
   });
 
+  it('refreshes the token on a 401 and retries the connection once', async () => {
+    // CR-31 / Kavya MAJOR#3 — the 401 branch was the one untested path in this transport, and
+    // it is the ONLY place in the app that drives a token refresh outside HttpClient's H-19
+    // interceptor (a raw fetch cannot use it). Driven end-to-end through the fetch mock rather
+    // than by spying on `http.bootstrap`, so this exercises the real refresh call and the real
+    // re-read of the rotated token — a spy would have asserted the intent while proving none
+    // of the mechanism.
+    const REFRESHED = 'rotated.access.token';
+    let streamAttempts = 0;
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/auth/refresh')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ success: true, data: { accessToken: REFRESHED, expiresIn: 900 } }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      streamAttempts += 1;
+      // First connection: the access token aged out while the room sat open.
+      if (streamAttempts === 1) return Promise.resolve(new Response('', { status: 401 }));
+      return Promise.resolve(cleanlyClosingSseResponse(ONE_FRAME));
+    });
+
+    const onMessage = vi.fn();
+    const onStatusChange = vi.fn();
+    const handle = messages.stream('creator', 'd1', { onMessage, onStatusChange });
+
+    await settle();
+
+    // Refreshed exactly once, and retried IMMEDIATELY — not after a backoff delay, because an
+    // expired token is not a failing server and should not be treated as one.
+    expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('/auth/refresh'))).toHaveLength(1);
+    expect(streamAttempts).toBe(2);
+    // The retry actually connected and delivered, rather than silently going terminal.
+    expect(onMessage).toHaveBeenCalledTimes(1);
+    expect(onStatusChange).toHaveBeenCalledWith('open');
+    expect(onStatusChange).not.toHaveBeenCalledWith('closed');
+    // And the rotated token was persisted, so the retry carried the new one.
+    expect(localStorage.getItem('creator_token')).toBe(REFRESHED);
+
+    handle.close();
+  });
+
+  it('gives up when a 401 survives the refresh — the session is genuinely gone', async () => {
+    // The other half of the guard: one refresh per generation. Without the `authRetried` flag a
+    // permanently-401ing server would refresh-and-retry forever.
+    let refreshCalls = 0;
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/auth/refresh')) {
+        refreshCalls += 1;
+        // Refresh itself fails — the refresh cookie is gone/expired too.
+        return Promise.resolve(new Response('', { status: 401 }));
+      }
+      return Promise.resolve(new Response('', { status: 401 }));
+    });
+
+    const onStatusChange = vi.fn();
+    const handle = messages.stream('creator', 'd1', { onMessage: vi.fn(), onStatusChange });
+
+    await settle();
+    expect(onStatusChange).toHaveBeenCalledWith('closed');
+    expect(onStatusChange).not.toHaveBeenCalledWith('reconnecting');
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    await settle();
+    expect(refreshCalls).toBeLessThanOrEqual(1);
+
+    handle.close();
+  });
+
   it('retries a 502, which is a blip rather than a verdict', async () => {
     fetchMock.mockResolvedValue(new Response('', { status: 502 }));
     const handle = messages.stream('creator', 'd1', { onMessage: vi.fn() });

@@ -5,7 +5,9 @@
 > **Maintainer (status updates):** **Tara** — see [§6 Tara's Update Protocol](#6-taras-update-protocol)
 > **Source of findings:** Neha (E2E), live logged-in walkthrough of `http://200.141.1.6` as `tejas.chache5@gmail.com`
 > **Opened:** 2026-07-27
-> **Last updated:** 2026-07-28 (4th pass) — **§9 gains a Deploy runbook, and a wrong claim is corrected.** A `VPS_restartProjectV1` on `influora-test` was run to ship Waves 3–5. **It deployed nothing** — the served bundle came back byte-identical (2,697,823 bytes, `priya_sharma` still present) because `docker compose restart` reuses existing containers and never re-resolves `:latest`. Cost ~30s of downtime for zero benefit. §9's previous claim that a restart *"is what would make Wave 3 live"* is struck out and corrected. **A real deploy needs `docker compose pull && docker compose up -d` over SSH**, which the VPS MCP toolset cannot do — full runbook with verification and rollback now in §9. **The box still serves Wave 2.** No ticket status changed.
+> **Last updated:** 2026-07-28 (5th pass) — **Tara.** Reconciliation pass: §3 and the §5 `Status:` lines are brought back in line with what has actually landed, which nobody else may do (§6). **§10's rulings are now applied as statuses**: CR-27 → `BLOCKED` (WONTFIX, decided), CR-22 **split** into **CR-22a** (`ASSIGNED`, Vikram) + **CR-22b** (`BLOCKED` on 22a), CR-11 `BLOCKED` → `IN PROGRESS` (instrumentation shipped in `61d0158`; the ticket now waits on the first captured report, not on Neha's luck), CR-30 `OPEN` → `IN QA` (brand-pipeline migrated in `a653def`, `deal-room-dashboard` closed as not-a-defect per §10.3). **Four §10.5 proposals get real §3 rows at the numbers already burned into shipped code — CR-31, CR-32, CR-33, CR-34, all `IN QA`** (`190969d`, `c05f685`, `69b4dbc`); renumbering them was considered and rejected, see §7. **New 🔴 Critical row CR-35 — frozen-escrow settlement moves nothing and the books record it as settled** (`IN PROGRESS`, fix being written now). Totals 30 → **36 logged**, and **still 0 `DONE`** — Neha has re-tested nothing, and **the box still serves Wave 2**. Nine factual errors found and listed in §7.
+>
+> **Previous pass (2026-07-28, 4th) — §9 gains a Deploy runbook, and a wrong claim is corrected.** A `VPS_restartProjectV1` on `influora-test` was run to ship Waves 3–5. **It deployed nothing** — the served bundle came back byte-identical (2,697,823 bytes, `priya_sharma` still present) because `docker compose restart` reuses existing containers and never re-resolves `:latest`. Cost ~30s of downtime for zero benefit. §9's previous claim that a restart *"is what would make Wave 3 live"* is struck out and corrected. **A real deploy needs `docker compose pull && docker compose up -d` over SSH**, which the VPS MCP toolset cannot do — full runbook with verification and rollback now in §9. **The box still serves Wave 2.** No ticket status changed.
 >
 > **Previous pass (2026-07-28, 3rd) — CR-29 complete.** The creator-side tripwire landed (commit `4ad66f9`): `src/pages/creator-chat-refresh.test.tsx` is the **first test harness for `creator-chat.tsx` in this repo**, and reverting the guard makes exactly the right test fail. It also caught a fragility in **CR-04's own fix** — an unguarded `viewport.scrollTo()` that threw under jsdom and took the page down; now feature-detected with the `scrollTop` fallback CR-04 originally prescribed. CR-29 `IN PROGRESS (PARTIAL)` → `IN QA`. Suite **259/259 across 28 files**. **No ticket in this file is partial any more, and no remaining work is gated on engineering capacity** — everything left needs a decision, a design, or evidence. Totals unchanged at **30 logged, 0 DONE**.
 >
@@ -56,6 +58,8 @@ Correcting the record before work starts — the generic company stack template 
 
 **A ticket is only `DONE` when Neha has re-run the original repro steps against the deployed build.** Code merged ≠ done.
 
+> **One bookkeeping marker, not a status (added 2026-07-28, Tara):** `SPLIT` may appear in the §3 Status column on a **parent** row whose work has moved to lettered children (today: CR-22 → CR-22a + CR-22b). It means *"this row holds no work and is retained only because §6 forbids deleting a ticket."* **A `SPLIT` parent is never counted in the totals** — its children are. It is not a state a ticket can be worked in, so it is deliberately absent from the table above.
+
 ---
 
 ## 3. Summary Board
@@ -72,7 +76,7 @@ Correcting the record before work starts — the generic company stack template 
 | CR-08 | 🟠 High | Accept/decline/counter never reach the other party (no SSE publish) | Vikram | IN VERIFY |
 | CR-09 | 🟠 High | Creator accept/decline never refresh the message timeline | Ananya | IN VERIFY |
 | CR-10 | 🟠 High | One render error whites out the ENTIRE app permanently | Ananya | IN QA |
-| CR-11 | 🟡 Medium | White screen on tab sequence — **NOT REPRODUCED**, needs data | Neha | BLOCKED |
+| CR-11 | 🟡 Medium | White screen on tab sequence — **NOT REPRODUCED**, needs data | Ananya | IN PROGRESS |
 | CR-12 | 🟡 Medium | All filter chip counts collapse to 0 when a filter is active | Ananya | IN QA |
 | CR-13 | 🟡 Medium | "Active" tab hides contracted + in-review deals | Vikram + Ananya | IN QA |
 | CR-14 | 🟡 Medium | Public page renders "Synced NaNd ago" | Ananya | IN QA |
@@ -83,43 +87,53 @@ Correcting the record before work starts — the generic company stack template 
 | CR-19 | 🟡 Medium | N1: `settleStatus` BigDecimal→Double round-trip; two bare `ObjectMapper`s | Vikram | IN VERIFY |
 | CR-20 | 🟢 Low | N2: `loadMessages` lost unmount cancellation (no leak today, React 18+) | Ananya | IN QA |
 | CR-21 | 🟢 Low | N3: "Refresh deal" flashes the whole page (full-page spinner) | Ananya | IN VERIFY |
-| CR-22 | 🟡 Medium | Brand-side `canReject` withdrawal flow needs its own UI (not the proposal card) | Unassigned | OPEN |
+| CR-22 | — | **SPLIT** into CR-22a + CR-22b (§10.1) — parent row retained per §6, **not counted in totals** | — | SPLIT |
+| CR-22a | 🔴 Critical | Deal-level withdrawal has no state model: `canReject()` is too broad **and `CANCELLED` is enforced by nothing downstream** | Vikram | ASSIGNED |
+| CR-22b | 🟡 Medium | The designed brand-side withdrawal affordance | Unassigned (design) | BLOCKED |
 | CR-23 | 🟢 Low | Brand `refreshDeal` catch block missing the staleness guard (cf. creator-side W2-L1) | Priya | IN VERIFY |
 | CR-24 | 🟡 Medium | Brand deal-room mapper diverges on `CollaborationStatus` (the CR-05 mirror) | Ananya | IN QA |
 | CR-25 | 🟡 Medium | SSE publishes fire inside the caller's `@Transactional` — pre-rollback frames observable | Vikram | IN QA |
 | CR-26 | 🟡 Medium | `DISPUTED`/`CANCELLED` render as "Done"/"Completed" — no display bucket exists | Ananya | IN QA |
-| CR-27 | 🟢 Low | `creator-deals.tsx` under-offers actions vs the server (`canAccept()` allows more) | Unassigned | OPEN |
+| CR-27 | 🟢 Low | `creator-deals.tsx` under-offers actions vs the server (`canAccept()` allows more) | Swapnil (ruled) | BLOCKED |
 | CR-28 | 🟢 Low | Backend test helper hides the settle path (`proposalMessage` carries null metadata) | Vikram | IN QA |
 | CR-29 | 🟢 Low | CR-23's fix has no test coverage (superseded-failed-refresh scenario untested) | Ananya | IN QA |
-| CR-30 | 🟡 Medium | `brand-pipeline` + `deal-room-dashboard` still switch over `CollaborationStatus` independently | Unassigned | OPEN |
+| CR-30 | 🟡 Medium | ~~`brand-pipeline` + `deal-room-dashboard`~~ **`brand-pipeline` only** still re-derives stage independently | Ananya | IN QA |
+| CR-31 | 🟠 High | Deal-room SSE stream never reconnects, and a clean close is completely silent | Ananya | IN QA |
+| CR-32 | 🟡 Medium | Second creator logout path (Settings) never got CR-06's session clear | Ananya | IN QA |
+| CR-33 | 🟢 Low | Stale doc comments contradicting the code they sit on | Ananya | IN QA |
+| CR-34 | 🟡 Medium | `ACCEPTABLE_COLLABORATION_STATUSES` duplicated in both deal rooms | Ananya | IN QA |
+| CR-35 | 🔴 Critical | Dispute settlement moves **no money** on normally-funded holds, and records it as settled | Vikram | IN PROGRESS |
 
-**Totals:** 3 Critical · 7 High · 12 Medium · 8 Low = **30 logged**, **0 DONE**
+**Totals:** 5 Critical · 8 High · 14 Medium · 9 Low = **36 logged**, **0 DONE**
 
-**By status:** 14 `IN QA` · 11 `IN VERIFY` · 3 `OPEN` · 2 `BLOCKED`
+> **How 30 became 36 — no ticket was deleted (§6).** +5 new rows given real IDs (CR-31/32/33/34 from §10.5, CR-35 new), and CR-22 split into two counted halves. **CR-22 itself is retained as an uncounted parent row** — counting it alongside CR-22a and CR-22b would triple-count one defect. `SPLIT` is not a §2 status; it is a bookkeeping marker on a parent that no longer holds work. 30 − 1 (CR-22 uncounted) + 2 (22a, 22b) + 5 (31–35) = **36**.
 
-**Progress against the 30:**
+**By status:** 19 `IN QA` · 11 `IN VERIFY` · 2 `IN PROGRESS` · 1 `ASSIGNED` · 3 `BLOCKED` · **0 `OPEN`** · **0 `DONE`**
 
-| Severity | Logged | Code written | Not started | Blocked |
-|---|---|---|---|---|
-| 🔴 Critical | 3 | **3** | 0 | 0 |
-| 🟠 High | 7 | **7** | 0 | 0 |
-| 🟡 Medium | 12 | 8 | 2 | 2 |
-| 🟢 Low | 8 | 7 | 1 | 0 |
-| **Total** | **30** | **25 (83%)** | **3** | **2** |
+**Progress against the 36:**
 
-**Every 🔴 Critical and 🟠 High ticket has code, and no written ticket is partial any more** — CR-29's creator half closed on the 2nd pass of 2026-07-28.
+| Severity | Logged | Code landed | In progress | Not started | Blocked |
+|---|---|---|---|---|---|
+| 🔴 Critical | 5 | 3 | 1 | 1 | 0 |
+| 🟠 High | 8 | **8** | 0 | 0 | 0 |
+| 🟡 Medium | 14 | 11 | 1 | 0 | 2 |
+| 🟢 Low | 9 | **8** | 0 | 0 | 1 |
+| **Total** | **36** | **30 (83%)** | **2** | **1** | **3** |
 
-**The 5 without code, and why — none of them is "not got to it yet":**
+> ⚠️ **The old claim "every 🔴 Critical and 🟠 High ticket has code" no longer holds and has been struck.** It was true of the original three Criticals. It is not true of the two new ones: **CR-22a has no code at all** and **CR-35's fix is being written right now**. Both are money-path. 🟠 High is still fully covered — CR-31 landed with the rest.
 
-| ID | Why it has no code |
+**The 6 without landed code, and why — none of them is "not got to it yet":**
+
+| ID | Why it has no landed code |
 |---|---|
-| CR-11 | 🚧 Needs the console line at the moment of blanking, or an account that reproduces. Not a coding task. |
+| CR-11 | The **instrumentation** landed (`61d0158`), but that is not a fix — it is the mechanism that will finally name the throw site. The ticket now waits on the first captured report, which is data the app produces by itself. |
 | CR-15 | 🚧 Needs a **domain + TLS** decision from Swapnil. Nothing to build until there is somewhere to serve HTTPS. |
-| CR-22 | Needs a **designed** withdrawal flow. Per the CTO ruling it deliberately does not belong on the proposal card, and inventing a replacement affordance is not an engineering call. |
-| CR-27 | The ticket itself says "a decision point, not an automatic fix" — needs a **product call** on whether the list should expose negotiation-stage actions. May be correct as-is. |
-| CR-30 | Needs an owner and a **product call**: `brand-pipeline`'s vocabulary encodes distinctions `DealStage` cannot express, so migrating it would move deals between columns. |
+| CR-22a | **`ASSIGNED` to Vikram, not started.** Needs the state model decided (escrow disposition, contract voiding, `DISPUTED` vs `CANCELLED`, who may act) before a line is written. §10.1 + Kabir's audit. |
+| CR-22b | **`BLOCKED` on CR-22a.** Designing an affordance against today's endpoint would put a button on a hole. |
+| CR-27 | **Decided, not deferred.** Ruled WONTFIX by Swapnil on Priya's framing (§10.2). `BLOCKED` is how §6 records a close without deleting the row. **Do not re-open as an oversight.** |
+| CR-35 | Fix in flight as this pass is written — spec at `wiki/tech/escrow-frozen-hold-fix-spec.md`. Recorded `IN PROGRESS` because nothing has landed; **do not read this row as fixed.** |
 
-> **0 DONE is still correct, and the reason has changed again.** Per §2 only Neha's live re-test closes a ticket. Waves 1–2 are deployed and their 11 `IN VERIFY` tickets are testable **today**. The 13 `IN QA` tickets need Kavya, then a VPS restart, then Neha. Nothing is blocked on infrastructure or on writing code.
+> **0 DONE is still correct, and it is not a bookkeeping lag.** Per §2 only Neha's live re-test closes a ticket, and **Neha has re-tested nothing**. Waves 1–2 are deployed, so the 11 `IN VERIFY` tickets are testable **today**. The 19 `IN QA` tickets need Kavya, then a **real deploy** (`docker compose pull && up -d` — see §9's runbook; a restart deploys nothing), then Neha. **The box still serves Wave 2.** Nothing is blocked on infrastructure or on writing code, with the two money-path Criticals as the sole exception.
 
 ---
 
@@ -170,7 +184,10 @@ Ordered by business damage, not by severity label. Ship wave by wave.
 | CR-29 | Ananya | ✅ `IN QA` — **both halves**; brand + creator tripwires, each proven by reverting the guard |
 
 ### 🌊 Wave 6 — Needs a decision or a design, not a keyboard
-**Nothing here is blocked on engineering capacity.** All five are waiting on a human judgement.
+
+> ⚠️ **STALE as of 2026-07-28 (5th pass, Tara) — §10 ruled on all five and falsified this section's premise.** Retained per §6's append-only rule; **read §10 and §3, not the table below.** The claim *"nothing here is blocked on engineering capacity"* is now **false**: after the rulings, four of the five are ordinary engineering work with named owners (§10.6), and two brand-new money-path Criticals (**CR-22a**, **CR-35**) are squarely engineering. **CR-15 is the only genuine Swapnil-gated blocker left.** Current statuses per row: CR-15 `BLOCKED` · CR-11 `IN PROGRESS` (Ananya, not Neha) · CR-22 **split** → CR-22a `ASSIGNED` / CR-22b `BLOCKED` · CR-27 `BLOCKED` (WONTFIX, decided) · CR-30 `IN QA`. This section is Arjun's to re-plan; Tara has changed no routing here, only flagged it.
+
+**~~Nothing here is blocked on engineering capacity. All five are waiting on a human judgement.~~**
 
 | ID | Owner | What it needs |
 |---|---|---|
@@ -185,7 +202,9 @@ Ordered by business damage, not by severity label. Ship wave by wave.
 
 **Pipeline for every ticket:** `Owner → Kavya (QA) → Meera (build/run) → Neha (live re-test) → Tara (mark DONE here)`
 
-> **Where the 8 `IN QA` tickets actually sit in that pipeline:** code done, and `typecheck`/`test`/`lint`/`build` all run and green (Meera's checks, self-run). **Kavya has not reviewed them**, and the images are published but **not pulled onto the box**, so Neha cannot re-test them yet. Next step is Kavya, then a VPS restart, then Neha.
+> **Where the ~~8~~ `IN QA` tickets actually sit in that pipeline:** code done, and `typecheck`/`test`/`lint`/`build` all run and green (Meera's checks, self-run). **Kavya has not reviewed them**, and the images are published but **not pulled onto the box**, so Neha cannot re-test them yet. Next step is Kavya, then ~~a VPS restart~~ **a real deploy (§9 runbook — a restart deploys nothing)**, then Neha.
+>
+> 🔧 **Corrected 2026-07-28 (5th pass, Tara): the count is now 19, and "8" was already wrong.** It was left at 8 when the 2nd pass took the board to 13 and the 3rd to 14 — §3 is authoritative, this line was not maintained. It now reads without a number so it cannot drift again.
 
 ---
 
@@ -392,7 +411,12 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-11 · 🟡 Medium · White screen on tab sequence — NOT REPRODUCED
-**Owner:** Neha · **Status:** 🚧 **BLOCKED — needs console output or a reproducing account**
+**Owner:** Ananya *(reassigned from Neha per §10.4)* · **Status:** IN PROGRESS
+
+**5th-pass update (Tara, 2026-07-28):** ~~`BLOCKED`~~ → **`IN PROGRESS`**, per Priya's ruling in §10.4 and the instrumentation that landed with it in commit `61d0158`.
+> **What changed is the unblock condition, not the diagnosis.** The throw site is **still unknown**. What is gone is the requirement that a human happen to have devtools open at the instant of blanking: `ErrorBoundary.componentDidCatch` now fires a fire-and-forget report to `POST /api/v1/client-errors` (auth-optional, always 202, per-IP rate-limited, 16 KB cap), carrying `componentStack`, `pathname` and the build id. Verified present in `src/components/ErrorBoundary.tsx:69` and `src/lib/api.ts:4185+`; endpoint verified at `influora-api/.../web/ClientErrorController.java`.
+> **`IN PROGRESS` and not `IN QA`, deliberately** — the instrumentation is code-complete, but it is not this ticket's fix. CR-11 is the white screen, and the white screen is not fixed until a captured stack names the throw site. **Do not advance this to `IN QA` on the strength of the instrumentation.**
+> ⚠️ **Not verified end-to-end.** No report has been posted from a real browser to a running API; the two halves were built in parallel against `wiki/tech/cr-11-client-error-contract.md` and meet only at that contract. **Neha is released from CR-11** and should spend the time on the 11 `IN VERIFY` tickets.
 
 **What was tried (all passed, no crash):**
 - All 5 filter chips — `?status=all|negotiating|in_progress|completed|new` all **200 OK**, zero console errors
@@ -562,12 +586,44 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 
 ---
 
-### CR-22 · 🟡 Medium · Brand-side `canReject` withdrawal flow needs its own UI
-**Owner:** Unassigned · **Status:** OPEN
+### CR-22 · — · Brand-side `canReject` withdrawal flow needs its own UI
+**Owner:** — · **Status:** SPLIT → **CR-22a** + **CR-22b** *(parent row retained per §6, uncounted in §3 totals)*
 
-**Why:** Per CTO ruling, deal-level withdrawal deliberately does **not** belong on the proposal card — it needs its own, separate flow. Cross-reference the ruling documented at `creator-chat.tsx:1856-1871` (the H2 decision).
+**5th-pass update (Tara, 2026-07-28):** Split per Priya's ruling in §10.1. **This row holds no work and is not counted**; it is kept because §6 forbids deleting a ticket. Work moved to CR-22a (backend state model, `ASSIGNED` to Vikram) and CR-22b (the design, `BLOCKED` on 22a).
 
-**Fix:** Design and implement a dedicated withdrawal affordance for the brand side, distinct from the proposal-card accept/reject/counter actions. Needs an owner assigned before it can move to `ASSIGNED`.
+**Why (original):** Per CTO ruling, deal-level withdrawal deliberately does **not** belong on the proposal card — it needs its own, separate flow. Cross-reference the ruling documented at ~~`creator-chat.tsx:1856-1871`~~ **`creator-chat.tsx:2055-2070`** (the H2 decision).
+
+> 🔧 **Line-reference correction (Tara, 5th pass):** this row said `:1856-1871` and §10.1 says `:2016-2031`; the comment is actually at **`:2055-2070`** in a 2,644-line file, verified by grep. Both citations had drifted — the file has grown by ~350 lines since. **Cite the comment text, not the line number**, next time.
+
+**Fix:** See CR-22a and CR-22b below.
+
+---
+
+### CR-22a · 🔴 Critical · Deal-level withdrawal has no state model — and `CANCELLED` is enforced by nothing
+**Owner:** Vikram (backend), with Priya on the state model · **Status:** ASSIGNED
+
+**Opened 2026-07-28 (Tara, 5th pass)** out of the CR-22 split. Ruling: §10.1. Evidence: `wiki/errors/CR-22a-withdrawal-money-path-audit.md` (Kabir).
+
+> ⚠️ **Severity is Tara's provisional call and Priya should confirm or downgrade it.** §10.1 framed CR-22a as narrowing `canReject()`, which Kabir ranks **HIGH** (audit finding #3). But §10.1's own correction folds in finding **#1**, ranked **CRITICAL** — *nothing downstream enforces `CANCELLED`*: `ContractService.generate` / `doRecordSignature` carry no status check, so a cancelled deal's contract can still be signed to ACTIVE; `EscrowService.initiateFund` gates on the **contract's** signatures, not the collaboration, so escrow can be funded **for the first time on a cancelled deal**; deliverable submit/approve have no check and approve fires `tryReleaseOnApproval`. **A ticket whose scope contains a CRITICAL finding is Critical.** If Priya prefers finding #1 as its own row, split it — but it must not sit inside a Medium.
+
+**Scope:** define what deal-level withdrawal *means* post-contract — escrow disposition, contract voiding, `DISPUTED` vs `CANCELLED`, and who may do it — then narrow `canReject()` **and land the same guard at the four downstream services that currently ignore the status.** Narrowing `canReject()` alone is cosmetic.
+
+**Recommended model (Kabir, endorsed in §10.1):** narrow `canReject()` to a pre-contract allowlist with `CONTRACT_PENDING` as the cut line — the first status with a durable artifact — and make post-contract withdrawal a separate *proposed* `POST /deals/{id}/termination` carrying an escrow disposition, which the counterparty accepts (compensating movement + `TERMINATED`) or declines/lapses (escalates to `DISPUTED`). **A post-contract withdrawal is a dialogue, not a button.** Razorpay Route is **not** a dependency — all three dispositions are internal `WalletLedgerService.post` movements.
+
+> **"Strand the money" was the wrong diagnosis and is corrected in §10.1.** Money is not stranded by `reject()` — `LedgerEscrowBackend` parks it in the platform clearing wallet and three paths still move it after `CANCELLED`. The accurate statement: `reject()` converts a two-party escrow into a **unilateral brand refund option** against a creator who may already have delivered. *(Money **is** permanently stranded elsewhere — that is **CR-35**, a different and independent defect.)*
+
+**Blocks:** CR-22b.
+
+---
+
+### CR-22b · 🟡 Medium · The designed brand-side withdrawal affordance
+**Owner:** Unassigned (design) · **Status:** BLOCKED — **on CR-22a**
+
+**Opened 2026-07-28 (Tara, 5th pass)** out of the CR-22 split. Ruling: §10.1.
+
+**Why blocked, not merely unstarted:** designing an affordance against the endpoint as it stands today *"would take a hole nobody can reach today and put a button on it"* (§10.1). The state model has to exist first. Until 22a lands, the CTO ruling stands unchanged: withdrawal does not belong on the proposal card, and the Decline gate is **not** to be widened to `canReject()`.
+
+**Fix:** A dedicated withdrawal affordance for the brand side, distinct from the proposal-card accept/reject/counter actions — most likely the counterparty-facing half of the proposed `POST /deals/{id}/termination` dialogue, once 22a defines it.
 
 ---
 
@@ -639,7 +695,12 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-27 · 🟢 Low · `creator-deals.tsx` under-offers actions vs the server
-**Owner:** Unassigned · **Status:** OPEN
+**Owner:** Swapnil (ruled), on Priya's technical framing · **Status:** BLOCKED — **WONTFIX, decided. Do not re-open.**
+
+**5th-pass update (Tara, 2026-07-28):** ~~`OPEN`~~ → **`BLOCKED`**, per the ruling in §10.2. **This is a close, not a deferral.** §6 forbids deleting a ticket, so `BLOCKED` + a written reason is how a decided-not-to-fix is recorded here.
+> *Business (Swapnil):* `INVITED` is the one state where the whole decision fits on a card. The other three mean a negotiation is already underway, and accepting one from a list row — without the thread that produced the current number — is how a creator accepts the wrong offer.
+> *Technical (Priya), the stronger reason:* after CR-13 the `negotiating` bucket contains `APPLIED`, `SHORTLISTED`, `IN_NEGOTIATION` **and `TERMS_AGREED`**, and `TERMS_AGREED` fails `canAccept()`. Widening the gate to `status === 'negotiating'` would offer Accept on an already-accepted deal and 409 — **CR-02 reopened on a third surface.** A correct version would have to gate on the raw `collaborationStatus`, which `CreatorDealsPageRow` does not carry, and add a third copy of the accept precondition — the exact drift that caused CR-05, CR-13 and CR-24.
+> **The current gate — actions on `new` only — is correct and should be commented as a decision** so the next reader does not re-file it as an oversight. *(Note the timing: CR-34 has since collapsed the precondition to **one** shared copy in `deal-stage.ts`, so the "third copy" cost is now a second copy. The ruling still stands — the business reason is independent of it, and `deal-stage-accept.test.ts` explicitly pins the `TERMS_AGREED` trap.)*
 
 **Why:** The page only offers Accept/Counter/Decline when status is `'new'` (`INVITED`), but `Collaboration.canAccept()` also permits `APPLIED`, `SHORTLISTED`, and `IN_NEGOTIATION` — states where the server would allow the action but the list view never surfaces it.
 
@@ -690,8 +751,15 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 
 ---
 
-### CR-30 · 🟡 Medium · `brand-pipeline` + `deal-room-dashboard` still re-derive stage independently
-**Owner:** Unassigned · **Status:** OPEN · *(split out of CR-24, 2026-07-28)*
+### CR-30 · 🟡 Medium · ~~`brand-pipeline` + `deal-room-dashboard`~~ `brand-pipeline` still re-derives stage independently
+**Owner:** Ananya · **Status:** IN QA · *(split out of CR-24, 2026-07-28; scope narrowed by §10.3 the same day)*
+
+**5th-pass update (Tara, 2026-07-28):** ~~`OPEN`~~ → **`IN QA`**. Commit `a653def`, pushed. Both halves are resolved, but **by different means, and the distinction matters**:
+> - **`deal-room-dashboard.tsx` — ruled NOT A DEFECT and closed (§10.3, Priya).** Its vocabulary is `proposed`/`accepted`/`rejected`/`negotiating` — a proposal vocabulary, not a lifecycle. Under it, `TERMS_AGREED → 'accepted'` is *literally correct*. No user-visible misstatement, no migration. Verified still local and still correct at `src/components/brand/deals/deal-room-dashboard.tsx:81`. **Nobody should "finish the job" by collapsing it** — CR-33 rewrote `deal-stage.ts`'s header comment specifically to stop that.
+> - **`brand-pipeline.tsx` — migrated.** New `src/lib/brand-pipeline-stage.ts` derives the board's columns from `mapCollaborationStatusToDealStage`; the private switch is deleted. **`TERMS_AGREED` moves `CONTRACTED` → `NEGOTIATING`**, which was the last surviving copy of the mapping CR-05 and CR-24 already deleted twice. `OUTREACH` is kept per Swapnil's ruling, expressed as one documented delta inside the `negotiating` arm. Exhaustive over `DealStage` with no `default:`, so a future stage cannot be silently swallowed. 17 tests in `src/lib/__tests__/brand-pipeline-stage.test.ts`, **both directions proven by breaking them** (restoring the defect fails 4 while 13 pass; collapsing `OUTREACH` fails 3 while 14 pass).
+>
+> ⚠️ **CR-24 had left this page in direct contradiction with `brand-chat.tsx`** — until `a653def`, one `TERMS_AGREED` deal read "Negotiating" in the brand deal room *and* sat in the "CONTRACTED" column of the pipeline board, same brand, same session. That was live, not latent.
+> ⚠️ **Kavya must look at the rendered board.** A deal legitimately changes column, which shifts per-column counts and can empty or fill one; the tests cover the mapping, not the chips, counts or empty states. **Not verified in a browser.**
 
 **Where:** `src/pages/brand-pipeline.tsx:83-86`; `src/components/brand/deals/deal-room-dashboard.tsx:81`
 
@@ -706,7 +774,103 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 
 **Fix:** Decide, per surface, whether its vocabulary is still wanted. If yes, keep it but derive it from `DealStage` plus an explicit, documented delta — the pattern `brand-chat.tsx` now uses. If no, migrate it and accept the column changes with QA on the affected chips, filters and empty states. **Needs an owner and a product call before code.**
 
-> **Do not treat `deal-stage.ts` existing as evidence this job is finished.** That module's own header comment names these two surfaces as outstanding and points here.
+> **Do not treat `deal-stage.ts` existing as evidence this job is finished.** ~~That module's own header comment names these two surfaces as outstanding and points here.~~ *(That header was rewritten by CR-33 to describe the split accurately — it no longer claims both surfaces are outstanding.)*
+
+---
+
+### CR-31 · 🟠 High · The deal-room SSE stream never reconnects, and a clean close is completely silent
+**Owner:** Ananya · **Status:** IN QA
+
+**Entered on the board 2026-07-28 (Tara, 5th pass).** Proposed in §10.5; **the ID CR-31 is kept as proposed** because it is already cited in shipped code and in commit `190969d` — see §7. Found by reading the code the §10 rulings depend on, not by testing.
+
+**Where:** `src/lib/api.ts` (`api.messages.stream`); consumers `src/pages/creator-chat.tsx`, `src/pages/brand-chat.tsx`
+
+**Why:** `api.messages.stream` is a one-shot `fetch` + `ReadableStream` reader. It replaced raw `EventSource` for a correct reason — `EventSource` cannot send an `Authorization` header and the token must not ride in the URL — but **it never reimplemented the automatic reconnect `EventSource` gave for free.** Worse: on a clean server close, `reader.read()` returns `done: true`, the loop `break`s, and the function returns having called **nothing** — not `onError`, not `onOpen`, no log. Net effect: a Caddy idle-timeout, a backend restart or any network blip leaves the deal room **permanently stale with zero trace anywhere**. The creator sees a frozen room with no way to know. This lands squarely on CR-08, whose whole purpose was realtime delivery of accept/decline/counter — CR-08's publishes are correct and the transport under them silently gives up.
+
+**Fixed (commit `190969d`, pushed):** the reconnect lives in `api.messages.stream`, not in the pages — two consumers, and duplicating it is how CR-05/CR-24 happened.
+> - **`done` now schedules a reconnect** instead of returning in silence. Exponential backoff 1s → 30s, jittered across the top half of each window so one API restart doesn't make every open room retry on the same tick.
+> - **The ladder only resets after a connection holds for 10s** — resetting on any open at all would turn an accept-then-immediately-close server into a hot loop at the base delay.
+> - **401 gets one immediate token refresh** via `http.bootstrap(role)` (the raw fetch bypasses the H-19 interceptor), then falls through to terminal. **401/403/404 are terminal**; everything else retries.
+> - **New `onReconnect`, and the callers must use it.** There is no `Last-Event-ID` replay, so frames published during a gap are gone. Both rooms call `loadMessages` **and** `refreshDeal` — messages alone would restore the thread while leaving the CR-02/CR-07 action buttons gated on a stale `collaborationStatus`.
+> - **New `onStatusChange` drives a visible banner.** `'closed'` uses `text-destructive-foreground`, since `text-destructive` is a pale background token in this theme and renders invisible.
+>
+> **Verified as a discriminating tripwire:** `src/lib/__tests__/deal-message-stream.test.ts` (5 tests). Reverting *only* the clean-close reconnect fails the two clean-close tests while 403-terminal, 502-retry and `close()`-cancel keep passing.
+> ⚠️ **Not verified in a browser** — the banner only renders in live API mode on an actually-dropped stream, which the local dev server cannot produce.
+
+---
+
+### CR-32 · 🟡 Medium · Second creator logout path never got CR-06's session clear
+**Owner:** Ananya · **Status:** IN QA
+
+**Entered on the board 2026-07-28 (Tara, 5th pass).** Proposed in §10.5; ID kept as proposed.
+
+**Where:** `src/pages/creator-settings.tsx` (Settings → Log out) vs `src/components/creator/creator-layout.tsx:166-174` (sidebar logout)
+
+**Why:** The sidebar path correctly calls `clearCreatorSession()`. The Settings path called `logout()` and then only `localStorage.removeItem('creator_token')`, leaving `creator_user_id`, `creator_email` and `creator_display_name` behind. `persistCreatorSession` writes `creator_display_name` only `if (displayName)`, so the next creator to sign in on that browser **without** a display name set inherits the previous creator's name in the shell until `/me/creator-profile` resolves — **and permanently if it fails.** Narrow, but it is precisely the identity-leak pattern the CR-06 CTO note said to eliminate at the root, reintroduced through a door CR-06 did not check.
+
+**Fixed (commits `190969d` + `61d0158`, pushed):** `clearCreatorSession()` is now called here too — it covers the token, so the bare `removeItem` is gone rather than kept alongside it. Verified at `creator-settings.tsx:170`.
+> - `src/lib/__tests__/creator-session.test.ts` (3 tests) pins the *property* that prevents recurrence: whatever `persistCreatorSession` writes, `clearCreatorSession` removes — so a future field added to one and forgotten in the other reopens this on a new key and fails the suite.
+> - **The call site is pinned too**, which it initially was not: `src/pages/creator-settings-logout.test.tsx` (4 tests). Two choices make it a real tripwire — `@/lib/auth-session` is **not** mocked (asserting on real `localStorage` pins the outcome, not a helper name), and `CreatorLayout` **is** stubbed, since it carries the other, already-correct logout path and would let every assertion pass for the wrong reason. **Revert-proven:** restoring the old two lines fails 3 of 4.
+>
+> *(Checked and NOT a bug, recorded so nobody re-files it: the stale-onboarding path. `persistCreatorSession` removes `creator_onboarding_completed` when the server says false, and runs inside `creatorLogin` before `creator-login.tsx:59` reads it.)*
+> 📋 **Process note carried forward, not buried:** producing the call-site proof required temporarily editing `creator-settings.tsx`, a file that had been declared off-limits to the agent. It was restored and independently confirmed byte-identical to HEAD. The bend produced a materially better test, but **it should have been asked for first.**
+
+---
+
+### CR-33 · 🟢 Low · Stale doc comments contradicting the code they sit on
+**Owner:** Ananya · **Status:** IN QA
+
+**Entered on the board 2026-07-28 (Tara, 5th pass).** Proposed in §10.5; ID kept as proposed.
+
+**Why:** In this repo the comments lie — the failure mode `project_influora_stale_comment_audits` warns about — and these lied about the exact fixes the last two waves shipped. Two found initially, four in the end:
+> - **(a)** `api.ts` — `creatorLogin`'s javadoc said *"Creator has no `persistCreatorSession` helper… the caller stores the raw token"*, three lines above the body calling `persistCreatorSession(data)`.
+> - **(b)** `creator-deal-mappers.ts` — *"13 backend states collapsed into 6 UI stages"*, when CR-26 made it 7.
+> - **(c)** `deal-stage.ts` — *"CR-24 remains open for those two"*, untrue since CR-30 was split out and doubly untrue once §10.3 ruled `deal-room-dashboard` not-a-defect.
+> - **(d)** `creator-chat.tsx` — *"when CR-07 wires the brand room up, lift this into `creator-deal-mappers.ts`"*. **CR-07 shipped in Wave 2 and the lift never happened** — a conditional comment whose trigger fired unnoticed. `brand-chat.tsx` claimed the lift *"is tracked separately"*, which was simply false: no ticket covered it.
+
+**Fixed (commit `c05f685`, pushed):** all four rewritten to describe what the code does, each recording what it used to claim. **(c)** now states the split including the `TERMS_AGREED → CONTRACTED` divergence, so nobody "finishes the job" by collapsing the dashboard.
+
+> **The genuine finding underneath (d) is not a comment problem — it is CR-34.** That is the value of this ticket: a Low-severity comment sweep surfaced a Medium drift risk that two comments had been asserting was handled.
+
+---
+
+### CR-34 · 🟡 Medium · `ACCEPTABLE_COLLABORATION_STATUSES` duplicated in both deal rooms, untracked
+**Owner:** Ananya · **Status:** IN QA
+
+**Entered on the board 2026-07-28 (Tara, 5th pass).** Proposed in §10.5; ID kept as proposed. Surfaced by CR-33's sweep.
+
+**Why:** `creator-chat.tsx` and `brand-chat.tsx` each carried their own copy of the exact status set `Collaboration.canAccept()` permits. Both were module-local for a real reason (exporting a non-component from a route module kills Fast Refresh for the page), but **two copies of one backend precondition is the same shape as CR-05, CR-13 and CR-24** — the defect class this file has now paid for three times. If `canAccept()` gains or loses a status, both copies must move or the two sides of one negotiation disagree about whether an offer is still live: CR-02's symptom with a different trigger.
+
+**Fixed (commit `69b4dbc`, pushed):** `ACCEPTABLE_COLLABORATION_STATUSES` and a new `allowsProposalResponse(status)` live in `src/lib/deal-stage.ts`; both private copies deleted. Verified — `grep -rn ACCEPTABLE_COLLABORATION_STATUSES src/` returns **one definition** (`deal-stage.ts:90`).
+> - `creator-chat.tsx` keeps its `dealAllowsProposalResponse(deal)` wrapper (the call site reads better and its CR-02/CR-05 history is worth preserving) but it is now three lines delegating. `brand-chat.tsx`'s two call sites call the shared predicate directly.
+> - The predicate takes the **raw** `CollaborationStatus`, never a `DealStage`, and **fails closed** on `null`/`undefined`. Both matter: the stage vocabulary folds `TERMS_AGREED` in with genuinely-actionable states, and a room with no backend status behind it must not offer an action the server never agreed to.
+>
+> **Pinned by `src/lib/__tests__/deal-stage-accept.test.ts` (16 tests), two guards proven by breaking them:** adding `TERMS_AGREED` — the tempting way to "fix" a missing button — fails 3 tests including one stating the CR-27 trap explicitly; and the `Record<CollaborationStatus, boolean>` partition breaks `typecheck` on a 14th status (verified with a fake `'ARBITRATION'`: `error TS2741`).
+> **Lint discipline, recorded:** removing the local array left `CollaborationStatus` imported-but-unused in `creator-chat.tsx`, taking lint to 404. **Fixed rather than suppressed** — back to 403, exactly baseline.
+
+---
+
+### CR-35 · 🔴 Critical · Dispute settlement moves no money on normally-funded holds, and records it as settled
+**Owner:** Vikram · **Status:** IN PROGRESS
+
+**Opened 2026-07-28 (Tara, 5th pass).** Source: `wiki/errors/CR-22a-withdrawal-money-path-audit.md` **finding #2** (Kabir, ranked CRITICAL). Fix spec: `wiki/tech/escrow-frozen-hold-fix-spec.md`.
+
+> ⚠️ **Independent of CR-22.** It needs no `reject()` call, no withdrawal UI and no ruling to fire. **It is live today.** It was found while auditing CR-22a and is filed separately for exactly that reason.
+
+**Where:** `influora-api/src/main/java/com/influora/service/EscrowService.java:978-986` vs `:1020-1045`; `:201-211`; `DisputeService.java:233-236`, `:239-259`
+
+**Why — three facts, each verified in source by Tara before this row was written:**
+> 1. **`EscrowHold.collaborationId` is almost never set.** `EscrowService.initiateFund` builds the hold without it. The **only** caller of `bindCollaboration` in the entire main tree is `ConfirmLaunchExecutor.java:501` — Meera's AI launch tool. So every hold created through the ordinary brand escrow flow has `collaborationId == null`. *(Verified: `grep -rn bindCollaboration influora-api/src/main/java/` returns the declaration plus that one call site.)*
+> 2. **Sibling lookups disagree about that.** `findFundedHoldsForCollaboration` (`:1020`) falls back to the milestone table when the direct column is null. **`requireFrozenHoldsForCollaboration` (`:978`) does not** — it is a bare `findByCollaborationIdAndStatus`. *(Verified by reading both method bodies.)*
+> 3. **So dispute settlement moves nothing, and says it did.** `freezeUnreleasedForDispute` uses the fallback lookup and freezes correctly. `adminReleaseForDispute` / `adminRefundForDispute` / `adminSplitForDispute` (`:691`, `:729`, `:786`) use the **non**-fallback lookup and iterate an **empty list**. `DisputeService.resolveDispute` then marks the dispute resolved and audit-logs `ESCROW_RELEASE` / `ESCROW_REFUND`.
+
+**Net effect: real money is frozen permanently while the books record it as settled.** Money genuinely stranded — which is what §10.1's "strand the money" claim was reaching for and attached to the wrong mechanism.
+
+**The invariant the code already claims, and doesn't hold:** `DisputeService.java:233-236` says verbatim that money is moved before the status is persisted so *"the dispute never ends up marked resolved without the money having actually moved."* That holds for a **thrown** exception. It does **not** hold for an **empty** settlement list — the loop completes, `settlements` is `[]`, and resolution proceeds. **The guard the comment promises does not exist for the zero-holds case. That is the real bug; the null column is only what triggers it.**
+
+**Fix — four parts, per the spec:** (1) one shared status-aware lookup carrying the milestone fallback, so the two methods cannot drift again — this repo has now paid four times for that shape (CR-05, CR-24, CR-30, CR-34); (2) bind `collaborationId` at creation in `initiateFund`, keeping `bindCollaboration`'s idempotent only-if-null semantics so `ConfirmLaunchExecutor:501` still works; (3) make the zero-holds case fail loudly instead of resolving silently, so the claimed invariant is real; (4) the remaining part per the spec.
+
+> 🚧 **`IN PROGRESS`, not done.** The fix is being written as this pass is recorded; **nothing has landed** and `wiki/tech/escrow-frozen-hold-fix-spec.md` is at this moment **untracked in git** — it is not yet committed. Tara has changed no code. **Do not read this row as fixed, and do not advance it without a landed commit.**
 
 ---
 
@@ -747,6 +911,7 @@ Run whenever any of these happens:
 | 2026-07-27 | Tara | Wave 1 results recorded. CR-01, CR-02, CR-03: `OPEN` → `IN VERIFY` (Kavya QA PASS, code+build complete, per Kavya's routing). CR-09: `OPEN` → `IN PROGRESS` marked **PARTIAL** (timeline refresh wired to the new Refresh button only; accept/decline handlers still call only `loadDeals()`, remainder is Wave 2). CR-15: `OPEN` → `BLOCKED` (awaiting domain + TLS purchase decision from Swapnil). CR-11 unchanged, still `BLOCKED`. Added CR-18 (`usageRights` missing from proposal metadata, IN VERIFY, owner Priya), CR-19 (N1 — `settleStatus` BigDecimal→Double round-trip, IN PROGRESS, owner Vikram), CR-20 (N2 — `loadMessages` lost unmount cancellation, OPEN, owner Ananya), CR-21 (N3 — "Refresh deal" flashes whole page, OPEN, owner Ananya), CR-22 (brand-side `canReject` withdrawal flow, OPEN, unassigned). Totals recalculated: 3 Critical · 7 High · 8 Medium · 4 Low = 22 logged, **0 DONE**. Verification evidence recorded against Wave 1: `npm run typecheck` clean; `npm test` 227/227; `npm run lint` 403 problems (unchanged baseline, no new debt); `mvn -o compile` exit 0; Meera — `npm run build` PASS incl. `postbuild` prerender, 16/16 routes snapshotted, `mvn -o package -DskipTests` BUILD SUCCESS (`influora-api-0.1.0-SNAPSHOT.jar`, 83.8 MB); new bundle `index-Bu4yUEbB.js` at 2,691.33 kB vs deployed `index-NdzlUg4U.js` ~2.68 MB (~+10 KB, no material change); Kavya QA verdict PASS, cleared for Meera. **Nothing has been deployed** — `http://200.141.1.6` still serves the old bundle `index-NdzlUg4U.js`. No ticket is marked `DONE`; nothing has been verified in a live browser by Neha. |
 | 2026-07-27 | Tara | **Stale-row correction:** CR-19 was left `IN PROGRESS` after last pass; Vikram finished it since then. `IN PROGRESS` → `IN VERIFY`. He enabled `USE_BIG_DECIMAL_FOR_FLOATS` on `DealMessage.MAPPER` only, deliberately leaving `DealService.MAPPER` untouched (its read path feeds the response DTO and the flag would change API response bytes); defect reproduced empirically (`25000.00` → `25000.0`), fix verified against the real compiled entity. **Wave 2 results:** CR-05 `OPEN` → `IN VERIFY` (one shared `mapCollaborationStatusToDealStage` in `creator-deal-mappers.ts`, private per-page mappers deleted). CR-07 `OPEN` → `IN VERIFY` (both buttons wired, `renderProposalCard` now unified for demo+live, gate mirrors `doAccept`'s `CANNOT_ACCEPT_OWN_OFFER`; Neha still needs brand test credentials — blocker unchanged). CR-08 `OPEN` → `IN VERIFY` (`DealService` now publishes two SSE frames per accept/reject/counter — settled/superseded card first, then system message or new card). CR-09 `IN PROGRESS (partial)` → `IN VERIFY`, now **COMPLETE** (`afterDealMutation` = `Promise.all([refreshDeal, loadMessages])` on accept, decline, and counter). CR-21 `OPEN` → `IN VERIFY`, **closed incidentally** by CR-09's work (not worked directly) — `refreshDeal` never touches `dealsLoading`. Added a note to CR-13 (no status change): `DealService.statusesForFilter` and `AdminBrandService`'s javadoc disagree with three display mappers on where `TERMS_AGREED` sits; Priya ruled the filter path must move. Added six new tickets: CR-23 (brand `refreshDeal` catch block missing staleness guard, mirrors creator-side W2-L1, OPEN, owner Ananya, Low), CR-24 (brand-side status mapper unification across three surfaces, OPEN, unassigned, Medium, ruled OUT of Wave 2 by Priya), CR-25 (SSE publishes fire inside caller's `@Transactional`, pre-existing, OPEN, owner Vikram, Medium), CR-26 (`DISPUTED`/`CANCELLED` render as Done/Completed, no display bucket, OPEN, unassigned, Medium), CR-27 (`creator-deals.tsx` under-offers actions vs `Collaboration.canAccept()`, OPEN, unassigned, Low, possibly intentional), CR-28 (backend test helper `proposalMessage` carries null metadata and hides the settle path, OPEN, owner Vikram, Low). Totals recalculated: 3 Critical · 7 High · 11 Medium · 7 Low = **28 logged**, **0 DONE**. Verification evidence recorded against Wave 2: `npm run typecheck` clean; `npm test` **252/252, 27 files** (227 baseline + 5 CR-07 + 17 CR-05 + 3 remediation guards); `npm run lint` **403, exactly baseline**; `mvn -o test` **1486 tests, 0 failures, 0 errors, 3 skipped, BUILD SUCCESS**. Kavya QA: **FAIL** on first pass (Critical **W2-C1** — the brand room was a third SSE consumer still running ignore-if-present dedupe, which would have reopened CR-02 on the brand side the moment CR-08 shipped), then **PASS** after remediation. **Correction on the record:** Wave 1 was committed with a red backend test (`DealServiceTest.testBrandAcceptHappyPath` asserted one `save()` while CR-02 made `doAccept` save twice) — went unnoticed because Priya instructed `-DskipTests` for Wave 1's build check; fixed in Wave 2, the suite now runs on every wave. **Meera's Wave 2 build verification landed — ALL PASS:** `npm run build` PASS (Vite 4765 modules in 24.33s), then `postbuild` (`node scripts/prerender.mjs`) **16/16 routes snapshotted** — the genuine risk this wave, since three route-level page components plus a shared lib changed and a prerender can fail on code that typechecks cleanly; only warnings were the pre-existing duplicate-key `tsconfig.json` esbuild notice and Vite's standard >500 kB chunk advisory, neither a failure. `mvn -o package` run **WITHOUT `-DskipTests`** — BUILD SUCCESS in 26.8s, **1486 tests, 0 failures, 0 errors, 3 skipped**, same signature as the standalone `mvn -o test`, no regression; jar packaged and Spring Boot repackaged (`influora-api-0.1.0-SNAPSHOT.jar`). **This is the first wave where `mvn -o package` ran with tests**, closing the gap that let Wave 1's red test through undetected. Bundle: `index-8fhUJ8_B.js` at 2,697.80 kB (gzip 725.37 kB); CSS `index-CImlwGd-.css` 222.93 kB. Deltas: **+6.47 kB (+0.24%)** vs the Wave 1 build (`index-Bu4yUEbB.js`, 2,691.33 kB); **≈ +17.8 kB (≈ +0.66%)** vs the deployed `index-NdzlUg4U.js` — recorded as **approximate**, since the deployed reference is only known as "~2.68 MB", not an exact byte count. **NOT verified: anything in a browser.** **Nothing has been deployed** — `http://200.141.1.6` still serves the pre-Wave-1 bundle. No ticket is marked `DONE`; nothing has been verified in a live browser by Neha. **Record note:** `wiki/errors/SHARED_CONTEXT.md` now exists (created this pass, outside the original brief but consistent with company protocol) — it is left in place, but this tracker, not `SHARED_CONTEXT.md`, remains the single source of truth for creator-defect status; the two files must not be allowed to drift apart on ticket state. |
 | 2026-07-27 | Tara | **CR-23** `OPEN` → `IN VERIFY`. Fixed by Priya in `brand-chat.tsx`'s `refreshDeal` useCallback — creator-side `isSupersededRefresh` pattern ported verbatim (matches `creator-chat.tsx:721-753`): `console.error` stays unconditional, only the failure `toast(...)` is suppressed when superseded; staleness-check-before-early-return ordering matched to the creator copy (no behavioral change); comments cite **W2-L1b** so the twice-found defect stays traceable to two surfaces. Verification: `npm run typecheck` clean · `npm test` **252/252, 27 files** (unchanged — no test exercises a superseded *failed* refresh) · `npm run lint` **403, exactly baseline**. Caveats recorded on the ticket: not yet re-reviewed by Kavya (landed after her Wave 2 PASS; W2-L1b was raised as LOW/non-blocking so didn't get its own QA round — fold into next pass), no new test coverage for the specific scenario, and still nothing deployed. Totals unchanged: 3 Critical · 7 High · 11 Medium · 7 Low = **28 logged**, **0 DONE** — CR-01/02/03/05/07/08/09/18/19/21/23 all remain `IN VERIFY`; `http://200.141.1.6` still serves the pre-Wave-1 bundle. |
+| 2026-07-28 (5th) | **Tara** | **Reconciliation pass — §3 and the §5 `Status:` lines brought back in line with reality after a day of work landed deliberately without them (they are mine per §6). Every claim below was verified against `git log`, the commit diffs and the source before it was recorded; two of the claims handed to me were wrong and are corrected here.** **Status transitions applied (7):** **CR-27** `OPEN` → **`BLOCKED`** — WONTFIX by ruling (§10.2, Swapnil on Priya's framing). §6 forbids deleting a ticket, so `BLOCKED` + a written reason is the recorded close; **do not re-file as an oversight.** **CR-22** `OPEN` → **`SPLIT`** (§10.1): parent row retained but **uncounted**, work moved to **CR-22a** (🔴 Critical, `ASSIGNED`, Vikram) and **CR-22b** (🟡 Medium, `BLOCKED` on 22a). **CR-11** `BLOCKED` → **`IN PROGRESS`**, owner Neha → **Ananya** (§10.4): instrumentation landed in `61d0158` (`POST /api/v1/client-errors`, auth-optional, always-202, rate-limited, 16 KB cap; `ErrorBoundary.componentDidCatch` fire-and-forget with `componentStack`/`pathname`/build id — both halves verified in source), **but the ticket stays open against the first captured report and the throw site is still unknown.** Deliberately **not** `IN QA`: the instrumentation is the mechanism, not the fix. Neha is released from CR-11. **CR-30** `OPEN` → **`IN QA`** (`a653def`, verified): `brand-pipeline.tsx` now derives its columns from `DealStage` via the new `src/lib/brand-pipeline-stage.ts`, `TERMS_AGREED` moved `CONTRACTED` → `NEGOTIATING` (the last surviving copy of the mapping CR-05 and CR-24 each deleted), `OUTREACH` kept as one documented delta per Swapnil, 17 tests proven in both directions by breaking them; **`deal-room-dashboard.tsx` ruled NOT a defect and closed** (§10.3) — its 4-state proposal vocabulary makes `TERMS_AGREED → 'accepted'` literally correct — so CR-30's title and scope are narrowed, not quietly dropped. **CR-31/32/33/34 entered as real §3 rows at `IN QA`** — they had been fixed and pushed (`190969d`, `c05f685`, `69b4dbc`, all verified present on `origin/feat/creator-my-applications`) while existing only as §10.5 *proposals* with no board rows at all. **NEW: CR-35** 🔴 Critical, `IN PROGRESS`. **ID decision, recorded deliberately: CR-31/32/33/34 keep the numbers they were proposed under, and CR-35 is the next free number.** Those four are already cited by number in shipped code comments (`api.ts`, `deal-stage.ts`, `creator-chat.tsx`, `brand-chat.tsx`, `brand-pipeline.tsx`) and in three commit messages, which are immutable. Renumbering would require a code sweep purely to keep the file's comments truthful, and would leave the commit messages permanently wrong regardless — **the cost is a code sweep and the benefit is nil, so they stay as-is.** §10.5's own note anticipated this and asked to be told; this is the answer. **CR-35 — new 🔴 Critical, frozen-escrow settlement.** From `wiki/errors/CR-22a-withdrawal-money-path-audit.md` finding #2 (Kabir, ranked CRITICAL) with the fix spec at `wiki/tech/escrow-frozen-hold-fix-spec.md`. **Re-verified in source rather than taken on trust:** `bindCollaboration` has exactly one caller in the whole main tree (`ConfirmLaunchExecutor.java:501`, Meera's launch tool), so ordinary brand-funded holds carry `collaborationId == null`; `findFundedHoldsForCollaboration` (`EscrowService.java:1020`) carries a milestone fallback and `requireFrozenHoldsForCollaboration` (`:978`) does **not**; the three `admin*ForDispute` settlement paths (`:691`, `:729`, `:786`) therefore iterate an **empty list** while `DisputeService.resolveDispute` marks the dispute resolved and audit-logs the movement. **Money frozen permanently, books say settled.** The deeper bug is that `DisputeService.java:233-236` promises verbatim that *"the dispute never ends up marked resolved without the money having actually moved"* — an invariant that holds for a thrown exception but not for an empty list. Recorded **`IN PROGRESS`, not done**: another agent is writing the fix now, nothing has landed, and the spec file is still **untracked in git**. **Totals recalculated — 30 → 36 logged, and still 0 `DONE`:** 5 Critical · 8 High · 14 Medium · 9 Low. Arithmetic stated so it can be checked: 30 − 1 (CR-22 retained but uncounted, since counting a parent beside both its halves triple-counts one defect) + 2 (22a, 22b) + 5 (31–35) = 36. **By status: 19 `IN QA` · 11 `IN VERIFY` · 2 `IN PROGRESS` · 1 `ASSIGNED` · 3 `BLOCKED` · 0 `OPEN` · 0 `DONE`.** Code landed on 30 of 36 (83%). **0 DONE is correct and is not a bookkeeping lag: Neha has re-tested nothing, and the box still serves Wave 2.** Every ticket that moved today moved on a *merge*, and §6 is explicit that a merge never closes anything. **Nine factual errors found while reconciling, all corrected or flagged in place:** (1) §10.5 says *"three rows are proposed"* and then lists **four** (CR-31–CR-34); (2) §10.6's handoff table compounds it — it lists "CR-31/32/33" and **omits CR-34 entirely**, so the one defect in that batch that is a genuine drift risk was the one that nearly fell out of the handoff; (3) §3's claim *"every 🔴 Critical and 🟠 High ticket has code"* is now **false** — CR-22a has none and CR-35's is unlanded, both money-path — struck and replaced with a warning; (4) §4's Wave 6 header *"nothing here is blocked on engineering capacity"* is falsified by §10's own rulings, which turn four of five into ordinary engineering — flagged with a stale banner, left for Arjun to re-plan since routing is not mine; (5) §4's "the **8** `IN QA` tickets" was stale from the 2nd pass onward (the board read 13, then 14, now 19) — the number is removed so it cannot drift again; (6) §4's Wave 4 row still calls CR-13 *"⬜ still OPEN — blocked on Vikram"* while the Wave 5 table two rows below and §3 both say `IN QA` — §4 contradicts itself, flagged not silently patched; (7) the CTO withdrawal ruling is cited as `creator-chat.tsx:1856-1871` in CR-22 and `:2016-2031` in §10.1 — **both wrong**, it is at `:2055-2070` in a 2,644-line file (grep-verified); cite the comment text, not a line number; (8) CR-30's closing line *"that module's own header comment names these two surfaces as outstanding"* was made untrue by CR-33's rewrite of `deal-stage.ts` — struck; (9) §9's commit table still shows `5b86a49` as the branch tip, six commits stale. **Two open items I am escalating rather than deciding:** (a) **audit findings #5–#8 have no rows in this file and no owner** — privilege inversion (any `VIEWER` in a brand workspace can cancel a contracted, funded deal, while funding/release/refund all require `OWNER`/`ADMIN`; same class as the campaign-delete gate fixed in `9767463`) and `reject()` having no idempotency arbiter and taking no row lock are both **MEDIUM**; dead `ContractStatus.CANCELLED` and `reject()`'s 409-on-retry are **LOW**. Kabir explicitly filed them as "fix separately". I have **not** invented rows for them without routing — **Arjun/Priya to say whether they are tickets here or elsewhere.** (b) **CR-22a's 🔴 Critical severity is my provisional call and Priya should confirm or downgrade it**: §10.1 framed CR-22a as narrowing `canReject()` (Kabir's finding #3, HIGH), but its own correction folds in finding **#1**, ranked CRITICAL — *nothing downstream enforces `CANCELLED`*; a cancelled deal's contract can still be signed to ACTIVE and escrow can be funded on it **for the first time**. A ticket containing a CRITICAL finding cannot sit at Medium; if Priya wants finding #1 as its own row, split it. **Branch/deploy state verified, not assumed:** all six of today's commits (`190969d`, `c05f685`, `69b4dbc`, `a653def`, `61d0158`, and `f672a9a` docs) **are** on `origin/feat/creator-my-applications`, whose tip is `61d0158`. The §9 branch-name wrinkle persists: HEAD is the local branch `cr-08-deal-lifecycle-sse`, and the local `feat/creator-my-applications` is **17 behind** — work on the remote-tracked name. **No code was changed and no git state was altered in this pass; only this file was edited.** |
 | 2026-07-28 (4th) | Claude (at repo owner's direction — **not Tara**, see header) | **§9 Deploy runbook added + a wrong claim corrected. No ticket status changed.** A `VPS_restartProjectV1` was run against Docker Compose project `influora-test` (VPS 1844961) to put Waves 3–5 in front of Neha. **It deployed nothing.** All 6 containers restarted healthy and `n8n` was untouched, but the served bundle came back **byte-identical** — `index-B_x5CUtn.js`, 2,697,823 bytes both sides, still containing the CR-06 `priya_sharma` literal and still missing `--app-header-h`. Root cause: `docker compose restart` (and this MCP tool) **stop and start the existing containers** and never re-resolve `:latest` against the registry. The tell is that container IDs were unchanged across the operation (`influora-test-frontend-1` stayed `977493f8c453`); a real deploy **recreates** containers and the IDs change. Net effect: **~30 seconds of downtime for zero benefit.** §9's prior statement that a restart *"is what would make Wave 3 live"* was **wrong** and is now struck through and corrected in place. Added a **Deploy runbook** to §9 covering: confirm CI is green for the SHA → `cd /docker/influora-test && docker compose pull && docker compose up -d` over SSH → **verify by bundle hash AND content** (`grep -c "priya_sharma"` must return `0`; "containers are healthy" proves nothing, they were healthy after the no-op restart too) → rollback by pinning `:${{ github.sha }}` (known-good: `905421f`, `5b86a49`, `ad8d503`). Also recorded that the Hostinger VPS MCP toolset exposes start/stop/restart but **no pull-and-recreate**, so deploying requires SSH access nobody in this session had. Ordering guidance kept: get Kavya's pass first and tell Neha before deploying, because a recreate swaps the build out from under whoever is mid-test. **The box still serves Wave 2**, so the 11 `IN VERIFY` tickets remain testable and the 14 `IN QA` ones remain undeployed. Totals unchanged: **30 logged**, **0 DONE**; **14 `IN QA` · 11 `IN VERIFY` · 3 `OPEN` · 2 `BLOCKED`**. |
 | 2026-07-28 (3rd) | Claude (at repo owner's direction — **not Tara**, see header) | **CR-29 completed** — `IN PROGRESS (PARTIAL)` → `IN QA`. Commit `4ad66f9`. Added `src/pages/creator-chat-refresh.test.tsx`, the **first test harness for `creator-chat.tsx` in this repo** (wide-but-shallow `api` mock; members the tests don't exercise resolve empty rather than being omitted, since an omitted member throws on property access and the failure reads as unrelated; `messages.stream` captures its handlers, which is how `refreshDeal` is reached). Three tests: the room mounts (a deliberate sanity check, so the guard tests cannot pass for the wrong reason — the precise failure mode CR-29 was opened on), a **current** failed refresh still toasts, and a **superseded** one does not while still logging. **Verified as a precise tripwire:** reverting the guard at `creator-chat.tsx:746` makes the superseded test fail while the "still the newest" test keeps passing, so it discriminates this guard specifically rather than merely detecting change. **The harness immediately found a real fragility in CR-04's own fix** — the auto-scroll effect called `viewport.scrollTo()` unguarded, and jsdom implements neither `Element.scrollTo` nor smooth behaviour, so the effect threw and took the whole page down the first time it was ever rendered under test. Fixed **in `creator-chat.tsx`, not shimmed in the test**: feature-detected with a plain `scrollTop` assignment as the fallback, which is what CR-04 prescribed in the first place (`scrollTo` was only preferred because it can animate). Both branches scroll exactly one element, the property CR-04 is actually about. Verification: `npm run typecheck` clean · `npm test` **259/259, 28 files** (256 + 3) · `npm run lint` **403 problems (336 errors, 67 warnings), exactly baseline** · `npm run build` PASS, 16/16 routes, 4769 modules. Totals unchanged: 3 Critical · 7 High · 12 Medium · 8 Low = **30 logged**, **0 DONE**; by status **14 `IN QA` · 11 `IN VERIFY` · 3 `OPEN` · 2 `BLOCKED`**. **No written ticket is partial any more**, and **no remaining work in this file is gated on engineering capacity** — CR-11 needs evidence, CR-15/CR-27/CR-30 need decisions, CR-22 needs a design. Still nothing `DONE`: Kavya has reviewed none of Waves 3–5, the VPS was deliberately not restarted, and nothing was verified in a browser. |
 | 2026-07-28 (2nd) | Claude (at repo owner's direction — **not Tara**, see header) | **Wave 5 + the backend verification gap closed.** **Status changes:** CR-13, CR-24, CR-25, CR-26, CR-28 `OPEN` → `IN QA`; CR-29 `OPEN` → `IN PROGRESS (PARTIAL)`. Commits `905421f` and `76b92c4`, both pushed to `origin/feat/creator-my-applications`; both triggered CI and **both runs succeeded** (all three images published). **New ticket CR-30** (🟡 Medium, unassigned) split out of CR-24 for `brand-pipeline.tsx` + `deal-room-dashboard.tsx`, whose vocabularies encode distinctions `DealStage` cannot express — migrating them would silently move deals between pipeline columns, so it needs a product call, not a refactor. Split rather than left partial because that work needs a different owner and its own wave, the same precedent by which CR-24 was split out of CR-05. **CR-13** — filter path moved per Priya's ruling, no display mapper touched: `statusesForFilter` accepts a comma-separated union so the Active chip asks for `contracted,in_progress,review` (chosen over redefining `in_progress` to secretly mean three stages); `TERMS_AGREED` moved `contracted` → `negotiating`, removing the last server-side contradiction; **`APPLIED` added to the creator's `negotiating` set** — beyond the ticket's literal text and flagged as such, being the identical divergence one row over in the same switch (no creator-role filter selected `APPLIED` at all, so a creator's own application was reachable only under "All"). **CR-24** — new `src/lib/deal-stage.ts` is the one switch; `brand-chat.tsx`'s private copy deleted, now deriving from it with two documented deltas. ⚠️ **User-visible brand change:** a `TERMS_AGREED` deal now reads "Negotiating" instead of "Contracted" — that IS the fix (both sides of one negotiation finally agree) but the brand chips/filters/empty-states need Kavya's eyes, which is the QA pass Priya asked for. **CR-25** — `publishToStream` registers an `afterCommit` synchronization; the inline fallback when no transaction is active proved load-bearing, since it is what keeps CR-08's `times(2)).publish(...)` assertions from silently observing zero frames in unit tests. **CR-26** — 7th `disputed` stage across mapper, backend filter (`CANCELLED`/`DISPUTED` were selected by NO filter before), chip, pill, empty state and the deal-room badge; `--stage-disputed` finally has a consumer. `DashboardService.bucketFor` deliberately unchanged. **CR-28** — fixed in the helper rather than at three call sites, plus explicit settle-path assertion. **CR-29** — brand tripwire added; creator half open for want of a `creator-chat` harness. **Both new guards verified by reverting them:** CR-29's test fails with the guard removed and passes with it restored; CR-28's assertion turns the backend suite red (`Errors: 1`) with the helper reverted to null metadata. That is the standard this ticket asked for — "all tests still pass" is not evidence a guard works. **BACKEND VERIFICATION GAP CLOSED:** this machine had **no Maven binary**, which is why every prior pass verified the frontend properly and left the backend unbuilt. Maven **3.9.9 installed** at `~/tools/apache-maven-3.9.9`, on the user PATH, **verified against Apache's published SHA-512** before extraction; uses the existing Adoptium JDK 21 and populated `~/.m2`. Real results: `mvn -o compile` exit 0 · `mvn -o test` **1486 tests, 0 failures, 0 errors, 3 skipped** · `mvn -o package` **WITH tests** (not `-DskipTests`) BUILD SUCCESS, jar repackaged. This **retroactively validates the CR-13/CR-25/CR-26 backend halves**, which the previous commit could only typecheck, and confirms the lone `SubscriptionService` error seen earlier was an artifact of an ad-hoc classpath, not a real defect. Frontend: `npm run typecheck` clean · `npm test` **256/256, 27 files** (252 + 4 new) · `npm run lint` **403 problems (336 errors, 67 warnings), exactly baseline** · `npm run build` PASS, **16/16 routes**, 4769 modules. Added a **build-tooling note to §1** so the next person does not repeat the gap, including the warning that `-DskipTests` still compiles tests and so hides failures rather than syntax errors. Totals recalculated: 3 Critical · 7 High · 12 Medium · 8 Low = **30 logged**, **0 DONE**; by status **13 `IN QA` · 11 `IN VERIFY` · 1 `IN PROGRESS` · 3 `OPEN` · 2 `BLOCKED`**. 25 of 30 now have code (83%), one of those partial. **Every remaining ticket without code is waiting on a decision, a design, or evidence — none is waiting on engineering capacity.** Still **nothing marked DONE**: Kavya has reviewed none of Waves 3–5, the VPS was **not** restarted (deliberately — a restart would swap the build out from under Neha mid-test), and nothing has been verified in a browser this session. |
@@ -929,7 +1094,7 @@ Designing an affordance for this endpoint would take a hole nobody can reach tod
 | **CR-22a** | Define what deal-level withdrawal *means* post-contract: escrow disposition, contract voiding, whether it becomes `DISPUTED` rather than `CANCELLED`, and who may do it. Then narrow `canReject()` or add the compensating logic. | **Vikram**, with Priya on the state model | **First** |
 | **CR-22b** | The designed affordance. | Unassigned (design) | **Blocked on 22a** |
 
-Until 22a lands, the CTO ruling recorded at `creator-chat.tsx:2016-2031` stands unchanged: withdrawal does not belong on the proposal card, and the Decline gate is **not** to be widened to `canReject()`.
+Until 22a lands, the CTO ruling stands unchanged: withdrawal does not belong on the proposal card, and the Decline gate is **not** to be widened to `canReject()`. It is the comment in `creator-chat.tsx` beginning *"All THREE buttons — including Decline — are scoped to the live offer via canAccept()"* — **cited by its text, not a line number**, because this section previously said `:2016-2031` and CR-22's row said `:1856-1871` and both had silently drifted as the file grew (Tara, 5th pass). Line numbers in a 2,600-line file that four commits touched in one day are not a durable reference.
 
 > ❗ **CORRECTION to the paragraph above — "strand the money" is the wrong diagnosis.** Kabir's audit (`wiki/errors/CR-22a-withdrawal-money-path-audit.md`) confirmed every checkable fact but refuted the conclusion, and the distinction changes what CR-22b must be designed against. Money is **not** stranded: `LedgerEscrowBackend` parks it in the platform clearing wallet, and three paths still move it after `CANCELLED` — `EscrowService.refund`, `EscrowService.release`, and `DisputeService.openDispute` — **none of which read `Collaboration.status`**. The accurate statement: `reject()` converts a two-party escrow into a **unilateral brand refund option** against a creator who may already have delivered.
 >
@@ -1015,7 +1180,9 @@ Neha is released from CR-11. She should spend that time on the 11 `IN VERIFY` ti
 
 ### 10.5 New defects found while ruling — not previously in this file
 
-Per §6 ("if a fix creates a new defect, open a new `CR-xx` row"), three rows are proposed. **Tara to assign the real IDs and enter them in §3.** All three were found by reading the code the rulings depend on, not by testing.
+Per §6 ("if a fix creates a new defect, open a new `CR-xx` row"), **four** rows are proposed — CR-31, CR-32, CR-33 and CR-34. **Tara to assign the real IDs and enter them in §3.** All four were found by reading the code the rulings depend on, not by testing.
+
+> 🔧 **Corrected (Tara, 5th pass):** this paragraph said *"three rows"* and then listed four, and §10.6's handoff table compounded it by listing "CR-31/32/33" and **omitting CR-34 entirely** — the one item in the batch that is a genuine drift risk was the one that nearly fell out of the handoff. Both fixed. Tara entered all four as real §3 rows at `IN QA` and kept the proposed numbers; see her changelog entry for why renumbering was rejected.
 
 > **Update, same day — CR-31 and CR-32 are now code-complete and pinned by tests.** Fixed at the repo owner's direction immediately after these rulings, before Tara had entered the rows; the proposed IDs are used below and in the code comments, so if Tara assigns different numbers the comments need updating with them. CR-33 (stale comments) is untouched. Verification for both: `npm run typecheck` clean · `npm test` **267/267 across 30 files** (259 baseline + 8 new) · `npm run test:live` **5/5** · `npm run lint` **403 problems (336 errors, 67 warnings), exactly baseline** · `npm run build` PASS, **16/16 routes prerendered**. **Not verified in a browser** — the CR-31 banner only renders in live API mode on an actually-dropped stream, which the local dev server cannot produce; the transport itself is covered by unit tests instead.
 
@@ -1091,6 +1258,30 @@ Not applied. Tara to apply, recalculate §3 totals, and append to §7.
 | CR-30 | `OPEN` (unassigned) | **`ASSIGNED` (Ananya)**, scope narrowed to `brand-pipeline.tsx` only | `deal-room-dashboard.tsx` dropped from scope as not-a-defect |
 | CR-11 | `BLOCKED` (Neha) | **`IN PROGRESS` (Ananya)** | Unblock condition replaced: instrument, don't wait |
 | CR-31/32/33 | — | **new rows, `OPEN`** | IDs to be assigned by Tara |
+
+### 10.7 Priya's answers to Tara's two escalations (5th pass)
+
+**(a) CR-22a severity — CONFIRMED 🔴 Critical, and finding #1 is split out.** Tara is right that a ticket containing a CRITICAL finding cannot sit at Medium, and right to refuse to decide it herself. But folding finding #1 into CR-22a is also wrong, because they are different defects with different owners and different urgency:
+
+- **CR-22a stays 🔴 Critical** and keeps the `canReject()` narrowing plus the termination flow. It blocks CR-22b.
+- **Finding #1 — "nothing downstream enforces `CANCELLED`" — becomes its own row.** It is not about withdrawal at all: a deal cancelled by *any* path (including today's legitimate pre-contract reject) can still have its contract signed to ACTIVE and its escrow funded **for the first time**. That is reachable right now, without CR-22 ever shipping, and it is the one an attacker or a confused user finds first. **Tara to assign it the next free ID at 🔴 Critical, unassigned.**
+
+The test is whether a fix for one would fix the other. Narrowing `canReject()` does nothing about a deal cancelled some other way; adding status guards to `ContractService`/`EscrowService` does nothing about post-contract withdrawal being undesigned. Two rows.
+
+**(b) Audit findings #5–#8 — yes, they are tickets here, and here is the routing.** Kabir filed them "fix separately", which is a scope call, not a decision to drop them. They belong in this file because this file is the single source of truth for defects on this surface, and an audit doc is not a work queue:
+
+| Finding | Severity | Routing |
+|---|---|---|
+| #5 — privilege inversion: a workspace `VIEWER` can cancel a contracted, funded deal, while funding/release/refund require `OWNER`/`ADMIN` | 🟡 Medium | Vikram. Same class as the campaign-delete gate fixed in `9767463`, and that precedent makes it cheap. |
+| #6 — `reject()` has no idempotency arbiter and takes no row lock; `Collaboration` has no `@Version`, so reject ↔ contract-sign is a live lost update | 🟡 Medium | Vikram. **Fold into CR-22a** — it is the same method and the same transaction, and fixing it separately would mean touching `reject()` twice. |
+| #7 — `ContractStatus.CANCELLED` is dead code | 🟢 Low | Whoever next touches `ContractService`. |
+| #8 — `reject()` returns 409 on retry | 🟢 Low | Resolves as a side effect of #6's idempotency work; do not open separately. |
+
+So: two new rows (#5, and finding #1 above), one fold-in (#6 → CR-22a), one deferred-to-contact (#7), one closed-as-subsumed (#8).
+
+**On Tara's nine corrections generally:** all nine are accepted, and three of them were mine — the "three rows" that listed four, the handoff table that dropped CR-34, and a line-number citation in §10.1 that had drifted. The lesson worth keeping is #7's: **cite comment text, not line numbers.** Four commits moved `creator-chat.tsx` in a single day and every line reference into it aged out silently. This file is full of them.
+
+---
 
 **What this changes about the shape of the file:** §4's Wave 6 claim that "nothing here is blocked on engineering capacity" no longer holds. After these rulings, four of the five Wave 6 items are ordinary engineering work with named owners. **CR-15 (domain + TLS) is the only genuine Swapnil-gated blocker left**, unchanged from §8 — and unchanged is also the answer on the `publish-images.yml` auto-deploy line: **leave it in while the box is a test box**, and remove it the day Neha starts verifying against something a customer can see.
 
