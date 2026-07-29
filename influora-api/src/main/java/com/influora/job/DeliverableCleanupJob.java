@@ -251,12 +251,41 @@ public class DeliverableCleanupJob {
      * this immediately before a destructive call is a meaningful TOCTOU mitigation (M-DPF8-2).
      */
     private boolean canDelete(Deliverable deliverable) {
-        if (disputeRepository.existsByCollaborationIdAndStatusIn(
-                deliverable.getCollaborationId(), ACTIVE_DISPUTE_STATUSES)) {
+        String collaborationId = deliverable.getCollaborationId();
+
+        // Fail CLOSED on an unknown collaboration. Without an id neither check below can run, and
+        // "we could not establish whether money is held against this" must never be treated as
+        // "no money is held against this" — that conflation is the whole bug this method had.
+        if (collaborationId == null || collaborationId.isBlank()) {
+            log.warn(
+                    "Refusing to delete media for deliverable {} — no collaborationId, so escrow"
+                            + " and dispute state cannot be established",
+                    deliverable.getId());
             return false;
         }
-        return !escrowHoldRepository.existsByCollaborationIdAndStatusIn(
-                deliverable.getCollaborationId(), UNRELEASED_ESCROW_STATUSES);
+
+        if (disputeRepository.existsByCollaborationIdAndStatusIn(
+                collaborationId, ACTIVE_DISPUTE_STATUSES)) {
+            return false;
+        }
+
+        // [SEC: CR-35 follow-on] Milestone-aware, and that is the entire fix. This used to call
+        // `existsByCollaborationIdAndStatusIn`, which matches ONLY the direct `collaboration_id`
+        // column — NULL on every hold the ordinary brand escrow flow creates, since only
+        // `ConfirmLaunchExecutor` ever bound it. So the guard returned "no unreleased escrow" for
+        // precisely the escrow-backed collaborations it exists to protect, and this job deleted
+        // creator deliverable media out from under funded, frozen and in-flight holds.
+        //
+        // It was not theoretical: `influora.cleanup.dry-run` defaults to true, but
+        // `application-prod.yml` sets it to FALSE and `docker-compose.hostinger.yml` runs
+        // SPRING_PROFILES_ACTIVE=prod — so on any production deploy this ran for real, nightly.
+        //
+        // The CR-35 backfill populates the column and CR-35's Fix 2 binds it at creation, but
+        // neither is sufficient on its own: campaign-level funding has no milestone to bind from
+        // and stays NULL permanently by design. The guard has to be correct without the column,
+        // which is what the milestone-linkage union gives it.
+        return !escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(
+                collaborationId, UNRELEASED_ESCROW_STATUSES);
     }
 
     /** Delete every key referenced anywhere in the deliverable's current {@code filesJson}. */

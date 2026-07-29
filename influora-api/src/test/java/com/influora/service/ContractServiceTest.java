@@ -220,6 +220,36 @@ class ContractServiceTest {
     }
 
     /**
+     * CR-22a, Kabir finding #1 — {@code generate} previously had zero {@code CollaborationStatus}
+     * awareness: a collaboration cancelled via {@code DealService#reject} could still have a
+     * Contract generated against it afterwards. Checked under the same row lock the duplicate-
+     * contract guard below already takes, so no Contract/PaymentMilestone row is ever persisted
+     * for a CANCELLED collaboration.
+     */
+    @Test
+    @DisplayName("generate: CANCELLED collaboration returns 409 COLLABORATION_CANCELLED, persists nothing")
+    void testGenerateRejectsCancelledCollaboration() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
+        collaboration.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).workspaceId(WORKSPACE_ID).build();
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaboration));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.generate(principal, WORKSPACE_ID, generateRequest()));
+
+        assertEquals("COLLABORATION_CANCELLED", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        verifyNoInteractions(contractRepository, milestoneRepository);
+    }
+
+    /**
      * [BE-1: Vikram, contract-flow-architecture-2026-07-23 §6.4 — REAL GAP, now closed]
      * {@code generate} previously had no duplicate-contract guard at all: a second {@code POST
      * /contracts} for a collaboration that already had a non-CANCELLED contract would silently
@@ -559,6 +589,8 @@ class ContractServiceTest {
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
                 .thenReturn(List.of());
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
         mockIdempotencyExecuteOnce();
 
         ContractResponse response =
@@ -569,6 +601,37 @@ class ContractServiceTest {
         verify(contractRepository, times(1)).save(contract);
         verifyNoInteractions(contractPdfService);
         verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /**
+     * CR-22a, Kabir finding #1 — a genuinely NEW signature must be blocked on a CANCELLED
+     * collaboration (belt-and-suspenders: post-narrowing, {@code canReject()} can no longer reach
+     * a collaboration that has a Contract row, but this is the same guard {@code generate}/
+     * {@code initiateFund} carry, and defends against any future path that writes CANCELLED).
+     */
+    @Test
+    @DisplayName(
+            "recordSignature: a NEW (not-yet-signed) signature on a CANCELLED collaboration returns"
+                    + " 409 COLLABORATION_CANCELLED, does not record the signature")
+    void testRecordSignatureRejectsCancelledCollaboration() {
+        Contract contract = unsignedContract();
+        when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(contract));
+        Collaboration cancelled = collaborationForCampaign(CAMPAIGN_ID);
+        cancelled.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(cancelled));
+        mockIdempotencyExecuteOnce();
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "BRAND"));
+
+        assertEquals("COLLABORATION_CANCELLED", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        assertEquals(null, contract.getBrandSignedAt());
+        verify(contractRepository, never()).save(any());
     }
 
     @Test
@@ -618,6 +681,8 @@ class ContractServiceTest {
         // isn't required to prove the "fires exactly once" guarantee; contractPdfService.render
         // being invoked (or at least attempted) once is what matters here.
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.empty());
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
         when(escrowHoldRepository.existsByCollaborationIdAndStatus(
                         COLLABORATION_ID, EscrowStatus.FUNDED))
                 .thenReturn(false);
@@ -757,6 +822,8 @@ class ContractServiceTest {
                         COLLABORATION_ID, EscrowStatus.FUNDED))
                 .thenReturn(false);
         when(collaborationRepository.findById(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
                 .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
         when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(Campaign.builder().id(CAMPAIGN_ID).title("Summer Drop").build()));
@@ -900,6 +967,8 @@ class ContractServiceTest {
                         COLLABORATION_ID, EscrowStatus.FUNDED))
                 .thenReturn(false);
         when(collaborationRepository.findById(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
                 .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
         when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(Campaign.builder().id(CAMPAIGN_ID).title("Drop").build()));

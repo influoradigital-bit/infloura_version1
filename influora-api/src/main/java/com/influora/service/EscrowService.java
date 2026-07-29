@@ -164,8 +164,13 @@ public class EscrowService {
         // but nothing on THIS, the actual money-moving path, ever enforced it). Gated only when a
         // milestoneId is supplied — campaign-level funding with no milestoneId predates the
         // contract/milestone model and has no contract to check against.
+        //
+        // [FIX: escrow-frozen-hold-fix-spec, Fix 2] this now also returns the milestone so its
+        // (non-null) collaborationId can be bound onto the hold below — see the comment at the
+        // hold-building block for why.
+        PaymentMilestone milestoneForCollaborationBinding = null;
         if (milestoneId != null && !milestoneId.isBlank()) {
-            assertContractActiveForMilestone(milestoneId, workspaceId);
+            milestoneForCollaborationBinding = assertContractActiveForMilestone(milestoneId, workspaceId);
         }
 
         var existing = escrowHoldRepository.findByIdempotencyKey(idempotencyKey);
@@ -198,7 +203,7 @@ public class EscrowService {
                     currency);
         }
 
-        EscrowHold hold =
+        EscrowHold.Builder holdBuilder =
                 EscrowHold.builder()
                         .id(Ulids.newUlid())
                         .workspaceId(workspaceId)
@@ -207,8 +212,27 @@ public class EscrowService {
                         .amount(amount)
                         .currency(currency)
                         .status(EscrowStatus.PENDING)
-                        .idempotencyKey(idempotencyKey)
-                        .build();
+                        .idempotencyKey(idempotencyKey);
+        // [FIX: escrow-frozen-hold-fix-spec, Fix 2 — root cause] Previously this builder NEVER set
+        // collaborationId, for any caller of this endpoint (the ordinary brand escrow flow) — the
+        // only code in the entire tree that ever called `EscrowHold.bindCollaboration` was
+        // ConfirmLaunchExecutor's AI-launch path. Every hold funded through POST /wallet/escrow/fund
+        // therefore carried collaboration_id = NULL forever, which is what made
+        // `requireFrozenHoldsForCollaboration`'s (pre-fix) non-fallback lookup silently iterate an
+        // empty list during dispute settlement (see class-level Fix 1 helper). `PaymentMilestone`'s
+        // collaboration_id column is NOT NULL, so whenever a milestone was supplied we always have a
+        // real collaboration to bind here — do it now, at creation, instead of relying on a
+        // best-effort bind sometime later.
+        //
+        // When milestoneId is null (campaign-level pool funding, no collaboration exists yet at
+        // this point), collaborationId is deliberately left null — a genuine "not yet resolvable"
+        // case, not an oversight. This is safe only because Fix 1
+        // (`resolveHoldsForCollaboration`'s milestone-table fallback) makes every downstream lookup
+        // robust to a null column; it is not safe on its own.
+        if (milestoneForCollaborationBinding != null) {
+            holdBuilder.collaborationId(milestoneForCollaborationBinding.getCollaborationId());
+        }
+        EscrowHold hold = holdBuilder.build();
         escrowHoldRepository.save(hold);
 
         // [FIX: double-charge, 2026-07-26] The balance check above (wallet.getBalance() >=
@@ -271,8 +295,12 @@ public class EscrowService {
      * this stays correct even if a future migration back-fills {@code status} inconsistently.
      * Workspace-scoped milestone lookup (mirrors {@code deriveFundAmount}) so a caller cannot probe
      * another workspace's milestone/contract state via this gate either.
+     *
+     * @return the resolved {@link PaymentMilestone} — reused by the caller ({@link #initiateFund})
+     *     to bind {@code collaborationId} onto the new hold (Fix 2 of the escrow-frozen-hold-fix
+     *     spec) instead of issuing a second, redundant lookup.
      */
-    private void assertContractActiveForMilestone(String milestoneId, String workspaceId) {
+    private PaymentMilestone assertContractActiveForMilestone(String milestoneId, String workspaceId) {
         PaymentMilestone milestone =
                 milestoneRepository
                         .findByIdAndWorkspaceId(milestoneId, workspaceId)
@@ -293,6 +321,31 @@ public class EscrowService {
                     "Escrow cannot be funded until the contract is fully signed by both parties",
                     HttpStatus.CONFLICT);
         }
+
+        // [CR-22a, Kabir finding #1] Previously nothing on this, the actual money-moving path,
+        // ever read CollaborationStatus — this gate (assertContractActiveForMilestone) only ever
+        // inspected the CONTRACT's two signature timestamps, so escrow could be funded for the
+        // FIRST time on a CANCELLED collaboration. `PaymentMilestone.collaborationId` is NOT NULL
+        // (V10), so this lookup always resolves. Locked (not a plain findById) for the same
+        // reason ContractService#generate/#doRecordSignature are: serializes this against a
+        // concurrent DealService#reject on the same collaboration row.
+        Collaboration collaboration =
+                collaborationRepository
+                        .findByIdForUpdate(milestone.getCollaborationId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "COLLABORATION_NOT_FOUND",
+                                                "Collaboration not found",
+                                                HttpStatus.NOT_FOUND));
+        if (collaboration.getStatus() == CollaborationStatus.CANCELLED) {
+            throw new ApiException(
+                    "COLLABORATION_CANCELLED",
+                    "This deal was cancelled and its escrow can no longer be funded",
+                    HttpStatus.CONFLICT);
+        }
+
+        return milestone;
     }
 
     /**
@@ -497,6 +550,9 @@ public class EscrowService {
                                                 HttpStatus.NOT_FOUND));
         String payeeUserId = collaboration.getCreatorId();
 
+        // [CR-36 residual, escrow-cancelled-gate-spec] release-only guard — see its javadoc for
+        // why refund() below is deliberately NOT given this check.
+        assertReleaseNotBlockedByCancellation(collaboration);
         assertEscrowNotBlockedByDispute(collaboration);
 
         EscrowHold hold = requireHoldForUpdate(milestone.getEscrowHoldId());
@@ -677,6 +733,39 @@ public class EscrowService {
     }
 
     /**
+     * [FIX: escrow-frozen-hold-fix-spec, Fix 3 support] Whether the collaboration has at least one
+     * FROZEN escrow hold right now (same fallback-aware lookup as
+     * {@link #requireFrozenHoldsForCollaboration}). {@link DisputeService#resolveDispute} calls
+     * this BEFORE running the settlement to distinguish "this collaboration genuinely has no
+     * escrow" (a dispute on an unfunded deal, which must still resolve cleanly) from "this
+     * collaboration has frozen escrow but the settlement moved zero holds" (an invariant
+     * violation that must never be allowed to silently resolve as if the money moved).
+     */
+    @Transactional(readOnly = true)
+    public boolean hasFrozenEscrow(String collaborationId) {
+        return countFrozenHolds(collaborationId) > 0;
+    }
+
+    /**
+     * How many FROZEN holds this collaboration has right now.
+     *
+     * [SEC: Kabir gate on CR-35, HIGH-2] `DisputeService` needs the COUNT, not a boolean. A boolean
+     * only answers "was there anything to move", which is satisfied by a single hold moving out of
+     * a hundred — and, worse, reads {@code false} for a collaboration whose escrow a FIRST dispute
+     * already settled, letting a second dispute resolve and audit-log {@code ESCROW_RELEASE} for a
+     * movement that did not happen. No race is required for that; two disputes on one collaboration
+     * are enough, and nothing today prevents them ({@code DisputeService}'s duplicate check is a
+     * bare {@code existsBy} and the index behind it is not unique).
+     *
+     * Comparing counts makes the settlement assert what it actually promises: every frozen hold was
+     * accounted for, not merely that something moved.
+     */
+    @Transactional(readOnly = true)
+    public int countFrozenHolds(String collaborationId) {
+        return resolveHoldsForCollaboration(collaborationId, EscrowStatus.FROZEN).size();
+    }
+
+    /**
      * Admin dispute settlement — releases every FROZEN hold on the collaboration to the creator
      * (RESOLVED_CREATOR). Runs inside the caller's ({@code DisputeService}) transaction, after
      * {@link #freezeUnreleasedForDispute} has already FROZEN the holds. [SEC: money-movement path
@@ -808,19 +897,37 @@ public class EscrowService {
                 creditLegId = releaseOutcome.releaseTxnId();
             }
 
+            String refundLegId = null;
             if (brandAmount.signum() > 0) {
                 String refundIdempotencyKey = "dispute-split-refund:" + hold.getId();
-                escrowBackend.refund(
-                        new EscrowBackend.RefundCommand(
-                                hold.getWorkspaceId(),
-                                hold.getId(),
-                                brandAmount,
-                                hold.getCurrency(),
-                                "Dispute-resolved split refund for collaboration " + collaborationId,
-                                refundIdempotencyKey));
+                var refundOutcome =
+                        escrowBackend.refund(
+                                new EscrowBackend.RefundCommand(
+                                        hold.getWorkspaceId(),
+                                        hold.getId(),
+                                        brandAmount,
+                                        hold.getCurrency(),
+                                        "Dispute-resolved split refund for collaboration " + collaborationId,
+                                        refundIdempotencyKey));
+                refundLegId = refundOutcome.refundTxnId();
             }
 
-            hold.markReleased(creditLegId != null ? creditLegId : "dispute-split:" + hold.getId());
+            // [Kavya QA, adjacent to CR-36] A 0% creatorSplitPercent is a legitimate settlement —
+            // the creator gets nothing, the brand is refunded in full — and creatorSplitPercent
+            // validation above permits 0. On that path creatorAmount.signum() > 0 is false, no
+            // ESCROW_RELEASE ever posts, and creditLegId stays null. This used to still call
+            // hold.markReleased(...) with a synthetic "dispute-split:<id>" string that corresponds
+            // to NO ledger transaction at all — RELEASED means "the creator was paid" everywhere
+            // else this status is read (creator-facing payment state, reporting, released-volume
+            // analytics), so a 100%-to-brand split was recorded and audited as a release. The
+            // terminal status must track what actually happened: a real creator credit -> RELEASED
+            // with that credit's real txn id; no creator credit -> REFUNDED with the REAL refund
+            // txn id captured above (never a synthetic id).
+            if (creditLegId != null) {
+                hold.markReleased(creditLegId);
+            } else {
+                hold.markRefunded(refundLegId);
+            }
             escrowHoldRepository.save(hold);
             markMilestoneReleasedIfPresent(hold, creditLegId, releaseIdempotencyKey);
 
@@ -975,12 +1082,41 @@ public class EscrowService {
                                         HttpStatus.NOT_FOUND));
     }
 
+    /**
+     * [FIX: escrow-frozen-hold-fix-spec, Fix 1] Row-locked FROZEN holds for a collaboration, using
+     * the same fallback-aware {@link #resolveHoldsForCollaboration} lookup as
+     * {@link #findFundedHoldsForCollaboration}. Before this fix, this method queried
+     * {@code findByCollaborationIdAndStatus} directly with NO milestone fallback, while its sibling
+     * did have one — for the (common, ordinary-brand-flow) case of a hold whose
+     * {@code collaboration_id} is null, this returned an empty list even though the hold was very
+     * much real, FROZEN, and tied to this collaboration via its milestone. {@code
+     * adminReleaseForDispute}/{@code adminRefundForDispute}/{@code adminSplitForDispute} would then
+     * iterate zero holds and {@code DisputeService.resolveDispute} would mark the dispute resolved
+     * anyway — money frozen forever, books say otherwise. One lookup, not two that can drift.
+     */
     private List<EscrowHold> requireFrozenHoldsForCollaboration(String collaborationId) {
-        List<EscrowHold> frozen =
-                escrowHoldRepository.findByCollaborationIdAndStatus(collaborationId, EscrowStatus.FROZEN);
+        List<EscrowHold> frozen = resolveHoldsForCollaboration(collaborationId, EscrowStatus.FROZEN);
         List<EscrowHold> locked = new ArrayList<>();
         for (EscrowHold snapshot : frozen) {
-            locked.add(requireHoldForUpdate(snapshot.getId()));
+            EscrowHold hold = requireHoldForUpdate(snapshot.getId());
+            // [SEC: Kabir gate on CR-35, HIGH-1] Re-check the status AFTER taking the row lock.
+            // `resolveHoldsForCollaboration` filtered on an UNLOCKED read, so between that read and
+            // this lock another transaction may already have moved the hold out of FROZEN. Acting on
+            // the stale snapshot pays the same hold twice: with two active disputes on one
+            // collaboration the two settlements use DIFFERENT idempotency keys
+            // (`dispute-refund:<id>` vs `dispute-release:<id>`), so `uq_wtx_idem` does not dedupe
+            // them; `markReleased`/`markRefunded` are unguarded setters; the second dispute is a
+            // different row so `@Version` never fires; and `WalletLedgerService.post` exempts the
+            // clearing wallet from the balance check. Nothing else would have stopped it.
+            //
+            // This is the same re-check `freezeUnreleasedForDispute` already does after its own
+            // lock. The asymmetry was harmless until CR-35: this loop returned an empty list for
+            // every ordinary-flow hold, so the window was unreachable. Fix 1 made it reachable for
+            // essentially every hold, which is why this landed in the same commit as Fix 1 and not
+            // as a follow-up.
+            if (hold.getStatus() == EscrowStatus.FROZEN) {
+                locked.add(hold);
+            }
         }
         return locked;
     }
@@ -1018,11 +1154,27 @@ public class EscrowService {
     }
 
     private List<EscrowHold> findFundedHoldsForCollaboration(String collaborationId) {
+        return resolveHoldsForCollaboration(collaborationId, EscrowStatus.FUNDED);
+    }
+
+    /**
+     * [FIX: escrow-frozen-hold-fix-spec, Fix 1 — "one lookup, not two that can drift"] The single
+     * status-parameterized lookup both {@link #findFundedHoldsForCollaboration} (FUNDED) and
+     * {@link #requireFrozenHoldsForCollaboration} (FROZEN) now delegate to, instead of each
+     * maintaining its own copy of the same rule. Queries the direct {@code collaboration_id} column
+     * AND falls back to the milestone → collaboration link, because {@code EscrowHold}'s
+     * {@code collaboration_id} is null for every hold that hasn't gone through
+     * {@code EscrowHold#bindCollaboration} (in the main tree, only {@code
+     * ConfirmLaunchExecutor}'s AI-launch path calls that) — see {@link #initiateFund}'s Fix 2
+     * comment for the root-cause half of this fix. This repo has paid for two copies of one rule
+     * drifting apart before (CR-05, CR-24, CR-30, CR-34); this is the same doctrine applied here,
+     * for money-movement code where the drift silently produced permanently frozen escrow.
+     */
+    private List<EscrowHold> resolveHoldsForCollaboration(String collaborationId, EscrowStatus status) {
         Set<String> seen = new LinkedHashSet<>();
         List<EscrowHold> result = new ArrayList<>();
         for (EscrowHold hold :
-                escrowHoldRepository.findByCollaborationIdAndStatus(
-                        collaborationId, EscrowStatus.FUNDED)) {
+                escrowHoldRepository.findByCollaborationIdAndStatus(collaborationId, status)) {
             if (seen.add(hold.getId())) {
                 result.add(hold);
             }
@@ -1033,7 +1185,7 @@ public class EscrowService {
             }
             escrowHoldRepository
                     .findById(milestone.getEscrowHoldId())
-                    .filter(h -> h.getStatus() == EscrowStatus.FUNDED)
+                    .filter(h -> h.getStatus() == status)
                     .ifPresent(
                             hold -> {
                                 if (seen.add(hold.getId())) {
@@ -1078,6 +1230,31 @@ public class EscrowService {
                         () ->
                                 new ApiException(
                                         "ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND));
+    }
+
+    /**
+     * [CR-36 residual, {@code wiki/tech/escrow-cancelled-gate-spec.md}] Blocks {@link
+     * #releaseInternal} from paying a creator on a collaboration that has been cancelled. Release
+     * moves money FORWARD to the creator on a deal the platform has already marked dead — that is
+     * the actual defect this closes.
+     *
+     * <p><b>Deliberately NOT folded into {@link #assertEscrowNotBlockedByDispute}</b>, even though
+     * both guards sit in front of sibling methods on the same {@link Collaboration}. This check
+     * must NEVER be added to {@code refund()}. Refund sends the money back to the brand that funded
+     * it — it is the remedy for a cancelled collaboration, not an abuse of one. Blocking refund on
+     * CANCELLED would strand every rupee held against a cancelled collaboration with no code path
+     * left to return it, which is exactly the class of bug CR-35 was opened for. A guard that
+     * recreates the bug it was written to prevent is worse than no guard, so this stays its own
+     * method with its own name rather than becoming a CANCELLED branch inside the shared dispute
+     * check.
+     */
+    private void assertReleaseNotBlockedByCancellation(Collaboration collaboration) {
+        if (collaboration.getStatus() == CollaborationStatus.CANCELLED) {
+            throw new ApiException(
+                    "COLLABORATION_CANCELLED",
+                    "This deal was cancelled and its escrow can no longer be released to the creator",
+                    HttpStatus.CONFLICT);
+        }
     }
 
     private void assertEscrowNotBlockedByDispute(Collaboration collaboration) {

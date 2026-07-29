@@ -12,11 +12,13 @@ import com.influora.domain.entity.Contract;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.DealMessage;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DealSenderType;
 import com.influora.domain.enums.EscrowStatus;
+import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.UserType;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
@@ -47,6 +49,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -58,6 +61,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Task #9 — unified deal room backed by {@link Collaboration} + {@link DealMessage} timeline.
@@ -243,7 +248,7 @@ public class DealService {
         String scopeId =
                 role == UserType.CREATOR
                         ? principal.getUserId()
-                        : brandContext.requireBrandWorkspace(principal).getId();
+                        : requireBrandDealManagerScope(principal);
         String key = resolveIdempotencyKey(idempotencyKey, "deal-accept:" + dealId);
 
         try {
@@ -263,11 +268,74 @@ public class DealService {
      * B-4 — role-aware: brand OR creator may reject/withdraw from the deal, mirroring {@link
      * #counter}'s dual-role auth + workspace/ownership scoping. Previously hard-gated {@code
      * creatorContext.requireCreator}, which 403'd every brand-side reject attempt.
+     *
+     * <p><b>CR-22a — narrowed to a pre-contract allowlist</b> (Priya's ruling, `CREATOR-BUG-
+     * TRACKER.md` §10.1/§10.7). {@link Collaboration#canReject()} used to be a denylist over the
+     * whole lifecycle, so this endpoint could unilaterally CANCEL a signed, escrow-funded deal
+     * with no compensating action anywhere. It now only admits the pre-contract negotiation
+     * states; {@code CONTRACT_PENDING} and beyond return 409 {@code DEAL_NOT_REJECTABLE}.
+     * Post-contract withdrawal is CR-22b (a separate, two-party termination flow) — out of scope
+     * here.
+     *
+     * <p><b>Kabir's finding #6 folded in here</b> (fixed in this method, not touched twice, per
+     * the ruling): this previously read the collaboration through a plain, non-locking finder
+     * and re-checked nothing before writing {@code CANCELLED} — a real lost-update race against
+     * {@code ContractService#doRecordSignature} (both starting from {@code CONTRACT_PENDING}
+     * before this narrowing; today the equivalent race is against a fresh
+     * {@code ContractService#generate}/{@code EscrowService#initiateFund} call starting from
+     * {@code TERMS_AGREED}, the highest status still in the allowlist). Fixed the same way {@code
+     * ContractService#generate} already serializes itself: {@link #doReject} takes a {@code
+     * PESSIMISTIC_WRITE} lock on the collaboration row ({@link CollaborationRepository
+     * #findByIdForUpdate}) BEFORE the {@code canReject()} check-then-write, so whichever
+     * transaction reaches the lock first serializes the other one behind it — the loser observes
+     * the winner's COMMITTED status, never a stale snapshot. This method is also now routed
+     * through {@link IdempotencyService}, mirroring {@link #accept}/{@link #counter} — which
+     * incidentally resolves finding #8 too: a retried reject after success now replays the prior
+     * 200 instead of a fresh 409.
      */
     @Transactional
-    public OkResponse reject(AuthPrincipal principal, String dealId, RejectRequest body) {
+    public OkResponse reject(
+            AuthPrincipal principal, String dealId, RejectRequest body, String idempotencyKey) {
         UserType role = requireRole(principal);
-        Collaboration collaboration = requireOwnedCollaboration(principal, dealId);
+        // Ownership/existence check ONLY, deliberately unlocked and deliberately not also
+        // re-running canReject() here: on a genuine retry of an already-succeeded reject, this
+        // deal is now CANCELLED, so an early canReject() check here would 409 before the
+        // idempotency wrapper below ever gets a chance to recognize the call as a replay — exactly
+        // the finding #8 failure mode this change is supposed to close. The real gate lives in
+        // doReject, under the row lock, where it belongs.
+        requireOwnedCollaboration(principal, dealId);
+        String scopeId =
+                role == UserType.CREATOR
+                        ? principal.getUserId()
+                        : requireBrandDealManagerScope(principal);
+        String key = resolveIdempotencyKey(idempotencyKey, "deal-reject:" + dealId);
+
+        try {
+            return idempotencyService.executeOnce(
+                    key, scopeId, "deal.reject", () -> doReject(dealId, role, body));
+        } catch (IdempotencyService.AlreadyInProgressException
+                | IdempotencyService.AlreadyCompletedException raced) {
+            // A prior call already reserved/completed this exact key — the effect already ran (or
+            // is running). Replay success rather than re-entering doReject, which would otherwise
+            // re-check canReject() against the now-CANCELLED row and 409.
+            return OkResponse.success();
+        }
+    }
+
+    /**
+     * Runs inside {@code executeOnce} (see {@link #reject}, Kabir finding #6). Re-resolves the
+     * collaboration by id under a {@code PESSIMISTIC_WRITE} lock — deliberately NOT reusing the
+     * unlocked instance {@link #reject} already read, since that read happened before the lock
+     * was acquired and may be stale by the time this runs.
+     */
+    private OkResponse doReject(String dealId, UserType role, RejectRequest body) {
+        Collaboration collaboration =
+                collaborationRepository
+                        .findByIdForUpdate(dealId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "DEAL_NOT_FOUND", "Deal not found", HttpStatus.NOT_FOUND));
         if (!collaboration.canReject()) {
             throw new ApiException(
                     "DEAL_NOT_REJECTABLE",
@@ -278,9 +346,26 @@ public class DealService {
         collaborationRepository.save(collaboration);
         String reason = body != null && body.reason() != null ? body.reason() : "Deal rejected";
         String actorLabel = role == UserType.CREATOR ? "Creator" : "Brand";
-        appendSystemMessage(
-                collaboration.getId(),
-                actorLabel + " rejected: " + TextSanitizer.sanitizePlainText(reason));
+        DealMessage systemMessage =
+                appendSystemMessage(
+                        collaboration.getId(),
+                        actorLabel + " rejected: " + TextSanitizer.sanitizePlainText(reason));
+        // CR-02 — same reason as the accept path: a declined offer must stop rendering as
+        // actionable. Pre-CR-22a, canReject() also permitted withdrawal from
+        // TERMS_AGREED/CONTRACTED, so this deliberately no-ops on a card already settled as
+        // "accepted" rather than rewriting agreed history — settleStatus enforces that; the
+        // system message above carries the withdrawal. Kept post-narrowing since TERMS_AGREED
+        // (an already-accepted, pre-contract state) is still in the allowlist.
+        Optional<DealMessage> settledCard = settleLatestProposal(collaboration.getId(), "rejected");
+
+        // CR-08 — same shape and same ordering rationale as doAccept: settled card first so it is
+        // inert before "… rejected: …" lands, then the system message. On the withdrawal case
+        // settleStatus no-oped, so what is republished here is the card's UNCHANGED already-settled
+        // state — an upsert of identical content, which is harmless and doubles as a resync for a
+        // subscriber that missed the original accept frame.
+        settledCard.ifPresent(
+                card -> publishToStream(collaboration.getId(), toMessageResponse(card)));
+        publishToStream(collaboration.getId(), toMessageResponse(systemMessage));
         return OkResponse.success();
     }
 
@@ -310,7 +395,7 @@ public class DealService {
         String scopeId =
                 role == UserType.CREATOR
                         ? principal.getUserId()
-                        : brandContext.requireBrandWorkspace(principal).getId();
+                        : requireBrandDealManagerScope(principal);
         String key = resolveIdempotencyKey(idempotencyKey, "deal-counter:" + dealId + ":" + body.amount());
 
         DealSenderType senderType = role == UserType.CREATOR ? DealSenderType.creator : DealSenderType.brand;
@@ -389,18 +474,70 @@ public class DealService {
         DealMessageResponse response = toMessageResponse(message);
         // Realtime fan-out (SSE) — same DTO shape as the response returned to the sender, so
         // both parties' open GET /deals/{dealId}/messages/stream connections render it
-        // identically. Best-effort: a registry publish failure must never fail the send itself,
-        // which has already fully succeeded above (message is persisted regardless).
-        try {
-            messageStreamRegistry.publish(collaboration.getId(), response);
-        } catch (RuntimeException e) {
-            log.error(
-                    "SSE publish failed for collaboration {} — message itself already persisted",
-                    collaboration.getId(),
-                    e);
-        }
+        // identically.
+        publishToStream(collaboration.getId(), response);
 
         return response;
+    }
+
+    /**
+     * CR-08 — single fan-out call site for every timeline row the deal room needs to see in
+     * realtime. Publishes {@code response} to {@code GET /deals/{dealId}/messages/stream} using the
+     * exact DTO shape {@link #listMessages} returns, so a subscriber renders a pushed row
+     * identically to a refetched one.
+     *
+     * <p><b>Deliberately best-effort, and that is a different question from the CR-02 [C2]
+     * ruling.</b> Unlike {@link #settleLatestProposal} — which writes to {@code deal_messages} and
+     * therefore MUST be atomic with the caller's transaction — this touches nothing durable.
+     * {@link DealMessageStreamRegistry} is an in-memory {@code ConcurrentHashMap} of live {@link
+     * org.springframework.web.servlet.mvc.method.annotation.SseEmitter}s; the message is already
+     * persisted before we get here and a subscriber that misses a frame refetches
+     * {@code GET /deals/{dealId}/messages} on its next reconnect. A dead or slow emitter must never
+     * roll back an accept, so the catch here is load-bearing rather than a swallowed error, and the
+     * log line above is the only signal it produces.
+     *
+     * <p><b>CR-25 — this now runs AFTER COMMIT.</b> Previously every caller published from inside
+     * the caller's {@code @Transactional} boundary, so a subscriber could observe a row that a
+     * later rollback erased — a creator watching the room would see "Brand accepted the proposal"
+     * for an accept that never happened. That predated CR-08 ({@link #sendMessage} had published
+     * from inside its transaction since the stream shipped); CR-08 only widened the surface. The
+     * fan-out is now registered as an {@code afterCommit} synchronization, so a subscriber only
+     * ever sees committed state.
+     *
+     * <p>When no transaction is active the publish happens inline, unchanged — that keeps the
+     * method safe to call from a non-transactional context and keeps unit tests, which do not open
+     * a transaction, exercising the real publish path rather than silently dropping every frame.
+     */
+    private void publishToStream(String collaborationId, DealMessageResponse response) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            publishToStreamNow(collaborationId, response);
+                        }
+                    });
+            return;
+        }
+        publishToStreamNow(collaborationId, response);
+    }
+
+    /**
+     * The actual fan-out. Best-effort by design — see {@link #publishToStream}. A dead or slow
+     * emitter must never fail the action that produced the message, and after CR-25 it provably
+     * cannot: by the time this runs the transaction has already committed, so there is nothing
+     * left to roll back.
+     */
+    private void publishToStreamNow(String collaborationId, DealMessageResponse response) {
+        try {
+            messageStreamRegistry.publish(collaborationId, response);
+        } catch (RuntimeException e) {
+            log.error(
+                    "SSE publish failed for collaboration {} — the message is already persisted and"
+                            + " the action stands",
+                    collaborationId,
+                    e);
+        }
     }
 
     /**
@@ -501,7 +638,23 @@ public class DealService {
         collaboration.transitionTo(CollaborationStatus.TERMS_AGREED);
         collaborationRepository.save(collaboration);
         String actorLabel = role == UserType.CREATOR ? "Creator" : "Brand";
-        appendSystemMessage(collaboration.getId(), actorLabel + " accepted the proposal");
+        DealMessage systemMessage =
+                appendSystemMessage(collaboration.getId(), actorLabel + " accepted the proposal");
+        // CR-02 — settle the proposal card that produced this accept. Must run AFTER the
+        // transition above, so the card is only marked accepted once the deal really is.
+        Optional<DealMessage> settledCard = settleLatestProposal(collaboration.getId(), "accepted");
+
+        // CR-08 — until now doAccept persisted both rows above and published neither, so the
+        // counterparty's open deal room showed nothing until a manual reload. Publish order is
+        // load-bearing and is NOT persistence order: the settled card goes first so a subscriber
+        // applying these in sequence never has "Creator accepted the proposal" sitting above a card
+        // still offering live Accept/Counter/Decline buttons. The card is an UPSERT keyed on its
+        // ORIGINAL id (settleLatestProposal returns the same managed entity, post-settle), so the
+        // client replaces the row it already holds rather than appending a duplicate; the system
+        // message is genuinely new and appends.
+        settledCard.ifPresent(
+                card -> publishToStream(collaboration.getId(), toMessageResponse(card)));
+        publishToStream(collaboration.getId(), toMessageResponse(systemMessage));
 
         // W3-1 — #4 "brand accepts creator's counter-bid" / #11 "creator accepts proposal"
         // (07-NOTIFICATION-SYSTEM-SPEC.md §3.1/§3.2). Best-effort — a lookup failure here must
@@ -570,14 +723,35 @@ public class DealService {
         }
         collaboration.transitionTo(CollaborationStatus.IN_NEGOTIATION);
         collaborationRepository.save(collaboration);
-        persistProposalMessage(
-                collaboration,
-                principal.getUserId(),
-                senderType,
-                body.amount(),
-                body.message(),
-                body.deliverables(),
-                body.deadline());
+        // [H1] Settle the offer this counter supersedes BEFORE persisting the new one — ordering
+        // is load-bearing, since settleLatestProposal resolves "the newest proposal" and the new
+        // card must not exist yet. Without this every superseded card stayed "pending" and kept
+        // its live Accept/Counter/Decline buttons: after three counters the deal was still
+        // IN_NEGOTIATION with four actionable cards. POST /deals/{id}/accept carries no proposal
+        // id (see api.deals.accept), so accepting is always "accept whatever is current" —
+        // clicking Accept on a stale 40,000 card would have agreed to the current 25,000 offer.
+        // "countered" is styled by the SPA and is != "pending", so the stale cards go inert.
+        Optional<DealMessage> supersededCard =
+                settleLatestProposal(collaboration.getId(), "countered");
+        DealMessage newProposal =
+                persistProposalMessage(
+                        collaboration,
+                        principal.getUserId(),
+                        senderType,
+                        body.amount(),
+                        body.message(),
+                        body.deliverables(),
+                        body.deadline());
+
+        // CR-08 — publish the superseded card BEFORE the new one. This mirrors the [H1] persistence
+        // ordering above for the same reason, one layer up: a subscriber that applied these in the
+        // opposite order would briefly render TWO cards both offering Accept, and since POST
+        // /deals/{id}/accept carries no proposal id, accepting the stale one would have agreed to
+        // the new amount. The first publish is an upsert on the superseded card's ORIGINAL id
+        // (status now "countered", so the SPA renders it inert); the second is a genuinely new row.
+        supersededCard.ifPresent(
+                card -> publishToStream(collaboration.getId(), toMessageResponse(card)));
+        publishToStream(collaboration.getId(), toMessageResponse(newProposal));
 
         // W3-1 — #10 "creator sends counter-bid" (07-NOTIFICATION-SYSTEM-SPEC.md §3.2). No
         // equivalent notification event exists for a brand counter (spec only models this
@@ -664,6 +838,33 @@ public class DealService {
         return principal.getUserType();
     }
 
+    /**
+     * CR-37 (Kabir audit finding #5) — the brand-side scope id for a deal mutation, AND the
+     * member-role gate that {@code requireBrandWorkspace} on its own was missing.
+     *
+     * <p>{@link #accept}, {@link #counter} and {@link #reject} all resolved the caller's brand
+     * workspace but never checked their MEMBER ROLE — so a workspace {@code VIEWER} (or {@code
+     * MEMBER}) could accept an offer, send a counter, or cancel a deal, while every actual money
+     * movement ({@code EscrowService#initiateFund}/{@code release}/{@code refund}) requires
+     * {@code OWNER}/{@code ADMIN}. That is a privilege inversion: the read-only role could steer a
+     * negotiation it could not fund.
+     *
+     * <p>The tier is {@code OWNER}/{@code ADMIN}/{@code MANAGER} — deliberately the *management*
+     * tier, not the treasury one. Managing a negotiation is the same class of action as generating
+     * a contract ({@code ContractService#generate}) or managing a campaign
+     * ({@code CampaignService}), which already use exactly this set; a MANAGER who can generate the
+     * contract can obviously accept the terms that precede it. It excludes {@code VIEWER} and
+     * {@code MEMBER}. Fixed for all three sibling methods at once — closing only {@code reject}
+     * would leave {@code accept}/{@code counter} open to the identical bypass.
+     */
+    private String requireBrandDealManagerScope(AuthPrincipal principal) {
+        Workspace workspace = brandContext.requireBrandWorkspace(principal);
+        WorkspaceMember member = brandContext.requireMember(principal, workspace.getId());
+        brandContext.requireRole(
+                member, MemberRole.OWNER, MemberRole.ADMIN, MemberRole.MANAGER);
+        return workspace.getId();
+    }
+
     private Campaign requireWorkspaceCampaign(String workspaceId, String campaignId) {
         Campaign campaign =
                 campaignRepository
@@ -700,7 +901,13 @@ public class DealService {
         }
     }
 
-    private void persistProposalMessage(
+    /**
+     * CR-08 — returns the persisted proposal card (it used to return {@code void}) so {@link
+     * #doCounter} can publish the new offer over SSE. {@link #createProposal} ignores the return:
+     * a brand-side proposal is the first event on a brand-new Collaboration, so there is no open
+     * deal room subscribed to it yet.
+     */
+    private DealMessage persistProposalMessage(
             Collaboration collaboration,
             String senderId,
             DealSenderType senderType,
@@ -724,6 +931,26 @@ public class DealService {
         if (deadline != null && !deadline.isBlank()) {
             metadata.put("deadline", deadline);
         }
+        // Snapshot the usage rights as they stand for THIS offer. The SPA renders the card from
+        // message metadata (creator-chat.tsx), and until now this key was never written, so every
+        // proposal card read "Usage Rights: Not specified" no matter what the brand submitted —
+        // the value was only ever on the Collaboration, never on the message.
+        //
+        // Read from the collaboration rather than taking a parameter: both call sites
+        // (createProposal, doCounter) apply their usage-rights term to the entity BEFORE calling
+        // this, so the field already holds the value as of this offer.
+        //
+        // Snapshot, not a live lookup, because usage rights are renegotiable per counter — the
+        // card is a historical record of what was offered at the time. Rendering the deal's
+        // current value instead would retroactively rewrite what older cards claim was on the
+        // table, which is exactly the kind of evidence-trail rewriting settleStatus() exists to
+        // prevent. Existing rows are immutable history and are deliberately NOT backfilled, so
+        // the key is absent on pre-2026-07-27 messages and the renderer keeps its `?? 'Not
+        // specified'` fallback.
+        String usageRights = collaboration.getUsageRights();
+        if (usageRights != null && !usageRights.isBlank()) {
+            metadata.put("usageRights", usageRights);
+        }
         DealMessage proposal =
                 DealMessage.create(
                         Ulids.newUlid(),
@@ -734,10 +961,68 @@ public class DealService {
                         TextSanitizer.sanitizePlainText(message),
                         writeJson(metadata));
         dealMessageRepository.save(proposal);
+        return proposal;
     }
 
-    private void appendSystemMessage(String collaborationId, String content) {
-        dealMessageRepository.save(
+    /**
+     * CR-02 — settles the most recent proposal card's {@code metadata.status} once the offer it
+     * represents is no longer on the table ({@code "accepted"} / {@code "rejected"} /
+     * {@code "countered"}).
+     *
+     * <p>{@link #persistProposalMessage} stamps {@code "pending"} at creation and, until this
+     * existed, nothing ever rewrote it — so every proposal card stayed "pending" forever. The SPA
+     * gates its Accept/Counter/Decline buttons on {@code metadata.status === 'pending'}
+     * (creator-chat.tsx), so it kept offering those actions on an already-agreed deal and the
+     * second click came back 409. The 409 itself is CORRECT and stays: {@code
+     * Collaboration.canAccept()} is the authority on what may be accepted. The stale card is the
+     * bug, not the guard.
+     *
+     * <p>[C2] This participates in the caller's transaction — it is NOT best-effort, and must not
+     * be commented as though it were. An earlier revision wrapped this in try/catch claiming a
+     * failure here could not roll back an already-successful accept. That was simply false:
+     * {@code proposal} is a managed entity, so Hibernate dirty-checking issues the UPDATE at
+     * commit-time flush no matter what this method catches, and a flush failure throws at commit
+     * OUTSIDE any try here; a {@code DataAccessException} from the save would meanwhile have
+     * already marked the transaction rollback-only, turning a swallowed error into
+     * {@code UnexpectedRollbackException}. Either way the caller gets a 500 with the deal unmoved
+     * while the log insists the transition succeeded — the log lying during the incident it exists
+     * to explain. Atomic is also the behaviour we actually want: on a payment evidence trail, a
+     * card whose badge disagrees with the deal's real state is the CR-02 bug returning as a silent
+     * failure mode. If this cannot be written, the accept should fail and be retried.
+     *
+     * <p>The read-modify-write and the pending-only rule both live in {@link
+     * DealMessage#settleStatus} so no caller can rewrite {@code amount} or re-stamp an already
+     * settled card — see the ruling documented there.
+     *
+     * <p>CR-08 — returns the settled card (empty only when the deal has no proposal card at all) so
+     * the caller can republish it over SSE. The returned instance is the SAME managed entity that
+     * was just settled, so {@code getId()} is its ORIGINAL persisted id and {@code
+     * getMetadataJson()} is already post-settle. Publishing it is an UPDATE to a row the client
+     * already has, not a new message — see {@link #publishToStream}'s callers.
+     */
+    private Optional<DealMessage> settleLatestProposal(String collaborationId, String status) {
+        // Same lookup doAccept already ran for its "can't accept your own offer" guard; within one
+        // transaction the persistence context returns that same managed instance, so this is not a
+        // second round trip in the accept path and reject/counter get the lookup they lack.
+        Optional<DealMessage> latest =
+                dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        collaborationId, DealMessageKind.proposal);
+        if (latest.isEmpty()) {
+            return Optional.empty();
+        }
+        DealMessage proposal = latest.get();
+        proposal.settleStatus(status);
+        dealMessageRepository.save(proposal);
+        return latest;
+    }
+
+    /**
+     * CR-08 — returns the persisted row (it used to return {@code void}) so the lifecycle paths can
+     * hand it to {@link #publishToStream}. The returned instance carries the id and {@code
+     * createdAt} that were actually written, which is what a subscriber needs to place the row.
+     */
+    private DealMessage appendSystemMessage(String collaborationId, String content) {
+        DealMessage message =
                 DealMessage.create(
                         Ulids.newUlid(),
                         collaborationId,
@@ -745,7 +1030,9 @@ public class DealService {
                         "system",
                         DealSenderType.system,
                         TextSanitizer.sanitizePlainText(content),
-                        null));
+                        null);
+        dealMessageRepository.save(message);
+        return message;
     }
 
     private DealResponse toDealResponse(
@@ -860,32 +1147,109 @@ public class DealService {
                 parseReadBy(message.getReadByJson()));
     }
 
+    /**
+     * CR-13 — resolves a {@code ?status=} filter to the collaboration states it selects.
+     *
+     * <p><b>Accepts a comma-separated union</b> ({@code ?status=contracted,in_progress,review}),
+     * which is what the creator "Active" chip sends. Before this, that chip sent the single value
+     * {@code in_progress}, which mapped to {@code [IN_PROGRESS]} only — so a signed, CONTRACTED
+     * deal was invisible on the one tab a creator would look for it on, and the tab rendered
+     * "Nothing active." while an active deal existed. Union rather than overloading
+     * {@code in_progress} to mean three stages: {@code in_progress} keeps meaning exactly
+     * IN_PROGRESS, so no other caller is surprised by a name that quietly changed meaning.
+     *
+     * <p><b>TERMS_AGREED moved from {@code contracted} to {@code negotiating}.</b> Per Priya's
+     * ruling on CR-13, the FILTER path is the side that moves. Every DISPLAY mapper already agreed
+     * TERMS_AGREED is pre-contract — {@code DashboardService.bucketFor}, {@code
+     * AdminCampaignService}, {@code CreatorApplicationMapper}, and the frontend's single
+     * {@code mapCollaborationStatusToDealStage} — and this function was one of only two sites
+     * putting it on the far side of the line. It is structurally pre-contract: {@code doAccept}
+     * transitions to TERMS_AGREED and no contract row exists at that point. Consequence fixed: a
+     * TERMS_AGREED deal was badged "Negotiating" yet was NOT returned by the "Negotiating" chip,
+     * leaving it reachable only under "All".
+     *
+     * <p><b>APPLIED added to the creator's {@code negotiating} set</b> — the same defect, one row
+     * over, found while fixing the above. The display mappers put APPLIED in "negotiating", but no
+     * creator-role filter selected it at all: creator {@code new} is {@code [INVITED]} and
+     * {@code negotiating} did not list it, so a creator's own application was unreachable from
+     * every chip except "All". Left in {@code new} for the BRAND role, where an incoming
+     * application genuinely is new work. Strictly speaking this is beyond CR-13's literal text; it
+     * is the identical filter-vs-display divergence in the same switch and was not left behind.
+     *
+     * <p><b>Still selected by no filter: CANCELLED and DISPUTED.</b> That is CR-26, which needs a
+     * display bucket, a chip, and empty-state work on both pages — deliberately not folded in here.
+     *
+     * @return {@code null} to mean "no filtering" (the {@code all} case), never an empty list.
+     */
     private static List<CollaborationStatus> statusesForFilter(String filter, UserType role) {
-        if (filter == null || filter.isBlank() || "all".equalsIgnoreCase(filter)) {
+        if (filter == null || filter.isBlank()) {
             return null;
         }
-        return switch (filter.toLowerCase()) {
+        LinkedHashSet<CollaborationStatus> union = new LinkedHashSet<>();
+        for (String token : filter.split(",")) {
+            String key = token.trim().toLowerCase();
+            if (key.isEmpty()) {
+                continue;
+            }
+            // "all" anywhere in the union widens to everything — filtering on
+            // "all,negotiating" cannot sensibly mean less than "all".
+            if ("all".equals(key)) {
+                return null;
+            }
+            union.addAll(statusesForSingleFilter(key, filter, role));
+        }
+        // Only reachable for input that is entirely separators (","/", ,"). Treated as an
+        // explicit bad request rather than silently degrading to "all", which would show a
+        // creator every deal they own in response to a malformed query.
+        if (union.isEmpty()) {
+            throw new ApiException(
+                    "INVALID_STATUS_FILTER",
+                    "Unknown status filter: " + filter,
+                    HttpStatus.BAD_REQUEST);
+        }
+        return List.copyOf(union);
+    }
+
+    /**
+     * One token of {@link #statusesForFilter}. {@code rawFilter} is echoed in the error so a bad
+     * token inside a union reports the whole filter the caller actually sent.
+     */
+    private static List<CollaborationStatus> statusesForSingleFilter(
+            String key, String rawFilter, UserType role) {
+        return switch (key) {
             case "new" ->
                     role == UserType.CREATOR
                             ? List.of(CollaborationStatus.INVITED)
                             : List.of(CollaborationStatus.APPLIED, CollaborationStatus.INVITED);
             case "negotiating" ->
-                    List.of(CollaborationStatus.SHORTLISTED, CollaborationStatus.IN_NEGOTIATION);
+                    role == UserType.CREATOR
+                            ? List.of(
+                                    CollaborationStatus.APPLIED,
+                                    CollaborationStatus.SHORTLISTED,
+                                    CollaborationStatus.IN_NEGOTIATION,
+                                    CollaborationStatus.TERMS_AGREED)
+                            : List.of(
+                                    CollaborationStatus.SHORTLISTED,
+                                    CollaborationStatus.IN_NEGOTIATION,
+                                    CollaborationStatus.TERMS_AGREED);
             case "contracted" ->
-                    List.of(
-                            CollaborationStatus.TERMS_AGREED,
-                            CollaborationStatus.CONTRACT_PENDING,
-                            CollaborationStatus.CONTRACTED);
+                    List.of(CollaborationStatus.CONTRACT_PENDING, CollaborationStatus.CONTRACTED);
             case "in_progress" -> List.of(CollaborationStatus.IN_PROGRESS);
             case "review" ->
                     List.of(
                             CollaborationStatus.REVIEW_PENDING,
                             CollaborationStatus.REVISION_REQUESTED);
             case "completed" -> List.of(CollaborationStatus.COMPLETED);
+            // CR-26 — before this, CANCELLED and DISPUTED were selected by NO filter at all, so
+            // the only way to reach a disputed deal was the unfiltered "All" list, where it was
+            // additionally mislabelled "Done". Gives the new client-side "Disputed" chip a real
+            // server-backed filter instead of a client-only invention.
+            case "disputed" ->
+                    List.of(CollaborationStatus.CANCELLED, CollaborationStatus.DISPUTED);
             default ->
                     throw new ApiException(
                             "INVALID_STATUS_FILTER",
-                            "Unknown status filter: " + filter,
+                            "Unknown status filter: " + rawFilter,
                             HttpStatus.BAD_REQUEST);
         };
     }

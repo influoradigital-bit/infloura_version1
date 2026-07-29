@@ -72,6 +72,85 @@ import { toast } from '@/hooks/use-toast';
  * Deferred to v2: layout themes, accent colours, custom domains.
  */
 
+/** Outcome of the last "Share page" press. `failed` is sticky on purpose. */
+type ShareState = 'idle' | 'copied' | 'failed';
+
+/**
+ * Copies `text` to the clipboard without assuming a secure context.
+ *
+ * CR-01: Influora is currently served over plain HTTP on a bare IP, where
+ * `navigator.share` AND `navigator.clipboard` are both `undefined` — they are
+ * secure-context-only APIs. The old code called `navigator.clipboard.writeText`
+ * unguarded, threw a TypeError on `undefined`, and swallowed it in an empty
+ * catch, so Share page did nothing at all with no error and no feedback.
+ *
+ * Until HTTPS lands (CR-15, blocked on a domain decision) we fall back to the
+ * legacy `document.execCommand('copy')` path, which carries no secure-context
+ * requirement. Returns whether the copy ACTUALLY happened — callers must not
+ * assume success, because on some locked-down browsers neither path works and
+ * the visible URL field is the only remaining route.
+ */
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      // Permission denied, or an insecure-origin rejection that slipped past the
+      // feature check. Log it, then try the legacy path rather than giving up.
+      console.warn('navigator.clipboard.writeText failed, trying execCommand', err);
+    }
+  }
+
+  // execCommand('copy') acts on the current selection, so the source node has to
+  // be in the document and actually selectable — hence off-screen positioning
+  // rather than `display:none`/`hidden`, which cannot hold a selection.
+  //
+  // KNOWN LIMITATION (iOS Safari): `readonly` + `select()` does not establish a
+  // copyable selection there — iOS needs a contentEditable node plus a Range. We
+  // deliberately do NOT special-case it: iOS is a secure-context-only browser for
+  // our purposes and gets `navigator.clipboard` the moment HTTPS lands (CR-15),
+  // which makes the whole branch moot. Until then iOS falls through to `false`
+  // and lands on the always-visible readonly input below, which is why that input
+  // is not optional.
+  const previousActive = document.activeElement as HTMLElement | null;
+  const previousSelection = window.getSelection();
+  const previousRange =
+    previousSelection && previousSelection.rangeCount > 0
+      ? previousSelection.getRangeAt(0).cloneRange()
+      : null;
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '0';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  try {
+    // focus() before select() is not optional: Chrome happens to focus implicitly
+    // but that is not spec-guaranteed, and without focus execCommand copies
+    // whatever the document selection already was — i.e. silently copies the
+    // wrong thing rather than failing.
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, text.length);
+    return document.execCommand('copy');
+  } catch (err) {
+    console.error('execCommand copy fallback failed', err);
+    return false;
+  } finally {
+    document.body.removeChild(textarea);
+    // Hijacking the selection and focus is a side effect of the copy, not an
+    // intended outcome — put the visitor's back where it was.
+    if (previousRange && previousSelection) {
+      previousSelection.removeAllRanges();
+      previousSelection.addRange(previousRange);
+    }
+    previousActive?.focus?.();
+  }
+}
+
 export default function CreatorPortfolioPublicPage() {
   // The route captures the whole first path segment (e.g. "@priyacreates").
   // A valid portfolio handle MUST start with "@" — otherwise this is some other
@@ -83,28 +162,46 @@ export default function CreatorPortfolioPublicPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [contactOpen, setContactOpen] = React.useState(false);
-  const [shared, setShared] = React.useState(false);
+  const [shareState, setShareState] = React.useState<ShareState>('idle');
+  const shareInputRef = React.useRef<HTMLInputElement>(null);
+
+  const shareUrl = `${window.location.origin}/@${username}`;
 
   const sharePage = React.useCallback(async () => {
-    const url = `${window.location.origin}/@${username}`;
     const title = page ? `${page.displayName} on Influora` : 'Influora creator';
-    // Native share sheet on mobile; clipboard copy everywhere else.
+    // Native share sheet first where it exists (mobile, secure context only).
     if (navigator.share) {
       try {
-        await navigator.share({ title, url });
+        await navigator.share({ title, url: shareUrl });
+        setShareState('idle');
         return;
-      } catch {
-        // user dismissed the share sheet — fall through to copy
+      } catch (err) {
+        // An AbortError is the user closing the sheet on purpose — expected, not a
+        // fault. Anything else is a real failure worth a console line. Either way
+        // we fall through to the copy path, but nothing is swallowed silently.
+        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+          console.warn('navigator.share failed, falling back to clipboard copy', err);
+        }
       }
     }
-    try {
-      await navigator.clipboard.writeText(url);
-      setShared(true);
-      window.setTimeout(() => setShared(false), 2000);
-    } catch {
-      /* clipboard blocked — no-op, button stays idle */
+
+    const copied = await copyTextToClipboard(shareUrl);
+    if (copied) {
+      setShareState('copied');
+      toast({ title: 'Link copied', description: shareUrl });
+      window.setTimeout(() => setShareState('idle'), 2500);
+      return;
     }
-  }, [username, page]);
+    // No auto-reset here: if copying is impossible the creator needs the
+    // manual-select instruction to stay on screen until they've got the link.
+    setShareState('failed');
+    toast({
+      title: 'Could not copy automatically',
+      description: 'Your browser blocked it. Select the link below and copy it manually.',
+      variant: 'destructive',
+    });
+    shareInputRef.current?.select();
+  }, [shareUrl, page]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -120,7 +217,10 @@ export default function CreatorPortfolioPublicPage() {
       .then((data) => {
         if (!cancelled) setPage(data as PortfolioPage);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        // Same no-silent-failures standard as sharePage: the visitor gets the
+        // friendly line, we keep the real reason in the console.
+        console.error('Failed to load public portfolio', err);
         if (!cancelled) setError('We could not find this creator.');
       })
       .finally(() => {
@@ -271,7 +371,7 @@ export default function CreatorPortfolioPublicPage() {
                   </Link>
                 </Button>
                 <Button size="lg" variant="outline" className="gap-2" onClick={sharePage}>
-                  {shared ? (
+                  {shareState === 'copied' ? (
                     <>
                       <CheckCircle2 className="h-4 w-4 text-success" />
                       Link copied
@@ -283,6 +383,53 @@ export default function CreatorPortfolioPublicPage() {
                     </>
                   )}
                 </Button>
+              </div>
+
+              {/* CR-01 — the actual guarantee. Web Share and Clipboard are both
+                  secure-context-only and this app is still on plain HTTP, so no
+                  programmatic copy path can be relied on. The link is therefore
+                  ALWAYS on screen, readonly and selectable: even when every copy
+                  mechanism fails the visitor can select it by hand and paste it.
+                  Keep this even after HTTPS (CR-15) — it costs one row and it is
+                  the only thing here that cannot break.
+
+                  Copy is written for an ANONYMOUS VISITOR, not the creator: this
+                  is the public page, and the CTA directly above it is "Invite to
+                  Campaign". Second-person "your portfolio" would be addressing the
+                  wrong reader on the page creators send to brands. */}
+              <div className="mt-3 max-w-md">
+                <Label htmlFor="portfolio-share-url" className="sr-only">
+                  Link to this portfolio
+                </Label>
+                <Input
+                  id="portfolio-share-url"
+                  ref={shareInputRef}
+                  readOnly
+                  value={shareUrl}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onClick={(e) => e.currentTarget.select()}
+                  className="h-9 font-mono text-xs"
+                />
+                {/* Deliberately NOT a live region. The Radix toast is the announcer
+                    and it fires on both the copied and the failed path, so putting
+                    role="status"/aria-live here would duplicate it — and on the idle
+                    default it made some screen readers announce boilerplate on page
+                    load. This text keeps its visual and navigational value (a screen
+                    reader user who tabs to the input reads it on demand via the
+                    label + adjacent text); it just stops competing for the
+                    announcement. One announcement per outcome. */}
+                <p
+                  className={cn(
+                    'mt-1.5 text-[11px]',
+                    shareState === 'failed' ? 'text-destructive' : 'text-muted-foreground',
+                  )}
+                >
+                  {shareState === 'copied'
+                    ? 'Copied to your clipboard.'
+                    : shareState === 'failed'
+                      ? 'Your browser blocked automatic copying — tap the link above to select it, then copy.'
+                      : 'Anyone with this link can view this portfolio.'}
+                </p>
               </div>
             </div>
           </div>
@@ -587,6 +734,7 @@ function PlatformStatCard({ stats }: { stats: PortfolioPlatformStats }) {
   const Icon = stats.platform === 'INSTAGRAM' ? Instagram : stats.platform === 'YOUTUBE' ? Youtube : Globe;
   const reachLabel = stats.platform === 'YOUTUBE' ? 'Avg Views per Video' : 'Avg Reel Views';
   const followerLabel = stats.platform === 'YOUTUBE' ? 'Subscribers' : 'Followers';
+  const syncedLabel = relativeTime(stats.lastSyncedAt);
   return (
     <Card>
       <CardContent className="p-4">
@@ -622,10 +770,14 @@ function PlatformStatCard({ stats }: { stats: PortfolioPlatformStats }) {
             </div>
           )}
         </div>
-        <p className="mt-3 text-[10px] text-muted-foreground flex items-center gap-1">
-          <RefreshCw className="h-2.5 w-2.5" />
-          Synced {relativeTime(stats.lastSyncedAt)}
-        </p>
+        {/* CR-14 — the whole line is dropped when there is no usable sync
+            timestamp; it never falls through to "Synced NaNd ago". */}
+        {syncedLabel && (
+          <p className="mt-3 text-[10px] text-muted-foreground flex items-center gap-1">
+            <RefreshCw className="h-2.5 w-2.5" />
+            Synced {syncedLabel}
+          </p>
+        )}
       </CardContent>
     </Card>
   );
@@ -923,8 +1075,25 @@ function monthYear(iso: string) {
   return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
 }
 
-function relativeTime(iso: string) {
-  const ms = Date.now() - new Date(iso).getTime();
+/**
+ * CR-14 — renders a relative "x ago" label, or `null` when the timestamp is
+ * missing/unparseable.
+ *
+ * The bug: a missing or invalid `lastSyncedAt` made `new Date(iso).getTime()`
+ * return NaN, which propagated through the day-difference arithmetic and
+ * shipped the literal string "Synced NaNd ago" onto the public page creators
+ * send to brands. Returning `null` lets the caller drop the line entirely
+ * rather than print arithmetic wreckage.
+ *
+ * A future timestamp (clock skew between the sync job and the viewer) also
+ * lands here — negative `ms` floors to a negative hour count, so it is clamped
+ * to 'just now' rather than rendering "-1h ago".
+ */
+function relativeTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return null;
+  const ms = Date.now() - then;
   const hours = Math.floor(ms / (1000 * 60 * 60));
   if (hours < 1) return 'just now';
   if (hours < 24) return `${hours}h ago`;

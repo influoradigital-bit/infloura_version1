@@ -16,7 +16,13 @@ const ToastViewport = React.forwardRef<
   <ToastPrimitives.Viewport
     ref={ref}
     className={cn(
-      'fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]',
+      // `gap-2`: the viewport had no gap at all, so a multi-toast stack rendered
+      // flush edge-to-edge as one undifferentiated slab. Structurally impossible
+      // to hit before TOAST_LIMIT went above 1, hence never noticed.
+      // `max-h-[60vh]`: was `max-h-screen`, which on mobile (top-0) let a full
+      // stack of p-6 toasts blanket the header. Capped so the page underneath is
+      // always partly reachable.
+      'fixed top-0 z-[100] flex max-h-[60vh] w-full flex-col-reverse gap-2 p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]',
       className,
     )}
     {...props}

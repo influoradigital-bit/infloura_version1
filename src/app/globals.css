@@ -42,6 +42,14 @@
   --chart-4: #2e7d7d;
   --chart-5: #a85a36;
   --radius: 0.625rem;
+
+  /* CR-17 — single source of truth for the sticky app header's height.
+     The creator/brand layout headers are `h-14` (3.5rem); the deal room root
+     hardcoded `h-[calc(100vh-4rem)]` against them, overflowing the layout by
+     8px (measured live: main 664px in a 720px viewport, deal room 656px).
+     Both sides now read this token, so they cannot drift again. */
+  --app-header-h: 3.5rem;
+
   --sidebar: #f3effc;
   --sidebar-foreground: #221e35;
   --sidebar-primary: #6d5ae6;

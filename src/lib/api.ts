@@ -34,6 +34,7 @@ import type {
 } from './types';
 import {
   persistBrandSession,
+  persistCreatorSession,
   type BackendTokenPair,
   type BrandSession,
 } from './auth-session';
@@ -55,6 +56,22 @@ const API_MODE: 'live' | 'mock' =
 export function isApiLive(): boolean {
   return API_MODE === 'live';
 }
+
+/**
+ * CR-11 — resolves the `__APP_BUILD_ID__` Vite `define` (vite.config.ts) to a value that is
+ * safe to read from ANY test/build context, not just a real `vite build`.
+ *
+ * `typeof __APP_BUILD_ID__` rather than a bare reference: when the define replaces the
+ * identifier (a real Vite build, or `npm run dev`), this evaluates the substituted literal
+ * as intended. When nothing replaces it (vitest's configs — vitest.config.ts /
+ * vitest.live.config.ts — deliberately aren't touched for this ticket and carry no such
+ * `define`), the identifier is never declared as a runtime binding — `declare const` in
+ * vite-env.d.ts is type-only — so referencing it directly would throw `ReferenceError` the
+ * first time any test imports this module. `typeof` on an unresolvable identifier is the
+ * one JS construct that returns `'undefined'` instead of throwing, so this line is safe in
+ * both worlds without needing either vitest config to know about this build id at all.
+ */
+const APP_BUILD_ID: string = typeof __APP_BUILD_ID__ !== 'undefined' ? __APP_BUILD_ID__ : 'dev';
 
 /**
  * Fail-closed mock guard (Kabir A3). Mock mode (hardcoded `mock_brand_token` /
@@ -579,7 +596,19 @@ const isLive = () => API_MODE === 'live';
 // ---------------------------------------------------------------------------
 
 export interface LoginPayload { email: string; password: string }
-export interface LoginResponse { token: string; userId: string; onboardingComplete: boolean }
+export interface LoginResponse {
+  token: string;
+  userId: string;
+  onboardingComplete: boolean;
+  /**
+   * CR-06 — the authenticated identity, carried through from the backend's
+   * `TokenPair.user` so the caller can populate the auth store instead of
+   * leaving `user` null and letting the shell fall back to a demo profile.
+   * Optional because mock mode has no real user behind it.
+   */
+  email?: string;
+  displayName?: string;
+}
 
 export interface BrandRegisterPayload {
   email: string;
@@ -646,9 +675,17 @@ export const auth = {
    * same way `creatorRegister` does — `http.request<T>()` only casts
    * `envelope.data as T`, so without this mapping `result.token` would be
    * `undefined` in live mode and `setToken('creator', undefined)` would break
-   * login. Creator has no `persistCreatorSession` helper (unlike brand's
-   * `persistBrandSession`); the caller stores the raw token via
-   * `api.auth.setToken('creator', result.token)`.
+   * login.
+   *
+   * CR-06 gave the creator flow its own `persistCreatorSession`, mirroring
+   * `persistBrandSession`, and it is called below — the identity fields are kept
+   * here rather than thrown away, which is what left the shell with no creator to
+   * display. The caller still stores the access token itself via
+   * `api.auth.setToken('creator', result.token)`; this helper deliberately does not
+   * touch the token.
+   *
+   * (CR-33 — this paragraph previously read "Creator has no `persistCreatorSession`
+   * helper... the caller stores the raw token", three lines above the call to it.)
    */
   creatorLogin: async (payload: LoginPayload): Promise<LoginResponse> => {
     if (!isLive()) {
@@ -659,10 +696,14 @@ export const auth = {
       body: payload,
       role: 'creator',
     });
+    // CR-06 — mirror the brand flow: keep the identity, not just the token.
+    const session = persistCreatorSession(data);
     return {
       token: data.accessToken,
-      userId: data.user.id,
-      onboardingComplete: data.onboardingCompleted ?? false,
+      userId: session.userId,
+      onboardingComplete: session.onboardingComplete,
+      email: session.email,
+      displayName: session.displayName,
     };
   },
 
@@ -692,10 +733,14 @@ export const auth = {
       body: payload,
       role: 'creator',
     });
+    // CR-06 — same identity capture as creatorLogin.
+    const session = persistCreatorSession(data);
     return {
       token: data.accessToken,
-      userId: data.user.id,
-      onboardingComplete: data.onboardingCompleted ?? false,
+      userId: session.userId,
+      onboardingComplete: session.onboardingComplete,
+      email: session.email,
+      displayName: session.displayName,
     };
   },
 
@@ -1272,7 +1317,20 @@ export type DealStatusFilter =
   | 'contracted'
   | 'in_progress'
   | 'review'
-  | 'completed';
+  | 'completed'
+  | 'disputed';     // CR-26 — CANCELLED + DISPUTED; previously selected by no filter at all
+
+/**
+ * CR-13 — what actually goes on the wire as `?status=`.
+ *
+ * `DealService.statusesForFilter` accepts a comma-separated union, which is how the creator
+ * "Active" chip asks for `contracted,in_progress,review` in one request. It used to send the
+ * single value `in_progress`, which the server maps to `[IN_PROGRESS]` only — so a signed,
+ * CONTRACTED deal never came back and the Active tab read "Nothing active." while an active
+ * deal existed. Kept distinct from `DealStatusFilter` so the single-value union stays the
+ * vocabulary for chips, empty states and local predicates.
+ */
+export type DealStatusQuery = DealStatusFilter | `${string},${string}`;
 
 export interface Deal {
   id: string;
@@ -1301,7 +1359,7 @@ export const deals = {
    * GET /deals?role=brand|creator&status=...
    * Single endpoint that powers brand Deal Room list AND creator unified Deals page.
    */
-  list: (role: Role, status: DealStatusFilter = 'all') =>
+  list: (role: Role, status: DealStatusQuery = 'all') =>
     isLive()
       ? http.request<Deal[]>('GET', '/deals', { role, query: { status } })
       : mockOr<Deal[]>([]),
@@ -1423,6 +1481,17 @@ export interface DealMessage {
   readBy: string[];
 }
 
+// CR-31 — deal-message stream reconnect tuning. Backoff doubles from BASE to MAX; a
+// connection that holds for STABLE_MS is treated as proof the backend recovered and resets
+// the ladder. MAX is deliberately well under a typical proxy idle-timeout so a room that
+// goes quiet overnight still reattaches on its own rather than waiting for a page reload.
+const STREAM_RECONNECT_BASE_MS = 1_000;
+const STREAM_RECONNECT_MAX_MS = 30_000;
+const STREAM_STABLE_MS = 10_000;
+
+/** HTTP statuses on which reconnecting the message stream cannot possibly help. */
+const TERMINAL_STREAM_STATUSES: readonly number[] = [401, 403, 404];
+
 export const messages = {
   /** GET /deals/:dealId/messages?before= */
   list: (role: Role, dealId: string, before?: string) =>
@@ -1471,22 +1540,68 @@ export const messages = {
    * uses the same ordinary role token (`brand_token`/`creator_token`) every
    * other brand/creator deal request uses.
    *
-   * Returns a handle whose `close()` aborts the underlying fetch — callers
-   * must call it on deal switch and on unmount to avoid leaking connections
-   * or letting a stale deal's stream write into the newly selected one.
+   * Returns a handle whose `close()` aborts the underlying fetch and cancels any
+   * pending reconnect — callers must call it on deal switch and on unmount to avoid
+   * leaking connections or letting a stale deal's stream write into the newly
+   * selected one.
    *
    * Never throws synchronously and never rejects the caller's render path:
    * connection failures, non-OK responses, and stream read errors all route
-   * through `handlers.onError` (optional) so a dropped/failed stream degrades
-   * silently to the existing fetch-on-load (`messages.list`) path.
+   * through `handlers.onError` (optional) so a failed stream degrades to the
+   * existing fetch-on-load (`messages.list`) path.
+   *
+   * ---------------------------------------------------------------------------
+   * CR-31 — this reconnects, and a clean close is a disconnect, not an exit
+   * ---------------------------------------------------------------------------
+   * Dropping `EventSource` for fetch (necessary — `EventSource` cannot send an
+   * `Authorization` header and the token must never ride in the URL) also dropped the
+   * automatic reconnect `EventSource` gives for free, and that was never reimplemented.
+   * Worse, the original read loop treated `done` as a normal return: when the server
+   * closed the stream cleanly — a Caddy idle-timeout, an API restart, any proxy hiccup —
+   * this function returned having called **nothing at all**. Not `onError`, not a log.
+   * The room went permanently deaf with no trace and no recovery short of switching
+   * deals, which silently undid CR-08's entire purpose.
+   *
+   * So: every way a connection can end now schedules a reconnect with exponential
+   * backoff + jitter, and `onStatusChange` exists so the room can say so out loud
+   * rather than looking healthy while receiving nothing.
+   *
+   * The stream carries no `Last-Event-ID` replay, so frames published during a gap are
+   * unrecoverable from the transport. `onReconnect` is the caller's cue to refetch —
+   * reconnecting without it would resume future frames while silently keeping the hole.
    */
   stream: (role: Role, dealId: string, handlers: DealMessageStreamHandlers): DealMessageStreamHandle => {
     const controller = new AbortController();
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    /** Consecutive failed/ended connections. Reset once a connection proves stable. */
+    let attempt = 0;
+    /** Has a connection ever opened? Distinguishes a first connect from a reconnect. */
+    let everOpened = false;
+    /** At most one 401-driven token refresh per connection generation. */
+    let authRetried = false;
 
-    void (async () => {
-      const token = localStorage.getItem(TOKEN_KEYS[role]);
+    const stopped = () => controller.signal.aborted;
+
+    const scheduleReconnect = () => {
+      if (stopped()) return;
+      attempt += 1;
+      const ceiling = Math.min(
+        STREAM_RECONNECT_BASE_MS * 2 ** (attempt - 1),
+        STREAM_RECONNECT_MAX_MS,
+      );
+      // Jittered across the top half of the window: when one API restart drops every open
+      // room at once, they must not all retry on the same tick and restart the stampede.
+      const delay = ceiling / 2 + Math.random() * (ceiling / 2);
+      handlers.onStatusChange?.('reconnecting');
+      retryTimer = setTimeout(() => void connect(), delay);
+    };
+
+    const connect = async (): Promise<void> => {
+      if (stopped()) return;
+
       let response: Response;
       try {
+        const token = localStorage.getItem(TOKEN_KEYS[role]);
         response = await fetch(`${API_BASE_URL}/deals/${dealId}/messages/stream`, {
           method: 'GET',
           headers: {
@@ -1497,21 +1612,51 @@ export const messages = {
           signal: controller.signal,
         });
       } catch (err) {
-        if (controller.signal.aborted) return;
+        if (stopped()) return;
         handlers.onError?.(
           err instanceof Error ? err : new Error('Deal message stream connection failed'),
         );
+        scheduleReconnect();
         return;
       }
 
-      if (controller.signal.aborted) return;
+      if (stopped()) return;
+
+      // 401 is the one rejection worth an instant retry: the access token simply expired
+      // while the room sat open. Ordinary requests get this for free from the H-19
+      // interceptor, which this raw fetch bypasses — so drive the same refresh explicitly.
+      // Guarded to once per generation: a 401 that survives a successful refresh means the
+      // session is genuinely gone, and falls through to the terminal branch below.
+      if (response.status === 401 && !authRetried) {
+        authRetried = true;
+        if (await http.bootstrap(role)) {
+          await connect();
+          return;
+        }
+      }
 
       if (!response.ok || !response.body) {
-        handlers.onError?.(new Error(`Deal message stream rejected (HTTP ${response.status})`));
+        const error = new Error(`Deal message stream rejected (HTTP ${response.status})`);
+        handlers.onError?.(error);
+        // 401/403/404 are verdicts, not blips. Retrying cannot change the answer and would
+        // hammer the API for as long as the room stays open, so this is where we stop.
+        if (TERMINAL_STREAM_STATUSES.includes(response.status)) {
+          handlers.onStatusChange?.('closed');
+        } else {
+          scheduleReconnect();
+        }
         return;
       }
 
+      const openedAt = Date.now();
+      const isReconnect = everOpened;
+      everOpened = true;
+      authRetried = false;
+      handlers.onStatusChange?.('open');
       handlers.onOpen?.();
+      // Anything published while we were down is gone — no replay on this transport. The
+      // caller refetches here or keeps the hole forever.
+      if (isReconnect) handlers.onReconnect?.();
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1543,32 +1688,75 @@ export const messages = {
           }
         }
       } catch (err) {
-        if (!controller.signal.aborted) {
-          handlers.onError?.(err instanceof Error ? err : new Error('Deal message stream interrupted'));
-        }
+        if (stopped()) return;
+        handlers.onError?.(
+          err instanceof Error ? err : new Error('Deal message stream interrupted'),
+        );
       }
-    })();
+
+      if (stopped()) return;
+      // The connection ended — cleanly via `done`, or by the read error just reported.
+      // A clean end is NOT success: the server closed a stream that is supposed to stay
+      // open, so the room is deaf from here. This is the exact path that used to return
+      // in silence (CR-31).
+      //
+      // Only a connection that held for a while counts as proof the backend is healthy;
+      // resetting on any open at all would turn an accept-then-immediately-close server
+      // into a tight reconnect loop at the base delay.
+      if (Date.now() - openedAt >= STREAM_STABLE_MS) attempt = 0;
+      scheduleReconnect();
+    };
+
+    void connect();
 
     return {
-      close: () => controller.abort(),
+      // No 'closed' status emitted here on purpose: this path is the caller closing its own
+      // stream (deal switch, unmount), it already knows, and telling it would mean a state
+      // update from an effect cleanup for no one's benefit.
+      close: () => {
+        controller.abort();
+        if (retryTimer) clearTimeout(retryTimer);
+      },
     };
   },
 };
 
+/**
+ * CR-31 — transport state of a deal-message stream.
+ *
+ * `'closed'` means the stream gave up and will not retry (a 401/403/404 verdict). It is
+ * never emitted for a caller-initiated `close()` — the caller already knows.
+ */
+export type DealMessageStreamStatus = 'open' | 'reconnecting' | 'closed';
+
 export interface DealMessageStreamHandlers {
   /** Called for each `deal-message` SSE event with the parsed DealMessage DTO. */
   onMessage: (message: DealMessage) => void;
-  /** Called once the connection is established (headers received), before any events. */
+  /** Called every time a connection is established (headers received), including reconnects. */
   onOpen?: () => void;
   /**
    * Called on connection failure, a non-OK response, or a stream read error.
    * Never throws internally — the caller decides whether/how to degrade.
+   *
+   * CR-31: this fires on every failed attempt, so it is a diagnostic channel, not a
+   * "the room is broken" signal. Drive user-facing state from `onStatusChange`.
    */
   onError?: (error: Error) => void;
+  /**
+   * CR-31 — transport state changes, so the room can show that it has stopped receiving
+   * instead of looking healthy while deaf.
+   */
+  onStatusChange?: (status: DealMessageStreamStatus) => void;
+  /**
+   * CR-31 — a connection opened after a previous one dropped. **Refetch here.** This
+   * transport has no `Last-Event-ID` replay, so frames published during the gap are gone;
+   * reconnecting without refetching resumes future messages and keeps the hole.
+   */
+  onReconnect?: () => void;
 }
 
 export interface DealMessageStreamHandle {
-  /** Aborts the underlying fetch and stops reading the stream. */
+  /** Aborts the underlying fetch, cancels any pending reconnect, and stops reading. */
   close: () => void;
 }
 
@@ -2773,7 +2961,14 @@ export interface PortfolioPlatformStats {
   followers: number;
   engagementRate: number;
   avgReach?: number;
-  lastSyncedAt: string; // ISO
+  /**
+   * ISO timestamp of the last platform sync. CR-14 — declared non-nullable
+   * here, but the live `GET /portfolio/:username` response omits it for a
+   * platform that has never completed a sync, which is how the public page
+   * came to render the literal "Synced NaNd ago". Typed to match what the
+   * server actually sends so the consumer's guard isn't dead code.
+   */
+  lastSyncedAt?: string | null;
 }
 
 export interface PortfolioCollab {
@@ -3949,6 +4144,97 @@ export const creatorCopilot = {
 };
 
 // ---------------------------------------------------------------------------
+// Client crash reporting (CR-11)
+// ---------------------------------------------------------------------------
+// wiki/tech/cr-11-client-error-contract.md — LOCKED contract, do not deviate from the
+// payload shape or the frontend rules documented there without Priya's sign-off.
+
+/** Raw fields `ErrorBoundary.componentDidCatch` has on hand; `report` fills in the rest. */
+export interface ClientErrorReportInput {
+  message: string;
+  stack: string | null;
+  componentStack: string | null;
+  /** `location.pathname` ONLY — never `search`/`hash`/`href` (contract: query strings here
+   *  carry `?deal=<id>` and OAuth callback params). Caller's responsibility to pass the
+   *  right value; this module does not read `window.location` itself. */
+  pathname: string;
+}
+
+/** Client-side caps from the contract table. A courtesy only — "the server re-truncates
+ *  everything" regardless of what arrives, so these exist to keep the request body small,
+ *  not to enforce the contract. */
+const CLIENT_ERROR_CAPS = {
+  message: 500,
+  stack: 4000,
+  componentStack: 4000,
+  pathname: 200,
+  buildId: 64,
+  userAgent: 300,
+} as const;
+
+function capString(value: string, max: number): string {
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+function capNullableString(value: string | null, max: number): string | null {
+  return value == null ? null : capString(value, max);
+}
+
+export const clientErrors = {
+  /**
+   * POST /client-errors — reports an uncaught render crash. Response is `202 Accepted`
+   * with an empty body (contract), so this deliberately does NOT go through `HttpClient`:
+   * `http.request` expects the standard `{ success, data, error }` envelope and would
+   * throw trying to parse an empty 202 body as JSON, which is exactly backwards for an
+   * endpoint whose entire job is to survive being unreachable.
+   *
+   * - Mock mode never touches the network — there is no mock backend for this endpoint
+   *   and this call site (a render crash) is the last place that should ever be blocked
+   *   on one existing.
+   * - Auth is optional server-side (contract). Attaches whichever role token happens to
+   *   be in `localStorage`, brand checked first: a render crash can happen logged out
+   *   entirely (the public portfolio page), or under either role, and this call site has
+   *   no other way to know which.
+   * - NEVER throws or rejects, by construction: mock-mode returns before touching
+   *   anything that could fail, and the live-mode path wraps `fetch` in try/catch and
+   *   resolves either way. `ErrorBoundary.componentDidCatch` (CR-11 rule 1) cannot survive
+   *   a throw from its own error-reporting side effect, so this guarantee is load-bearing,
+   *   not incidental — see ErrorBoundary.tsx's own belt-and-braces `.catch()` on the call.
+   */
+  report: (input: ClientErrorReportInput): Promise<void> => {
+    if (!isLive()) return Promise.resolve();
+    return (async () => {
+      try {
+        const token =
+          localStorage.getItem(TOKEN_KEYS.brand) ?? localStorage.getItem(TOKEN_KEYS.creator);
+        const body = {
+          message: capString(input.message, CLIENT_ERROR_CAPS.message),
+          stack: capNullableString(input.stack, CLIENT_ERROR_CAPS.stack),
+          componentStack: capNullableString(input.componentStack, CLIENT_ERROR_CAPS.componentStack),
+          pathname: capString(input.pathname, CLIENT_ERROR_CAPS.pathname),
+          buildId: capString(APP_BUILD_ID, CLIENT_ERROR_CAPS.buildId),
+          userAgent: capString(
+            typeof navigator !== 'undefined' ? navigator.userAgent : '',
+            CLIENT_ERROR_CAPS.userAgent,
+          ),
+        };
+        await fetch(`${API_BASE_URL}/client-errors`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(body),
+        });
+      } catch {
+        // Rule 5 (contract) — failure is silent. A crash reporter that surfaces its own
+        // errors to the user is worse than no crash reporter.
+      }
+    })();
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Default export — single facade
 // ---------------------------------------------------------------------------
 
@@ -3991,6 +4277,7 @@ export const api = {
   brandDisputes,
   trendspark,
   creatorCopilot,
+  clientErrors,
 };
 
 export default api;

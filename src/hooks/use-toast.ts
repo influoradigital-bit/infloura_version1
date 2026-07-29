@@ -5,8 +5,35 @@ import * as React from 'react'
 
 import type { ToastActionElement, ToastProps } from '@/components/ui/toast'
 
-const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+/**
+ * How many toasts may be on screen at once.
+ *
+ * CR-03: this was 1, which made the queue a single slot with no queueing — any
+ * second toast fired in the same moment replaced the first outright, so whichever
+ * of two simultaneous failures happened to dispatch last was the only one the
+ * user ever saw.
+ *
+ * 2, not 3: the real burst this needs to survive is exactly two deep (a failed
+ * action plus the refetch it triggers). Each toast is `p-6`, and the viewport is
+ * pinned to `top-0` on mobile, so every extra slot is ~100px of a phone screen
+ * covered — 3 could blanket the header. 2 clears the actual requirement at half
+ * the worst-case footprint. Paired with `gap-2` + `max-h-[60vh]` on ToastViewport
+ * (components/ui/toast.tsx), which had no gap and no realistic height cap because
+ * a stack was impossible while this was 1.
+ */
+const TOAST_LIMIT = 2
+
+/**
+ * How long a toast stays in the store AFTER it has been dismissed/closed, before
+ * being dropped from state. This is purely the exit-animation grace period.
+ *
+ * CR-03: this was 1000000 (16.6 minutes) — the shadcn default that nobody ever
+ * changes. Combined with TOAST_LIMIT above it meant a toast the user closed at
+ * 09:00 was still occupying the store at 09:16, so `dismiss()` with no id and any
+ * capacity arithmetic operated on long-dead entries. 4s comfortably outlasts the
+ * Radix slide-out.
+ */
+const TOAST_REMOVE_DELAY = 4000
 
 type ToasterToast = ToastProps & {
   id: string
@@ -126,15 +153,33 @@ export const reducer = (state: State, action: Action): State => {
   }
 }
 
-const listeners: Array<(state: State) => void> = []
+const listeners: Array<() => void> = []
 
 let memoryState: State = { toasts: [] }
 
 function dispatch(action: Action) {
   memoryState = reducer(memoryState, action)
   listeners.forEach((listener) => {
-    listener(memoryState)
+    listener()
   })
+}
+
+/** `useSyncExternalStore` subscribe half — returns its own unsubscribe. */
+function subscribe(onStoreChange: () => void) {
+  listeners.push(onStoreChange)
+  return () => {
+    const index = listeners.indexOf(onStoreChange)
+    if (index > -1) {
+      listeners.splice(index, 1)
+    }
+  }
+}
+
+/** `useSyncExternalStore` snapshot half. `memoryState` is replaced wholesale by
+ *  the reducer on every dispatch and otherwise referentially stable, which is
+ *  exactly the identity contract the hook requires. */
+function getSnapshot() {
+  return memoryState
 }
 
 type Toast = Omit<ToasterToast, 'id'>
@@ -168,18 +213,23 @@ function toast({ ...props }: Toast) {
   }
 }
 
+/**
+ * CR-03: this was a hand-rolled `useState(memoryState)` + `useEffect(..., [state])`
+ * subscription — the shadcn original. Two problems, both of which drop toasts on
+ * the floor rather than showing them:
+ *
+ *   1. The initial value is snapshotted at FIRST render but the listener is only
+ *      registered on commit. Anything dispatched in that gap mutated the module
+ *      store while nobody was subscribed, and never reached the screen.
+ *   2. `[state]` as the dependency tore the listener down and re-registered it on
+ *      every single toast, reopening that same gap on each update.
+ *
+ * `useSyncExternalStore` is the purpose-built primitive for exactly this shape:
+ * it re-reads the snapshot on subscribe, so neither gap can exist, and it is
+ * tear-safe under concurrent rendering.
+ */
 function useToast() {
-  const [state, setState] = React.useState<State>(memoryState)
-
-  React.useEffect(() => {
-    listeners.push(setState)
-    return () => {
-      const index = listeners.indexOf(setState)
-      if (index > -1) {
-        listeners.splice(index, 1)
-      }
-    }
-  }, [state])
+  const state = React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 
   return {
     ...state,

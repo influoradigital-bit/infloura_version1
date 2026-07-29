@@ -14,6 +14,7 @@ import com.influora.domain.entity.PaymentMilestone;
 import com.influora.domain.entity.User;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
+import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DeliverableType;
@@ -179,14 +180,33 @@ public class ContractService {
         // throws CONTRACT_ALREADY_EXISTS below. Deliberately acquired AFTER the workspace-ownership
         // check above (an unauthorized caller should fail fast without taking a row lock) but
         // BEFORE the exists-check + insert it is meant to serialize.
-        collaborationRepository
-                .findByIdForUpdate(collaboration.getId())
-                .orElseThrow(
-                        () ->
-                                new ApiException(
-                                        "COLLABORATION_NOT_FOUND",
-                                        "Collaboration not found",
-                                        HttpStatus.NOT_FOUND));
+        // Re-fetched under the lock rather than reassigning `collaboration` itself — the latter is
+        // captured by the milestone-building lambda further down and reassigning it would make it
+        // non-effectively-final. Within this persistence context the two reads resolve to the SAME
+        // managed entity instance (JPA first-level cache, same @Id), so this is not a second,
+        // divergent copy — just a name that makes "read under the lock" explicit at the call site.
+        Collaboration lockedCollaboration =
+                collaborationRepository
+                        .findByIdForUpdate(collaboration.getId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "COLLABORATION_NOT_FOUND",
+                                                "Collaboration not found",
+                                                HttpStatus.NOT_FOUND));
+
+        // [CR-22a, Kabir finding #1] Nothing downstream of DealService#reject ever checked
+        // CollaborationStatus, so a CANCELLED deal's contract could still be generated (and later
+        // fully signed to ACTIVE — see the equivalent guard in #doRecordSignature). Checked here,
+        // under the row lock just acquired above, so a reject() racing this exact call is
+        // serialized against it rather than raced: whichever of {reject, generate} commits first
+        // is what the other observes.
+        if (lockedCollaboration.getStatus() == CollaborationStatus.CANCELLED) {
+            throw new ApiException(
+                    "COLLABORATION_CANCELLED",
+                    "This deal was cancelled and can no longer be contracted",
+                    HttpStatus.CONFLICT);
+        }
 
         // [BE-1: Vikram, contract-flow-architecture-2026-07-23 §6.4 — immutability/duplicate guard]
         // Previously `generate` had no awareness of any contract that might already exist for this
@@ -577,6 +597,23 @@ public class ContractService {
      * short-circuit still runs first as a fast, non-error idempotent-replay path for a genuine
      * sequential retry (the original E2 audit finding #10 scenario); {@code executeOnce} additionally
      * arbitrates the narrower truly-concurrent race that check alone cannot catch.
+     *
+     * <p><b>[CR-22a, Kabir finding #1 + #6]</b> Previously this method had no {@code
+     * CollaborationStatus} awareness at all — a contract could be signed to {@code ACTIVE} on a
+     * {@code CANCELLED} collaboration ({@code CollaborationLifecycleService#onContractFullySigned}
+     * only froze the STATUS LABEL, it never stopped the signature itself). A genuinely NEW
+     * signature (not an idempotent replay of one already recorded) now takes the same {@code
+     * PESSIMISTIC_WRITE} lock on the collaboration row that {@link #generate} and {@code
+     * DealService#doReject} take, and re-checks {@code CANCELLED} under that lock — so this is
+     * serialized against a concurrent {@code reject()} the same way {@link #generate} is: whichever
+     * of {reject, sign} commits first is what the other observes, not a stale snapshot. Placed
+     * AFTER the already-signed short-circuit below, deliberately — an idempotent replay of an
+     * already-fully-executed signature must keep touching nothing beyond the contract itself (see
+     * {@code ContractServiceTest#testRetriedSignatureAfterFullyExecutedIsNoOp}'s {@code
+     * verifyNoInteractions(..., collaborationRepository)}), and is in any case not a hole: once a
+     * signature is genuinely recorded, {@code canReject()} can no longer reach {@code CANCELLED}
+     * from here (a contract implies at least {@code CONTRACT_PENDING}, which is past the CR-22a
+     * cut line).
      */
     private ContractResponse doRecordSignature(Contract contract, boolean isBrand) {
         boolean alreadySignedByThisRole =
@@ -588,6 +625,22 @@ public class ContractService {
             List<PaymentMilestone> existingMilestones =
                     milestoneRepository.findByContractIdOrderBySequenceNoAsc(contract.getId());
             return toResponse(contract, existingMilestones);
+        }
+
+        Collaboration collaboration =
+                collaborationRepository
+                        .findByIdForUpdate(contract.getCollaborationId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "COLLABORATION_NOT_FOUND",
+                                                "Collaboration not found",
+                                                HttpStatus.NOT_FOUND));
+        if (collaboration.getStatus() == CollaborationStatus.CANCELLED) {
+            throw new ApiException(
+                    "COLLABORATION_CANCELLED",
+                    "This deal was cancelled and its contract can no longer be signed",
+                    HttpStatus.CONFLICT);
         }
 
         if (isBrand) {

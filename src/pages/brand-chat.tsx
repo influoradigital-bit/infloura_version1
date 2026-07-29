@@ -38,10 +38,14 @@ import {
   isApiLive,
   ApiError,
   type DealMessage,
+  type DealMessageStreamStatus,
   type Deal,
   type ContractApiRecord,
   type ContractStatus,
 } from '@/lib/api';
+// CR-24 — the one switch over CollaborationStatus. CR-34 — and the one mirror of
+// Collaboration.canAccept(), which this file used to duplicate. See lib/deal-stage.ts.
+import { allowsProposalResponse, mapCollaborationStatusToDealStage } from '@/lib/deal-stage';
 import type { CollaborationStatus } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -161,28 +165,39 @@ interface ChatDealRoom {
 // deal-room-list shape). Deals with no equivalent dealStatus (CANCELLED,
 // DISPUTED) are filtered out — this list has no matching status chip for them.
 // ---------------------------------------------------------------------------
+/**
+ * CR-24 — derived from the shared `mapCollaborationStatusToDealStage`, not from a second
+ * private switch over `CollaborationStatus`.
+ *
+ * **This is a real behaviour change and it is the point of the ticket.** The deleted copy
+ * mapped `TERMS_AGREED -> 'contracted'` — character-for-character the mapping removed from
+ * `creator-chat.tsx` as the CR-05 defect. So the instant a creator pressed Accept, the creator
+ * saw "Negotiating" and the brand saw "Contracted" for the same deal, and no contract existed
+ * on either side. A TERMS_AGREED deal now reads **Negotiating** here, matching the creator, all
+ * three backend display mappers, and (since CR-13) the filter path.
+ *
+ * ⚠️ Brand-side badge copy changes for TERMS_AGREED deals — Kavya/Neha should confirm the chips
+ * and filters on this page against the new value. Priya flagged the brand vocabulary as needing
+ * its own QA pass; this is that pass's subject.
+ *
+ * The two deltas below are the brand's own perspective, expressed once and explained, rather
+ * than hidden inside a duplicated switch.
+ */
 function mapDealStatusToChatStatus(status: Deal['status']): ChatDealRoom['dealStatus'] | null {
-  switch (status) {
-    case 'INVITED':
-    case 'APPLIED':
-    case 'SHORTLISTED':
-    case 'IN_NEGOTIATION':
+  const stage = mapCollaborationStatusToDealStage(status);
+  switch (stage) {
+    // No 'new' bucket on this page: from the brand's side an INVITED deal is one they have
+    // already reached out on, so it belongs with the rest of the pre-contract work.
+    case 'new':
+    case 'negotiating':
       return 'negotiating';
-    case 'TERMS_AGREED':
-    case 'CONTRACT_PENDING':
-    case 'CONTRACTED':
-      return 'contracted';
-    case 'IN_PROGRESS':
-      return 'in_progress';
-    case 'REVIEW_PENDING':
-    case 'REVISION_REQUESTED':
-      return 'review';
-    case 'COMPLETED':
-      return 'completed';
-    case 'CANCELLED':
-    case 'DISPUTED':
-    default:
+    // Filtered out of the list entirely — unchanged behaviour. This deal-room list has no
+    // disputed chip, so a null row is dropped by `mapDealToChatRoom`. Giving the brand side a
+    // disputed bucket is CR-26's brand half and is not folded in here.
+    case 'disputed':
       return null;
+    default:
+      return stage;
   }
 }
 
@@ -467,6 +482,14 @@ const mockTimelineEvents = [
   },
 ];
 
+/**
+ * CR-07 — demo-mode stand-in for `latestProposalMessageId`. The scripted timeline is static, so
+ * the offer "on the table" is simply its last proposal event; Accept is never offered on an
+ * earlier, superseded card.
+ */
+const LATEST_MOCK_PROPOSAL_ID =
+  [...mockTimelineEvents].reverse().find((e) => e.type === 'proposal')?.id ?? null;
+
 function getDeliverablesForDeal(dealId: string): DealDeliverableItem[] {
   if (dealId === 'deal-1') {
     return mockTimelineEvents
@@ -514,6 +537,70 @@ function formatDate(date: Date): string {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/**
+ * W2-H1 — whether an incoming stream frame could mean the COLLABORATION moved, and therefore
+ * that `rawStatus` (which gates Accept/Counter) needs re-reading. No frame carries the deal's
+ * own status, so this is a trigger, not a source of truth.
+ *
+ * Deliberately NOT "a settled proposal card arrived", which is too narrow:
+ * `DealService.settleLatestProposal` no-ops when the deal has no proposal card at all, so an
+ * INVITED deal accepted straight off the invite reaches TERMS_AGREED having settled nothing —
+ * only the system message is published, and a card-only trigger would leave the gate stale.
+ */
+function mayIndicateDealStatusChange(message: DealMessage): boolean {
+  return message.kind === 'proposal' || message.kind === 'system';
+}
+
+/** CR-07 — outcome of the last Accept attempt, pinned to the card it came from. */
+interface ProposalFeedback {
+  /**
+   * Deal room the attempt happened in — the banner render is gated on this matching the
+   * selected deal, so switching rooms hides it without an effect that clears state.
+   */
+  dealId: string;
+  /** Message/event id of the proposal card the attempt originated from. */
+  proposalId: string;
+  tone: 'success' | 'error';
+  message: string;
+  /** True for the 409s that mean "stale card" — those get a Refresh affordance. */
+  stale: boolean;
+}
+
+/**
+ * CR-07 — turns an accept rejection into copy the brand can act on.
+ *
+ * A 409 here is never "try again": the deal has genuinely moved, and retrying fails identically
+ * forever. Each code DealService.doAccept can raise gets its own explanation; anything else keeps
+ * the server's own message and only falls back to a retry prompt for transient failures.
+ */
+function describeAcceptError(err: unknown): { message: string; stale: boolean } {
+  if (err instanceof ApiError && err.status === 409) {
+    switch (err.code) {
+      case 'DEAL_NOT_ACCEPTABLE':
+        return {
+          message:
+            'This deal has already moved past the offer stage — it can no longer be accepted. Refresh to see where it stands now.',
+          stale: true,
+        };
+      case 'CANNOT_ACCEPT_OWN_OFFER':
+        return {
+          message:
+            'You made the last offer, so the creator has to accept it. Send a new proposal if you want to change the terms.',
+          stale: false,
+        };
+      default:
+        return { message: err.message, stale: true };
+    }
+  }
+  if (err instanceof ApiError) {
+    return { message: err.message, stale: false };
+  }
+  return {
+    message: 'Could not accept this proposal. Check your connection and try again.',
+    stale: false,
+  };
+}
+
 export default function BrandChatPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const creatorIdFromUrl = searchParams.get('creator');
@@ -541,6 +628,14 @@ export default function BrandChatPage() {
     React.useState<Record<string, DealContractStatus>>(INITIAL_CONTRACT_STATUS);
   const [showProposalForm, setShowProposalForm] = React.useState(false);
   const [isSubmittingProposal, setIsSubmittingProposal] = React.useState(false);
+  const [isAcceptingProposal, setIsAcceptingProposal] = React.useState(false);
+  const [proposalFeedback, setProposalFeedback] = React.useState<ProposalFeedback | null>(null);
+  /**
+   * CR-07 — demo-mode settle for the scripted proposal cards. Live mode re-reads the real
+   * `metadata.status` that `DealService.settleLatestProposal` writes; demo mode has no server,
+   * so an accepted card would otherwise keep offering Accept forever.
+   */
+  const [demoProposalStatuses, setDemoProposalStatuses] = React.useState<Record<string, string>>({});
   /**
    * Real workspace platform fee for the proposal form's cost breakdown. The form used to
    * hardcode 10%; the platform default is 15% (application.yml PLATFORM_FEE_PERCENT), so brands
@@ -581,6 +676,13 @@ export default function BrandChatPage() {
   const [liveMessages, setLiveMessages] = React.useState<DealMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = React.useState(false);
   const [messagesError, setMessagesError] = React.useState<string | null>(null);
+  /**
+   * CR-31 — realtime transport state for the selected room's stream. Seeded optimistically
+   * to 'open' for the same reasons as the creator room: the banner renders only when this is
+   * NOT 'open', so a truthful 'connecting' seed would flash on every healthy deal switch, and
+   * `messagesApi.stream` emits no status synchronously to seed it from.
+   */
+  const [streamStatus, setStreamStatus] = React.useState<DealMessageStreamStatus>('open');
 
   // B-1: live deliverables (GET /deals/:id/deliverables). Live mode only.
   const [liveDeliverables, setLiveDeliverables] = React.useState<DealDeliverableItem[]>([]);
@@ -631,6 +733,82 @@ export default function BrandChatPage() {
   React.useEffect(() => {
     if (isApiLive()) void loadDealRooms();
   }, [loadDealRooms]);
+
+  /**
+   * W2-H1 — per-deal monotonic tokens for {@link refreshDeal}. Keyed by deal id, not one shared
+   * counter: refreshes of two DIFFERENT deals are both legitimate and must both land, while a
+   * slow response for one deal must never overwrite a newer response for that same deal. A
+   * single counter drops the former; no counter at all allows the latter.
+   */
+  const dealRefreshRefs = React.useRef(new Map<string, number>());
+
+  /**
+   * W2-H1 — re-read ONE deal (`GET /deals/:id`) and upsert it into the list.
+   *
+   * Before this, `brand-chat.tsx` had no way to re-read a deal at all: the accept handler and
+   * the stream both refreshed messages only, so `selectedDeal.rawStatus` — which is the whole
+   * of the Accept/Counter gate — was never correct after any transition. It kept whatever value
+   * the deal had when the list was last loaded, so a deal that had moved to TERMS_AGREED or
+   * CANCELLED elsewhere still rendered live buttons that could only 409.
+   *
+   * Deliberately narrow: nothing here touches `dealsLoading`/`dealsError`, so a background
+   * refresh never replaces the deal list with a spinner or an error panel mid-action (the
+   * creator side's CR-21). `loadDealRooms()` keeps its two real jobs — first paint and the
+   * error-state Retry — where a list-level spinner is the honest thing to show.
+   */
+  const refreshDeal = React.useCallback(
+    async (id: string) => {
+      if (!isApiLive()) return;
+      const token = (dealRefreshRefs.current.get(id) ?? 0) + 1;
+      dealRefreshRefs.current.set(id, token);
+      /** Has a newer refresh of THIS deal started since we issued ours? */
+      const isSupersededRefresh = (dealId: string) =>
+        dealRefreshRefs.current.get(dealId) !== token;
+      try {
+        const fresh = await dealsApi.get('brand', id);
+        if (isSupersededRefresh(id)) return;
+        if (!fresh) return;
+        const room = mapDealToChatRoom(fresh);
+        setLiveDealRooms((prev) => {
+          // CANCELLED / DISPUTED map to null: this list has no chip for them, so the row drops
+          // out exactly as it does on a full `loadDealRooms()`.
+          if (!room) return prev.filter((d) => d.id !== id);
+          return prev.some((d) => d.id === room.id)
+            ? prev.map((d) => (d.id === room.id ? room : d))
+            : [room, ...prev];
+        });
+        // The open room is plain state, and the list-sync effect below can only reach it via a
+        // row that survived the mapping. Patch it here so a deal that just became
+        // CANCELLED/DISPUTED still closes its Accept/Counter gate instead of keeping the
+        // rawStatus it was selected with. The coarse `dealStatus` chip cannot express those two
+        // states — that is the brand status-vocabulary gap tracked separately, not this fix.
+        setSelectedDeal((prev) =>
+          prev && prev.id === id ? (room ?? { ...prev, rawStatus: fresh.status }) : prev,
+        );
+      } catch (err) {
+        // Log unconditionally — a request really did fail and that is worth diagnosing even
+        // if its result is no longer wanted.
+        console.error('Failed to refresh deal', id, err);
+        // W2-L1b — the success path's staleness guard applies to the failure path too, and
+        // used to be missing here. A slow refresh that fails AFTER a newer refresh of the
+        // same deal already succeeded has nothing to report: what is on screen is current,
+        // and "Could not refresh this deal" would flatly contradict it.
+        if (isSupersededRefresh(id)) return;
+        // Otherwise never silent. The visible consequence of a failed refresh is Accept/Counter
+        // continuing to render on a deal that has already closed — the brand would otherwise
+        // discover it only by clicking and eating a 409.
+        toast({
+          title: 'Could not refresh this deal',
+          description:
+            err instanceof ApiError
+              ? err.message
+              : "This deal's status may be out of date. Reload to be sure.",
+          variant: 'destructive',
+        });
+      }
+    },
+    [toast],
+  );
 
   // Keep `selectedDeal` (plain state, not derived) in sync whenever the live
   // list refreshes — e.g. right after POST /contracts, so the newly-real
@@ -848,20 +1026,47 @@ export default function BrandChatPage() {
     }
   };
 
+  // W2-C1 — keyed on the deal ID, not the deal OBJECT. Messages and deliverables belong to a
+  // deal id; re-reading them because the row's identity changed is never right, and with
+  // `refreshDeal` now firing per stream frame it is actively harmful: each frame produced a new
+  // deal object, the object identity re-ran this effect, and `loadMessages` then replaced
+  // `liveMessages` wholesale — overwriting the very frame that had just been merged, and
+  // flipping `messagesLoading` so the room showed "Loading messages…" in place of the thread on
+  // every incoming frame.
   React.useEffect(() => {
     if (isApiLive() && selectedDeal) {
       void loadMessages(selectedDeal.id);
       void loadDeliverables(selectedDeal.id);
     }
-  }, [selectedDeal, loadMessages, loadDeliverables]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDeal?.id, loadMessages, loadDeliverables]);
 
   // Realtime messaging (Priya direct assignment, SHARED_CONTEXT.md "Realtime
   // messaging for brand-chat"): opens the deal-message SSE stream after the
-  // initial messagesApi.list load, live mode only. Dedupe by message id is
-  // mandatory — sendMessage's publish-on-send fires to every open emitter
-  // for the deal including the sender's own, and handleSendMessage already
-  // appends the message returned by messagesApi.send, so without this guard
-  // the sender would see every own-message twice.
+  // initial messagesApi.list load, live mode only.
+  //
+  // W2-C1 — the merge is an UPSERT BY ID, not ignore-if-present. Both halves matter:
+  //   - Unknown id  -> append. sendMessage publishes to every open emitter for the deal
+  //     including the sender's own, and handleSendMessage already appends what
+  //     messagesApi.send returned, so a plain append would show own-messages twice.
+  //   - Known id    -> REPLACE IN PLACE. Ignore-if-present was correct while messages were
+  //     immutable and only sendMessage published. CR-08 changed that: accept/reject/counter
+  //     republish the settled proposal card under its ORIGINAL id with mutated metadata, and
+  //     `DealMessageStreamRegistry` keys emitters by deal id with no role partition, so this
+  //     room receives every frame the creator's action emits. Dropping the known id discarded
+  //     precisely the update that retires the Accept button — a straight reintroduction of
+  //     CR-02, where the brand saw "Creator accepted the proposal" above a card still reading
+  //     Pending with a live Accept beneath it, and clicking it 409'd DEAL_NOT_ACCEPTABLE.
+  //
+  // The merge is idempotent, which is required regardless of CR-08: SSE redelivers on
+  // reconnect and loadMessages replaces the array wholesale — both converge on the same list.
+  //
+  // Frames are applied ONE AT A TIME in arrival order, never buffered, batched or coalesced.
+  // CR-08 publishes the settled card first and the system message (or, on a counter, the new
+  // pending card) second, precisely so the room never renders a "Creator accepted" line above a
+  // card that still has live buttons. Reordering or batching here would throw that away. Each
+  // setLiveMessages is a functional update, so React may coalesce the RENDERS while the
+  // updates still apply in the order the frames arrived.
   //
   // Keyed on selectedDeal?.id (not the selectedDeal object) so a deal-room
   // list refresh that returns a new object for the same deal doesn't tear
@@ -876,24 +1081,52 @@ export default function BrandChatPage() {
     const handle = messagesApi.stream('brand', dealId, {
       onMessage: (incoming) => {
         setLiveMessages((prev) => {
-          if (prev.some((m) => m.id === incoming.id)) return prev;
-          return [...prev, incoming];
+          const idx = prev.findIndex((m) => m.id === incoming.id);
+          if (idx === -1) return [...prev, incoming];
+          const next = prev.slice();
+          next[idx] = incoming;
+          return next;
         });
+        // W2-H1 — no frame carries the collaboration's own status, so re-read the deal
+        // whenever one arrives that could imply a transition. Fired per frame and not
+        // coalesced: a counter publishes two frames and therefore two GETs, which the per-deal
+        // token in refreshDeal resolves last-write-wins. Narrow by construction — one
+        // GET /deals/:id, touching neither dealsLoading nor dealsError, so a frame can never
+        // blank the room or the deal list.
+        if (mayIndicateDealStatusChange(incoming)) {
+          void refreshDeal(dealId);
+        }
+        // Unchanged, and unconditional as before: a replaced frame scrolls too. Settling a
+        // card in place normally happens at the foot of the thread anyway, and making this
+        // conditional would mean reading the append/replace outcome back out of a functional
+        // updater, which is not a safe place to observe from.
         setTimeout(scrollToBottom, 50);
       },
-      onError: () => {
-        // Graceful degrade: a dropped/failed stream is silent and non-fatal —
-        // the existing fetch-on-load path (loadMessages) already covers
-        // message delivery, so send/render must never be blocked by this.
-        console.debug('[brand-chat] deal message stream error/closed for deal', dealId);
+      onError: (err) => {
+        // Still non-fatal and still not a toast — send/render never depend on the stream.
+        // CR-31: this now fires per failed ATTEMPT and the transport retries, so it is a
+        // diagnostic line rather than the room's state. `streamStatus` is the state.
+        console.debug('[brand-chat] deal message stream error for deal', dealId, err);
+      },
+      onStatusChange: setStreamStatus,
+      onReconnect: () => {
+        // CR-31 — nothing published during the gap is recoverable from the transport, so
+        // re-read both: `loadMessages` restores the thread, `refreshDeal` restores
+        // `rawStatus`, which gates Accept/Counter here exactly as `collaborationStatus`
+        // does on the creator side. Messages alone would leave the CR-07 controls
+        // rendering on a deal that moved on while the stream was down.
+        void loadMessages(dealId);
+        void refreshDeal(dealId);
       },
     });
 
     return () => {
       handle.close();
     };
+    // `selectedDeal` itself is intentionally not a dep — only its id is, so a deal-list refresh
+    // returning a new object for the same deal does not tear down and reopen the connection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDeal?.id]);
+  }, [selectedDeal?.id, refreshDeal, loadMessages]);
 
   const handleSendMessage = async () => {
     if (!message.trim()) return;
@@ -1015,7 +1248,71 @@ export default function BrandChatPage() {
       setIsSubmittingProposal(false);
     }
   };
-  
+
+  /**
+   * CR-07 — Accept on a proposal card. Until now both this button and Counter beside it were
+   * rendered with styling and no `onClick` at all: clicking them ran nothing, threw nothing and
+   * logged nothing, so the brand could not take a creator's counter-offer from the deal room.
+   *
+   * `POST /deals/:id/accept` acts on the deal's CURRENT offer, not on an individual message —
+   * `proposalId` only identifies the card the click came from, so the outcome banner can be
+   * pinned to it. The backend has accepted `role=brand` since B-4 (DealService.accept is
+   * role-aware); no backend change is needed here.
+   */
+  const handleAcceptProposal = async (proposalId: string) => {
+    if (!selectedDeal) return;
+    const dealId = selectedDeal.id;
+    const creatorName = selectedDeal.creatorName;
+    setProposalFeedback(null);
+    setIsAcceptingProposal(true);
+    try {
+      if (isApiLive()) {
+        await dealsApi.accept(dealId, 'brand');
+        // Refresh both halves of the gate: the deal's collaboration status (which decides
+        // whether Accept/Counter may still be offered) and the messages, whose metadata.status
+        // DealService.settleLatestProposal has just moved to 'accepted'. Two independent
+        // resources, so two reads. `refreshDeal`, not `loadDealRooms`, so acting on a proposal
+        // never swaps the deal list out for a spinner (W2-H1).
+        //
+        // This is the FALLBACK, not the mechanism: once CR-08's publishes land the stream
+        // usually wins the race and both of these confirm what is already on screen. That is
+        // exactly why the stream merge is an idempotent upsert rather than an append.
+        await Promise.all([refreshDeal(dealId), loadMessages(dealId)]);
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        setDemoProposalStatuses((prev) => ({ ...prev, [proposalId]: 'accepted' }));
+      }
+      setProposalFeedback({
+        dealId,
+        proposalId,
+        tone: 'success',
+        message: 'Proposal accepted. You can send the contract for signing next.',
+        stale: false,
+      });
+      toast({
+        title: 'Proposal accepted',
+        description: `Terms are agreed with ${creatorName} — send the contract next.`,
+      });
+    } catch (err) {
+      console.error('Failed to accept proposal', err);
+      const { message, stale } = describeAcceptError(err);
+      setProposalFeedback({ dealId, proposalId, tone: 'error', message, stale });
+      toast({ title: 'Could not accept proposal', description: message, variant: 'destructive' });
+    } finally {
+      setIsAcceptingProposal(false);
+    }
+  };
+
+  /**
+   * CR-07 — Counter on a proposal card. The brand's counter IS the five-step proposal wizard
+   * (it already POSTs /deals/:id/counter via handleSendProposal), so this opens that rather than
+   * introducing a second, thinner counter form that would send a different shape of terms.
+   */
+  const handleCounterProposal = () => {
+    setProposalFeedback(null);
+    setShowProposalForm(true);
+  };
+
   const filteredDeals = dealRooms.filter(deal =>
     deal.creatorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     deal.campaignName.toLowerCase().includes(searchQuery.toLowerCase())
@@ -1062,16 +1359,219 @@ export default function BrandChatPage() {
 
   /**
    * Mirrors `Collaboration.canCounter()` (= `canAccept()`) so the "Send Proposal" control only
-   * appears while the server would actually accept a counter. In demo mode there is no
-   * rawStatus to read and no server to reject, so the form stays available.
+   * appears while the server would actually accept a counter. Demo mode has no server to reject,
+   * so the wizard stays reachable there regardless of the room's status.
    */
-  const canSendProposal =
-    !liveApiMode ||
-    (selectedDeal
-      ? ['INVITED', 'APPLIED', 'SHORTLISTED', 'IN_NEGOTIATION'].includes(
-          selectedDeal.rawStatus ?? '',
-        )
-      : false);
+  const canSendProposal = !liveApiMode || allowsProposalResponse(selectedDeal?.rawStatus);
+
+  /**
+   * CR-07 — the same `Collaboration.canAccept()` mirror, applied to the Accept/Counter pair on a
+   * proposal card. Read from `rawStatus` in BOTH modes (the mock deal rooms carry a real
+   * CollaborationStatus too), because unlike "Send Proposal" — which demo mode leaves open so the
+   * wizard is always explorable — an Accept offered on a contracted demo deal is simply wrong.
+   */
+  const canRespondToProposal = allowsProposalResponse(selectedDeal?.rawStatus);
+
+  /**
+   * CR-07 — id of the newest proposal message in the thread. Accept is only ever offered on this
+   * one: `DealService.doAccept` resolves "the offer on the table" as the most recent
+   * proposal-kind message and 409s `CANNOT_ACCEPT_OWN_OFFER` when its sender is the caller's own
+   * party, so an Accept button on any older card could only ever fail.
+   */
+  const latestProposalMessageId = React.useMemo(() => {
+    for (let i = liveMessages.length - 1; i >= 0; i--) {
+      if (liveMessages[i].kind === 'proposal') return liveMessages[i].id;
+    }
+    return null;
+  }, [liveMessages]);
+
+  const feedbackForThisRoom =
+    proposalFeedback && selectedDeal && proposalFeedback.dealId === selectedDeal.id
+      ? proposalFeedback
+      : null;
+
+  /**
+   * CR-07 — one proposal card for both modes. Demo mode feeds it the scripted mockTimelineEvents
+   * row; live mode feeds it a real `kind === 'proposal'` DealMessage, which the feed previously
+   * flattened into an anonymous grey text bubble — so a creator's counter-offer arrived with no
+   * terms and no way to respond to it.
+   */
+  const renderProposalCard = (proposal: {
+    id: string;
+    fromBrand: boolean;
+    status: string;
+    amount: number;
+    deliverableCount: number;
+    usageRights: string;
+    timestamp: Date;
+    /** Whether this is the offer currently on the table (see latestProposalMessageId). */
+    isLatestOffer: boolean;
+  }) => {
+    const isAccepted = proposal.status === 'accepted';
+    const isCountered = proposal.status === 'countered';
+    const isRejected = proposal.status === 'rejected';
+    const isPending = !isAccepted && !isCountered && !isRejected;
+    // Counter needs canCounter() only; Accept additionally needs the offer to be the creator's,
+    // which is exactly the CANNOT_ACCEPT_OWN_OFFER rule in DealService.doAccept.
+    const showCounter = isPending && proposal.isLatestOffer && canRespondToProposal;
+    const showAccept = showCounter && !proposal.fromBrand;
+    const cardFeedback = feedbackForThisRoom?.proposalId === proposal.id ? feedbackForThisRoom : null;
+
+    return (
+      <div key={proposal.id} className={cn('flex', proposal.fromBrand ? 'justify-end' : 'justify-start')}>
+        <Card
+          className={cn(
+            'w-full max-w-md',
+            isAccepted
+              ? 'border-stage-approved-border bg-stage-approved'
+              : isCountered
+                ? 'border-stage-negotiating-border bg-amber-50/50'
+                : isRejected
+                  ? 'border-destructive/40 bg-destructive/5'
+                  : 'border-stage-contracted-border bg-stage-contracted',
+          )}
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <div
+                className={cn(
+                  'h-8 w-8 rounded-full flex items-center justify-center',
+                  isAccepted ? 'bg-stage-approved' : 'bg-stage-contracted',
+                )}
+              >
+                <FileText
+                  className={cn(
+                    'h-4 w-4',
+                    isAccepted ? 'text-stage-approved-fg' : 'text-stage-contracted-fg',
+                  )}
+                />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-sm">
+                  {proposal.fromBrand ? 'Your Proposal' : 'Counter Proposal'}
+                </p>
+                <p className="text-xs text-muted-foreground">{formatTime(proposal.timestamp)}</p>
+              </div>
+              <Badge
+                className={cn(
+                  isAccepted
+                    ? 'bg-stage-approved text-stage-approved-fg'
+                    : isCountered
+                      ? 'bg-stage-negotiating text-stage-negotiating-fg'
+                      : isRejected
+                        ? 'bg-destructive/10 text-destructive'
+                        : 'bg-stage-contracted text-stage-contracted-fg',
+                )}
+              >
+                {isAccepted ? 'Accepted' : isCountered ? 'Countered' : isRejected ? 'Declined' : 'Pending'}
+              </Badge>
+            </div>
+
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Amount</span>
+                <span className="font-semibold text-stage-approved-fg">
+                  {formatINR(proposal.amount)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Deliverables</span>
+                <span>{proposal.deliverableCount} items</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Usage Rights</span>
+                <span>{proposal.usageRights}</span>
+              </div>
+            </div>
+
+            {(showAccept || showCounter) && (
+              <div className="flex gap-2 mt-3">
+                {showAccept && (
+                  <Button
+                    size="sm"
+                    className="flex-1 h-8 text-xs bg-stage-approved-fg hover:opacity-90 text-white"
+                    onClick={() => handleAcceptProposal(proposal.id)}
+                    disabled={isAcceptingProposal || isSubmittingProposal}
+                  >
+                    {isAcceptingProposal ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Accepting...
+                      </>
+                    ) : (
+                      'Accept'
+                    )}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 h-8 text-xs"
+                  onClick={handleCounterProposal}
+                  disabled={isAcceptingProposal || isSubmittingProposal}
+                >
+                  Counter
+                </Button>
+              </div>
+            )}
+
+            {/* The two reasons a pending card carries no Accept. Saying so beats leaving a
+                silent gap where the buttons were — that gap is indistinguishable from the
+                dead buttons this ticket removed. */}
+            {isPending && proposal.isLatestOffer && canRespondToProposal && proposal.fromBrand && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Waiting on {selectedDeal?.creatorName ?? 'the creator'} — you made this offer, so
+                only they can accept it.
+              </p>
+            )}
+            {isPending && !(proposal.isLatestOffer && canRespondToProposal) && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                This offer is no longer on the table — the deal has already moved on.
+              </p>
+            )}
+
+            {/* Persistent outcome of the last Accept on THIS card. Deliberately NOT a live
+                region: every path here also fires a toast, and a Radix toast is structurally a
+                live region already, so announcing here too would double up (Wave 1 standard). */}
+            {cardFeedback && (
+              <div
+                className={cn(
+                  'mt-3 flex items-start gap-2 rounded-md border p-2.5 text-xs',
+                  cardFeedback.tone === 'error'
+                    ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                    : 'border-stage-approved-border bg-stage-approved text-stage-approved-fg',
+                )}
+              >
+                {cardFeedback.tone === 'error' ? (
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" />
+                ) : (
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-px" />
+                )}
+                <div className="space-y-1.5">
+                  <p>{cardFeedback.message}</p>
+                  {cardFeedback.stale && selectedDeal && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 text-[11px]"
+                      // Both halves: the deal refresh fixes the status the gate reads, the
+                      // messages refresh fixes the metadata.status this card's badge reads.
+                      onClick={() => {
+                        void refreshDeal(selectedDeal.id);
+                        void loadMessages(selectedDeal.id);
+                      }}
+                    >
+                      Refresh deal
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
 
   const dealPhase = selectedDeal
     ? getDealPhase(selectedDeal.dealStatus, contractStatus)
@@ -1321,6 +1821,26 @@ export default function BrandChatPage() {
 
           {/* Always-visible chat feed — message events, proposals, contracts, deliverables, payments all render inline */}
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* CR-31 — the brand mirror of the creator room's banner. A dropped stream used to
+              be indistinguishable from a quiet negotiation. The transport retries by itself,
+              so 'reconnecting' stays understated; 'closed' means it gave up on a 401/403/404
+              and needs the brand to do something. `text-destructive-foreground`, not
+              `text-destructive` — the latter is a pale background token here. */}
+          {isApiLive() && streamStatus !== 'open' && (
+            <div
+              role="status"
+              className={cn(
+                'px-4 py-1.5 border-b text-xs text-center',
+                streamStatus === 'closed'
+                  ? 'bg-destructive/10 text-destructive-foreground'
+                  : 'bg-muted/50 text-muted-foreground',
+              )}
+            >
+              {streamStatus === 'closed'
+                ? 'Live updates are off for this deal. Reload to see new messages.'
+                : 'Reconnecting to live updates…'}
+            </div>
+          )}
           <ScrollArea className="flex-1 p-4">
             <div className="space-y-4 max-w-3xl mx-auto">
               {/* LIVE MODE (B-1): real messages from GET /deals/:id/messages. */}
@@ -1356,6 +1876,23 @@ export default function BrandChatPage() {
                     !messagesError &&
                     liveMessages.map((m) => {
                       const isOwn = m.senderType === 'brand';
+                      // CR-07: a proposal/counter arrives as a real `kind: 'proposal'` message
+                      // carrying its terms in `metadata`. Rendering it as a plain bubble threw
+                      // those terms away and left the brand nothing to act on.
+                      if (m.kind === 'proposal') {
+                        const meta = m.metadata ?? {};
+                        const deliverables = meta.deliverables;
+                        return renderProposalCard({
+                          id: m.id,
+                          fromBrand: isOwn,
+                          status: String(meta.status ?? 'pending'),
+                          amount: Number(meta.amount ?? 0),
+                          deliverableCount: Array.isArray(deliverables) ? deliverables.length : 0,
+                          usageRights: meta.usageRights ? String(meta.usageRights) : 'Not specified',
+                          timestamp: new Date(m.createdAt),
+                          isLatestOffer: m.id === latestProposalMessageId,
+                        });
+                      }
                       return (
                         <div key={m.id} className={cn('flex', isOwn ? 'justify-end' : 'justify-start')}>
                           <div className={cn('flex gap-2 max-w-[70%]', isOwn && 'flex-row-reverse')}>
@@ -1433,72 +1970,19 @@ export default function BrandChatPage() {
                   );
                 }
 
-                // Proposal Card
+                // Proposal Card — same renderer as live mode, so the wiring cannot drift
+                // between the two.
                 if (event.type === 'proposal') {
-                  const isOwn = event.sender === 'brand';
-                  const isAccepted = event.data?.status === 'accepted';
-                  const isCountered = event.data?.status === 'countered';
-                  
-                  return (
-                    <div key={event.id} className={cn('flex', isOwn ? 'justify-end' : 'justify-start')}>
-                      <Card className={cn(
-                        'w-full max-w-md',
-                        isAccepted ? 'border-stage-approved-border bg-stage-approved' : 
-                        isCountered ? 'border-stage-negotiating-border bg-amber-50/50' :
-                        'border-stage-contracted-border bg-stage-contracted'
-                      )}>
-                        <CardContent className="p-4">
-                          <div className="flex items-center gap-2 mb-3">
-                            <div className={cn(
-                              'h-8 w-8 rounded-full flex items-center justify-center',
-                              isAccepted ? 'bg-stage-approved' : 'bg-stage-contracted'
-                            )}>
-                              <FileText className={cn('h-4 w-4', isAccepted ? 'text-stage-approved-fg' : 'text-stage-contracted-fg')} />
-                            </div>
-                            <div className="flex-1">
-                              <p className="font-medium text-sm">
-                                {isOwn ? 'Your Proposal' : 'Counter Proposal'}
-                              </p>
-                              <p className="text-xs text-muted-foreground">{formatTime(event.timestamp)}</p>
-                            </div>
-                            <Badge className={cn(
-                              isAccepted ? 'bg-stage-approved text-stage-approved-fg' : 
-                              isCountered ? 'bg-stage-negotiating text-stage-negotiating-fg' :
-                              'bg-stage-contracted text-stage-contracted-fg'
-                            )}>
-                              {isAccepted ? 'Accepted' : isCountered ? 'Countered' : 'Pending'}
-                            </Badge>
-                          </div>
-                          
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Amount</span>
-                              <span className="font-semibold text-stage-approved-fg">{formatINR(event.data?.amount || 0)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Deliverables</span>
-                              <span>{event.data?.deliverables?.length} items</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Usage Rights</span>
-                              <span>{event.data?.usageRights ?? 'Not specified'}</span>
-                            </div>
-                          </div>
-                          
-                          {!isAccepted && !isCountered && (
-                            <div className="flex gap-2 mt-3">
-                              <Button size="sm" className="flex-1 h-8 text-xs bg-stage-approved-fg hover:opacity-90 text-white">
-                                Accept
-                              </Button>
-                              <Button size="sm" variant="outline" className="flex-1 h-8 text-xs">
-                                Counter
-                              </Button>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    </div>
-                  );
+                  return renderProposalCard({
+                    id: event.id,
+                    fromBrand: event.sender === 'brand',
+                    status: demoProposalStatuses[event.id] ?? String(event.data?.status ?? 'pending'),
+                    amount: Number(event.data?.amount ?? 0),
+                    deliverableCount: event.data?.deliverables?.length ?? 0,
+                    usageRights: String(event.data?.usageRights ?? 'Not specified'),
+                    timestamp: event.timestamp,
+                    isLatestOffer: event.id === LATEST_MOCK_PROPOSAL_ID,
+                  });
                 }
 
                 // Contract Card

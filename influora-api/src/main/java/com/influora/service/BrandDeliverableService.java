@@ -6,11 +6,14 @@ import com.influora.common.ApiException;
 import com.influora.common.JsonLists;
 import com.influora.common.TextSanitizer;
 import com.influora.config.R2Properties;
+import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.MeeraInteractionEventType;
 import com.influora.integration.storage.R2StorageService;
+import com.influora.repository.CollaborationRepository;
 import com.influora.repository.DeliverableRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.meera.MeeraInteractionLogService;
@@ -53,6 +56,7 @@ public class BrandDeliverableService {
     private final EscrowService escrowService;
     private final CollaborationLifecycleService collaborationLifecycleService;
     private final MeeraInteractionLogService meeraInteractionLogService;
+    private final CollaborationRepository collaborationRepository;
 
     public BrandDeliverableService(
             BrandContextService brandContext,
@@ -61,7 +65,8 @@ public class BrandDeliverableService {
             R2Properties r2Properties,
             EscrowService escrowService,
             CollaborationLifecycleService collaborationLifecycleService,
-            MeeraInteractionLogService meeraInteractionLogService) {
+            MeeraInteractionLogService meeraInteractionLogService,
+            CollaborationRepository collaborationRepository) {
         this.brandContext = brandContext;
         this.deliverableRepository = deliverableRepository;
         this.r2StorageService = r2StorageService;
@@ -69,6 +74,7 @@ public class BrandDeliverableService {
         this.escrowService = escrowService;
         this.collaborationLifecycleService = collaborationLifecycleService;
         this.meeraInteractionLogService = meeraInteractionLogService;
+        this.collaborationRepository = collaborationRepository;
     }
 
     @Transactional(readOnly = true)
@@ -87,6 +93,15 @@ public class BrandDeliverableService {
                     "Cannot approve deliverable in current state",
                     HttpStatus.CONFLICT);
         }
+        // [CR-22a, Kabir finding #1] Approval fires tryReleaseOnApproval below — real money
+        // leaving the clearing wallet — and previously had zero CollaborationStatus awareness.
+        // A deliverable can only reach SUBMITTED/RESUBMITTED once a Contract exists
+        // (ContractService#generate materializes the rows), which is CONTRACT_PENDING+ — a status
+        // DealService#reject can no longer cancel post-CR-22a-narrowing. So this is defense in
+        // depth (mirrors the same guard in ContractService/EscrowService), not closing a live
+        // race: there is no code path left that can put a deliverable-bearing collaboration into
+        // CANCELLED.
+        requireNotCancelled(deliverable.getCollaborationId());
         deliverable.applyApprove();
         deliverableRepository.save(deliverable);
 
@@ -177,6 +192,28 @@ public class BrandDeliverableService {
         // CollaborationLifecycleService's DELIVERABLE_RESOLVED javadoc).
         collaborationLifecycleService.onDeliverableReviewed(deliverable.getCollaborationId());
         return new ReviewResponse(DeliverableStatus.REJECTED);
+    }
+
+    /**
+     * [CR-22a, Kabir finding #1] Shared guard — see {@link #approve}'s javadoc for why this is
+     * belt-and-suspenders rather than closing a live race.
+     */
+    private void requireNotCancelled(String collaborationId) {
+        Collaboration collaboration =
+                collaborationRepository
+                        .findById(collaborationId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "COLLABORATION_NOT_FOUND",
+                                                "Collaboration not found",
+                                                HttpStatus.NOT_FOUND));
+        if (collaboration.getStatus() == CollaborationStatus.CANCELLED) {
+            throw new ApiException(
+                    "COLLABORATION_CANCELLED",
+                    "This deal was cancelled and its deliverables can no longer be approved",
+                    HttpStatus.CONFLICT);
+        }
     }
 
     private Deliverable requireBrandDeliverable(AuthPrincipal principal, String deliverableId) {

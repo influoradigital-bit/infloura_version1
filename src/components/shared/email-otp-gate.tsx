@@ -108,8 +108,13 @@ export interface EmailOtpGateProps {
   email: string;
   /** Picks the `/auth/brand/*` vs `/auth/creator/*` route pair. */
   role: Role;
-  /** Fired once the server confirms `emailVerified`. The caller then runs its register call. */
-  onVerified: () => void;
+  /**
+   * Fired once the server confirms `emailVerified`. The caller then runs its register call.
+   * `handleVerify` awaits this — the caller's register attempt (success or failure) must fully
+   * settle before the OTP panel reports itself done, so the panel never renders in a stale
+   * "verifying" state while a registration is still in flight in the background.
+   */
+  onVerified: () => void | Promise<void>;
   /** Returns the user to the form so they can correct a typo'd address. */
   onEditEmail: () => void;
 }
@@ -120,6 +125,14 @@ export function EmailOtpGate({ email, role, onVerified, onEditEmail }: EmailOtpG
   const [isSending, setIsSending] = React.useState(false);
   const [isVerifying, setIsVerifying] = React.useState(false);
   const [resendTimer, setResendTimer] = React.useState(RESEND_COOLDOWN_SECONDS);
+
+  // `handleVerify` now awaits the caller's (possibly slow) `onVerified`, so this component can
+  // legitimately still be unmounted — by the caller's own success/failure handling — while that
+  // await is pending. Guards the `finally` block below from setting state after unmount.
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   const sendOtp = React.useCallback(
     (email_: string) =>
@@ -168,7 +181,15 @@ export function EmailOtpGate({ email, role, onVerified, onEditEmail }: EmailOtpG
     try {
       const result = await verifyOtp(email, code);
       if (result.emailVerified) {
-        onVerified();
+        // Must be awaited: `onVerified` (the caller's register attempt) can itself fail and
+        // needs to finish updating the caller's state — including dropping back out of this
+        // panel — before this handler resolves. Firing it without awaiting let this handler's
+        // promise (and therefore the click that triggered it) resolve before that follow-up
+        // render happened, so `isVerifying` flipped back to false — and the button re-enabled —
+        // while the registration call was still in flight, and anything the caller renders as a
+        // consequence of `onVerified` (an inline error, a route change) had no guaranteed
+        // ordering relative to this handler completing.
+        await onVerified();
       } else {
         // Defensive: the server signals a bad code with a 4xx, not `emailVerified: false`.
         // Handled anyway so a contract change can't silently read as success.
@@ -177,7 +198,7 @@ export function EmailOtpGate({ email, role, onVerified, onEditEmail }: EmailOtpG
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Invalid verification code');
     } finally {
-      setIsVerifying(false);
+      if (mountedRef.current) setIsVerifying(false);
     }
   };
 

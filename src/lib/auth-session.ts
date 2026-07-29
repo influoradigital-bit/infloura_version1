@@ -61,6 +61,75 @@ export function persistBrandSession(data: BackendTokenPair): BrandSession {
   return { token, userId, email, workspaceId, onboardingComplete };
 }
 
+// ---------------------------------------------------------------------------
+// Creator session
+// ---------------------------------------------------------------------------
+
+export interface CreatorSession {
+  userId: string;
+  email: string;
+  displayName?: string;
+  onboardingComplete: boolean;
+}
+
+const CREATOR_ONBOARDING_KEY = 'creator_onboarding_completed';
+
+/**
+ * CR-06 — persists the identity fields from a creator login/register.
+ *
+ * There was no creator equivalent of `persistBrandSession`: the creator flow
+ * stored the bare token and threw the rest of the `TokenPair` away. The auth
+ * store was then only populated in mock mode, so on a live build `user` stayed
+ * `null` forever and every `user?.x || 'demo default'` in the creator shell
+ * rendered somebody else's identity.
+ *
+ * Same rule as the brand helper: the refresh token is NEVER written to
+ * JS-readable storage (Kabir A1) — it arrives as an HttpOnly cookie.
+ */
+export function persistCreatorSession(data: BackendTokenPair): CreatorSession {
+  const userId = data.user.id;
+  const email = data.user.email;
+  const displayName = data.user.displayName;
+  const onboardingComplete = data.onboardingCompleted ?? false;
+
+  localStorage.setItem('creator_user_id', userId);
+  localStorage.setItem('creator_email', email);
+  if (displayName) localStorage.setItem('creator_display_name', displayName);
+
+  if (onboardingComplete) {
+    localStorage.setItem(CREATOR_ONBOARDING_KEY, 'true');
+  } else {
+    localStorage.removeItem(CREATOR_ONBOARDING_KEY);
+  }
+
+  return { userId, email, displayName, onboardingComplete };
+}
+
+/**
+ * Reads back what `persistCreatorSession` stored. Returns `null` unless a real
+ * identity is present — callers must render a neutral placeholder in that case,
+ * never a stand-in user.
+ */
+export function getCreatorSession(): CreatorSession | null {
+  const userId = localStorage.getItem('creator_user_id');
+  const email = localStorage.getItem('creator_email');
+  if (!userId || !email) return null;
+  return {
+    userId,
+    email,
+    displayName: localStorage.getItem('creator_display_name') || undefined,
+    onboardingComplete: localStorage.getItem(CREATOR_ONBOARDING_KEY) === 'true',
+  };
+}
+
+export function clearCreatorSession(): void {
+  localStorage.removeItem('creator_token');
+  localStorage.removeItem('creator_user_id');
+  localStorage.removeItem('creator_email');
+  localStorage.removeItem('creator_display_name');
+  localStorage.removeItem(CREATOR_ONBOARDING_KEY);
+}
+
 export function getBrandOnboardingComplete(): boolean {
   return (
     localStorage.getItem(ONBOARDING_KEY) === 'true' ||

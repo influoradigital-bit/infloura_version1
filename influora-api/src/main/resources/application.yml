@@ -61,12 +61,53 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
-  # [SEC: Wave-1 S6] Off by default (fail-safe) — Spring/Tomcat's own X-Forwarded-* handling
-  # (scheme/host/port used for redirect URL generation etc.) must stay OFF unless this instance
-  # actually sits behind the SAME reverse proxy configured in influora.security.trusted-proxies
-  # below. Never set to `native` in this stack — the embedded Tomcat's native remote-ip valve is
-  # unmanaged by our trusted-proxy allow-list; use `framework` if/when a real deploy needs it.
-  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
+  # [SEC: Kabir CR-11 endpoint red-team, Blocker-1] `native`, NOT `framework`. This reverses the
+  # Wave-1 S6 guidance that used to sit here ("never set to `native` ... use `framework` if/when a
+  # real deploy needs it"), and the deploys had since set `framework`. That combination was
+  # exploitable:
+  #
+  #   `framework` installs Spring's ForwardedHeaderFilter, which (a) takes the LEFT-MOST
+  #   X-Forwarded-For entry — the one a client can freely spoof, since Caddy APPENDS the true peer
+  #   rather than replacing the header — (b) performs no trusted-proxy validation whatsoever, and
+  #   (c) STRIPS the X-Forwarded-* headers from the wrapped request. It runs at HIGHEST_PRECEDENCE,
+  #   ahead of the Security chain at -100. So by the time AuthRateLimitFilter ran, getRemoteAddr()
+  #   was already attacker-controlled AND the raw header was gone — no code downstream could
+  #   recover the real peer. Every IP-keyed bucket, including login brute-force, was defeated by
+  #   sending a different XFF per request. AdminAuditLogService recorded the same forged value as
+  #   a forensic record.
+  #
+  # The old comment's premise — that `native` is "unmanaged by our trusted-proxy allow-list" — was
+  # backwards. Tomcat's RemoteIpValve HAS an allow-list (`internal-proxies`), and it walks XFF
+  # RIGHT-TO-LEFT skipping known proxies, so it lands on the entry Caddy actually appended and a
+  # client-prepended entry can never win. `framework` is the one with no allow-list at all.
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:native}
+  tomcat:
+    # [SEC: Kabir CR-11 red-team, H-2] Bound the request-BODY read. `connection-timeout` (20s
+    # default) covers reading request HEADERS only, and `disable-upload-timeout` defaults to TRUE,
+    # which means no read timeout is applied during the body read at all. Nothing here previously
+    # set any `server.tomcat.*` property, so both defaults stood.
+    #
+    # Consequence: a request that trickles its body holds one Tomcat thread out of a pool of 200 for
+    # as long as it likes. 200 slow connections stop the entire API — login, deals, webhooks, all of
+    # it. Caddy does not help: it streams the body upstream with no client read timeout, and its
+    # `read_timeout` applies to reading the upstream RESPONSE, not the client's upload.
+    #
+    # `POST /client-errors` is where this became cheap to reach — unauthenticated, no HMAC (unlike
+    # /webhooks/*), no credentials (unlike /auth/*) — but the exposure belongs to every POST that
+    # reads a body, which is why the fix is global rather than per-endpoint.
+    #
+    # 15s is generous for every legitimate request this API serves EXCEPT deliverable upload, which
+    # is why the value is overridable: a large upload over a slow mobile link is the one real case
+    # that needs longer, and it should be raised deliberately rather than discovered in production.
+    disable-upload-timeout: false
+    connection-upload-timeout: ${TOMCAT_UPLOAD_TIMEOUT_MS:15000}
+    remoteip:
+      # Tomcat's default already covers RFC1918 + loopback, which is every Docker bridge range this
+      # stack uses, so the out-of-the-box value is correct here and needs no per-deploy tuning.
+      # Overridable for a topology with a proxy outside those ranges. It is a REGEX, not a list —
+      # this is why the old comma-separated `influora.security.trusted-proxies` could not simply be
+      # handed to it.
+      internal-proxies: ${TOMCAT_INTERNAL_PROXIES:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|169\.254\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.1[6-9]{1}\.\d{1,3}\.\d{1,3}|172\.2[0-9]{1}\.\d{1,3}\.\d{1,3}|172\.3[0-1]{1}\.\d{1,3}\.\d{1,3}|0:0:0:0:0:0:0:1|::1}
   servlet:
     context-path: /api/v1
 
@@ -117,12 +158,15 @@ influora:
   security:
     content-security-policy: >-
       ${CONTENT_SECURITY_POLICY:default-src 'none'; frame-ancestors 'none'; base-uri 'none'}
-    # [SEC: Wave-1 S6 / Kabir audit H-4] Comma-separated allow-list of trusted reverse-proxy
-    # socket addresses. See AuthRateLimitFilter#clientIp — empty by default (fail-safe): with no
-    # trusted proxy configured, X-Forwarded-For is ignored entirely and the raw socket peer is
-    # used as the rate-limit key. Set to the LB/ingress IP(s) in any real deploy that sits behind
-    # a reverse proxy.
-    trusted-proxies: ${TRUSTED_PROXIES:}
+    # [SEC: Kabir CR-11 XFF re-review, H-1] `trusted-proxies` is GONE. It used to live here telling
+    # operators to "set to the LB/ingress IP(s) in any real deploy" and cross-referencing
+    # AuthRateLimitFilter#clientIp, which no longer reads it. Trusted-proxy validation now lives in
+    # `server.tomcat.remoteip.internal-proxies` above. Deleting only the Java half left the half an
+    # operator actually reads to understand this system's posture — precisely the CR-33 artefact the
+    # fix commit invoked as its reason for deleting rather than leaving inert.
+    # The `TRUSTED_PROXIES` env var is still passed by deploy/hostinger/*.yml and is inert; it stays
+    # there so a rollback to an older image does not lose it. That reasoning does not extend to this
+    # binding, which is why this one is removed and that one is not.
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
   jwt:

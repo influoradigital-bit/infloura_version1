@@ -2,6 +2,7 @@ package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -12,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
 import com.influora.common.InsufficientFundsException;
+import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.PaymentMilestone;
 import com.influora.domain.entity.Wallet;
@@ -212,6 +214,108 @@ class EscrowServiceTest {
     }
 
     // ------------------------------------------------------------------------------------------
+    // [FIX: escrow-frozen-hold-fix-spec] Reproduction test for the defect the spec fixes: a hold
+    // funded through the ORDINARY brand escrow flow carries collaboration_id == NULL (the only
+    // caller of EscrowHold#bindCollaboration in the main tree is ConfirmLaunchExecutor's AI-launch
+    // path) and is reachable only via its milestone's collaboration_id. Before Fix 1,
+    // requireFrozenHoldsForCollaboration (used by adminReleaseForDispute/adminRefundForDispute/
+    // adminSplitForDispute) had no milestone fallback — unlike its sibling
+    // findFundedHoldsForCollaboration — so it iterated an EMPTY list for exactly this hold shape,
+    // and DisputeService.resolveDispute marked the dispute resolved anyway. Money frozen forever,
+    // books say otherwise.
+    //
+    // THIS TEST MUST FAIL IF FIX 1 IS REVERTED: reverting requireFrozenHoldsForCollaboration to
+    // its pre-fix body (a bare escrowHoldRepository.findByCollaborationIdAndStatus(collaborationId,
+    // FROZEN), no milestone-fallback loop) leaves the direct-query stub below — which deliberately
+    // returns empty, exactly as a real database would for a hold whose own collaboration_id column
+    // is null — as the ONLY source of holds. adminReleaseForDispute then iterates zero holds,
+    // `settlements` comes back empty, and `assertEquals(1, settlements.size())` below fails.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "REPRODUCTION (escrow-frozen-hold-fix-spec): a hold funded the ordinary way (null"
+                    + " collaboration_id, linked only via its milestone) is frozen on dispute-open and"
+                    + " actually settled on dispute-resolve — must fail if Fix 1 is reverted")
+    void adminReleaseForDisputeSettlesOrdinaryFlowHoldWithNullCollaborationId() {
+        PaymentMilestone milestone =
+                PaymentMilestone.builder()
+                        .id(MILESTONE_ID)
+                        .contractId("01HCONTRACT1234567AB")
+                        .collaborationId(COLLAB_ID)
+                        .amount(BigDecimal.valueOf(5000))
+                        .build();
+
+        // The ordinary brand escrow flow (POST /wallet/escrow/fund), pre-Fix-2 shape: no
+        // .collaborationId(...) call on the builder at all — reproduces the null column.
+        EscrowHold hold =
+                EscrowHold.builder()
+                        .id(ESCROW_HOLD_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .campaignId("01HCAMPAIGN1234567AB")
+                        .milestoneId(MILESTONE_ID)
+                        .amount(BigDecimal.valueOf(5000))
+                        .currency("INR")
+                        .status(EscrowStatus.FUNDED)
+                        .idempotencyKey("idem-ordinary-flow")
+                        .build();
+        assertNull(hold.getCollaborationId());
+        milestone.markFunded(hold.getId());
+
+        // The direct collaboration_id-column queries the pre-fix code relied on exclusively —
+        // always empty for this hold, exactly as a real database would return, because the column
+        // is null. Fix 1's milestone-fallback loop is the only way this hold is ever found below.
+        when(escrowHoldRepository.findByCollaborationIdAndStatus(COLLAB_ID, EscrowStatus.FUNDED))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.findByCollaborationIdAndStatus(COLLAB_ID, EscrowStatus.FROZEN))
+                .thenReturn(List.of());
+        when(milestoneRepository.findByCollaborationId(COLLAB_ID)).thenReturn(List.of(milestone));
+        when(escrowHoldRepository.findById(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+
+        // -- Dispute OPENS: freezeUnreleasedForDispute finds the hold via the (already
+        // fallback-aware, pre-existing) findFundedHoldsForCollaboration and freezes it.
+        int frozen = service.freezeUnreleasedForDispute(COLLAB_ID);
+        assertEquals(1, frozen);
+        assertEquals(EscrowStatus.FROZEN, hold.getStatus());
+
+        // -- Dispute RESOLVES (RESOLVED_CREATOR): adminReleaseForDispute must find and settle the
+        // SAME hold via requireFrozenHoldsForCollaboration — this is the call Fix 1 repairs.
+        Collaboration collaboration =
+                Collaboration.invite(COLLAB_ID, "01HCAMPAIGN1234567AB", CREATOR_USER_ID, null, "INR");
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(collaboration));
+        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+
+        Wallet clearingWallet = Wallet.forWorkspace("01HCLEARING1234567890", "platform-clearing");
+        Wallet payeeWallet = Wallet.forUser("01HPAYEEWALLET1234AB", CREATOR_USER_ID);
+        when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
+        when(walletService.requireOrCreateUserWallet(CREATOR_USER_ID)).thenReturn(payeeWallet);
+        when(platformFeeService.deductAtRelease(any(), any(), any(), any(), any(), any()))
+                .thenReturn(
+                        new PlatformFeeService.FeeDeductionResult(
+                                BigDecimal.valueOf(5000),
+                                1500,
+                                BigDecimal.valueOf(750),
+                                BigDecimal.valueOf(4250),
+                                null));
+        when(ledgerService.post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(
+                        new WalletLedgerService.LedgerPostingResult(
+                                WalletTransaction.builder().id("wtx-dispute-debit").build(),
+                                WalletTransaction.builder().id("wtx-dispute-credit").build()));
+
+        List<EscrowStatusResponse> settlements = service.adminReleaseForDispute(COLLAB_ID);
+
+        // This is the assertion that fails if Fix 1 is reverted (see class comment above).
+        assertEquals(1, settlements.size());
+        assertEquals(EscrowStatus.RELEASED, hold.getStatus());
+        // Saved twice total: once by freezeUnreleasedForDispute (FUNDED -> FROZEN), once more by
+        // adminReleaseForDispute (FROZEN -> RELEASED) — both real saves, proving the hold was
+        // found and mutated at each stage rather than skipped.
+        verify(escrowHoldRepository, times(2)).save(hold);
+    }
+
+    // ------------------------------------------------------------------------------------------
     // [SEC: Vikram, P4 defensive fix] adminSplitForDispute -- creatorSplitPercent validation
     // ------------------------------------------------------------------------------------------
 
@@ -270,6 +374,85 @@ class EscrowServiceTest {
                         ApiException.class,
                         () -> service.adminSplitForDispute(COLLAB_ID, BigDecimal.valueOf(100)));
         assertEquals("COLLABORATION_NOT_FOUND", ex100.getCode());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // [Kavya QA, adjacent to CR-36] adminSplitForDispute: a 0% creatorSplitPercent settlement must
+    // end the hold REFUNDED with the REAL refund txn id, not RELEASED with a synthetic
+    // "dispute-split:<id>" string that corresponds to no ledger transaction at all. RELEASED means
+    // "the creator was paid" everywhere else this status is read (creator-facing payment state,
+    // reporting, released-volume analytics).
+    // ------------------------------------------------------------------------------------------
+
+    private EscrowHold frozenHoldForSplit() {
+        return EscrowHold.builder()
+                .id(ESCROW_HOLD_ID)
+                .workspaceId(WORKSPACE_ID)
+                .collaborationId(COLLAB_ID)
+                .campaignId("01HCAMPAIGN1234567AB")
+                .amount(BigDecimal.valueOf(5000))
+                .currency("INR")
+                .status(EscrowStatus.FROZEN)
+                .idempotencyKey("idem-split-1")
+                .build();
+    }
+
+    private void stubSplitLookup(EscrowHold hold, Collaboration collaboration) {
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(collaboration));
+        when(escrowHoldRepository.findByCollaborationIdAndStatus(COLLAB_ID, EscrowStatus.FROZEN))
+                .thenReturn(List.of(hold));
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+    }
+
+    @Test
+    @DisplayName(
+            "adminSplitForDispute: a 0% creatorSplitPercent settlement ends REFUNDED with the real"
+                    + " refund txn id -- NOT RELEASED with a synthetic id, since no ESCROW_RELEASE"
+                    + " ever posts when the creator's share is zero")
+    void adminSplitForDisputeZeroPercentEndsRefundedNotReleased() {
+        EscrowHold hold = frozenHoldForSplit();
+        Collaboration collaboration =
+                Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        stubSplitLookup(hold, collaboration);
+        Wallet clearingWallet = Wallet.forWorkspace("01HCLEARING1234567890", "platform-clearing");
+        Wallet brandWallet = Wallet.forWorkspace(WORKSPACE_ID, "brand");
+        when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(brandWallet);
+        when(ledgerService.post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(
+                        new WalletLedgerService.LedgerPostingResult(
+                                WalletTransaction.builder().id("wtx-split-refund-debit").build(),
+                                WalletTransaction.builder().id("wtx-split-refund-credit").build()));
+
+        List<EscrowStatusResponse> results = service.adminSplitForDispute(COLLAB_ID, BigDecimal.ZERO);
+
+        assertEquals(1, results.size());
+        assertEquals(EscrowStatus.REFUNDED, hold.getStatus());
+        assertEquals("wtx-split-refund-credit", hold.getReleaseTxnId());
+        // No release leg was ever attempted -- the creator's share was zero.
+        verify(platformFeeService, never()).deductAtRelease(any(), any(), any(), any(), any(), any());
+        verify(walletService, never()).requireOrCreateUserWallet(any());
+    }
+
+    @Test
+    @DisplayName(
+            "adminSplitForDispute: a normal (non-zero, non-100) split still ends RELEASED with the"
+                    + " real release txn id -- proves the 0% fix is narrow, not blanket")
+    void adminSplitForDisputeNormalSplitStillEndsReleased() {
+        EscrowHold hold = frozenHoldForSplit();
+        Collaboration collaboration =
+                Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        stubSplitLookup(hold, collaboration);
+        Wallet brandWallet = Wallet.forWorkspace(WORKSPACE_ID, "brand");
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(brandWallet);
+        stubSuccessfulReleaseLedgerCalls(CREATOR_USER_ID);
+
+        List<EscrowStatusResponse> results =
+                service.adminSplitForDispute(COLLAB_ID, BigDecimal.valueOf(60));
+
+        assertEquals(1, results.size());
+        assertEquals(EscrowStatus.RELEASED, hold.getStatus());
+        assertEquals("wtx-release-credit", hold.getReleaseTxnId());
     }
 
     // ------------------------------------------------------------------------------------------
@@ -543,6 +726,13 @@ class EscrowServiceTest {
         fullySigned.recordBrandSignature();
         fullySigned.recordCreatorSignature();
         when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(fullySigned));
+        // [CR-22a] assertContractActiveForMilestone now also locks + status-checks the
+        // collaboration behind the milestone — must resolve to a non-CANCELLED row.
+        when(collaborationRepository.findByIdForUpdate(COLLAB_ID))
+                .thenReturn(
+                        Optional.of(
+                                Collaboration.invite(
+                                        COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR")));
         when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY))
                 .thenReturn(Optional.empty());
         when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(wallet);
@@ -560,6 +750,57 @@ class EscrowServiceTest {
         // Saved twice: once creating the PENDING hold, once more after applyFunding marks it
         // FUNDED — both in the same call now that funding happens immediately, no gateway round trip.
         verify(escrowHoldRepository, times(2)).save(any(EscrowHold.class));
+    }
+
+    /**
+     * CR-22a, Kabir finding #1 — previously {@code assertContractActiveForMilestone} only ever
+     * checked the CONTRACT's two signature timestamps, so escrow could be funded for the FIRST
+     * time on a CANCELLED collaboration. Contract is fully signed here (so the pre-existing
+     * CONTRACT_NOT_ACTIVE gate above would NOT catch this) — the CollaborationStatus check is the
+     * only thing standing between this call and a real wallet debit.
+     */
+    @Test
+    @DisplayName(
+            "initiateFund: rejects funding with 409 COLLABORATION_CANCELLED when the milestone's"
+                    + " collaboration was cancelled, even though the contract is fully signed")
+    void initiateFundRejectsCancelledCollaborationEvenWhenContractActive() {
+        BigDecimal requiredAmount = BigDecimal.valueOf(5000);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestoneForContract(CONTRACT_ID)));
+        Contract fullySigned =
+                Contract.builder()
+                        .id(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .totalAmount(requiredAmount)
+                        .build();
+        fullySigned.recordBrandSignature();
+        fullySigned.recordCreatorSignature();
+        when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(fullySigned));
+        Collaboration cancelled =
+                Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        cancelled.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
+        when(collaborationRepository.findByIdForUpdate(COLLAB_ID))
+                .thenReturn(Optional.of(cancelled));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.initiateFund(
+                                        principal,
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        MILESTONE_ID,
+                                        requiredAmount,
+                                        "INR",
+                                        FUND_IDEMPOTENCY_KEY));
+
+        assertEquals("COLLABORATION_CANCELLED", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        verify(escrowHoldRepository, never()).save(any());
+        verify(walletService, never()).requireWorkspaceWallet(any());
     }
 
     @Test
@@ -583,5 +824,181 @@ class EscrowServiceTest {
         verify(escrowHoldRepository, times(2)).save(any(EscrowHold.class));
         verify(milestoneRepository, never()).findByIdAndWorkspaceId(any(), any());
         verify(contractRepository, never()).findById(any());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // [CR-36 residual, wiki/tech/escrow-cancelled-gate-spec.md] release() must refuse to pay a
+    // creator on a CANCELLED collaboration. refund() must NOT be blocked by the same status — that
+    // would strand every rupee held against a cancelled collaboration with no path to return it,
+    // the CR-35 class of bug. See EscrowService#assertReleaseNotBlockedByCancellation's javadoc.
+    // ------------------------------------------------------------------------------------------
+
+    private PaymentMilestone releasableMilestone() {
+        PaymentMilestone milestone =
+                PaymentMilestone.builder()
+                        .id(MILESTONE_ID)
+                        .contractId(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .amount(BigDecimal.valueOf(5000))
+                        .build();
+        milestone.markFunded(ESCROW_HOLD_ID);
+        return milestone;
+    }
+
+    private void stubSuccessfulReleaseLedgerCalls(String payeeUserId) {
+        Wallet clearingWallet = Wallet.forWorkspace("01HCLEARING1234567890", "platform-clearing");
+        Wallet payeeWallet = Wallet.forUser("01HPAYEEWALLET1234AB", payeeUserId);
+        when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
+        when(walletService.requireOrCreateUserWallet(payeeUserId)).thenReturn(payeeWallet);
+        when(platformFeeService.deductAtRelease(any(), any(), any(), any(), any(), any()))
+                .thenReturn(
+                        new PlatformFeeService.FeeDeductionResult(
+                                BigDecimal.valueOf(5000),
+                                1500,
+                                BigDecimal.valueOf(750),
+                                BigDecimal.valueOf(4250),
+                                null));
+        when(ledgerService.post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(
+                        new WalletLedgerService.LedgerPostingResult(
+                                WalletTransaction.builder().id("wtx-release-debit").build(),
+                                WalletTransaction.builder().id("wtx-release-credit").build()));
+    }
+
+    @Test
+    @DisplayName(
+            "[CR-36 residual] release: refuses to pay the creator with 409 COLLABORATION_CANCELLED"
+                    + " when the milestone's collaboration was cancelled -- no money moves")
+    void releaseRejectsCancelledCollaboration() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        PaymentMilestone milestone = releasableMilestone();
+        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        Collaboration cancelled =
+                Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        cancelled.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(cancelled));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.release(principal, WORKSPACE_ID, MILESTONE_ID));
+
+        assertEquals("COLLABORATION_CANCELLED", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        // No hold was ever locked/read and no ledger posting was attempted — the guard fires before
+        // either, so a cancelled deal can never even reach the FUNDED-status/dispute checks.
+        verify(escrowHoldRepository, never()).findByIdForUpdate(any());
+        verify(ledgerService, never())
+                .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "[CR-36 residual regression guard] refund: still succeeds on a CANCELLED collaboration --"
+                    + " refund is the remedy for a cancelled deal, not an abuse of one, and must stay"
+                    + " exempt from the release-only CANCELLED guard")
+    void refundStillSucceedsOnCancelledCollaboration() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        EscrowHold hold = fundedHold(); // carries collaborationId(COLLAB_ID)
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+        Collaboration cancelled =
+                Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        cancelled.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(cancelled));
+        Wallet clearingWallet = Wallet.forWorkspace("01HCLEARING1234567890", "platform-clearing");
+        Wallet brandWallet = Wallet.forWorkspace(WORKSPACE_ID, "brand");
+        when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(brandWallet);
+        when(ledgerService.post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(
+                        new WalletLedgerService.LedgerPostingResult(
+                                WalletTransaction.builder().id("wtx-refund-debit").build(),
+                                WalletTransaction.builder().id("wtx-refund-credit").build()));
+
+        EscrowStatusResponse response = service.refund(principal, WORKSPACE_ID, ESCROW_HOLD_ID);
+
+        assertEquals(EscrowStatus.REFUNDED, response.status());
+        verify(escrowHoldRepository).save(hold);
+    }
+
+    @Test
+    @DisplayName(
+            "[CR-36 residual] release: still succeeds on a healthy (non-cancelled, non-disputed)"
+                    + " collaboration -- proves the new guard is narrow, not blanket")
+    void releaseSucceedsOnHealthyCollaboration() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        PaymentMilestone milestone = releasableMilestone();
+        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        Collaboration healthy = Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(healthy));
+        EscrowHold hold = fundedHold();
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+        stubSuccessfulReleaseLedgerCalls(CREATOR_USER_ID);
+
+        EscrowStatusResponse response = service.release(principal, WORKSPACE_ID, MILESTONE_ID);
+
+        assertEquals(EscrowStatus.RELEASED, response.status());
+        verify(escrowHoldRepository).save(hold);
+    }
+
+    @Test
+    @DisplayName(
+            "[Kabir gate CR-35 HIGH-1] a hold that left FROZEN between the unlocked read and the row"
+                    + " lock is SKIPPED, not paid out a second time")
+    void adminReleaseForDisputeSkipsHoldThatLeftFrozenBeforeTheLock() {
+        // The TOCTOU this guards. `resolveHoldsForCollaboration` filters status on an UNLOCKED read;
+        // by the time `findByIdForUpdate` returns, a concurrent transaction may already have settled
+        // the hold. Two objects with the SAME id and different statuses is exactly that window:
+        //   - `snapshot` is what the unlocked query saw (still FROZEN)
+        //   - `lockedTruth` is what the row actually contains once locked (already RELEASED)
+        //
+        // Before this guard the code appended `snapshot` and paid it out again. That is not caught
+        // by idempotency: with two active disputes the keys differ (`dispute-refund:<id>` vs
+        // `dispute-release:<id>`), `markReleased`/`markRefunded` are unguarded setters, and
+        // `WalletLedgerService.post` exempts the clearing wallet from the balance check.
+        //
+        // This window was unreachable before CR-35 — the lookup returned [] for every ordinary-flow
+        // hold — which is why the guard ships in the same commit as the fix that made it reachable.
+        EscrowHold snapshot =
+                EscrowHold.builder()
+                        .id(ESCROW_HOLD_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .campaignId("01HCAMPAIGN1234567AB")
+                        .collaborationId(COLLAB_ID)
+                        .amount(BigDecimal.valueOf(5000))
+                        .currency("INR")
+                        .status(EscrowStatus.FROZEN)
+                        .idempotencyKey("idem-toctou-snapshot")
+                        .build();
+
+        EscrowHold lockedTruth =
+                EscrowHold.builder()
+                        .id(ESCROW_HOLD_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .campaignId("01HCAMPAIGN1234567AB")
+                        .collaborationId(COLLAB_ID)
+                        .amount(BigDecimal.valueOf(5000))
+                        .currency("INR")
+                        .status(EscrowStatus.RELEASED)
+                        .idempotencyKey("idem-toctou-locked")
+                        .build();
+
+        when(escrowHoldRepository.findByCollaborationIdAndStatus(COLLAB_ID, EscrowStatus.FROZEN))
+                .thenReturn(List.of(snapshot));
+        when(milestoneRepository.findByCollaborationId(COLLAB_ID)).thenReturn(List.of());
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID))
+                .thenReturn(Optional.of(lockedTruth));
+
+        Collaboration collaboration =
+                Collaboration.invite(COLLAB_ID, "01HCAMPAIGN1234567AB", CREATOR_USER_ID, null, "INR");
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(collaboration));
+
+        List<EscrowStatusResponse> settled = service.adminReleaseForDispute(COLLAB_ID);
+
+        // Skipped, not settled. Reverting the post-lock status re-check makes this return 1 and pay
+        // an already-released hold a second time.
+        assertEquals(0, settled.size()); // an already-released hold must not be settled again
+        // And nothing moved: no ledger posting, no second release on the hold.
+        verify(escrowHoldRepository, never()).save(any(EscrowHold.class));
+        assertEquals(EscrowStatus.RELEASED, lockedTruth.getStatus());
     }
 }

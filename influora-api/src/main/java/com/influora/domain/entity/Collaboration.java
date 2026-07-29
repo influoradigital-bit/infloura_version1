@@ -193,9 +193,36 @@ public class Collaboration {
         return canAccept();
     }
 
+    /**
+     * CR-22a (Priya's ruling, `wiki/errors/CREATOR-BUG-TRACKER.md` §10.1/§10.7) — narrowed from a
+     * denylist (everything except {@code COMPLETED}/{@code CANCELLED}/{@code DISPUTED}) to an
+     * allowlist over the pre-contract negotiation states only.
+     *
+     * <p>The denylist previously let {@code CONTRACT_PENDING}, {@code CONTRACTED}, {@code
+     * IN_PROGRESS}, {@code REVIEW_PENDING} and {@code REVISION_REQUESTED} through — so {@code
+     * DealService#reject} could unilaterally CANCEL a signed, escrow-funded deal, with no escrow
+     * refund, no contract voiding and no deliverable reconciliation (Kabir's audit, `wiki/errors/
+     * CR-22a-withdrawal-money-path-audit.md`, finding #3/#4). {@code CONTRACT_PENDING} is the cut
+     * line: it is the first status with a durable artifact (a {@code Contract} row) that a
+     * cancellation would have to reconcile, and at every status below it there is genuinely
+     * nothing to reconcile — no contract, no escrow, no deliverables. {@code TERMS_AGREED} stays
+     * in the allowlist for exactly that reason: it is {@code ContractService#generate}'s legal
+     * predecessor, not its output.
+     *
+     * <p>Post-contract withdrawal (CR-22b) is deliberately NOT this method widened — it needs its
+     * own two-party, escrow-aware termination flow (a proposed disposition the counterparty
+     * accepts or disputes), which is out of scope here and design-blocked on product input.
+     *
+     * <p>This is also now a denylist-to-allowlist conversion for a different reason than the
+     * withdrawal fix alone: a future 14th {@link CollaborationStatus} value is non-rejectable by
+     * default, which is the correct default for a terminal verb (the old denylist made a new
+     * status rejectable by default instead).
+     */
     public boolean canReject() {
-        return status != CollaborationStatus.COMPLETED
-                && status != CollaborationStatus.CANCELLED
-                && status != CollaborationStatus.DISPUTED;
+        return status == CollaborationStatus.INVITED
+                || status == CollaborationStatus.APPLIED
+                || status == CollaborationStatus.SHORTLISTED
+                || status == CollaborationStatus.IN_NEGOTIATION
+                || status == CollaborationStatus.TERMS_AGREED;
     }
 }

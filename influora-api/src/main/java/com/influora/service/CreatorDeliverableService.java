@@ -15,6 +15,7 @@ import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.DeliverableMetric;
+import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.integration.storage.R2StorageService;
 import com.influora.repository.CampaignRepository;
@@ -249,6 +250,11 @@ public class CreatorDeliverableService {
                     "Cannot submit deliverable in current state",
                     HttpStatus.CONFLICT);
         }
+        // [CR-22a, Kabir finding #1] Deliverable submit had zero CollaborationStatus awareness —
+        // a creator could submit against a CANCELLED collaboration. Not on the money-moving path
+        // (only #approve releases funds), so a plain read is enough here; no PESSIMISTIC_WRITE
+        // lock, unlike the contract/escrow guards.
+        requireNotCancelled(deliverable.getCollaborationId());
         if (!hasUploadedFiles(deliverable)) {
             throw new ApiException(
                     "NO_CONTENT",
@@ -290,6 +296,30 @@ public class CreatorDeliverableService {
                         ? "Resubmitted for brand review"
                         : "Submitted for brand review";
         return new SubmitResponse(deliverable.getId(), newStatus, message);
+    }
+
+    /**
+     * [CR-22a, Kabir finding #1] Shared guard — a {@code CANCELLED} collaboration must not accept
+     * new deliverable submissions. Throws {@code COLLABORATION_NOT_FOUND} on a missing
+     * collaboration rather than silently proceeding (a deliverable row with no collaboration
+     * behind it is itself a data-integrity problem, not something to paper over here).
+     */
+    private void requireNotCancelled(String collaborationId) {
+        Collaboration collaboration =
+                collaborationRepository
+                        .findById(collaborationId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "COLLABORATION_NOT_FOUND",
+                                                "Collaboration not found",
+                                                HttpStatus.NOT_FOUND));
+        if (collaboration.getStatus() == CollaborationStatus.CANCELLED) {
+            throw new ApiException(
+                    "COLLABORATION_CANCELLED",
+                    "This deal was cancelled and its deliverables can no longer be submitted",
+                    HttpStatus.CONFLICT);
+        }
     }
 
     private void notifyDeliverableSubmitted(CreatorProfile profile, Deliverable deliverable) {

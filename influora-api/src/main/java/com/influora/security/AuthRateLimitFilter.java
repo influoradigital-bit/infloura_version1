@@ -7,13 +7,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -67,10 +64,13 @@ import org.springframework.web.util.UriUtils;
  *       undecoded path; a request for {@code /wallet/%77ithdraw} would otherwise silently bypass
  *       every literal-path bucket match here. {@link #bucketFor} decodes the path before matching
  *       (Kabir NEW-1) so an encoded path segment cannot be used to dodge a bucket.
- *   <li><b>Trusted-proxy {@code X-Forwarded-For}</b> (Wave-1 S6 / Kabir audit H-4) — {@link
- *       #clientIp} only honors XFF when the direct socket peer is a configured trusted proxy
- *       ({@link #trustedProxiesRaw}); otherwise every IP-keyed bucket keys on the raw socket peer,
- *       so a spoofed XFF header can never be used to evade throttling.
+ *   <li><b>Spoofed {@code X-Forwarded-For}</b> (Kabir CR-11 endpoint red-team, Blocker-1) — client
+ *       IP resolution is delegated entirely to Tomcat's {@code RemoteIpValve}
+ *       ({@code forward-headers-strategy: native}), which validates the peer against
+ *       {@code internal-proxies} and walks XFF right-to-left. The hand-rolled allow-list that used
+ *       to live here read the LEFT-most entry and failed open under the {@code framework} strategy
+ *       the deploys had switched to — see {@link #clientIp} for exactly how. A spoofed XFF can no
+ *       longer move a request into a different or fresh bucket.
  * </ul>
  *
  * <p>Keyed by client IP + coarse endpoint bucket (or by user id for the buckets above). In-memory
@@ -126,6 +126,16 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     /** Requests per window for the public tracking/webhook surface (Wave A task A2). */
     @Value("${influora.tracking.rate-limit-per-window:30}")
     private int trackingLimit;
+
+    /**
+     * Requests per window, per IP, for the CR-11 client crash-report sink ({@code POST
+     * /client-errors}). IP-keyed like {@code tracking}/{@code sensitive}, not user-keyed — the
+     * contract requires this endpoint to work with no {@code Authorization} header at all (a crash
+     * on the public portfolio page or before login), so per-IP is the only identity available. See
+     * {@code ClientErrorController} and {@code wiki/tech/cr-11-client-error-contract.md}.
+     */
+    @Value("${influora.client-error.rate-limit-per-window:30}")
+    private int clientErrorLimit;
 
     /** Requests per window, per creator, for the deliverable upload/submit/metrics surface. */
     @Value("${influora.creator.deliverable-write-rate-limit-per-window:20}")
@@ -191,20 +201,15 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     @Value("${influora.auth.rate-limit.window-seconds:60}")
     private long windowSeconds;
 
-    /**
-     * [SEC: Wave-1 S6 / Kabir audit H-4] Comma-separated allow-list of trusted reverse-proxy
-     * socket addresses (the L4 peer this app actually accepts connections from, e.g. the load
-     * balancer / ingress IP). {@code X-Forwarded-For} is honored ONLY when the direct socket peer
-     * is in this list. Empty by default: with no trusted proxy configured, the spoofable XFF
-     * header is ignored entirely and the socket peer address is used as the rate-limit key —
-     * fail-safe. Without this, any client could set {@code X-Forwarded-For: <random>} on every
-     * request and trivially evade every IP-keyed bucket above by rotating a header value,
-     * defeating the brute-force/enumeration/abuse defense this filter exists for.
-     */
-    @Value("${influora.security.trusted-proxies:}")
-    private String trustedProxiesRaw;
-
-    private volatile Set<String> trustedProxies;
+    // [SEC: Kabir CR-11 endpoint red-team, Blocker-1] `influora.security.trusted-proxies` and its
+    // cached Set are GONE, not merely unused. They were the hand-rolled allow-list that
+    // `ForwardedHeaderFilter` silently defeated, and leaving them here would leave a security
+    // control that reads as if it still protects something. Trusted-proxy validation now lives
+    // where it belongs: `server.tomcat.remoteip.internal-proxies` in application.yml.
+    //
+    // The env var `TRUSTED_PROXIES` is still set by deploy/hostinger/*.yml and is now inert. It is
+    // left in the compose files deliberately rather than removed in the same change — see the
+    // deploy note in that file — so a rollback to a prior image does not lose it.
 
     private final Map<String, Window> windows = new ConcurrentHashMap<>();
 
@@ -266,7 +271,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 
     /** Returns the rate-limit bucket for the request path, or null if the path is not throttled. */
     private String bucketFor(HttpServletRequest request) {
-        String path = decode(stripContext(request.getRequestURI()));
+        String path = stripMatrixParams(decode(stripContext(request.getRequestURI())));
         boolean isGet = "GET".equalsIgnoreCase(request.getMethod());
 
         if (isGet) {
@@ -296,6 +301,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         }
         if (path.equals("/woocommerce/connect")) {
             return "meta-oauth";
+        }
+        if (path.equals("/client-errors")) {
+            return "client-errors";
         }
         if (path.equals("/creators/suggestions")) {
             // Kabir NEW-2: same query cost as GET /creators/search — must share that bucket.
@@ -354,6 +362,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             case "refresh" -> refreshLimit;
             case "meta-oauth" -> metaOAuthLimit;
             case "tracking" -> trackingLimit;
+            case "client-errors" -> clientErrorLimit;
             case "creator-deliverable-write" -> creatorDeliverableWriteLimit;
             case "brand-deliverable-review" -> brandDeliverableReviewLimit;
             case "contract-sign" -> contractSignLimit;
@@ -457,45 +466,78 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     }
 
     /**
-     * [SEC: Wave-1 S6 / Kabir audit H-4] {@code X-Forwarded-For} is trusted ONLY when the direct
-     * socket peer ({@link HttpServletRequest#getRemoteAddr()}) is a configured trusted proxy (see
-     * {@link #trustedProxiesRaw}). Otherwise the header is ignored and the socket peer is used —
-     * a spoofed XFF from an untrusted client can never move a request into a different (or fresh)
-     * rate-limit bucket. Fail-safe default: no trusted proxies configured => always use the peer.
+     * Strips matrix parameters — everything from the first {@code ;} of each segment.
+     *
+     * <p>[SEC: Kabir CR-11 endpoint red-team, L-7] Spring Boot 3's {@code PathPatternParser} treats
+     * matrix variables as segment metadata, so {@code POST /api/v1/client-errors;x=1} still routes
+     * to the controller. But this filter matched the RAW URI, so {@code /client-errors;x=1} failed
+     * every {@code .equals()} below, **no bucket was assigned at all**, and the request went
+     * through unthrottled.
+     *
+     * <p>This affects every literal-path bucket here — {@code /wallet/withdraw}, {@code /webhooks/*},
+     * {@code /meera/voice/*} — not just the endpoint it was found on. ({@code /auth/} uses
+     * {@code startsWith} and was never affected.)
+     *
+     * <p>It is the same class of gap as the earlier percent-encoding bypass (Kabir NEW-1), which
+     * added {@link #decode} but not this. Worth noting why it was ranked LOW at the time and is
+     * being fixed now anyway: it was redundant while Blocker-1 handed out unlimited requests
+     * outright. Blocker-1 is fixed, so this became the next bypass — a finding's severity is
+     * relative to what else is broken, and nothing re-ranks it automatically when its dependency
+     * closes.
      */
-    private String clientIp(HttpServletRequest request) {
-        String peer = request.getRemoteAddr();
-        if (peer != null && trustedProxies().contains(peer)) {
-            String forwarded = request.getHeader("X-Forwarded-For");
-            if (forwarded != null && !forwarded.isBlank()) {
-                int comma = forwarded.indexOf(',');
-                String first = (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
-                if (!first.isEmpty()) {
-                    // Left-most XFF entry is the originating client as reported by our OWN
-                    // trusted proxy. Safe precisely because we only reach here when the socket
-                    // peer is that trusted proxy; an untrusted direct caller's XFF is never
-                    // consulted.
-                    return first;
-                }
-            }
+    private static String stripMatrixParams(String path) {
+        if (path.indexOf(';') < 0) {
+            return path;
         }
-        return peer;
+        StringBuilder cleaned = new StringBuilder(path.length());
+        for (String segment : path.split("/", -1)) {
+            if (cleaned.length() > 0 || path.startsWith("/")) {
+                cleaned.append('/');
+            }
+            int semi = segment.indexOf(';');
+            cleaned.append(semi < 0 ? segment : segment.substring(0, semi));
+        }
+        // split("/", -1) on a leading-slash path yields an empty first element, so the loop above
+        // has already emitted the leading '/' — drop the duplicate it also prepends for it.
+        String result = cleaned.toString();
+        return result.startsWith("//") ? result.substring(1) : result;
     }
 
-    /** Lazily parses and caches the trusted-proxy allow-list from {@link #trustedProxiesRaw}. */
-    private Set<String> trustedProxies() {
-        Set<String> cached = trustedProxies;
-        if (cached == null) {
-            String raw = trustedProxiesRaw == null ? "" : trustedProxiesRaw;
-            cached =
-                    Arrays.stream(raw.split(","))
-                            .map(String::trim)
-                            .filter(s -> !s.isEmpty())
-                            .collect(Collectors.toUnmodifiableSet());
-            trustedProxies = cached;
-        }
-        return cached;
+    /**
+     * The rate-limit bucket key.
+     *
+     * [SEC: Kabir CR-11 endpoint red-team, Blocker-1] This used to hand-roll X-Forwarded-For
+     * parsing behind a comma-separated trusted-proxy allow-list. It was defeated by the deploys
+     * setting {@code SERVER_FORWARD_HEADERS_STRATEGY=framework}, and it failed OPEN:
+     *
+     * <ul>
+     *   <li>Spring's {@code ForwardedHeaderFilter} runs at {@code HIGHEST_PRECEDENCE}, ahead of the
+     *       Security chain at {@code -100}, and had already overwritten {@code getRemoteAddr()}
+     *       with the <em>left-most</em> XFF entry — the spoofable one, because Caddy appends the
+     *       true peer rather than replacing the header.
+     *   <li>The allow-list check then compared that spoofed value against itself, never matched,
+     *       and fell through to {@code return peer} — handing back the attacker's own header as the
+     *       bucket key. A different XFF per request meant no limit at all.
+     *   <li>It also strips the X-Forwarded-* headers, so nothing downstream could recover the truth.
+     * </ul>
+     *
+     * The blast radius was every IP-keyed bucket, login brute-force included — not just CR-11's
+     * endpoint, which is merely where it was found.
+     *
+     * The fix is upstream, in {@code application.yml}: {@code forward-headers-strategy: native}
+     * installs Tomcat's {@code RemoteIpValve}, which validates against {@code internal-proxies} and
+     * walks XFF RIGHT-TO-LEFT, landing on the entry our own proxy appended. A client-prepended
+     * entry can never win. So {@code getRemoteAddr()} is now the real client IP, and reading it
+     * directly is both correct and the only thing that stays correct if the topology changes —
+     * parsing the header here a second time would just be a second place to get it wrong.
+     *
+     * @see AdminAuditLogService#clientIp — same root cause, same fix, worse consequence (forged
+     *     forensic records rather than a rate-limit bypass).
+     */
+    private String clientIp(HttpServletRequest request) {
+        return request.getRemoteAddr();
     }
+
 
     private static final class Window {
         final long startSecond;

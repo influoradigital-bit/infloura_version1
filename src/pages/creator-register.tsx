@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
 import { createMockCreatorUser } from '@/lib/mock-user';
+import { buildCreatorUser } from '@/lib/creator-identity';
 import { AuthLoginShell } from '@/components/shared/auth-login-shell';
 import { EmailOtpGate } from '@/components/shared/email-otp-gate';
 import { api, ApiError, isApiLive } from '@/lib/api';
@@ -91,10 +92,19 @@ export default function CreatorRegisterPage() {
       });
       api.auth.setToken('creator', result.token);
 
-      if (!isApiLive()) {
-        // Mock mode only — populate a demo profile for the UI to render.
-        login(createMockCreatorUser({ id: 'creator-new', displayName: name.trim() || 'New Creator', email }));
-      }
+      // CR-06 — populated in BOTH modes. Same defect as creator-login.tsx: a
+      // live registration left the auth store empty, so the shell rendered its
+      // demo fallbacks ('Creator Account' / '@priya_sharma') for a brand-new
+      // creator who had just typed their own name into this form.
+      login(
+        isApiLive()
+          ? buildCreatorUser({
+              id: result.userId,
+              email: result.email ?? email,
+              displayName: result.displayName ?? name.trim(),
+            })
+          : createMockCreatorUser({ id: 'creator-new', displayName: name.trim() || 'New Creator', email }),
+      );
 
       navigate(result.onboardingComplete ? '/creator/dashboard' : '/creator/onboarding');
     } catch (err) {

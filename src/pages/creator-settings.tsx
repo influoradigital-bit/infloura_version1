@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
+import { clearCreatorSession } from '@/lib/auth-session';
 import { TaxIdentityForm } from '@/components/creator/TaxIdentityForm';
 import { api, isApiLive } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
@@ -157,7 +158,16 @@ export default function CreatorSettingsPage() {
       setIsLoggingOut(false);
     }
     logout();
-    localStorage.removeItem('creator_token');
+    // CR-32 — this is the SECOND creator logout path, and CR-06's session clear only ever
+    // reached the first (`creator-layout.tsx`'s sidebar menu). Removing `creator_token`
+    // alone left `creator_user_id` / `creator_email` / `creator_display_name` behind, and
+    // `persistCreatorSession` writes the display name only when the login response carries
+    // one — so the next creator to sign in on this browser without a display name set
+    // inherited the previous creator's name in the shell, permanently if
+    // `/me/creator-profile` then failed. That is the identity-leak pattern the CR-06 CTO
+    // note said to remove at the root, reintroduced through a door CR-06 did not check.
+    // `clearCreatorSession()` covers the token too — do not re-add a bare removeItem here.
+    clearCreatorSession();
     navigate('/creator/login');
   };
 

@@ -88,6 +88,38 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
     boolean existsByCollaborationIdAndStatusIn(
             String collaborationId, Collection<EscrowStatus> statuses);
 
+    /**
+     * Does this collaboration have ANY hold in the given statuses, reached by EITHER linkage?
+     *
+     * <p>[SEC: CR-35 follow-on] {@link #existsByCollaborationIdAndStatusIn} above matches only the
+     * direct {@code collaboration_id} column — which is NULL on every hold created by the ordinary
+     * brand escrow flow, because only {@code ConfirmLaunchExecutor} ever called
+     * {@code bindCollaboration}. Any caller using it as a safety guard therefore silently concluded
+     * "no escrow" for exactly the holds that matter. {@code DeliverableCleanupJob.canDelete} was
+     * such a caller, and it deletes creator media.
+     *
+     * <p>This query adds the milestone linkage as a second path, the same union
+     * {@code EscrowService.resolveHoldsForCollaboration} performs in Java, so the answer no longer
+     * depends on whether the denormalised column happens to be populated. CR-35's backfill and its
+     * bind-at-creation fix both narrow how often the column is null; **this makes the guard correct
+     * even when it still is** — including campaign-level funding, which has no milestone to bind
+     * from and is therefore permanently null by design.
+     *
+     * <p>Prefer this over the derived query for anything that gates a destructive or money-moving
+     * action. The derived one is fine for callers that genuinely mean "is the column set".
+     */
+    @Query(
+            "SELECT CASE WHEN COUNT(e) > 0 THEN TRUE ELSE FALSE END FROM EscrowHold e "
+                    + "WHERE e.status IN :statuses AND ("
+                    + "  e.collaborationId = :collaborationId "
+                    + "  OR e.milestoneId IN ("
+                    + "       SELECT m.id FROM PaymentMilestone m WHERE m.collaborationId = :collaborationId"
+                    + "  )"
+                    + ")")
+    boolean existsForCollaborationIncludingMilestoneLink(
+            @Param("collaborationId") String collaborationId,
+            @Param("statuses") Collection<EscrowStatus> statuses);
+
     List<EscrowHold> findByCollaborationIdAndStatus(String collaborationId, EscrowStatus status);
 
     /** Row lock for FUNDED → {FROZEN|RELEASED|REFUNDED} transitions (H-T34-1). */

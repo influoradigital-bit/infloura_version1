@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -21,6 +23,7 @@ import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DealMessageKind;
+import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.DealSenderType;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.UserType;
@@ -35,6 +38,7 @@ import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.web.dto.deal.DealDtos.CounterRequest;
 import com.influora.web.dto.deal.DealDtos.CreateDealRequest;
+import com.influora.web.dto.deal.DealDtos.DealMessageResponse;
 import com.influora.web.dto.deal.DealDtos.DealResponse;
 import com.influora.web.dto.deal.DealDtos.DeliverableSlot;
 import com.influora.web.dto.deal.DealDtos.OkResponse;
@@ -53,6 +57,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 
 /** Task #9 — access isolation, negotiation state transitions, idempotency wiring. */
 @ExtendWith(MockitoExtension.class)
@@ -132,6 +137,23 @@ class DealServiceTest {
                 Workspace.newBrand(WORKSPACE_ID, "Test Brand", "test-brand", "Beauty", "10-50");
         when(brandPrincipal.getUserType()).thenReturn(UserType.BRAND);
         when(brandContext.requireBrandWorkspace(brandPrincipal)).thenReturn(workspace);
+    }
+
+    /**
+     * CR-22a — {@code reject} is now routed through {@code IdempotencyService.executeOnce}
+     * (Kabir finding #6), mirroring {@link #testCounterPublishesSupersededCardBeforeNewCard}'s
+     * pattern for {@code counter}: runs the supplied action as the (only, in these unit tests)
+     * race winner so the Mockito-default {@code null} doesn't silently swallow {@code doReject}'s
+     * real return value.
+     */
+    private void mockRejectIdempotencyExecuteOnce() {
+        when(idempotencyService.executeOnce(anyString(), anyString(), eq("deal.reject"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<OkResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
     }
 
     // ---------------------------------------------------------------------
@@ -378,6 +400,22 @@ class DealServiceTest {
     // ownership scoping pattern (requireOwnedCollaboration, brand scopeId = workspace id).
     // ------------------------------------------------------------------
 
+    /**
+     * The last offer on the table, as a real row in {@code deal_messages}.
+     *
+     * <p>CR-28 — this helper used to pass {@code null} metadata. {@code settleStatus} no-ops on
+     * null metadata, so every older accept/counter test built on it passed WITHOUT ever
+     * exercising the settle-and-republish path that CR-02 added: the assertions were real but
+     * the settle was silently skipped. Only the newer {@link #pendingProposalMessage} covered it.
+     * The risk was missing assertions rather than wrong ones — no false positive was ever traced
+     * to it — but a helper that quietly disables the code under test is a trap for the next test
+     * that reaches for it.
+     *
+     * <p>Fixed in the helper rather than at the three call sites, so a future test cannot
+     * reintroduce the gap by picking the wrong one. Ids stay distinct from
+     * {@link #PROPOSAL_MSG_ID} so the CR-08 publish-order tests, which assert on that exact id,
+     * are unaffected.
+     */
     private static DealMessage proposalMessage(String senderId, DealSenderType senderType) {
         return DealMessage.create(
                 "01HMSGLASTOFFER00000" + (senderType == DealSenderType.brand ? "1" : "2"),
@@ -386,7 +424,7 @@ class DealServiceTest {
                 senderId,
                 senderType,
                 "Offer on the table",
-                null);
+                "{\"amount\":25000.00,\"status\":\"pending\"}");
     }
 
     @Test
@@ -428,7 +466,31 @@ class DealServiceTest {
 
         assertEquals(CollaborationStatus.TERMS_AGREED, response.status());
         verify(collaborationRepository).save(any(Collaboration.class));
-        verify(dealMessageRepository).save(any(DealMessage.class));
+        // [CR-08 baseline fix] This asserted a single save and had been RED since Wave 1 landed
+        // CR-02: doAccept now writes twice — the system message, then the settled proposal card
+        // (settleLatestProposal). Two saves is the correct post-CR-02 behaviour, so the assertion
+        // was stale, not the production code. Distinct from testAcceptHappyPath, which stubs no
+        // proposal card at all and so genuinely saves once.
+        verify(dealMessageRepository, times(2)).save(any(DealMessage.class));
+
+        // CR-28 — explicit proof the settle path actually RAN, which is the coverage this test
+        // silently lacked. `proposalMessage` used to carry null metadata, so settleStatus no-oped:
+        // the two saves above were the system message and an untouched card, and this assertion
+        // would have failed. Now the originating offer is genuinely marked accepted.
+        ArgumentCaptor<DealMessage> saved = ArgumentCaptor.forClass(DealMessage.class);
+        verify(dealMessageRepository, times(2)).save(saved.capture());
+        DealMessage settledCard =
+                saved.getAllValues().stream()
+                        .filter(m -> m.getKind() == DealMessageKind.proposal)
+                        .findFirst()
+                        .orElseThrow(
+                                () ->
+                                        new AssertionError(
+                                                "no proposal card was saved — the settle path did"
+                                                        + " not run"));
+        assertTrue(
+                settledCard.getMetadataJson().contains("\"status\":\"accepted\""),
+                "settled card metadata: " + settledCard.getMetadataJson());
     }
 
     @Test
@@ -438,16 +500,232 @@ class DealServiceTest {
         Collaboration collaboration = invitedDeal();
         when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
         when(collaborationRepository.save(any(Collaboration.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
 
-        OkResponse response = service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"));
+        OkResponse response =
+                service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"), null);
 
         assertEquals(true, response.ok());
         assertEquals(CollaborationStatus.CANCELLED, collaboration.getStatus());
         verify(dealMessageRepository).save(any(DealMessage.class));
+    }
+
+    /**
+     * CR-37 (Kabir audit finding #5) — a brand workspace VIEWER must not be able to accept,
+     * counter or cancel a deal. All three delegate the member-role gate to {@code
+     * brandContext.requireRole(member, OWNER, ADMIN, MANAGER)} via {@code
+     * requireBrandDealManagerScope}; here that call is stubbed to throw, and each method must
+     * propagate the 403 WITHOUT mutating the collaboration or saving anything.
+     *
+     * <p>The stub matches the EXACT role set (OWNER/ADMIN/MANAGER). That is the tripwire: narrow
+     * the gate to OWNER/ADMIN, or drop it entirely, and this stub no longer matches — requireRole
+     * becomes a no-op, the deal proceeds, and these three fail. Verified by reverting: with the
+     * scope helper reverted to the bare {@code requireBrandWorkspace(...).getId()}, all three fail
+     * ("expected ApiException to be thrown").
+     */
+    private void stubViewerForbiddenByRoleGate(Collaboration collaboration) {
+        stubBrandWorkspace();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        doThrow(
+                        new ApiException(
+                                "FORBIDDEN_ROLE",
+                                "This action requires an OWNER, ADMIN or MANAGER role",
+                                HttpStatus.FORBIDDEN))
+                .when(brandContext)
+                .requireRole(
+                        any(),
+                        eq(MemberRole.OWNER),
+                        eq(MemberRole.ADMIN),
+                        eq(MemberRole.MANAGER));
+    }
+
+    @Test
+    @DisplayName("CR-37: a VIEWER cannot reject/cancel a deal — 403, nothing saved")
+    void testBrandRejectRequiresManagerRole() {
+        Collaboration collaboration = invitedDeal();
+        stubViewerForbiddenByRoleGate(collaboration);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.reject(brandPrincipal, DEAL_ID, new RejectRequest("no"), null));
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        assertEquals(CollaborationStatus.INVITED, collaboration.getStatus()); // untouched
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+        verify(dealMessageRepository, never()).save(any(DealMessage.class));
+    }
+
+    @Test
+    @DisplayName("CR-37: a VIEWER cannot accept a deal — 403, nothing saved")
+    void testBrandAcceptRequiresManagerRole() {
+        Collaboration collaboration = invitedDeal();
+        stubViewerForbiddenByRoleGate(collaboration);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.accept(brandPrincipal, DEAL_ID, null));
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        assertEquals(CollaborationStatus.INVITED, collaboration.getStatus());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+    }
+
+    @Test
+    @DisplayName("CR-37: a VIEWER cannot send a counter-offer — 403, nothing saved")
+    void testBrandCounterRequiresManagerRole() {
+        Collaboration collaboration = invitedDeal();
+        stubViewerForbiddenByRoleGate(collaboration);
+        // counter() resolves + amount-validates the campaign before the role gate (the gate still
+        // precedes any mutation). Stub it so the test reaches the gate rather than 404ing early.
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.counter(
+                                        brandPrincipal,
+                                        DEAL_ID,
+                                        new CounterRequest(
+                                                new BigDecimal("25000"), "no", null, null, null),
+                                        null));
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        assertEquals(CollaborationStatus.INVITED, collaboration.getStatus());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+    }
+
+    /**
+     * CR-22a — {@code canReject()} narrowed from a denylist (everything except COMPLETED/
+     * CANCELLED/DISPUTED) to an allowlist ending at TERMS_AGREED. This is the ticket's central
+     * finding: pre-fix, this exact call would have transitioned a CONTRACT_PENDING deal (a
+     * durable Contract row already exists) straight to CANCELLED. Revert {@code
+     * Collaboration#canReject()} to the old denylist and this test is the one that must fail.
+     */
+    @Test
+    @DisplayName(
+            "reject: CR-22a — CONTRACT_PENDING (post-contract) returns 409 DEAL_NOT_REJECTABLE,"
+                    + " does not transition or save")
+    void testRejectRejectsPostContractStatus() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        collaboration.transitionTo(CollaborationStatus.CONTRACT_PENDING);
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
+        mockRejectIdempotencyExecuteOnce();
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.reject(
+                                        brandPrincipal, DEAL_ID, new RejectRequest("too late"), null));
+
+        assertEquals("DEAL_NOT_REJECTABLE", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        assertEquals(
+                CollaborationStatus.CONTRACT_PENDING,
+                collaboration.getStatus(),
+                "must not have been mutated");
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+    }
+
+    /**
+     * The other half of the allowlist boundary: TERMS_AGREED is the HIGHEST status still
+     * rejectable (it is {@code ContractService#generate}'s legal predecessor, not its output —
+     * no Contract row exists yet). Proves the cut line is exactly at CONTRACT_PENDING, not one
+     * status earlier by accident.
+     */
+    @Test
+    @DisplayName("reject: CR-22a — TERMS_AGREED (highest pre-contract status) is still rejectable")
+    void testRejectAllowsTermsAgreed() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        collaboration.transitionTo(CollaborationStatus.TERMS_AGREED);
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        OkResponse response =
+                service.reject(brandPrincipal, DEAL_ID, new RejectRequest("changed our mind"), null);
+
+        assertEquals(true, response.ok());
+        assertEquals(CollaborationStatus.CANCELLED, collaboration.getStatus());
+    }
+
+    /**
+     * Kabir finding #6 (the lost-update race) — the fix is a {@code PESSIMISTIC_WRITE} row lock
+     * taken via {@code findByIdForUpdate} INSIDE the idempotency-guarded action, mirroring {@code
+     * ContractService#generate}. A unit test cannot force the actual concurrent interleaving (see
+     * {@code ContractServiceTest#testConcurrentGenerateCallsAreSerializedByCollaborationLock} for
+     * why that needs real threads + a JDBC-level lock), but it CAN prove the lock is acquired at
+     * all — which a plain, non-locking {@code findByIdAndWorkspaceId}-only implementation would
+     * fail. Revert {@code doReject} back to reading through the unlocked instance and this is the
+     * test that catches it.
+     */
+    @Test
+    @DisplayName("reject: acquires a PESSIMISTIC_WRITE row lock on the collaboration before transitioning it")
+    void testRejectAcquiresRowLock() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"), null);
+
+        verify(collaborationRepository).findByIdForUpdate(DEAL_ID);
+    }
+
+    /**
+     * Kabir finding #8 — a retried reject after the first call already succeeded must replay the
+     * prior 200, not 409 DEAL_NOT_REJECTABLE (the old behavior: the deal is now CANCELLED, so a
+     * plain re-check of {@code canReject()} on retry would always 409). Simulates the retry by
+     * having the idempotency wrapper report the key as already COMPLETED — {@code doReject} must
+     * never even be invoked in that case.
+     */
+    @Test
+    @DisplayName(
+            "reject: a retried call after success replays 200 (not 409) — finding #8, resolved as a"
+                    + " side effect of routing through IdempotencyService")
+    void testRejectRetryAfterSuccessReplays200() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        collaboration.transitionTo(CollaborationStatus.CANCELLED); // as left by the first, successful call
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(idempotencyService.executeOnce(anyString(), anyString(), eq("deal.reject"), any()))
+                .thenThrow(new IdempotencyService.AlreadyCompletedException("deal-reject:" + DEAL_ID));
+
+        OkResponse response =
+                service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"), null);
+
+        assertEquals(true, response.ok());
+        verify(collaborationRepository, never()).findByIdForUpdate(any());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
     }
 
     @Test
@@ -476,11 +754,12 @@ class DealServiceTest {
         ApiException ex =
                 assertThrows(
                         ApiException.class,
-                        () -> service.reject(brandPrincipal, DEAL_ID, new RejectRequest("nope")));
+                        () -> service.reject(brandPrincipal, DEAL_ID, new RejectRequest("nope"), null));
 
         assertEquals("DEAL_NOT_FOUND", ex.getCode());
         assertEquals(404, ex.getStatus().value());
         verify(collaborationRepository, never()).save(any(Collaboration.class));
+        verify(idempotencyService, never()).executeOnce(anyString(), anyString(), anyString(), any());
     }
 
     @Test
@@ -612,6 +891,191 @@ class DealServiceTest {
         var inOrder = org.mockito.Mockito.inOrder(dealMessageRepository, messageStreamRegistry);
         inOrder.verify(dealMessageRepository).save(any(DealMessage.class));
         inOrder.verify(messageStreamRegistry).publish(eq(DEAL_ID), eq(response));
+    }
+
+    // ------------------------------------------------------------------
+    // CR-08 — accept/decline/counter must reach the counterparty's OPEN deal room.
+    //
+    // Before this, DealService published to the SSE registry from exactly one place (sendMessage),
+    // so the proposal lifecycle actions persisted their rows and pushed nothing: a creator
+    // accepted and the brand's open room showed stale, still-actionable cards until a manual
+    // reload. These pin BOTH halves of the contract with Ananya's frontend:
+    //   1. WHAT is published — a settled card goes out under its ORIGINAL persisted id with
+    //      post-settle metadata, so the client's upsert-by-id replaces the row it already holds
+    //      instead of appending a duplicate. A new id here would be the bug.
+    //   2. In WHAT ORDER — settled/superseded card first, so a client applying the frames in
+    //      sequence never renders an inconsistent room.
+    // ------------------------------------------------------------------
+
+    private static final String PROPOSAL_MSG_ID = "01HMSGPENDINGCARD0001";
+
+    /**
+     * A proposal card as it actually sits in {@code deal_messages} while an offer is live —
+     * {@code status: "pending"} with a real amount. {@link #proposalMessage} deliberately carries
+     * NULL metadata (it only exists to identify who made the last offer), and settleStatus no-ops
+     * on null metadata, so it cannot exercise the settle-and-republish path at all.
+     */
+    private static DealMessage pendingProposalMessage(String senderId, DealSenderType senderType) {
+        return DealMessage.create(
+                PROPOSAL_MSG_ID,
+                DEAL_ID,
+                DealMessageKind.proposal,
+                senderId,
+                senderType,
+                "Offer on the table",
+                "{\"amount\":25000.00,\"status\":\"pending\"}");
+    }
+
+    @Test
+    @DisplayName(
+            "accept: publishes the settled card under its ORIGINAL id, then the system message")
+    void testAcceptPublishesSettledCardThenSystemMessage() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        DEAL_ID, DealMessageKind.proposal))
+                .thenReturn(Optional.of(pendingProposalMessage(CREATOR_USER_ID, DealSenderType.creator)));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any()))
+                .thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(idempotencyService.executeOnce(
+                        eq("deal-accept:" + DEAL_ID), eq(WORKSPACE_ID), eq("deal.accept"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        service.accept(brandPrincipal, DEAL_ID, null);
+
+        ArgumentCaptor<DealMessageResponse> published =
+                ArgumentCaptor.forClass(DealMessageResponse.class);
+        verify(messageStreamRegistry, times(2)).publish(eq(DEAL_ID), published.capture());
+        List<DealMessageResponse> frames = published.getAllValues();
+
+        // Frame 1 — the settled card. Its id MUST be the id already on the client, otherwise the
+        // upsert appends a second copy of the same offer instead of replacing the live one.
+        assertEquals(PROPOSAL_MSG_ID, frames.get(0).id());
+        assertEquals(DealMessageKind.proposal, frames.get(0).kind());
+        assertEquals("accepted", frames.get(0).metadata().get("status"));
+
+        // Frame 2 — the system message, and it lands AFTER the card is already inert.
+        assertEquals(DealMessageKind.system, frames.get(1).kind());
+        assertEquals(DealSenderType.system, frames.get(1).senderType());
+        assertTrue(
+                frames.get(1).content().contains("accepted the proposal"),
+                "system message content: " + frames.get(1).content());
+    }
+
+    @Test
+    @DisplayName("reject: publishes the settled card (status rejected), then the system message")
+    void testRejectPublishesSettledCardThenSystemMessage() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        DEAL_ID, DealMessageKind.proposal))
+                .thenReturn(Optional.of(pendingProposalMessage(BRAND_USER_ID, DealSenderType.brand)));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"), null);
+
+        ArgumentCaptor<DealMessageResponse> published =
+                ArgumentCaptor.forClass(DealMessageResponse.class);
+        verify(messageStreamRegistry, times(2)).publish(eq(DEAL_ID), published.capture());
+        List<DealMessageResponse> frames = published.getAllValues();
+
+        assertEquals(PROPOSAL_MSG_ID, frames.get(0).id());
+        assertEquals("rejected", frames.get(0).metadata().get("status"));
+        assertEquals(DealMessageKind.system, frames.get(1).kind());
+        assertTrue(
+                frames.get(1).content().contains("Not a fit"),
+                "system message content: " + frames.get(1).content());
+    }
+
+    @Test
+    @DisplayName("counter: publishes the superseded card INERT before the new proposal card")
+    void testCounterPublishesSupersededCardBeforeNewCard() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        DEAL_ID, DealMessageKind.proposal))
+                .thenReturn(Optional.of(pendingProposalMessage(CREATOR_USER_ID, DealSenderType.creator)));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any()))
+                .thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(idempotencyService.executeOnce(anyString(), eq(WORKSPACE_ID), eq("deal.counter"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        service.counter(
+                brandPrincipal,
+                DEAL_ID,
+                new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null),
+                null);
+
+        ArgumentCaptor<DealMessageResponse> published =
+                ArgumentCaptor.forClass(DealMessageResponse.class);
+        verify(messageStreamRegistry, times(2)).publish(eq(DEAL_ID), published.capture());
+        List<DealMessageResponse> frames = published.getAllValues();
+
+        // Frame 1 — the superseded card, same id, now inert. This MUST precede frame 2: two cards
+        // both reading "pending" on the client, even briefly, means a click on the stale one
+        // accepts the new amount (POST /deals/{id}/accept carries no proposal id).
+        assertEquals(PROPOSAL_MSG_ID, frames.get(0).id());
+        assertEquals("countered", frames.get(0).metadata().get("status"));
+
+        // Frame 2 — the new offer: a genuinely NEW row (distinct id), still pending.
+        assertEquals(DealMessageKind.proposal, frames.get(1).kind());
+        assertTrue(
+                !PROPOSAL_MSG_ID.equals(frames.get(1).id()),
+                "the new proposal must not reuse the superseded card's id");
+        assertEquals("pending", frames.get(1).metadata().get("status"));
+        assertEquals(DealSenderType.brand, frames.get(1).senderType());
     }
 
     // ------------------------------------------------------------------

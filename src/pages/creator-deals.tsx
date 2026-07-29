@@ -10,6 +10,7 @@ import {
   Shield,
   Sparkles,
   AlertCircle,
+  AlertTriangle,
   ChevronRight,
   Loader2,
 } from 'lucide-react';
@@ -21,8 +22,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { cn, formatINR } from '@/lib/utils';
-import { api, ApiError, type DealStatusFilter } from '@/lib/api';
-import { mapDealToDealsPageRow } from '@/lib/creator-deal-mappers';
+import { api, ApiError, type DealStatusFilter, type DealStatusQuery } from '@/lib/api';
+import {
+  mapDealToDealsPageRow,
+  type CreatorDealsPageRow,
+} from '@/lib/creator-deal-mappers';
 import { getInitials } from '@/lib/helpers';
 import { type HypeInvite } from '@/lib/demo-data';
 import { HypeInboxCard } from '@/components/creator/hype-inbox-card';
@@ -47,43 +51,40 @@ type StatusChip = {
   id: DealStatusFilter;
   label: string;
   match: (d: DealRoom) => boolean;
+  /**
+   * CR-13 — what this chip actually sends as `?status=`, when that differs from its `id`.
+   *
+   * The "Active" chip means three stages (contracted / in_progress / review) but its `id` is
+   * the single value `in_progress`, which the server maps to `[IN_PROGRESS]` alone — so a
+   * signed, CONTRACTED deal was never returned and the tab rendered "Nothing active." with an
+   * active deal sitting right there. `DealService.statusesForFilter` now accepts a
+   * comma-separated union, so the chip asks for exactly what it means.
+   *
+   * Kept separate from `id` rather than renaming the id: `id` is also the key for
+   * `EmptyState` copy and the local `match` predicate, and overloading `in_progress` on the
+   * server to secretly mean three stages would surprise every other caller.
+   */
+  apiFilter?: DealStatusQuery;
 };
 
-interface DealRoom {
-  id: string;
-  brandId: string;
-  brandName: string;
-  brandLogo?: string;
-  brandVerified: boolean;
-  brandRating?: number;
-  brandPaymentSpeed?: string;
-  campaignTitle: string;
-  status:
-    | 'new'
-    | 'negotiating'
-    | 'contracted'
-    | 'in_progress'
-    | 'review'
-    | 'completed';
-  budget: number;
-  deliverables: Array<{ type: string; count: number }>;
-  deadline: string;
-  lastMessage?: string;
-  lastMessageAt?: Date;
-  unreadCount: number;
-  deliverablesDone: number;
-  deliverablesTotal: number;
-  receivedAt?: Date;
-  expiresAt?: Date;
-  escrowFunded: boolean;
-}
+/**
+ * CR-05 — the row shape (and with it the `status` union) is owned by
+ * `lib/creator-deal-mappers.ts`, which also owns the single
+ * `CollaborationStatus -> stage` switch that `creator-chat.tsx` reads. This page used to
+ * re-declare both locally, which is how the deal room drifted onto a different mapping.
+ */
+type DealRoom = CreatorDealsPageRow;
 
 const STATUS_CHIPS: StatusChip[] = [
   { id: 'all',         label: 'All',           match: () => true },
   { id: 'new',         label: 'New',           match: (d) => d.status === 'new' },
   { id: 'negotiating', label: 'Negotiating',   match: (d) => d.status === 'negotiating' },
-  { id: 'in_progress', label: 'Active',        match: (d) => d.status === 'contracted' || d.status === 'in_progress' || d.status === 'review' },
+  // CR-13 — `apiFilter` is the union this chip has always *meant*; its `id` stays
+  // `in_progress` because that is the EmptyState key and the local predicate's name.
+  { id: 'in_progress', label: 'Active',        match: (d) => d.status === 'contracted' || d.status === 'in_progress' || d.status === 'review', apiFilter: 'contracted,in_progress,review' },
   { id: 'completed',   label: 'Completed',     match: (d) => d.status === 'completed' },
+  // CR-26 — CANCELLED/DISPUTED were previously badged "Done" and selected by no filter at all.
+  { id: 'disputed',    label: 'Disputed',      match: (d) => d.status === 'disputed' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -205,6 +206,18 @@ export default function CreatorDealsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [deals, setDeals] = React.useState<DealRoom[]>([]);
+  /**
+   * CR-12 — the unfiltered deal set, used ONLY for the chip badges and the
+   * header summary.
+   *
+   * The bug: `counts` was derived from `deals`, which the effect below refetches
+   * scoped to `activeFilter`. So the badges described the current filter's own
+   * result set — click "Active" and every chip, including "All", reported 0, and
+   * the header read "0 active". A creator with deals was told they had none.
+   * Badge numbers must not depend on which filter is selected, so they get their
+   * own unfiltered read.
+   */
+  const [allDeals, setAllDeals] = React.useState<DealRoom[]>([]);
   const [activeFilter, setActiveFilter] = React.useState<DealStatusFilter>('all');
   const [search, setSearch] = React.useState('');
   const [loading, setLoading] = React.useState(false);
@@ -219,7 +232,9 @@ export default function CreatorDealsPage() {
     (async () => {
       setLoading(true);
       try {
-        const remote = await api.deals.list('creator', activeFilter);
+        // CR-13 — send the chip's `apiFilter` union when it has one, not its bare id.
+        const chip = STATUS_CHIPS.find((c) => c.id === activeFilter);
+        const remote = await api.deals.list('creator', chip?.apiFilter ?? activeFilter);
         // Array.isArray alone, deliberately no `.length > 0` -- a creator with genuinely zero
         // deals gets back a real empty array, which EmptyState already renders correctly.
         // Requiring non-empty treated that correct empty response the same as "API call didn't
@@ -250,13 +265,41 @@ export default function CreatorDealsPage() {
     };
   }, [activeFilter]);
 
+  /**
+   * CR-12 — one unfiltered read that backs every chip badge and the header
+   * summary. Deliberately separate from the list fetch above, which stays
+   * server-filtered: the list's source of truth is the API's own status
+   * mapping, and collapsing the two would paper over CR-13 (the server's
+   * `statusesForFilter` disagreeing with the chips about `TERMS_AGREED`)
+   * client-side instead of fixing it where Priya ruled it must be fixed.
+   */
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const remote = await api.deals.list('creator', 'all');
+        if (!cancelled && Array.isArray(remote)) {
+          setAllDeals(remote.map(mapDealToDealsPageRow));
+        }
+      } catch {
+        // Counts are an affordance, not the page. Swallowed on purpose: the
+        // list fetch above already toasts its own failure, and a second toast
+        // for the badges would be noise on the same underlying outage. The
+        // badges keep their last known value rather than lying with 0.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const counts = React.useMemo(() => {
     const map = new Map<DealStatusFilter, number>();
     STATUS_CHIPS.forEach((chip) => {
-      map.set(chip.id, deals.filter(chip.match).length);
+      map.set(chip.id, allDeals.filter(chip.match).length);
     });
     return map;
-  }, [deals]);
+  }, [allDeals]);
 
   const filtered = React.useMemo(() => {
     const chip = STATUS_CHIPS.find((c) => c.id === activeFilter) || STATUS_CHIPS[0];
@@ -280,11 +323,14 @@ export default function CreatorDealsPage() {
       });
   }, [deals, activeFilter, search]);
 
-  const newCount = deals.filter((d) => d.status === 'new').length;
-  const activeCount = deals.filter(
+  // CR-12 — header summary reads the unfiltered set for the same reason the
+  // badges do: "2 new · 1 active · ₹30,000 pending payout" describes the
+  // account, not the chip that happens to be selected.
+  const newCount = allDeals.filter((d) => d.status === 'new').length;
+  const activeCount = allDeals.filter(
     (d) => d.status === 'contracted' || d.status === 'in_progress' || d.status === 'review',
   ).length;
-  const pendingPayout = deals
+  const pendingPayout = allDeals
     .filter((d) => d.status === 'review' || d.status === 'in_progress')
     .reduce((sum, d) => sum + d.budget, 0);
 
@@ -312,9 +358,12 @@ export default function CreatorDealsPage() {
     setActionLoading(deal.id);
     try {
       await api.deals.accept(deal.id);
-      setDeals((prev) =>
-        prev.map((d) => (d.id === deal.id ? { ...d, status: 'negotiating' } : d)),
-      );
+      // CR-12 — both the list and the counts source are updated, so the badges
+      // move with the row instead of going stale until the next mount.
+      const toNegotiating = (d: DealRoom) =>
+        d.id === deal.id ? { ...d, status: 'negotiating' as const } : d;
+      setDeals((prev) => prev.map(toNegotiating));
+      setAllDeals((prev) => prev.map(toNegotiating));
       openDeal(deal.id);
     } catch (err) {
       // Previously a try/finally with NO catch — an accept failure was an unhandled
@@ -340,7 +389,9 @@ export default function CreatorDealsPage() {
     setActionLoading(deal.id);
     try {
       await api.deals.reject(deal.id);
+      // CR-12 — dropped from the counts source too, not just the visible list.
       setDeals((prev) => prev.filter((d) => d.id !== deal.id));
+      setAllDeals((prev) => prev.filter((d) => d.id !== deal.id));
     } catch (err) {
       // Was try/finally with no catch — a decline failure vanished silently.
       toast({
@@ -646,6 +697,10 @@ function StatusPill({ status }: { status: DealRoom['status'] }) {
     in_progress: { label: 'Active',      cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
     review:      { label: 'In review',   cls: 'bg-orange-100 text-orange-700 border-orange-200' },
     completed:   { label: 'Done',        cls: 'bg-gray-100 text-gray-600 border-gray-200' },
+    // CR-26 — was folded into `completed` and rendered "Done" for a deal the creator is
+    // actively contesting. Uses the `--stage-disputed` token, defined since the palette
+    // shipped and until now unused.
+    disputed:    { label: 'Disputed',    cls: 'bg-stage-disputed text-stage-disputed-fg border-stage-disputed-border' },
   };
   const c = config[status];
   return (
@@ -667,6 +722,8 @@ function EmptyState({ filter }: { filter: DealStatusFilter }) {
     in_progress: { icon: AlertCircle, title: 'Nothing active',         body: 'Deals you\'re working on will show here.' },
     review:      { icon: AlertCircle, title: 'Nothing in review',      body: 'Submitted work awaiting brand approval will appear here.' },
     completed:   { icon: CheckCircle2, title: 'No completed deals yet', body: 'Past deals and earnings will show up here.' },
+    // CR-26 — deliberately reassuring rather than neutral: an empty Disputed tab is good news.
+    disputed:    { icon: AlertTriangle, title: 'Nothing disputed',      body: 'Deals that were cancelled or raised as a dispute will appear here.' },
   };
   const c = copy[filter];
   const Icon = c.icon;

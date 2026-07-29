@@ -32,6 +32,12 @@ on:
     branches:
       - main
       - feat/creator-taxonomy-keyword-patch   # so it runs without needing main / the dispatch button
+      # Same reason as above: `main` holds only README.md, so this workflow does not exist on the
+      # default branch and GitHub never renders the "Run workflow" button — workflow_dispatch is
+      # unreachable in the UI. Adding the active branch here is the only route to a published image.
+      # Remove this line once Waves 1-2 have shipped: while it is present, every push to this branch
+      # redeploys the influora-test box that Neha runs live verification against.
+      - feat/creator-my-applications
     paths:
       - 'influora-api/**'
       - 'influora-ai/**'
