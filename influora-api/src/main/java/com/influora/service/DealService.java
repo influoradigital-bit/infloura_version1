@@ -12,11 +12,13 @@ import com.influora.domain.entity.Contract;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.DealMessage;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DealSenderType;
 import com.influora.domain.enums.EscrowStatus;
+import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.UserType;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
@@ -246,7 +248,7 @@ public class DealService {
         String scopeId =
                 role == UserType.CREATOR
                         ? principal.getUserId()
-                        : brandContext.requireBrandWorkspace(principal).getId();
+                        : requireBrandDealManagerScope(principal);
         String key = resolveIdempotencyKey(idempotencyKey, "deal-accept:" + dealId);
 
         try {
@@ -305,7 +307,7 @@ public class DealService {
         String scopeId =
                 role == UserType.CREATOR
                         ? principal.getUserId()
-                        : brandContext.requireBrandWorkspace(principal).getId();
+                        : requireBrandDealManagerScope(principal);
         String key = resolveIdempotencyKey(idempotencyKey, "deal-reject:" + dealId);
 
         try {
@@ -393,7 +395,7 @@ public class DealService {
         String scopeId =
                 role == UserType.CREATOR
                         ? principal.getUserId()
-                        : brandContext.requireBrandWorkspace(principal).getId();
+                        : requireBrandDealManagerScope(principal);
         String key = resolveIdempotencyKey(idempotencyKey, "deal-counter:" + dealId + ":" + body.amount());
 
         DealSenderType senderType = role == UserType.CREATOR ? DealSenderType.creator : DealSenderType.brand;
@@ -834,6 +836,33 @@ public class DealService {
                     HttpStatus.FORBIDDEN);
         }
         return principal.getUserType();
+    }
+
+    /**
+     * CR-37 (Kabir audit finding #5) — the brand-side scope id for a deal mutation, AND the
+     * member-role gate that {@code requireBrandWorkspace} on its own was missing.
+     *
+     * <p>{@link #accept}, {@link #counter} and {@link #reject} all resolved the caller's brand
+     * workspace but never checked their MEMBER ROLE — so a workspace {@code VIEWER} (or {@code
+     * MEMBER}) could accept an offer, send a counter, or cancel a deal, while every actual money
+     * movement ({@code EscrowService#initiateFund}/{@code release}/{@code refund}) requires
+     * {@code OWNER}/{@code ADMIN}. That is a privilege inversion: the read-only role could steer a
+     * negotiation it could not fund.
+     *
+     * <p>The tier is {@code OWNER}/{@code ADMIN}/{@code MANAGER} — deliberately the *management*
+     * tier, not the treasury one. Managing a negotiation is the same class of action as generating
+     * a contract ({@code ContractService#generate}) or managing a campaign
+     * ({@code CampaignService}), which already use exactly this set; a MANAGER who can generate the
+     * contract can obviously accept the terms that precede it. It excludes {@code VIEWER} and
+     * {@code MEMBER}. Fixed for all three sibling methods at once — closing only {@code reject}
+     * would leave {@code accept}/{@code counter} open to the identical bypass.
+     */
+    private String requireBrandDealManagerScope(AuthPrincipal principal) {
+        Workspace workspace = brandContext.requireBrandWorkspace(principal);
+        WorkspaceMember member = brandContext.requireMember(principal, workspace.getId());
+        brandContext.requireRole(
+                member, MemberRole.OWNER, MemberRole.ADMIN, MemberRole.MANAGER);
+        return workspace.getId();
     }
 
     private Campaign requireWorkspaceCampaign(String workspaceId, String campaignId) {

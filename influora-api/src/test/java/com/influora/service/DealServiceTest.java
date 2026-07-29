@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -22,6 +23,7 @@ import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DealMessageKind;
+import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.DealSenderType;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.UserType;
@@ -55,6 +57,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 
 /** Task #9 — access isolation, negotiation state transitions, idempotency wiring. */
 @ExtendWith(MockitoExtension.class)
@@ -511,6 +514,94 @@ class DealServiceTest {
         assertEquals(true, response.ok());
         assertEquals(CollaborationStatus.CANCELLED, collaboration.getStatus());
         verify(dealMessageRepository).save(any(DealMessage.class));
+    }
+
+    /**
+     * CR-37 (Kabir audit finding #5) — a brand workspace VIEWER must not be able to accept,
+     * counter or cancel a deal. All three delegate the member-role gate to {@code
+     * brandContext.requireRole(member, OWNER, ADMIN, MANAGER)} via {@code
+     * requireBrandDealManagerScope}; here that call is stubbed to throw, and each method must
+     * propagate the 403 WITHOUT mutating the collaboration or saving anything.
+     *
+     * <p>The stub matches the EXACT role set (OWNER/ADMIN/MANAGER). That is the tripwire: narrow
+     * the gate to OWNER/ADMIN, or drop it entirely, and this stub no longer matches — requireRole
+     * becomes a no-op, the deal proceeds, and these three fail. Verified by reverting: with the
+     * scope helper reverted to the bare {@code requireBrandWorkspace(...).getId()}, all three fail
+     * ("expected ApiException to be thrown").
+     */
+    private void stubViewerForbiddenByRoleGate(Collaboration collaboration) {
+        stubBrandWorkspace();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        doThrow(
+                        new ApiException(
+                                "FORBIDDEN_ROLE",
+                                "This action requires an OWNER, ADMIN or MANAGER role",
+                                HttpStatus.FORBIDDEN))
+                .when(brandContext)
+                .requireRole(
+                        any(),
+                        eq(MemberRole.OWNER),
+                        eq(MemberRole.ADMIN),
+                        eq(MemberRole.MANAGER));
+    }
+
+    @Test
+    @DisplayName("CR-37: a VIEWER cannot reject/cancel a deal — 403, nothing saved")
+    void testBrandRejectRequiresManagerRole() {
+        Collaboration collaboration = invitedDeal();
+        stubViewerForbiddenByRoleGate(collaboration);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.reject(brandPrincipal, DEAL_ID, new RejectRequest("no"), null));
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        assertEquals(CollaborationStatus.INVITED, collaboration.getStatus()); // untouched
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+        verify(dealMessageRepository, never()).save(any(DealMessage.class));
+    }
+
+    @Test
+    @DisplayName("CR-37: a VIEWER cannot accept a deal — 403, nothing saved")
+    void testBrandAcceptRequiresManagerRole() {
+        Collaboration collaboration = invitedDeal();
+        stubViewerForbiddenByRoleGate(collaboration);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.accept(brandPrincipal, DEAL_ID, null));
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        assertEquals(CollaborationStatus.INVITED, collaboration.getStatus());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+    }
+
+    @Test
+    @DisplayName("CR-37: a VIEWER cannot send a counter-offer — 403, nothing saved")
+    void testBrandCounterRequiresManagerRole() {
+        Collaboration collaboration = invitedDeal();
+        stubViewerForbiddenByRoleGate(collaboration);
+        // counter() resolves + amount-validates the campaign before the role gate (the gate still
+        // precedes any mutation). Stub it so the test reaches the gate rather than 404ing early.
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.counter(
+                                        brandPrincipal,
+                                        DEAL_ID,
+                                        new CounterRequest(
+                                                new BigDecimal("25000"), "no", null, null, null),
+                                        null));
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        assertEquals(CollaborationStatus.INVITED, collaboration.getStatus());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
     }
 
     /**
