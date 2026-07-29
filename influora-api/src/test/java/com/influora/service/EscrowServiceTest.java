@@ -873,6 +873,11 @@ class EscrowServiceTest {
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
         PaymentMilestone milestone = releasableMilestone();
         when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        // [CR-47] The hold now loads (and its ownership is verified) BEFORE the CANCELLED guard runs,
+        // so a legitimately-owned FUNDED hold must be stubbed for the guard to be the thing that fires
+        // (rather than an ownership rejection). The hold belongs to the caller's own WORKSPACE_ID.
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID))
+                .thenReturn(Optional.of(fundedHold()));
         Collaboration cancelled =
                 Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
         cancelled.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
@@ -884,9 +889,49 @@ class EscrowServiceTest {
 
         assertEquals("COLLABORATION_CANCELLED", ex.getCode());
         assertEquals(409, ex.getStatus().value());
-        // No hold was ever locked/read and no ledger posting was attempted — the guard fires before
-        // either, so a cancelled deal can never even reach the FUNDED-status/dispute checks.
-        verify(escrowHoldRepository, never()).findByIdForUpdate(any());
+        // The guard still fires before any money moves: the hold is loaded for the ownership check,
+        // but no ledger posting is ever attempted on a cancelled deal.
+        verify(ledgerService, never())
+                .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "[CR-47] release: a foreign-workspace hold is rejected with 404 ESCROW_NOT_FOUND BEFORE"
+                    + " any collaboration state is read -- ownership gates the CANCELLED/DISPUTED"
+                    + " guards, closing the cross-tenant status-enumeration oracle")
+    void releaseChecksTenantOwnershipBeforeReadingCollaborationState() {
+        // Caller is a legitimate OWNER/ADMIN of WORKSPACE_ID (workspace A)...
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        PaymentMilestone milestone = releasableMilestone();
+        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        // ...but the hold behind this milestone belongs to a DIFFERENT workspace (workspace B).
+        EscrowHold foreignHold =
+                EscrowHold.builder()
+                        .id(ESCROW_HOLD_ID)
+                        .workspaceId("01HOTHERWORKSPACE99AB")
+                        .collaborationId(COLLAB_ID)
+                        .campaignId(CAMPAIGN_ID)
+                        .amount(BigDecimal.valueOf(5000))
+                        .currency("INR")
+                        .status(EscrowStatus.FUNDED)
+                        .idempotencyKey("idem-foreign")
+                        .build();
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID))
+                .thenReturn(Optional.of(foreignHold));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.release(principal, WORKSPACE_ID, MILESTONE_ID));
+
+        // Same code a non-existent hold yields — the caller cannot tell "not yours" from "no such
+        // hold", and gets NO signal about workspace B's deal state.
+        assertEquals("ESCROW_NOT_FOUND", ex.getCode());
+        assertEquals(404, ex.getStatus().value());
+        // The oracle is closed: workspace B's collaboration was NEVER read, so its CANCELLED/DISPUTED
+        // status cannot leak through a distinct error code. Reverting the ownership-first reorder
+        // makes this fail — the state guards would run and findById(COLLAB_ID) would be called.
+        verify(collaborationRepository, never()).findById(any());
         verify(ledgerService, never())
                 .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
