@@ -5,6 +5,8 @@
 > **Maintainer (status updates):** **Tara** — see [§6 Tara's Update Protocol](#6-taras-update-protocol)
 > **Source of findings:** Neha (E2E), live logged-in walkthrough of `http://200.141.1.6` as `tejas.chache5@gmail.com`
 > **Opened:** 2026-07-27
+> **Last updated:** 2026-07-29 (Kavya QA pass) — **Tara.** Kavya's QA pass on the 29 `IN QA` tickets recorded: **25 → `IN VERIFY`** (a Kavya PASS moves to `IN VERIFY`, not `DONE`), **4 held at `IN QA`** (CR-35, CR-38, CR-39, CR-42, each with its hold reason on the §5 block). By status now **4 `IN QA` · 36 `IN VERIFY` · 2 `IN PROGRESS` · 1 `ASSIGNED` · 3 `BLOCKED` · 0 `OPEN` · 0 `DONE`**. **0 `DONE` unchanged** — the box still serves Wave 2 and Neha has re-tested nothing.
+>
 > **Last updated:** 2026-07-28 (7th pass, addendum) — **Claude at the repo owner’s instruction, NOT Tara.** The **six unrouted red-team findings Tara flagged as item (1) are now rows CR-40–CR-45, and all six are fixed** (`dd9645a`, CI green on all four workflows): slow-body Tomcat thread exhaustion, logfmt log forging, missing Docker log rotation, secret redaction, the false “never a 4xx” claim, and the matrix-parameter bucket bypass. Totals **40 → 46 logged**, code landed **40/46 (87%)**, and **still 0 `DONE`**. ⚠️ **87% is the least meaningful number here — all six entered the board already fixed, so none ever appeared as open work.** ⚠️ **CR-42 and CR-38 are inert until the box’s compose is replaced; an image pull alone does not apply them, and §9’s Step 3 cannot detect that.** Still open from Kabir’s re-review with no rows: his **H-2 topology check** (a full CR-38 bypass on IPv6, one command on the box) and a real `RemoteIpValve` test.
 >
 > **Last updated:** 2026-07-28 (7th pass) — **Tara.** Reconciliation pass: **the board was under-reporting its own severity by two 🔴 Criticals, both of which were fixed and pushed today with no row at all.** **CR-38** — `AuthRateLimitFilter.clientIp()` failed **OPEN** under `SERVER_FORWARD_HEADERS_STRATEGY=framework`, defeating **every** IP-keyed bucket including login brute-force and forging the client IP on every admin audit-log record (`3de077d`). **CR-39** — `DeliverableCleanupJob.canDelete()`'s escrow guard matched only the direct `collaboration_id` column, NULL on every ordinary brand-funded hold, so the nightly job **deleted creator deliverable media against FUNDED/FROZEN/PENDING escrow** on any production deploy (`e92338b`). **Both verified against git rather than taken on trust:** each is an ancestor of `origin/feat/creator-my-applications`, whose tip is now **`e92338b`**, and the GitHub Actions API returns **four** runs for each SHA — Backend CI, Frontend Checks, Publish Images (GHCR), TrendSpark Tagger Sync — **all `success`**. **CR-22a landed** (`21402af`): the `canReject()` narrowing plus the four downstream guards, 8 guards revert-proven — `ASSIGNED` → `IN QA`. Per §10.7(a)'s own correction that makes **CR-36 partially closed, not closed**; its residual is `ShipmentService` (0 refs, not a money path) and `EscrowService.release`/`refund` (gated on `DISPUTED` only — **verified in source this pass at `EscrowService.java:1215`**, and `CANCELLED` is genuinely absent), so CR-36 goes `OPEN` → **`IN PROGRESS`**, with a fix being written right now against the still-**untracked** `wiki/tech/escrow-cancelled-gate-spec.md`. `ReviewService:115` was reported as residual and **is not** — re-read this pass, it is an allowlist of exactly one (`COMPLETED`), so `CANCELLED` is already excluded. Totals 38 → **40 logged**, code landed 31 → **34 (85%)**, and **still 0 `DONE`** — Neha has re-tested nothing and the box still serves Wave 2. ⚠️ **CR-38's fix does nothing until the compose env on the box changes** — the code change alone is inert, see the row. **Eight more stale, unrouted or self-contradictory items found and listed in §7**, including **six red-team findings with no rows and no disposition, two of them HIGH**.
@@ -81,50 +83,50 @@ Correcting the record before work starts — the generic company stack template 
 | CR-01 | 🔴 Critical | "Share page" button does nothing — creator can never share their page | Meera → Ananya | IN VERIFY |
 | CR-02 | 🔴 Critical | Contracted deal still offers Accept → 409 Conflict | Vikram + Ananya | IN VERIFY |
 | CR-03 | 🔴 Critical | The 409 failure is completely silent — no toast ever renders | Ananya | IN VERIFY |
-| CR-04 | 🟠 High | Top 106px of deal room clipped and unreachable — can't scroll | Ananya | IN QA |
+| CR-04 | 🟠 High | Top 106px of deal room clipped and unreachable — can't scroll | Ananya | IN VERIFY |
 | CR-05 | 🟠 High | Same deal shows two different statuses on two pages | Ananya | IN VERIFY |
-| CR-06 | 🟠 High | Wrong identity in shell — "Creator Account" / "IN" / "@priya_sharma" | Ananya | IN QA |
+| CR-06 | 🟠 High | Wrong identity in shell — "Creator Account" / "IN" / "@priya_sharma" | Ananya | IN VERIFY |
 | CR-07 | 🟠 High | Brand negotiation room: Accept + Counter are dead buttons | Ananya | IN VERIFY |
 | CR-08 | 🟠 High | Accept/decline/counter never reach the other party (no SSE publish) | Vikram | IN VERIFY |
 | CR-09 | 🟠 High | Creator accept/decline never refresh the message timeline | Ananya | IN VERIFY |
-| CR-10 | 🟠 High | One render error whites out the ENTIRE app permanently | Ananya | IN QA |
+| CR-10 | 🟠 High | One render error whites out the ENTIRE app permanently | Ananya | IN VERIFY |
 | CR-11 | 🟡 Medium | White screen on tab sequence — **NOT REPRODUCED**, needs data | Ananya | IN PROGRESS |
-| CR-12 | 🟡 Medium | All filter chip counts collapse to 0 when a filter is active | Ananya | IN QA |
-| CR-13 | 🟡 Medium | "Active" tab hides contracted + in-review deals | Vikram + Ananya | IN QA |
-| CR-14 | 🟡 Medium | Public page renders "Synced NaNd ago" | Ananya | IN QA |
+| CR-12 | 🟡 Medium | All filter chip counts collapse to 0 when a filter is active | Ananya | IN VERIFY |
+| CR-13 | 🟡 Medium | "Active" tab hides contracted + in-review deals | Vikram + Ananya | IN VERIFY |
+| CR-14 | 🟡 Medium | Public page renders "Synced NaNd ago" | Ananya | IN VERIFY |
 | CR-15 | 🟡 Medium | Public URL is a bare IP over HTTP — unusable as a shared link | Meera | BLOCKED |
-| CR-16 | 🟢 Low | Sidebar "Deals 3" badge is hardcoded | Ananya | IN QA |
-| CR-17 | 🟢 Low | Deal room height overflows layout by 8px | Ananya | IN QA |
+| CR-16 | 🟢 Low | Sidebar "Deals 3" badge is hardcoded | Ananya | IN VERIFY |
+| CR-17 | 🟢 Low | Deal room height overflows layout by 8px | Ananya | IN VERIFY |
 | CR-18 | 🟡 Medium | `usageRights` missing from proposal metadata — always "Not specified" | Priya (implemented) | IN VERIFY |
 | CR-19 | 🟡 Medium | N1: `settleStatus` BigDecimal→Double round-trip; two bare `ObjectMapper`s | Vikram | IN VERIFY |
-| CR-20 | 🟢 Low | N2: `loadMessages` lost unmount cancellation (no leak today, React 18+) | Ananya | IN QA |
+| CR-20 | 🟢 Low | N2: `loadMessages` lost unmount cancellation (no leak today, React 18+) | Ananya | IN VERIFY |
 | CR-21 | 🟢 Low | N3: "Refresh deal" flashes the whole page (full-page spinner) | Ananya | IN VERIFY |
 | CR-22 | — | **SPLIT** into CR-22a + CR-22b (§10.1) — parent row retained per §6, **not counted in totals** | — | SPLIT |
-| CR-22a | 🔴 Critical | Deal-level withdrawal has no state model: `canReject()` is too broad **and `CANCELLED` is enforced by nothing downstream** | Vikram | IN QA |
+| CR-22a | 🔴 Critical | Deal-level withdrawal has no state model: `canReject()` is too broad **and `CANCELLED` is enforced by nothing downstream** | Vikram | IN VERIFY |
 | CR-22b | 🟡 Medium | The designed brand-side withdrawal affordance | Unassigned (design) | BLOCKED |
 | CR-23 | 🟢 Low | Brand `refreshDeal` catch block missing the staleness guard (cf. creator-side W2-L1) | Priya | IN VERIFY |
-| CR-24 | 🟡 Medium | Brand deal-room mapper diverges on `CollaborationStatus` (the CR-05 mirror) | Ananya | IN QA |
-| CR-25 | 🟡 Medium | SSE publishes fire inside the caller's `@Transactional` — pre-rollback frames observable | Vikram | IN QA |
-| CR-26 | 🟡 Medium | `DISPUTED`/`CANCELLED` render as "Done"/"Completed" — no display bucket exists | Ananya | IN QA |
+| CR-24 | 🟡 Medium | Brand deal-room mapper diverges on `CollaborationStatus` (the CR-05 mirror) | Ananya | IN VERIFY |
+| CR-25 | 🟡 Medium | SSE publishes fire inside the caller's `@Transactional` — pre-rollback frames observable | Vikram | IN VERIFY |
+| CR-26 | 🟡 Medium | `DISPUTED`/`CANCELLED` render as "Done"/"Completed" — no display bucket exists | Ananya | IN VERIFY |
 | CR-27 | 🟢 Low | `creator-deals.tsx` under-offers actions vs the server (`canAccept()` allows more) | Swapnil (ruled) | BLOCKED |
-| CR-28 | 🟢 Low | Backend test helper hides the settle path (`proposalMessage` carries null metadata) | Vikram | IN QA |
-| CR-29 | 🟢 Low | CR-23's fix has no test coverage (superseded-failed-refresh scenario untested) | Ananya | IN QA |
-| CR-30 | 🟡 Medium | ~~`brand-pipeline` + `deal-room-dashboard`~~ **`brand-pipeline` only** still re-derives stage independently | Ananya | IN QA |
-| CR-31 | 🟠 High | Deal-room SSE stream never reconnects, and a clean close is completely silent | Ananya | IN QA |
-| CR-32 | 🟡 Medium | Second creator logout path (Settings) never got CR-06's session clear | Ananya | IN QA |
-| CR-33 | 🟢 Low | Stale doc comments contradicting the code they sit on | Ananya | IN QA |
-| CR-34 | 🟡 Medium | `ACCEPTABLE_COLLABORATION_STATUSES` duplicated in both deal rooms | Ananya | IN QA |
+| CR-28 | 🟢 Low | Backend test helper hides the settle path (`proposalMessage` carries null metadata) | Vikram | IN VERIFY |
+| CR-29 | 🟢 Low | CR-23's fix has no test coverage (superseded-failed-refresh scenario untested) | Ananya | IN VERIFY |
+| CR-30 | 🟡 Medium | ~~`brand-pipeline` + `deal-room-dashboard`~~ **`brand-pipeline` only** still re-derives stage independently | Ananya | IN VERIFY |
+| CR-31 | 🟠 High | Deal-room SSE stream never reconnects, and a clean close is completely silent | Ananya | IN VERIFY |
+| CR-32 | 🟡 Medium | Second creator logout path (Settings) never got CR-06's session clear | Ananya | IN VERIFY |
+| CR-33 | 🟢 Low | Stale doc comments contradicting the code they sit on | Ananya | IN VERIFY |
+| CR-34 | 🟡 Medium | `ACCEPTABLE_COLLABORATION_STATUSES` duplicated in both deal rooms | Ananya | IN VERIFY |
 | CR-35 | 🔴 Critical | Dispute settlement moves **no money** on normally-funded holds, and records it as settled | Vikram | IN QA |
 | CR-36 | 🔴 Critical | Nothing downstream enforces `CANCELLED` — a cancelled deal's contract still signs to ACTIVE and its escrow can be funded **for the first time** | **Unassigned** *(never routed; being worked anyway)* | IN PROGRESS **(PARTIAL — `21402af`)** |
 | CR-37 | 🟡 Medium | Privilege inversion: a workspace `VIEWER` can cancel a contracted, funded deal, while funding/release/refund require `OWNER`/`ADMIN` | Vikram | ASSIGNED |
 | CR-38 | 🔴 Critical | Spoofable `X-Forwarded-For`: `clientIp()` failed **open**, defeating every IP-keyed rate limit (login brute-force included) and forging the IP on every admin audit-log record | Unrouted → **Kabir** (re-review, **not signed off**) | IN QA |
 | CR-39 | 🔴 Critical | `DeliverableCleanupJob` **deleted creator deliverable media against FUNDED/FROZEN/PENDING escrow** — nightly, for real, on any prod deploy | Unrouted → Kavya | IN QA |
-| CR-40 | 🟠 High | Unauthenticated slow-body request holds a Tomcat thread indefinitely — 200 of them stop the entire API | Unrouted → Kavya | IN QA |
-| CR-41 | 🟠 High | Log forging: values are unquoted in a logfmt line, so `pathname` forges every later field — and logback's own `correlationId=`/`logger=` | Unrouted → Kavya | IN QA |
+| CR-40 | 🟠 High | Unauthenticated slow-body request holds a Tomcat thread indefinitely — 200 of them stop the entire API | Unrouted → Kavya | IN VERIFY |
+| CR-41 | 🟠 High | Log forging: values are unquoted in a logfmt line, so `pathname` forges every later field — and logback's own `correlationId=`/`logger=` | Unrouted → Kavya | IN VERIFY |
 | CR-42 | 🟡 Medium | No Docker log rotation on **any** service — unbounded disk on the box that also holds `mysql_data` and `caddy_data` | Unrouted → Meera | IN QA |
-| CR-43 | 🟡 Medium | No redaction of token-shaped strings before an internet-writable log | Unrouted → Kavya | IN QA |
-| CR-44 | 🟡 Medium | `ClientErrorController`'s "always 202, never a 4xx" was false — `AuthRateLimitFilter` returns 429 in front of it | Unrouted → Kavya | IN QA |
-| CR-45 | 🟢 Low | Matrix parameter (`;x=1`) dodges **every** literal-path rate-limit bucket entirely — no bucket assigned at all | Unrouted → Kavya | IN QA |
+| CR-43 | 🟡 Medium | No redaction of token-shaped strings before an internet-writable log | Unrouted → Kavya | IN VERIFY |
+| CR-44 | 🟡 Medium | `ClientErrorController`'s "always 202, never a 4xx" was false — `AuthRateLimitFilter` returns 429 in front of it | Unrouted → Kavya | IN VERIFY |
+| CR-45 | 🟢 Low | Matrix parameter (`;x=1`) dodges **every** literal-path rate-limit bucket entirely — no bucket assigned at all | Unrouted → Kavya | IN VERIFY |
 
 **Totals:** 8 Critical · 10 High · 18 Medium · 10 Low = **46 logged**, **0 DONE**
 
@@ -138,7 +140,7 @@ Correcting the record before work starts — the generic company stack template 
 >
 > **And how 38 became 40 (7th pass, Tara) — neither of these came from a ruling, a routing table or a handoff. They were already fixed, pushed and CI-green when this pass started, and neither had a row.** **CR-38** (`3de077d`) and **CR-39** (`e92338b`), both 🔴 Critical, both entered at the next free IDs. 38 + 2 = **40**. ⚠️ **That is the finding, not the arithmetic.** Every previous growth in this file came *in* through §10 or through Neha; these two came in through commit messages that each end *"Needs a tracker row (Tara)"*. **The board is only as complete as whoever remembers to tell it** — there is no mechanism that would have caught either of these, and for a full day the file's own header under-stated the product's live severity by two Criticals. See §7.
 
-**By status:** 29 `IN QA` · 11 `IN VERIFY` · 2 `IN PROGRESS` · 1 `ASSIGNED` · 3 `BLOCKED` · **0 `OPEN`** · **0 `DONE`**
+**By status:** 4 `IN QA` · 36 `IN VERIFY` · 2 `IN PROGRESS` · 1 `ASSIGNED` · 3 `BLOCKED` · **0 `OPEN`** · **0 `DONE`**
 
 > 🔧 **`0 OPEN` is true again, and for a good reason this time — but do not read it as "nothing is unowned".** ~~The board carried no `OPEN` row for one pass. CR-36 is `OPEN` because §10.7(a) filed it **unassigned**.~~ CR-36 has moved to `IN PROGRESS` because work on it is genuinely in flight. **It is still unowned** — the 6th pass escalated the CR-36/CR-22a sequencing question to Arjun/Priya and **no answer was ever recorded**; instead the overlap resolved itself by Vikram landing most of the guards inside `21402af`, exactly as that row predicted, and a *second* agent is now writing the residual. **A 🔴 Critical money-path row is being worked by two parties on the strength of a prediction rather than a routing decision.** The `OPEN` column no longer shows that, so it is written here.
 
@@ -352,7 +354,7 @@ Deal "QA E2E — Diwali Skincare Reels" renders **Contracted** and sits on step 
 ---
 
 ### CR-04 · 🟠 High · Top 106px of the deal room is clipped and unreachable
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Wave 3 update (2026-07-28):** Fixed — **all three** contributing causes, not just the scroll call:
 > 1. `p-4` moved off the `ScrollArea` **root** onto the inner content div, plus `min-h-0`. Padding on the Radix Root inflates the scroll container itself (539px inside a 510px parent); padding belongs to the scrolled *content*, not the viewport.
@@ -396,7 +398,7 @@ wrapper div (:1520)  scrollHeight 616  clientHeight 510  overflow-y: hidden  scr
 ---
 
 ### CR-06 · 🟠 High · Wrong creator identity across the shell
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Wave 3 update (2026-07-28):** Fixed at the root cause and along the whole chain. The CTO note was followed literally — **the literals are deleted, not repointed**:
 > - `lib/auth-session.ts` gains `persistCreatorSession` / `getCreatorSession` / `clearCreatorSession`. The creator flow had **no equivalent of `persistBrandSession`** — it kept the token and discarded the rest of the `TokenPair`, which is why there was no identity to show.
@@ -466,7 +468,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-10 · 🟠 High · One render error whites out the ENTIRE app
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Wave 3 update (2026-07-28):** Fixed — `<ErrorBoundary>` moved **inside** `<BrowserRouter>` via a `RoutedErrorBoundary` wrapper that reads `useLocation().pathname` and passes it as a new `resetKey` prop; `componentDidUpdate` clears `hasError` when that key changes. `<Toaster>` and `<DemoModeBanner>` moved inside the Router with it so they keep rendering alongside the routes.
 > **`resetKey` rather than React's `key`, deliberately:** keying the boundary would remount the entire subtree on *every* navigation, discarding all component state on healthy routes to fix a case that almost never fires. The reset is also loop-safe — the guard requires `hasError`, which the `setState` immediately falsifies.
@@ -505,7 +507,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-12 · 🟡 Medium · Filter chip counts all collapse to 0
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Wave 3 update (2026-07-28):** Fixed — the chip badges **and** the header summary (`newCount` / `activeCount` / `pendingPayout`, which had the identical defect) now read a separate unfiltered `api.deals.list('creator','all')`. Accept/decline update both arrays, so badges move with the row instead of going stale until remount. The counts fetch swallows its own errors on purpose: the list fetch already toasts, and a second toast for the badges would be noise on one outage — the badges hold their last value rather than lying with 0.
 > **Scope decision worth flagging to Kavya:** the list's own fetch stays **server-filtered**. Fetching once and filtering entirely client-side would have been simpler and would also have hidden CR-13's symptom on this page — but Priya ruled the filter path (`DealService.statusesForFilter`) is the side that must move, so masking it client-side was deliberately avoided. **Expect a visible consequence:** the Active chip may now read a non-zero count while the Active tab still renders "Nothing active." That *is* CR-13, now more visible rather than newly broken.
@@ -521,7 +523,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-13 · 🟡 Medium · "Active" tab hides contracted + in-review deals
-**Owner:** Vikram (API) + Ananya (client) · **Status:** IN QA
+**Owner:** Vikram (API) + Ananya (client) · **Status:** IN VERIFY
 
 **Wave 5 update (2026-07-28):** Fixed, and the **filter path moved** as Priya ruled — no display mapper was touched.
 > - `statusesForFilter` now accepts a **comma-separated union**, so the Active chip asks for `contracted,in_progress,review` — what it has always meant. Chosen over redefining `in_progress` to secretly mean three stages, which would surprise every other caller. The chip's `id` stays `in_progress` (it is also the `EmptyState` key and the local predicate's name); a new `apiFilter` field carries the wire value.
@@ -543,7 +545,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-14 · 🟡 Medium · Public page renders "Synced NaNd ago"
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Wave 3 update (2026-07-28):** Fixed — `relativeTime` returns `null` for a missing or unparseable timestamp (`Number.isFinite` guard) and the caller drops the whole "Synced …" line rather than printing arithmetic wreckage. A *future* timestamp (clock skew between the sync job and the viewer) is clamped to 'just now' instead of rendering "-1h ago".
 > **Also corrected the lying type:** `PortfolioPlatformStats.lastSyncedAt` was declared `string` (non-nullable) while the live `GET /portfolio/:username` omits it for a platform that never completed a sync — which is precisely how the `NaN` arrived. Widened to `?: string | null`, so the guard is real code rather than something TypeScript considers unreachable.
@@ -576,7 +578,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-16 · 🟢 Low · Sidebar "Deals 3" badge is hardcoded
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Wave 3 update (2026-07-28):** Fixed — new `hooks/use-creator-unread-count.ts` sums the `unreadCount` the deals API already returns per deal, so no new backend was needed. Keyed on `location.pathname` so the badge settles after a deal room marks its messages read. Drives **both** the sidebar "Deals" badge and the header bell, which shared the same literal. Fails silently by design: this is chrome, and the pages themselves already surface deal-loading failures.
 
@@ -589,7 +591,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-17 · 🟢 Low · Deal room height overflows layout by 8px
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Wave 3 update (2026-07-28):** Fixed with the shared token, not the local number — a new `--app-header-h: 3.5rem` in `src/app/globals.css` is consumed by **both** the layout header (`h-[var(--app-header-h)]`, visually identical to the old `h-14`) and the four deal-room `h-[calc(100vh-var(--app-header-h))]` roots. The two can no longer drift. Verified present in the built CSS.
 > **Deliberately left alone:** the fifth `h-[calc(100vh-4rem)]` in `creator-chat.tsx` (the ToolsSheet body) measures against the **sheet's own** header, not the app header, so it is a different context and out of this ticket's scope. It is under-sized rather than over-sized, so it cannot overflow — but it is unexamined and someone should confirm that deliberately rather than discover it.
@@ -631,7 +633,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-20 · 🟢 Low · N2: `loadMessages` lost unmount cancellation
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Wave 3 update (2026-07-28):** Fixed — an `isMountedRef` now sits alongside the existing monotonic request token, combined into one `isCurrent()` predicate applied to all three branches (success, error, finally). A response is applied only if it is both the newest request **and** still wanted by a mounted component. `console.error` stays unconditional, matching the W2-L1 `refreshDeal` convention: a failed request is worth diagnosing whether or not its result is still wanted.
 > Still correctly characterised as **restoring a capability, not fixing a live defect** — no leak is observable under React 18+.
@@ -671,7 +673,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-22a · 🔴 Critical · Deal-level withdrawal has no state model — and `CANCELLED` is enforced by nothing
-**Owner:** Vikram (backend), with Priya on the state model · **Status:** IN QA
+**Owner:** Vikram (backend), with Priya on the state model · **Status:** IN VERIFY
 
 **Opened 2026-07-28 (Tara, 5th pass)** out of the CR-22 split. Ruling: §10.1. Evidence: `wiki/errors/CR-22a-withdrawal-money-path-audit.md` (Kabir).
 
@@ -718,7 +720,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-24 · 🟡 Medium · Brand deal-room mapper diverges on `CollaborationStatus`
-**Owner:** Ananya · **Status:** IN QA · *(scope narrowed — the other two surfaces are now **CR-30**)*
+**Owner:** Ananya · **Status:** IN VERIFY · *(scope narrowed — the other two surfaces are now **CR-30**)*
 
 **Wave 5 update (2026-07-28):** Fixed for the surface this ticket's "Why" actually describes — `brand-chat.tsx`, the character-for-character mirror of the CR-05 defect.
 > - New **`src/lib/deal-stage.ts`** is now the ONE switch over `CollaborationStatus`. It was living in `creator-deal-mappers.ts` under a comment saying it was "scoped to creator deliberately" — that scoping is precisely what let the brand copy drift. `creator-deal-mappers.ts` re-exports both symbols, so every existing creator import is unchanged (pinned by a test).
@@ -739,7 +741,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-25 · 🟡 Medium · SSE publishes fire inside the caller's `@Transactional`
-**Owner:** Vikram · **Status:** IN QA
+**Owner:** Vikram · **Status:** IN VERIFY
 
 **Wave 5 update (2026-07-28):** Fixed — `publishToStream` registers an `afterCommit` transaction synchronization, so a subscriber can no longer observe a frame that a later rollback erases (a creator seeing "Brand accepted the proposal" for an accept that never happened). The fan-out body moved to `publishToStreamNow`, still best-effort — and now provably safe to be, since by the time it runs the transaction has already committed and there is nothing left to roll back.
 > **Deliberate fallback, and it turned out to be load-bearing:** when no transaction synchronization is active the publish happens **inline**, unchanged. That keeps the method safe outside a transaction — and it is what keeps CR-08's `verify(messageStreamRegistry, times(2)).publish(...)` assertions meaningful, because Mockito unit tests open no transaction. Without the fallback every one of those assertions would have silently observed **zero** frames and gone quietly dead. Confirmed by the real Maven run: `mvn -o test` **1486 tests, 0 failures** with the CR-08 publish-order assertions still passing.
@@ -753,7 +755,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-26 · 🟡 Medium · `DISPUTED`/`CANCELLED` render as "Done"/"Completed"
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Wave 5 update (2026-07-28):** Fixed — the 7th bucket exists.
 > - **Shared mapper:** `CANCELLED`/`DISPUTED` → new `'disputed'` stage instead of `'completed'`.
@@ -786,7 +788,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-28 · 🟢 Low · Backend test helper hides the settle path
-**Owner:** Vikram · **Status:** IN QA
+**Owner:** Vikram · **Status:** IN VERIFY
 
 **Wave 5 update (2026-07-28):** Fixed — and fixed **in the helper**, not at the three call sites, so a future test cannot reintroduce the gap by reaching for the wrong one. `proposalMessage` now carries real pending metadata; its ids stay distinct from `PROPOSAL_MSG_ID` so the CR-08 publish-order tests that assert on that exact id are unaffected.
 > **A helper carrying metadata is not coverage, so explicit coverage was added too.** `testBrandAcceptHappyPath` now captures the saved `DealMessage`s, finds the proposal card, and asserts its metadata became `status:accepted` — the assertion that fails if the settle stops running.
@@ -802,7 +804,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-29 · 🟢 Low · CR-23's fix has no test coverage
-**Owner:** Ananya · **Status:** IN QA — **both halves complete**
+**Owner:** Ananya · **Status:** IN VERIFY — **both halves complete**
 
 **Wave 5 update — 2nd pass (2026-07-28):** ✅ **CR-29 is now complete.** The creator half landed: `src/pages/creator-chat-refresh.test.tsx` is the **first test harness for `creator-chat.tsx` in this repo**.
 > Three tests: the room mounts (a deliberate sanity check — without it the guard tests could pass for the wrong reason, which is the exact failure mode this ticket is about), a **current** failed refresh still toasts, and a **superseded** one does not while still logging.
@@ -829,7 +831,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-30 · 🟡 Medium · ~~`brand-pipeline` + `deal-room-dashboard`~~ `brand-pipeline` still re-derives stage independently
-**Owner:** Ananya · **Status:** IN QA · *(split out of CR-24, 2026-07-28; scope narrowed by §10.3 the same day)*
+**Owner:** Ananya · **Status:** IN VERIFY · *(split out of CR-24, 2026-07-28; scope narrowed by §10.3 the same day)*
 
 **5th-pass update (Tara, 2026-07-28):** ~~`OPEN`~~ → **`IN QA`**. Commit `a653def`, pushed. Both halves are resolved, but **by different means, and the distinction matters**:
 > - **`deal-room-dashboard.tsx` — ruled NOT A DEFECT and closed (§10.3, Priya).** Its vocabulary is `proposed`/`accepted`/`rejected`/`negotiating` — a proposal vocabulary, not a lifecycle. Under it, `TERMS_AGREED → 'accepted'` is *literally correct*. No user-visible misstatement, no migration. Verified still local and still correct at `src/components/brand/deals/deal-room-dashboard.tsx:81`. **Nobody should "finish the job" by collapsing it** — CR-33 rewrote `deal-stage.ts`'s header comment specifically to stop that.
@@ -856,7 +858,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-31 · 🟠 High · The deal-room SSE stream never reconnects, and a clean close is completely silent
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Entered on the board 2026-07-28 (Tara, 5th pass).** Proposed in §10.5; **the ID CR-31 is kept as proposed** because it is already cited in shipped code and in commit `190969d` — see §7. Found by reading the code the §10 rulings depend on, not by testing.
 
@@ -877,7 +879,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-32 · 🟡 Medium · Second creator logout path never got CR-06's session clear
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Entered on the board 2026-07-28 (Tara, 5th pass).** Proposed in §10.5; ID kept as proposed.
 
@@ -895,7 +897,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-33 · 🟢 Low · Stale doc comments contradicting the code they sit on
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Entered on the board 2026-07-28 (Tara, 5th pass).** Proposed in §10.5; ID kept as proposed.
 
@@ -912,7 +914,7 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-34 · 🟡 Medium · `ACCEPTABLE_COLLABORATION_STATUSES` duplicated in both deal rooms, untracked
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Entered on the board 2026-07-28 (Tara, 5th pass).** Proposed in §10.5; ID kept as proposed. Surfaced by CR-33's sweep.
 
@@ -929,6 +931,8 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 
 ### CR-35 · 🔴 Critical · Dispute settlement moves no money on normally-funded holds, and records it as settled
 **Owner:** Vikram · **Status:** IN QA
+
+*Kavya QA hold (2026-07-29) — migration never run against a real DB; must not advance on a green unit suite.*
 
 **Opened 2026-07-28 (Tara, 5th pass).** Source: `wiki/errors/CR-22a-withdrawal-money-path-audit.md` **finding #2** (Kabir, ranked CRITICAL). Fix spec: `wiki/tech/escrow-frozen-hold-fix-spec.md`.
 
@@ -1062,6 +1066,8 @@ EscrowService.java            CollaborationStatus refs: 1  (a DISPUTED check, no
 ### CR-38 · 🔴 Critical · Spoofable `X-Forwarded-For` — `clientIp()` failed OPEN and defeated every IP-keyed rate limit
 **Owner:** Unrouted → **Kabir** (re-review in flight, **not signed off**) · **Status:** IN QA
 
+*Kavya QA hold (2026-07-29) — inert until the box's compose carries `native`; also gated on Kabir's H-2 IPv6 live check (`wiki/errors/CR-38-h2-topology-check-on-box.md`).*
+
 **Opened 2026-07-28 (Tara, 7th pass).** Fixed and pushed in **`3de077d`** *before* this row existed. Source: `wiki/errors/CR-11-client-errors-endpoint-redteam.md` **B-1** (Kabir, ranked BLOCKER).
 
 > ⚠️ **This row is being written after its own fix, and that is the first thing to notice about it.** The defect was live in the deployed build for the whole time this file did not know about it. `3de077d`'s message ends *"Needs a tracker row (Tara) and a Kabir re-review"* — that sentence is the only reason this row exists. There is no mechanism in this process that would otherwise have caught it.
@@ -1107,6 +1113,8 @@ EscrowService.java            CollaborationStatus refs: 1  (a DISPUTED check, no
 ### CR-39 · 🔴 Critical · `DeliverableCleanupJob` deleted creator deliverable media against escrow-backed collaborations
 **Owner:** Unrouted → Kavya · **Status:** IN QA
 
+*Kavya QA hold (2026-07-29) — Mockito pins which repo method is called, not that the JPQL resolves a milestone-linked hold; needs Meera's real-DB dry-run.*
+
 **Opened 2026-07-28 (Tara, 7th pass).** Fixed and pushed in **`e92338b`** *before* this row existed. Source: `wiki/processes/cr-35-migration-deploy-readiness.md` §2 (Meera), found while establishing deploy readiness for CR-35's backfill.
 
 > ⚠️ **This is a DISTINCT defect from CR-35, and filing it separately is the whole point.** CR-35's migration repaired it only **incidentally**, by populating the column the broken guard happened to read. **CR-35's `IN QA` note already flagged this interaction as a risk — "Kabir flagged that it silently changes `DeliverableCleanupJob.canDelete`, a destructive job that deletes deliverable media"** — but flagged it as *blast radius to manage*. **Meera traced the direction and found the change was "stops destroying data". The risk was pointing the wrong way, and that is what made it urgent.**
@@ -1132,7 +1140,7 @@ EscrowService.java            CollaborationStatus refs: 1  (a DISPUTED check, no
 ---
 
 ### CR-40 · 🟠 High · Unauthenticated slow-body request exhausts the Tomcat thread pool
-**Owner:** Unrouted → Kavya · **Status:** IN QA · *(Kabir `/client-errors` red-team, H-2. Fixed `dd9645a`.)*
+**Owner:** Unrouted → Kavya · **Status:** IN VERIFY · *(Kabir `/client-errors` red-team, H-2. Fixed `dd9645a`.)*
 
 **Why:** `connection-timeout` (20s) covers reading request **headers** only, and `disable-upload-timeout` defaults to **true**, so no read timeout was applied during the body read at all. `application.yml` set no `server.tomcat.*` property, so both defaults stood. One request that trickles its body holds a thread out of a pool of 200 for as long as it likes; 200 of them stop **every** endpoint — login, deals, webhooks.
 
@@ -1147,7 +1155,7 @@ Caddy does not help: it streams the body upstream with no client read timeout, a
 ---
 
 ### CR-41 · 🟠 High · Log forging — the control was wrong, not missing
-**Owner:** Unrouted → Kavya · **Status:** IN QA · *(Kabir H-3. Fixed `dd9645a`.)*
+**Owner:** Unrouted → Kavya · **Status:** IN VERIFY · *(Kabir H-3. Fixed `dd9645a`.)*
 
 **Why:** the controller stripped control characters and its javadoc claimed a submitted value "can never forge additional WARN log lines". The claim about **additional lines** was true. The implied claim was false: **the log format is space-delimited `key=value`, and neither a space nor an `=` is a control character.**
 
@@ -1162,6 +1170,8 @@ Third, separate: **`\p{Cntrl}` is ASCII-only** without `UNICODE_CHARACTER_CLASS`
 ### CR-42 · 🟡 Medium · No Docker log rotation on any service — unbounded disk
 **Owner:** Unrouted → Meera · **Status:** IN QA · *(Kabir M-4. Fixed `dd9645a`.)*
 
+*Kavya QA hold (2026-07-29) — inert until the box's compose is replaced; log rotation lives only in `deploy/hostinger/*.yml`.*
+
 **Why:** `logback-spring.xml` has a single CONSOLE appender with no rolling policy, and **no compose service set a `logging:` block**, so every one inherited Docker's `json-file` driver with `max-size` **unlimited**. Container logs grew in `/var/lib/docker/containers/<id>/*-json.log` until the disk filled.
 
 **This is a product-down path, not housekeeping.** The box has one disk, shared by the `mysql_data` volume, `clamav_data`, and `caddy_data` (issued TLS certs). **Disk-full takes MySQL with it**, and Caddy's certificate renewal too. `POST /client-errors` made it internet-reachable: ~9 KB per max-size report at WARN, and the client-side dedupe only stops an *honest browser* looping — a script posting distinct `message` values is unaffected.
@@ -1173,7 +1183,7 @@ Third, separate: **`\p{Cntrl}` is ASCII-only** without `UNICODE_CHARACTER_CLASS`
 ---
 
 ### CR-43 · 🟡 Medium · No redaction of token-shaped strings before an internet-writable log
-**Owner:** Unrouted → Kavya · **Status:** IN QA · *(Kabir M-5. Fixed `dd9645a`.)*
+**Owner:** Unrouted → Kavya · **Status:** IN VERIFY · *(Kabir M-5. Fixed `dd9645a`.)*
 
 **Why:** there is **no known live leak** — Kabir checked: the three constructed `Error`s in `src/lib/api.ts` carry status codes and fixed strings, React's `componentStack` is display names only, and no route carries a token in a path segment. The problem is the invariant holding that up: *"nobody ever throws an `Error` whose message contains a secret"* is enforced nowhere, is one careless `new Error(\`failed: ${JSON.stringify(response)}\`)` away from being false, and would deposit the result into a log **anyone on the internet can also write to**.
 
@@ -1184,7 +1194,7 @@ Third, separate: **`\p{Cntrl}` is ASCII-only** without `UNICODE_CHARACTER_CLASS`
 ---
 
 ### CR-44 · 🟡 Medium · "Always 202, never a 4xx" was false one layer up
-**Owner:** Unrouted → Kavya · **Status:** IN QA · *(Kabir M-6. Fixed `dd9645a`.)*
+**Owner:** Unrouted → Kavya · **Status:** IN VERIFY · *(Kabir M-6. Fixed `dd9645a`.)*
 
 **Why:** the controller genuinely cannot return anything but 202 — but `AuthRateLimitFilter` sits **in front** of it and returns **429 with a JSON error body** for this exact path. Both the contract and the class javadoc asserted an invariant the deployed system does not hold.
 
@@ -1195,7 +1205,7 @@ Third, separate: **`\p{Cntrl}` is ASCII-only** without `UNICODE_CHARACTER_CLASS`
 ---
 
 ### CR-45 · 🟢 Low · Matrix parameter dodges every literal-path rate-limit bucket
-**Owner:** Unrouted → Kavya · **Status:** IN QA · *(Kabir L-7. Fixed `dd9645a`.)*
+**Owner:** Unrouted → Kavya · **Status:** IN VERIFY · *(Kabir L-7. Fixed `dd9645a`.)*
 
 **Why:** Spring Boot 3's `PathPatternParser` treats matrix variables as segment metadata, so `POST /client-errors;x=1` still **routes** to the controller — but `bucketFor` matched the raw URI, `.equals()` failed, and **no bucket was assigned at all**. Unthrottled. Affects every literal-path bucket: `/wallet/withdraw`, `/webhooks/*`, `/meera/voice/*`. (`/auth/` uses `startsWith` and was never affected.)
 
@@ -1253,6 +1263,7 @@ Run whenever any of these happens:
 | 2026-07-28 (2nd) | Claude (at repo owner's direction — **not Tara**, see header) | **Wave 5 + the backend verification gap closed.** **Status changes:** CR-13, CR-24, CR-25, CR-26, CR-28 `OPEN` → `IN QA`; CR-29 `OPEN` → `IN PROGRESS (PARTIAL)`. Commits `905421f` and `76b92c4`, both pushed to `origin/feat/creator-my-applications`; both triggered CI and **both runs succeeded** (all three images published). **New ticket CR-30** (🟡 Medium, unassigned) split out of CR-24 for `brand-pipeline.tsx` + `deal-room-dashboard.tsx`, whose vocabularies encode distinctions `DealStage` cannot express — migrating them would silently move deals between pipeline columns, so it needs a product call, not a refactor. Split rather than left partial because that work needs a different owner and its own wave, the same precedent by which CR-24 was split out of CR-05. **CR-13** — filter path moved per Priya's ruling, no display mapper touched: `statusesForFilter` accepts a comma-separated union so the Active chip asks for `contracted,in_progress,review` (chosen over redefining `in_progress` to secretly mean three stages); `TERMS_AGREED` moved `contracted` → `negotiating`, removing the last server-side contradiction; **`APPLIED` added to the creator's `negotiating` set** — beyond the ticket's literal text and flagged as such, being the identical divergence one row over in the same switch (no creator-role filter selected `APPLIED` at all, so a creator's own application was reachable only under "All"). **CR-24** — new `src/lib/deal-stage.ts` is the one switch; `brand-chat.tsx`'s private copy deleted, now deriving from it with two documented deltas. ⚠️ **User-visible brand change:** a `TERMS_AGREED` deal now reads "Negotiating" instead of "Contracted" — that IS the fix (both sides of one negotiation finally agree) but the brand chips/filters/empty-states need Kavya's eyes, which is the QA pass Priya asked for. **CR-25** — `publishToStream` registers an `afterCommit` synchronization; the inline fallback when no transaction is active proved load-bearing, since it is what keeps CR-08's `times(2)).publish(...)` assertions from silently observing zero frames in unit tests. **CR-26** — 7th `disputed` stage across mapper, backend filter (`CANCELLED`/`DISPUTED` were selected by NO filter before), chip, pill, empty state and the deal-room badge; `--stage-disputed` finally has a consumer. `DashboardService.bucketFor` deliberately unchanged. **CR-28** — fixed in the helper rather than at three call sites, plus explicit settle-path assertion. **CR-29** — brand tripwire added; creator half open for want of a `creator-chat` harness. **Both new guards verified by reverting them:** CR-29's test fails with the guard removed and passes with it restored; CR-28's assertion turns the backend suite red (`Errors: 1`) with the helper reverted to null metadata. That is the standard this ticket asked for — "all tests still pass" is not evidence a guard works. **BACKEND VERIFICATION GAP CLOSED:** this machine had **no Maven binary**, which is why every prior pass verified the frontend properly and left the backend unbuilt. Maven **3.9.9 installed** at `~/tools/apache-maven-3.9.9`, on the user PATH, **verified against Apache's published SHA-512** before extraction; uses the existing Adoptium JDK 21 and populated `~/.m2`. Real results: `mvn -o compile` exit 0 · `mvn -o test` **1486 tests, 0 failures, 0 errors, 3 skipped** · `mvn -o package` **WITH tests** (not `-DskipTests`) BUILD SUCCESS, jar repackaged. This **retroactively validates the CR-13/CR-25/CR-26 backend halves**, which the previous commit could only typecheck, and confirms the lone `SubscriptionService` error seen earlier was an artifact of an ad-hoc classpath, not a real defect. Frontend: `npm run typecheck` clean · `npm test` **256/256, 27 files** (252 + 4 new) · `npm run lint` **403 problems (336 errors, 67 warnings), exactly baseline** · `npm run build` PASS, **16/16 routes**, 4769 modules. Added a **build-tooling note to §1** so the next person does not repeat the gap, including the warning that `-DskipTests` still compiles tests and so hides failures rather than syntax errors. Totals recalculated: 3 Critical · 7 High · 12 Medium · 8 Low = **30 logged**, **0 DONE**; by status **13 `IN QA` · 11 `IN VERIFY` · 1 `IN PROGRESS` · 3 `OPEN` · 2 `BLOCKED`**. 25 of 30 now have code (83%), one of those partial. **Every remaining ticket without code is waiting on a decision, a design, or evidence — none is waiting on engineering capacity.** Still **nothing marked DONE**: Kavya has reviewed none of Waves 3–5, the VPS was **not** restarted (deliberately — a restart would swap the build out from under Neha mid-test), and nothing has been verified in a browser this session. |
 | 2026-07-28 (1st) | Claude (at repo owner's direction — **not Tara**, see header) | **Wave 3/4 pass + four factual corrections.** **Status changes:** CR-04, CR-06, CR-10, CR-12, CR-14, CR-16, CR-17, CR-20 all `OPEN` → `IN QA` — code-complete in commit `5b86a49`, pushed to `origin/feat/creator-my-applications` (fast-forward `ad8d503..5b86a49`, 15 files, +679/−77). **CR-06** fixed at root cause: new `persistCreatorSession`/`getCreatorSession`/`clearCreatorSession` (the creator flow had no `persistBrandSession` equivalent), `login()` now called in both modes, new `useCreatorIdentity()` hydrating from session + `GET /me/creator-profile` (required because the auth store is `partialize: () => ({})` and empties on reload), and the `@priya_sharma` / `Creator Account` / `IN` literals **deleted** per the CTO note — verified absent from the production bundle. **CR-10** boundary moved inside `<BrowserRouter>` with a `resetKey` on pathname (prop not `key`, to avoid remounting healthy routes). **CR-04** all three causes: `p-4` off the ScrollArea root, `scrollIntoView` → viewport `scrollTo` via a new optional `viewportRef`, `baseEventsForDeal` memoized. **CR-12** badges + header summary read a separate unfiltered fetch; list stays server-filtered so CR-13 is not masked client-side against Priya's ruling — expect the Active chip to show a count while the Active tab is empty, which *is* CR-13. **CR-17** new shared `--app-header-h` token; ToolsSheet occurrence deliberately untouched. **CR-14** `relativeTime` guard + `lastSyncedAt` widened to `?: string \| null` (the type was lying about what the server sends). **CR-16** real unread total from the deals API. **CR-20** `isMountedRef` alongside the request token. **Verification:** `npm run typecheck` clean · `npm test` **252/252, 27 files** (exactly baseline — **no new tests added**) · `npm run lint` **403 problems (336 errors, 67 warnings), exactly baseline**, measured by stashing rather than trusting the recorded figure; two findings did land above baseline (a `setState`-in-effect error and an `exhaustive-deps` warning) and both were fixed rather than suppressed · `npm run build` PASS, **16/16 routes prerendered**, 4768 modules · bundle `index-DkEVH8Vd.js` 2,702.25 kB, **+4.45 kB (+0.16%)** vs Wave 2. **NOT verified: anything in a browser** — the Browser pane would not composite this session, so CR-04/06/12/17, all visual, are unobserved. **Four corrections to the existing record:** (1) **§9's deploy blocker is RESOLVED** by `04b7a53`, which added the exact one-line fix §9 prescribed — §9 rewritten with a superseded banner, original text retained per the append-only rule; (2) **the live box serves Wave 2, not the pre-Wave-1 bundle** — `index-B_x5CUtn.js`, 2,697,823 bytes, matching the recorded 2,697.80 kB, so **Waves 1–2 ARE deployed** and their 11 `IN VERIFY` tickets are testable now; (3) Wave 2 + CR-23 are committed and pushed, not uncommitted; (4) the "0 DONE because nothing is deployed" rationale no longer holds — the gap is QA and Neha's time. **Wave 3 images published but NOT pulled:** run `30343078697` built and pushed all three images successfully, but the VPS was **deliberately not restarted** (`VPS_restartProjectV1` on `influora-test`) because these 8 tickets have had no Kavya pass and a restart would swap the build out from under Neha. Totals unchanged: 3 Critical · 7 High · 11 Medium · 8 Low = **29 logged**, **0 DONE**; by status **8 `IN QA` · 11 `IN VERIFY` · 8 `OPEN` · 2 `BLOCKED`**. Every 🔴 Critical and 🟠 High ticket now has code; everything unwritten is Medium or Low. |
 | 2026-07-27 | Tara | Added **§9 Deploy Blocker** — the analysis of why nothing can go `DONE` had existed only in-session until now. Recorded: the live box is Hostinger VPS 1844961 running Docker Compose project `influora-test` (6 containers) pulling `ghcr.io/influoradigital-bit/influora-{api,ai,web}:latest`; `.github/workflows/publish-images.yml` doesn't trigger on `feat/creator-my-applications` (only `main` / `feat/creator-taxonomy-keyword-patch`); `workflow_dispatch` is unreachable because `origin/main` is a 1-file (`README.md`) branch with no workflow on it; merging to `main` is not a viable release valve (~108 unreviewed commits ahead); the one-line fix (add the branch to `push.branches`, precedented by `feat/creator-taxonomy-keyword-patch`'s existing entry) is safe on a push trigger (build-arg fallbacks match the live bundle's config) and rollback exists (images tagged both `:latest` and `:sha`); owner is Swapnil, this is a decision not an engineering task; editing the workflow file is blocked by this session's permission classifier. Recorded Wave 1's actual commit state (`21399b2`, `06c1bcb`, not pushed; Wave 2 + CR-23 uncommitted on top; branch also answers to `cr-08-deal-lifecycle-sse`, same commit, no work at risk). Added a note to CR-15 (no status change) distinguishing its domain+TLS blocker from §9's CI/CD blocker — fixing one does not fix the other. Added **CR-29** (🟢 Low, unassigned — CR-23's fix, and the creator-side W2-L1 fix it was ported from, have no test coverage for the superseded-failed-refresh scenario; contrast with Wave 2's three remediation guards, which do fail on revert). Totals recalculated: 3 Critical · 7 High · 11 Medium · 8 Low = **29 logged**, **0 DONE**. No ticket status changed in this pass; `http://200.141.1.6` still serves the pre-Wave-1 bundle. |
+| 2026-07-29 | **Tara** | **Kavya QA pass on the 29 `IN QA` tickets recorded.** **A Kavya PASS moves a ticket to `IN VERIFY`, not `DONE`** — per §2 only Neha's live re-test closes a row. **25 → `IN VERIFY`:** CR-04, CR-06, CR-10, CR-12, CR-13, CR-14, CR-16, CR-17, CR-20, CR-22a, CR-24, CR-25, CR-26, CR-28, CR-29, CR-30, CR-31, CR-32, CR-33, CR-34, CR-40, CR-41, CR-43, CR-44, CR-45. **4 held at `IN QA`, hold reason written onto each §5 block:** CR-35 (migration never run against a real DB), CR-38 (inert until the box's compose carries `native`; also gated on Kabir's H-2 IPv6 live check), CR-39 (Mockito pins which repo method is called, not that the JPQL resolves a milestone-linked hold), CR-42 (inert until the box's compose is replaced; rotation lives only in `deploy/hostinger/*.yml`). **Three raised blocks were overturned before recording, not carried:** **CR-04** — the `scrollTo` concern is a non-issue: it scrolls exactly one element and is feature-detected with a `scrollTop` fallback (the CR-04/CR-29 fix), so it does not regress under jsdom or an unsupported host; **CR-32** — the "no test pins the call site" claim is false: `creator-settings-logout.test.tsx` pins it and the guard is revert-proven; **CR-12** — the zero-count flash is loading state, not the ticket's defect (the filtered counts render correctly once data resolves). **CR-40 tuning follow-up, not a block:** the 15s upload-timeout may need lengthening for deliverable upload over slow links — a tuning note on the row, it does not hold the QA pass. **By status: 4 `IN QA` · 36 `IN VERIFY` · 2 `IN PROGRESS` · 1 `ASSIGNED` · 3 `BLOCKED` · 0 `OPEN` · 0 `DONE`** (29 − 25 = 4 remain `IN QA`; 11 + 25 = 36 `IN VERIFY`; 4+36+2+1+3 = 46, CR-22 parent uncounted). **Totals unchanged — 8 Critical · 10 High · 18 Medium · 10 Low = 46 logged, and `DONE` is still 0:** an `IN QA`→`IN VERIFY` move touches neither the severity distribution nor the §3 progress table (both `IN QA` and `IN VERIFY` count as *code landed*), so only the by-status line changed. **0 `DONE` is unchanged because the box still serves Wave 2 and Neha has re-tested nothing** — the 36 `IN VERIFY` rows are Neha's queue, not closed tickets. Only `wiki/errors/CREATOR-BUG-TRACKER.md` was edited; no Maven, npm, or git command was run. |
 
 ---
 
