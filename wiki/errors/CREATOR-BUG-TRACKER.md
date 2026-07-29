@@ -133,8 +133,9 @@ Correcting the record before work starts — the generic company stack template 
 | CR-44 | 🟡 Medium | `ClientErrorController`'s "always 202, never a 4xx" was false — `AuthRateLimitFilter` returns 429 in front of it | Unrouted → Kavya | IN VERIFY |
 | CR-45 | 🟢 Low | Matrix parameter (`;x=1`) dodges **every** literal-path rate-limit bucket entirely — no bucket assigned at all | Unrouted → Kavya | IN VERIFY |
 | CR-46 | 🟠 High | The box's full env — DB password, R2 secret key, Anthropic/Gemini/Sarvam/MSG91/SMTP keys, Meta app secret, internal signing keys — is returned in **plaintext** by the Hostinger project-read API and was pulled into an AI session this pass. **Rotate the exposed credentials.** | Unrouted → Swapnil / Meera | ASSIGNED |
+| CR-47 | 🟢 Low | Cross-tenant status-enumeration oracle in `EscrowService.releaseInternal`: the `CANCELLED` guard (`:555`) and `DISPUTED` guard (`:556`) run BEFORE the tenant-ownership check (`:559`), and the milestone/collaboration are read global-by-id (`:544`) — a brand `OWNER`/`ADMIN` of workspace A passing workspace B's `milestoneId` can distinguish B's deal state (409 `COLLABORATION_CANCELLED` vs 409 `ESCROW_BLOCKED_BY_DISPUTE` vs 404 `ESCROW_NOT_FOUND`). Needs an unguessable ULID; no money moves, no PII. `c328b42` widened a pre-existing DISPUTED-arm oracle by one code. | Unrouted → **Vikram** (backend) | OPEN |
 
-**Totals:** 8 Critical · 11 High · 18 Medium · 10 Low = **47 logged**, **0 DONE**
+**Totals:** 8 Critical · 11 High · 18 Medium · 11 Low = **48 logged**, **0 DONE**
 
 > ⚠️ **Protocol exception, recorded (7th pass).** CR-40–CR-45 were entered by Claude at the repo owner's direct instruction, **not by Tara**. §6 reserves §3 and the §5 `Status:` lines for her. She should re-derive the totals rather than accept them — she has caught arithmetic and cross-reference errors in every pass where someone else touched this file, and three of those were mine.
 >
@@ -146,7 +147,7 @@ Correcting the record before work starts — the generic company stack template 
 >
 > **And how 38 became 40 (7th pass, Tara) — neither of these came from a ruling, a routing table or a handoff. They were already fixed, pushed and CI-green when this pass started, and neither had a row.** **CR-38** (`3de077d`) and **CR-39** (`e92338b`), both 🔴 Critical, both entered at the next free IDs. 38 + 2 = **40**. ⚠️ **That is the finding, not the arithmetic.** Every previous growth in this file came *in* through §10 or through Neha; these two came in through commit messages that each end *"Needs a tracker row (Tara)"*. **The board is only as complete as whoever remembers to tell it** — there is no mechanism that would have caught either of these, and for a full day the file's own header under-stated the product's live severity by two Criticals. See §7.
 
-**By status:** 3 `IN QA` · 39 `IN VERIFY` · 1 `IN PROGRESS` · 1 `ASSIGNED` · 3 `BLOCKED` · **0 `OPEN`** · **0 `DONE`**
+**By status:** 3 `IN QA` · 39 `IN VERIFY` · 1 `IN PROGRESS` · 1 `ASSIGNED` · 3 `BLOCKED` · **1 `OPEN`** · **0 `DONE`**
 
 > ⚠️ **Protocol exception (deploy pass) — CR-46 was entered by Claude at the repo owner's direct instruction, not by Tara.** It is not a code defect and not a creator-flow bug: it is an operational-security finding surfaced *during* this session. Calling `VPS_getProjectContentsV1` on the `influora-test` box returned the entire `environment` block in plaintext, so those live credential values are now in an AI session transcript. **They must be treated as exposed and rotated** — highest-value: the R2 secret access key (full media-bucket access), the Meta app secret (OAuth-app takeover), MSG91/SMTP (send as the brand), and the internal HMAC/service-token signing keys. *(Razorpay keys were NOT in the test box's env, so the money keys were not exposed by this — the test box has no payment secrets.)* Recorded here rather than buried in chat because "rotate credentials" is an action that otherwise has no home and no owner. Tara to re-derive the totals.
 
@@ -160,15 +161,15 @@ Correcting the record before work starts — the generic company stack template 
 >
 > ✅ **Re-checked rather than assumed (Tara, 6th pass) — the cell is correct and the claims behind it are true.** `d3a22da` is the tip of `origin/feat/creator-my-applications`, so it is genuinely pushed, not merely committed. The GitHub Actions API returns **exactly four** workflow runs for that SHA and all four concluded `success`: **Backend CI**, **Frontend Checks**, **Publish Images (GHCR)**, **TrendSpark Tagger Sync**. *(Worth stating precisely, because "all four workflows" reads like a fixed set and is not: this repo carries **ten** workflow files. Four is simply how many the `paths:` filters selected for this commit's file list. A commit touching different paths will run a different number, and "all four green" must not calcify into a checklist.)* **§5's `Status:` line, however, had NOT been moved with §3** — it still read `IN PROGRESS` and still said the fix spec was "untracked in git" when `wiki/tech/escrow-frozen-hold-fix-spec.md` shipped inside `d3a22da` itself. Corrected in §5. **That split is the whole argument for §6**: one editor moved one cell and the ticket's own detail block contradicted the board for a full pass.
 
-**Progress against the 47:**
+**Progress against the 48:**
 
 | Severity | Logged | Code landed | In progress | Not started | Blocked |
 |---|---|---|---|---|---|
 | 🔴 Critical | **8** | **7** | **1** | 0 | 0 |
 | 🟠 High | **11** | **10** | 0 | **1** | 0 |
 | 🟡 Medium | **18** | ~~14~~ **15** | 1 | ~~1~~ **0** | 2 |
-| 🟢 Low | **10** | **9** | 0 | 0 | 1 |
-| **Total** | **47** | ~~40 (85%)~~ **41 (87%)** | **2** | ~~2~~ **1** | **3** |
+| 🟢 Low | **11** | **9** | 0 | **1** | 1 |
+| **Total** | **48** | ~~40 (85%)~~ ~~41 (87%)~~ **41 (85%)** | **2** | ~~2~~ ~~1~~ **2** | **3** |
 
 > 🔧 **Recalculated 2026-07-29 (second deploy, Tara): CR-37 (🟡 Medium) landed in `7991342`, so it moved from *Not started* to *Code landed* — Medium 14→15 / not-started 1→0, Total 40→41 (85%→87%), not-started 2→1.** The 85%-era prose below is prior-pass commentary and is left as dated history; its point — **code-landed ≠ done, `DONE` is still 0** — is unchanged by this move, since CR-37 went to `IN QA`, not `DONE`.
 
@@ -716,6 +717,8 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 
 **Fix:** A dedicated withdrawal affordance for the brand side, distinct from the proposal-card accept/reject/counter actions — most likely the counterparty-facing half of the proposed `POST /deals/{id}/termination` dialogue, once 22a defines it.
 
+> ⚠️ **Precondition from Kabir's CR-36 red-team (2026-07-29) — read before any post-contract funded-termination work.** `EscrowService.releaseInternal` reads the collaboration **UNLOCKED** (`:542`/`:555`) — safe today only because no funded-cancel path exists. Any CR-22b post-contract funded-termination design **MUST first make `releaseInternal` re-read the collaboration status under the same hold row lock as the ledger write**, or it reopens a funded-release-vs-cancel TOCTOU race. (Status unchanged — CR-22b stays `BLOCKED`.)
+
 ---
 
 ### CR-23 · 🟢 Low · Brand `refreshDeal` catch block missing the staleness guard
@@ -977,6 +980,8 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 **Owner:** **Unassigned** *(never routed — see the 7th-pass note)* · **Status:** IN VERIFY
 
 > ✅ **2026-07-29 — Kavya QA PASS. ~~`IN QA`~~ → `IN VERIFY`.** She flagged the `tryReleaseOnApproval` skip-list asymmetry (`COLLABORATION_CANCELLED` not in `isExpectedReleaseSkip`); verified NOT-a-defect and overturned — `approve()` guards `CANCELLED` upstream at `BrandDeliverableService.java:104` (`requireNotCancelled` throws before `tryReleaseOnApproval` at `:117`, so unreachable), and the dispute-vs-cancelled asymmetry is correct by design (dispute=live/hold, cancelled=terminal/hard-fail); adding the case would be wrong. No code change. **DO NOT re-raise this in a later QA pass.** Remaining gates: **Kabir** red-team (money-path 🔴 Critical) → **Neha** live re-test.
+
+> ✅ **2026-07-29 — Kabir red-team PASS (money-path 🔴 Critical). Status unchanged: stays `IN VERIFY`.** No bypass, no TOCTOU exploit today, refund-asymmetry safe, 0%-split correct. Verified against code by Kabir and re-confirmed by Claude: `CANCELLED` is written **only pre-contract** (`DealService.doReject`, gated by `canReject()`'s pre-contract allowlist under a `PESSIMISTIC_WRITE` lock) and escrow funds **only post-contract**, so a `CANCELLED` collaboration provably never carries `FUNDED`/`FROZEN` escrow; the release gate is sound; the refund asymmetry is safe under `FUNDED` + the hold-row lock; and the 0%-split correctly maps `creditLegId → RELEASED` vs `refundLegId → REFUNDED`. **CR-36's remaining gate is now ONLY Neha's live re-test.** *(Two non-blocking findings surfaced by this red-team: new **CR-47** — cross-tenant status-enumeration oracle in `releaseInternal` — and a TOCTOU precondition annotated onto **CR-22b**. Neither blocks CR-36.)*
 
 **Opened 2026-07-28 (Tara, 6th pass)**, split out of **CR-22a** per Priya's ruling in **§10.7(a)**. Source: `wiki/errors/CR-22a-withdrawal-money-path-audit.md` **finding #1** (Kabir, ranked **CRITICAL** — his §5 table calls it *"the actual defect; §10.1's finding is a symptom of it"*).
 
@@ -1266,6 +1271,25 @@ Same class as the earlier percent-encoding bypass (Kabir NEW-1), which added `de
 
 ---
 
+### CR-47 · 🟢 Low · Cross-tenant status-enumeration oracle in `EscrowService.releaseInternal`
+**Owner:** Unrouted → **Vikram** (backend) · **Status:** OPEN · *(surfaced by Kabir's CR-36 red-team, 2026-07-29; non-blocking)*
+
+**Opened 2026-07-29 (Tara)** from Kabir's red-team of the CR-36 residual (`c328b42`). Non-blocking — it did **not** hold up Kabir's CR-36 money-path PASS.
+
+**What:** In `EscrowService.releaseInternal`, the `CANCELLED` guard (`:555`) and the `DISPUTED` guard (`:556`) both run **before** the tenant-ownership check (`:559`), and the milestone/collaboration are read **global-by-id** (`:544`). So an authenticated brand `OWNER`/`ADMIN` of workspace A, passing a foreign workspace B's `milestoneId`, can distinguish B's deal state by the error returned:
+
+| B's state | Response |
+|---|---|
+| collaboration `CANCELLED` | 409 `COLLABORATION_CANCELLED` |
+| escrow blocked by dispute | 409 `ESCROW_BLOCKED_BY_DISPUTE` |
+| no hold / not found | 404 `ESCROW_NOT_FOUND` |
+
+**Why Low:** exploitation requires an **unguessable ULID** `milestoneId` from the target workspace; **no money moves and no PII is disclosed** — only the deal's coarse lifecycle state. Pre-existing for the DISPUTED arm; `c328b42` **widened** it by adding one more distinguishable code (`COLLABORATION_CANCELLED`).
+
+**Fix:** move the `hold.getWorkspaceId().equals(workspaceId)` ownership check **ahead of** the two state guards in `releaseInternal`, so a cross-tenant caller gets the same 403/404 regardless of B's state. Needs a covering test. **Note:** this changes the hold-row-lock acquisition order, so the fix must be reviewed for lock-ordering effects, not applied blind.
+
+---
+
 ## 6. Tara's Update Protocol
 
 **Tara owns every status change in this file. Nobody else edits §3 or the `Status:` lines in §5.**
@@ -1298,6 +1322,8 @@ Run whenever any of these happens:
 ## 7. Changelog
 
 | Date | By | Change |
+|---|---|---|
+| 2026-07-29 (CR-36 Kabir red-team PASS + CR-47) | **Tara** | **Kabir red-team PASS on CR-36 (money-path 🔴 Critical) — no status move, CR-36 stays `IN VERIFY`; its remaining gate is now ONLY Neha's live re-test.** No bypass, no TOCTOU exploit today, refund-asymmetry safe, 0%-split correct (verified against code by Kabir, re-confirmed by Claude): `CANCELLED` is only written pre-contract (`DealService.doReject` under a `PESSIMISTIC_WRITE` lock, gated by `canReject()`'s pre-contract allowlist) and escrow funds only post-contract, so a `CANCELLED` collaboration provably never carries `FUNDED`/`FROZEN` escrow. **Two non-blocking findings logged from the same red-team:** (1) **new CR-47 (🟢 Low, `OPEN`, Unrouted → Vikram)** — cross-tenant status-enumeration oracle in `EscrowService.releaseInternal`: the `CANCELLED` (`:555`) and `DISPUTED` (`:556`) guards run before the tenant-ownership check (`:559`) and the milestone is read global-by-id (`:544`), so a brand `OWNER`/`ADMIN` of workspace A can distinguish workspace B's deal state (409 `COLLABORATION_CANCELLED` vs 409 `ESCROW_BLOCKED_BY_DISPUTE` vs 404) using B's ULID `milestoneId`; no money, no PII; `c328b42` widened a pre-existing DISPUTED-arm oracle by one code; fix = move ownership check ahead of the state guards (needs a covering test; changes hold-row-lock order). (2) **CR-22b annotated** with the TOCTOU precondition — `releaseInternal` reads the collaboration unlocked (`:542`/`:555`), safe only because no funded-cancel path exists today; any CR-22b post-contract funded-termination work must first make `releaseInternal` re-read status under the same hold row lock as the ledger write. **CR-22b status unchanged (`BLOCKED`).** **Totals: 47 → 48 logged** (8 Critical · 11 High · 18 Medium · **11** Low); code-landed **87% → 85%** (CR-47 is `OPEN` with no closing commit, so it sits in *Not started*). **By status: 3 `IN QA` · 39 `IN VERIFY` · 1 `IN PROGRESS` · 1 `ASSIGNED` · 3 `BLOCKED` · 1 `OPEN` · 0 `DONE`** (CR-47 is the one `OPEN`). **`0 DONE` unchanged.** Scope: only `wiki/errors/CREATOR-BUG-TRACKER.md` edited; no Maven/npm/git run. CR-38, CR-42, §10 and all other rows untouched. |
 |---|---|---|
 | 2026-07-29 (CR-36 Kavya PASS) | **Tara** | **CR-36 `IN QA` → `IN VERIFY` on Kavya QA PASS of `c328b42`.** Kavya raised ONE concern — the `tryReleaseOnApproval` skip-list asymmetry: `isExpectedReleaseSkip` whitelists `ESCROW_BLOCKED_BY_DISPUTE` for graceful skip but NOT the new `COLLABORATION_CANCELLED`, so a cancelled deal on the approval path would theoretically hard-throw 409 and roll back the approval. **Verified NOT-a-defect and overturned** (Claude, CTO call — Priya agent derailed): (1) **UNREACHABLE** — `BrandDeliverableService.approve()` calls `requireNotCancelled` at `:104`, which throws `COLLABORATION_CANCELLED` (409) BEFORE `tryReleaseOnApproval` at `:117`; the hard-rollback cannot occur via approval. (2) **CORRECT BY DESIGN** — skip-list is for transient not-eligible-yet states where approval proceeds; DISPUTED is live (approve, hold money → legitimately skips), CANCELLED is terminal (no approve-later flow → hard fail is the right safety behavior); adding `COLLABORATION_CANCELLED` would be WRONG (mask a terminal state). (3) Belt-and-suspenders — per CR-22a narrowing no path can put a deliverable-bearing collaboration into CANCELLED anyway (`BrandDeliverableService.java:96-103`). **No code change.** Remaining gates: **Kabir** red-team (money-path 🔴 Critical) → **Neha** live re-test. §3 "By status" recomputed: `IN QA` 4→3, `IN VERIFY` 38→39 (still 47). **`0 DONE` unchanged.** Scope: only `wiki/errors/CREATOR-BUG-TRACKER.md` edited; no Maven/npm/git run. |
 |---|---|---|
