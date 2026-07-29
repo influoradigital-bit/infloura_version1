@@ -99,3 +99,36 @@ than appends — the edge fix Kabir's original B-1 recommended and that was neve
   "code fixed ≠ deployed" gap that has held all day, applied to a security control.
 - Nothing on the box was changed. No bucket was deliberately exhausted (probes stayed well under
   every limit). Read-only.
+
+---
+
+## UPDATE 2026-07-29 — the actual test RAN, after `native` deployed. FULL PASS.
+
+> **Ran:** 2026-07-29 against `http://200.141.1.6` (v4) and `srv1844961.hstgr.cloud`
+> (v6, `2a02:4780:63:a04e::1`), by Claude at the repo owner's instruction.
+> **Precondition now satisfied:** `SERVER_FORWARD_HEADERS_STRATEGY=native` was deployed to the
+> box's compose via SSH earlier this pass (`/docker/influora-test`, `docker compose up -d`,
+> all containers recreated). So the build under test is finally the fixed one, not Wave 2.
+
+Procedure = the four arms in "The actual test to run" above, `POST /api/v1/auth/brand/login`
+with junk creds (the rate-limit filter runs before auth, so status is the signal; this filter
+does **not** emit `X-RateLimit-Remaining`, so verdicts are read from HTTP status).
+
+| Arm | What | Observed | Verdict |
+|-----|------|----------|---------|
+| v4 limiting | 12 unspoofed POSTs from real v4 | req 1–10 → `401`, req 11–12 → `429` | IP-keyed limiting live (limit 10) |
+| v4 spoof | v4 bucket exhausted, then rotating `X-Forwarded-For: 9.9.9.9 / 8.8.4.4 / 203.0.113.5` | all `429` | **spoof ignored — CR-38 core fix confirmed** |
+| v6 separation | v6 client while v4 bucket sat at `429` | v6 → `401` (fresh bucket) | real-IP keyed, **not** collapsed to Caddy's container IP → **Kabir branch-(c) ruled out** |
+| v6 spoof | v6 bucket exhausted, then `X-Forwarded-For: 9.9.9.9 / 203.0.113.5 / 2001:4860:4860::8888` | all `429` | **v6 spoof ignored — H-2 IPv6 bypass does NOT exist on this build** |
+
+Extra evidence: the **same** junk email was used on both stacks, yet v6 got fresh `401`s while v4
+was `429` — so the limiter keys on the **real peer IP**, not the account, and discards the
+client-supplied XFF on both stacks.
+
+**Honest scope:** v4 and v6 were the operator's dual-stack egress — two genuinely different source
+addresses (the one-v4-one-v6 "sharper check" this doc recommended), not two physically separate
+networks. Sufficient for "distinguishes source IPs + ignores spoofed XFF." Not a load test.
+
+**Bottom line: CR-38's behavioural bypass test — untested since 2026-07-28 for lack of a deployed
+fix — is now RUN and PASSES on all four arms, including the IPv6 path.** The only thing between
+CR-38 and `DONE` is the board's convention that Neha's live re-test performs the close.
