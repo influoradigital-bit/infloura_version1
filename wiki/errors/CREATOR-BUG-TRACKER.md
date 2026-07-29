@@ -122,7 +122,7 @@ Correcting the record before work starts — the generic company stack template 
 | CR-33 | 🟢 Low | Stale doc comments contradicting the code they sit on | Ananya | IN VERIFY |
 | CR-34 | 🟡 Medium | `ACCEPTABLE_COLLABORATION_STATUSES` duplicated in both deal rooms | Ananya | IN VERIFY |
 | CR-35 | 🔴 Critical | Dispute settlement moves **no money** on normally-funded holds, and records it as settled | Vikram | IN QA |
-| CR-36 | 🔴 Critical | Nothing downstream enforces `CANCELLED` — a cancelled deal's contract still signs to ACTIVE and its escrow can be funded **for the first time** | **Unassigned** *(never routed; being worked anyway)* | IN QA |
+| CR-36 | 🔴 Critical | Nothing downstream enforces `CANCELLED` — a cancelled deal's contract still signs to ACTIVE and its escrow can be funded **for the first time** | **Unassigned** *(never routed; being worked anyway)* | IN VERIFY |
 | CR-37 | 🟡 Medium | Privilege inversion: a workspace `VIEWER` can cancel a contracted, funded deal, while funding/release/refund require `OWNER`/`ADMIN` | Vikram | IN QA |
 | CR-38 | 🔴 Critical | Spoofable `X-Forwarded-For`: `clientIp()` failed **open**, defeating every IP-keyed rate limit (login brute-force included) and forging the IP on every admin audit-log record | Unrouted → **Kabir** (re-review, **not signed off**) | IN VERIFY |
 | CR-39 | 🔴 Critical | `DeliverableCleanupJob` **deleted creator deliverable media against FUNDED/FROZEN/PENDING escrow** — nightly, for real, on any prod deploy | Unrouted → Kavya | IN QA |
@@ -146,7 +146,7 @@ Correcting the record before work starts — the generic company stack template 
 >
 > **And how 38 became 40 (7th pass, Tara) — neither of these came from a ruling, a routing table or a handoff. They were already fixed, pushed and CI-green when this pass started, and neither had a row.** **CR-38** (`3de077d`) and **CR-39** (`e92338b`), both 🔴 Critical, both entered at the next free IDs. 38 + 2 = **40**. ⚠️ **That is the finding, not the arithmetic.** Every previous growth in this file came *in* through §10 or through Neha; these two came in through commit messages that each end *"Needs a tracker row (Tara)"*. **The board is only as complete as whoever remembers to tell it** — there is no mechanism that would have caught either of these, and for a full day the file's own header under-stated the product's live severity by two Criticals. See §7.
 
-**By status:** 4 `IN QA` · 38 `IN VERIFY` · 1 `IN PROGRESS` · 1 `ASSIGNED` · 3 `BLOCKED` · **0 `OPEN`** · **0 `DONE`**
+**By status:** 3 `IN QA` · 39 `IN VERIFY` · 1 `IN PROGRESS` · 1 `ASSIGNED` · 3 `BLOCKED` · **0 `OPEN`** · **0 `DONE`**
 
 > ⚠️ **Protocol exception (deploy pass) — CR-46 was entered by Claude at the repo owner's direct instruction, not by Tara.** It is not a code defect and not a creator-flow bug: it is an operational-security finding surfaced *during* this session. Calling `VPS_getProjectContentsV1` on the `influora-test` box returned the entire `environment` block in plaintext, so those live credential values are now in an AI session transcript. **They must be treated as exposed and rotated** — highest-value: the R2 secret access key (full media-bucket access), the Meta app secret (OAuth-app takeover), MSG91/SMTP (send as the brand), and the internal HMAC/service-token signing keys. *(Razorpay keys were NOT in the test box's env, so the money keys were not exposed by this — the test box has no payment secrets.)* Recorded here rather than buried in chat because "rotate credentials" is an action that otherwise has no home and no owner. Tara to re-derive the totals.
 
@@ -974,7 +974,9 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 ---
 
 ### CR-36 · 🔴 Critical · Nothing downstream enforces `CANCELLED`
-**Owner:** **Unassigned** *(never routed — see the 7th-pass note)* · **Status:** IN QA
+**Owner:** **Unassigned** *(never routed — see the 7th-pass note)* · **Status:** IN VERIFY
+
+> ✅ **2026-07-29 — Kavya QA PASS. ~~`IN QA`~~ → `IN VERIFY`.** She flagged the `tryReleaseOnApproval` skip-list asymmetry (`COLLABORATION_CANCELLED` not in `isExpectedReleaseSkip`); verified NOT-a-defect and overturned — `approve()` guards `CANCELLED` upstream at `BrandDeliverableService.java:104` (`requireNotCancelled` throws before `tryReleaseOnApproval` at `:117`, so unreachable), and the dispute-vs-cancelled asymmetry is correct by design (dispute=live/hold, cancelled=terminal/hard-fail); adding the case would be wrong. No code change. **DO NOT re-raise this in a later QA pass.** Remaining gates: **Kabir** red-team (money-path 🔴 Critical) → **Neha** live re-test.
 
 **Opened 2026-07-28 (Tara, 6th pass)**, split out of **CR-22a** per Priya's ruling in **§10.7(a)**. Source: `wiki/errors/CR-22a-withdrawal-money-path-audit.md` **finding #1** (Kabir, ranked **CRITICAL** — his §5 table calls it *"the actual defect; §10.1's finding is a symptom of it"*).
 
@@ -1296,6 +1298,8 @@ Run whenever any of these happens:
 ## 7. Changelog
 
 | Date | By | Change |
+|---|---|---|
+| 2026-07-29 (CR-36 Kavya PASS) | **Tara** | **CR-36 `IN QA` → `IN VERIFY` on Kavya QA PASS of `c328b42`.** Kavya raised ONE concern — the `tryReleaseOnApproval` skip-list asymmetry: `isExpectedReleaseSkip` whitelists `ESCROW_BLOCKED_BY_DISPUTE` for graceful skip but NOT the new `COLLABORATION_CANCELLED`, so a cancelled deal on the approval path would theoretically hard-throw 409 and roll back the approval. **Verified NOT-a-defect and overturned** (Claude, CTO call — Priya agent derailed): (1) **UNREACHABLE** — `BrandDeliverableService.approve()` calls `requireNotCancelled` at `:104`, which throws `COLLABORATION_CANCELLED` (409) BEFORE `tryReleaseOnApproval` at `:117`; the hard-rollback cannot occur via approval. (2) **CORRECT BY DESIGN** — skip-list is for transient not-eligible-yet states where approval proceeds; DISPUTED is live (approve, hold money → legitimately skips), CANCELLED is terminal (no approve-later flow → hard fail is the right safety behavior); adding `COLLABORATION_CANCELLED` would be WRONG (mask a terminal state). (3) Belt-and-suspenders — per CR-22a narrowing no path can put a deliverable-bearing collaboration into CANCELLED anyway (`BrandDeliverableService.java:96-103`). **No code change.** Remaining gates: **Kabir** red-team (money-path 🔴 Critical) → **Neha** live re-test. §3 "By status" recomputed: `IN QA` 4→3, `IN VERIFY` 38→39 (still 47). **`0 DONE` unchanged.** Scope: only `wiki/errors/CREATOR-BUG-TRACKER.md` edited; no Maven/npm/git run. |
 |---|---|---|
 | 2026-07-29 (CR-36 correction) | **Tara** | **CR-36 `IN PROGRESS` (PARTIAL) → `IN QA`; the stale "nothing has landed" prose is corrected.** `c328b42` SHIPPED the `CANCELLED` release-gate — `assertReleaseNotBlockedByCancellation` throws `COLLABORATION_CANCELLED`, both release paths (`release()` and `tryReleaseOnApproval`, via `releaseInternal`) gated; `refund()` intentionally ungated (CR-35 remedy, by design, not a gap); 0%-split fixed; `ShipmentService` confirmed non-money-path — plus **5 covering tests** (`EscrowServiceTest.java` +193). Verified against code + git this pass by **Priya, Arjun and Claude**. **CR-36 is CODE-COMPLETE.** Remaining gates in order: **Kavya → Kabir → Neha** live re-test. **`0 DONE` unchanged** — code-complete ≠ `DONE`; only Neha's live re-test closes it. §3 "By status" recomputed: `IN PROGRESS` 2→1, `IN QA` 3→4. Scope: only `wiki/errors/CREATOR-BUG-TRACKER.md` edited; no other row changed. |
 |---|---|---|
