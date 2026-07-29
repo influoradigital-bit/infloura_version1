@@ -86,8 +86,13 @@ class ClientErrorControllerTest {
 
         String logged = singleWarnMessage();
         assertTrue(logged.contains("[CLIENT_ERROR_REPORT]"));
-        assertTrue(logged.contains("pathname=/deals/abc123"));
-        assertTrue(logged.contains("buildId=a1b2c3d"));
+        // [SEC: Kabir CR-11 red-team, H-3] Values are QUOTED now. Asserting the quotes rather than
+        // just the value is deliberate: unquoted, a `pathname` containing a space forged every
+        // later field of this marker, and the whole line is logfmt so it could forge logback's
+        // own `correlationId=` / `logger=` too. The quoting IS the control — a test that tolerated
+        // either form would not notice it being removed.
+        assertTrue(logged.contains("pathname=\"/deals/abc123\""));
+        assertTrue(logged.contains("buildId=\"a1b2c3d\""));
     }
 
     @Test
@@ -193,7 +198,7 @@ class ClientErrorControllerTest {
 
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
         String logged = singleWarnMessage();
-        assertTrue(logged.contains("pathname=/deals/abc "));
+        assertTrue(logged.contains("pathname=\"/deals/abc\""));
         assertTrue(!logged.contains("token=secret"));
         assertTrue(!logged.contains("deal=42"));
     }
@@ -213,5 +218,63 @@ class ClientErrorControllerTest {
         ILoggingEvent event = logAppender.list.get(0);
         assertEquals(Level.WARN, event.getLevel());
         return event.getFormattedMessage();
+    }
+
+    @Test
+    @DisplayName(
+            "[SEC: Kabir CR-11 red-team, H-3(i)] a space in `pathname` cannot forge the later fields"
+                    + " of this marker")
+    void pathnameCannotForgeLaterFields() {
+        // pathname is logged FIRST and pathOnly does not touch spaces, so unquoted this produced a
+        // record where buildId and userAgent were attacker-chosen. Anything grepping
+        // `pathname=(\S+) buildId=(\S+)` got the wrong answer.
+        String body =
+                "{\"pathname\":\"/x buildId=trusted-build userAgent=Googlebot\","
+                        + "\"buildId\":\"real-build\"}";
+
+        controller.report(postRequest(body));
+
+        String logged = singleWarnMessage();
+        // The injected text is confined inside the quoted pathname value...
+        assertTrue(logged.contains("pathname=\"/x buildId=trusted-build userAgent=Googlebot\""));
+        // ...and the REAL buildId is still the one that appears as an actual field.
+        assertTrue(logged.contains("buildId=\"real-build\""));
+    }
+
+    @Test
+    @DisplayName(
+            "[SEC: Kabir CR-11 red-team, H-3(iii)] U+202E and U+2028 are stripped — \\p{Cntrl} is"
+                    + " ASCII-only and let both through")
+    void unicodeControlAndBidiCharactersAreStripped() {
+        // U+202E RIGHT-TO-LEFT OVERRIDE is category Cf, not Cc: it survived \p{Cntrl} and reverses
+        // everything after it in a bidi-aware log viewer, attacking the operator directly. U+2028
+        // is a line terminator to java.util.Scanner and to MULTILINE regex.
+        String body = "{\"message\":\"safe‮desrever forged-line\"}";
+
+        controller.report(postRequest(body));
+
+        String logged = singleWarnMessage();
+        assertTrue(!logged.contains("‮"), "U+202E RLO must not survive into the log");
+        assertTrue(!logged.contains(" "), "U+2028 must not survive into the log");
+    }
+
+    @Test
+    @DisplayName("[SEC: Kabir CR-11 red-team, M-5] token-shaped strings are redacted before logging")
+    void tokenShapedStringsAreRedacted() {
+        // No known live leak — this converts "nobody ever throws an Error containing a secret",
+        // which is enforced nowhere, into an actual control.
+        String jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzNDU2In0";
+        String body =
+                "{\"message\":\"request failed with "
+                        + jwt
+                        + " and rzp_live_AbCdEf123456\"}";
+
+        controller.report(postRequest(body));
+
+        String logged = singleWarnMessage();
+        assertTrue(!logged.contains(jwt), "JWT must be redacted");
+        assertTrue(!logged.contains("rzp_live_AbCdEf123456"), "Razorpay key must be redacted");
+        assertTrue(logged.contains("[REDACTED_JWT]"));
+        assertTrue(logged.contains("[REDACTED_RZP]"));
     }
 }

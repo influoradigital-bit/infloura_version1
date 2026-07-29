@@ -20,10 +20,22 @@ import org.springframework.web.bind.annotation.RestController;
  * a render crash is visible on the server instead of only in a devtools console that nobody had
  * open at the moment of blanking.
  *
- * <p><b>Always 202, always empty body, never a 4xx.</b> This endpoint exists to catch failures; a
+ * <p><b>This controller always returns 202 with an empty body.</b> It exists to catch failures; a
  * report that fails to parse, or is garbage, or is hostile, must never be able to cause one of its
  * own. Every failure mode inside {@link #handle} is caught in {@link #report} and swallowed —
  * dropped server-side, never surfaced to the caller.
+ *
+ * <p>[SEC: Kabir CR-11 red-team, M-6] <b>The caller can still see a 4xx, and the previous wording
+ * here ("never a 4xx") was false one layer up.</b> {@code AuthRateLimitFilter} sits in FRONT of this
+ * controller and returns 429 with a JSON error body for this exact path. The invariant this class
+ * can honestly promise is scoped to itself, which is what the sentence above now says.
+ *
+ * <p>Practical impact on the client is nil — it swallows every failure by construction. The cost is
+ * diagnostic, and it is worth understanding rather than papering over: reports are dropped precisely
+ * when volume is high, which is exactly when a render bug is hitting many users at once — the
+ * failure mode CR-11 was built to catch. The alternative (exempting this path from the limiter) is
+ * strictly worse: per-IP throttling is this endpoint's only abuse defence, and it is unauthenticated
+ * and writes to the log. So the 429 stays and the claim is corrected instead.
  *
  * <p><b>Auth is optional by design.</b> Not wired into {@code AuthPrincipal}/JWT at all — a crash on
  * the public portfolio page or before login is exactly the crash nobody else can see, and the
@@ -106,18 +118,27 @@ public class ClientErrorController {
             return;
         }
 
-        String message = truncate(textOf(node, "message"), MAX_MESSAGE);
-        String stack = truncate(textOf(node, "stack"), MAX_STACK);
-        String componentStack = truncate(textOf(node, "componentStack"), MAX_COMPONENT_STACK);
+        // Redaction runs on the free-text fields only (M-5). `pathname`/`buildId`/`userAgent` are
+        // structurally constrained and would only lose fidelity to a false positive.
+        String message = truncate(redactSecrets(textOf(node, "message")), MAX_MESSAGE);
+        String stack = truncate(redactSecrets(textOf(node, "stack")), MAX_STACK);
+        String componentStack =
+                truncate(redactSecrets(textOf(node, "componentStack")), MAX_COMPONENT_STACK);
         String pathname = truncate(pathOnly(textOf(node, "pathname")), MAX_PATHNAME);
         String buildId = truncate(textOf(node, "buildId"), MAX_BUILD_ID);
         String userAgent = truncate(textOf(node, "userAgent"), MAX_USER_AGENT);
 
         // [CLIENT_ERROR_REPORT] is the stable, greppable marker the contract requires. Every value
-        // logged here is the already-truncated/sanitized copy above, never the raw client bytes.
+        // is truncated, control-stripped, secret-redacted AND quoted — see quote()'s javadoc for why
+        // the quoting is the part that actually stops field forging in this logfmt line.
         log.warn(
                 "[CLIENT_ERROR_REPORT] pathname={} buildId={} userAgent={} message={} stack={} componentStack={}",
-                pathname, buildId, userAgent, message, stack, componentStack);
+                quote(pathname),
+                quote(buildId),
+                quote(userAgent),
+                quote(message),
+                quote(stack),
+                quote(componentStack));
     }
 
     /**
@@ -181,14 +202,86 @@ public class ClientErrorController {
     /**
      * Server-side truncation applied to every field regardless of what the client sent or claimed
      * to cap — client caps in the contract are a courtesy only, since this endpoint is
-     * unauthenticated and anyone can post to it. Also strips control characters (including CR/LF)
-     * so a submitted value can never forge additional WARN log lines.
+     * unauthenticated and anyone can post to it.
+     *
+     * <p>[SEC: Kabir CR-11 red-team, H-3(iii)] The strip is {@code [\p{Cc}\p{Cf}\p{Zl}\p{Zp}]}, not
+     * {@code \p{Cntrl}}. Java's POSIX classes are ASCII-scoped without
+     * {@code UNICODE_CHARACTER_CLASS}, so {@code \p{Cntrl}} is only {@code [\x00-\x1F\x7F]} and
+     * these survived it:
+     * <ul>
+     *   <li><b>U+0085 NEL, U+2028, U+2029</b> — not line breaks to {@code BufferedReader}, but they
+     *       ARE to {@code java.util.Scanner} and to Java/JS regex in MULTILINE mode, so any parser
+     *       in that class sees forged lines.
+     *   <li><b>U+202E RIGHT-TO-LEFT OVERRIDE</b> (category {@code Cf}, not {@code Cc}) — a
+     *       Trojan-Source line. Everything after it renders reversed in a bidi-aware terminal or log
+     *       viewer, so the operator reads something other than what was logged. This one needs no
+     *       downstream parser to do harm; it attacks the human reading the log.
+     * </ul>
+     *
+     * <p>Order matters and is deliberate: sanitise first, THEN substring, so truncation cannot
+     * bisect an escape and leave a partial artefact.
      */
     private static String truncate(String value, int maxLength) {
         if (value == null) {
             return null;
         }
-        String sanitized = value.replaceAll("\\p{Cntrl}", " ");
+        String sanitized = value.replaceAll("[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]", " ");
         return sanitized.length() <= maxLength ? sanitized : sanitized.substring(0, maxLength);
+    }
+
+    /**
+     * Token-shaped redaction over free-text fields before they are logged.
+     *
+     * <p>[SEC: Kabir CR-11 red-team, M-5] There is no <em>known</em> leak today — the three
+     * constructed {@code Error}s in {@code src/lib/api.ts} carry status codes and fixed strings, and
+     * React's {@code componentStack} is component display names only. But the property holding that
+     * up is "nobody ever throws an {@code Error} whose message contains a secret", which is enforced
+     * nowhere, is one careless {@code new Error(`failed: ${JSON.stringify(response)}`)} away from
+     * being false, and would deposit the result into a log that anyone on the internet can also
+     * write to. This converts an unenforced invariant into an actual control.
+     *
+     * <p>Deliberately narrow — JWTs, Razorpay keys, and long opaque runs. It is a safety net over
+     * accidental inclusion, not a general DLP pass, and it must never become expensive enough to
+     * matter on a path that exists to absorb crash traffic.
+     */
+    private static String redactSecrets(String value) {
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        return value
+                // JWTs — header.payload, enough to be unmistakable and not match ordinary prose.
+                .replaceAll("eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}", "[REDACTED_JWT]")
+                // Razorpay key/secret ids, live and test.
+                .replaceAll("rzp_(live|test)_[A-Za-z0-9]+", "[REDACTED_RZP]")
+                // Long opaque hex/base64ish runs — API keys, session ids, signatures.
+                .replaceAll("\\b[A-Fa-f0-9]{32,}\\b", "[REDACTED_HEX]");
+    }
+
+    /**
+     * Quotes a value for the space-delimited {@code key=value} log line.
+     *
+     * <p>[SEC: Kabir CR-11 red-team, H-3(i)(ii)] Stripping control characters was the wrong control
+     * for this log format. It correctly prevents <em>additional lines</em>, but neither a space nor
+     * an {@code =} is a control character, and the format — both this marker's own
+     * {@code pathname={} buildId={} …} and logback's surrounding
+     * {@code level=… correlationId=… logger=… msg=…} — is logfmt.
+     *
+     * <p>So an unquoted value gave an attacker two primitives. {@code pathname} is logged FIRST and
+     * {@code pathOnly} does not touch spaces, so {@code /x buildId=trusted userAgent=Googlebot}
+     * forged every later field of this marker. And because the whole line is logfmt, injected
+     * content lands inside {@code msg=} — whose value terminates at the first space for Loki's
+     * {@code logfmt}, Vector's {@code key_value}, or Fluent Bit — letting an attacker emit a forged
+     * {@code correlationId=} (poisoning triage against a real incident id) or make content appear to
+     * originate from {@code logger=com.influora.web.AuthController}.
+     *
+     * <p>Latent rather than live today, because nothing currently parses these logs — but a
+     * crash-report sink is exactly the thing someone eventually points a shipper at, and the fix is
+     * one wrapper.
+     */
+    private static String quote(String value) {
+        if (value == null) {
+            return "-";
+        }
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 }

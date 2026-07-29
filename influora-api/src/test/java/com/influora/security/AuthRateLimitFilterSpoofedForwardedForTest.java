@@ -55,6 +55,7 @@ class AuthRateLimitFilterSpoofedForwardedForTest {
 
     private static final String PATH = "/auth/brand/login"; // the `sensitive` bucket
     private static final int SENSITIVE_LIMIT = 3;
+    private static final int CLIENT_ERROR_LIMIT = 2;
 
     private AuthRateLimitFilter filter;
 
@@ -67,7 +68,7 @@ class AuthRateLimitFilterSpoofedForwardedForTest {
         setField("refreshLimit", 30);
         setField("metaOAuthLimit", 20);
         setField("trackingLimit", 30);
-        setField("clientErrorLimit", 30);
+        setField("clientErrorLimit", CLIENT_ERROR_LIMIT);
         setField("windowSeconds", 60L);
     }
 
@@ -102,6 +103,41 @@ class AuthRateLimitFilterSpoofedForwardedForTest {
         assertEquals(429, attempt("203.0.113.9", "198.51.100.7"));
         // Nor does dropping the header entirely.
         assertEquals(429, attempt("203.0.113.9", null));
+    }
+
+    @Test
+    @DisplayName(
+            "[SEC: Kabir CR-11 red-team, L-7] a matrix parameter cannot dodge the bucket entirely")
+    void matrixParameterCannotEvadeTheBucket() throws Exception {
+        // Spring Boot 3's PathPatternParser treats matrix variables as segment metadata, so
+        // `POST /auth/brand/login;x=1` still ROUTES to the handler — but this filter matched the raw
+        // URI, so the path failed every equals() and NO bucket was assigned at all. Unthrottled.
+        //
+        // Ranked LOW by the red-team only because Blocker-1 was handing out unlimited requests
+        // anyway. Blocker-1 is fixed, so this became the next bypass — severity is relative to what
+        // else is broken, and nothing re-ranks a finding when its dependency closes.
+        // NOTE the endpoint: `/client-errors`, a LITERAL-path bucket matched with `.equals()`.
+        // An earlier draft of this test used `/auth/brand/login` and passed with the guard removed —
+        // vacuously, because the `/auth/` family matches with `startsWith` and was never vulnerable
+        // to this. Only the `.equals()` buckets (`/client-errors`, `/wallet/withdraw`,
+        // `/webhooks/*`, `/meera/voice/*`) can be dodged this way, so the test has to use one.
+        for (int i = 1; i <= CLIENT_ERROR_LIMIT; i++) {
+            assertEquals(200, postTo("/client-errors", "203.0.113.20"));
+        }
+        assertEquals(429, postTo("/client-errors", "203.0.113.20"));
+
+        // Same client, same endpoint, one matrix param appended. Pre-fix `.equals()` failed, NO
+        // bucket was assigned at all, and this returned 200 forever.
+        assertEquals(429, postTo("/client-errors;x=1", "203.0.113.20"));
+    }
+
+    /** One POST to an arbitrary path from `peer`, no XFF. Returns the status. */
+    private int postTo(String path, String peer) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+        request.setRemoteAddr(peer);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, new MockFilterChain());
+        return response.getStatus();
     }
 
     @Test

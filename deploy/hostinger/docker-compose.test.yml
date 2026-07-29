@@ -28,10 +28,19 @@ configs:
         }
       }
 
+# [SEC: Kabir CR-11 red-team, M-4] See docker-compose.hostinger.yml for why. Same single-disk box,
+# same unbounded json-file default, same internet-reachable log-writing endpoint.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "80:80"
     configs:
@@ -45,6 +54,7 @@ services:
   mysql:
     image: mysql:8.0
     restart: unless-stopped
+    logging: *default-logging
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: influora
@@ -62,11 +72,13 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *default-logging
     command: ["redis-server", "--save", "", "--appendonly", "no"]
 
   influora-api:
     image: ghcr.io/influoradigital-bit/influora-api:latest
     restart: unless-stopped
+    logging: *default-logging
     environment:
       APP_ENV: dev
       SPRING_PROFILES_ACTIVE: dev
@@ -129,6 +141,7 @@ services:
   influora-ai:
     image: ghcr.io/influoradigital-bit/influora-ai:latest
     restart: unless-stopped
+    logging: *default-logging
     environment:
       APP_ENV: dev
       LOG_LEVEL: INFO
@@ -162,6 +175,7 @@ services:
   frontend:
     image: ghcr.io/influoradigital-bit/influora-web:latest
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   mysql_test_data:

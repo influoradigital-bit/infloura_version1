@@ -82,6 +82,25 @@ server:
   # client-prepended entry can never win. `framework` is the one with no allow-list at all.
   forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:native}
   tomcat:
+    # [SEC: Kabir CR-11 red-team, H-2] Bound the request-BODY read. `connection-timeout` (20s
+    # default) covers reading request HEADERS only, and `disable-upload-timeout` defaults to TRUE,
+    # which means no read timeout is applied during the body read at all. Nothing here previously
+    # set any `server.tomcat.*` property, so both defaults stood.
+    #
+    # Consequence: a request that trickles its body holds one Tomcat thread out of a pool of 200 for
+    # as long as it likes. 200 slow connections stop the entire API — login, deals, webhooks, all of
+    # it. Caddy does not help: it streams the body upstream with no client read timeout, and its
+    # `read_timeout` applies to reading the upstream RESPONSE, not the client's upload.
+    #
+    # `POST /client-errors` is where this became cheap to reach — unauthenticated, no HMAC (unlike
+    # /webhooks/*), no credentials (unlike /auth/*) — but the exposure belongs to every POST that
+    # reads a body, which is why the fix is global rather than per-endpoint.
+    #
+    # 15s is generous for every legitimate request this API serves EXCEPT deliverable upload, which
+    # is why the value is overridable: a large upload over a slow mobile link is the one real case
+    # that needs longer, and it should be raised deliberately rather than discovered in production.
+    disable-upload-timeout: false
+    connection-upload-timeout: ${TOMCAT_UPLOAD_TIMEOUT_MS:15000}
     remoteip:
       # Tomcat's default already covers RFC1918 + loopback, which is every Docker bridge range this
       # stack uses, so the out-of-the-box value is correct here and needs no per-deploy tuning.

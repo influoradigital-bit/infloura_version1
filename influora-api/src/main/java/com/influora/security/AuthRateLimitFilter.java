@@ -271,7 +271,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 
     /** Returns the rate-limit bucket for the request path, or null if the path is not throttled. */
     private String bucketFor(HttpServletRequest request) {
-        String path = decode(stripContext(request.getRequestURI()));
+        String path = stripMatrixParams(decode(stripContext(request.getRequestURI())));
         boolean isGet = "GET".equalsIgnoreCase(request.getMethod());
 
         if (isGet) {
@@ -463,6 +463,44 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         } catch (IllegalArgumentException e) {
             return path;
         }
+    }
+
+    /**
+     * Strips matrix parameters — everything from the first {@code ;} of each segment.
+     *
+     * <p>[SEC: Kabir CR-11 endpoint red-team, L-7] Spring Boot 3's {@code PathPatternParser} treats
+     * matrix variables as segment metadata, so {@code POST /api/v1/client-errors;x=1} still routes
+     * to the controller. But this filter matched the RAW URI, so {@code /client-errors;x=1} failed
+     * every {@code .equals()} below, **no bucket was assigned at all**, and the request went
+     * through unthrottled.
+     *
+     * <p>This affects every literal-path bucket here — {@code /wallet/withdraw}, {@code /webhooks/*},
+     * {@code /meera/voice/*} — not just the endpoint it was found on. ({@code /auth/} uses
+     * {@code startsWith} and was never affected.)
+     *
+     * <p>It is the same class of gap as the earlier percent-encoding bypass (Kabir NEW-1), which
+     * added {@link #decode} but not this. Worth noting why it was ranked LOW at the time and is
+     * being fixed now anyway: it was redundant while Blocker-1 handed out unlimited requests
+     * outright. Blocker-1 is fixed, so this became the next bypass — a finding's severity is
+     * relative to what else is broken, and nothing re-ranks it automatically when its dependency
+     * closes.
+     */
+    private static String stripMatrixParams(String path) {
+        if (path.indexOf(';') < 0) {
+            return path;
+        }
+        StringBuilder cleaned = new StringBuilder(path.length());
+        for (String segment : path.split("/", -1)) {
+            if (cleaned.length() > 0 || path.startsWith("/")) {
+                cleaned.append('/');
+            }
+            int semi = segment.indexOf(';');
+            cleaned.append(semi < 0 ? segment : segment.substring(0, semi));
+        }
+        // split("/", -1) on a leading-slash path yields an empty first element, so the loop above
+        // has already emitted the leading '/' — drop the duplicate it also prepends for it.
+        String result = cleaned.toString();
+        return result.startsWith("//") ? result.substring(1) : result;
     }
 
     /**
