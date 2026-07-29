@@ -539,6 +539,17 @@ public class EscrowService {
             throw new ApiException(
                     "MILESTONE_NOT_FUNDED", "Milestone has no funded escrow hold", HttpStatus.CONFLICT);
         }
+        // [CR-47] Verify TENANT OWNERSHIP before reading any collaboration state. The CANCELLED /
+        // DISPUTED guards below distinguish a deal's status via distinct error codes; running them
+        // ahead of the ownership check turned this method into a cross-tenant status oracle — a brand
+        // admin of workspace A could probe workspace B's deal state by passing a foreign milestoneId.
+        // Loading the hold (under its write lock) and rejecting a foreign workspace with the same
+        // ESCROW_NOT_FOUND it would get for a non-existent hold must gate everything below.
+        EscrowHold hold = requireHoldForUpdate(milestone.getEscrowHoldId());
+        if (!hold.getWorkspaceId().equals(workspaceId)) {
+            throw new ApiException("ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND);
+        }
+
         Collaboration collaboration =
                 collaborationRepository
                         .findById(milestone.getCollaborationId())
@@ -555,10 +566,6 @@ public class EscrowService {
         assertReleaseNotBlockedByCancellation(collaboration);
         assertEscrowNotBlockedByDispute(collaboration);
 
-        EscrowHold hold = requireHoldForUpdate(milestone.getEscrowHoldId());
-        if (!hold.getWorkspaceId().equals(workspaceId)) {
-            throw new ApiException("ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND);
-        }
         if (hold.getStatus() == EscrowStatus.RELEASED) {
             return toStatusResponse(hold); // idempotent no-op
         }
