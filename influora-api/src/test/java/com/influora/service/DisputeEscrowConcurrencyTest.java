@@ -141,6 +141,9 @@ class DisputeEscrowConcurrencyTest {
         when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
         when(disputeRepository.existsByCollaborationIdAndStatusIn(any(), any())).thenReturn(true);
+        // [CR-47] ownership/hold-load now precedes the DISPUTED guard in releaseInternal, so an owned
+        // FUNDED hold must be stubbed for the guard (not an ESCROW_NOT_FOUND ownership miss) to fire.
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(fundedHold()));
 
         ApiException ex =
                 assertThrows(
@@ -148,7 +151,6 @@ class DisputeEscrowConcurrencyTest {
                         () -> escrowService.release(principal, WORKSPACE_ID, MILESTONE_ID));
 
         assertEquals("ESCROW_BLOCKED_BY_DISPUTE", ex.getCode());
-        verify(escrowHoldRepository, never()).findByIdForUpdate(any());
         verify(ledgerService, never()).post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
@@ -165,6 +167,9 @@ class DisputeEscrowConcurrencyTest {
 
         when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        // [CR-47] ownership/hold-load precedes the DISPUTED guard — stub an owned FUNDED hold so the
+        // guard is what fires, not an ESCROW_NOT_FOUND ownership miss.
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(fundedHold()));
 
         ApiException ex =
                 assertThrows(
