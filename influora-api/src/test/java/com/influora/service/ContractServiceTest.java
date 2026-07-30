@@ -683,8 +683,8 @@ class ContractServiceTest {
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.empty());
         when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
                 .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(
-                        COLLABORATION_ID, EscrowStatus.FUNDED))
+        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(
+                        eq(COLLABORATION_ID), any()))
                 .thenReturn(false);
         mockIdempotencyExecuteOnce();
 
@@ -818,8 +818,8 @@ class ContractServiceTest {
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
                 .thenReturn(List.of());
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(
-                        COLLABORATION_ID, EscrowStatus.FUNDED))
+        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(
+                        eq(COLLABORATION_ID), any()))
                 .thenReturn(false);
         when(collaborationRepository.findById(COLLABORATION_ID))
                 .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
@@ -838,7 +838,51 @@ class ContractServiceTest {
         assertEquals(ContractStatus.ACTIVE, response.status());
         verify(contractRepository, times(1)).save(contract);
         verify(escrowHoldRepository)
-                .existsByCollaborationIdAndStatus(COLLABORATION_ID, EscrowStatus.FUNDED);
+                .existsForCollaborationIncludingMilestoneLink(eq(COLLABORATION_ID), any());
+    }
+
+    /**
+     * [CR-49 regression] Before this fix, {@code promptEscrowFundingIfNeeded} used
+     * {@code existsByCollaborationIdAndStatus}, which matches ONLY the direct {@code
+     * collaboration_id} column -- NULL on every hold the ordinary brand escrow flow creates (see
+     * {@code EscrowHoldRepository}'s javadoc, CR-35/CR-39). A hold reachable only via its
+     * milestone link (collaborationId column null) would have been invisible to that query, so an
+     * already-FUNDED deal would still fire a spurious "please fund escrow" notification. Simulating
+     * exactly that shape -- {@code existsByCollaborationIdAndStatus} stubbed true is deliberately
+     * NOT done, because the fixed code must never call it at all.
+     */
+    @Test
+    @DisplayName(
+            "[CR-49] recordSignatureForCreator: milestone-linked FUNDED hold (collaboration_id column"
+                    + " null) correctly suppresses the escrow funding prompt")
+    void testCreatorSignSuppressesPromptForMilestoneLinkedFundedHold() {
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+        Contract contract = unsignedContract();
+        contract.recordBrandSignature();
+        when(contractRepository.findByIdAndCreatorId(CONTRACT_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(contract));
+        when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
+        // The milestone-aware query reports FUNDED (reached only via its milestone link); the
+        // direct-column query is never stubbed, so if the fix regresses to calling it Mockito's
+        // default (false/"not funded") would make this test fail with a spurious save/notification.
+        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(
+                        eq(COLLABORATION_ID), any()))
+                .thenReturn(true);
+        mockIdempotencyExecuteOnce();
+
+        ContractResponse response = service.recordSignatureForCreator(principal, CONTRACT_ID);
+
+        assertNotNull(response.creatorSignedAt());
+        // The notification (owner lookup) path is never reached -- escrow is already funded.
+        // (generateAndDeliverContractPdf ALSO calls collaborationRepository.findById for an
+        // unrelated reason, so that call alone isn't a reliable signal for this test.)
+        verify(workspaceMemberRepository, never())
+                .findFirstByWorkspaceIdAndRoleAndActiveTrue(any(), any());
+        verify(escrowHoldRepository, never())
+                .existsByCollaborationIdAndStatus(anyString(), any());
     }
 
     @Test
@@ -963,8 +1007,8 @@ class ContractServiceTest {
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
                 .thenReturn(List.of());
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(
-                        COLLABORATION_ID, EscrowStatus.FUNDED))
+        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(
+                        eq(COLLABORATION_ID), any()))
                 .thenReturn(false);
         when(collaborationRepository.findById(COLLABORATION_ID))
                 .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));

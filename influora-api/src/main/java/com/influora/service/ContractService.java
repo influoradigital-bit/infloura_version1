@@ -49,6 +49,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -674,8 +675,13 @@ public class ContractService {
      */
     private void promptEscrowFundingIfNeeded(Contract contract) {
         try {
-            if (escrowHoldRepository.existsByCollaborationIdAndStatus(
-                    contract.getCollaborationId(), EscrowStatus.FUNDED)) {
+            // [CR-49] Use the milestone-aware existence check, not the direct collaboration_id-column
+            // one -- the latter is NULL on every hold the ordinary brand escrow flow creates (only
+            // ConfirmLaunchExecutor ever calls bindCollaboration; see EscrowHoldRepository's javadoc
+            // and CR-39/CR-35), so it would answer "not funded" for exactly the holds that matter and
+            // fire a spurious "please fund escrow" notification on an already-funded deal.
+            if (escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(
+                    contract.getCollaborationId(), Set.of(EscrowStatus.FUNDED))) {
                 return;
             }
             Collaboration collaboration =

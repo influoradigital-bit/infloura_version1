@@ -53,6 +53,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -1088,9 +1089,13 @@ public class DealService {
                         collaboration.getId());
         Contract latest = contracts.isEmpty() ? null : contracts.get(0);
 
+        // [CR-49] Milestone-aware existence check, not the direct collaboration_id-column one -- see
+        // ContractService#promptEscrowFundingIfNeeded and EscrowHoldRepository's javadoc (CR-35/CR-39):
+        // the direct column is NULL on every ordinary brand-funded hold, so the derived query would
+        // silently report this read-only "escrow funded" flag as false on a genuinely funded deal.
         boolean escrowFunded =
-                escrowHoldRepository.existsByCollaborationIdAndStatus(
-                        collaboration.getId(), EscrowStatus.FUNDED);
+                escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(
+                        collaboration.getId(), Set.of(EscrowStatus.FUNDED));
 
         return new DealResponse(
                 collaboration.getId(),

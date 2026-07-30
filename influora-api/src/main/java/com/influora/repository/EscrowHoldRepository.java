@@ -83,8 +83,28 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
 
     List<EscrowHold> findByMilestoneId(String milestoneId);
 
+    /**
+     * [SEC: CR-49, Kabir's CR-35 red-team MEDIUM-3] Matches ONLY the direct {@code
+     * collaboration_id} column -- see {@link #existsForCollaborationIncludingMilestoneLink}'s
+     * javadoc for why that column is NULL on every hold the ordinary brand escrow flow creates.
+     * As of CR-49 this repository has NO remaining production callers ({@code
+     * ContractService#promptEscrowFundingIfNeeded} and {@code DealService}'s deal-response escrow
+     * flag were the last two direct-column callers and both were repointed at {@link
+     * #existsForCollaborationIncludingMilestoneLink}). Left in place rather than deleted in the
+     * same pass -- deleting it is a separate, deliberate follow-up, not a side effect of this one
+     * (see CR-49's tracker entry). Do not add a new caller; use {@link
+     * #existsForCollaborationIncludingMilestoneLink} instead.
+     */
     boolean existsByCollaborationIdAndStatus(String collaborationId, EscrowStatus status);
 
+    /**
+     * [SEC: CR-49] Same direct-{@code collaboration_id}-column limitation as {@link
+     * #existsByCollaborationIdAndStatus} above. Has had NO production callers since before CR-49 --
+     * {@code DeliverableCleanupJobTest#escrowGuardUsesMilestoneAwareLookup} asserts this method is
+     * never invoked by that job as a regression tripwire (CR-35's actual production bug was exactly
+     * this method silently reporting "no escrow" for a funded collaboration). Left in place, not
+     * deleted, so that tripwire keeps testing something real; do not add a new caller.
+     */
     boolean existsByCollaborationIdAndStatusIn(
             String collaborationId, Collection<EscrowStatus> statuses);
 
