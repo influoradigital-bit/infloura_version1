@@ -183,13 +183,15 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
         await new Promise((r) => setTimeout(r, 300));
         setNotifications(MOCK_NOTIFICATIONS);
       } else {
-        // NotificationController.list() returns the raw NotificationListResponse shape
-        // ({notifications, unreadCount, page, size}) — not the {success,data,error} envelope
-        // most other controllers use, so this reads the body directly rather than `.data`.
+        // BR-34: NotificationController.list() is now wrapped in the standard
+        // {success, data, error} ApiResponse envelope (feature-audit-brand-creator-2026-07-23.md
+        // P2 fix) like every other controller — the NotificationListResponse shape
+        // ({notifications, unreadCount, page, size}) lives under `.data`, not the body root.
         const res = await fetch(`${API_BASE_URL}/notifications`, { headers: authHeader() });
         if (!res.ok) throw new Error('Failed to fetch notifications');
-        const data = (await res.json()) as NotificationListWire;
-        setNotifications((data.notifications ?? []).map(fromWire));
+        const envelope = (await res.json()) as { success: boolean; data?: NotificationListWire };
+        if (!envelope.success || !envelope.data) throw new Error('Failed to fetch notifications');
+        setNotifications((envelope.data.notifications ?? []).map(fromWire));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notifications');

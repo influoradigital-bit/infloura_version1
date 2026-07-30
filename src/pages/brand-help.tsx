@@ -25,27 +25,27 @@ const SECTIONS = [
   {
     icon: Megaphone,
     title: 'Campaigns',
-    body: 'TODO: final copy from Nisha. Placeholder — Create a campaign brief (goals, budget, platforms), publish it, and creators apply or you invite them directly.',
+    body: `Create a campaign brief with your goals, budget, and platform. Choose Open (creators apply publicly), Direct (invite specific creators), or Hype (72-hour blitz with many creators on one reel). Once you publish, creators apply or you can reach out directly from Discover.`,
   },
   {
     icon: MessagesSquare,
     title: 'Deal Rooms',
-    body: 'TODO: final copy from Nisha. Placeholder — Every collaboration gets its own Deal Room: chat with the creator, negotiate terms, and track progress in one place.',
+    body: `Every collaboration gets its own Deal Room. Chat with the creator, send and counter proposals (budget, deliverables, timeline), and track every milestone in one place. All your deal rooms appear on your dashboard — filter by stage to see what needs attention.`,
   },
   {
     icon: FileSignature,
     title: 'Contracts',
-    body: 'TODO: final copy from Nisha. Placeholder — Once terms are agreed, a contract is generated inside the Deal Room for both sides to sign before work begins.',
+    body: `Once you and the creator agree on terms, a contract is generated right inside the Deal Room. Both sides e-sign before work starts. The contract locks in deliverables, payment schedule, and usage rights, and triggers escrow funding automatically.`,
   },
   {
     icon: Wallet,
     title: 'Payments & Escrow',
-    body: 'TODO: final copy from Nisha. Placeholder — Funds are held in escrow when a deal is signed and only released to the creator after you approve their deliverables.',
+    body: `When a deal is signed, the agreed amount is held in escrow and released to the creator only after you approve their deliverables. You can top up your wallet, view transaction history, and track escrow holds — all in one dashboard. Payment processing is powered by Razorpay.`,
   },
   {
     icon: Sparkles,
     title: 'Meera',
-    body: 'TODO: final copy from Nisha. Placeholder — Meera is your AI cofounder. Ask her to help draft campaigns, explain how something works, or walk you through your account.',
+    body: `Meera is your AI cofounder. She can help you draft campaign briefs, explain how features work, answer product questions, or walk you through your account. Just open the chat and ask — she's available anytime from the sidebar.`,
   },
 ];
 

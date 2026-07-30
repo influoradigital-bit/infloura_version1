@@ -6,6 +6,7 @@ import com.influora.domain.entity.PlatformStat;
 import com.influora.web.dto.creator.CreatorDtos;
 import com.influora.web.dto.creator.CreatorDtos.CreatorResponse;
 import com.influora.web.dto.creator.CreatorDtos.PlatformStatResponse;
+import com.influora.web.dto.creator.DiscoveryDtos;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Collections;
@@ -20,7 +21,8 @@ public final class CreatorMapper {
     public static CreatorResponse toResponse(
             CreatorProfile profile,
             List<PlatformStat> platforms,
-            Boolean saved) {
+            Boolean saved,
+            DiscoveryDtos.CreatorScores scores) {
         BigDecimal avgRate = averageRate(profile.getRateMin(), profile.getRateMax());
         List<PlatformStatResponse> platformDtos =
                 platforms.stream().map(CreatorMapper::toPlatform).toList();
@@ -43,7 +45,8 @@ public final class CreatorMapper {
                 profile.getCurrency(),
                 profile.isVerified(),
                 Collections.emptyList(),
-                saved);
+                saved,
+                scores);
     }
 
     public static Map<String, List<PlatformStat>> groupPlatforms(List<PlatformStat> all) {

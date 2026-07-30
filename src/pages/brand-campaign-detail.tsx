@@ -530,6 +530,37 @@ export default function BrandCampaignDetailPage() {
   const [mutatingId, setMutatingId] = React.useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
 
+  // BR-37 — GET /campaigns/:id/export?format=csv|pdf (ReportExportController). Pro-gated
+  // (@RequiresPlan EXPORT); a non-Pro workspace gets a 402, surfaced below as an upgrade
+  // prompt rather than a silent failure.
+  const [exportingFormat, setExportingFormat] = React.useState<'csv' | 'pdf' | null>(null);
+  const handleExportReport = async (format: 'csv' | 'pdf') => {
+    if (!id) return;
+    setExportingFormat(format);
+    try {
+      const blob = await api.reports.exportCampaign(id, format);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `campaign-${id}-report.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export campaign report', err);
+      const message =
+        err instanceof ApiError && err.status === 402
+          ? 'Report export is a Pro feature. Upgrade your plan to export campaign reports.'
+          : err instanceof ApiError
+            ? err.message
+            : 'Could not export the report. Try again.';
+      toast({ title: 'Export failed', description: message, variant: 'destructive' });
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
   React.useEffect(() => {
     if (!liveApi || !id) return;
     let cancelled = false;
@@ -893,10 +924,32 @@ export default function BrandCampaignDetailPage() {
                     Edit
                   </Button>
                 )}
-                <Button variant="outline" size="sm" className="gap-1.5" disabled title="Report export isn't available yet">
-                  <Download className="h-4 w-4" />
-                  <span className="hidden sm:inline">Export</span>
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1.5" disabled={exportingFormat !== null}>
+                      {exportingFormat ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      <span className="hidden sm:inline">Export</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      disabled={exportingFormat !== null}
+                      onClick={() => void handleExportReport('csv')}
+                    >
+                      <Download className="mr-2 h-4 w-4" />Export as CSV
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={exportingFormat !== null}
+                      onClick={() => void handleExportReport('pdf')}
+                    >
+                      <Download className="mr-2 h-4 w-4" />Export as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="icon">
@@ -906,9 +959,6 @@ export default function BrandCampaignDetailPage() {
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem disabled={mutatingId === id} onClick={handleDuplicateCampaign}>
                       <Copy className="mr-2 h-4 w-4" />Duplicate Campaign
-                    </DropdownMenuItem>
-                    <DropdownMenuItem disabled title="Report export isn't available yet">
-                      <Download className="mr-2 h-4 w-4" />Export Full Report
                     </DropdownMenuItem>
                     {!isCompleted && (
                       <>

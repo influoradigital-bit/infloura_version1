@@ -555,6 +555,19 @@ export interface AuditLog {
 // CREATOR PROFILE (for discovery)
 // ============================================
 
+/**
+ * BR-18 — denormalized read of `creator_scores` (append-only, one row per creator per run).
+ * Mirrors the backend's canonical `DiscoveryDtos.CreatorScores(quality, authenticity,
+ * brandSafety)` projection exactly — do not add loose score fields elsewhere. Per Priya's
+ * Score Exposure rule, an absent score is `null`, never `0` — render it as "not yet scored".
+ * `brandSafety` is `null` for every creator until BR-42 ships.
+ */
+export interface CreatorScoresSummary {
+  quality: number | null;
+  authenticity: number | null;
+  brandSafety: number | null;
+}
+
 export interface CreatorProfile {
   id: string;
   userId: string;
@@ -575,6 +588,8 @@ export interface CreatorProfile {
   portfolioItems: PortfolioItem[];
   languages?: string[];
   contentStyles?: string[];
+  /** Nullable nested scores object (BR-18) — absent/not-yet-computed scores are `null`, not `0`. */
+  scores?: CreatorScoresSummary | null;
 }
 
 export interface PlatformStats {

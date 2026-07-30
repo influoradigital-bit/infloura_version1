@@ -223,7 +223,11 @@ class AnalyticsServiceTest {
         CreatorScoresResponse result = analyticsService.getCreatorScores(principal, CREATOR_ID);
 
         assertNotNull(result);
-        assertEquals(new BigDecimal("92.50"), result.authenticityScore());
+        // BR-18 fix (Priya ruling, 2026-07-30): authenticityScore = 100 - fakeFollowerScore, not
+        // the raw suspicion score. fakeFollowerScore is stubbed 92.50 above, so authenticity is
+        // 7.50 (see CreatorScoreMath#toAuthenticity). This assertion previously expected 92.50
+        // straight through, asserting the pre-fix inverted-semantics bug.
+        assertEquals(new BigDecimal("7.50"), result.authenticityScore());
         assertEquals(new BigDecimal("81.00"), result.qualityScore());
         // BrandSafetyScoreService not built yet — must be null, never a fake/synthetic value.
         assertEquals(null, result.brandSafetyScore());

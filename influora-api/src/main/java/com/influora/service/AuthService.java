@@ -441,6 +441,42 @@ public class AuthService {
         refreshTokenRepository.revokeAllForUser(user.getId());
     }
 
+    /**
+     * BR-05 — POST /me/password, the only in-session (already-authenticated) password-change
+     * path; distinct from {@link #resetPassword} which is the logged-out forgot-password flow off
+     * a mailed token. Re-authenticates on {@code currentPassword} against the stored BCrypt hash
+     * before accepting the new one — same {@code passwordEncoder.matches} check {@link
+     * #brandLogin}/{@link #creatorLogin} use — and rejects with 401 rather than 400 so a stolen
+     * session cookie/access token alone still can't rotate the password without knowing it.
+     *
+     * <p>On success, revokes every other outstanding refresh token (mirrors {@link
+     * #resetPassword}): a password change is exactly the moment a leaked/stale session should stop
+     * working, and burning the other side's refresh token forces re-auth with the new credential.
+     */
+    @Transactional
+    public void changePassword(String userId, String currentPassword, String newPassword) {
+        User user =
+                userRepository
+                        .findById(userId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "USER_NOT_FOUND", "User not found", HttpStatus.NOT_FOUND));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new ApiException(
+                    "INVALID_CURRENT_PASSWORD",
+                    "Current password is incorrect",
+                    HttpStatus.UNAUTHORIZED);
+        }
+
+        PasswordPolicy.validate(newPassword);
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        refreshTokenRepository.revokeAllForUser(user.getId());
+    }
+
     private void createPasswordResetToken(User user) {
         String raw = jwtService.createRefreshTokenValue();
         String hash = JwtService.hashToken(raw);

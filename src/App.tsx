@@ -7,6 +7,7 @@ import { DemoModeBanner } from '@/components/DemoModeBanner';
 import BrandLoginPage from '@/pages/brand-login';
 import BrandRegisterPage from '@/pages/brand-register';
 import BrandForgotPasswordPage from '@/pages/brand-forgot-password';
+import BrandResetPasswordPage from '@/pages/brand-reset-password';
 import BrandDashboardPage from '@/pages/brand-dashboard';
 import BrandMeeraPage from '@/pages/brand-meera';
 import BrandOnboardingPage from '@/pages/brand-onboarding';
@@ -149,6 +150,11 @@ export default function App() {
         <Route path="/brand/login" element={<BrandLoginPage />} />
         <Route path="/brand/register" element={<BrandRegisterPage />} />
         <Route path="/brand/forgot-password" element={<BrandForgotPasswordPage />} />
+        {/* BR-03: bare path, unprefixed — matches the link AuthService actually emails
+            (webBaseUrl + "/reset-password?token=..."), not /brand/reset-password. Role-agnostic
+            page (see brand-reset-password.tsx) since the same email link is sent for both
+            brand and creator forgot-password requests. */}
+        <Route path="/reset-password" element={<BrandResetPasswordPage />} />
 
         {/* Onboarding Routes */}
         <Route path="/brand/onboarding" element={<BrandOnboardingPage />} />

@@ -15,11 +15,12 @@ import jakarta.servlet.http.HttpServletResponse;
  * missing attribute (non-brand caller, or a workspace {@link PlanGateFilter} could not resolve)
  * fails closed here rather than silently letting a gated feature through.
  *
- * <p>No {@code @RequiresPlan}-annotated endpoint exists yet as of Task 22 (Phase 3b) — export and
- * campaign-template write endpoints are not built in this codebase (grepped {@code web/} —
- * confirmed absent). This class + the annotation are the ready mechanism for whichever future
- * endpoint adds it; every current route is an immediate no-op here (see {@code preHandle}: no
- * annotation short-circuits on the very first check).
+ * <p>As of BR-14, {@code POST /campaign-templates} ({@code
+ * CampaignTemplateController#saveAsTemplate}) carries {@code @RequiresPlan(CAMPAIGN_TEMPLATES)}
+ * and is gated live by this interceptor — see {@code CampaignTemplateControllerTest} for the real
+ * 402 case exercised against that endpoint. {@code EXPORT} still has no annotated endpoint; for
+ * that feature this class remains the ready mechanism, and an unannotated route is a no-op here
+ * (see {@code preHandle}: no annotation short-circuits on the very first check).
  */
 public class PlanGateInterceptor implements HandlerInterceptor {
 

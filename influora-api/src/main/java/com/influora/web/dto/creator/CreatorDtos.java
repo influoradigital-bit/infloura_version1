@@ -37,7 +37,14 @@ public final class CreatorDtos {
             String currency,
             boolean isVerified,
             List<PortfolioItemResponse> portfolioItems,
-            Boolean saved) {}
+            Boolean saved,
+            // BR-18 — nullable nested projection of the canonical creator_scores read model
+            // (DiscoveryDtos.CreatorScores, same shape CreatorPublicProfileResponse uses). Null
+            // stays null end-to-end: brandSafety is null for every creator until BR-42 ships, and
+            // quality/authenticity are null for any creator never polled/scored yet. Never coerce
+            // to BigDecimal.ZERO here (see CreatorDiscoveryService#buildScores /
+            // AdminCreatorService#latestQualityScore for the wrong way to do this).
+            DiscoveryDtos.CreatorScores scores) {}
 
     public record PortfolioItemResponse(
             String id,

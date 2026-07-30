@@ -92,6 +92,11 @@ public class CampaignTemplateService {
                         .scope(CampaignTemplateScope.CUSTOM)
                         .workspaceId(workspace.getId())
                         .createdBy(principal.getUserId())
+                        // Bug fix (BR-14): campaignType was never copied from the source campaign,
+                        // so every CUSTOM template saved with campaignType == null and silently
+                        // degraded to STANDARD on apply (CreateCampaignExecutor picks a default
+                        // when the template's campaignType is null).
+                        .campaignType(source.getCampaignType())
                         .budgetMin(source.getBudgetMin())
                         .budgetMax(source.getBudgetMax())
                         .platformsJson(source.getPlatformsJson())

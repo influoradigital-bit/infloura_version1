@@ -30,6 +30,7 @@ import type {
   CreatorScores,
   DeliverableStatus,
   Platform,
+  TargetAudience,
   VerificationStatus,
 } from './types';
 import {
@@ -795,6 +796,32 @@ export const auth = {
     return { sent: true };
   },
 
+  /**
+   * POST /auth/reset-password — BR-03. Consumes the `token` from the emailed reset link
+   * (`webBaseUrl + "/reset-password?token=" + raw` — AuthService.forgotPassword) plus the
+   * user's chosen `newPassword`. Field names match `ResetPasswordRequest`
+   * (web/dto/auth/ResetPasswordRequest.java) exactly: `token`, `newPassword`. Unauthenticated
+   * route — the token itself is the credential, so no `role`/Bearer header is sent, same as
+   * `forgotPassword` above.
+   */
+  resetPassword: async (payload: { token: string; newPassword: string }) => {
+    if (!isLive()) return mockOr({ reset: true });
+    await http.request<{ message: string }>('POST', '/auth/reset-password', { body: payload });
+    return { reset: true };
+  },
+
+  /**
+   * POST /me/password — BR-05. In-session password change (current + new, re-auth on current).
+   * Distinct from `resetPassword` (unauthenticated, token-from-email flow) — this one requires
+   * the caller's current password and an active session. Landing in parallel on the backend
+   * (Vikram); a 404 here means it hasn't shipped yet, not that the client is wrong.
+   */
+  changePassword: async (payload: { currentPassword: string; newPassword: string }) => {
+    if (!isLive()) return mockOr({ changed: true });
+    await http.request<{ message: string }>('POST', '/me/password', { body: payload });
+    return { changed: true };
+  },
+
   /** POST /auth/logout */
   logout: (role: Role) => {
     http.clearToken(role);
@@ -851,6 +878,16 @@ export interface WorkspaceMemberRow {
   active: boolean;
 }
 
+/** POST /workspace/members/invite response — WorkspaceMemberDtos.InviteResponse. */
+export interface WorkspaceInviteResponse {
+  id: string;
+  workspaceId: string;
+  email: string;
+  role: string;
+  status: string;
+  expiresAt: string;
+}
+
 export const workspaceMembers = {
   /**
    * GET /workspace/members (WorkspaceMemberController.java:74) — the only endpoint that exposes
@@ -864,6 +901,25 @@ export const workspaceMembers = {
       : mockOr<WorkspaceMemberRow[]>([
           { id: 'm_1', workspaceId: 'ws_1', userId: 'u_1', role: 'OWNER', active: true },
         ]),
+
+  /**
+   * POST /workspace/members/invite (WorkspaceMemberController.java:51) — server derives
+   * `workspaceId` from the authenticated principal, never from the client. `role` must be one of
+   * ADMIN, MANAGER, MEMBER, VIEWER (OWNER is not assignable via invite).
+   */
+  invite: (email: string, role: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER') =>
+    isLive()
+      ? http.request<WorkspaceInviteResponse>('POST', '/workspace/members/invite', {
+          body: { email, role },
+        })
+      : mockOr<WorkspaceInviteResponse>({
+          id: 'inv_mock',
+          workspaceId: 'ws_1',
+          email,
+          role,
+          status: 'PENDING',
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
 };
 
 export const workspaces = {
@@ -1304,6 +1360,49 @@ export const creators = {
           body: { campaignId, message },
         })
       : mockOr({ collaborationId: 'col_new' }),
+};
+
+// ---------------------------------------------------------------------------
+// Campaign templates (BR-14 Phase 1) — CampaignTemplateController @ /campaign-templates.
+// Read is free to every plan tier (4 SYSTEM presets are seeded); only POST (save-as-template,
+// not built in this pass) carries @RequiresPlan. No FE plan gate needed for list/get.
+// ---------------------------------------------------------------------------
+
+/** GET /campaign-templates[/:id] — CampaignTemplateDtos.CampaignTemplateResponse (@JsonInclude NON_NULL). */
+export interface CampaignTemplateResponse {
+  id: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  scope: 'SYSTEM' | 'CUSTOM' | string;
+  workspaceId?: string | null;
+  createdBy?: string | null;
+  campaignType?: string | null;
+  budgetMin?: number | null;
+  budgetMax?: number | null;
+  platforms?: string[];
+  contentTypes?: string[];
+  objectives?: string[];
+  requirements?: string[];
+  hashtags?: string[];
+  targetAudience?: TargetAudience | null;
+  brandGuidelines?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export const campaignTemplates = {
+  /** GET /campaign-templates — the 4 SYSTEM presets plus any CUSTOM templates for the workspace. */
+  list: () =>
+    isLive()
+      ? http.request<CampaignTemplateResponse[]>('GET', '/campaign-templates')
+      : mockOr<CampaignTemplateResponse[]>([]),
+
+  /** GET /campaign-templates/:id */
+  get: (templateId: string) =>
+    isLive()
+      ? http.request<CampaignTemplateResponse>('GET', `/campaign-templates/${templateId}`)
+      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Templates are not available in mock mode')),
 };
 
 // ---------------------------------------------------------------------------
@@ -2797,6 +2896,24 @@ export const billing = {
 };
 
 // ---------------------------------------------------------------------------
+// BR-37 report export — ReportExportController @ /campaigns/:id/export.
+// Pro-gated (@RequiresPlan EXPORT) — a non-Pro workspace gets a 402, which the caller
+// surfaces as an upgrade prompt rather than letting the download silently fail.
+// ---------------------------------------------------------------------------
+
+export type ReportExportFormat = 'csv' | 'pdf';
+
+export const reports = {
+  /** GET /campaigns/:campaignId/export?format=csv|pdf — raw file bytes, not the JSON envelope. */
+  exportCampaign: (campaignId: string, format: ReportExportFormat) =>
+    isLive()
+      ? http.downloadBlob(
+          `/campaigns/${encodeURIComponent(campaignId)}/export?format=${format}`,
+        )
+      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Report export is not available in mock mode')),
+};
+
+// ---------------------------------------------------------------------------
 // D14 marketplace invoicing — Doc#2 (campaign_service_invoices, Creator -> Brand)
 // and Doc#3 (platform_commission_invoices, split BRAND/CREATOR legs).
 // Backed by CreatorInvoicingController (/creator/*) and BrandInvoicingController
@@ -4244,6 +4361,7 @@ export const api = {
   workspaceMembers,
   onboarding,
   campaigns,
+  campaignTemplates,
   creators,
   deals,
   messages,
@@ -4258,6 +4376,7 @@ export const api = {
   dashboard,
   notifications,
   billing,
+  reports,
   uploads,
   portfolio,
   analytics,
