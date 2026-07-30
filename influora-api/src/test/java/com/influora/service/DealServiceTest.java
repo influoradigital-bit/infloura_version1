@@ -194,6 +194,51 @@ class DealServiceTest {
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
     }
 
+    /**
+     * CR-37 followup (Kavya QA of `7991342`) — the fourth door. That commit gated {@code accept},
+     * {@code counter} and {@code reject} on OWNER/ADMIN/MANAGER but left {@code createProposal}
+     * resolving scope with a bare {@code requireBrandWorkspace}, so a VIEWER could still open a
+     * priced deal. The inconsistency was the tell: a VIEWER could not counter to an amount but
+     * could propose at one.
+     *
+     * <p>Deliberately stubs nothing but the workspace and the throwing role gate. {@code
+     * stubProposalCampaign()} is NOT reused — its {@code campaignRepository.findById} stub would go
+     * unused now that the gate fires first, and Mockito's strict stubs would fail this with
+     * UnnecessaryStubbingException (the same way those two visibility tests once broke Backend CI).
+     *
+     * <p>The two {@code never()} verifies at the end are the placement tripwire, not decoration:
+     * they fail if the gate is ever moved BELOW the campaign or creator lookup, which would let a
+     * VIEWER probe which campaignIds and creatorIds exist by reading 404 against 403.
+     */
+    @Test
+    @DisplayName("CR-37 followup: a VIEWER cannot open a deal via createProposal — 403, nothing saved")
+    void testBrandCreateProposalRequiresManagerRole() {
+        Workspace workspace =
+                Workspace.newBrand(WORKSPACE_ID, "Test Brand", "test-brand", "Beauty", "10-50");
+        when(brandContext.requireBrandWorkspace(brandPrincipal)).thenReturn(workspace);
+        doThrow(
+                        new ApiException(
+                                "FORBIDDEN_ROLE",
+                                "This action requires an OWNER, ADMIN or MANAGER role",
+                                HttpStatus.FORBIDDEN))
+                .when(brandContext)
+                .requireRole(
+                        any(),
+                        eq(MemberRole.OWNER),
+                        eq(MemberRole.ADMIN),
+                        eq(MemberRole.MANAGER));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.createProposal(brandPrincipal, proposalRequest()));
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+        verify(campaignRepository, never()).findById(anyString());
+        verify(creatorProfileRepository, never()).findByIdAndDiscoverableTrue(anyString());
+    }
+
     @Test
     @DisplayName("createProposal: creator who turned discoverability off is not offerable — 404")
     void testCreateProposalRejectsNonDiscoverableCreator() {
