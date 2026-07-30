@@ -10,6 +10,7 @@ import com.influora.service.AuthService;
 import com.influora.web.dto.user.UserDtos.ChangePasswordRequest;
 import com.influora.web.dto.user.UserDtos.ChangePasswordResponse;
 import com.influora.web.dto.user.UserDtos.DeleteAccountResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -93,12 +94,22 @@ public class AccountController {
      * /users/me} does not accept a password). Re-authenticates on {@code currentPassword} before
      * accepting {@code newPassword} — see {@link AuthService#changePassword} for the 401/400
      * split.
+     *
+     * <p><b>[SEC: Priya audit, e60d249 follow-up]</b> Reads the caller's own raw refresh token off
+     * the same HttpOnly cookie {@code AuthController} reads for {@code /auth/refresh}, purely so
+     * {@code AuthService#changePassword} can identify and spare the caller's own session while
+     * revoking every other one — see that method's javadoc. Never logged, never put in the
+     * response; if the cookie is absent (e.g. a non-browser client) {@code null} flows straight
+     * into the service's existing fallback path.
      */
     @PostMapping("/password")
     public ResponseEntity<ApiResponse<ChangePasswordResponse>> changePassword(
             @AuthenticationPrincipal AuthPrincipal principal,
-            @Valid @RequestBody ChangePasswordRequest body) {
-        authService.changePassword(principal.getUserId(), body.currentPassword(), body.newPassword());
+            @Valid @RequestBody ChangePasswordRequest body,
+            HttpServletRequest request) {
+        String currentRefreshToken = authCookieService.readRefreshToken(request);
+        authService.changePassword(
+                principal.getUserId(), body.currentPassword(), body.newPassword(), currentRefreshToken);
         return ResponseEntity.ok(ApiResponse.ok(new ChangePasswordResponse(true)));
     }
 }

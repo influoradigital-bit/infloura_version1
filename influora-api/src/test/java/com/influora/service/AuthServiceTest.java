@@ -14,6 +14,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
@@ -621,5 +622,78 @@ class AuthServiceTest {
 
         assertEquals("If this email exists, a reset link has been sent.", msg);
         verify(passwordResetTokenRepository, never()).save(any());
+    }
+
+    // ── changePassword (Priya audit, e60d249 follow-up: revoke-except-current) ─
+
+    @Test
+    @DisplayName(
+            "changePassword: valid current refresh token -- revokes every OTHER session"
+                    + " (revokeAllForUserExcept with the resolved keepId), never the blanket"
+                    + " revokeAllForUser, so the caller who just changed their password stays"
+                    + " signed in")
+    void testChangePasswordKeepsCallersOwnSession() {
+        User user = creatorUser(true);
+        String rawRefreshToken = "callers-own-refresh-raw";
+        String tokenHash = JwtService.hashToken(rawRefreshToken);
+        RefreshToken callersToken =
+                RefreshToken.create(
+                        "01HKEEPTOKEN123456789ABCD", user.getId(), tokenHash, Instant.now().plusSeconds(3600));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("OldSecret1", "hashed-pw")).thenReturn(true);
+        when(passwordEncoder.encode("NewSecret9")).thenReturn("new-hash");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(refreshTokenRepository.findByTokenHashAndRevokedFalse(tokenHash))
+                .thenReturn(Optional.of(callersToken));
+
+        authService.changePassword(user.getId(), "OldSecret1", "NewSecret9", rawRefreshToken);
+
+        assertEquals("new-hash", user.getPasswordHash());
+        verify(refreshTokenRepository)
+                .revokeAllForUserExcept(user.getId(), "01HKEEPTOKEN123456789ABCD");
+        verify(refreshTokenRepository, never()).revokeAllForUser(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "changePassword: no/blank current refresh token -- falls back to revoking every session"
+                    + " (revokeAllForUser), since there is nothing to spare")
+    void testChangePasswordFallsBackToRevokeAllWithNoRefreshToken() {
+        User user = creatorUser(true);
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("OldSecret1", "hashed-pw")).thenReturn(true);
+        when(passwordEncoder.encode("NewSecret9")).thenReturn("new-hash");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        authService.changePassword(user.getId(), "OldSecret1", "NewSecret9", null);
+
+        assertEquals("new-hash", user.getPasswordHash());
+        verify(refreshTokenRepository).revokeAllForUser(user.getId());
+        verify(refreshTokenRepository, never()).revokeAllForUserExcept(anyString(), anyString());
+
+        // Also covers the blank (empty-string) case -- same fallback, no lookup attempted.
+        verify(refreshTokenRepository, never()).findByTokenHashAndRevokedFalse(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "changePassword: wrong currentPassword -- INVALID_CURRENT_PASSWORD 401, nothing"
+                    + " persisted and no session revoked")
+    void testChangePasswordWrongCurrentPasswordDoesNotRevokeAnything() {
+        User user = creatorUser(true);
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("WrongPassword1", "hashed-pw")).thenReturn(false);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                authService.changePassword(
+                                        user.getId(), "WrongPassword1", "NewSecret9", "some-refresh-raw"));
+
+        assertEquals("INVALID_CURRENT_PASSWORD", ex.getCode());
+        assertEquals(401, ex.getStatus().value());
+        verify(userRepository, never()).save(any(User.class));
+        verifyNoInteractions(refreshTokenRepository);
     }
 }
