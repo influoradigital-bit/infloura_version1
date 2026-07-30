@@ -528,9 +528,25 @@ public class EscrowService {
     }
 
     private EscrowStatusResponse releaseInternal(String workspaceId, String milestoneId) {
+        // [CR-48] Resolve the milestone SCOPED TO THE CALLER'S WORKSPACE first, via the same
+        // milestone -> collaboration -> campaign -> workspace join deriveFundAmount already uses to
+        // close its own cross-tenant IDOR (see PaymentMilestoneRepository#findByIdAndWorkspaceId).
+        // CR-47 moved the *hold's* tenant check above the CANCELLED/DISPUTED guards, but left this
+        // milestone lookup and the funded-state check below it BOTH unscoped and sequenced ahead of
+        // any tenant gate at all — workspace A could still pass workspace B's milestoneId and learn,
+        // via three distinct outcomes (404 MILESTONE_NOT_FOUND / 409 MILESTONE_NOT_FUNDED / 404
+        // ESCROW_NOT_FOUND), whether B's milestone exists and whether it's escrow-funded. Scoping
+        // this lookup up front collapses "doesn't exist" and "exists in another workspace" into the
+        // exact same MILESTONE_NOT_FOUND, matching deriveFundAmount's precedent, BEFORE the
+        // MILESTONE_NOT_FUNDED branch can ever be reached for a foreign id.
+        //
+        // MILESTONE_NOT_FUNDED itself is NOT collapsed — isExpectedReleaseSkip whitelists it so
+        // tryReleaseOnApproval can gracefully skip release on an approval that predates funding. That
+        // is safe to keep as-is here precisely BECAUSE the lookup above already proved the milestone
+        // is in-tenant before this branch can fire; it is no longer reachable for a foreign workspace.
         PaymentMilestone milestone =
                 milestoneRepository
-                        .findById(milestoneId)
+                        .findByIdAndWorkspaceId(milestoneId, workspaceId)
                         .orElseThrow(
                                 () ->
                                         new ApiException(
@@ -539,12 +555,11 @@ public class EscrowService {
             throw new ApiException(
                     "MILESTONE_NOT_FUNDED", "Milestone has no funded escrow hold", HttpStatus.CONFLICT);
         }
-        // [CR-47] Verify TENANT OWNERSHIP before reading any collaboration state. The CANCELLED /
-        // DISPUTED guards below distinguish a deal's status via distinct error codes; running them
-        // ahead of the ownership check turned this method into a cross-tenant status oracle — a brand
-        // admin of workspace A could probe workspace B's deal state by passing a foreign milestoneId.
-        // Loading the hold (under its write lock) and rejecting a foreign workspace with the same
-        // ESCROW_NOT_FOUND it would get for a non-existent hold must gate everything below.
+        // [CR-47] Hold-level tenant check retained as defense-in-depth. By this point the milestone
+        // lookup above has already proven workspaceId ownership via the campaign join, so this should
+        // never fire for a genuine cross-tenant caller anymore; if it ever does, that indicates a data
+        // inconsistency (hold.workspaceId diverged from its milestone's campaign workspace) rather
+        // than a live cross-tenant probe, and ESCROW_NOT_FOUND is still the right uniform response.
         EscrowHold hold = requireHoldForUpdate(milestone.getEscrowHoldId());
         if (!hold.getWorkspaceId().equals(workspaceId)) {
             throw new ApiException("ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND);

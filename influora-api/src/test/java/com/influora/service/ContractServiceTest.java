@@ -683,8 +683,8 @@ class ContractServiceTest {
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.empty());
         when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
                 .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(
-                        COLLABORATION_ID, EscrowStatus.FUNDED))
+        when(escrowHoldRepository.hasEscrowForCollaboration(
+                        eq(COLLABORATION_ID), any()))
                 .thenReturn(false);
         mockIdempotencyExecuteOnce();
 
@@ -818,8 +818,8 @@ class ContractServiceTest {
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
                 .thenReturn(List.of());
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(
-                        COLLABORATION_ID, EscrowStatus.FUNDED))
+        when(escrowHoldRepository.hasEscrowForCollaboration(
+                        eq(COLLABORATION_ID), any()))
                 .thenReturn(false);
         when(collaborationRepository.findById(COLLABORATION_ID))
                 .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
@@ -838,7 +838,46 @@ class ContractServiceTest {
         assertEquals(ContractStatus.ACTIVE, response.status());
         verify(contractRepository, times(1)).save(contract);
         verify(escrowHoldRepository)
-                .existsByCollaborationIdAndStatus(COLLABORATION_ID, EscrowStatus.FUNDED);
+                .hasEscrowForCollaboration(eq(COLLABORATION_ID), any());
+    }
+
+    /**
+     * [CR-49 regression, method renamed by CR-50] Before CR-49, {@code promptEscrowFundingIfNeeded}
+     * used the direct-{@code collaboration_id}-column derived query -- NULL on every hold the
+     * ordinary brand escrow flow creates (see {@code EscrowHoldRepository}'s javadoc, CR-35/CR-39).
+     * A hold reachable only via its milestone link (collaborationId column null) would have been
+     * invisible to that query, so an already-FUNDED deal would still fire a spurious "please fund
+     * escrow" notification. CR-50 deleted that derived method entirely, so the old regression is now
+     * structurally impossible to reintroduce at this call site -- there is nothing else to call.
+     */
+    @Test
+    @DisplayName(
+            "[CR-49] recordSignatureForCreator: milestone-linked FUNDED hold (collaboration_id column"
+                    + " null) correctly suppresses the escrow funding prompt")
+    void testCreatorSignSuppressesPromptForMilestoneLinkedFundedHold() {
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+        Contract contract = unsignedContract();
+        contract.recordBrandSignature();
+        when(contractRepository.findByIdAndCreatorId(CONTRACT_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(contract));
+        when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
+        // The milestone-aware query reports FUNDED (reached only via its milestone link).
+        when(escrowHoldRepository.hasEscrowForCollaboration(
+                        eq(COLLABORATION_ID), any()))
+                .thenReturn(true);
+        mockIdempotencyExecuteOnce();
+
+        ContractResponse response = service.recordSignatureForCreator(principal, CONTRACT_ID);
+
+        assertNotNull(response.creatorSignedAt());
+        // The notification (owner lookup) path is never reached -- escrow is already funded.
+        // (generateAndDeliverContractPdf ALSO calls collaborationRepository.findById for an
+        // unrelated reason, so that call alone isn't a reliable signal for this test.)
+        verify(workspaceMemberRepository, never())
+                .findFirstByWorkspaceIdAndRoleAndActiveTrue(any(), any());
     }
 
     @Test
@@ -963,8 +1002,8 @@ class ContractServiceTest {
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
                 .thenReturn(List.of());
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(
-                        COLLABORATION_ID, EscrowStatus.FUNDED))
+        when(escrowHoldRepository.hasEscrowForCollaboration(
+                        eq(COLLABORATION_ID), any()))
                 .thenReturn(false);
         when(collaborationRepository.findById(COLLABORATION_ID))
                 .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));

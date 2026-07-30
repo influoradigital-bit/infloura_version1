@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test Report — influora-test live E2E (build a144f2f)</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    margin: 0; background: #f4f5f7; color: #1a1a2e; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 24px; }
+  header { background: #fff; border-radius: 14px; padding: 24px; display: flex;
+    gap: 24px; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .ring { width: 110px; height: 110px; border-radius: 50%; flex: none;
+    display: grid; place-items: center; color: #fff; font-size: 26px; font-weight: 700;
+    background: #27ae60; }
+  h1 { margin: 0 0 6px; font-size: 22px; }
+  .meta { color: #555; font-size: 14px; line-height: 1.6; }
+  .verdict { display: inline-block; margin-top: 8px; padding: 6px 14px; border-radius: 20px;
+    color: #fff; font-weight: 700; background: #e67e22; }
+  .tiles { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin: 20px 0; }
+  .tile { background: #fff; border-radius: 12px; padding: 16px; text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .tnum { font-size: 30px; font-weight: 700; }
+  .tlabel { color: #666; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; }
+  details { background: #fff; border-radius: 12px; margin-bottom: 12px; padding: 6px 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  summary { font-weight: 600; font-size: 16px; padding: 10px 0; cursor: pointer; }
+  .finding { background: #fafafa; border-radius: 8px; padding: 12px 14px; margin: 10px 0; }
+  .badge { color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px;
+    border-radius: 10px; margin-right: 8px; text-transform: uppercase; }
+  .ftitle { font-weight: 600; }
+  .fmeta { font-size: 14px; color: #333; margin-top: 6px; }
+  .clean { background: #fff; border-radius: 12px; padding: 24px; text-align: center;
+    font-size: 18px; color: #27ae60; font-weight: 600; }
+  footer { text-align: center; color: #999; font-size: 12px; margin: 24px 0; }
+</style></head>
+<body><div class="wrap">
+  <header>
+    <div class="ring">88%</div>
+    <div>
+      <h1>🧪 Test Report — influora-test live E2E (build a144f2f)</h1>
+      <div class="meta"><b>Target:</b> http://200.141.1.6 (Hostinger VPS 1844961, project influora-test, build a144f2f deployed 2026-07-30 ~07:15 UTC)<br>
+        <b>Date:</b> 2026-07-30 &nbsp;·&nbsp; <b>Stages:</b> E2E</div>
+      <div class="verdict">PASS WITH REQUIRED FIXES ⚠️</div>
+    </div>
+  </header>
+  <div class="tiles"><div class="tile" style="border-top:4px solid #c0392b"><div class="tnum">0</div><div class="tlabel">Critical</div></div><div class="tile" style="border-top:4px solid #e67e22"><div class="tnum">1</div><div class="tlabel">High</div></div><div class="tile" style="border-top:4px solid #f1c40f"><div class="tnum">0</div><div class="tlabel">Medium</div></div><div class="tile" style="border-top:4px solid #3498db"><div class="tnum">2</div><div class="tlabel">Low</div></div></div>
+  <details open><summary>Neha — E2E (3 findings)</summary><div class="finding" style="border-left:5px solid #e67e22"><span class="badge" style="background:#e67e22">High</span><span class="ftitle">RUN BLOCKED: no test credentials for EITHER role — 0 of 42 IN VERIFY tickets could be verified</span><div class="fmeta"><b>Where:</b> http://200.141.1.6/creator/login and /brand/login</div><div class="fmeta"><b>Issue:</b> The authenticated surface was never reached. The handoff flagged missing BRAND credentials (CR-07); CREATOR credentials are absent too — nothing in CREATOR-BUG-TRACKER.md records a working creator test account. Every one of the 42 IN VERIFY tickets lives behind one of these two logins (deal room, messages, deliverables, settings, portfolio editing, escrow). I confirmed login itself functions (a bad-credential attempt returned a correct &#x27;Invalid email or password&#x27;), so the blocker is purely the absence of an account, not a broken flow. Per §2 only a live re-test moves a ticket to DONE, so the board correctly remains 0 DONE. This is the same blocker recorded against CR-07 on 2026-07-27 and 2026-07-28 — it is now three passes old and is the single thing preventing this box from producing any DONE ticket.</div><div class="fmeta"><b>Fix:</b> Swapnil/Meera to provision and record two test accounts — one brand (with OWNER and, for CR-37, a second VIEWER member) and one creator — seeded against the influora-test database. Until they exist, no amount of deploying moves the board.</div></div><div class="finding" style="border-left:5px solid #3498db"><span class="badge" style="background:#3498db">Low</span><span class="ftitle">All four auth routes serve the generic fallback &lt;title&gt; instead of a page-specific one</span><div class="fmeta"><b>Where:</b> /creator/login, /brand/login, /creator/register, /brand/register</div><div class="fmeta"><b>Issue:</b> All four render with document.title = &#x27;Influora — Escrow-Protected Influencer Marketing for India&#x27;, the index fallback. Marketing and public routes do set specific titles — /pricing = &#x27;Pricing | Influora&#x27;, /about = &#x27;About Influora&#x27;, /blog = &#x27;Blog — Influencer Marketing Guides...&#x27;, /@tejas_creater = &#x27;Tejas Creater — Fitness &amp; Health Creator | Mumbai | Influora&#x27;. So the mechanism works and the auth routes simply do not use it. Cosmetic, but it affects browser-tab disambiguation and bookmarks, and it is inconsistent with the rest of the app.</div><div class="fmeta"><b>Fix:</b> Set a route title on the four auth pages using the same mechanism the marketing and portfolio routes already use. Owner: Ananya.</div></div><div class="finding" style="border-left:5px solid #3498db"><span class="badge" style="background:#3498db">Low</span><span class="ftitle">Public portfolio &#x27;Platform Stats&#x27; renders a 0 Instagram follower count — data or display, cannot distinguish</span><div class="fmeta"><b>Where:</b> http://200.141.1.6/@tejas_creater — Platform Stats section</div><div class="fmeta"><b>Issue:</b> The public portfolio for the seeded creator shows &#x27;0&#x27; against Instagram under Platform Stats. The page renders cleanly with no console error, and GET /api/v1/portfolio/tejas_creater returns 200, so this is not a crash. I could NOT determine whether the seed row genuinely holds 0 followers or whether a real value is failing to render — that needs someone with database access to check the seeded creator&#x27;s follower fields. Recorded as an observation rather than a confirmed defect. Flagged because a brand-facing portfolio that advertises 0 followers undercuts the page&#x27;s purpose if the underlying value is non-zero.</div><div class="fmeta"><b>Fix:</b> Check the seeded tejas_creater row&#x27;s follower fields against what the portfolio renders. If the data is genuinely 0, seed a realistic value for demo purposes; if non-zero, this is a display bug. Owner: Meera (data check) then Ananya if it proves to be display.</div></div></details>
+  <footer>Generated by the <b>tester</b> skill · Sage Digital</footer>
+</div></body></html>

@@ -307,7 +307,8 @@ class DealServiceTest {
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
         when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any())).thenReturn(false);
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
+                .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
         when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
@@ -333,6 +334,54 @@ class DealServiceTest {
         assertEquals(CollaborationStatus.TERMS_AGREED, response.status());
         verify(collaborationRepository).save(any(Collaboration.class));
         verify(dealMessageRepository).save(any(DealMessage.class));
+    }
+
+    /**
+     * [CR-49 regression, method renamed by CR-50] {@code escrowFunded} used to be computed with the
+     * direct-{@code collaboration_id}-column derived query -- NULL on every hold the ordinary brand
+     * escrow flow creates (see {@code EscrowHoldRepository}'s javadoc, CR-35/CR-39). A
+     * milestone-linked hold (reachable only via its milestone, collaboration_id column null) would
+     * have made this read-only frontend flag silently report "not funded" on a genuinely funded
+     * deal. CR-50 deleted that derived method entirely, so the old regression is now structurally
+     * impossible to reintroduce at this call site -- there is nothing else to call.
+     */
+    @Test
+    @DisplayName(
+            "[CR-49] accept: escrowFunded reports true for a milestone-linked hold (collaboration_id"
+                    + " column null) that the direct-column query would have missed")
+    void testAcceptReportsEscrowFundedForMilestoneLinkedHold() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
+                .thenReturn(true);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(idempotencyService.executeOnce(
+                        eq("deal-accept:" + DEAL_ID),
+                        eq(CREATOR_USER_ID),
+                        eq("deal.accept"),
+                        any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        DealResponse response = service.accept(creatorPrincipal, DEAL_ID, null);
+
+        assertEquals(true, response.escrowFunded());
     }
 
     @Test
@@ -363,7 +412,8 @@ class DealServiceTest {
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any())).thenReturn(false);
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
+                .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
         when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
@@ -400,7 +450,8 @@ class DealServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0));
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
                 .thenReturn(List.of());
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any())).thenReturn(false);
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
+                .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
         when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
@@ -487,7 +538,8 @@ class DealServiceTest {
                 .thenReturn(Optional.of(proposalMessage(CREATOR_USER_ID, DealSenderType.creator)));
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any())).thenReturn(false);
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
+                .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
         when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
@@ -849,7 +901,8 @@ class DealServiceTest {
                 .thenReturn(Optional.of(proposalMessage(CREATOR_USER_ID, DealSenderType.creator)));
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any())).thenReturn(false);
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
+                .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
         when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
@@ -986,7 +1039,7 @@ class DealServiceTest {
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
                 .thenReturn(List.of());
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any()))
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
                 .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
@@ -1080,7 +1133,7 @@ class DealServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0));
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
                 .thenReturn(List.of());
-        when(escrowHoldRepository.existsByCollaborationIdAndStatus(anyString(), any()))
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
                 .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());

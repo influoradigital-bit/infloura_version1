@@ -269,12 +269,12 @@ public class DeliverableCleanupJob {
             return false;
         }
 
-        // [SEC: CR-35 follow-on] Milestone-aware, and that is the entire fix. This used to call
-        // `existsByCollaborationIdAndStatusIn`, which matches ONLY the direct `collaboration_id`
-        // column — NULL on every hold the ordinary brand escrow flow creates, since only
-        // `ConfirmLaunchExecutor` ever bound it. So the guard returned "no unreleased escrow" for
-        // precisely the escrow-backed collaborations it exists to protect, and this job deleted
-        // creator deliverable media out from under funded, frozen and in-flight holds.
+        // [SEC: CR-35 follow-on, renamed CR-50] Milestone-aware, and that is the entire fix. This
+        // used to call `existsByCollaborationIdAndStatusIn`, which matches ONLY the direct
+        // `collaboration_id` column — NULL on every hold the ordinary brand escrow flow creates,
+        // since only `ConfirmLaunchExecutor` ever bound it. So the guard returned "no unreleased
+        // escrow" for precisely the escrow-backed collaborations it exists to protect, and this job
+        // deleted creator deliverable media out from under funded, frozen and in-flight holds.
         //
         // It was not theoretical: `influora.cleanup.dry-run` defaults to true, but
         // `application-prod.yml` sets it to FALSE and `docker-compose.hostinger.yml` runs
@@ -283,8 +283,12 @@ public class DeliverableCleanupJob {
         // The CR-35 backfill populates the column and CR-35's Fix 2 binds it at creation, but
         // neither is sufficient on its own: campaign-level funding has no milestone to bind from
         // and stays NULL permanently by design. The guard has to be correct without the column,
-        // which is what the milestone-linkage union gives it.
-        return !escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(
+        // which is what the milestone-linkage union gives it. CR-50 deleted the unsafe direct-column
+        // methods (`existsByCollaborationIdAndStatus[In]`) from EscrowHoldRepository entirely and
+        // renamed this one to `hasEscrowForCollaboration` — it is now the ONLY collaboration-scoped
+        // escrow-existence query on the repository, so a future caller cannot regress to the wrong
+        // one by name; see that method's javadoc for the full history.
+        return !escrowHoldRepository.hasEscrowForCollaboration(
                 collaborationId, UNRELEASED_ESCROW_STATUSES);
     }
 

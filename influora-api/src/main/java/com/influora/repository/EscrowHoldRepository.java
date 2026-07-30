@@ -83,20 +83,22 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
 
     List<EscrowHold> findByMilestoneId(String milestoneId);
 
-    boolean existsByCollaborationIdAndStatus(String collaborationId, EscrowStatus status);
-
-    boolean existsByCollaborationIdAndStatusIn(
-            String collaborationId, Collection<EscrowStatus> statuses);
-
     /**
      * Does this collaboration have ANY hold in the given statuses, reached by EITHER linkage?
      *
-     * <p>[SEC: CR-35 follow-on] {@link #existsByCollaborationIdAndStatusIn} above matches only the
-     * direct {@code collaboration_id} column — which is NULL on every hold created by the ordinary
-     * brand escrow flow, because only {@code ConfirmLaunchExecutor} ever called
-     * {@code bindCollaboration}. Any caller using it as a safety guard therefore silently concluded
-     * "no escrow" for exactly the holds that matter. {@code DeliverableCleanupJob.canDelete} was
-     * such a caller, and it deletes creator media.
+     * <p>[SEC: CR-35 follow-on, consolidated CR-50] Before CR-50 this repository exposed THREE
+     * overlapping exists-methods answering the same question: two derived queries
+     * ({@code existsByCollaborationIdAndStatus} / {@code existsByCollaborationIdAndStatusIn})
+     * matching ONLY the direct {@code collaboration_id} column — which is NULL on every hold
+     * created by the ordinary brand escrow flow, because only {@code ConfirmLaunchExecutor} ever
+     * called {@code bindCollaboration} — and this one. Any caller using a direct-column method as a
+     * safety guard therefore silently concluded "no escrow" for exactly the holds that matter.
+     * {@code DeliverableCleanupJob.canDelete} was such a caller (CR-35), and it deletes creator
+     * media; {@code ContractService#promptEscrowFundingIfNeeded} and {@code DealService}'s
+     * deal-response escrow flag were two more (CR-49). CR-50 deleted both derived methods outright
+     * — there is now exactly ONE collaboration-scoped escrow-existence query in this repository, so
+     * a future caller cannot pick the wrong one by name; the drift class itself is gone, not just
+     * documented.
      *
      * <p>This query adds the milestone linkage as a second path, the same union
      * {@code EscrowService.resolveHoldsForCollaboration} performs in Java, so the answer no longer
@@ -105,8 +107,14 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
      * even when it still is** — including campaign-level funding, which has no milestone to bind
      * from and is therefore permanently null by design.
      *
-     * <p>Prefer this over the derived query for anything that gates a destructive or money-moving
-     * action. The derived one is fine for callers that genuinely mean "is the column set".
+     * <p><b>Known limitation carried forward, not introduced by CR-50:</b> this repository has no
+     * {@code @DataJpaTest}/real-database test harness (see the same disclaimer on
+     * {@code CreatorMetricsRepositoryTest}, {@code MeeraInteractionLogRepositoryQueryTest} et al.),
+     * so the milestone-linkage JPQL above is exercised by production traffic and by
+     * {@code DeliverableCleanupJobTest}'s Mockito-stubbed behavioral tests, never by an execution of
+     * the actual query against a real schema. A regression to this method's OWN query body (as
+     * opposed to a caller picking a different, wrong method — now structurally impossible, see
+     * above) would not be caught by any test in this module today.
      */
     @Query(
             "SELECT CASE WHEN COUNT(e) > 0 THEN TRUE ELSE FALSE END FROM EscrowHold e "
@@ -116,7 +124,7 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
                     + "       SELECT m.id FROM PaymentMilestone m WHERE m.collaborationId = :collaborationId"
                     + "  )"
                     + ")")
-    boolean existsForCollaborationIncludingMilestoneLink(
+    boolean hasEscrowForCollaboration(
             @Param("collaborationId") String collaborationId,
             @Param("statuses") Collection<EscrowStatus> statuses);
 
