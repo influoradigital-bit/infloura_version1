@@ -171,7 +171,16 @@ public class DealService {
 
     @Transactional
     public DealResponse createProposal(AuthPrincipal principal, CreateDealRequest body) {
-        Workspace workspace = brandContext.requireBrandWorkspace(principal);
+        // [CR-37 followup, Kavya QA of 7991342] Gated on the same management tier as
+        // accept/counter/reject. That commit closed those three and left this one open, which made
+        // the model self-contradictory: a VIEWER could not COUNTER a deal to an amount but could
+        // PROPOSE one at that amount, and both set a negotiation price. There is no web-layer gate
+        // to fall back on — DealController carries no @PreAuthorize/@Secured/@RolesAllowed, so this
+        // service is the sole authz point.
+        //
+        // Placed before the campaign and creator lookups on purpose: a VIEWER must not be able to
+        // probe which campaignIds or creatorIds exist by reading 404 vs 403 off this endpoint.
+        Workspace workspace = requireBrandDealManagerWorkspace(principal);
         Campaign campaign = requireWorkspaceCampaign(workspace.getId(), body.campaignId());
         CreatorProfile creator = requireOfferableProfile(body.creatorId());
         validateProposalAmount(campaign, body.amount());
@@ -858,11 +867,26 @@ public class DealService {
      * would leave {@code accept}/{@code counter} open to the identical bypass.
      */
     private String requireBrandDealManagerScope(AuthPrincipal principal) {
+        return requireBrandDealManagerWorkspace(principal).getId();
+    }
+
+    /**
+     * Same gate as {@link #requireBrandDealManagerScope}, returning the resolved {@link Workspace}
+     * rather than just its id — {@link #createProposal} needs the entity itself (for {@code
+     * ProposalSentEvent}'s workspace name), so without this it would have had to re-resolve the
+     * workspace or skip the gate.
+     *
+     * <p>[CR-37 followup] Deliberately ONE definition of the gate with two return shapes, rather
+     * than a second copy of the role set. The tier is asserted in exactly one place, so narrowing
+     * or widening it cannot drift between the four call sites — which is the failure mode that put
+     * {@code createProposal} outside the original fix in the first place.
+     */
+    private Workspace requireBrandDealManagerWorkspace(AuthPrincipal principal) {
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
         WorkspaceMember member = brandContext.requireMember(principal, workspace.getId());
         brandContext.requireRole(
                 member, MemberRole.OWNER, MemberRole.ADMIN, MemberRole.MANAGER);
-        return workspace.getId();
+        return workspace;
     }
 
     private Campaign requireWorkspaceCampaign(String workspaceId, String campaignId) {
