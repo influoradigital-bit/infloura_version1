@@ -114,7 +114,9 @@ class DisputeEscrowConcurrencyTest {
         EscrowHold hold = fundedHold();
         hold.markFrozen();
 
-        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        // [CR-48] releaseInternal now resolves the milestone via the workspace-scoped lookup.
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestone));
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
         when(disputeRepository.existsByCollaborationIdAndStatusIn(any(), any())).thenReturn(false);
         when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
@@ -138,7 +140,9 @@ class DisputeEscrowConcurrencyTest {
                 Collaboration.invite(
                         COLLABORATION_ID, "01HCAMPAIGN1234567AB", CREATOR_USER_ID, null, "INR");
 
-        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        // [CR-48] releaseInternal now resolves the milestone via the workspace-scoped lookup.
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestone));
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
         when(disputeRepository.existsByCollaborationIdAndStatusIn(any(), any())).thenReturn(true);
         // [CR-47] ownership/hold-load now precedes the DISPUTED guard in releaseInternal, so an owned
@@ -165,7 +169,9 @@ class DisputeEscrowConcurrencyTest {
                         COLLABORATION_ID, "01HCAMPAIGN1234567AB", CREATOR_USER_ID, null, "INR");
         collaboration.transitionTo(CollaborationStatus.DISPUTED);
 
-        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        // [CR-48] releaseInternal now resolves the milestone via the workspace-scoped lookup.
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestone));
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
         // [CR-47] ownership/hold-load precedes the DISPUTED guard — stub an owned FUNDED hold so the
         // guard is what fires, not an ESCROW_NOT_FOUND ownership miss.
@@ -218,7 +224,9 @@ class DisputeEscrowConcurrencyTest {
         Collaboration collaboration =
                 Collaboration.invite(
                         COLLABORATION_ID, "01HCAMPAIGN1234567AB", CREATOR_USER_ID, null, "INR");
-        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        // [CR-48] releaseInternal now resolves the milestone via the workspace-scoped lookup.
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestone));
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
         when(disputeRepository.existsByCollaborationIdAndStatusIn(any(), any())).thenReturn(false);
 

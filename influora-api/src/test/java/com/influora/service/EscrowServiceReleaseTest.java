@@ -137,7 +137,9 @@ class EscrowServiceReleaseTest {
             .idempotencyKey("fund-idem")
             .build();
 
-    when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+    // [CR-48] releaseInternal now resolves the milestone via the workspace-scoped lookup.
+    when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+        .thenReturn(Optional.of(milestone));
     when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
     when(disputeRepository.existsByCollaborationIdAndStatusIn(any(), any())).thenReturn(false);
     when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
@@ -239,7 +241,9 @@ class EscrowServiceReleaseTest {
 
   private void stubCommonReleaseCollaborators(PaymentMilestone milestone, Collaboration collaboration) {
     when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
-    when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+    // [CR-48] releaseInternal now resolves the milestone via the workspace-scoped lookup.
+    when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+        .thenReturn(Optional.of(milestone));
     when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
     when(disputeRepository.existsByCollaborationIdAndStatusIn(any(), any())).thenReturn(false);
   }
@@ -396,7 +400,14 @@ class EscrowServiceReleaseTest {
     PaymentMilestone milestone = fundedMilestoneWithCondition(ReleaseCondition.ON_POSTED);
     Collaboration collaboration =
         Collaboration.invite(COLLABORATION_ID, "01HCAMPAIGN1234567AB", CREATOR_USER_ID, null, "INR");
+    // tryReleaseOnApproval's own pre-check uses the unscoped lookup (internal call, workspaceId
+    // already trusted from the approval flow -- see EscrowService#tryReleaseOnApproval javadoc)...
     when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+    // [CR-48] ...but the releaseInternal call it makes now resolves the milestone via the
+    // workspace-scoped lookup, so that must be stubbed too or this test would short-circuit on
+    // MILESTONE_NOT_FOUND instead of actually reaching (and testing) the release_condition gate.
+    when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+        .thenReturn(Optional.of(milestone));
     when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
     when(disputeRepository.existsByCollaborationIdAndStatusIn(any(), any())).thenReturn(false);
 
@@ -432,6 +443,10 @@ class EscrowServiceReleaseTest {
     Collaboration collaboration =
         Collaboration.invite(COLLABORATION_ID, "01HCAMPAIGN1234567AB", CREATOR_USER_ID, null, "INR");
     when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+    // [CR-48] releaseInternal (called from tryReleaseOnApproval) now resolves the milestone via
+    // the workspace-scoped lookup -- see the sibling test above for why both stubs are needed.
+    when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+        .thenReturn(Optional.of(milestone));
     when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
     when(disputeRepository.existsByCollaborationIdAndStatusIn(any(), any())).thenReturn(false);
 

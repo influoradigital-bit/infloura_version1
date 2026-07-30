@@ -872,7 +872,9 @@ class EscrowServiceTest {
     void releaseRejectsCancelledCollaboration() {
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
         PaymentMilestone milestone = releasableMilestone();
-        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        // [CR-48] releaseInternal now resolves the milestone via the workspace-scoped lookup.
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestone));
         // [CR-47] The hold now loads (and its ownership is verified) BEFORE the CANCELLED guard runs,
         // so a legitimately-owned FUNDED hold must be stubbed for the guard to be the thing that fires
         // (rather than an ownership rejection). The hold belongs to the caller's own WORKSPACE_ID.
@@ -904,7 +906,11 @@ class EscrowServiceTest {
         // Caller is a legitimate OWNER/ADMIN of WORKSPACE_ID (workspace A)...
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
         PaymentMilestone milestone = releasableMilestone();
-        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        // [CR-48] The milestone itself IS in workspace A (this proves the hold-level check below is
+        // still needed as defense-in-depth: a milestone can pass the workspace-scoped lookup and its
+        // hold can still, in principle, disagree).
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestone));
         // ...but the hold behind this milestone belongs to a DIFFERENT workspace (workspace B).
         EscrowHold foreignHold =
                 EscrowHold.builder()
@@ -931,6 +937,43 @@ class EscrowServiceTest {
         // The oracle is closed: workspace B's collaboration was NEVER read, so its CANCELLED/DISPUTED
         // status cannot leak through a distinct error code. Reverting the ownership-first reorder
         // makes this fail — the state guards would run and findById(COLLAB_ID) would be called.
+        verify(collaborationRepository, never()).findById(any());
+        verify(ledgerService, never())
+                .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "[CR-48] release: a foreign-workspace milestoneId is rejected with 404 MILESTONE_NOT_FOUND"
+                    + " -- the SAME code a genuinely-nonexistent id gets -- even when that milestone is"
+                    + " funded in its own (other) workspace, so a caller can no longer distinguish"
+                    + " absent/present-unfunded/present-funded by probing another tenant's milestoneId")
+    void releaseRejectsForeignWorkspaceMilestoneUniformlyRegardlessOfFundingState() {
+        // Caller is a legitimate OWNER/ADMIN of WORKSPACE_ID (workspace A) ...
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        // ...but MILESTONE_ID actually belongs to a DIFFERENT workspace, and IS funded there --
+        // the workspace-scoped lookup (join through collaboration -> campaign -> workspace) must
+        // return empty for workspace A regardless, exactly as it does for a milestoneId that
+        // doesn't exist at all anywhere.
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.empty());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.release(principal, WORKSPACE_ID, MILESTONE_ID));
+
+        // Pre-CR-48 this milestone (funded, real, just in another workspace) would have reached the
+        // unscoped findById + escrowHoldId-null check and, if not properly gated, could have surfaced
+        // a DIFFERENT code (MILESTONE_NOT_FUNDED/ESCROW_NOT_FOUND) than a truly-nonexistent id does.
+        // The workspace-scoped gate collapses both into this single code before that branch runs.
+        assertEquals("MILESTONE_NOT_FOUND", ex.getCode());
+        assertEquals(404, ex.getStatus().value());
+        // The funded-state branch, the hold lookup, and any collaboration-state read must never be
+        // reached for a foreign milestoneId -- reverting to the unscoped findById would make the
+        // service consult the (mocked-empty) unscoped stub instead and this verify would fail because
+        // the call site itself would move.
+        verify(milestoneRepository, never()).findById(MILESTONE_ID);
+        verify(escrowHoldRepository, never()).findByIdForUpdate(any());
         verify(collaborationRepository, never()).findById(any());
         verify(ledgerService, never())
                 .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
@@ -972,7 +1015,8 @@ class EscrowServiceTest {
     void releaseSucceedsOnHealthyCollaboration() {
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
         PaymentMilestone milestone = releasableMilestone();
-        when(milestoneRepository.findById(MILESTONE_ID)).thenReturn(Optional.of(milestone));
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestone));
         Collaboration healthy = Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
         when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(healthy));
         EscrowHold hold = fundedHold();
