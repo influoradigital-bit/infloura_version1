@@ -1089,12 +1089,13 @@ public class DealService {
                         collaboration.getId());
         Contract latest = contracts.isEmpty() ? null : contracts.get(0);
 
-        // [CR-49] Milestone-aware existence check, not the direct collaboration_id-column one -- see
-        // ContractService#promptEscrowFundingIfNeeded and EscrowHoldRepository's javadoc (CR-35/CR-39):
-        // the direct column is NULL on every ordinary brand-funded hold, so the derived query would
-        // silently report this read-only "escrow funded" flag as false on a genuinely funded deal.
+        // [CR-49, renamed CR-50] Milestone-aware existence check, not the direct collaboration_id-
+        // column one -- see ContractService#promptEscrowFundingIfNeeded and EscrowHoldRepository's
+        // javadoc (CR-35/CR-39): the direct column is NULL on every ordinary brand-funded hold, so
+        // the derived query would silently report this read-only "escrow funded" flag as false on a
+        // genuinely funded deal. CR-50 consolidated the repository to this one method.
         boolean escrowFunded =
-                escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(
+                escrowHoldRepository.hasEscrowForCollaboration(
                         collaboration.getId(), Set.of(EscrowStatus.FUNDED));
 
         return new DealResponse(

@@ -675,12 +675,13 @@ public class ContractService {
      */
     private void promptEscrowFundingIfNeeded(Contract contract) {
         try {
-            // [CR-49] Use the milestone-aware existence check, not the direct collaboration_id-column
-            // one -- the latter is NULL on every hold the ordinary brand escrow flow creates (only
-            // ConfirmLaunchExecutor ever calls bindCollaboration; see EscrowHoldRepository's javadoc
-            // and CR-39/CR-35), so it would answer "not funded" for exactly the holds that matter and
-            // fire a spurious "please fund escrow" notification on an already-funded deal.
-            if (escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(
+            // [CR-49, renamed CR-50] Use the milestone-aware existence check, not the direct
+            // collaboration_id-column one -- the latter is NULL on every hold the ordinary brand
+            // escrow flow creates (only ConfirmLaunchExecutor ever calls bindCollaboration; see
+            // EscrowHoldRepository's javadoc and CR-39/CR-35), so it would answer "not funded" for
+            // exactly the holds that matter and fire a spurious "please fund escrow" notification on
+            // an already-funded deal. CR-50 consolidated the repository to this one method.
+            if (escrowHoldRepository.hasEscrowForCollaboration(
                     contract.getCollaborationId(), Set.of(EscrowStatus.FUNDED))) {
                 return;
             }

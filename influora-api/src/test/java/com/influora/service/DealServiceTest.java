@@ -307,7 +307,7 @@ class DealServiceTest {
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
         when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
-        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(anyString(), any()))
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
                 .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
@@ -337,13 +337,13 @@ class DealServiceTest {
     }
 
     /**
-     * [CR-49 regression] {@code escrowFunded} used to be computed with {@code
-     * existsByCollaborationIdAndStatus}, which matches ONLY the direct {@code collaboration_id}
-     * column -- NULL on every hold the ordinary brand escrow flow creates (see
-     * {@code EscrowHoldRepository}'s javadoc, CR-35/CR-39). A milestone-linked hold (reachable only
-     * via its milestone, collaboration_id column null) would have made this read-only frontend flag
-     * silently report "not funded" on a genuinely funded deal. Deliberately does NOT stub the
-     * direct-column method at all -- the fixed code must never call it.
+     * [CR-49 regression, method renamed by CR-50] {@code escrowFunded} used to be computed with the
+     * direct-{@code collaboration_id}-column derived query -- NULL on every hold the ordinary brand
+     * escrow flow creates (see {@code EscrowHoldRepository}'s javadoc, CR-35/CR-39). A
+     * milestone-linked hold (reachable only via its milestone, collaboration_id column null) would
+     * have made this read-only frontend flag silently report "not funded" on a genuinely funded
+     * deal. CR-50 deleted that derived method entirely, so the old regression is now structurally
+     * impossible to reintroduce at this call site -- there is nothing else to call.
      */
     @Test
     @DisplayName(
@@ -357,7 +357,7 @@ class DealServiceTest {
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
         when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
-        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(anyString(), any()))
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
                 .thenReturn(true);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
@@ -382,7 +382,6 @@ class DealServiceTest {
         DealResponse response = service.accept(creatorPrincipal, DEAL_ID, null);
 
         assertEquals(true, response.escrowFunded());
-        verify(escrowHoldRepository, never()).existsByCollaborationIdAndStatus(anyString(), any());
     }
 
     @Test
@@ -413,7 +412,7 @@ class DealServiceTest {
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
-        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(anyString(), any()))
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
                 .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
@@ -451,7 +450,7 @@ class DealServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0));
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
                 .thenReturn(List.of());
-        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(anyString(), any()))
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
                 .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
@@ -539,7 +538,7 @@ class DealServiceTest {
                 .thenReturn(Optional.of(proposalMessage(CREATOR_USER_ID, DealSenderType.creator)));
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
-        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(anyString(), any()))
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
                 .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
@@ -902,7 +901,7 @@ class DealServiceTest {
                 .thenReturn(Optional.of(proposalMessage(CREATOR_USER_ID, DealSenderType.creator)));
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
-        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(anyString(), any()))
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
                 .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
@@ -1040,7 +1039,7 @@ class DealServiceTest {
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
                 .thenReturn(List.of());
-        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(anyString(), any()))
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
                 .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
@@ -1134,7 +1133,7 @@ class DealServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0));
         when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
                 .thenReturn(List.of());
-        when(escrowHoldRepository.existsForCollaborationIncludingMilestoneLink(anyString(), any()))
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
                 .thenReturn(false);
         when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
                 .thenReturn(Optional.empty());
