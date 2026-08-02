@@ -143,49 +143,4 @@ export function CreditMeter({
   );
 }
 
-/**
- * Compact credit badge for tight spaces (e.g., mobile header)
- */
-export function CreditBadge({
-  state,
-  creditsRemaining,
-  className,
-}: {
-  state: CreditState;
-  creditsRemaining: number;
-  className?: string;
-}) {
-  if (state === 'unlimited') {
-    return (
-      <span className={cn('flex items-center gap-1 text-xs text-meera-escrow', className)}>
-        <Infinity className="h-3 w-3" />
-      </span>
-    );
-  }
-
-  if (state === 'exhausted') {
-    return (
-      <span className={cn('flex items-center gap-1 rounded-full bg-meera-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-meera-danger', className)}>
-        0
-      </span>
-    );
-  }
-
-  const isLow = state === 'low';
-
-  return (
-    <span
-      className={cn(
-        'flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums',
-        isLow
-          ? 'bg-meera-warning/10 text-meera-warning'
-          : 'bg-meera-accent-soft text-meera-accent',
-        className
-      )}
-    >
-      {creditsRemaining}
-    </span>
-  );
-}
-
 export default CreditMeter;

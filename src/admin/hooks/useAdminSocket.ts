@@ -89,24 +89,3 @@ export function useAdminSocket<E extends AdminSocketEvent>(
     isConnected: status === AdminSocketStatus.OPEN,
   };
 }
-
-/**
- * Track only the connection status without subscribing to a domain event.
- * Useful for a global "reconnecting…" banner in the admin shell.
- */
-export function useAdminSocketStatus(enabled = true): UseAdminSocketResult {
-  const [status, setStatus] = useState<AdminSocketStatus>(
-    () => getAdminSocket().getStatus(),
-  );
-
-  useEffect(() => {
-    if (!enabled) return;
-    const socket = getAdminSocket();
-    const off = socket.onStatusChange(setStatus);
-    setStatus(socket.getStatus());
-    socket.connect();
-    return off;
-  }, [enabled]);
-
-  return { status, isConnected: status === AdminSocketStatus.OPEN };
-}

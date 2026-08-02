@@ -48,6 +48,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /** Task #26 V1 — escrow release path wires platform fee before creator credit. */
 @ExtendWith(MockitoExtension.class)
@@ -104,6 +105,19 @@ class EscrowServiceReleaseTest {
             eventPublisher,
             collaborationLifecycleService,
             escrowBackend);
+    // [CR-51 step 2] This whole test class exercises the B5 release_condition gate
+    // (assertReleaseConditionSatisfied), which now only applies to milestones created after a
+    // configured cutover (see EscrowService javadoc on that method) — legacy pre-cutover
+    // milestones fail open unconditionally. Every milestone built in this file is a fresh
+    // PaymentMilestone.builder().build() (createdAt = Instant.now()), so a cutover safely in the
+    // past puts all of them on the "post-cutover, gate applies" side, preserving this class's
+    // original intent (these tests exist specifically to prove the gate DOES fire) without a
+    // per-test cutover dance. A real deploy sets this via
+    // influora.escrow.release-gate.cutover-instant; here it's wired directly since these mocks
+    // are constructed with `new EscrowService(...)`, not a Spring context that would resolve the
+    // @Value default.
+    ReflectionTestUtils.setField(service, "releaseGateCutoverInstantRaw", "2020-01-01T00:00:00Z");
+    ReflectionTestUtils.invokeMethod(service, "initReleaseGateCutoverInstant");
   }
 
   @Test
@@ -143,6 +157,13 @@ class EscrowServiceReleaseTest {
     when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
     when(disputeRepository.existsByCollaborationIdAndStatusIn(any(), any())).thenReturn(false);
     when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+    // [CR-51 step 3] This test is about fee/credit accounting, not the release_condition gate —
+    // but the gate now BLOCKS a zero-deliverable post-cutover release (Swapnil: forbid) instead of
+    // failing open, so a satisfying deliverable must be stubbed for release() to reach the
+    // fee-deduction code this test actually asserts on. milestone has no explicit
+    // releaseCondition -> gate defaults to ON_POSTED.
+    when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(COLLABORATION_ID))
+        .thenReturn(List.of(deliverableWithStatus(DeliverableStatus.POSTED)));
 
     Wallet clearingWallet = Wallet.forWorkspace(CLEARING_WALLET_ID, "platform-clearing");
     Wallet payeeWallet = Wallet.forUser(PAYEE_WALLET_ID, CREATOR_USER_ID);
@@ -270,7 +291,7 @@ class EscrowServiceReleaseTest {
     when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
 
     // Deliverable exists but is only APPROVED — ON_POSTED requires POSTED/METRICS_REPORTED/VERIFIED.
-    when(deliverableRepository.findByMilestoneId(MILESTONE_ID))
+    when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(COLLABORATION_ID))
         .thenReturn(List.of(deliverableWithStatus(DeliverableStatus.APPROVED)));
 
     ApiException ex =
@@ -304,7 +325,7 @@ class EscrowServiceReleaseTest {
             .idempotencyKey("fund-idem")
             .build();
     when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
-    when(deliverableRepository.findByMilestoneId(MILESTONE_ID))
+    when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(COLLABORATION_ID))
         .thenReturn(List.of(deliverableWithStatus(DeliverableStatus.POSTED)));
 
     Wallet clearingWallet = Wallet.forWorkspace(CLEARING_WALLET_ID, "platform-clearing");
@@ -354,7 +375,12 @@ class EscrowServiceReleaseTest {
             .idempotencyKey("fund-idem")
             .build();
     when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
-    // No deliverable linked -> release_condition gate is a no-op (fail-open, matches other tests).
+    // [CR-51 step 3] This test is about invoice-failure isolation, not the release_condition gate
+    // — a zero-deliverable post-cutover release is now BLOCKED (Swapnil: forbid) rather than
+    // fail-open, so a satisfying deliverable must be stubbed for release() to reach the code this
+    // test actually asserts on.
+    when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(COLLABORATION_ID))
+        .thenReturn(List.of(deliverableWithStatus(DeliverableStatus.POSTED)));
 
     Wallet clearingWallet = Wallet.forWorkspace(CLEARING_WALLET_ID, "platform-clearing");
     Wallet payeeWallet = Wallet.forUser(PAYEE_WALLET_ID, CREATOR_USER_ID);
@@ -424,7 +450,7 @@ class EscrowServiceReleaseTest {
             .build();
     when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
     // Deliverable is only APPROVED (brand just approved it) — not yet POSTED.
-    when(deliverableRepository.findByMilestoneId(MILESTONE_ID))
+    when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(COLLABORATION_ID))
         .thenReturn(List.of(deliverableWithStatus(DeliverableStatus.APPROVED)));
 
     boolean released = service.tryReleaseOnApproval(WORKSPACE_ID, MILESTONE_ID);
@@ -463,7 +489,7 @@ class EscrowServiceReleaseTest {
             .build();
     when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
     // ON_APPROVAL is satisfied the instant the deliverable reaches APPROVED.
-    when(deliverableRepository.findByMilestoneId(MILESTONE_ID))
+    when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(COLLABORATION_ID))
         .thenReturn(List.of(deliverableWithStatus(DeliverableStatus.APPROVED)));
 
     Wallet clearingWallet = Wallet.forWorkspace(CLEARING_WALLET_ID, "platform-clearing");

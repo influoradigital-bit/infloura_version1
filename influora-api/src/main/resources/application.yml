@@ -136,6 +136,16 @@ influora:
   # thing booting a real context. Defaulted the same way web-base-url is.
   api:
     public-url: ${INFLUORA_API_PUBLIC_URL:http://localhost:8080}
+  escrow:
+    release-gate:
+      # CR-51 step 2 — EscrowService#assertReleaseConditionSatisfied cutover. Blank/unset (the
+      # default) keeps the release-condition gate fully disabled (fail-open for every milestone),
+      # matching pre-CR-51 production behavior. Set to an ISO-8601 instant (e.g.
+      # 2026-07-30T12:00:00Z, normally "when step 1's fix deployed") to start gating milestones
+      # created after that instant; milestones created at/before it keep failing open
+      # unconditionally so deals already in flight are unaffected. Deliberately NOT derived from
+      # "has deliverables" — see the javadoc on assertReleaseConditionSatisfied.
+      cutover-instant: ${INFLUORA_ESCROW_RELEASE_GATE_CUTOVER_INSTANT:}
   auth:
     require-email-verification: true
     require-email-otp-before-register: ${REQUIRE_EMAIL_OTP_BEFORE_REGISTER:false}

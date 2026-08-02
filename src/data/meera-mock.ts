@@ -187,5 +187,3 @@ export const MEERA_CONVERSATION_SCRIPT: MeeraTurn[] = [
   },
 ]
 
-/** Legacy alias kept for anything still importing the old flat-array name. */
-export type MockScriptedMessage = MeeraTurn

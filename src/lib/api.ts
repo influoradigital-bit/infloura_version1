@@ -1964,6 +1964,20 @@ export interface ShipmentReceiptSubmission {
   note?: string;
 }
 
+/**
+ * Body for `POST /deals/:id/shipment` — brand-only, marks the deal SHIPPED.
+ * Field names match `ShipmentDtos.MarkShippedRequest` (influora-api
+ * `web/dto/shipment/ShipmentDtos.java`) exactly: `carrier` (not `courier`),
+ * `trackingNumber`, optional `trackingUrl`, and `productName` (a single
+ * string — the backend has no `items[]` concept).
+ */
+export interface ShipmentMarkShippedSubmission {
+  carrier: string;
+  trackingNumber: string;
+  trackingUrl?: string;
+  productName: string;
+}
+
 export const shipments = {
   /** GET /deals/:id/shipment — dual-role (brand or creator); returns synthetic AWAITING_ADDRESS if no row yet. */
   get: (role: Role, dealId: string) =>
@@ -1994,6 +2008,21 @@ export const shipments = {
           status: body.condition === 'GOOD' ? 'RECEIVED' : 'DAMAGED',
           receivedCondition: body.condition,
           conditionNote: body.note ?? null,
+        }),
+
+  /** POST /deals/:id/shipment — brand only. Transitions ADDRESS_PROVIDED -> SHIPPED (DealController.java:199). */
+  markShipped: (dealId: string, body: ShipmentMarkShippedSubmission) =>
+    isLive()
+      ? http.request<ShipmentApiRecord>('POST', `/deals/${dealId}/shipment`, {
+          role: 'brand',
+          body,
+        })
+      : mockOr<ShipmentApiRecord>({
+          status: 'SHIPPED',
+          carrier: body.carrier,
+          trackingNumber: body.trackingNumber,
+          trackingUrl: body.trackingUrl ?? null,
+          productName: body.productName,
         }),
 };
 

@@ -56,8 +56,3 @@ function loadDocs(): Map<string, LegalDoc> {
 export function getLegalDoc(slug: string): LegalDoc | undefined {
   return loadDocs().get(slug);
 }
-
-/** All legal doc slugs currently on disk — useful for footer links / sitemaps. */
-export function getAllLegalDocSlugs(): string[] {
-  return Array.from(loadDocs().keys());
-}

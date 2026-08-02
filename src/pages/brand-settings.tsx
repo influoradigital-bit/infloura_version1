@@ -25,9 +25,50 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { api, isApiLive, ApiError } from '@/lib/api';
+import { api, isApiLive, ApiError, type NotificationPreference } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { toast } from '@/hooks/use-toast';
+
+/**
+ * Verified against influora-api: NotificationService#isUnsubscribed (service/notification/
+ * NotificationService.java) keys the per-event lookup on `event.eventType()` — the literal string
+ * each NotificationEvent record returns from its own `eventType()` method — NOT the "creator.x" /
+ * "brand.x" strings NotificationListener also passes as `templateKey` for email-template selection.
+ * Those templateKey strings (e.g. "creator.campaign_match", "brand.new_application",
+ * "creator.bid_accepted", "brand.counter_bid", "brand.proposal_accepted",
+ * "creator.proposal_received") are never read by isUnsubscribed, so binding a toggle to one would
+ * be a dead preference row. Further restricted to events where the BRAND is the actual recipient
+ * (NotificationListener's "Creator -> Brand events" block, `emailOf(event.userId())` resolving to
+ * the brand's own user) — "campaign.created" (CampaignCreatedEvent) and "bid.accepted"
+ * (BidAcceptedEvent) are real, emitted eventTypes, but both only ever notify the *creator* side, so
+ * a brand's preference row for them would never be matched by isUnsubscribed either. Grepped and
+ * cross-checked against every *Event.java under service/notification/event/ on 2026-07-30.
+ *
+ * UPDATE (2026-07-30, Vikram recipient-trace): expanded both groups to the complete brand-recipient
+ * eventType sets — traced by which emailOf(...) resolution each event actually hits, not by
+ * comment/file grouping. `message.first` is a real brand-recipient eventType too but is
+ * DELIBERATELY EXCLUDED from Campaign Alerts (Priya ruling) — a first-message email isn't a
+ * "campaign alert", and folding it in would mean disabling Campaign Alerts silently kills message
+ * notifications, which is surprising. It stays controlled only by the global "*" switch until a
+ * dedicated "Messages" toggle exists. Contract/billing eventTypes (contract.signed,
+ * contract.ready_for_escrow, billing.invoice_ready, billing.payment_failed,
+ * billing.subscription_halted) are also real brand-recipient events but are intentionally NOT
+ * bound to any toggle — see the transactional-notice copy in the Notifications tab below.
+ */
+const CAMPAIGN_ALERT_EVENT_TYPES = ['application.created', 'deliverable.submitted', 'shipment.received'] as const;
+const BID_NOTIFICATION_EVENT_TYPES = ['bid.countered', 'proposal.accepted'] as const;
+const CATEGORY_EVENT_TYPES = {
+  campaignAlerts: CAMPAIGN_ALERT_EVENT_TYPES,
+  bidNotifications: BID_NOTIFICATION_EVENT_TYPES,
+} as const;
+type CategoryPrefKey = keyof typeof CATEGORY_EVENT_TYPES;
+
+// OFF only when every eventType in the group is unsubscribed; a missing row defaults to
+// subscribed (mirrors NotificationService#isUnsubscribed's own default), so any missing/false row
+// keeps the group ON. Deterministic and idempotent regardless of preference-row ordering.
+function isCategoryGroupOff(prefs: NotificationPreference[], eventTypes: readonly string[]): boolean {
+  return eventTypes.every((eventType) => prefs.find((p) => p.eventType === eventType)?.unsubscribed === true);
+}
 
 export default function BrandSettingsPage() {
   const navigate = useNavigate();
@@ -140,11 +181,16 @@ export default function BrandSettingsPage() {
 
   // UPDATE (2026-07-18): notifications.getPreferences/setPreference (src/lib/api.ts) now hit a
   // real, auth-scoped route (GET/POST /notifications/preferences, NotificationController.java),
-  // backed by the existing email_preferences table. It covers exactly the global email opt-out
-  // (eventType "*"), which is what "Email Notifications" below is wired to. pushNotifications has
-  // no backend channel at all (no push infra); campaignAlerts/bidNotifications/weeklyDigest have
-  // no matching backend event-category or digest job to bind to — they stay UI-only local state
-  // rather than pretend to persist (same precedent as creator-settings.tsx).
+  // backed by the existing email_preferences table. "Email Notifications" below is wired to the
+  // global opt-out (eventType "*"), which NotificationService#isUnsubscribed checks FIRST and
+  // short-circuits on — if the master switch is off, per-category rows are moot regardless of
+  // their own value, so that stays the master switch, unchanged.
+  // UPDATE (2026-07-30): campaignAlerts/bidNotifications ARE wired for real now — isUnsubscribed
+  // falls through to a genuine per-eventType lookup (findByUserIdAndEventType) once the global
+  // check passes, and that lookup is honored by the real event emitters. See
+  // CATEGORY_EVENT_TYPES above for the exact eventType groups and why each string was kept/dropped.
+  // weeklyDigest and pushNotifications remain unbacked (no weekly-digest job — only
+  // "cron.monthly_statement" exists — and no push infra at all) and stay UI-only/disabled.
   React.useEffect(() => {
     let cancelled = false;
     setEmailPrefLoading(true);
@@ -153,7 +199,12 @@ export default function BrandSettingsPage() {
       .then((prefs) => {
         if (cancelled) return;
         const globalPref = prefs.find((p) => p.eventType === '*');
-        setSettings((prev) => ({ ...prev, emailNotifications: !globalPref?.unsubscribed }));
+        setSettings((prev) => ({
+          ...prev,
+          emailNotifications: !globalPref?.unsubscribed,
+          campaignAlerts: !isCategoryGroupOff(prefs, CAMPAIGN_ALERT_EVENT_TYPES),
+          bidNotifications: !isCategoryGroupOff(prefs, BID_NOTIFICATION_EVENT_TYPES),
+        }));
       })
       .catch((err) => {
         if (cancelled) return;
@@ -189,6 +240,46 @@ export default function BrandSettingsPage() {
       });
     } finally {
       setEmailPrefSaving(false);
+    }
+  };
+
+  // Category toggles (campaignAlerts/bidNotifications) — one setPreference call per eventType in
+  // the group (no bulk endpoint; same one-call-per-item precedent as markAllRead in
+  // useNotifications.ts). A partial failure would leave the group's eventTypes in an inconsistent
+  // subscribed state, so this reverts the whole optimistic toggle on ANY failure rather than trying
+  // to reconcile per-eventType, same as handleEmailPrefChange above.
+  const [categoryPrefSaving, setCategoryPrefSaving] = React.useState<Record<CategoryPrefKey, boolean>>({
+    campaignAlerts: false,
+    bidNotifications: false,
+  });
+  const [categoryPrefError, setCategoryPrefError] = React.useState<Record<CategoryPrefKey, string | null>>({
+    campaignAlerts: null,
+    bidNotifications: null,
+  });
+
+  const handleCategoryPrefChange = async (key: CategoryPrefKey, checked: boolean) => {
+    const previous = settings[key];
+    setSettings((prev) => ({ ...prev, [key]: checked }));
+    setCategoryPrefError((prev) => ({ ...prev, [key]: null }));
+
+    if (!liveApi) return; // mock mode: local state is the whole story
+
+    setCategoryPrefSaving((prev) => ({ ...prev, [key]: true }));
+    try {
+      await Promise.all(
+        CATEGORY_EVENT_TYPES[key].map((eventType) => api.notifications.setPreference('brand', eventType, checked)),
+      );
+    } catch (err) {
+      console.error(`Failed to save ${key} notification preference`, err);
+      setSettings((prev) => ({ ...prev, [key]: previous })); // revert on failure
+      setCategoryPrefError((prev) => ({ ...prev, [key]: 'Could not save. Please try again.' }));
+      toast({
+        title: 'Save failed',
+        description: 'Could not update your notification preference.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCategoryPrefSaving((prev) => ({ ...prev, [key]: false }));
     }
   };
 
@@ -525,28 +616,36 @@ export default function BrandSettingsPage() {
                 <div className="flex items-center justify-between p-4 border rounded-lg">
                   <div>
                     <p className="font-medium text-sm">Campaign Alerts</p>
-                    <p className="text-xs text-muted-foreground">Alerts on new bids and offers</p>
+                    <p className="text-xs text-muted-foreground">
+                      New applications, submitted deliverables, and shipment updates on your campaigns.
+                    </p>
                   </div>
                   <Switch
                     checked={settings.campaignAlerts}
-                    onCheckedChange={(e) => setSettings({ ...settings, campaignAlerts: e })}
-                    disabled
-                    title="Category preferences aren't available yet"
+                    disabled={categoryPrefSaving.campaignAlerts}
+                    onCheckedChange={(e) => handleCategoryPrefChange('campaignAlerts', e)}
                   />
                 </div>
+                {categoryPrefError.campaignAlerts && (
+                  <p className="text-xs text-destructive-foreground -mt-3">{categoryPrefError.campaignAlerts}</p>
+                )}
 
                 <div className="flex items-center justify-between p-4 border rounded-lg">
                   <div>
                     <p className="font-medium text-sm">Bid Notifications</p>
-                    <p className="text-xs text-muted-foreground">When creators submit bids</p>
+                    <p className="text-xs text-muted-foreground">
+                      When a creator counters your offer or accepts your proposal.
+                    </p>
                   </div>
                   <Switch
                     checked={settings.bidNotifications}
-                    onCheckedChange={(e) => setSettings({ ...settings, bidNotifications: e })}
-                    disabled
-                    title="Category preferences aren't available yet"
+                    disabled={categoryPrefSaving.bidNotifications}
+                    onCheckedChange={(e) => handleCategoryPrefChange('bidNotifications', e)}
                   />
                 </div>
+                {categoryPrefError.bidNotifications && (
+                  <p className="text-xs text-destructive-foreground -mt-3">{categoryPrefError.bidNotifications}</p>
+                )}
 
                 <div className="flex items-center justify-between p-4 border rounded-lg">
                   <div>
@@ -557,9 +656,19 @@ export default function BrandSettingsPage() {
                     checked={settings.weeklyDigest}
                     onCheckedChange={(e) => setSettings({ ...settings, weeklyDigest: e })}
                     disabled
-                    title="Category preferences aren't available yet"
+                    title="Weekly digest isn't available yet"
                   />
                 </div>
+
+                {/* Priya ruling: contract/escrow/billing emails (contract.signed,
+                    contract.ready_for_escrow, billing.invoice_ready, billing.payment_failed,
+                    billing.subscription_halted) are transactional and always-on — a brand must
+                    not be able to switch off a payment-failed or contract-signed email, so this
+                    is disclosure copy, not a control. */}
+                <p className="text-xs text-muted-foreground">
+                  Essential contract, escrow, and billing emails are always sent and can&apos;t be
+                  turned off individually — only the Email Notifications switch above affects them.
+                </p>
 
                 <Button disabled title={SETTINGS_PERSISTENCE_UNAVAILABLE} className="w-full gap-2">
                   <Save className="h-4 w-4" />

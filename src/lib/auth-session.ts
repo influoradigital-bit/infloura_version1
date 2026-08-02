@@ -137,16 +137,6 @@ export function getBrandOnboardingComplete(): boolean {
   );
 }
 
-export function clearBrandSession(): void {
-  localStorage.removeItem('brand_token');
-  localStorage.removeItem('brand_refresh_token');
-  localStorage.removeItem('brand_user_id');
-  localStorage.removeItem('brand_email');
-  localStorage.removeItem('brand_workspace_id');
-  localStorage.removeItem('brand_company');
-  localStorage.removeItem(ONBOARDING_KEY);
-  localStorage.removeItem('onboarding_complete');
-}
 
 export function hasBrandToken(): boolean {
   return !!localStorage.getItem('brand_token');

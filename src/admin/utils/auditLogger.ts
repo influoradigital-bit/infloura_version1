@@ -289,20 +289,3 @@ export function initAuditLogger(): void {
     // Swallow errors — don't let retry queue processing break app startup
   });
 }
-
-/**
- * Debugging helper: view the current retry queue state.
- * Useful for verifying queue behavior in dev/test environments.
- */
-export function getAuditRetryQueueStatus(): {
-  size: number;
-  oldestEntry: number | null;
-  newestEntry: number | null;
-} {
-  const queue = getRetryQueue();
-  return {
-    size: queue.length,
-    oldestEntry: queue[0]?.queuedAt ?? null,
-    newestEntry: queue[queue.length - 1]?.queuedAt ?? null,
-  };
-}

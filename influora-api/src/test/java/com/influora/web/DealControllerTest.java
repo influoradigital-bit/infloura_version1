@@ -1,8 +1,10 @@
 package com.influora.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -19,13 +21,22 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.DealMessageStreamRegistry;
 import com.influora.service.DealService;
 import com.influora.web.dto.deal.DealDtos.CounterRequest;
+import com.influora.web.dto.deal.DealDtos.CreateDealRequest;
 import com.influora.web.dto.deal.DealDtos.DealMessageResponse;
 import com.influora.web.dto.deal.DealDtos.DealResponse;
+import com.influora.web.dto.deal.DealDtos.DeliverableSlot;
 import com.influora.web.dto.deal.DealDtos.OkResponse;
 import com.influora.web.dto.deal.DealDtos.SendMessageRequest;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import jakarta.validation.ValidatorFactory;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,9 +59,111 @@ class DealControllerTest {
 
     private DealController controller;
 
+    private static ValidatorFactory validatorFactory;
+    private static Validator validator;
+
+    @BeforeAll
+    static void setUpValidator() {
+        validatorFactory = Validation.buildDefaultValidatorFactory();
+        validator = validatorFactory.getValidator();
+    }
+
+    @AfterAll
+    static void tearDownValidator() {
+        validatorFactory.close();
+    }
+
     @BeforeEach
     void setUp() {
         controller = new DealController(dealService, disputeService, messageStreamRegistry, shipmentService);
+    }
+
+    // ------------------------------------------------------------------
+    // CR-51 step 3 — CreateDealRequest/CounterRequest/DeliverableSlot: @NotEmpty + @Valid +
+    // @Positive cascade actually fires (the same Validator Spring's @Valid delegates to; no
+    // MockMvc harness in this codebase yet — see AuthControllerTest javadoc).
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("CreateDealRequest: empty deliverables list fails validation (@NotEmpty)")
+    void createDealRequest_emptyDeliverables_failsValidation() {
+        CreateDealRequest request =
+                new CreateDealRequest(
+                        "camp1", "creator1", new BigDecimal("100"), List.of(), null, null, null);
+
+        Set<ConstraintViolation<CreateDealRequest>> violations = validator.validate(request);
+
+        assertFalse(violations.isEmpty());
+        assertTrue(
+                violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals("deliverables")));
+    }
+
+    @Test
+    @DisplayName("CreateDealRequest: a qty:0 deliverable slot fails validation (@Positive via cascaded @Valid)")
+    void createDealRequest_zeroQtySlot_failsValidation() {
+        CreateDealRequest request =
+                new CreateDealRequest(
+                        "camp1",
+                        "creator1",
+                        new BigDecimal("100"),
+                        List.of(new DeliverableSlot("reel", 0)),
+                        null,
+                        null,
+                        null);
+
+        Set<ConstraintViolation<CreateDealRequest>> violations = validator.validate(request);
+
+        assertFalse(violations.isEmpty());
+    }
+
+    @Test
+    @DisplayName("CreateDealRequest: at least one slot with qty >= 1 passes validation")
+    void createDealRequest_validDeliverables_passesValidation() {
+        CreateDealRequest request =
+                new CreateDealRequest(
+                        "camp1",
+                        "creator1",
+                        new BigDecimal("100"),
+                        List.of(new DeliverableSlot("reel", 1)),
+                        null,
+                        null,
+                        null);
+
+        assertTrue(validator.validate(request).isEmpty());
+    }
+
+    @Test
+    @DisplayName("CounterRequest: empty deliverables list fails validation (@NotEmpty)")
+    void counterRequest_emptyDeliverables_failsValidation() {
+        CounterRequest request = new CounterRequest(new BigDecimal("100"), null, List.of(), null, null);
+
+        Set<ConstraintViolation<CounterRequest>> violations = validator.validate(request);
+
+        assertFalse(violations.isEmpty());
+        assertTrue(
+                violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals("deliverables")));
+    }
+
+    @Test
+    @DisplayName("CounterRequest: a qty:0 deliverable slot fails validation (@Positive via cascaded @Valid)")
+    void counterRequest_zeroQtySlot_failsValidation() {
+        CounterRequest request =
+                new CounterRequest(
+                        new BigDecimal("100"), null, List.of(new DeliverableSlot("story", 0)), null, null);
+
+        Set<ConstraintViolation<CounterRequest>> violations = validator.validate(request);
+
+        assertFalse(violations.isEmpty());
+    }
+
+    @Test
+    @DisplayName("CounterRequest: at least one slot with qty >= 1 passes validation")
+    void counterRequest_validDeliverables_passesValidation() {
+        CounterRequest request =
+                new CounterRequest(
+                        new BigDecimal("100"), null, List.of(new DeliverableSlot("story", 2)), null, null);
+
+        assertTrue(validator.validate(request).isEmpty());
     }
 
     @Test

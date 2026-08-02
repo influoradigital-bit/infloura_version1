@@ -33,12 +33,6 @@ export enum ContentFlagStatus {
   ACTIONED = 'ACTIONED'
 }
 
-export enum SuspensionStatus {
-  ACTIVE = 'ACTIVE',
-  APPEALED = 'APPEALED',
-  REINSTATED = 'REINSTATED'
-}
-
 export enum TicketStatus {
   OPEN = 'OPEN',
   IN_PROGRESS = 'IN_PROGRESS',
@@ -106,162 +100,10 @@ export interface AdminLoginResponse {
 // ============================================
 
 /**
- * Every distinct privileged action in the admin panel, named to match the rows of
- * `src/admin/__tests__/role-permission-matrix.md`. This is the type-safe contract that both the
- * frontend `useAdminAuth` hook and Vikram's server-side `@PreAuthorize` checks resolve against, so
- * tests can assert "SUPPORT cannot suspend a brand" without hardcoding string literals.
- *
- * NOTE: the runtime grant table lives in `src/admin/hooks/useAdminAuth.ts` (`ROLE_PERMISSIONS`,
- * keyed by the granular `Permission` const). This `AdminAction` union is the human-readable,
- * matrix-aligned view used for typing capability maps and MFA policy below.
- */
-export type AdminAction =
-  // Dashboard
-  | 'dashboard.viewPulse'
-  | 'dashboard.viewFinancial'
-  | 'dashboard.viewOperations'
-  | 'dashboard.viewMarketing'
-  // Brand management
-  | 'brand.view'
-  | 'brand.update'
-  | 'brand.kycReview'
-  | 'brand.suspend'
-  | 'brand.reinstate'
-  | 'brand.overrideBudget'
-  // Creator management
-  | 'creator.view'
-  | 'creator.update'
-  | 'creator.applicationReview'
-  | 'creator.tierAdjust'
-  | 'creator.forceReauth'
-  | 'creator.suspend'
-  | 'creator.reinstate'
-  // Campaign monitoring
-  | 'campaign.view'
-  | 'campaign.viewAtRisk'
-  | 'campaign.viewHypeOps'
-  // Finance
-  | 'finance.viewRevenue'
-  | 'finance.viewEscrow'
-  | 'finance.viewPayouts'
-  | 'finance.retryPayout'
-  | 'finance.viewReconciliation'
-  | 'finance.resolveReconciliation'
-  | 'finance.downloadTds'
-  // Escrow operations
-  | 'escrow.viewFlagged'
-  | 'escrow.release'
-  | 'escrow.hold'
-  | 'escrow.refund'
-  // Support
-  | 'support.listTickets'
-  | 'support.viewTicket'
-  | 'support.updateTicket'
-  | 'support.replyTicket'
-  | 'support.escalateTicket'
-  | 'support.assignTicket'
-  | 'support.viewStats'
-  // Moderation
-  | 'moderation.viewFlags'
-  | 'moderation.actionFlag'
-  | 'moderation.viewApprovals'
-  | 'moderation.processApproval'
-  | 'moderation.viewSuspensions'
-  | 'moderation.reviewAppeal'
-  // Audit / errors / email / marketing
-  | 'audit.view'
-  | 'errorLog.view'
-  | 'errorLog.resolve'
-  | 'email.view'
-  | 'email.retry'
-  | 'email.sendBulk'
-  | 'marketing.view'
-  // Admin user management
-  | 'adminUser.manage';
-
-/**
  * Role → allowed actions. Higher roles do NOT structurally inherit lower roles here; each role's
  * full effective set is listed explicitly so the map is auditable at a glance and matches the
  * matrix exactly. Keep this in lockstep with `ROLE_PERMISSIONS` in `useAdminAuth.ts`.
  */
-export type RoleCapabilities = {
-  readonly [K in AdminRole]: readonly AdminAction[];
-};
-
-export const ROLE_CAPABILITIES: RoleCapabilities = {
-  [AdminRole.SUPER_ADMIN]: [
-    'dashboard.viewPulse', 'dashboard.viewFinancial', 'dashboard.viewOperations', 'dashboard.viewMarketing',
-    'brand.view', 'brand.update', 'brand.kycReview', 'brand.suspend', 'brand.reinstate', 'brand.overrideBudget',
-    'creator.view', 'creator.update', 'creator.applicationReview', 'creator.tierAdjust', 'creator.forceReauth', 'creator.suspend', 'creator.reinstate',
-    'campaign.view', 'campaign.viewAtRisk', 'campaign.viewHypeOps',
-    'finance.viewRevenue', 'finance.viewEscrow', 'finance.viewPayouts', 'finance.retryPayout', 'finance.viewReconciliation', 'finance.resolveReconciliation', 'finance.downloadTds',
-    'escrow.viewFlagged', 'escrow.release', 'escrow.hold', 'escrow.refund',
-    'support.listTickets', 'support.viewTicket', 'support.updateTicket', 'support.replyTicket', 'support.escalateTicket', 'support.assignTicket', 'support.viewStats',
-    'moderation.viewFlags', 'moderation.actionFlag', 'moderation.viewApprovals', 'moderation.processApproval', 'moderation.viewSuspensions', 'moderation.reviewAppeal',
-    'audit.view', 'errorLog.view', 'errorLog.resolve', 'email.view', 'email.retry', 'email.sendBulk', 'marketing.view',
-    'adminUser.manage',
-  ],
-  [AdminRole.ADMIN]: [
-    'dashboard.viewPulse', 'dashboard.viewFinancial', 'dashboard.viewOperations', 'dashboard.viewMarketing',
-    'brand.view', 'brand.update', 'brand.kycReview', 'brand.suspend', 'brand.reinstate', 'brand.overrideBudget',
-    'creator.view', 'creator.update', 'creator.applicationReview', 'creator.tierAdjust', 'creator.forceReauth', 'creator.suspend', 'creator.reinstate',
-    'campaign.view', 'campaign.viewAtRisk', 'campaign.viewHypeOps',
-    // Finance: VIEW + payout retry only. NOT finance.resolveReconciliation (SUPER_ADMIN-only,
-    // write-off risk — matrix line 66). NOT email.sendBulk (blast risk — matrix line 100).
-    'finance.viewRevenue', 'finance.viewEscrow', 'finance.viewPayouts', 'finance.retryPayout', 'finance.viewReconciliation', 'finance.downloadTds',
-    'escrow.viewFlagged', 'escrow.release', 'escrow.hold', 'escrow.refund',
-    'support.listTickets', 'support.viewTicket', 'support.updateTicket', 'support.replyTicket', 'support.escalateTicket', 'support.assignTicket', 'support.viewStats',
-    'moderation.viewFlags', 'moderation.actionFlag', 'moderation.viewApprovals', 'moderation.processApproval', 'moderation.viewSuspensions', 'moderation.reviewAppeal',
-    'errorLog.view', 'errorLog.resolve', 'email.view', 'email.retry', 'marketing.view',
-    // NOT audit.view (SUPER_ADMIN-only) and NOT adminUser.manage (SUPER_ADMIN-only).
-  ],
-  [AdminRole.SUPPORT]: [
-    'dashboard.viewOperations',
-    'brand.view',
-    'creator.view',
-    'campaign.view',
-    'support.listTickets', 'support.viewTicket', 'support.updateTicket', 'support.replyTicket', 'support.escalateTicket', 'support.viewStats',
-    'moderation.viewFlags',
-  ],
-};
-
-// ============================================
-// MFA STEP-UP / RE-VERIFICATION MODEL
-// ============================================
-
-/**
- * Per-session MFA verification state, surfaced to the SPA so it knows whether a step-up prompt is
- * needed before a sensitive action. Today the backend (`AdminAuthService.login`) only enforces MFA
- * at LOGIN — there is no step-up hook yet; `TotpService.verifyCode` is the reusable primitive
- * Vikram will call when implementing re-verification for `MFA_REQUIRED_ACTIONS` below.
- */
-export type MfaVerificationStatus = 'DISABLED' | 'REQUIRED' | 'VERIFIED';
-
-/**
- * Actions that MUST require a fresh MFA re-verification (step-up) beyond the login TOTP check when
- * the acting admin has `mfaEnabled=true`. These are the money-touching / irreversible / blast-risk
- * operations. The server is the source of truth: a matching endpoint must return `MFA_REQUIRED`
- * (HTTP 403) if the current session has not re-verified within the step-up window. The frontend
- * uses this set to prompt for a TOTP code before firing the request.
- */
-export const MFA_REQUIRED_ACTIONS: readonly AdminAction[] = [
-  'brand.overrideBudget',
-  'brand.suspend',
-  'creator.suspend',
-  'finance.retryPayout',
-  'finance.resolveReconciliation',
-  'escrow.release',
-  'escrow.hold',
-  'escrow.refund',
-  'email.sendBulk',
-  'adminUser.manage',
-];
-
-/** Convenience predicate: does this action require MFA step-up re-verification? */
-export function actionRequiresMfa(action: AdminAction): boolean {
-  return MFA_REQUIRED_ACTIONS.includes(action);
-}
-
 // ============================================
 // DASHBOARD / KPIs
 // ============================================

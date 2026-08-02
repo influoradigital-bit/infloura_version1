@@ -350,7 +350,7 @@ public class ContractService {
      * deliverable slot at contract-generation time (same transaction as the PaymentMilestones
      * above) so a creator has something to upload against once the contract exists.
      *
-     * <p>Source of truth for "agreed slots": the {@code deliverableSlots} metadata on the most
+     * <p>Source of truth for "agreed slots": the {@code deliverables} metadata on the most
      * recent {@code proposal}-kind {@link DealMessage} for this collaboration — the last accepted
      * offer. Best-effort / non-fatal: a collaboration whose last offer has no structured
      * deliverables (e.g. a pre-fix proposal, or one negotiated without the deliverables field)
@@ -409,7 +409,7 @@ public class ContractService {
         }
     }
 
-    /** Reads the {@code deliverableSlots} array persisted by {@code DealService#persistProposalMessage}. */
+    /** Reads the {@code deliverables} array persisted by {@code DealService#persistProposalMessage}. */
     private List<Map<String, Object>> latestAgreedDeliverableSlots(String collaborationId) {
         Optional<DealMessage> lastProposal =
                 dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
@@ -422,14 +422,14 @@ public class ContractService {
                     MAPPER.readValue(
                             lastProposal.get().getMetadataJson(),
                             new TypeReference<Map<String, Object>>() {});
-            Object raw = metadata.get("deliverableSlots");
+            Object raw = metadata.get("deliverables");
             if (raw == null) {
                 return List.of();
             }
             return MAPPER.convertValue(raw, new TypeReference<List<Map<String, Object>>>() {});
         } catch (Exception e) {
             log.warn(
-                    "Could not parse deliverableSlots metadata for collaboration {}: {}",
+                    "Could not parse deliverables metadata for collaboration {}: {}",
                     collaborationId,
                     e.getMessage());
             return List.of();

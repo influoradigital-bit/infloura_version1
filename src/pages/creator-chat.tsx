@@ -80,7 +80,7 @@ import { RevisionHandler } from '@/components/creator/deal-room/revision-handler
 import { ShippingAddressForm, type ShippingAddressData } from '@/components/creator/deal-room/shipping-address-form';
 import { ReceiptConfirmation, type ReceiptData } from '@/components/creator/deal-room/receipt-confirmation';
 import { ShipmentCard, type ShipmentStatus } from '@/components/shared/shipment-card';
-import { MapPin, Truck } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 // CR-34 — `CollaborationStatus` is no longer imported here: the only value-level use was the
 // local canAccept() mirror, which now lives in lib/deal-stage.ts. It survives in prose below.
 import type { TimelineEvent as LibTimelineEvent, TimelineEventMetadata } from '@/lib/types';
@@ -1030,6 +1030,9 @@ export default function CreatorChatPage() {
   // C19: real deliverable rows feed the submission dialog (was a hardcoded fake array).
   // The chat page can only LIST them — rows are created server-side when the contract is
   // generated, so an empty list here means "no contract yet, nothing to submit".
+  // Real deliverable rows for the selected collaboration — GET /creator/deliverables?collaboration_id=.
+  // Empty until a contract materializes the rows (ContractService.materializeDeliverables).
+  const [liveDeliverables, setLiveDeliverables] = React.useState<CreatorDeliverableListItem[]>([]);
   const loadDeliverables = React.useCallback(async () => {
     if (!liveApi || !selectedDeal) {
       setLiveDeliverables([]);
@@ -1063,9 +1066,6 @@ export default function CreatorChatPage() {
   const [showCounterForm, setShowCounterForm] = React.useState(false);
   const [isSubmittingCounter, setIsSubmittingCounter] = React.useState(false);
   const [showDeliverableDialog, setShowDeliverableDialog] = React.useState(false);
-  // Real deliverable rows for the selected collaboration — GET /creator/deliverables?collaboration_id=.
-  // Empty until a contract materializes the rows (ContractService.materializeDeliverables).
-  const [liveDeliverables, setLiveDeliverables] = React.useState<CreatorDeliverableListItem[]>([]);
   const [counterAmount, setCounterAmount] = React.useState('');
   const [counterMessage, setCounterMessage] = React.useState('');
   const [showRevisionHandler, setShowRevisionHandler] = React.useState(false);
@@ -1819,8 +1819,8 @@ export default function CreatorChatPage() {
                 onClick={() => setShowShippingAddressForm(true)}
                 className="gap-1.5"
               >
-                <Truck className="h-4 w-4" />
-                <span className="hidden sm:inline">Shipping</span>
+                <MapPin className="h-4 w-4" />
+                <span className="hidden sm:inline">Edit shipping address</span>
               </Button>
             )}
             {selectedDeal.status === 'in_progress' && (

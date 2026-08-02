@@ -146,16 +146,6 @@ export interface MeeraEscrowStatus {
   fundedAt: string | null;
 }
 
-/** SSE event types from Python (04 section 4) */
-export type MeeraSSEEventType =
-  | 'token'
-  | 'thinking'
-  | 'tool_start'
-  | 'tool_result'
-  | 'prompt_meta'
-  | 'done'
-  | 'error';
-
 export interface MeeraTokenEvent {
   text: string;
 }

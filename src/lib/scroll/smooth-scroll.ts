@@ -39,8 +39,4 @@ export function destroySmoothScroll() {
   tickerBound = false;
 }
 
-export function getLenisInstance() {
-  return lenisInstance;
-}
-
 export { gsap, ScrollTrigger };

@@ -81,15 +81,6 @@ export async function uploadToR2(
 }
 
 /**
- * Delete a file from Cloudflare R2
- */
-export async function deleteFromR2(key: string): Promise<{ success: boolean }> {
-  await new Promise((r) => setTimeout(r, 300));
-  // In production: DELETE /api/upload/:key
-  return { success: true };
-}
-
-/**
  * Generate a local preview URL for an image file (before upload)
  */
 export function createLocalPreview(file: File): Promise<string> {
@@ -140,50 +131,5 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/**
- * Build R2 path for different file types
- * 
- * Structure:
- * - contracts/collab-{id}/contract-{id}.pdf
- * - deliverables/collab-{id}/collab-{id}_reel-{n}_{version}.{ext}
- * - messages/collab-{id}/msg-{eventId}_attachment.{ext}
- */
-export function buildR2Path(
-  type: 'contract' | 'deliverable' | 'message',
-  collaborationId: string,
-  options: {
-    contractId?: string;
-    deliverableNumber?: number;
-    version?: number;
-    eventId?: string;
-    filename?: string;
-  } = {},
-): string {
-  switch (type) {
-    case 'contract':
-      return `contracts/collab-${collaborationId}/contract-${options.contractId}.pdf`;
-    
-    case 'deliverable': {
-      const filename = options.filename || `reel-${options.deliverableNumber || 1}`;
-      const version = options.version || 1;
-      const ext = filename.includes('.') ? filename.split('.').pop() : 'mp4';
-      return `deliverables/collab-${collaborationId}/collab-${collaborationId}_${filename}_v${version}.${ext}`;
-    }
-    
-    case 'message':
-      return `messages/collab-${collaborationId}/msg-${options.eventId}_attachment`;
-    
-    default:
-      return `uploads/collab-${collaborationId}/${options.filename || 'file'}`;
-  }
-}
-
-/**
- * Generate presigned URL for R2 object (mock)
- */
-export function generatePresignedUrl(r2Path: string, expiresIn: number = 3600): string {
-  return `https://r2.influora.com/${r2Path}?presign=${Date.now()}&exp=${expiresIn}`;
 }
 

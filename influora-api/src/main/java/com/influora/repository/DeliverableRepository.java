@@ -25,13 +25,15 @@ public interface DeliverableRepository extends JpaRepository<Deliverable, String
   List<Deliverable> findByCollaborationIdOrderBySlotIndexAsc(String collaborationId);
 
   /**
-   * B5 — release-condition gate lookup: {@code EscrowService#release} resolves the deliverable(s)
-   * tied to a {@link com.influora.domain.entity.PaymentMilestone} (via {@code
-   * deliverables.milestone_id}) to check whether their status satisfies the milestone's {@code
-   * release_condition} before money moves. Deliberately a plain {@code findBy} (no workspace/
-   * creator scoping) — it is only ever invoked from server-resolved milestone ids already inside a
-   * trusted service-layer call, never from a client-supplied id directly.
+   * @deprecated CR-51 / Priya's Option B ruling: the release-condition gate in {@code
+   *     EscrowService#assertReleaseConditionSatisfied} now re-keys off {@code collaborationId} via
+   *     {@link #findByCollaborationIdOrderBySlotIndexAsc(String)}, not this method. {@code
+   *     Deliverable.milestoneId} is never set by materialization (milestones and deliverables come
+   *     from independent sources with no principled N:M mapping — see {@code
+   *     ContractService.materializeDeliverables}), so this lookup always returns empty and has no
+   *     remaining production caller. Left in place, not deleted, per CR-51 scope.
    */
+  @Deprecated
   List<Deliverable> findByMilestoneId(String milestoneId);
 
   /**

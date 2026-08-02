@@ -49,9 +49,6 @@ export const MEERA_STAGE_ENTER_FROM = { opacity: 0, y: 12 }
 export const MEERA_STAGE_ENTER_TO = { opacity: 1, y: 0 }
 export const MEERA_STAGE_EXIT_DURATION = 0.18
 
-/** Count-up duration for T6 stat tiles (~900ms ease). */
-export const MEERA_COUNTUP_DURATION = 0.9
-
 /** Escrow-lock hero timeline (T2) — total ~1.6s. */
 export const MEERA_LOCK_TIMELINE = {
   meterFillMs: 700,
@@ -64,16 +61,10 @@ export const MEERA_LOCK_TIMELINE = {
 /** Reduced-motion aura fade fallback. */
 export const MEERA_REDUCED_AURA_MS = 150
 
-/** Pay CTA press (NOT a spring — per spec §5). */
-export const MEERA_PRESS_SCALE = 0.97
-export const MEERA_PRESS_TRANSITION = { duration: 0.15, ease: [0.23, 1, 0.32, 1] as const }
-
 /**
  * Voice & Living Presence (spec §5A / Priya's voice handoff §5, §9).
  * VoiceWaveform is time-based (loops while active), never audio-reactive —
  * there is no audio stream to analyze from speechSynthesis output.
  */
-export const MEERA_PRESENCE_IDLE_DURATION = 2.6 // seconds, gentle breathing loop
-export const MEERA_PRESENCE_THINKING_DURATION = 1.1 // seconds, ring shimmer loop
 export const MEERA_WAVEFORM_BAR_COUNT = 5
 export const MEERA_WAVEFORM_LOOP_DURATION = 0.9 // seconds per bar cycle

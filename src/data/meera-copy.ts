@@ -108,13 +108,6 @@ export const MEERA_PAYWALL = {
 }
 
 /**
- * Quick-reply chips are now sourced per-turn from
- * `MeeraTurn.suggestedReplies` in `data/meera-mock.ts` — never a static row.
- * This constant is kept only as the empty-state fallback (no active turn).
- */
-export const MEERA_QUICK_REPLIES: string[] = []
-
-/**
  * R6 — tap-to-fill starter templates shown in LIVE mode when the chat is empty.
  * Unlike quick-reply chips (which send instantly), tapping one of these only
  * PRE-FILLS the composer — the brand edits the [bracketed] blanks with their own
@@ -167,12 +160,6 @@ export const MEERA_MOBILE = {
   sheetTitle: 'Campaign',
   closeSheet: 'Close',
 }
-
-/** Message roles for the mock scripted conversation */
-export const MEERA_MESSAGE_ROLE = {
-  meera: 'meera',
-  brand: 'brand',
-} as const
 
 /**
  * Voice & Living Presence (spec §5A). Every voice failure path routes to the

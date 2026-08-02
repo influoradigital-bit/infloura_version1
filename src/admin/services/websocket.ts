@@ -521,11 +521,3 @@ export function getAdminSocket(): AdminSocketClient {
   if (!singleton) singleton = new AdminSocketClient();
   return singleton;
 }
-
-/** Tear down the singleton (e.g. on logout). Safe to call when unset. */
-export function resetAdminSocket(): void {
-  if (singleton) {
-    singleton.disconnect();
-    singleton = null;
-  }
-}

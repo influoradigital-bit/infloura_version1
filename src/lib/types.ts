@@ -184,18 +184,6 @@ export interface Workspace {
   updatedAt: Date;
 }
 
-export interface WorkspaceMember {
-  id: string;
-  workspaceId: string;
-  userId: string;
-  role: MemberRole;
-  permissions: string[];
-  invitedBy?: string;
-  invitedAt?: Date;
-  joinedAt?: Date;
-  isActive: boolean;
-}
-
 export interface Address {
   street?: string;
   city?: string;
@@ -424,36 +412,6 @@ export interface Deliverable {
   updatedAt: Date;
 }
 
-export interface DeliverableRevision {
-  id: string;
-  deliverableId: string;
-  version: number;
-  files: MediaFile[];
-  caption?: string;
-  notes?: string;
-  feedback?: RevisionFeedback;
-  submittedAt: Date;
-  reviewedAt?: Date;
-  reviewedBy?: string;
-}
-
-export interface MediaFile {
-  id: string;
-  url: string;
-  filename: string;
-  mimeType: string;
-  size: number;
-  thumbnailUrl?: string;
-}
-
-export interface RevisionFeedback {
-  status: 'APPROVED' | 'REVISION_REQUESTED' | 'REJECTED';
-  comments: string;
-  requestedChanges?: string[];
-  givenBy: string;
-  givenAt: Date;
-}
-
 // ============================================
 // FINANCIAL DOMAIN
 // ============================================
@@ -511,17 +469,6 @@ export interface DisputeResolution {
   resolvedBy: string;
 }
 
-export interface DisputeEvidence {
-  id: string;
-  disputeId: string;
-  submittedBy: string;
-  type: 'DOCUMENT' | 'IMAGE' | 'VIDEO' | 'MESSAGE' | 'OTHER';
-  title: string;
-  description?: string;
-  fileUrl?: string;
-  createdAt: Date;
-}
-
 // ============================================
 // SYSTEM DOMAIN
 // ============================================
@@ -536,18 +483,6 @@ export interface Notification {
   isRead: boolean;
   readAt?: Date;
   actionUrl?: string;
-  createdAt: Date;
-}
-
-export interface AuditLog {
-  id: string;
-  userId?: string;
-  action: string;
-  entityType: string;
-  entityId: string;
-  changes?: Record<string, unknown>;
-  ipAddress?: string;
-  userAgent?: string;
   createdAt: Date;
 }
 
