@@ -68,3 +68,20 @@ __pycache__/
 
 # Live infra access + credentials — never commit
 deploy/hostinger/ACCESS-GUIDE.md
+
+# graphify knowledge-graph output (derived, 100MB+) — never commit
+graphify-out/
+src/graphify-out/
+
+# proof-os derived graph blobs (ledger/journal/gates stay trackable if desired)
+.proof-os/graph*.json
+.proof-os/*.bak.json
+.proof-os/.runtime/
+
+# extracted plugin copies — not project source
+proof-os-0.1.3/
+proof-os-0.1.8/
+
+# Production env secrets — currently TRACKED in history; still needs
+# `git rm --cached .env.production` + secret rotation to fully remediate
+.env.production
