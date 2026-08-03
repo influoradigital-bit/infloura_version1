@@ -145,6 +145,14 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
     long countByStatus(EscrowStatus status);
 
     /**
+     * Platform-wide list of holds in one status, newest first — powers {@code GET
+     * /admin/escrow/flagged} ({@link EscrowStatus#FROZEN} = the held-for-review state). Derived query;
+     * {@code status} is {@code @Enumerated(STRING)}. Unpaginated: the flagged set is expected to be
+     * small (holds actively frozen for dispute); revisit with {@code Pageable} if that stops holding.
+     */
+    List<EscrowHold> findByStatusOrderByCreatedAtDesc(EscrowStatus status);
+
+    /**
      * AVERAGE release latency in SECONDS across {@code RELEASED} holds — {@code AVG(released_at −
      * funded_at)} — for the admin escrow summary's {@code averageReleaseTime} (the service divides
      * by 3600 to hours). Returns {@code null} when no hold has been released yet (SQL {@code AVG} of

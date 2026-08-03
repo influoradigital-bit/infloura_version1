@@ -16,6 +16,14 @@ public interface DisputeRepository extends JpaRepository<Dispute, String> {
     boolean existsByCollaborationIdAndStatusIn(String collaborationId, Collection<DisputeStatus> statuses);
 
     /**
+     * Disputes for a set of collaborations — used by the admin escrow console ({@code GET
+     * /admin/escrow/flagged}) to attach each FROZEN hold's flag reason (a hold is frozen precisely
+     * because a dispute was opened on its collaboration). Caller de-dupes to the most-recent dispute
+     * per collaboration. Returns an empty list for an empty input.
+     */
+    List<Dispute> findByCollaborationIdIn(Collection<String> collaborationIds);
+
+    /**
      * Brand-scoped dispute list (B7). Disputes carry no {@code workspace_id} of their own — the
      * trust boundary is resolved through {@code collaboration.campaign_id -> campaign.workspace_id},
      * same discipline as {@code CollaborationRepository.findByWorkspaceId}.

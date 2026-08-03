@@ -36,4 +36,28 @@ public final class AdminFinanceDtos {
             long pendingRelease,
             long flaggedTransactions,
             double averageReleaseTime) {}
+
+    /**
+     * {@code GET /admin/escrow/flagged} — one row per {@code FROZEN} escrow hold (the held-for-review
+     * state; {@code EscrowStatus} has no {@code FLAGGED} value). Mirrors the inline array shape in
+     * {@code escrowApi.getFlagged()} ({@code src/admin/services/api-contracts.ts}). All fields are
+     * live:
+     *
+     * <ul>
+     *   <li>{@code id}/{@code campaignId}/{@code amount}/{@code createdAt} — straight off {@code EscrowHold}.
+     *   <li>{@code campaignName} — {@code Campaign.title} joined by {@code campaignId} (batch-loaded, no
+     *       N+1); {@code "(unknown campaign)"} if the campaign row is gone.
+     *   <li>{@code flagReason} — the {@code reason} of the most-recent {@code Dispute} on the hold's
+     *       collaboration (a hold is FROZEN precisely because {@code freezeUnreleasedForDispute} ran).
+     *       Falls back to {@code "Frozen — no linked dispute"} when a FROZEN hold has no
+     *       collaboration/dispute (e.g. a campaign-scoped freeze), never a fabricated reason.
+     * </ul>
+     */
+    public record FlaggedEscrowDto(
+            String id,
+            String campaignId,
+            String campaignName,
+            double amount,
+            String flagReason,
+            String createdAt) {}
 }
