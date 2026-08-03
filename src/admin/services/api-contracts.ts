@@ -52,7 +52,6 @@ import type {
   PaginatedResponse,
   ApiResponse,
   BillingMetrics,
-  AdminSubscriptionRow,
   PaginatedSubscriptionResponse,
   CompSubscriptionRequest,
   OverrideSubscriptionRequest,
@@ -95,6 +94,20 @@ async function apiRequest<T>(
     return { success: false, error: 'Malformed response from server' };
   }
   return { success: true, data };
+}
+
+/**
+ * Endpoints the frontend declares but the backend deliberately does NOT expose yet
+ * (F-0054 / F-0063). Returns a typed "unavailable" ApiResponse WITHOUT issuing a network
+ * call, so the UI degrades gracefully to a clear message instead of a 404, and the FE<->BE
+ * contract gate (.proof-os/gates/fe_be_endpoints.py) sees no phantom path. Each call names
+ * WHY it is parked so the reason survives. Re-wire to apiRequest(...) when the backend ships.
+ * Tracking: escrow hold/release/refund = Tier B (parked design decision); payouts/retry =
+ * Razorpay Route epic; tds/26q = TDS engine epic; reconciliation = webhook-only (no admin
+ * read model); suspensions/appeal = appeal subsystem absent; marketing = analytics unbuilt.
+ */
+function unavailable<T>(reason: string): Promise<ApiResponse<T>> {
+  return Promise.resolve({ success: false, error: `Not available yet — ${reason}` });
 }
 
 // ============================================
@@ -151,11 +164,11 @@ export const dashboardApi = {
     }>('/dashboard/operations'),
 
   getMarketingSummary: () =>
-    apiRequest<{
+    unavailable<{
       acquisitionMetrics: AcquisitionMetrics;
       growthMetrics: GrowthMetrics;
       reputationScore: PlatformReputationScore;
-    }>('/dashboard/marketing'),
+    }>('marketing analytics dashboard — not built (marketing metrics service pending)'),
 };
 
 // ============================================
@@ -354,19 +367,20 @@ export const financeApi = {
     ),
 
   retryPayout: (id: string) =>
-    apiRequest<PayoutQueueItem>(`/finance/payouts/${id}/retry`, { method: 'POST' }),
+    unavailable<PayoutQueueItem>(`payout ${id} retry — blocked on Razorpay Route epic (Tier C)`),
 
   getReconciliation: (date: string) =>
-    apiRequest<ReconciliationItem[]>(`/finance/reconciliation?date=${date}`),
+    unavailable<ReconciliationItem[]>(
+      `reconciliation (${date}) — PayoutReconciliationService is webhook-only, no admin read model yet (Tier A pending)`
+    ),
 
   resolveReconciliation: (id: string, resolution: 'MATCH' | 'WRITE_OFF', reason: string) =>
-    apiRequest<ReconciliationItem>(`/finance/reconciliation/${id}/resolve`, {
-      method: 'POST',
-      body: JSON.stringify({ resolution, reason }),
-    }),
+    unavailable<ReconciliationItem>(
+      `reconciliation ${id} resolve (${resolution}: ${reason}) — not built (webhook-driven, no admin mutation)`
+    ),
 
   getTdsReport: (quarter: string) =>
-    apiRequest<{ downloadUrl: string }>(`/finance/tds/26q?quarter=${quarter}`),
+    unavailable<{ downloadUrl: string }>(`TDS 26Q (${quarter}) — TDS engine unimplemented (Tier C epic)`),
 
   // --------------------------------------------
   // Platform fee config — PlatformFeeAdminController (Vikram), SUPER_ADMIN
@@ -466,22 +480,19 @@ export const escrowApi = {
     }[]>('/escrow/flagged'),
 
   release: (id: string, reason: string) =>
-    apiRequest<void>(`/escrow/${id}/release`, {
-      method: 'POST',
-      body: JSON.stringify({ reason }),
-    }),
+    unavailable<void>(
+      `escrow ${id} release (${reason}) — Tier B parked: use the dispute-mediated flow (AdminDisputeController), not direct escrow mutation`
+    ),
 
   hold: (id: string, reason: string) =>
-    apiRequest<void>(`/escrow/${id}/hold`, {
-      method: 'POST',
-      body: JSON.stringify({ reason }),
-    }),
+    unavailable<void>(
+      `escrow ${id} hold (${reason}) — Tier B parked: direct escrow mutation pending security-reviewed design`
+    ),
 
   refund: (id: string, amount: number, reason: string) =>
-    apiRequest<void>(`/escrow/${id}/refund`, {
-      method: 'POST',
-      body: JSON.stringify({ amount, reason }),
-    }),
+    unavailable<void>(
+      `escrow ${id} refund ${amount} (${reason}) — Tier B parked: use the dispute-mediated flow, not direct escrow mutation`
+    ),
 };
 
 // ============================================
@@ -580,10 +591,9 @@ export const moderationApi = {
     ),
 
   reviewAppeal: (id: string, action: 'REINSTATE' | 'UPHOLD', notes: string) =>
-    apiRequest<AccountSuspension>(`/moderation/suspensions/${id}/appeal`, {
-      method: 'POST',
-      body: JSON.stringify({ action, notes }),
-    }),
+    unavailable<AccountSuspension>(
+      `suspension ${id} appeal (${action}: ${notes}) — appeal subsystem not built (AdminModerationController: appealStatus is NONE until it exists)`
+    ),
 };
 
 // ============================================
@@ -721,12 +731,12 @@ export const emailApi = {
 
 export const marketingApi = {
   getAcquisition: (startDate: string, endDate: string) =>
-    apiRequest<AcquisitionMetrics>(
-      `/marketing/acquisition?startDate=${startDate}&endDate=${endDate}`
+    unavailable<AcquisitionMetrics>(
+      `acquisition metrics (${startDate}..${endDate}) — marketing analytics not built`
     ),
 
   getGrowth: () =>
-    apiRequest<GrowthMetrics>('/marketing/growth'),
+    unavailable<GrowthMetrics>('growth metrics — marketing analytics not built'),
 
   getReputation: () =>
     apiRequest<PlatformReputationScore>('/marketing/reputation'),
