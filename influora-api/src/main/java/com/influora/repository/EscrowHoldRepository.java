@@ -134,4 +134,27 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT e FROM EscrowHold e WHERE e.id = :id")
     Optional<EscrowHold> findByIdForUpdate(@Param("id") String id);
+
+    /**
+     * Platform-wide COUNT of holds in one status — powers the admin Finance/Escrow summary
+     * ({@code GET /admin/finance/escrow}): {@code pendingRelease} passes {@link EscrowStatus#FUNDED}
+     * (holds awaiting release), {@code flaggedTransactions} passes {@link EscrowStatus#FROZEN} (the
+     * held-for-review state — {@code EscrowStatus} has no {@code FLAGGED} value). Derived query;
+     * {@code status} is {@code @Enumerated(STRING)}.
+     */
+    long countByStatus(EscrowStatus status);
+
+    /**
+     * AVERAGE release latency in SECONDS across {@code RELEASED} holds — {@code AVG(released_at −
+     * funded_at)} — for the admin escrow summary's {@code averageReleaseTime} (the service divides
+     * by 3600 to hours). Returns {@code null} when no hold has been released yet (SQL {@code AVG} of
+     * an empty set), which the service maps to 0. Native ({@code TIMESTAMPDIFF}, MySQL — the app's
+     * dialect); filters {@code RELEASED} only so REFUNDED holds (which also set {@code released_at})
+     * do not skew the figure.
+     */
+    @Query(
+            value = "SELECT AVG(TIMESTAMPDIFF(SECOND, funded_at, released_at)) FROM escrow_holds "
+                    + "WHERE status = 'RELEASED' AND funded_at IS NOT NULL AND released_at IS NOT NULL",
+            nativeQuery = true)
+    Double avgReleaseSeconds();
 }
