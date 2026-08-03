@@ -68,16 +68,16 @@ describe('api facade shape', () => {
  * CreatorOnboardingController, UploadController, and the payout-methods routes).
  */
 const KNOWN_PHANTOM_PATHS = new Set<string>([
-  '/notifications/read-all',
   // NOTE (2026-07-26): '/wallet/recharge' removed — the dead `wallet.recharge` wrapper that
   // called it was deleted from src/lib/api.ts (no callers, no controller, never had one).
   //
-  // '/deliverables/{}/approve' and '/deliverables/{}/revise' are STALE entries: both are real
-  // today (BrandDeliverableController.java:46 and :53) and are called from four brand UI sites.
-  // They stay listed only because this set may not shrink without re-running the generator that
-  // built it; remove them the next time this baseline is regenerated.
-  '/deliverables/{}/approve',
-  '/deliverables/{}/revise',
+  // NOTE (2026-08-03): three stale entries removed as their contracts are now settled —
+  //   '/notifications/read-all'   — the dead `api.notifications.markAllRead` wrapper (its only
+  //                                 reference) was deleted from src/lib/api.ts; nothing calls it.
+  //   '/deliverables/{}/approve'  — real today (BrandDeliverableController.java:46), matched live.
+  //   '/deliverables/{}/revise'   — real today (BrandDeliverableController.java:53), matched live.
+  // Baseline only shrinks (guardrail contract): each was verified to no longer be an unmatched
+  // FE phantom before removal.
 
   // -------------------------------------------------------------------------
   // ADMIN PANEL — deferred by explicit CTO scope decision (Priya, 2026-07-15).

@@ -48,10 +48,10 @@ export type { DeliverableStatus, ContractStatus } from './types';
 // ---------------------------------------------------------------------------
 
 const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+  import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 
 const API_MODE: 'live' | 'mock' =
-  (import.meta as any).env?.VITE_API_MODE === 'live' ? 'live' : 'mock';
+  import.meta.env?.VITE_API_MODE === 'live' ? 'live' : 'mock';
 
 /** True when `VITE_API_MODE=live` */
 export function isApiLive(): boolean {
@@ -385,7 +385,7 @@ class HttpClient {
       !!this.getToken(role),
     );
 
-    const envelope = await this.parseEnvelope<T>(res, path);
+    const envelope = await this.parseEnvelope<T>(res);
 
     if (!res.ok || !envelope.success) {
       throw new ApiError(
@@ -407,7 +407,7 @@ class HttpClient {
    * "Invalid JSON" made a transient outage look like a data bug; instead we tell the user
    * the server was briefly unavailable so the UI's "Try again" reads correctly.
    */
-  private async parseEnvelope<T>(res: Response, path: string): Promise<ApiEnvelope<T>> {
+  private async parseEnvelope<T>(res: Response): Promise<ApiEnvelope<T>> {
     const raw = await res.text();
     try {
       return JSON.parse(raw) as ApiEnvelope<T>;
@@ -458,7 +458,7 @@ class HttpClient {
       role,
       !!this.getToken(role),
     );
-    const envelope = await this.parseEnvelope<T>(res, path);
+    const envelope = await this.parseEnvelope<T>(res);
     if (!res.ok || !envelope.success) {
       throw new ApiError(
         envelope.error?.code || 'UNKNOWN',
@@ -509,7 +509,7 @@ class HttpClient {
       !!this.getToken(role),
     );
     if (res.status === 204) return null;
-    const envelope = await this.parseEnvelope<T>(res, path);
+    const envelope = await this.parseEnvelope<T>(res);
     if (!res.ok || !envelope.success) {
       throw new ApiError(
         envelope.error?.code || 'UNKNOWN',
@@ -1074,10 +1074,29 @@ type CampaignApiRow = Campaign & {
   totalSpend?: number;
 };
 
+// FE CampaignType ('OPEN' | 'DIRECT' | 'HYPE' — src/lib/types.ts:15) and the backend's
+// CampaignIntentType (HYPE | DIRECT | REVIEW | STANDARD) do not share a vocabulary: FE 'OPEN'
+// is the backend's 'STANDARD', and the backend's 'REVIEW' has no FE surface (never created by
+// the brand form; treated as an open campaign on read). These two tables are the single, explicit
+// translation at the HTTP boundary so campaignType round-trips losslessly instead of leaking a
+// raw 'STANDARD' into a field the FE union claims can only be OPEN/DIRECT/HYPE.
+const CAMPAIGN_TYPE_TO_API = { OPEN: 'STANDARD', DIRECT: 'DIRECT', HYPE: 'HYPE' } as const;
+const CAMPAIGN_TYPE_FROM_API = {
+  STANDARD: 'OPEN',
+  REVIEW: 'OPEN',
+  DIRECT: 'DIRECT',
+  HYPE: 'HYPE',
+} as const;
+
 function mapCampaignFromApi(row: CampaignApiRow): Campaign {
   const timeline = row.timeline as Campaign['timeline'];
   return {
     ...row,
+    // Map the backend CampaignIntentType back to the FE CampaignType union so this field is
+    // never the runtime lie it used to be ('STANDARD' arriving where the type says OPEN/DIRECT/HYPE).
+    campaignType: row.campaignType
+      ? CAMPAIGN_TYPE_FROM_API[row.campaignType as keyof typeof CAMPAIGN_TYPE_FROM_API] ?? 'OPEN'
+      : undefined,
     timeline: {
       startDate: timeline?.startDate ? new Date(timeline.startDate) : new Date(),
       endDate: timeline?.endDate ? new Date(timeline.endDate) : new Date(),
@@ -1124,14 +1143,13 @@ function campaignToPayload(payload: Partial<Campaign>) {
   // jackson-datatype-jsr310, so a typed Instant would fail on persist).
   const fmtIso = (d: Date | string) => (d instanceof Date ? d : new Date(d)).toISOString();
 
-  // FE CampaignType ('OPEN' | 'DIRECT' | 'HYPE' — src/lib/types.ts:15) does not
-  // match the backend's CampaignIntentType enum (HYPE | DIRECT | REVIEW |
-  // STANDARD). 'OPEN' has no backend equivalent and would 400, so only forward
-  // campaignType when it's a value the backend actually accepts; omitting it
-  // otherwise preserves today's behavior for non-Hype creates (backend
-  // defaults absent/null campaignType to STANDARD — CampaignService.java:115-116).
-  // Reconciling the full OPEN/STANDARD mismatch is a separate, pre-existing item.
-  const campaignType = payload.campaignType !== 'OPEN' ? payload.campaignType : undefined;
+  // Translate the FE CampaignType to the backend CampaignIntentType via the explicit table
+  // (CAMPAIGN_TYPE_TO_API above): FE 'OPEN' -> 'STANDARD' (the backend's equivalent), DIRECT/HYPE
+  // pass through. Sending 'STANDARD' explicitly is identical in outcome to the old omit-and-let-
+  // the-backend-default-to-STANDARD (CampaignService.java:115-116) but is lossless and honest.
+  const campaignType = payload.campaignType
+    ? CAMPAIGN_TYPE_TO_API[payload.campaignType] ?? undefined
+    : undefined;
 
   const hype = payload.hype
     ? {
@@ -1575,7 +1593,7 @@ export interface DealMessage {
   senderId: string;
   senderType: 'brand' | 'creator' | 'system';
   content?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   createdAt: string;
   readBy: string[];
 }
@@ -2754,12 +2772,6 @@ export const notifications = {
   markRead: (role: Role, id: string) =>
     isLive()
       ? http.request<{ ok: true }>('POST', '/notifications/read', { role, body: { notificationId: id } })
-      : mockOr({ ok: true as const }),
-
-  /** POST /notifications/read-all */
-  markAllRead: (role: Role) =>
-    isLive()
-      ? http.request<{ ok: true }>('POST', '/notifications/read-all', { role })
       : mockOr({ ok: true as const }),
 
   /**
