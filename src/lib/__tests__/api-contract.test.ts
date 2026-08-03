@@ -138,15 +138,14 @@ const KNOWN_PHANTOM_PATHS = new Set<string>([
   '/admin/moderation/suspensions',
   '/admin/moderation/suspensions/{}/appeal',
 
-  // Same decision, same evidence: these four api-contracts.ts exports have NO
-  // importer anywhere in src/ — errorApi, emailApi, marketingApi, auditApi are
-  // dead in their entirety (not just individual methods), as is escrowApi above.
-  // They were NOT in the original phantom report, which was truncated; the real
-  // count was 38, not 25. Surfaced only by running the guardrail to completion.
-  '/admin/errors/recent',
-  '/admin/errors/{}',
-  '/admin/errors/{}/resolve',
-  '/admin/errors/stats',
+  // Same decision, same evidence: these api-contracts.ts exports have NO importer
+  // anywhere in src/ — emailApi, marketingApi, auditApi are dead in their entirety,
+  // as is escrowApi above. They were NOT in the original phantom report, which was
+  // truncated; the real count was 38, not 25. Surfaced by running the guardrail fully.
+  //
+  // NOTE (2026-08-03): the four '/admin/errors/*' entries were REMOVED — errorApi is now
+  // LIVE (AdminErrorLogController, committed 9d22e4c) AND wired (useErrorLog.ts /
+  // ErrorLogPage.tsx), so those paths resolve to real controllers and are no longer phantom.
   '/admin/emails/queue',
   '/admin/emails/queue/{}/retry',
   '/admin/emails/templates',
