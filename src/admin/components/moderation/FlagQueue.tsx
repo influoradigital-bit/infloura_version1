@@ -299,7 +299,7 @@ function FlagDetailDrawer({ flag, onOpenChange }: { flag: ContentFlag | null; on
       setActionNote('Action applied successfully.');
       setTimeout(() => onOpenChange(false), 1500);
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       setActionNote(`Action failed: ${error?.message || 'Unknown error'}`);
     },
   });

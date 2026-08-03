@@ -11,10 +11,10 @@ import { ContractPanel } from '../panels/contract-panel';
 
 export function ContractEventCard({
   event,
-  currentUserType,
 }: {
   event: TimelineEvent;
-  currentUserType: 'brand' | 'creator';
+  /** Accepted for API symmetry; ContractPanel derives the viewer role itself. */
+  currentUserType?: 'brand' | 'creator';
 }) {
   const meta = event.metadata;
   const status = meta?.contractStatus || 'generated';

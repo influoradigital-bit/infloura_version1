@@ -9,24 +9,15 @@ import {
   Paperclip,
   Search,
   MoreVertical,
-  Check,
   CheckCheck,
   FileText,
-  Image as ImageIcon,
-  Clock,
-  ChevronRight,
-  Shield,
   IndianRupee,
-  Calendar,
   Video,
   Upload,
   CheckCircle2,
   AlertCircle,
-  Pen,
-  Eye,
   Building2,
   Reply,
-  MessageSquare,
   FileSignature,
   Package,
   CreditCard,
@@ -57,12 +48,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -71,11 +56,9 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { CounterProposalForm, type CounterProposalFormData } from '@/components/creator/deal-room/counter-proposal-form';
-import { CounterProposalCard } from '@/components/creator/deal-room/counter-proposal-card';
 import { CreatorContractPanel } from '@/components/creator/deal-room/creator-contract-panel';
 import { CreatorContractCard } from '@/components/creator/deal-room/creator-contract-card';
 import { DeliverableSubmission, type DeliverableSubmissionData } from '@/components/creator/deal-room/deliverable-submission';
-import { DeliverableCard } from '@/components/creator/deal-room/deliverable-card';
 import { RevisionHandler } from '@/components/creator/deal-room/revision-handler';
 import { ShippingAddressForm, type ShippingAddressData } from '@/components/creator/deal-room/shipping-address-form';
 import { ReceiptConfirmation, type ReceiptData } from '@/components/creator/deal-room/receipt-confirmation';
@@ -1000,8 +983,6 @@ export default function CreatorChatPage() {
     if (selectedDeal) syncUrl(selectedDeal.id, panel);
   };
 
-  const openContractTab = () => openTool('contract');
-
   // FE-2: fetch the full contract once a real contractId exists on the
   // selected deal. Coarse status (deal.contractStatus) already renders an
   // honest state before this resolves.
@@ -1069,7 +1050,7 @@ export default function CreatorChatPage() {
   const [counterAmount, setCounterAmount] = React.useState('');
   const [counterMessage, setCounterMessage] = React.useState('');
   const [showRevisionHandler, setShowRevisionHandler] = React.useState(false);
-  const [selectedDeliverableForRevision, setSelectedDeliverableForRevision] = React.useState<string | null>(null);
+  const [selectedDeliverableForRevision] = React.useState<string | null>(null);
   const [isSubmittingDeliverable, setIsSubmittingDeliverable] = React.useState(false);
   const [isAcceptingProposal, setIsAcceptingProposal] = React.useState(false);
   const [isDecliningProposal, setIsDecliningProposal] = React.useState(false);
@@ -1397,10 +1378,6 @@ export default function CreatorChatPage() {
     }
   };
 
-  const handleSubmitDeliverable = () => {
-    setShowDeliverableDialog(false);
-  };
-
   const handleSubmitDeliverableForm = async (data: DeliverableSubmissionData) => {
     setIsSubmittingDeliverable(true);
     try {
@@ -1420,7 +1397,7 @@ export default function CreatorChatPage() {
     }
   };
 
-  const handleStartRevision = async (revisionNotes: string) => {
+  const handleStartRevision = async (_revisionNotes: string) => {
     // No dedicated "start revision" endpoint exists (or is needed) — a revision
     // is just a re-submission of the same deliverable row via
     // creatorDeliverables.upload + deliverables.submit, which
@@ -2452,63 +2429,6 @@ export default function CreatorChatPage() {
           </ToolsSheetContent>
         </ToolsSheet>
       </div>
-
-      {/* Contract Details Sheet */}
-      {false && (
-      <Sheet open={false} onOpenChange={() => {}}>
-        <SheetContent className="w-full sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle>Contract Details</SheetTitle>
-          </SheetHeader>
-          <div className="mt-6 space-y-6">
-            <div>
-              <p className="text-sm text-muted-foreground mb-1">Contract ID</p>
-              <p className="font-mono">CTR-2024-001</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground mb-1">Brand</p>
-              <p className="font-medium">{selectedDeal.brandName}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground mb-1">Campaign</p>
-              <p className="font-medium">{selectedDeal.campaignName}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground mb-1">Contract Value</p>
-              <p className="text-2xl font-bold">{formatINR(selectedDeal.dealAmount)}</p>
-            </div>
-            <div className="pt-4 border-t">
-              <p className="text-sm font-medium mb-3">Your Earnings</p>
-              <div className="space-y-2 text-sm">
-                {(() => {
-                  const earnings = calculateEarnings(selectedDeal.dealAmount);
-                  return (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Contract Value</span>
-                        <span>{formatINR(selectedDeal.dealAmount)}</span>
-                      </div>
-                      <div className="flex justify-between text-stage-disputed-fg">
-                        <span>Platform Fee (15%)</span>
-                        <span>-{formatINR(earnings.platformFee)}</span>
-                      </div>
-                      <div className="flex justify-between font-semibold text-stage-approved-fg pt-2 border-t">
-                        <span>You Receive</span>
-                        <span>{formatINR(earnings.netEarnings)}</span>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-            <Button className="w-full">
-              <FileText className="h-4 w-4 mr-2" />
-              Download Contract PDF
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
-      )}
 
       {/* Counter Proposal Dialog */}
       <Dialog open={showCounterDialog} onOpenChange={setShowCounterDialog}>

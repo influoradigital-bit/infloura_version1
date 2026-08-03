@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, Calendar, Users, IndianRupee, Edit, Pause, Play,
-  Copy, Trash2, MoreHorizontal, Send, MessageSquare, CheckCircle2,
+  Copy, Trash2, MoreHorizontal, MessageSquare, CheckCircle2,
   XCircle, Clock, Star, TrendingUp, Instagram, Youtube, Twitter,
   FileText, Download, AlertCircle, Sparkles, Filter, Search,
   BadgeCheck, Heart, Eye, BarChart2, Target, Award, RefreshCcw,
@@ -34,10 +34,10 @@ import {
 } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { CampaignStateMachine, type CampaignState } from '@/components/brand/campaigns/campaign-state-machine';
+import { CampaignStateMachine } from '@/components/brand/campaigns/campaign-state-machine';
 import { CollaborationTimeline } from '@/components/brand/timeline/collaboration-timeline';
 import { api, isApiLive, ApiError, type Deal, type CampaignAnalytics } from '@/lib/api';
-import type { Campaign as ApiCampaign } from '@/lib/types';
+import type { Campaign as ApiCampaign, Collaboration } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -460,14 +460,6 @@ const formatCurrency = (amount: number, currency = 'INR'): string =>
 const formatDate = (date: Date): string =>
   new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 
-const statusConfig = {
-  DRAFT:     { label: 'Draft',     color: 'border bg-stage-draft text-stage-draft-fg border-stage-draft-border' },
-  ACTIVE:    { label: 'Active',    color: 'border bg-stage-approved text-stage-approved-fg border-stage-approved-border' },
-  PAUSED:    { label: 'Paused',    color: 'border bg-stage-paused text-stage-paused-fg border-stage-paused-border' },
-  COMPLETED: { label: 'Completed', color: 'border bg-stage-approved text-stage-approved-fg border-stage-approved-border' },
-  CANCELLED: { label: 'Cancelled', color: 'border bg-stage-cancelled text-stage-cancelled-fg border-stage-cancelled-border' },
-};
-
 const bidStatusConfig: Record<string, { label: string; color: string }> = {
   PENDING:     { label: 'Pending Review',  color: 'border bg-stage-outreach text-stage-outreach-fg border-stage-outreach-border' },
   SHORTLISTED: { label: 'Shortlisted',     color: 'border bg-stage-outreach text-stage-outreach-fg border-stage-outreach-border' },
@@ -523,7 +515,7 @@ export default function BrandCampaignDetailPage() {
   const [liveCampaign, setLiveCampaign] = React.useState<ApiCampaign | null>(null);
   const [liveDeals, setLiveDeals] = React.useState<Deal[]>([]);
   const [liveAnalytics, setLiveAnalytics] = React.useState<CampaignAnalytics | null>(null);
-  const [isLoading, setIsLoading] = React.useState(liveApi);
+  const [, setIsLoading] = React.useState(liveApi);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [notFound, setNotFound] = React.useState(false);
   const [reloadToken, setReloadToken] = React.useState(0);
@@ -1717,10 +1709,6 @@ export default function BrandCampaignDetailPage() {
                           ].map((b) => {
                             const delta = Math.round(((b.campaign - b.peer) / b.peer) * 100);
                             const isGood = b.better === 'higher' ? delta > 0 : delta < 0;
-                            const campWidth = b.better === 'higher'
-                              ? (b.campaign / Math.max(b.campaign, b.peer)) * 100
-                              : (b.peer / Math.max(b.campaign, b.peer)) * 100 * (b.peer / b.campaign);
-                            const peerWidth = 60;
                             return (
                               <div key={b.label}>
                                 <div className="flex items-center justify-between mb-2 text-sm">
@@ -2016,8 +2004,10 @@ export default function BrandCampaignDetailPage() {
                     id: selectedCollaboration.id,
                     creatorId: selectedCollaboration.creator.id,
                     creatorName: selectedCollaboration.creator.name,
-                    // Add other required fields from Collaboration type
-                  } as any}
+                    // Partial view-model: the timeline only reads id/creatorId/
+                    // creatorName. Asserted to Collaboration rather than `any` so
+                    // the component's own field access stays type-checked.
+                  } as unknown as Collaboration}
                   currentUserType="brand"
                 />
               </div>

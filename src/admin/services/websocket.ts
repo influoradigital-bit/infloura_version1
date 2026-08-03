@@ -149,7 +149,7 @@ const CLOSE = {
   FORBIDDEN: 4403,
 } as const;
 
-const isDev = (import.meta as any).env?.DEV === true;
+const isDev = import.meta.env?.DEV === true;
 
 function log(...args: unknown[]): void {
   if (isDev) console.info('[admin-ws]', ...args);
@@ -162,7 +162,7 @@ function log(...args: unknown[]): void {
  * empty, or anything other than the literal string `"true"` stays disabled.
  */
 export function isAdminWsEnabled(): boolean {
-  const env = (import.meta as any).env ?? {};
+  const env = import.meta.env ?? {};
   return env.VITE_ADMIN_WS_ENABLED === 'true';
 }
 
@@ -175,7 +175,7 @@ export function isAdminWsEnabled(): boolean {
  *  3. Local dev fallback.
  */
 export function resolveAdminSocketUrl(): string {
-  const env = (import.meta as any).env ?? {};
+  const env = import.meta.env ?? {};
   const explicit: string | undefined = env.VITE_ADMIN_WS_URL;
   if (explicit) return explicit;
 

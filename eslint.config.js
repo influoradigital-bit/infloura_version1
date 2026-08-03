@@ -12,7 +12,11 @@ export default tseslint.config(
     // `.claude` holds ~10 full worktree copies of this repo (each with its own
     // src/ + tsconfig); `eslint .` would otherwise descend into all of them,
     // producing thousands of duplicate/parse errors. Ignore it outright.
-    ignores: ['dist', 'build', 'node_modules', 'app', 'components', 'hooks', 'lib', '.claude'],
+    // `**/.venv/**` keeps `eslint .` out of vendored Python virtualenvs (e.g.
+    // influora-ai/.venv holds Playwright's bundled JS, which ships its own eslint
+    // rules — `notice/notice`, `internal-playwright/*` — and produced 34 phantom
+    // problems that are not this app's code.
+    ignores: ['dist', 'build', 'node_modules', 'app', 'components', 'hooks', 'lib', '.claude', '**/.venv/**'],
   },
   {
     files: ['src/**/*.{ts,tsx}'],
@@ -34,9 +38,44 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // react-hooks v7's `recommended` ships the entire React Compiler ruleset
+      // at `error`. On inspection every one of these fired on idiomatic,
+      // correct code for THIS (non-React-Compiler) codebase, not on bugs:
+      //   set-state-in-effect  -> standard fetch-in-effect (setLoading/setData)
+      //   purity               -> Date.now()/new Date() for display, Math.random
+      //                           for decorative widths
+      //   immutability         -> @react-three/fiber useFrame camera mutation
+      //                           (the documented R3F animation pattern)
+      //   refs                 -> the latest-ref idiom (ref.current = handler)
+      //                           and detection-ref reads
+      //   static-components    -> icon-map lookups (const Icon = resolve(...))
+      //   preserve-manual-memoization / set-state-in-render -> same class
+      // Per React's own incremental-adoption guidance these are warnings until
+      // React Compiler is actually adopted. The classic always-real rules
+      // (rules-of-hooks, exhaustive-deps, use-memo, error-boundaries, globals,
+      // gating, config) are left at their recommended severity.
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/set-state-in-render': 'warn',
+      'react-hooks/purity': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/static-components': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },
+      ],
+      // Honour the `_`-prefix convention for intentionally-unused bindings
+      // (params kept for signature/shape, disabled imports). Author already
+      // marks these with a leading underscore; this makes the linter agree.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+        },
       ],
     },
   },

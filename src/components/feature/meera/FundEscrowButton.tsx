@@ -114,7 +114,10 @@ export function FundEscrowButton({
   campaignId,
   milestoneId,
   displayAmount,
-  onFunded,
+  // NOTE: `onFunded` is declared on FundEscrowButtonProps but is not currently
+  // invoked anywhere in this component — the parent's callback never fires on a
+  // successful fund. Left un-destructured (not wired) deliberately: wiring a
+  // payment-completion callback is out of scope for a lint pass. Tracked separately.
   className,
   disabled = false,
 }: FundEscrowButtonProps) {
