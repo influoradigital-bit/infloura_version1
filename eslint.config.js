@@ -79,4 +79,13 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // F-0050: brand-pipeline's BoardView/ListView/TimelineView were converted
+    // from in-render components to render helpers and CollaborationCard hoisted
+    // to module scope. Keep static-components at ERROR here (it's `warn`
+    // globally until React Compiler adoption) so the remount anti-pattern
+    // cannot silently return to this file.
+    files: ['src/pages/brand-pipeline.tsx'],
+    rules: { 'react-hooks/static-components': 'error' },
+  },
 )

@@ -1,26 +1,21 @@
 import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  ArrowRight, 
-  Plus, 
-  MessageSquare, 
-  Clock, 
-  CheckCircle2, 
+import {
+  Plus,
+  MessageSquare,
+  Clock,
+  CheckCircle2,
   AlertCircle,
   AlertTriangle,
-  TrendingUp,
   Send,
   FileCheck,
   Banknote,
-  Filter,
-  MoreHorizontal,
   LayoutGrid,
   List,
   Calendar,
   Search,
   Instagram,
   Youtube,
-  Timer,
   Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -31,13 +26,6 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Tooltip,
   TooltipContent,
@@ -296,6 +284,95 @@ const PlatformIcon = ({ platform }: { platform: string }) => {
 // Check if collaboration is at SLA risk (< 12 hours)
 const isAtRisk = (collab: Collaboration) => collab.slaHoursRemaining && collab.slaHoursRemaining < 12;
 
+// Module-scope so it keeps a stable component identity and never remounts on a
+// BrandPipelinePage re-render (F-0050). Reads module-level stages/isAtRisk/
+// formatINR/PlatformIcon; takes the row data and an onOpen handler as props.
+function CollaborationCard({ collab, onOpen }: { collab: Collaboration; onOpen: () => void }) {
+  const stage = stages.find((s) => s.id === collab.status);
+  const atRiskStatus = isAtRisk(collab);
+
+  return (
+    <Card
+      className={cn(
+        'p-3 cursor-pointer hover:shadow-md transition-all border-l-4',
+        stage?.color || 'border-l-muted',
+        atRiskStatus && 'ring-2 ring-red-200 bg-red-50/50'
+      )}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open deal with ${collab.creatorName}`}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      {/* SLA Warning */}
+      {atRiskStatus && (
+        <div className="flex items-center gap-1 text-stage-disputed-fg text-xs font-medium mb-2 bg-red-100 rounded px-2 py-1">
+          <AlertTriangle className="h-3 w-3" />
+          <span>SLA at risk: {collab.slaHoursRemaining}h remaining</span>
+        </div>
+      )}
+
+      <div className="flex items-start gap-3">
+        <Avatar className="h-10 w-10 border-2 border-background">
+          <AvatarImage src={collab.creatorAvatar} />
+          <AvatarFallback>{collab.creatorName.charAt(0)}</AvatarFallback>
+        </Avatar>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="font-medium text-sm truncate">{collab.creatorName}</p>
+            <span className="text-xs text-muted-foreground">{collab.creatorFollowers}</span>
+          </div>
+          <p className="text-xs text-muted-foreground truncate">{collab.campaignTitle}</p>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <span className="text-muted-foreground">Budget</span>
+          <p className="font-semibold">{formatINR(collab.budget)}</p>
+        </div>
+        {collab.matchScore !== undefined && (
+          <div>
+            <span className="text-muted-foreground">Match</span>
+            <p className={cn(
+              'font-semibold',
+              collab.matchScore >= 90 ? 'text-stage-approved-fg' :
+              collab.matchScore >= 80 ? 'text-stage-negotiating-fg' : 'text-muted-foreground'
+            )}>
+              {collab.matchScore}%
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Deliverable Progress (for IN_PROGRESS) */}
+      {collab.status === 'IN_PROGRESS' && collab.deliverableProgress !== undefined && (
+        <div className="mt-3">
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="text-muted-foreground">Progress</span>
+            <span className="font-medium">{collab.deliverableProgress}%</span>
+          </div>
+          <Progress value={collab.deliverableProgress} className="h-1.5" />
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          {collab.platforms.map((p) => (
+            <PlatformIcon key={p} platform={p} />
+          ))}
+        </div>
+        <span className="text-xs text-muted-foreground">{collab.lastActivity}</span>
+      </div>
+    </Card>
+  );
+}
+
 export default function BrandPipelinePage() {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = React.useState<'board' | 'list' | 'timeline'>('board');
@@ -346,95 +423,11 @@ export default function BrandPipelinePage() {
   const getCollaborationsByStage = (stageId: string) => 
     filteredCollabs.filter((c) => c.status === stageId);
 
-  const CollaborationCard = ({ collab }: { collab: Collaboration }) => {
-    const stage = stages.find((s) => s.id === collab.status);
-    const atRiskStatus = isAtRisk(collab);
-    const openDeal = () => navigate(`/brand/deals/${collab.id}`);
+  const openDeal = (id: string) => navigate(`/brand/deals/${id}`);
 
-    return (
-      <Card
-        className={cn(
-          'p-3 cursor-pointer hover:shadow-md transition-all border-l-4',
-          stage?.color || 'border-l-muted',
-          atRiskStatus && 'ring-2 ring-red-200 bg-red-50/50'
-        )}
-        role="button"
-        tabIndex={0}
-        aria-label={`Open deal with ${collab.creatorName}`}
-        onClick={openDeal}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            openDeal();
-          }
-        }}
-      >
-        {/* SLA Warning */}
-        {atRiskStatus && (
-          <div className="flex items-center gap-1 text-stage-disputed-fg text-xs font-medium mb-2 bg-red-100 rounded px-2 py-1">
-            <AlertTriangle className="h-3 w-3" />
-            <span>SLA at risk: {collab.slaHoursRemaining}h remaining</span>
-          </div>
-        )}
-        
-        <div className="flex items-start gap-3">
-          <Avatar className="h-10 w-10 border-2 border-background">
-            <AvatarImage src={collab.creatorAvatar} />
-            <AvatarFallback>{collab.creatorName.charAt(0)}</AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="font-medium text-sm truncate">{collab.creatorName}</p>
-              <span className="text-xs text-muted-foreground">{collab.creatorFollowers}</span>
-            </div>
-            <p className="text-xs text-muted-foreground truncate">{collab.campaignTitle}</p>
-          </div>
-        </div>
-        
-        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-          <div>
-            <span className="text-muted-foreground">Budget</span>
-            <p className="font-semibold">{formatINR(collab.budget)}</p>
-          </div>
-          {collab.matchScore !== undefined && (
-            <div>
-              <span className="text-muted-foreground">Match</span>
-              <p className={cn(
-                'font-semibold',
-                collab.matchScore >= 90 ? 'text-stage-approved-fg' :
-                collab.matchScore >= 80 ? 'text-stage-negotiating-fg' : 'text-muted-foreground'
-              )}>
-                {collab.matchScore}%
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Deliverable Progress (for IN_PROGRESS) */}
-        {collab.status === 'IN_PROGRESS' && collab.deliverableProgress !== undefined && (
-          <div className="mt-3">
-            <div className="flex items-center justify-between text-xs mb-1">
-              <span className="text-muted-foreground">Progress</span>
-              <span className="font-medium">{collab.deliverableProgress}%</span>
-            </div>
-            <Progress value={collab.deliverableProgress} className="h-1.5" />
-          </div>
-        )}
-        
-        <div className="mt-3 flex items-center justify-between">
-          <div className="flex items-center gap-1">
-            {collab.platforms.map((p) => (
-              <PlatformIcon key={p} platform={p} />
-            ))}
-          </div>
-          <span className="text-xs text-muted-foreground">{collab.lastActivity}</span>
-        </div>
-      </Card>
-    );
-  };
-
-  // Board View
-  const BoardView = () => (
+  // Board View — a render helper (called, not mounted as <BoardView/>), so it
+  // produces inlined elements with no in-render component identity to remount.
+  const boardView = () => (
     <ScrollArea className="w-full">
       <div className="flex gap-4 pb-4 min-w-max">
         {stages.map((stage) => {
@@ -460,7 +453,7 @@ export default function BrandPipelinePage() {
               </div>
               <div className="space-y-3">
                 {stageCollabs.map((collab) => (
-                  <CollaborationCard key={collab.id} collab={collab} />
+                  <CollaborationCard key={collab.id} collab={collab} onOpen={() => openDeal(collab.id)} />
                 ))}
                 {stageCollabs.length === 0 && (
                   <div className="rounded-lg border-2 border-dashed p-6 text-center">
@@ -476,8 +469,8 @@ export default function BrandPipelinePage() {
     </ScrollArea>
   );
 
-  // List View
-  const ListView = () => (
+  // List View — render helper (see boardView note).
+  const listView = () => (
     <div className="rounded-lg border overflow-hidden">
       <table className="w-full">
         <thead className="bg-muted/50">
@@ -566,8 +559,8 @@ export default function BrandPipelinePage() {
     </div>
   );
 
-  // Timeline View (simplified Gantt-like)
-  const TimelineView = () => (
+  // Timeline View (simplified Gantt-like) — render helper (see boardView note).
+  const timelineView = () => (
     <div className="space-y-4">
       {filteredCollabs.map((collab) => {
         const stage = stages.find((s) => s.id === collab.status);
@@ -734,9 +727,9 @@ export default function BrandPipelinePage() {
           </Card>
         ) : (
           <>
-            {viewMode === 'board' && <BoardView />}
-            {viewMode === 'list' && <ListView />}
-            {viewMode === 'timeline' && <TimelineView />}
+            {viewMode === 'board' && boardView()}
+            {viewMode === 'list' && listView()}
+            {viewMode === 'timeline' && timelineView()}
           </>
         )}
       </div>

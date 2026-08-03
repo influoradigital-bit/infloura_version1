@@ -206,4 +206,83 @@ describe('FundEscrowButton', () => {
     expect(openCheckoutMock).not.toHaveBeenCalled();
     expect(screen.getByRole('button')).toHaveTextContent(/try again/i);
   });
+
+  // --- onFunded callback (F-0049) ---------------------------------------------
+  // The parent's success callback must fire exactly once, and ONLY after the
+  // SERVER-confirmed FUNDED state — never on render, never on a dismissed
+  // Checkout (no money moved).
+
+  it('calls onFunded exactly once when the server funds immediately from the wallet', async () => {
+    fundEscrowMock.mockResolvedValueOnce({
+      escrowHoldId: 'hold_f1',
+      amount: 5000,
+      currency: 'INR',
+      status: 'FUNDED',
+    });
+
+    const onFunded = vi.fn();
+    const user = userEvent.setup();
+    render(<FundEscrowButton campaignId="camp_1" displayAmount={5000} onFunded={onFunded} />);
+
+    // Not on render — human click required before anything happens.
+    expect(onFunded).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button'));
+
+    await waitFor(() => expect(screen.getByRole('button')).toHaveTextContent(/secured/i));
+    expect(onFunded).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onFunded once after server-verified FUNDED polling (the real Checkout path)', async () => {
+    fundEscrowMock.mockResolvedValueOnce({
+      escrowHoldId: 'hold_f2',
+      amount: 5000,
+      currency: 'INR',
+      razorpayOrderId: 'order_f2',
+      status: 'PENDING',
+    });
+    // The poll's first attempt sees FUNDED — no fake timers needed.
+    getEscrowStatusMock.mockResolvedValue({ status: 'FUNDED' } as never);
+
+    const onFunded = vi.fn();
+    const user = userEvent.setup();
+    render(<FundEscrowButton campaignId="camp_1" displayAmount={5000} onFunded={onFunded} />);
+
+    await user.click(screen.getByRole('button'));
+    await waitFor(() => expect(openCheckoutMock).toHaveBeenCalledTimes(1));
+
+    // Simulate the human completing the Razorpay modal — this only STARTS
+    // server-side verification; onFunded must still wait for FUNDED.
+    const { onSuccess } = openCheckoutMock.mock.calls[0][0] as OpenCheckoutParams;
+    await waitFor(() =>
+      onSuccess({ razorpay_payment_id: 'pay_f2', razorpay_order_id: 'order_f2' }),
+    );
+
+    await waitFor(() => expect(screen.getByRole('button')).toHaveTextContent(/secured/i));
+    expect(onFunded).toHaveBeenCalledTimes(1);
+  });
+
+  it('never calls onFunded when the escrow Checkout is dismissed (no money moved)', async () => {
+    fundEscrowMock.mockResolvedValueOnce({
+      escrowHoldId: 'hold_f3',
+      amount: 5000,
+      currency: 'INR',
+      razorpayOrderId: 'order_f3',
+      status: 'PENDING',
+    });
+
+    const onFunded = vi.fn();
+    const user = userEvent.setup();
+    render(<FundEscrowButton campaignId="camp_1" displayAmount={5000} onFunded={onFunded} />);
+
+    await user.click(screen.getByRole('button'));
+    await waitFor(() => expect(openCheckoutMock).toHaveBeenCalledTimes(1));
+
+    const { onDismiss } = openCheckoutMock.mock.calls[0][0] as OpenCheckoutParams;
+    await waitFor(() => onDismiss());
+
+    await waitFor(() => expect(screen.getByRole('button')).toBeEnabled());
+    expect(onFunded).not.toHaveBeenCalled();
+    expect(getEscrowStatusMock).not.toHaveBeenCalled();
+  });
 });
