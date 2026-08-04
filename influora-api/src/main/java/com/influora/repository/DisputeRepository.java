@@ -74,4 +74,17 @@ public interface DisputeRepository extends JpaRepository<Dispute, String> {
             @Param("brandId") String brandId,
             @Param("creatorId") String creatorId,
             Pageable pageable);
+
+    /**
+     * Average dispute resolution time in SECONDS across every resolved dispute (has a {@code
+     * resolved_at}) — powers {@code disputeResolutionSpeed} on the admin reputation score ({@code
+     * GET /admin/marketing/reputation}, converted to hours in the service). Returns {@code null}
+     * when no dispute has been resolved yet, never a fabricated 0.
+     */
+    @Query(
+            value =
+                    "SELECT AVG(TIMESTAMPDIFF(SECOND, created_at, resolved_at)) FROM disputes "
+                            + "WHERE resolved_at IS NOT NULL",
+            nativeQuery = true)
+    Double avgResolutionSeconds();
 }

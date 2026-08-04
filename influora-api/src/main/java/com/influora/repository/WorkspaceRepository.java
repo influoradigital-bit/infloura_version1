@@ -18,6 +18,13 @@ public interface WorkspaceRepository
     boolean existsBySlugAndIdNot(String slug, String id);
 
     /**
+     * Total workspaces of one type — powers {@code GET /admin/marketing/growth}'s {@code
+     * conversionRates.brandSignupToFirstCampaign} denominator ({@code
+     * AdminMarketingService.getGrowth}), called with {@code BRAND}.
+     */
+    long countByType(WorkspaceType type);
+
+    /**
      * Brand workspaces awaiting a KYC decision — backs {@code ApprovalWorkflowController}'s
      * unified pending-approvals queue (BRAND_KYC slice). Only {@code PENDING} (docs actually
      * submitted and awaiting review), not {@code UNVERIFIED} (nothing submitted yet — there is
@@ -38,4 +45,11 @@ public interface WorkspaceRepository
 
     @Query("SELECT w.id FROM Workspace w WHERE w.type = :type")
     List<String> findIdsByType(@Param("type") WorkspaceType type);
+
+    /**
+     * All currently-suspended workspaces (brand/agency accounts) — powers the admin moderation
+     * suspensions list ({@code GET /admin/moderation/suspensions}, {@code AdminModerationService}).
+     * Derived query on the {@code suspended} boolean flag set by {@code AdminBrandService}.
+     */
+    List<Workspace> findBySuspendedTrue();
 }

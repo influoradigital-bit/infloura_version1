@@ -357,15 +357,9 @@ export const financeApi = {
   getEscrowSummary: () =>
     apiRequest<EscrowSummary>('/finance/escrow'),
 
-  getPayoutQueue: (status?: string, page = 1, pageSize = 20) =>
-    apiRequest<PaginatedResponse<PayoutQueueItem>>(
-      `/finance/payouts?${new URLSearchParams({
-        ...(status && { status }),
-        page: String(page),
-        pageSize: String(pageSize),
-      })}`
-    ),
-
+  // getPayoutQueue REMOVED (2026-08-04, admin-fix-0804): called GET /admin/finance/payouts,
+  // a phantom route no controller exposes; had zero UI callers (dead code). Deleted per
+  // PROJECT-DEEP-AUDIT §3 BROKEN #1. Payout retry stays as an explicit unavailable() stub below.
   retryPayout: (id: string) =>
     unavailable<PayoutQueueItem>(`payout ${id} retry — blocked on Razorpay Route epic (Tier C)`),
 
@@ -735,20 +729,20 @@ export const marketingApi = {
       `acquisition metrics (${startDate}..${endDate}) — marketing analytics not built`
     ),
 
+  // getGrowth is LIVE (2026-08-04, admin-backend-0804): GET /admin/marketing/growth returns the
+  // data-backed SUBSET of GrowthMetrics — funnel.signups/firstCampaign/repeatCampaign + the two
+  // conversionRates, all derived from real User/Campaign/CreatorProfile rows. cohortRetention,
+  // referralStats, and funnel.profileComplete are OMITTED by the backend (no retention-event
+  // tracking, no Referral table, no profile-complete flag) — hence optional on GrowthMetrics.
   getGrowth: () =>
-    unavailable<GrowthMetrics>('growth metrics — marketing analytics not built'),
+    apiRequest<GrowthMetrics>('/marketing/growth'),
 
   getReputation: () =>
     apiRequest<PlatformReputationScore>('/marketing/reputation'),
 
-  getReferrals: (page = 1, pageSize = 20) =>
-    apiRequest<PaginatedResponse<{
-      referrerId: string;
-      referrerName: string;
-      referredCount: number;
-      convertedCount: number;
-      revenueAttributed: number;
-    }>>(`/marketing/referrals?page=${page}&pageSize=${pageSize}`),
+  // getReferrals REMOVED (2026-08-04, admin-fix-0804): called GET /admin/marketing/referrals,
+  // a phantom route — AdminMarketingController exposes only /reputation (referrals has no backing
+  // data, per AdminMarketingDtos.java:9). Zero UI callers. Deleted per PROJECT-DEEP-AUDIT §3 BROKEN #2.
 };
 
 // ============================================

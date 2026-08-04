@@ -741,12 +741,23 @@ export interface SourceAttribution {
 export interface GrowthMetrics {
   funnel: {
     signups: number;
-    profileComplete: number;
+    /** Omitted by GET /admin/marketing/growth — no profile-complete flag exists on the entities. */
+    profileComplete?: number;
     firstCampaign: number;
     repeatCampaign: number;
   };
-  cohortRetention: CohortRetention[];
-  referralStats: {
+  /**
+   * Data-backed conversion rates (0..1) served by GET /admin/marketing/growth's `GrowthMetricsDto`:
+   * approved/total creator applications, and brands-with-a-campaign / total brands.
+   */
+  conversionRates: {
+    creatorApplicationToApproval: number;
+    brandSignupToFirstCampaign: number;
+  };
+  /** Omitted by the backend — no retention/activity-event tracking exists yet (see AdminMarketingDtos). */
+  cohortRetention?: CohortRetention[];
+  /** Omitted by the backend — no Referral table exists yet (see AdminMarketingDtos). */
+  referralStats?: {
     invitesSent: number;
     conversions: number;
     conversionRate: number;

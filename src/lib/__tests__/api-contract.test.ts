@@ -125,7 +125,8 @@ const KNOWN_PHANTOM_PATHS = new Set<string>([
   '/admin/campaigns/hype/ops',
   '/admin/finance/revenue',
   '/admin/finance/escrow',
-  '/admin/finance/payouts',
+  // '/admin/finance/payouts' REMOVED (2026-08-04, admin-fix-0804): the dead `financeApi.getPayoutQueue`
+  // wrapper that emitted it was deleted — no longer an emitted FE phantom. Baseline only shrinks.
   '/admin/finance/payouts/{}/retry',
   '/admin/finance/reconciliation',
   '/admin/finance/reconciliation/{}/resolve',
@@ -153,7 +154,8 @@ const KNOWN_PHANTOM_PATHS = new Set<string>([
   '/admin/emails/stats',
   '/admin/marketing/acquisition',
   '/admin/marketing/growth',
-  '/admin/marketing/referrals',
+  // '/admin/marketing/referrals' REMOVED (2026-08-04, admin-fix-0804): the dead `marketingApi.getReferrals`
+  // wrapper that emitted it was deleted — no longer an emitted FE phantom. Baseline only shrinks.
   '/admin/marketing/reputation',
 
   // Non-admin, also verified zero live callers (2026-07-15): the api.ts methods

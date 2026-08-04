@@ -41,4 +41,17 @@ public interface ReviewRepository extends JpaRepository<Review, String> {
     List<Review> findReceivedByBrandWorkspaceId(
             @Param("workspaceId") String workspaceId,
             @Param("reviewerType") ReviewerType reviewerType);
+
+    /**
+     * Platform-wide average star rating for one reviewer direction (non-hidden reviews only) —
+     * powers the admin reputation score ({@code GET /admin/marketing/reputation}). {@code BRAND}
+     * reviewers rate creators (→ creator-quality), {@code CREATOR} reviewers rate brands (→
+     * brand-satisfaction). Returns {@code null} when no such review exists (never a fabricated 0).
+     */
+    @Query("SELECT AVG(r.stars) FROM Review r WHERE r.hidden = false AND r.reviewerType = :reviewerType")
+    Double avgStarsByReviewerType(@Param("reviewerType") ReviewerType reviewerType);
+
+    /** Platform-wide average star rating across all non-hidden reviews (both directions). */
+    @Query("SELECT AVG(r.stars) FROM Review r WHERE r.hidden = false")
+    Double avgAllStars();
 }
