@@ -17,7 +17,8 @@ interface Props {
   courier: string;
   trackingNumber: string;
   trackingUrl?: string;
-  estimatedDelivery: string;
+  /** ISO date `YYYY-MM-DD`; null/undefined when the brand hasn't provided an ETA yet. */
+  estimatedDelivery?: string | null;
   notes?: string;
   perspective: 'brand' | 'creator';
   onMarkReceived?: () => void;
@@ -92,7 +93,9 @@ export function ShipmentCard({
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Est. Delivery</span>
-              <span className="font-medium">{new Date(estimatedDelivery).toLocaleDateString()}</span>
+              <span className="font-medium">
+                {estimatedDelivery ? new Date(estimatedDelivery).toLocaleDateString() : '—'}
+              </span>
             </div>
           </div>
 

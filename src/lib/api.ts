@@ -1963,6 +1963,8 @@ export interface ShipmentApiRecord {
   receivedCondition?: ShipmentCondition | null;
   createdAt?: string;
   updatedAt?: string;
+  /** Brand-supplied ETA (creator-shipment-eta-0804), ISO date `YYYY-MM-DD`; null until shipped with a date. */
+  estimatedDelivery?: string | null;
 }
 
 /** Body for `POST /deals/:id/shipping-address` — creator-supplied delivery address. */
@@ -2001,6 +2003,8 @@ export interface ShipmentMarkShippedSubmission {
   trackingNumber: string;
   trackingUrl?: string;
   productName: string;
+  /** Optional brand-supplied ETA (creator-shipment-eta-0804), ISO date `YYYY-MM-DD`. */
+  estimatedDelivery?: string;
 }
 
 export const shipments = {
@@ -2048,6 +2052,7 @@ export const shipments = {
           trackingNumber: body.trackingNumber,
           trackingUrl: body.trackingUrl ?? null,
           productName: body.productName,
+          estimatedDelivery: body.estimatedDelivery ?? null,
         }),
 };
 

@@ -185,7 +185,8 @@ public class ShipmentService {
         validateTrackingUrl(trackingUrl);
         String productName = TextSanitizer.sanitizePlainText(body.productName());
 
-        shipment.markShipped(carrier, trackingNumber, trackingUrl, productName, Instant.now());
+        shipment.markShipped(
+                carrier, trackingNumber, trackingUrl, productName, body.estimatedDelivery(), Instant.now());
         shipmentRepository.save(shipment);
         appendShipmentMessage(collaboration.getId(), "Brand shipped the product via " + carrier);
 
@@ -416,6 +417,7 @@ public class ShipmentService {
                 shipment.getTrackingUrl(),
                 shipment.getConditionNote(),
                 shipment.getReceivedCondition(),
-                shipment.getUpdatedAt());
+                shipment.getUpdatedAt(),
+                shipment.getEstimatedDelivery());
     }
 }

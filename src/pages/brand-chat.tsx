@@ -11,7 +11,6 @@ import {
   FileText,
   Image as ImageIcon,
   Clock,
-  ChevronRight,
   Shield,
   IndianRupee,
   Calendar,
@@ -971,15 +970,19 @@ export default function BrandChatPage() {
           trackingNumber: data.trackingNumber,
           trackingUrl: data.trackingUrl || undefined,
           productName,
+          // creator-shipment-eta-0804: the form's `type="date"` value is already YYYY-MM-DD,
+          // exactly what the backend LocalDate expects. Now persisted (was dropped before).
+          estimatedDelivery: data.estimatedDelivery || undefined,
         });
-        // `items`/`estimatedDelivery`/`notes` have no backend equivalent (design doc has
-        // no columns for them) — keep what the brand just entered for those; courier/
-        // tracking/status come back from the persisted record so the card reflects truth.
+        // `items`/`notes` still have no backend column — keep what the brand just entered for
+        // those. `estimatedDelivery` now comes back on the record; courier/tracking/status also
+        // come from the persisted record so the card reflects truth.
         setShipment({
           ...data,
           courier: record.carrier ?? data.courier,
           trackingNumber: record.trackingNumber ?? data.trackingNumber,
           trackingUrl: record.trackingUrl ?? data.trackingUrl,
+          estimatedDelivery: record.estimatedDelivery ?? data.estimatedDelivery,
           status: mapShipmentApiStatusToUiStatus(record.status),
         });
       } else {
@@ -1223,11 +1226,11 @@ export default function BrandChatPage() {
     setTimeout(scrollToBottom, 50);
   };
 
-  const handleApproveDeliverable = (itemId: string, _feedback: string) => {
+  const handleApproveDeliverable = (itemId: string) => {
     setDeliverableStatuses((prev) => ({ ...prev, [itemId]: 'approved' }));
   };
 
-  const handleRequestRevision = (itemId: string, _feedback: string) => {
+  const handleRequestRevision = (itemId: string) => {
     setDeliverableStatuses((prev) => ({ ...prev, [itemId]: 'revision' }));
   };
 
@@ -2387,8 +2390,8 @@ export default function BrandChatPage() {
                       total={selectedDeal.deliverablesTotal}
                       dealValue={selectedDeal.dealValue}
                       items={deliverableItems}
-                      onApprove={(id) => handleApproveDeliverable(id, '')}
-                      onRequestRevision={(id) => handleRequestRevision(id, '')}
+                      onApprove={(id) => handleApproveDeliverable(id)}
+                      onRequestRevision={(id) => handleRequestRevision(id)}
                     />
                   )
                 )}

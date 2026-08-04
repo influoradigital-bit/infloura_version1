@@ -59,6 +59,7 @@ import { CounterProposalForm, type CounterProposalFormData } from '@/components/
 import { CreatorContractPanel } from '@/components/creator/deal-room/creator-contract-panel';
 import { CreatorContractCard } from '@/components/creator/deal-room/creator-contract-card';
 import { DeliverableSubmission, type DeliverableSubmissionData } from '@/components/creator/deal-room/deliverable-submission';
+import { DeliverableLifecyclePanel } from '@/components/creator/deal-room/deliverable-lifecycle-panel';
 import { RevisionHandler } from '@/components/creator/deal-room/revision-handler';
 import { ShippingAddressForm, type ShippingAddressData } from '@/components/creator/deal-room/shipping-address-form';
 import { ReceiptConfirmation, type ReceiptData } from '@/components/creator/deal-room/receipt-confirmation';
@@ -1130,11 +1131,10 @@ export default function CreatorChatPage() {
     ? liveShipment?.status === 'SHIPPED' || liveShipment?.status === 'RECEIVED' || liveShipment?.status === 'DAMAGED'
     : true; // mock/demo mode: keep the prior "brand always already shipped" assumption so the click-through demo still works
 
-  // Display fields ShipmentCard needs beyond status/address. Priya's Shipment entity has a
-  // single `productName` string and no ETA field. In live mode `items` is derived from the
-  // real `productName` (flattened to qty 1); only `estimatedDelivery` stays a hardcoded
-  // placeholder in both modes until a future schema addition. Courier/tracking/notes come
-  // from the real record once liveApi is on.
+  // Display fields ShipmentCard needs beyond status/address. In live mode `items` is derived
+  // from the real `productName` (flattened to qty 1), and `estimatedDelivery` is now the real
+  // brand-supplied ETA (creator-shipment-eta-0804) — null until the brand marks it shipped with
+  // a date. Courier/tracking/notes come from the real record once liveApi is on.
   const shipmentDisplay = React.useMemo(() => {
     if (liveApi) {
       return {
@@ -1142,6 +1142,7 @@ export default function CreatorChatPage() {
         courier: liveShipment?.carrier || 'Courier pending',
         trackingNumber: liveShipment?.trackingNumber || 'Pending',
         trackingUrl: liveShipment?.trackingUrl || undefined,
+        estimatedDelivery: liveShipment?.estimatedDelivery ?? null,
         notes: liveShipment?.conditionNote || undefined,
       };
     }
@@ -1150,6 +1151,7 @@ export default function CreatorChatPage() {
       courier: 'Delhivery',
       trackingNumber: 'DLV789456123',
       trackingUrl: 'https://www.delhivery.com/track',
+      estimatedDelivery: '2026-08-10',
       notes: 'Please unbox on camera if you can. Care: dry-clean only.',
     };
   }, [liveApi, liveShipment]);
@@ -2311,7 +2313,7 @@ export default function CreatorChatPage() {
                 courier={shipmentDisplay.courier}
                 trackingNumber={shipmentDisplay.trackingNumber}
                 trackingUrl={shipmentDisplay.trackingUrl}
-                estimatedDelivery={new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()}
+                estimatedDelivery={shipmentDisplay.estimatedDelivery}
                 notes={shipmentDisplay.notes}
                 onMarkReceived={handleMarkReceived}
               />
@@ -2410,12 +2412,33 @@ export default function CreatorChatPage() {
               )}
 
               {openPanel === 'deliverables' && (
-                <DealDeliverablesTab
-                  done={selectedDeal.deliverablesDone}
-                  total={selectedDeal.deliverablesTotal}
-                  dealValue={selectedDeal.dealAmount}
-                  items={deliverableItems}
-                />
+                <div className="space-y-4">
+                  <DealDeliverablesTab
+                    done={selectedDeal.deliverablesDone}
+                    total={selectedDeal.deliverablesTotal}
+                    dealValue={selectedDeal.dealAmount}
+                    items={deliverableItems}
+                  />
+                  {/* Post-approval lifecycle: mark-posted → report metrics / upload proof.
+                      Wires the four previously-orphan CreatorDeliverableController routes
+                      (PROJECT-DEEP-AUDIT-2026-08-04.md §5). Live mode only. */}
+                  {liveApi &&
+                    liveDeliverables
+                      .filter((d) =>
+                        (['APPROVED', 'POSTED', 'METRICS_REPORTED', 'VERIFIED'] as const).includes(
+                          d.status as 'APPROVED' | 'POSTED' | 'METRICS_REPORTED' | 'VERIFIED',
+                        ),
+                      )
+                      .map((d) => (
+                        <DeliverableLifecyclePanel
+                          key={d.id}
+                          deliverableId={d.id}
+                          title={d.title}
+                          status={d.status}
+                          onChanged={() => void loadDeliverables()}
+                        />
+                      ))}
+                </div>
               )}
 
               {openPanel === 'payments' && (
