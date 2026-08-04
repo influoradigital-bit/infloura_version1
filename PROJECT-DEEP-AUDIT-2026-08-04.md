@@ -47,6 +47,11 @@
 > - **Received reviews + flag** — new `CreatorReceivedReviews` surface (lists `GET /creator/reviews/received`) with a Flag dialog wiring the previously-orphan `creatorReviews.flag` → `POST /creator/reviews/{id}/flag`. This route had **no UI at all** before.
 > Creator ⬜ 4 → **2**; the remaining 2 are the **brand-facing** creator-discovery routes (`/creators/search|featured|similar|suggestions`) — brands discovering creators, not a creator gap. Verified: `npx tsc --noEmit` 0 errors + eslint 0 errors on changed files + reachability greps. Ceiling: BELIEVED (static; no live HTTP). Commit `b44d30f`.
 
+> **Creator remediation update #4 — 2026-08-04 (proof-os task `creator-shipment-eta-0804`).** The last Creator PARTIAL is resolved (🟡→✅): the deal-room shipment `estimatedDelivery` was a fabricated `now + 3d` on the FE because `Shipment` had no ETA column.
+> - **Backend:** Flyway `V20260804130000` adds `estimated_delivery DATE`; `Shipment` entity + `markShipped` param; `MarkShippedRequest` + `ShipmentResponse` carry it; `ShipmentService` passes/maps it. Brand supplies it (optional) on mark-shipped.
+> - **FE:** brand mark-shipped now sends the form's already-collected `type=date` value (was dropped); `creator-chat` renders the real `liveShipment.estimatedDelivery`; `ShipmentCard` renders "—" when null.
+> **Creator 🟡 1 → 0** (row now `54/0/0/2/56`; TOTAL working +1 / partial −1). Verified: `mvn -o compile` + test-compile exit 0 (no shipment tests to break); `tsc`/`eslint` 0 errors on changed files. Ceiling: BELIEVED (static; no live HTTP / live DB migration run). Commit `43d4260`.
+
 ---
 
 ## 1. Executive Summary
@@ -55,17 +60,17 @@
 |---|---:|---:|---:|---:|---:|
 | **Admin** | 24 | 4 | 0 | 7 | 35 |
 | **Brand** | 53 | 6 | 0 | 10 | 69 |
-| **Creator** | 53 | 1 | 0 | 2 | 56 |
+| **Creator** | 54 | 0 | 0 | 2 | 56 |
 | **AI / Meera** | 27 | 6 | 0 | 1 | 34 |
-| **TOTAL** | **157** | **17** | **0** | **20** | **194** |
+| **TOTAL** | **158** | **16** | **0** | **20** | **194** |
 
-*Creator row is post-remediation (2026-08-04): `creator-fix-0804` +1 working (KYC), −2 missing, −1 total; `creator-deliv-0804` +4 working / −4 missing (deliverable lifecycle); then `creator-missing-0804` +2 working / −2 missing (own-media analytics `GET /me/media` + received-reviews-with-flag `POST /creator/reviews/:id/flag`). Net from the original 46/1/0/10/57 → 53/1/0/2/56. The remaining 2 ⬜ are the **brand-facing** creator-discovery routes (`/creators/search|featured|similar|suggestions`) — brands discovering creators, not a creator gap; tracked under Brand.*
+*Creator row is post-remediation (2026-08-04): `creator-fix-0804` +1 working (KYC), −2 missing, −1 total; `creator-deliv-0804` +4 working / −4 missing (deliverable lifecycle); `creator-missing-0804` +2 working / −2 missing (own-media analytics `GET /me/media` + received-reviews-with-flag `POST /creator/reviews/:id/flag`); then `creator-shipment-eta-0804` +1 working / −1 partial (real brand-supplied shipment ETA — last PARTIAL resolved). Net from the original 46/1/0/10/57 → 54/0/0/2/56. The remaining 2 ⬜ are the **brand-facing** creator-discovery routes (`/creators/search|featured|similar|suggestions`) — brands discovering creators, not a creator gap; tracked under Brand.*
 *Admin row is post-remediation (2026-08-04): `admin-fix-0804` 🔴 2 → 0 (phantom endpoints deleted, total 37 → 35); `admin-console-0804` ✅ 17 → 24 / ⬜ 15 → 8 (Finance/Escrow/Revenue console built, **7** real routes wired — `getRevenue` stays orphan); then `admin-backend-0804` ⬜ 8 → 7 / 🟡 3 → 4 (real data-backed Growth endpoint built — `GET /admin/marketing/growth`). The 3 original PARTIAL are by-design gates; the remaining 7 MISSING are honestly blocked on unbuilt backend / external epics / a security decision (see the remediation updates at the top).*
 
 **Completion metrics (transparent, code-truth):**
-- Fully working: **157 / 194 = 80.9%**
+- Fully working: **158 / 194 = 81.4%**
 - Wired to a real backend (working + partial): **174 / 194 = 89.7%**
-- Weighted (partial = ½): **165.5 / 194 = 85.3%**
+- Weighted (partial = ½): **166 / 194 = 85.6%**
 
 ### The one-line story
 **The API wiring is excellent — the problems are not connection bugs.** All 140 typed `request()` calls in the main frontend client resolve to a real backend method+path (**zero phantom endpoints**). The real gaps are elsewhere: an unbuilt admin finance/escrow console (backend is ready, no UI), money flows that are code-complete but blocked on **infra/config** (live Razorpay keys) or **deliberate security scope exclusions**, analytics/scoring placeholders, and a handful of genuinely unbuilt user flows.
@@ -109,7 +114,7 @@ Both were low blast-radius unreachable dead code. Deleted rather than backed (no
 - 🟡 **TrendSpark nudge** — returns fallback templated placeholder copy when the AI client is unavailable. `CreatorNudgeService.java:215`.
 
 ### Creator (1)
-- 🟡 **Deal-room shipment** *(wording corrected 2026-08-04)* — routes match, and in **live mode `items` reflects the real `productName`** (`creator-chat.tsx:1140`, flattened to qty 1); only **`estimatedDelivery` is a hardcoded placeholder even in live mode** (`creator-chat.tsx:2313` = `now + 3d`, no backend field). PARTIAL on the strength of `estimatedDelivery` alone.
+- ✅ **Deal-room shipment** *(resolved 2026-08-04, `creator-shipment-eta-0804`)* — `items` reflects the real `productName`, and `estimatedDelivery` is now a **real brand-supplied ETA** (`Shipment.estimatedDelivery` DATE column via Flyway `V20260804130000`; brand enters it on mark-shipped, creator renders `liveShipment.estimatedDelivery`). The hardcoded `now + 3d` is gone — this was the last Creator PARTIAL, so **Creator 🟡 1 → 0**.
 
 ### AI / Meera (6)
 - 🟡 **Meera streaming generation** — the browser SSE path to Python `/chat` is fully built but short-circuited: the frontend returns the sync `reply` and `return`s **before** `stream.open`. Also key-gated. `MeeraChatPanel.tsx:487-495`.
