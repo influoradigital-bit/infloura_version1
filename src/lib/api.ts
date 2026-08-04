@@ -4042,6 +4042,44 @@ export interface CreatorDeliverableStatusResponse {
   versionNumber: number;
   revisionCount: number;
   actions: { canUploadNewVersion: boolean; canSubmit: boolean; canReportMetrics: boolean };
+  /** verified-analytics-0804 — cached metric source / verification state. */
+  metricSource: CreatorDeliverableMetricSource | null;
+  lastVerifiedAt: string | null;
+  metaConnected: boolean;
+}
+
+/** Metric provenance — the honesty signal (DeliverableMetric.source). */
+export type CreatorDeliverableMetricSource = 'PLATFORM_VERIFIED' | 'CREATOR_REPORTED';
+
+/** DeliverableVerificationService.Outcome (verified-analytics-0804). */
+export type CreatorDeliverableVerifyOutcome =
+  | 'VERIFIED'
+  | 'FALLBACK_NO_POST_URL'
+  | 'FALLBACK_NO_MILESTONE'
+  | 'FALLBACK_UNRECOGNIZED_URL'
+  | 'FALLBACK_YOUTUBE_UNSUPPORTED'
+  | 'FALLBACK_NO_TOKEN'
+  | 'FALLBACK_TOKEN_EXPIRED'
+  | 'FALLBACK_RATE_LIMITED'
+  | 'FALLBACK_NOT_FOUND'
+  | 'FALLBACK_API_ERROR'
+  | 'FALLBACK_DATA_INTEGRITY';
+
+/**
+ * POST /creator/deliverables/:id/verify response — VerificationStateResponse
+ * (CreatorDeliverableDtos.java). `manualFallbackAllowed` is true ONLY when Meta genuinely failed
+ * for a connected account — the sole condition under which the manual form may open.
+ */
+export interface CreatorDeliverableVerificationState {
+  deliverableId: string;
+  outcome: CreatorDeliverableVerifyOutcome;
+  metricSource: CreatorDeliverableMetricSource | null;
+  reach: number | null;
+  impressions: number | null;
+  engagements: number | null;
+  lastVerifiedAt: string | null;
+  metaConnected: boolean;
+  manualFallbackAllowed: boolean;
 }
 
 /** POST /creator/deliverables/:id/mark-posted response — MarkPostedResponse (CreatorDeliverableDtos.java:96). */
@@ -4128,6 +4166,33 @@ export const creatorDeliverables = {
           versionNumber: 1,
           revisionCount: 0,
           actions: { canUploadNewVersion: false, canSubmit: false, canReportMetrics: true },
+          metricSource: null,
+          lastVerifiedAt: null,
+          metaConnected: false,
+        }),
+
+  /**
+   * POST /creator/deliverables/:id/verify — on-demand Meta verification
+   * (CreatorDeliverableController.java, verified-analytics-0804). Runs the same verification the 6h
+   * batch job runs and returns the live outcome + verified numbers + whether the manual form may open.
+   */
+  verifyNow: (deliverableId: string) =>
+    isLive()
+      ? http.request<CreatorDeliverableVerificationState>(
+          'POST',
+          `/creator/deliverables/${deliverableId}/verify`,
+          { role: 'creator' },
+        )
+      : mockOr<CreatorDeliverableVerificationState>({
+          deliverableId,
+          outcome: 'VERIFIED',
+          metricSource: 'PLATFORM_VERIFIED',
+          reach: 48200,
+          impressions: 61300,
+          engagements: 7850,
+          lastVerifiedAt: '2026-08-04T00:00:00Z',
+          metaConnected: true,
+          manualFallbackAllowed: false,
         }),
 
   /** POST /creator/deliverables/:id/mark-posted — DPF-3 live post URL (CreatorDeliverableController.java:104) */
