@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useReducedMotion } from 'framer-motion';
-import { CheckCircle2, Pen, X, AlertCircle, Video as VideoIcon, Image as ImageIcon } from 'lucide-react';
+import { CheckCircle2, Pen, AlertCircle, Video as VideoIcon, Image as ImageIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

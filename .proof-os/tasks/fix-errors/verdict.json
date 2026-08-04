@@ -1,0 +1,5 @@
+{"verdict":"proved","oracle":"tsc","isolation":"oracle",
+ "done_when":"npx tsc --noEmit exits 0 over src/ after the three fixes, and the full vitest unit suite passes",
+ "evidence":{"oracle":"tsc","command":"npx --no-install tsc --noEmit","result":"exit 0, 0 errors","where":"src/lib/api.ts:1"},
+ "not_checked":["runtime behavior against a live server — that OPEN campaigns now POST campaignType:'STANDARD' and that a persisted STANDARD/REVIEW reads back as 'OPEN' was verified by types+unit tests, not a live create/read round-trip","the Meera /internal/meera/create_campaign path still sends its own campaignType and was not exercised","vitest 313/313 is BELIEVED, not PROVED (vitest is not in the deterministic oracle allowlist)"],
+ "skipped":[{"step":"ledger.py / journal.py / promote.py","reason":"all import fcntl (Unix-only) and crash on this Windows host; the three fixes and their gate results are recorded in this verdict + REPORT instead"}]}

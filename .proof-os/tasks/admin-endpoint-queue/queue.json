@@ -1,0 +1,194 @@
+{
+  "queue": [
+    {
+      "id": "AF-01",
+      "order": 1,
+      "verb": "GET",
+      "path": "/admin/finance/revenue",
+      "tier": "read",
+      "status": "ready",
+      "note": "GMV/fees must come from real ledger; verify source exists before build"
+    },
+    {
+      "id": "AF-02",
+      "order": 2,
+      "verb": "GET",
+      "path": "/admin/finance/reconciliation",
+      "tier": "read",
+      "status": "ready",
+      "note": "needs Razorpay-vs-internal source; may be partial"
+    },
+    {
+      "id": "AF-03",
+      "order": 3,
+      "verb": "GET",
+      "path": "/admin/finance/payouts",
+      "tier": "read",
+      "status": "ready",
+      "note": "payout entity may not exist yet (Razorpay Route gap)"
+    },
+    {
+      "id": "AF-04",
+      "order": 4,
+      "verb": "GET",
+      "path": "/admin/escrow/flagged",
+      "tier": "read",
+      "status": "HELD",
+      "note": "concurrent automation mid-build (DTO+service imports already landed) \u2014 do NOT take, avoid collision"
+    },
+    {
+      "id": "AF-05",
+      "order": 5,
+      "verb": "GET",
+      "path": "/admin/marketing/acquisition",
+      "tier": "read",
+      "status": "ready",
+      "note": "marketing analytics source unknown \u2014 verify"
+    },
+    {
+      "id": "AF-06",
+      "order": 6,
+      "verb": "GET",
+      "path": "/admin/marketing/growth",
+      "tier": "read",
+      "status": "ready",
+      "note": "verify source"
+    },
+    {
+      "id": "AF-07",
+      "order": 7,
+      "verb": "GET",
+      "path": "/admin/marketing/referrals",
+      "tier": "read",
+      "status": "ready",
+      "note": "verify source"
+    },
+    {
+      "id": "AF-08",
+      "order": 8,
+      "verb": "GET",
+      "path": "/admin/marketing/reputation",
+      "tier": "read",
+      "status": "ready",
+      "note": "verify source"
+    },
+    {
+      "id": "AF-09",
+      "order": 9,
+      "verb": "GET",
+      "path": "/admin/campaigns/at-risk",
+      "tier": "read",
+      "status": "ready",
+      "note": "AdminCampaignController exists \u2014 extend it"
+    },
+    {
+      "id": "AF-10",
+      "order": 10,
+      "verb": "GET",
+      "path": "/admin/campaigns/hype/ops",
+      "tier": "read",
+      "status": "ready",
+      "note": "AdminCampaignController exists \u2014 extend it"
+    },
+    {
+      "id": "AF-11",
+      "order": 11,
+      "verb": "GET",
+      "path": "/admin/dashboard/financial",
+      "tier": "read",
+      "status": "ready",
+      "note": "AdminDashboardController exists (pulse/operations) \u2014 extend"
+    },
+    {
+      "id": "AF-12",
+      "order": 12,
+      "verb": "GET",
+      "path": "/admin/dashboard/marketing",
+      "tier": "read",
+      "status": "ready",
+      "note": "AdminDashboardController exists \u2014 extend"
+    },
+    {
+      "id": "AF-13",
+      "order": 13,
+      "verb": "GET",
+      "path": "/admin/moderation/suspensions",
+      "tier": "read",
+      "status": "ready",
+      "note": "AdminModerationController exists (flags) \u2014 extend"
+    },
+    {
+      "id": "AF-14",
+      "order": 14,
+      "verb": "GET",
+      "path": "/admin/finance/tds/26q",
+      "tier": "read",
+      "status": "BLOCKED",
+      "note": "TDS 26Q calculation is unimplemented (Rohan owns the formula) \u2014 cannot build honestly yet"
+    },
+    {
+      "id": "AF-15",
+      "order": 15,
+      "verb": "POST",
+      "path": "/notifications/read-all",
+      "tier": "write",
+      "status": "ready",
+      "note": "bulk mark-read; or delete dead FE path \u2014 product call"
+    },
+    {
+      "id": "AF-16",
+      "order": 16,
+      "verb": "POST",
+      "path": "/admin/finance/payouts/{id}/retry",
+      "tier": "write",
+      "status": "depends",
+      "note": "depends on AF-03 payout entity"
+    },
+    {
+      "id": "AF-17",
+      "order": 17,
+      "verb": "POST",
+      "path": "/admin/finance/reconciliation/{id}/resolve",
+      "tier": "write",
+      "status": "depends",
+      "note": "depends on AF-02"
+    },
+    {
+      "id": "AF-18",
+      "order": 18,
+      "verb": "POST",
+      "path": "/admin/moderation/suspensions/{id}/appeal",
+      "tier": "write",
+      "status": "depends",
+      "note": "depends on AF-13"
+    },
+    {
+      "id": "AF-19",
+      "order": 19,
+      "verb": "POST",
+      "path": "/admin/escrow/{id}/release",
+      "tier": "money",
+      "status": "CONFIRM",
+      "note": "MONEY-MOVE \u2014 force-release escrow; own confirm screen; Kabir sign-off"
+    },
+    {
+      "id": "AF-20",
+      "order": 20,
+      "verb": "POST",
+      "path": "/admin/escrow/{id}/hold",
+      "tier": "money",
+      "status": "CONFIRM",
+      "note": "MONEY-MOVE \u2014 freeze hold; own confirm screen"
+    },
+    {
+      "id": "AF-21",
+      "order": 21,
+      "verb": "POST",
+      "path": "/admin/escrow/{id}/refund",
+      "tier": "money",
+      "status": "CONFIRM",
+      "note": "MONEY-MOVE \u2014 refund escrow; own confirm screen; Kabir sign-off"
+    }
+  ],
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data"
+}

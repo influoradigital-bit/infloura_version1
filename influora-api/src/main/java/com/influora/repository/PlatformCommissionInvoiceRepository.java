@@ -2,6 +2,7 @@ package com.influora.repository;
 
 import com.influora.domain.entity.PlatformCommissionInvoice;
 import com.influora.domain.enums.CommissionInvoiceLeg;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -31,4 +32,12 @@ public interface PlatformCommissionInvoiceRepository
     Optional<PlatformCommissionInvoice> findByIdAndCounterpartyWorkspaceId(String id, String workspaceId);
 
     Optional<PlatformCommissionInvoice> findByIdAndCounterpartyUserId(String id, String userId);
+
+    /**
+     * Invoices whose {@code created_at} falls in the half-open range [start, end) — powers the admin
+     * revenue report's platform-fee bucketing ({@code GET /admin/finance/revenue}, {@code
+     * AdminRevenueService}). Derived query on {@code created_at}.
+     */
+    List<PlatformCommissionInvoice> findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+            Instant start, Instant end);
 }

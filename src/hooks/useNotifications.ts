@@ -232,9 +232,9 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
   }, [role]);
 
   /**
-   * Mark all notifications as read. `NotificationController` has no bulk `/read-all` route —
-   * only single-notification `POST /notifications/read` exists — so this fires one call per
-   * currently-unread notification instead of hitting a 404.
+   * Mark all notifications as read via the bulk `POST /notifications/read-all` route (a single
+   * server-side UPDATE). Previously this fired one `POST /notifications/read` per unread
+   * notification because no bulk route existed; the backend now has one.
    */
   const markAllRead = useCallback(async () => {
     const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
@@ -244,27 +244,20 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
 
     if (isApiLive()) {
-      const results = await Promise.allSettled(
-        unreadIds.map((id) =>
-          fetch(`${API_BASE_URL}/notifications/read`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...authHeader() },
-            body: JSON.stringify({ notificationId: id }),
-          }).then((res) => {
-            if (!res.ok) throw new Error('Failed to mark notification read');
-          }),
-        ),
-      );
-      const failedIds = new Set(
-        unreadIds.filter((_, i) => results[i].status === 'rejected'),
-      );
-      if (failedIds.size > 0) {
-        // Revert only the ones that actually failed.
+      try {
+        const res = await fetch(`${API_BASE_URL}/notifications/read-all`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader() },
+        });
+        if (!res.ok) throw new Error('Failed to mark all notifications read');
+      } catch {
+        // Revert the optimistic update — restore exactly the rows we flipped.
+        const revertIds = new Set(unreadIds);
         setNotifications((prev) =>
-          prev.map((n) => (failedIds.has(n.id) ? { ...n, read: false } : n)),
+          prev.map((n) => (revertIds.has(n.id) ? { ...n, read: false } : n)),
         );
         toast({
-          title: 'Some notifications couldn’t be marked read',
+          title: 'Couldn’t mark notifications read',
           description: 'Please try again.',
           variant: 'destructive',
         });

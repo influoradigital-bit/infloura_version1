@@ -1,0 +1,13 @@
+{
+  "id": "AF-17",
+  "order": 17,
+  "verb": "POST",
+  "path": "/admin/finance/reconciliation/{id}/resolve",
+  "dto": "ReconciliationItem",
+  "tier": "write",
+  "status": "BLOCKED",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "depends on AF-02 reconciliation list, which is blocked (no reconciliation ledger)."
+}

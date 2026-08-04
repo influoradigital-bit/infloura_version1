@@ -4,9 +4,11 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.admin.AdminModerationService;
 import com.influora.web.dto.admin.AdminModerationDtos.ActionFlagRequest;
 import com.influora.web.dto.admin.AdminModerationDtos.FlagDto;
+import com.influora.web.dto.admin.AdminModerationDtos.AccountSuspensionDto;
 import com.influora.web.dto.admin.AdminModerationDtos.PagedFlagsDto;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -74,5 +76,19 @@ public class AdminModerationController {
             @PathVariable String id,
             @Valid @RequestBody ActionFlagRequest request) {
         return adminModerationService.actionFlag(principal, httpRequest, id, request);
+    }
+
+    /**
+     * List every currently-suspended account (brands/agencies + creators). Backs {@code
+     * moderationApi.getSuspensions()}. The optional {@code status} query param is part of the FE
+     * contract but has no effect yet: every row's {@code appealStatus} is {@code NONE} until an
+     * appeal subsystem exists (see {@link AccountSuspensionDto}), so there is nothing to filter on.
+     * SUPER_ADMIN + ADMIN, MFA-gated in the service.
+     */
+    @GetMapping("/suspensions")
+    public List<AccountSuspensionDto> listSuspensions(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(required = false) String status) {
+        return adminModerationService.getSuspensions(principal);
     }
 }

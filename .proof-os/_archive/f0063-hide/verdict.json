@@ -1,0 +1,4 @@
+{"verdict":"believed","oracle":"model","isolation":"oracle",
+ "done_when":"hide all 11 phantom admin endpoints; FE<->BE gate exits 0; tsc+build green; deferred work tracked",
+ "not_checked":["runtime behaviour of the unavailable() UX (no click-through run)","whether the 5 deferred features are correctly tiered — that is a product/security call, tracked in F-0064","HTTP verb agreement (gate compares path only)"],
+ "skipped":[{"step":"implement finance/moderation endpoints","reason":"all parked/blocked/need-subsystem per SCOPE.md + controller docs; human chose hide-all; fabricating them was refused"}]}

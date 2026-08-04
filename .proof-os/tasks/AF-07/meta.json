@@ -1,0 +1,13 @@
+{
+  "id": "AF-07",
+  "order": 7,
+  "verb": "GET",
+  "path": "/admin/marketing/referrals",
+  "dto": "MarketingReferrals",
+  "tier": "read",
+  "status": "BLOCKED",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "no Referral entity/table exists anywhere in the schema (verified) \u2014 cannot list referrals that aren't recorded"
+}

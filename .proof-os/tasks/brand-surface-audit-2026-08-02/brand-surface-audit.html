@@ -1,0 +1,247 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Influora Brand-Surface Audit</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;background:#f8fafc}
+.wrap{max-width:1040px;margin:0 auto;padding:32px 20px 64px}
+header{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;border-radius:16px;padding:28px 30px;margin-bottom:24px}
+header h1{margin:0 0 4px;font-size:24px}header .sub{opacity:.85;font-size:13px}
+.pct{font-size:52px;font-weight:800;line-height:1;margin:14px 0 6px}
+.bar{height:12px;background:rgba(255,255,255,.25);border-radius:8px;overflow:hidden;margin-top:10px}
+.bar>i{display:block;height:100%;width:98.0%;background:#15803d}
+.tags{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.tag{background:rgba(255,255,255,.15);padding:5px 12px;border-radius:20px;font-size:13px;font-weight:600}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px;margin-bottom:14px}
+.chead{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.chead h3{margin:0;font-size:16px}
+.badge{font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap}
+ul.chain{list-style:none;padding:0;margin:12px 0 0}ul.chain li{padding:3px 0;font-size:13px;color:#334155}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:middle}
+code{background:#f1f5f9;padding:1px 6px;border-radius:5px;font-size:12px;color:#475569}
+.note{margin-top:10px;padding:9px 12px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:0 6px 6px 0;font-size:13px;color:#78350f}
+.method{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px;margin:24px 0;font-size:13px;color:#475569}
+.method b{color:#0f172a}
+h2{font-size:15px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:28px 0 12px}
+</style></head><body><div class="wrap">
+<header>
+  <h1>Influora — Brand Surface Audit</h1>
+  <div class="sub">Generated 2026-08-02 · scope: brand-facing FE (src/) → api.ts → influora-api backend · code-traced, docs ignored</div>
+  <div class="pct">98.0%</div>
+  <div class="bar"><i></i></div>
+  <div class="tags">
+    <span class="tag">✅ 24 aligned</span>
+    <span class="tag">🟡 1 partial</span>
+    <span class="tag">🔴 0 broken</span>
+    <span class="tag">⬜ 0 missing</span>
+    <span class="tag">25 features</span>
+  </div>
+</header>
+<div class="method">
+  <b>How this number is computed (reproducible):</b> each feature is traced end-to-end in code
+  — route (App.tsx) → FE call (api.ts / component) → backend handler (@RequestMapping). Scored
+  aligned=1.0, partial=0.5, broken/missing=0.0. Overall = Σscore / feature_count =
+  <b>24.5 / 25 = 98.0%</b>. No score is injected (proof-os F-0006).
+  Worst-first ordering. TS <code>tsc --noEmit</code> = 0 errors; correctness caveats below come from the project's own <code>eslint</code>.
+</div>
+<h2>Features (worst first)</h2>
+
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#b45309;background:#fef3c7">PARTIAL · 0.5</span>
+            <h3>Notifications (badge + dropdown panel)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>unread badge (real)</b> — <code>brand-layout.tsx:125,355 useNotificationStore</code></li><li><span class="dot" style="background:#b91c1c"></span><b>dropdown list (MOCK)</b> — <code>brand-layout.tsx:371 renders mockNotifications defined :131</code></li><li><span class="dot" style="background:#15803d"></span><b>backend exists but unused here</b> — <code>NotificationController.java:44 (/notifications) + api.ts /notifications</code></li></ul>
+          <div class="note">The bell badge count is live, but the notification LIST in the popover is hardcoded mock data. Real /notifications endpoint is never called by the layout.</div>
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Brand auth (login/register/OTP/forgot/reset)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:150-158</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls /auth/brand/*</b> — <code>api.ts (/auth/brand/login,register,verify-email)</code></li><li><span class="dot" style="background:#15803d"></span><b>backend handler</b> — <code>AuthController.java:35 @RequestMapping(/auth)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Brand onboarding (company/KYC/complete)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:160</code></li><li><span class="dot" style="background:#15803d"></span><b>FE api calls x8</b> — <code>brand-onboarding.tsx</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>OnboardingController.java:20 (/onboarding/brand)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Dashboard (actions + pipeline + wallet)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:164</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls</b> — <code>dashboard-page.tsx:103-105 api.dashboard.actions/pipeline, api.wallet.get</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>DashboardController.java:22 (/actions,/pipeline)</code></li></ul>
+          <div class="note">Correctness: Date.now() called during render — dashboard-page.tsx:207 (eslint react-hooks/purity).</div>
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Campaigns list &amp; CRUD (list/duplicate/update/delete)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:172</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls</b> — <code>campaigns-list.tsx:269,312,329,346</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>CampaignController.java:29 (/campaigns)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>New / Edit / HYPE campaign</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>routes</b> — <code>App.tsx:180,188,204</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls</b> — <code>brand-new-campaign.tsx, brand-edit-campaign.tsx, brand-new-hype-campaign.tsx</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>CampaignController.java:29</code></li></ul>
+          <div class="note">Correctness: Date.now() in render — hype-campaign-card.tsx:68 (purity).</div>
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Campaign detail + aggregated analytics</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:196</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls x13</b> — <code>brand-campaign-detail.tsx</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>CampaignController.java:97 @GetMapping(/{campaignId}/analytics)</code></li></ul>
+          <div class="note">Correctness: Date.now() in render — brand-campaign-detail.tsx:667,672 (purity).</div>
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Campaign tracking (UTM / coupons / links / ROI)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:305</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls</b> — <code>components/campaigns/tracking/* (coupons, tracking-links)</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>CampaignTrackingController.java:45 (/campaigns/{campaignId})</code></li></ul>
+          <div class="note">Correctness: Date.now() in render — CouponsTable.tsx:93 (purity).</div>
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Creator discovery (search / save / invite)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:212</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls</b> — <code>creator-discovery.tsx:523,541,608,625</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>CreatorController.java:31 (/creators,/{id}/save,/invite)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Creator profile view</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:220</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls x4</b> — <code>brand-creator-profile.tsx</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>CreatorController.java:31 (/creators/{id})</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Creator analytics (brand viewing a creator)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>routes</b> — <code>App.tsx:284,295</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls</b> — <code>brand-creator-analytics.tsx + analytics/* hooks</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>AnalyticsController.java:48 (/analytics/creators/{id}/metrics,scores,demographics,media)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Deal room (list / accept / counter / reject / messages)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:341,350</code></li><li><span class="dot" style="background:#15803d"></span><b>FE live calls</b> — <code>deal-room-dashboard.tsx:256,344,366,387,416 (dealsApi/messagesApi)</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>DealController.java:46 (/deals)</code></li></ul>
+          <div class="note">Mock data (deal-room-dashboard.tsx:136) is the DEMO-MODE fallback only — live path gated on isApiLive() (:250).</div>
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Contracts &amp; deliverables (sign / approve / revise / PDF)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:252</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls</b> — <code>contracts-and-deliverables.tsx:557,596,637,663,695</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>ContractController.java:27 + BrandDeliverableController.java:26</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Wallet &amp; escrow (topup / withdraw / fund / release / txns / payout)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:228</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls x6</b> — <code>brand-wallet.tsx</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>WalletController.java:38 + EscrowController.java:38 (/wallet/escrow/fund,release)</code></li></ul>
+          <div class="note">Correctness: escrow retry loop uses recheckBalanceThenRetry/pollForFunded before declaration — useEscrowFund.ts:325,377 (react-hooks/immutability). Works at runtime; breaks React-Compiler memoization on the money path.</div>
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Pipeline (Kanban)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:358</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls x9</b> — <code>brand-pipeline.tsx</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>DashboardController.java:22 (/dashboard/pipeline)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Brand chat (Meera conversational)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:236</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls x6</b> — <code>brand-chat.tsx (meeraApi)</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>MeeraController.java:62 (/meera)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Brand Meera workspace</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:244</code></li><li><span class="dot" style="background:#15803d"></span><b>delegates</b> — <code>brand-meera.tsx -&gt; MeeraWorkspace</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>MeeraController.java:62 (/meera)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Messages (deal threads)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:260</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls</b> — <code>brand-messages.tsx (messagesApi)</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>DealController.java:46 (/deals/{dealId}/messages)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Brand disputes</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:313</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls x2</b> — <code>brand-disputes.tsx</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>BrandDisputeController.java:25 (/brand/disputes)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Brand reviews (collaboration reviews)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:324</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls</b> — <code>collaboration-reviews-panel.tsx:47 (api.deals.list) + reviews</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>BrandReviewController.java:27 (/brand/reviews,/received)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Settings (account / password / workspace / notif prefs)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:268</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls x12</b> — <code>brand-settings.tsx</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>AccountController.java:47 (/me) + WorkspaceController.java:22 + NotificationController.java:44</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Billing settings (plan / checkout / invoices / usage)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:276</code></li><li><span class="dot" style="background:#15803d"></span><b>FE calls x2</b> — <code>brand-billing-settings.tsx</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>BillingController.java:57 (/billing)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>TrendSpark nudges (brand)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>FE calls</b> — <code>api.ts /brand/trendspark/nudge (+/click,/purchase)</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>TrendSparkController.java:26 (/brand/trendspark)</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Store integrations (Shopify / WooCommerce / Meta OAuth)</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>FE calls</b> — <code>api.ts /integrations/store/status, /shopify/oauth, /woocommerce/connect, /meta/oauth</code></li><li><span class="dot" style="background:#15803d"></span><b>backend</b> — <code>StoreIntegrationStatusController:51, ShopifyConnectController:41, WooCommerceConnectController:43, MetaOAuthController:33</code></li></ul>
+          
+        </div>
+        <div class="card">
+          <div class="chead">
+            <span class="badge" style="color:#15803d;background:#dcfce7">ALIGNED · 1.0</span>
+            <h3>Brand help</h3>
+          </div>
+          <ul class="chain"><li><span class="dot" style="background:#15803d"></span><b>route</b> — <code>App.tsx:332</code></li><li><span class="dot" style="background:#15803d"></span><b>static content</b> — <code>brand-help.tsx (no backend dependency by design)</code></li></ul>
+          <div class="note">Static page; nothing to wire.</div>
+        </div>
+</div></body></html>

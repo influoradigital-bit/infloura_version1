@@ -1,0 +1,13 @@
+{
+  "id": "AF-12",
+  "order": 12,
+  "verb": "GET",
+  "path": "/admin/dashboard/marketing",
+  "dto": "DashboardMarketing",
+  "tier": "read",
+  "status": "BLOCKED",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "bundles {acquisitionMetrics, growthMetrics, reputationScore}; 2 of 3 are the already-blocked marketing analytics (no ad-spend/attribution/Referral) \u2014 cannot return the shape without fabricating. reputationScore alone is real (see AF-08)"
+}

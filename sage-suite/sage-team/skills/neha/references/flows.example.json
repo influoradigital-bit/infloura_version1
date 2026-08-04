@@ -1,0 +1,36 @@
+[
+  {
+    "name": "Login",
+    "critical": true,
+    "steps": [
+      {"action": "goto", "url": "/login"},
+      {"action": "fill", "selector": "input[name=email]", "value": "test@demo.com"},
+      {"action": "fill", "selector": "input[name=password]", "value": "TEST_PASSWORD"},
+      {"action": "click", "selector": "button[type=submit]"},
+      {"action": "expect_text", "text": "Dashboard"},
+      {"action": "screenshot"}
+    ]
+  },
+  {
+    "name": "Add to cart and reach checkout",
+    "critical": true,
+    "steps": [
+      {"action": "goto", "url": "/products/turmeric"},
+      {"action": "click", "selector": "button:has-text('Add to cart')"},
+      {"action": "click", "selector": "a[href='/cart']"},
+      {"action": "expect_visible", "selector": "button:has-text('Checkout')"},
+      {"action": "click", "selector": "button:has-text('Checkout')"},
+      {"action": "expect_text", "text": "Payment"},
+      {"action": "screenshot"}
+    ]
+  },
+  {
+    "name": "Contact form validation",
+    "critical": false,
+    "steps": [
+      {"action": "goto", "url": "/contact"},
+      {"action": "click", "selector": "button[type=submit]"},
+      {"action": "expect_text", "text": "required"}
+    ]
+  }
+]

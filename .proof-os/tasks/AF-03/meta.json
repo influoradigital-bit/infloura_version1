@@ -1,0 +1,13 @@
+{
+  "id": "AF-03",
+  "order": 3,
+  "verb": "GET",
+  "path": "/admin/finance/payouts",
+  "dto": "PaginatedResponse<PayoutQueueItem>",
+  "tier": "read",
+  "status": "BLOCKED",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "BLOCKED: PayoutQueueItem requires grossAmount/tdsAmount/tdsSection(194C|194R) but Payout entity has NO TDS fields (only amount). TDS is unimplemented (same gap as AF-14, Rohan owns formula). Cannot populate the tax breakdown without fabricating tax data."
+}

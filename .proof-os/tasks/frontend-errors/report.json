@@ -1,0 +1,76 @@
+{
+  "rows": [
+    {
+      "subject": "src/** — TypeScript compile (tsc --noEmit)",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "node_modules/.bin/tsc -p tsconfig.json --noEmit",
+        "result": "0 errors (exit 0)",
+        "where": "tsconfig.json:1"
+      }
+    },
+    {
+      "subject": "BRAND surface — ESLint (src/components/brand, src/pages/brand*, src/hooks/brand)",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "eslint",
+        "command": "node_modules/.bin/eslint . -f stylish",
+        "result": "45 errors, 4 warnings across 26 files (mostly react-hooks set-state-in-effect)",
+        "where": "src/pages/brand-chat.tsx:757"
+      }
+    },
+    {
+      "subject": "CREATOR surface — ESLint (src/components/creator, src/pages/creator*, src/hooks/creator)",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "eslint",
+        "command": "node_modules/.bin/eslint . -f stylish",
+        "result": "29 errors, 11 warnings across 17 files (creator-chat.tsx alone = 12e/7w)",
+        "where": "src/pages/creator-chat.tsx:1"
+      }
+    },
+    {
+      "subject": "ADMIN surface — ESLint (src/admin/**)",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "eslint",
+        "command": "node_modules/.bin/eslint . -f stylish",
+        "result": "28 errors, 2 warnings across 24 files (20 admin hooks: set-state-in-effect)",
+        "where": "src/admin/services/websocket.ts:1"
+      }
+    },
+    {
+      "subject": "SHARED surface — ESLint (lib, hooks, ui, feature/meera, 3d, motion)",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "eslint",
+        "command": "node_modules/.bin/eslint . -f stylish",
+        "result": "49 errors, 16 warnings across 42 files (voice hooks: ref-access-in-render)",
+        "where": "src/hooks/useVoiceOutput.ts:1"
+      }
+    },
+    {
+      "subject": "LINT SCOPE — vendored influora-ai/.venv no longer linted (FIXED)",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "eslint",
+        "command": "node_modules/.bin/eslint . -f stylish | grep -c .venv",
+        "result": "0 .venv references after adding **/.venv/** to ignores; total 218 -> 184 problems",
+        "where": "eslint.config.js:19"
+      }
+    }
+  ]
+}

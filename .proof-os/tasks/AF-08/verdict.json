@@ -1,0 +1,5 @@
+{"verdict":"believed","oracle":"mvn","isolation":"fresh-context",
+ "done_when":"build.mvn.sh compiles influora-api (exit 0) with GET /admin/marketing/reputation returning PlatformReputationScore computed live from real Review + Dispute data; fresh-context review REAL",
+ "evidence":{"oracle":"mvn","command":"PROOF_MVN_HEAP=3g gates/build.mvn.sh influora-api","result":"exit 0 — module compiles; fresh-context review REAL (6/6 checks, reviewer-direction + no-Referral-table claim verified)","where":"influora-api/src/main/java/com/influora/web/AdminMarketingController.java:1"},
+ "not_checked":["runtime — the AVG queries + endpoint not executed against a real DB (no @DataJpaTest)","overall/creator/brand avgs are 0-5 stars; FE may render as a different scale (formatting)","disputeResolutionSpeed averages ALL-time resolved disputes (no time window)"],
+ "skipped":[{"step":"graphify update","reason":"AST re-index exceeds the 2-min shell budget; re-syncs next run"}]}

@@ -1,0 +1,16 @@
+{
+  "name": "sage-team",
+  "description": "The Sage Digital virtual agency as governed services: CEO, CTO, eng lead, CFO, CMO, developers, QA, security red-team, E2E, AI reviewer, content, SEO, design, automation, reporting. Tenants for proof-os \u2014 each one carries a trust ceiling and a jurisdiction rather than a trigger phrase.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Sage Digital (built with Claude)"
+  },
+  "keywords": [
+    "agency",
+    "agents",
+    "team",
+    "qa",
+    "security",
+    "content"
+  ]
+}

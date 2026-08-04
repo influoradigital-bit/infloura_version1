@@ -1,0 +1,1 @@
+build.mvn.sh compiles influora-api (exit 0) with GET /admin/finance/tds/26q returning {downloadUrl} computed live from real repositories; independent fresh-context review returns REAL (no fabricated data, authz present)

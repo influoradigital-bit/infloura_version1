@@ -21,7 +21,6 @@ import {
   BarChart3,
   Star,
   AlertTriangle,
-  User,
   Sparkles,
 } from 'lucide-react';
 
@@ -30,7 +29,6 @@ import { useAuthStore, useUIStore } from '@/lib/store';
 import { useNotifications } from '@/hooks/useNotifications';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,

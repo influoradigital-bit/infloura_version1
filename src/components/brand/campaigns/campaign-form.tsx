@@ -4,13 +4,10 @@ import {
   ArrowLeft,
   ArrowRight,
   Save,
-  Eye,
   Loader2,
   Plus,
   X,
   Calendar,
-  DollarSign,
-  Users,
   ImageIcon,
   Video,
   FileText,
@@ -35,7 +32,6 @@ import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';

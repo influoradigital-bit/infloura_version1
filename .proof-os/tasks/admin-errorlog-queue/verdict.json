@@ -1,0 +1,5 @@
+{"verdict":"proved","oracle":"mvn","isolation":"oracle",
+ "done_when":"admin error-log console verified end-to-end: FE<->BE parity holds, AdminErrorLogService is test-covered (mvn test-compile + surefire green), and the stale phantom baseline entries are removed (vitest guardrail 3/3, tsc 0)",
+ "evidence":{"oracle":"mvn","command":"mvn -o test-compile surefire:test -Dtest=AdminErrorLogServiceTest","result":"Tests run: 6, Failures: 0, Errors: 0","where":"influora-api/src/test/java/com/influora/service/admin/AdminErrorLogServiceTest.java:46"},
+ "not_checked":["the ErrorLogRepository queries against real MySQL (repo mocked)","HTTP filter-chain authz (service-layer SUPER_ADMIN gate proven, web layer not)","runtime render of ErrorLogPage.tsx with live data"],
+ "skipped":[{"step":"commit the AdminModerationServiceTest compile-fix","reason":"it depends on vikram's UNCOMMITTED 5-arg AdminModerationService (AF-13); committing the test alone would break the build. Fix left in the working tree for vikram to land with his service change."}]}

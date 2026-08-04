@@ -32,7 +32,7 @@ const SCOPE_LABELS: MetaScopeInfo[] = [
  */
 export function ConnectedAccounts() {
   const { toast } = useToast();
-  const [connectionState, setConnectionState] = React.useState(() => api.metaOAuth.getLocalConnectionState());
+  const [connectionState] = React.useState(() => api.metaOAuth.getLocalConnectionState());
   const [isConnecting, setIsConnecting] = React.useState(false);
 
   const handleConnect = async () => {

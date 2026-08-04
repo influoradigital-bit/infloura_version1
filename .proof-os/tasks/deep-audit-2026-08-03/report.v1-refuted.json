@@ -1,0 +1,208 @@
+{
+ "rows": [
+  {
+   "subject": "src/** \u2014 TypeScript typecheck (437 files)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "npx --no-install tsc -p tsconfig.json --noEmit",
+    "result": "exit 0 \u2014 0 errors",
+    "where": "tsconfig.json:1"
+   }
+  },
+  {
+   "subject": "src/**/*.test.tsx \u2014 unit + component test suite",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "node",
+    "command": "npx --no-install vitest run --reporter=basic",
+    "result": "exit 0 \u2014 34 test files, 315 passed, 1 skipped, 113.94s",
+    "where": "vitest.config.ts:1"
+   }
+  },
+  {
+   "subject": "dist/ \u2014 production build + prerender",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "npm",
+    "command": "npm run build (VITE_API_MODE=live from .env.production)",
+    "result": "exit 0 \u2014 vite built in 44.63s; postbuild prerender 16/16 marketing routes snapshotted",
+    "where": "vite.config.ts:52"
+   }
+  },
+  {
+   "subject": "influora-ai/** \u2014 Meera AI service (FastAPI, 92 modules)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python -m pytest -q (influora-ai)",
+    "result": "exit 0 \u2014 499 passed, 2 skipped in 7.15s",
+    "where": "influora-ai/pytest.ini:1"
+   }
+  },
+  {
+   "subject": "src/hooks/**, src/admin/hooks/** \u2014 rules-of-hooks",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python3 .proof-os/gates/react_hooks.py",
+    "result": "exit 0 \u2014 0 rules-of-hooks violations across 424 files",
+    "where": ".proof-os/gates/react_hooks.py:1"
+   }
+  },
+  {
+   "subject": "src/** \u2014 use-before-declare (F-0040/F-0046 class)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python3 .proof-os/gates/react_hooks_immutability.py",
+    "result": "exit 0 \u2014 0 use-before-declare violations across 115 files",
+    "where": ".proof-os/gates/react_hooks_immutability.py:1"
+   }
+  },
+  {
+   "subject": "src/components/brand/brand-layout.tsx \u2014 notifications wiring (F-0043 class)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python3 .proof-os/gates/notifications_wired.py",
+    "result": "exit 0 \u2014 wired to useNotifications; no mockNotifications / useNotificationStore left in src",
+    "where": ".proof-os/gates/notifications_wired.py:1"
+   }
+  },
+  {
+   "subject": "src/** \u2014 correctness singletons (F-0047 class)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python3 .proof-os/gates/lint_singletons.py",
+    "result": "exit 0 \u2014 0 violations across src for the three correctness rules promoted from F-0047",
+    "where": ".proof-os/gates/lint_singletons.py:1"
+   }
+  },
+  {
+   "subject": "src/**, app/**, lib/**, hooks/** \u2014 project ESLint ruleset",
+   "owner": "meera",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "eslint",
+    "command": "npx --no-install eslint . -f stylish",
+    "result": "exit 0 \u2014 0 errors, 161 warnings (95 react-hooks/set-state-in-effect, 17 exhaustive-deps, 13 react-refresh/only-export-components, 13 react-hooks/refs, 11 react-hooks/purity, 6 static-components, 4 other)",
+    "where": "src/pages/creator-wallet.tsx:434"
+   }
+  },
+  {
+   "subject": "influora-api/** \u2014 Spring Boot backend build",
+   "owner": "vikram",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -B -DskipTests package (influora-api)",
+    "result": "exit 1 UNAVAILABLE, not a finding \u2014 repo.maven.apache.org returns 403 in this sandbox so the parent POM cannot resolve; the newest built jar is 2026-07-28 and 70 .java sources are newer than it",
+    "where": "influora-api/pom.xml:7"
+   }
+  },
+  {
+   "subject": ".proof-os/gates/frontend.sh \u2014 sage lint ruleset",
+   "owner": "meera",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "eslint",
+    "command": "bash .proof-os/gates/frontend.sh .",
+    "result": "exit 1 \u2014 6 errors: 2 @typescript-eslint/no-unused-vars (app/layout.tsx:6,7), 4 no-console (ci/lighthouse-meera.mjs:168-171); plus 11 raw hex colours outside tokens",
+    "where": "app/layout.tsx:6"
+   }
+  },
+  {
+   "subject": "package-lock.json \u2014 dependency vulnerabilities",
+   "owner": "meera",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "npm-audit",
+    "command": "npm audit --audit-level=high",
+    "result": "exit 1 \u2014 23 vulnerabilities (4 high, 18 moderate, 1 low): react-router-dom <=7.17.0 (5 advisories incl. open redirect + SSR constructor injection), vite <=6.4.2 (fs.deny bypass, launch-editor NTLM disclosure)",
+    "where": "package-lock.json:1"
+   }
+  },
+  {
+   "subject": "src/** \u2014 dead exports (F-0042 class)",
+   "owner": "meera",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python3 .proof-os/gates/dead_exports.py",
+    "result": "exit 1 \u2014 2 genuinely-unreferenced exports cross-verified against 63 ts-prune candidates: CounterProposalCard, DeliverableCard",
+    "where": "src/components/creator/deal-room/deliverable-card.tsx:40"
+   }
+  },
+  {
+   "subject": ".proof-os/gates/registry_render.py \u2014 project gate copy vs registry version",
+   "owner": "meera",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python3 .proof-os/gates/registry_render.py",
+    "result": "exit 1 \u2014 7 services rejected: may_claim 'echo' not in proved|believed|inherits|null. The project gate is 0.3.x; registry.json declares proof-os 0.4.1. The 0.4.2 plugin copy of the same gate exits 0 on the same registry",
+    "where": ".proof-os/gates/registry_render.py:1"
+   }
+  },
+  {
+   "subject": "src/pages/brand-pipeline.tsx \u2014 components created in render (F-0050, open)",
+   "owner": "meera",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "eslint",
+    "command": "npx --no-install eslint src/pages/brand-pipeline.tsx -f stylish",
+    "result": "exit 0 with 4 react-hooks/static-components warnings \u2014 BoardView/ListView are constructed during render at lines 425, 468, 558, 640",
+    "where": "src/pages/brand-pipeline.tsx:425"
+   }
+  },
+  {
+   "subject": "src/admin/services/api-contracts.ts \u2014 admin console FE\u2194BE endpoint contract",
+   "owner": "vikram",
+   "status": "missing",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "parser",
+    "command": "python3 /tmp/ep2.py \u2014 parse @Get/Post/Put/Patch/DeleteMapping across influora-api/src/main/java (252 mapped paths) vs apiRequest()/fetch() paths in src (130 declared)",
+    "result": "15 admin endpoints the frontend calls have no backend mapping: dashboard/financial, dashboard/marketing, escrow/{}/hold|release|refund, finance/payouts, finance/payouts/{}/retry, finance/reconciliation, finance/reconciliation/{}/resolve, finance/revenue, finance/tds/26q, marketing/acquisition|growth|reputation, moderation/suspensions/{}/appeal",
+    "where": "src/admin/services/api-contracts.ts:348"
+   }
+  },
+  {
+   "subject": ".proof-os/graph.json \u2014 dependency graph provenance",
+   "owner": "meera",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python3 .proof-os/gates/graph_source.py",
+    "result": "exit 0 \u2014 engine scan.py-regex, 2657 edges, oracle_strength 0.0% (0/2657 parser-derived), so no graph edge can render green",
+    "where": ".proof-os/gates/graph_source.py:1"
+   }
+  }
+ ]
+}

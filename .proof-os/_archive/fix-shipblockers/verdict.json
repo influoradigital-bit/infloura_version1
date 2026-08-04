@@ -1,0 +1,17 @@
+{
+  "verdict": "believed",
+  "oracle": "model",
+  "isolation": "oracle",
+  "done_when": "solve the ship-blocking errors one by one, each verified against its exit-test gate",
+  "not_checked": [
+    "react-router RSC-CSRF non-reachability is a reasoning claim about app config (library mode, no RSC), not an oracle result — npm audit still reports 2 high for it (accepted, documented in SECURITY-ACCEPTED-RISKS.md)",
+    "the 11 phantom admin endpoints are DETECTED now (F-0054 gate) but NOT yet fixed — F-0063 repair record is open; the gate exits 1 until they are implemented or removed",
+    "F-0055 hardening was verified only on a host WITH a browser; the no-Chrome CI path was reasoned through, not executed here",
+    "runtime behaviour of the bumped deps beyond tsc+build (no E2E/click-through run)",
+    "whether each of the 11 endpoints should be implemented vs hidden — that triage is proposed, not decided"
+  ],
+  "skipped": [
+    {"step": "react-router v8 migration", "reason": "human chose Accept-risk waiver; breaking major, advisory not reachable in this SPA"},
+    {"step": "implement/hide the 11 admin endpoints", "reason": "human chose gate-first-then-triage; gate is built + promoted, actual implement/hide is follow-on work in F-0063"}
+  ]
+}

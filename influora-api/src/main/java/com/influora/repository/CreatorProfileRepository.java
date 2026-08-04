@@ -30,4 +30,11 @@ public interface CreatorProfileRepository
      * bounded-page list, for {@code AdminDashboardService.operations}'s {@code reviewBacklog} KPI.
      */
     long countByApplicationStatus(CreatorApplicationStatus applicationStatus);
+
+    /**
+     * All currently-suspended creator profiles — powers the admin moderation suspensions list
+     * ({@code GET /admin/moderation/suspensions}, {@code AdminModerationService}). Derived query on
+     * the {@code suspended} boolean flag set by {@code AdminCreatorService}.
+     */
+    List<CreatorProfile> findBySuspendedTrue();
 }

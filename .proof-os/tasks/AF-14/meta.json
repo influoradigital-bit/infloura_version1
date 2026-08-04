@@ -1,0 +1,13 @@
+{
+  "id": "AF-14",
+  "order": 14,
+  "verb": "GET",
+  "path": "/admin/finance/tds/26q",
+  "dto": "{downloadUrl}",
+  "tier": "read",
+  "status": "BLOCKED",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "TDS 26Q calculation is unimplemented (Rohan owns the formula) \u2014 cannot build honestly yet"
+}

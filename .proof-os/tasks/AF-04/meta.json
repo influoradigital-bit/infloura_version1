@@ -1,0 +1,13 @@
+{
+  "id": "AF-04",
+  "order": 4,
+  "verb": "GET",
+  "path": "/admin/escrow/flagged",
+  "dto": "FlaggedEscrowDto[]",
+  "tier": "read",
+  "status": "DONE",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "built by concurrent writer: AdminEscrowController.getFlagged + AdminFinanceService.getFlaggedEscrows + FlaggedEscrowDto (verified wired, compiles in shared gate)"
+}

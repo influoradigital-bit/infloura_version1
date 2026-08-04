@@ -1,0 +1,22 @@
+{"rows": [
+  {"subject": "Backend: estimated_delivery real field end-to-end (migration+entity+DTO+service)",
+   "owner": "vikram", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "javac", "command": "mvn -o -DskipTests compile && mvn -o test-compile",
+     "result": "both exit 0; Shipment.estimatedDelivery + markShipped param + MarkShippedRequest/ShipmentResponse + ShipmentService mapper all consistent",
+     "where": "influora-api/src/main/java/com/influora/domain/entity/Shipment.java:74"}},
+  {"subject": "FE: brand sends ETA + creator renders real value (no more now+3d)",
+   "owner": "ananya", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "tsc", "command": "npx tsc --noEmit",
+     "result": "0 errors; brand-chat sends body.estimatedDelivery; creator-chat renders liveShipment.estimatedDelivery; ShipmentCard null-guards to '-'",
+     "where": "src/pages/creator-chat.tsx:2316"}},
+  {"subject": "Migration adds the estimated_delivery column",
+   "owner": "meera", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "grep", "command": "cat V20260804130000__shipment_estimated_delivery.sql",
+     "result": "ALTER TABLE shipments ADD COLUMN estimated_delivery DATE",
+     "where": "influora-api/src/main/resources/db/migration/V20260804130000__shipment_estimated_delivery.sql:4"}},
+  {"subject": "Deep-audit md: Creator PARTIAL 1 -> 0 (shipment resolved)",
+   "owner": "tara", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "grep", "command": "grep -n 'Creator .* 54 .* 0 .* 0 .* 2 .* 56' PROJECT-DEEP-AUDIT-2026-08-04.md",
+     "result": "Creator row 54/0/0/2/56; shipment §4 line flipped to resolved",
+     "where": "PROJECT-DEEP-AUDIT-2026-08-04.md:58"}}
+]}

@@ -4,8 +4,7 @@ import { persist } from 'zustand/middleware';
 import type {
   User,
   Workspace,
-  Campaign,
-  CreatorProfile
+  Campaign
 } from './types';
 
 // ============================================
@@ -89,43 +88,6 @@ export const useCampaignStore = create<CampaignState>((set) => ({
     activeCampaign: state.activeCampaign?.id === id ? null : state.activeCampaign
   })),
 }));
-
-// ============================================
-// DISCOVERY STORE (for finding creators)
-// ============================================
-
-interface DiscoveryFilters {
-  platforms: string[];
-  categories: string[];
-  followerRange: { min: number; max: number } | null;
-  engagementRange: { min: number; max: number } | null;
-  location: string | null;
-  isVerified: boolean | null;
-  budgetRange: { min: number; max: number } | null;
-}
-
-interface DiscoveryState {
-  creators: CreatorProfile[];
-  filteredCreators: CreatorProfile[];
-  filters: DiscoveryFilters;
-  searchQuery: string;
-  isLoading: boolean;
-  setCreators: (creators: CreatorProfile[]) => void;
-  setFilters: (filters: Partial<DiscoveryFilters>) => void;
-  setSearchQuery: (query: string) => void;
-  resetFilters: () => void;
-  applyFilters: () => void;
-}
-
-const defaultFilters: DiscoveryFilters = {
-  platforms: [],
-  categories: [],
-  followerRange: null,
-  engagementRange: null,
-  location: null,
-  isVerified: null,
-  budgetRange: null,
-};
 
 // ============================================
 // UI STORE

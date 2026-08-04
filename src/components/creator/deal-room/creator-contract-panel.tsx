@@ -2,12 +2,10 @@
 
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
-import { FileText, Download, PenTool, CheckCircle2, Lock, Loader2, AlertCircle } from 'lucide-react';
+import { Download, PenTool, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { TimelineEvent } from '@/lib/types';
 import type { DealContractStatus } from '@/components/brand/deal-room/deal-contract-tab';
 import { downloadContractPDF, signContract } from '@/lib/contract-generator';

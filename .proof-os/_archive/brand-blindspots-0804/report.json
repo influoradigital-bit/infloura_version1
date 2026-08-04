@@ -1,0 +1,148 @@
+{
+ "rows": [
+  {
+   "subject": "BS-1 raw fetch/EventSource sweep \u2014 all 6 brand-relevant raw consumers resolve to real backend routes",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "grep",
+    "command": "grep -rn 'fetch(`${API_BASE_URL}|new EventSource' src/ + mapping greps in influora-api web controllers",
+    "result": "notifications x3, auth refresh, deals SSE stream, ClientErrorController route line 64 \u2014 all six raw consumers map to real backend controllers (NotificationController 76/97/127, AuthController 117, DealController)",
+    "where": "src/hooks/useNotifications.ts:248"
+   }
+  },
+  {
+   "subject": "BS-2 reconciliation recompute \u2014 0 phantom endpoints in main client",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "python",
+    "command": "python scratchpad/reconcile.py (extract typed request() calls, diff vs controller mappings by method+normalized path)",
+    "result": "FE typed calls: 128, BE routes: 278, PHANTOM: 0",
+    "where": "src/lib/api.ts:1"
+   }
+  },
+  {
+   "subject": "BS-3a WORKING rows re-trace, campaign/deal/contract half (29 rows)",
+   "owner": "kavya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "grep",
+    "command": "fresh-context checker re-traced 29 rows FE file -> api call -> backend mapping",
+    "result": "29/29 verified, 0 defects",
+    "where": "PROJECT-DEEP-AUDIT-2026-08-04.html:183"
+   }
+  },
+  {
+   "subject": "BS-3b WORKING rows re-trace, wallet/billing/settings half (24 rows)",
+   "owner": "vikram",
+   "status": "broken",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "grep",
+    "command": "fresh-context checker re-traced 24 rows; each defect re-verified by dispatcher grep",
+    "result": "13 verified, 11 defects: withdraw/payout-methods/escrow-release/checkout/slug-check/command-bar/billing-cancel mislabeled WORKING + 4 wrong citations",
+    "where": "PROJECT-DEEP-AUDIT-2026-08-04.html:224"
+   }
+  },
+  {
+   "subject": "BS-3b dispatcher re-verification of all 11 claimed defects by deterministic grep",
+   "owner": "dev",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "grep",
+    "command": "grep call-site sweeps: withdraw in brand-wallet.tsx=0 hits; payout-method callers=creator-wallet only; escrow release callers=0; checkout/cancel callers=0; checkSlug callers=0; command-bar mock arrays at :67,:74; uploads real caller brand-kyc-prompt.tsx:128",
+    "result": "all 11 checker defect claims reproduce under grep; 7 rows mislabeled WORKING confirmed",
+    "where": "src/lib/api.ts:2710"
+   }
+  },
+  {
+   "subject": "BS-4 mock fallbacks + production fail-closed guard",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "grep",
+    "command": "Read api.ts:55-97; grep assertMockAuthAllowed callers",
+    "result": "guard throws in PROD when VITE_API_MODE!=live; called from demo-access-panel.tsx:40,46; one leak: command-bar mock arrays render in live mode",
+    "where": "src/lib/api.ts:94"
+   }
+  },
+  {
+   "subject": "BS-5 build oracles: tsc --noEmit",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "npx tsc --noEmit",
+    "result": "exit 0, 0 errors",
+    "where": "tsconfig.json:1"
+   }
+  },
+  {
+   "subject": "BS-5b build oracles: eslint brand surface",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "eslint",
+    "command": "npx eslint src/components/brand src/pages --ext .ts,.tsx",
+    "result": "exit 0: 0 errors, 74 warnings (react-hooks v7 intentionally warn-level per project policy)",
+    "where": "eslint.config.js:1"
+   }
+  },
+  {
+   "subject": "BS-5c build oracles: production vite build + prerender",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "build",
+    "command": "npm run build",
+    "result": "exit 0; 16/16 marketing routes prerendered",
+    "where": "package.json:1"
+   }
+  },
+  {
+   "subject": "BS-6 money-path gating: Razorpay env-keyed config confirmed; escrow-release UI gap stacks on top",
+   "owner": "dev",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "grep",
+    "command": "grep razorpay influora-api/src/main/resources/application.yml",
+    "result": "keys are ${RAZORPAY_*} env placeholders (application.yml:299-305); live behavior untestable here; release endpoint additionally has no UI caller",
+    "where": "influora-api/src/main/resources/application.yml:299"
+   }
+  },
+  {
+   "subject": "BS-7 ledger carry-overs re-confirmed (F-0065 FakeFollower overclaim, F-0066 read-all wrongly MISSING, CR-51 invoice backfill)",
+   "owner": "dev",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "grep",
+    "command": "re-read FakeFollowerDetectionService.java:25-27, useNotifications.ts:248, brand-layout.tsx:381",
+    "result": "both audit errors still present in the doc; findings F-0065/F-0066 stand; CR-51 unchanged",
+    "where": "influora-api/src/main/java/com/influora/service/scoring/FakeFollowerDetectionService.java:25"
+   }
+  },
+  {
+   "subject": "Deliverable BRAND-BLINDSPOT-AUDIT-2026-08-04.md written with all broken/partial/missing + corrected tally",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "python",
+    "command": "file written via Write tool; existence and section count verifiable on disk",
+    "result": "file exists at repo root covering BS-1..7, 7 mislabeled rows, 2 factual corrections, 4 citation corrections, 6 partial, 12 missing, 1 not-applicable",
+    "where": "BRAND-BLINDSPOT-AUDIT-2026-08-04.md:1"
+   }
+  }
+ ]
+}

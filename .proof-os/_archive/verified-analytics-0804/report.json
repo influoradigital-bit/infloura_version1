@@ -1,0 +1,52 @@
+{
+ "rows": [
+  {
+   "subject": "Backend: on-demand verify endpoint + manual-write gate (verified-first)",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "junit",
+    "command": "mvn -o -Dtest=CreatorDeliverableServiceManualFallbackTest,CreatorDeliverableServiceTest,CreatorDeliverableControllerTest test",
+    "result": "BUILD SUCCESS; manual self-report is blocked (409 MANUAL_METRICS_NOT_ALLOWED) unless Meta could not verify a connected post; verify endpoint returns the live outcome",
+    "where": "influora-api/src/main/java/com/influora/service/CreatorDeliverableService.java:453"
+   }
+  },
+  {
+   "subject": "Outcome -> manualFallbackAllowed mapping (all 11 values, failure-only)",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "junit",
+    "command": "mvn -o -Dtest=CreatorDeliverableServiceManualFallbackTest test",
+    "result": "green; manual allowed only when Meta could not verify a connected post, blocked for VERIFIED / NO_TOKEN / bad-URL",
+    "where": "influora-api/src/test/java/com/influora/service/CreatorDeliverableServiceManualFallbackTest.java:1"
+   }
+  },
+  {
+   "subject": "Creator: verified-first lifecycle panel (manual only on Meta failure)",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "npx tsc --noEmit",
+    "result": "0 errors; panel shows verified numbers / Connect-Instagram / manual-only-when-manualFallbackAllowed via verifyNow",
+    "where": "src/components/creator/deal-room/deliverable-lifecycle-panel.tsx:1"
+   }
+  },
+  {
+   "subject": "Brand: per-deliverable verified/self-reported badge from real source",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "npx tsc --noEmit",
+    "result": "0 errors; brand-campaign-detail renders MetricSourceBadge from d.source (real per-row source) + derived aggregate",
+    "where": "src/pages/brand-campaign-detail.tsx:1455"
+   }
+  }
+ ]
+}

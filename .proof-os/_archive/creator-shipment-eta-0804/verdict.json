@@ -1,0 +1,5 @@
+{"verdict": "believed", "oracle": "javac", "isolation": "fresh-context",
+ "done_when": "deal-room shipment estimatedDelivery is a real brand-supplied backend field (not a hardcoded now+3d); creator renders the real ETA; Creator PARTIAL 1 -> 0",
+ "not_checked": ["live: the Flyway migration was not run against a real DB, and no HTTP round-trip was exercised",
+                 "no dedicated shipment tests exist in the repo to run (compile + test-compile green only)"],
+ "skipped": [{"step": "shipment unit test", "reason": "no *Shipment* test class exists in the repo; adding one is out of this partial-fix scope — flagged"}]}

@@ -1,0 +1,13 @@
+{
+  "id": "AF-06",
+  "order": 6,
+  "verb": "GET",
+  "path": "/admin/marketing/growth",
+  "dto": "MarketingGrowth",
+  "tier": "read",
+  "status": "BLOCKED",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "GrowthMetrics.referralStats needs a Referral entity (does not exist); cohortRetention has no cohort infra \u2014 only funnel is real, cannot return the full shape honestly"
+}

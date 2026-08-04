@@ -1,0 +1,70 @@
+{"rows":[
+{"subject":"src/** — TypeScript typecheck (423 files; tsconfig excludes app/, components/, src/app/)","owner":"meera","status":"aligned","isolation":"oracle",
+ "evidence":{"oracle":"tsc","command":"npx --no-install tsc -p tsconfig.json --noEmit","result":"exit 0 — 0 errors","where":"tsconfig.json:1"}},
+
+{"subject":"src/**/*.test.{ts,tsx} — unit + component test suite","owner":"meera","status":"aligned","isolation":"oracle",
+ "evidence":{"oracle":"node","command":"npx --no-install vitest run --reporter=basic","result":"exit 0 — 34 test files, 316 passed, 0 skipped, 62.35s","where":"vitest.config.ts:1"}},
+
+{"subject":"influora-ai/** — Meera AI service (FastAPI, 92 modules)","owner":"meera","status":"aligned","isolation":"oracle",
+ "evidence":{"oracle":"pytest","command":"python -m pytest -q (influora-ai)","result":"exit 0 — 499 passed, 2 skipped in 7.15s","where":"influora-ai/pytest.ini:1"}},
+
+{"subject":"src/** (424 files) — rules-of-hooks","owner":"meera","status":"aligned","isolation":"oracle",
+ "evidence":{"oracle":"script","command":"python3 .proof-os/gates/react_hooks.py","result":"exit 0 — 0 rules-of-hooks violations across 424 files","where":".proof-os/gates/react_hooks.py:1"}},
+
+{"subject":"src/hooks/**, src/pages/** — use-before-declare (gate default scope, 115 files)","owner":"meera","status":"aligned","isolation":"oracle",
+ "evidence":{"oracle":"script","command":"python3 .proof-os/gates/react_hooks_immutability.py","result":"exit 0 — 0 use-before-declare violations across 115 files","where":".proof-os/gates/react_hooks_immutability.py:1"}},
+
+{"subject":"src/components/brand/brand-layout.tsx — notifications wiring (F-0043 class)","owner":"meera","status":"aligned","isolation":"oracle",
+ "evidence":{"oracle":"script","command":"python3 .proof-os/gates/notifications_wired.py","result":"exit 0 — wired to useNotifications; mockNotifications and useNotificationStore are both absent from src","where":".proof-os/gates/notifications_wired.py:1"}},
+
+{"subject":"src/** — correctness singletons (F-0047 class)","owner":"meera","status":"aligned","isolation":"oracle",
+ "evidence":{"oracle":"script","command":"python3 .proof-os/gates/lint_singletons.py","result":"exit 0 — 0 violations across src for the three correctness rules promoted from F-0047","where":".proof-os/gates/lint_singletons.py:1"}},
+
+{"subject":"src/**, app/**, lib/**, hooks/** — project ESLint ruleset","owner":"meera","status":"partial","isolation":"oracle",
+ "evidence":{"oracle":"eslint","command":"npx --no-install eslint . -f stylish","result":"exit 0 — 0 errors, 162 warnings: 95 react-hooks/set-state-in-effect, 17 exhaustive-deps, 13 react-refresh/only-export-components, 13 react-hooks/refs, 11 react-hooks/purity, 6 static-components, 2 preserve-manual-memoization, 2 immutability, 3 unused eslint-disable directives","where":"src/pages/creator-wallet.tsx:434"}},
+
+{"subject":"influora-api/** — Spring Boot backend build (886 java sources, 96 flyway migrations)","owner":"vikram","status":"partial","isolation":"oracle",
+ "evidence":{"oracle":"mvn","command":"mvn -B -DskipTests package (influora-api)","result":"exit 1 UNAVAILABLE, not a finding — repo.maven.apache.org returns 403 through this sandbox proxy so spring-boot-starter-parent:3.3.5 cannot resolve. On the laptop, target/influora-api-0.1.0-SNAPSHOT.jar is dated 2026-07-28 and 70 .java sources under influora-api/src are newer than it, so the last green backend build predates the current source","where":"influora-api/pom.xml:7"}},
+
+{"subject":"e2e/** — Playwright end-to-end suite","owner":"neha","status":"missing","isolation":"oracle",
+ "evidence":{"oracle":"script","command":"bash .proof-os/gates/e2e.sh . ; ls node_modules/@playwright","result":"exit 2 UNAVAILABLE — no URL given. Separately, playwright.config.ts and 2 spec files exist but @playwright/test is in neither package.json nor node_modules on the laptop, and package.json has no e2e script, so this suite has no way to run","where":"playwright.config.ts:1"}},
+
+{"subject":".proof-os/graph.json — dependency graph provenance","owner":"meera","status":"partial","isolation":"oracle",
+ "evidence":{"oracle":"script","command":"python3 .proof-os/gates/graph_source.py","result":"exit 0 — engine scan.py-regex, 2657 edges, oracle_strength 0.0% (0/2657 parser-derived), so no graph edge can render green","where":".proof-os/gates/graph_source.py:1"}},
+
+{"subject":"dist/ — production build (vite build + postbuild prerender)","owner":"meera","status":"broken","isolation":"oracle",
+ "evidence":{"oracle":"npm","command":"npm run build","result":"exit 1 — vite build succeeds, then postbuild `node scripts/prerender.mjs` aborts: resolveChrome() finds no browser at any of its 8 hardcoded paths and PRERENDER_CHROME_PATH is set in no env file, package.json script or workflow. Confirmed on the laptop too: dist/ there contains index.html and assets only, zero of the 16 prerendered route directories","where":"scripts/prerender.mjs:107"}},
+
+{"subject":".proof-os/gates/frontend.sh — sage lint ruleset + hex-token grep","owner":"meera","status":"broken","isolation":"oracle",
+ "evidence":{"oracle":"eslint","command":"npx eslint . --config .proof-os/gates/eslint.sage.mjs --no-config-lookup -f stylish","result":"exit 1 — 56 errors and 2 warnings across 26 files (30 no-console, 18 exhaustive-deps, 8 no-unused-vars). The gate itself prints only 6 of them because frontend.sh:29 pipes the report through `head -10`; the raw-hex step likewise emits 65 lines across 13 files, and gitleaks reports UNAVAILABLE so no secret scanning runs","where":".proof-os/gates/frontend.sh:29"}},
+
+{"subject":".proof-os/gates/security.sh — dependency + secret scanning","owner":"meera","status":"broken","isolation":"oracle",
+ "evidence":{"oracle":"npm-audit","command":"bash .proof-os/gates/security.sh .","result":"exit 1 — 23 vulnerabilities (4 high, 18 moderate, 1 low): react-router-dom <=7.17.0 with 5 advisories including open redirect and SSR constructor injection, and vite <=6.4.2 with the server.fs.deny bypass and launch-editor NTLM hash disclosure. gitleaks is UNAVAILABLE, so the secret-scanning half of this gate has never run","where":"package-lock.json:1"}},
+
+{"subject":"src/** — dead exports (F-0042 class)","owner":"meera","status":"broken","isolation":"oracle",
+ "evidence":{"oracle":"script","command":"python3 .proof-os/gates/dead_exports.py","result":"exit 1 — 2 genuinely-unreferenced exports cross-verified against 63 ts-prune candidates: CounterProposalCard, DeliverableCard","where":"src/components/creator/deal-room/deliverable-card.tsx:40"}},
+
+{"subject":".proof-os/gates/registry_render.py — project gate copy vs registry version","owner":"meera","status":"broken","isolation":"oracle",
+ "evidence":{"oracle":"script","command":"python3 .proof-os/gates/registry_render.py","result":"exit 1 — 7 services rejected on may_claim 'echo' not in proved|believed|inherits|null. The project copy is proof-os 0.3.x; registry.json declares 0.4.1. The 0.4.2 plugin copy of the same gate exits 0 on the same registry, so this red is the gate being stale, not the registry being wrong","where":".proof-os/gates/registry_render.py:1"}},
+
+{"subject":".proof-os/gates/meta_length.py — SEO meta-length gate","owner":"meera","status":"broken","isolation":"oracle",
+ "evidence":{"oracle":"script","command":"python3 .proof-os/gates/meta_length.py ; python3 -c \"len of index.html meta description\"","result":"exit 0 with 'meta checks failed: 0' while the meta description at index.html:7 is 169 characters against the gate's own 160 limit — a gate that passes bad input, which is open ledger record F-0029 still live","where":"index.html:7"}},
+
+{"subject":"src/pages/brand-pipeline.tsx + admin — components created in render (F-0050)","owner":"meera","status":"broken","isolation":"oracle",
+ "evidence":{"oracle":"eslint","command":"npx --no-install eslint . -f json | filter react-hooks/static-components","result":"6 sites, not the 3 the ledger record names: brand-pipeline.tsx:725,726,727 (definitions at 425, 468, 558) plus KpiCard.tsx:128 and FlagQueue.tsx:332,343, which are outside F-0050's recorded where","where":"src/admin/components/dashboard/KpiCard.tsx:128"}},
+
+{"subject":"src/lib/__tests__/api-contract.test.ts — FE/BE contract guardrail deferred allowlist","owner":"vikram","status":"missing","isolation":"oracle",
+ "evidence":{"oracle":"parser","command":"python3 — parse @Get/Post/Put/Patch/DeleteMapping across influora-api/src/main/java (252 mapped paths) and diff against the 38 paths the guardrail's deferred allowlist exempts","result":"the guardrail passes only because 38 paths are allowlisted. 18 of them have no backend mapping at all: admin dashboard/financial, dashboard/marketing, finance/revenue, finance/payouts(+/{}/retry), finance/reconciliation(+/{}/resolve), finance/tds/26q, escrow/{}/release|hold|refund, moderation/suspensions/{}/appeal, marketing/acquisition|growth|referrals|reputation, plus wallet/recharge and notifications/read-all. The other 19 DO have controllers today but are still exempted, so their FE/BE parity is no longer checked by anything","where":"src/lib/__tests__/api-contract.test.ts:118"}},
+
+{"subject":"graphify-out/ — the codebase-query workflow CLAUDE.md mandates","owner":"meera","status":"partial","isolation":"oracle",
+ "evidence":{"oracle":"script","command":"python3 .proof-os/gates/graph_scope.py ; command -v graphify","result":"the graph data exists on the laptop (graphify-out/ with GRAPH_REPORT.md, graph.html, cache and two dated runs) but the `graphify` binary is not on PATH, so the query/path/explain workflow CLAUDE.md makes the first step for any codebase question cannot be executed","where":"CLAUDE.md:1"}}
+],
+"not_checked":[
+ "whether any of these features behave correctly at runtime — no server was started, no browser session was driven, and gates/e2e.sh had no URL, so every green row here is a static or unit-level result",
+ "the entire Java backend beyond parsing its request mappings: mvn cannot resolve dependencies through this sandbox proxy, so 886 sources, 188 test classes and 96 Flyway migrations were never compiled or run",
+ "secrets: gitleaks is unavailable in both frontend.sh and security.sh, so nothing scanned .env.local / .env.production or git history",
+ "whether the 18 phantom endpoints are wanted product or dead client code — that is a product decision, not an oracle's",
+ "whether the 162 eslint warnings and 56 sage-lint errors represent real defects or accepted style debt",
+ "influora-ai runtime behaviour against the real Claude/Gemini/Sarvam APIs — the 499 passing tests are all mocked",
+ "trendspark/n8n workflows, .github/workflows CI definitions, and docker/ deployment config — none were executed"
+]}

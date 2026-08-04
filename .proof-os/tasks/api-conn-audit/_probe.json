@@ -1,0 +1,1 @@
+{"rows":[{"subject":"x","owner":"kavya","status":"aligned","isolation":"oracle","evidence":{"oracle":"tsc","command":"tsc --noEmit","result":"0 errors","where":"x:1"}}]}

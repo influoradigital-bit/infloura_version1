@@ -1,0 +1,37 @@
+{
+ "verdict": "believed",
+ "oracle": "tsc",
+ "isolation": "fresh-context",
+ "done_when": "each available oracle ran, findings are classed into ledger records with missed_by, and the blind spots are named",
+ "not_checked": [
+  "whether any feature behaves correctly at runtime \u2014 no server was started and no browser session was driven, so every green row is a static or unit-level result",
+  "the Java backend beyond parsing its request mappings: mvn cannot resolve dependencies through this sandbox proxy, so 886 sources, 188 test classes and 96 Flyway migrations were never compiled or run",
+  "secrets \u2014 gitleaks is unavailable in both security gates, so nothing has ever scanned .env.local, .env.production or git history",
+  "whether the 18 phantom endpoints are wanted product or dead client code \u2014 that is a product decision, not an oracle's",
+  "influora-ai behaviour against the real Claude/Gemini/Sarvam APIs \u2014 its 499 passing tests are all mocked",
+  "trendspark/n8n workflows, .github/workflows CI definitions and docker/ deployment config \u2014 none were executed",
+  "whether the two fresh-context checkers were themselves right; their objections were re-run by hand and three of their findings turned out to be artifacts of a partial file staging, not project defects"
+ ],
+ "skipped": [
+  {
+   "step": "gates/e2e.sh with a live URL",
+   "reason": "nothing is deployed and no URL was supplied; recorded as exit 2 unavailable, never as a pass"
+  },
+  {
+   "step": "gates/citations.py, gates/deck.py",
+   "reason": "both require a target file argument and have no subject in this audit; invoked bare they raise IndexError"
+  },
+  {
+   "step": "gates/version_assert.py, gates/frontmatter.py",
+   "reason": "both exit 2 \u2014 no plugin manifest and no SKILL.md under this project's .proof-os, so there is nothing for them to hash or parse"
+  },
+  {
+   "step": "scripts/independence.py --enforce",
+   "reason": "left as a report; every judgment service has an undetermined catch rate, and an automatic ceiling change driven by an undetermined statistic would itself be an unproved claim rendering as a fact"
+  },
+  {
+   "step": "staging influora-api/target, graphify-out and node_modules into the audit container",
+   "reason": "the device bridge kills any process past 45s so the oracles had to run in the cloud; these were left on the laptop and queried there instead, which is why three of the checkers' objections about 'missing' files were staging artifacts rather than defects"
+  }
+ ]
+}

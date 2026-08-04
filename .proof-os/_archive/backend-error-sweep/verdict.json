@@ -1,0 +1,25 @@
+{
+  "verdict": "proved",
+  "oracle": "mvn",
+  "isolation": "oracle",
+  "done_when": "each available oracle ran over the scope and its raw output is recorded",
+  "evidence": {
+    "oracle": "mvn",
+    "command": "PROOF_MVN_HEAP=3g gates/build.mvn.sh influora-api ; MAVEN_OPTS=-Xmx3g mvn -q -o test-compile",
+    "result": "exit 0 — main compiles (VERDICT: aligned proved) and test sources compile (exit 0); 0 compile errors",
+    "where": "influora-api/pom.xml:1"
+  },
+  "not_checked": [
+    "runtime behaviour, data correctness, and security in either backend — a compiler/parser cannot see these",
+    "Java tests were COMPILED (test-compile) but NOT executed — no test regression was caught",
+    "AI service (influora-ai) is parse-proved only via py_compile; lint, type-check, and tests could not run — no ruff/pyflakes/mypy/pytest on this host (believed, not a clean bill)",
+    "the JVM OutOfMemory boot failures in influora-api/boot.log + hs_err dumps are a HOST fact (8GB RAM, 'paging file too small'), not a code error; unverified whether the app boots on an adequate host",
+    "Redis 'Connection refused :6379' in boot_retry.log is environment (Redis not running), not code",
+    "runtime authz: ai_dev.log shows POST /internal/meera/create_campaign -> 403 (read-only JWT scope, prior known bug) — invisible to any compile oracle"
+  ],
+  "skipped": [
+    {"step": "PROOF_MVN_TESTS=1 (Java test EXECUTION)", "reason": "the ask was 'errors' = compile/build; test-run is a separate signal and prior JVM OOM makes a full test run host-risky"},
+    {"step": "AI lint / type-check", "reason": "ruff/pyflakes/mypy not installed in the environment — unavailable, not a finding"},
+    {"step": "OS journaling via native fcntl", "reason": "scripts import fcntl (absent on Windows Python); a local no-op fcntl shim was placed on PYTHONPATH so the journal WAS written — noting the workaround, not skipping the step"}
+  ]
+}

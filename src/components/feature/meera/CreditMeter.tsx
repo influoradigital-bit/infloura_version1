@@ -15,7 +15,7 @@
  *   - Voice reply: 4 credits
  */
 
-import { Sparkles, Infinity, AlertTriangle } from 'lucide-react';
+import { Sparkles, Infinity as InfinityIcon, AlertTriangle } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 
 import type { CreditState } from '@/hooks/useMeeraCredits';
@@ -66,7 +66,7 @@ export function CreditMeter({
   if (state === 'unlimited') {
     return (
       <div className={cn('flex items-center gap-1.5 text-xs', className)}>
-        <Infinity className="h-3.5 w-3.5 text-meera-escrow" />
+        <InfinityIcon className="h-3.5 w-3.5 text-meera-escrow" />
         <span className="text-meera-text-muted">Unlimited while live</span>
       </div>
     );

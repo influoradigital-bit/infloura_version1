@@ -1,0 +1,114 @@
+
+/home/claude/influora/app/layout.tsx
+  6:7  error  '_geist' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  7:7  error  '_geistMono' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/claude/influora/ci/lighthouse-meera.mjs
+  168:3   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  169:3   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  170:3   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  171:3   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  174:12  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  176:3   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  185:12  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  205:3   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  206:3   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  207:3   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  215:5   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  216:5   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+/home/claude/influora/hooks/use-toast.ts
+  18:7  error  'actionTypes' is assigned a value but only used as a type  @typescript-eslint/no-unused-vars
+
+/home/claude/influora/scripts/meera-turn-smoke.mjs
+  152:3  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  167:3  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+/home/claude/influora/scripts/prerender.mjs
+  365:5   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  388:11  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  417:5   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  420:3   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  426:5   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+/home/claude/influora/src/admin/services/websocket.ts
+  155:14  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+/home/claude/influora/src/admin/utils/auditLogger.ts
+  137:5  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  175:5  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+/home/claude/influora/src/app/layout.tsx
+  6:7  error  '_geist' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  7:7  error  '_geistMono' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/claude/influora/src/components/ErrorBoundary.tsx
+  63:5  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/home/claude/influora/src/components/brand/campaigns/campaign-form.tsx
+  178:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  188:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+/home/claude/influora/src/components/brand/contracts/contracts-and-deliverables.tsx
+  582:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+/home/claude/influora/src/components/feature/meera/FundEscrowButton.tsx
+  190:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  206:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  258:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+/home/claude/influora/src/components/feature/meera/MeeraChatPanel.tsx
+  317:5   error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  350:5   error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  671:41  error  '_lang' is defined but never used                                @typescript-eslint/no-unused-vars
+
+/home/claude/influora/src/components/feature/meera/StageSnapshot.tsx
+  89:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+/home/claude/influora/src/components/feature/meera/VoiceMode.tsx
+  119:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+/home/claude/influora/src/components/motion/EscrowLockSequence.tsx
+  52:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+/home/claude/influora/src/hooks/analytics/useCreatorMetrics.ts
+  84:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+/home/claude/influora/src/hooks/useMeeraStream.ts
+  218:11  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+/home/claude/influora/src/hooks/useNotifications.ts
+  201:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  231:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+/home/claude/influora/src/lib/api.ts
+  1803:15  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+/home/claude/influora/src/lib/contract-generator.ts
+  178:57  error  '_filename' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/claude/influora/src/pages/brand-chat.tsx
+   844:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found                    react-hooks/exhaustive-deps
+  1102:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found                    react-hooks/exhaustive-deps
+  1170:9  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  1189:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found                    react-hooks/exhaustive-deps
+
+/home/claude/influora/src/pages/brand-wallet.tsx
+  490:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+/home/claude/influora/src/pages/creator-chat.tsx
+   924:9   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  1400:38  error  '_revisionNotes' is defined but never used                                         @typescript-eslint/no-unused-vars
+
+/home/claude/influora/trendspark/n8n/tagger-sync.check.js
+  104:3  warning  Unused eslint-disable directive (no problems were reported from 'no-eval')
+  196:3  error    Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+/home/claude/influora/trendspark/n8n/theme-tagger.js
+  308:5  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  327:3  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  330:3  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+✖ 58 problems (56 errors, 2 warnings)
+  0 errors and 2 warnings potentially fixable with the `--fix` option.
+

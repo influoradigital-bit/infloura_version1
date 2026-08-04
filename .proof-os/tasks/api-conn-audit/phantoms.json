@@ -1,0 +1,67 @@
+{
+ "count": 40,
+ "groups": {
+  "Admin \u00b7 Users": [
+   "/admin/brands/{}/campaigns/{}/budget-override",
+   "/admin/creators/applications/pending",
+   "/admin/creators/{}/tier"
+  ],
+  "Admin \u00b7 Campaigns": [
+   "/admin/campaigns/at-risk",
+   "/admin/campaigns/hype/ops",
+   "/admin/campaigns/{}"
+  ],
+  "Admin \u00b7 Dashboard": [
+   "/admin/dashboard/financial",
+   "/admin/dashboard/marketing"
+  ],
+  "Admin \u00b7 Emails": [
+   "/admin/emails/queue",
+   "/admin/emails/queue/{}/retry",
+   "/admin/emails/send-bulk",
+   "/admin/emails/stats",
+   "/admin/emails/templates"
+  ],
+  "Admin \u00b7 Error log": [
+   "/admin/errors/recent",
+   "/admin/errors/stats",
+   "/admin/errors/{}",
+   "/admin/errors/{}/resolve"
+  ],
+  "Admin \u00b7 Finance / Escrow": [
+   "/admin/escrow/flagged",
+   "/admin/escrow/{}/hold",
+   "/admin/escrow/{}/refund",
+   "/admin/escrow/{}/release",
+   "/admin/finance/escrow",
+   "/admin/finance/payouts",
+   "/admin/finance/payouts/{}/retry",
+   "/admin/finance/reconciliation",
+   "/admin/finance/reconciliation/{}/resolve",
+   "/admin/finance/revenue",
+   "/admin/finance/tds/26q"
+  ],
+  "Admin \u00b7 Marketing": [
+   "/admin/marketing/acquisition",
+   "/admin/marketing/growth",
+   "/admin/marketing/referrals",
+   "/admin/marketing/reputation"
+  ],
+  "Admin \u00b7 Moderation": [
+   "/admin/moderation/suspensions",
+   "/admin/moderation/suspensions/{}/appeal"
+  ],
+  "Admin \u00b7 Support": [
+   "/admin/support/stats"
+  ],
+  "Creator / Brand": [
+   "/analytics/creators/{}/media",
+   "/deliverables/{}/approve",
+   "/deliverables/{}/revise"
+  ],
+  "Notifications": [
+   "/notifications/preferences",
+   "/notifications/read-all"
+  ]
+ }
+}

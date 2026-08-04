@@ -1,0 +1,13 @@
+{
+  "id": "AF-08",
+  "order": 8,
+  "verb": "GET",
+  "path": "/admin/marketing/reputation",
+  "dto": "MarketingReputation",
+  "tier": "read",
+  "status": "DONE",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "built + reviewed REAL \u2014 reputation from real Review stars + Dispute resolution time"
+}

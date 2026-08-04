@@ -1,0 +1,6 @@
+{"verdict": "believed", "oracle": "tsc", "isolation": "fresh-context",
+ "done_when": "all creator error solve & updated md file get sign up from priya when work done",
+ "not_checked": ["live HTTP: the KYC form was not submitted against a running backend (static reachability + tsc/eslint only)",
+                 "the selfie upload round-trip to /uploads was not exercised at runtime",
+                 "whether POST /onboarding/creator/kyc returns correct data at runtime (route existence only)"],
+ "skipped": [{"step": "browser preview verification", "reason": "KYC dialog sits behind an authenticated creator session + running backend, unavailable in this environment; reachability proven statically instead"}]}

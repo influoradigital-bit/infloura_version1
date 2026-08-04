@@ -1,0 +1,224 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>New Influora — deep codebase audit, 3 Aug 2026</title><style>
+*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3;font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:48px 24px 80px}
+h1{font-size:30px;margin:0 0 6px;letter-spacing:-.02em}
+.sub{color:#8b949e;margin:0 0 34px;font-size:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:#161b22;border:1px solid #21262d;border-radius:10px;padding:16px 18px}
+.kpi .n{font-size:28px;font-weight:650;letter-spacing:-.02em}
+.kpi .l{color:#8b949e;font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+.vline{background:#161b22;border:1px solid #21262d;border-radius:10px;padding:14px 18px;font:13px ui-monospace,SFMono-Regular,Menlo,monospace;color:#8b949e;white-space:pre-wrap;margin-bottom:34px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:#8b949e;margin:38px 0 14px;font-weight:600}
+.row{display:flex;background:#161b22;border:1px solid #21262d;border-radius:10px;overflow:hidden;margin-bottom:10px}
+.bar{width:4px;flex:none} .body{padding:14px 18px;min-width:0;flex:1}
+.tagline{display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap}
+.tag{font-size:10.5px;font-weight:700;letter-spacing:.09em;padding:2px 8px;border-radius:20px;border:1px solid}
+.owner,.orc{font-size:11px;color:#6e7681;background:#21262d;padding:2px 8px;border-radius:20px}
+h3{font-size:15px;margin:0 0 6px;font-weight:600;word-break:break-word}
+.res{margin:0 0 9px;color:#c9d1d9;font-size:13.5px}
+.cmd{display:block;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#7d8590;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:7px 10px;overflow-x:auto;white-space:pre}
+.where{margin-top:7px;font:11.5px ui-monospace,Menlo,monospace;color:#58a6ff}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.07em;padding:8px 10px;border-bottom:1px solid #21262d}
+td{padding:10px;border-bottom:1px solid #21262d;vertical-align:top;color:#c9d1d9}
+td.id{font:12px ui-monospace,Menlo,monospace;color:#f85149;white-space:nowrap}
+td.cls{font:12px ui-monospace,Menlo,monospace;color:#d29922;white-space:nowrap}
+td.wh{font:11.5px ui-monospace,Menlo,monospace;color:#58a6ff;max-width:190px;word-break:break-all}
+td.mb{color:#8b949e}
+ul{padding-left:20px;color:#c9d1d9;font-size:14px} li{margin-bottom:7px}
+.note{background:#161b22;border:1px solid #21262d;border-left:3px solid #d29922;border-radius:8px;padding:16px 20px;color:#c9d1d9;font-size:14px;margin-bottom:14px}
+.note b{color:#e6edf3}
+footer{margin-top:46px;padding-top:20px;border-top:1px solid #21262d;color:#6e7681;font-size:12px}
+</style></head><body><div class="wrap">
+<h1>New Influora — deep codebase audit</h1>
+<p class="sub">3 August 2026 · proof-os 0.4.2 · verb AUDIT, oracle-first · every number below is an exit code or a command's own output</p>
+<div class="kpis">
+ <div class="kpi"><div class="n" style="color:#3fb950">7</div><div class="l">working</div></div>
+ <div class="kpi"><div class="n" style="color:#d29922">4</div><div class="l">partial</div></div>
+ <div class="kpi"><div class="n" style="color:#f85149">7</div><div class="l">broken</div></div>
+ <div class="kpi"><div class="n" style="color:#a371f7">2</div><div class="l">missing</div></div>
+ <div class="kpi"><div class="n">8</div><div class="l">new ledger records</div></div>
+ <div class="kpi"><div class="n">20</div><div class="l">open records total</div></div>
+</div>
+<div class="vline">VALID · 20 rows · alignment 45.0% · proved 42.5% (18/20 scored rows) · believed 2 · capped 0
+computed by scripts/validate.py from the rows below — never self-scored (F-0006)</div>
+
+<div class="note"><b>The first version of this report was wrong, and two independent checkers caught it.</b>
+The build row was recorded green after <code>npm run build</code> was run with an undeclared <code>PRERENDER_CHROME_PATH</code> override. Without it the command exits 1. Two fresh-context checkers — given only the report and the done_when — re-ran every command and refuted it, along with seven other rows whose recorded numbers drifted from real output. Those rows are corrected here and the false green is itself recorded as <b>F-0059</b>.</div>
+
+<h2>Findings — worst first</h2>
+<div class="row" data-s="broken">
+ <div class="bar" style="background:#f85149"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#f85149;border-color:#f8514944;background:#f8514914">BROKEN</span><span class="owner">meera</span><span class="orc">eslint</span></div>
+  <h3>.proof-os/gates/frontend.sh — sage lint ruleset + hex-token grep</h3>
+  <p class="res">exit 1 — 56 errors and 2 warnings across 26 files (30 no-console, 18 exhaustive-deps, 8 no-unused-vars). The gate itself prints only 6 of them because frontend.sh:29 pipes the report through `head -10`; the raw-hex step likewise emits 65 lines across 13 files, and gitleaks reports UNAVAILABLE so no secret scanning runs</p>
+  <code class="cmd">$ npx eslint . --config .proof-os/gates/eslint.sage.mjs --no-config-lookup -f stylish</code>
+  <div class="where">.proof-os/gates/frontend.sh:29</div>
+ </div></div><div class="row" data-s="broken">
+ <div class="bar" style="background:#f85149"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#f85149;border-color:#f8514944;background:#f8514914">BROKEN</span><span class="owner">meera</span><span class="orc">script</span></div>
+  <h3>.proof-os/gates/meta_length.py — SEO meta-length gate</h3>
+  <p class="res">exit 0 with &#x27;meta checks failed: 0&#x27; while the meta description at index.html:7 is 169 characters against the gate&#x27;s own 160 limit — a gate that passes bad input, which is open ledger record F-0029 still live</p>
+  <code class="cmd">$ python3 .proof-os/gates/meta_length.py ; python3 -c &quot;len of index.html meta description&quot;</code>
+  <div class="where">index.html:7</div>
+ </div></div><div class="row" data-s="broken">
+ <div class="bar" style="background:#f85149"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#f85149;border-color:#f8514944;background:#f8514914">BROKEN</span><span class="owner">meera</span><span class="orc">script</span></div>
+  <h3>.proof-os/gates/registry_render.py — project gate copy vs registry version</h3>
+  <p class="res">exit 1 — 7 services rejected on may_claim &#x27;echo&#x27; not in proved|believed|inherits|null. The project copy is proof-os 0.3.x; registry.json declares 0.4.1. The 0.4.2 plugin copy of the same gate exits 0 on the same registry, so this red is the gate being stale, not the registry being wrong</p>
+  <code class="cmd">$ python3 .proof-os/gates/registry_render.py</code>
+  <div class="where">.proof-os/gates/registry_render.py:1</div>
+ </div></div><div class="row" data-s="broken">
+ <div class="bar" style="background:#f85149"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#f85149;border-color:#f8514944;background:#f8514914">BROKEN</span><span class="owner">meera</span><span class="orc">npm-audit</span></div>
+  <h3>.proof-os/gates/security.sh — dependency + secret scanning</h3>
+  <p class="res">exit 1 — 23 vulnerabilities (4 high, 18 moderate, 1 low): react-router-dom &lt;=7.17.0 with 5 advisories including open redirect and SSR constructor injection, and vite &lt;=6.4.2 with the server.fs.deny bypass and launch-editor NTLM hash disclosure. gitleaks is UNAVAILABLE, so the secret-scanning half of this gate has never run</p>
+  <code class="cmd">$ bash .proof-os/gates/security.sh .</code>
+  <div class="where">package-lock.json:1</div>
+ </div></div><div class="row" data-s="broken">
+ <div class="bar" style="background:#f85149"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#f85149;border-color:#f8514944;background:#f8514914">BROKEN</span><span class="owner">meera</span><span class="orc">npm</span></div>
+  <h3>dist/ — production build (vite build + postbuild prerender)</h3>
+  <p class="res">exit 1 — vite build succeeds, then postbuild `node scripts/prerender.mjs` aborts: resolveChrome() finds no browser at any of its 8 hardcoded paths and PRERENDER_CHROME_PATH is set in no env file, package.json script or workflow. Confirmed on the laptop too: dist/ there contains index.html and assets only, zero of the 16 prerendered route directories</p>
+  <code class="cmd">$ npm run build</code>
+  <div class="where">scripts/prerender.mjs:107</div>
+ </div></div><div class="row" data-s="broken">
+ <div class="bar" style="background:#f85149"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#f85149;border-color:#f8514944;background:#f8514914">BROKEN</span><span class="owner">meera</span><span class="orc">script</span></div>
+  <h3>src/** — dead exports (F-0042 class)</h3>
+  <p class="res">exit 1 — 2 genuinely-unreferenced exports cross-verified against 63 ts-prune candidates: CounterProposalCard, DeliverableCard</p>
+  <code class="cmd">$ python3 .proof-os/gates/dead_exports.py</code>
+  <div class="where">src/components/creator/deal-room/deliverable-card.tsx:40</div>
+ </div></div><div class="row" data-s="broken">
+ <div class="bar" style="background:#f85149"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#f85149;border-color:#f8514944;background:#f8514914">BROKEN</span><span class="owner">meera</span><span class="orc">eslint</span></div>
+  <h3>src/pages/brand-pipeline.tsx + admin — components created in render (F-0050)</h3>
+  <p class="res">6 sites, not the 3 the ledger record names: brand-pipeline.tsx:725,726,727 (definitions at 425, 468, 558) plus KpiCard.tsx:128 and FlagQueue.tsx:332,343, which are outside F-0050&#x27;s recorded where</p>
+  <code class="cmd">$ npx --no-install eslint . -f json | filter react-hooks/static-components</code>
+  <div class="where">src/admin/components/dashboard/KpiCard.tsx:128</div>
+ </div></div><div class="row" data-s="missing">
+ <div class="bar" style="background:#a371f7"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#a371f7;border-color:#a371f744;background:#a371f714">MISSING</span><span class="owner">neha</span><span class="orc">script</span></div>
+  <h3>e2e/** — Playwright end-to-end suite</h3>
+  <p class="res">exit 2 UNAVAILABLE — no URL given. Separately, playwright.config.ts and 2 spec files exist but @playwright/test is in neither package.json nor node_modules on the laptop, and package.json has no e2e script, so this suite has no way to run</p>
+  <code class="cmd">$ bash .proof-os/gates/e2e.sh . ; ls node_modules/@playwright</code>
+  <div class="where">playwright.config.ts:1</div>
+ </div></div><div class="row" data-s="missing">
+ <div class="bar" style="background:#a371f7"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#a371f7;border-color:#a371f744;background:#a371f714">MISSING</span><span class="owner">vikram</span><span class="orc">parser</span></div>
+  <h3>src/lib/__tests__/api-contract.test.ts — FE/BE contract guardrail deferred allowlist</h3>
+  <p class="res">the guardrail passes only because 38 paths are allowlisted. 18 of them have no backend mapping at all: admin dashboard/financial, dashboard/marketing, finance/revenue, finance/payouts(+/{}/retry), finance/reconciliation(+/{}/resolve), finance/tds/26q, escrow/{}/release|hold|refund, moderation/suspensions/{}/appeal, marketing/acquisition|growth|referrals|reputation, plus wallet/recharge and notifications/read-all. The other 19 DO have controllers today but are still exempted, so their FE/BE parity is no longer checked by anything</p>
+  <code class="cmd">$ python3 — parse @Get/Post/Put/Patch/DeleteMapping across influora-api/src/main/java (252 mapped paths) and diff against the 38 paths the guardrail&#x27;s deferred allowlist exempts</code>
+  <div class="where">src/lib/__tests__/api-contract.test.ts:118</div>
+ </div></div><div class="row" data-s="partial">
+ <div class="bar" style="background:#d29922"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#d29922;border-color:#d2992244;background:#d2992214">PARTIAL</span><span class="owner">meera</span><span class="orc">script</span></div>
+  <h3>.proof-os/graph.json — dependency graph provenance</h3>
+  <p class="res">exit 0 — engine scan.py-regex, 2657 edges, oracle_strength 0.0% (0/2657 parser-derived), so no graph edge can render green</p>
+  <code class="cmd">$ python3 .proof-os/gates/graph_source.py</code>
+  <div class="where">.proof-os/gates/graph_source.py:1</div>
+ </div></div><div class="row" data-s="partial">
+ <div class="bar" style="background:#d29922"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#d29922;border-color:#d2992244;background:#d2992214">PARTIAL</span><span class="owner">meera</span><span class="orc">script</span></div>
+  <h3>graphify-out/ — the codebase-query workflow CLAUDE.md mandates</h3>
+  <p class="res">the graph data exists on the laptop (graphify-out/ with GRAPH_REPORT.md, graph.html, cache and two dated runs) but the `graphify` binary is not on PATH, so the query/path/explain workflow CLAUDE.md makes the first step for any codebase question cannot be executed</p>
+  <code class="cmd">$ python3 .proof-os/gates/graph_scope.py ; command -v graphify</code>
+  <div class="where">CLAUDE.md:1</div>
+ </div></div><div class="row" data-s="partial">
+ <div class="bar" style="background:#d29922"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#d29922;border-color:#d2992244;background:#d2992214">PARTIAL</span><span class="owner">vikram</span><span class="orc">mvn</span></div>
+  <h3>influora-api/** — Spring Boot backend build (886 java sources, 96 flyway migrations)</h3>
+  <p class="res">exit 1 UNAVAILABLE, not a finding — repo.maven.apache.org returns 403 through this sandbox proxy so spring-boot-starter-parent:3.3.5 cannot resolve. On the laptop, target/influora-api-0.1.0-SNAPSHOT.jar is dated 2026-07-28 and 70 .java sources under influora-api/src are newer than it, so the last green backend build predates the current source</p>
+  <code class="cmd">$ mvn -B -DskipTests package (influora-api)</code>
+  <div class="where">influora-api/pom.xml:7</div>
+ </div></div><div class="row" data-s="partial">
+ <div class="bar" style="background:#d29922"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#d29922;border-color:#d2992244;background:#d2992214">PARTIAL</span><span class="owner">meera</span><span class="orc">eslint</span></div>
+  <h3>src/**, app/**, lib/**, hooks/** — project ESLint ruleset</h3>
+  <p class="res">exit 0 — 0 errors, 162 warnings: 95 react-hooks/set-state-in-effect, 17 exhaustive-deps, 13 react-refresh/only-export-components, 13 react-hooks/refs, 11 react-hooks/purity, 6 static-components, 2 preserve-manual-memoization, 2 immutability, 3 unused eslint-disable directives</p>
+  <code class="cmd">$ npx --no-install eslint . -f stylish</code>
+  <div class="where">src/pages/creator-wallet.tsx:434</div>
+ </div></div><div class="row" data-s="aligned">
+ <div class="bar" style="background:#3fb950"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#3fb950;border-color:#3fb95044;background:#3fb95014">WORKING</span><span class="owner">meera</span><span class="orc">pytest</span></div>
+  <h3>influora-ai/** — Meera AI service (FastAPI, 92 modules)</h3>
+  <p class="res">exit 0 — 499 passed, 2 skipped in 7.15s</p>
+  <code class="cmd">$ python -m pytest -q (influora-ai)</code>
+  <div class="where">influora-ai/pytest.ini:1</div>
+ </div></div><div class="row" data-s="aligned">
+ <div class="bar" style="background:#3fb950"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#3fb950;border-color:#3fb95044;background:#3fb95014">WORKING</span><span class="owner">meera</span><span class="orc">script</span></div>
+  <h3>src/** (424 files) — rules-of-hooks</h3>
+  <p class="res">exit 0 — 0 rules-of-hooks violations across 424 files</p>
+  <code class="cmd">$ python3 .proof-os/gates/react_hooks.py</code>
+  <div class="where">.proof-os/gates/react_hooks.py:1</div>
+ </div></div><div class="row" data-s="aligned">
+ <div class="bar" style="background:#3fb950"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#3fb950;border-color:#3fb95044;background:#3fb95014">WORKING</span><span class="owner">meera</span><span class="orc">tsc</span></div>
+  <h3>src/** — TypeScript typecheck (423 files; tsconfig excludes app/, components/, src/app/)</h3>
+  <p class="res">exit 0 — 0 errors</p>
+  <code class="cmd">$ npx --no-install tsc -p tsconfig.json --noEmit</code>
+  <div class="where">tsconfig.json:1</div>
+ </div></div><div class="row" data-s="aligned">
+ <div class="bar" style="background:#3fb950"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#3fb950;border-color:#3fb95044;background:#3fb95014">WORKING</span><span class="owner">meera</span><span class="orc">script</span></div>
+  <h3>src/** — correctness singletons (F-0047 class)</h3>
+  <p class="res">exit 0 — 0 violations across src for the three correctness rules promoted from F-0047</p>
+  <code class="cmd">$ python3 .proof-os/gates/lint_singletons.py</code>
+  <div class="where">.proof-os/gates/lint_singletons.py:1</div>
+ </div></div><div class="row" data-s="aligned">
+ <div class="bar" style="background:#3fb950"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#3fb950;border-color:#3fb95044;background:#3fb95014">WORKING</span><span class="owner">meera</span><span class="orc">node</span></div>
+  <h3>src/**/*.test.{ts,tsx} — unit + component test suite</h3>
+  <p class="res">exit 0 — 34 test files, 316 passed, 0 skipped, 62.35s</p>
+  <code class="cmd">$ npx --no-install vitest run --reporter=basic</code>
+  <div class="where">vitest.config.ts:1</div>
+ </div></div><div class="row" data-s="aligned">
+ <div class="bar" style="background:#3fb950"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#3fb950;border-color:#3fb95044;background:#3fb95014">WORKING</span><span class="owner">meera</span><span class="orc">script</span></div>
+  <h3>src/components/brand/brand-layout.tsx — notifications wiring (F-0043 class)</h3>
+  <p class="res">exit 0 — wired to useNotifications; mockNotifications and useNotificationStore are both absent from src</p>
+  <code class="cmd">$ python3 .proof-os/gates/notifications_wired.py</code>
+  <div class="where">.proof-os/gates/notifications_wired.py:1</div>
+ </div></div><div class="row" data-s="aligned">
+ <div class="bar" style="background:#3fb950"></div>
+ <div class="body">
+  <div class="tagline"><span class="tag" style="color:#3fb950;border-color:#3fb95044;background:#3fb95014">WORKING</span><span class="owner">meera</span><span class="orc">script</span></div>
+  <h3>src/hooks/**, src/pages/** — use-before-declare (gate default scope, 115 files)</h3>
+  <p class="res">exit 0 — 0 use-before-declare violations across 115 files</p>
+  <code class="cmd">$ python3 .proof-os/gates/react_hooks_immutability.py</code>
+  <div class="where">.proof-os/gates/react_hooks_immutability.py:1</div>
+ </div></div>
+
+<h2>Opened this audit</h2>
+<table><tr><th>id</th><th>class</th><th>where</th><th>symptom</th><th>what should have caught it</th></tr><tr><td class="id">F-0052</td><td class="cls">dependency-vuln</td><td class="wh">package-lock.json</td><td class="sym">npm audit --audit-level=high exits 1: 23 vulnerabilities (4 high, 18 moderate, 1 low) — react-router-dom &lt;=7.17.0 (open redirect, SSR constructor injection, DoS) and vite &lt;=6.4.2 (server.fs.deny bypass, launch-editor NTLM hash disclosure)</td><td class="mb">gates/security.sh — it exists and runs npm audit, but nothing in the pipeline invokes it, so 23 advisories accumulated unseen</td></tr><tr><td class="id">F-0053</td><td class="cls">stale-runtime-copy</td><td class="wh">.proof-os/gates/registry_render.py</td><td class="sym">the project-local copy of registry_render.py is proof-os 0.3.x and rejects may_claim &#x27;echo&#x27; for 7 services; registry.json declares 0.4.1 and the 0.4.2 plugin copy of the same gate exits 0 on the same file — the project gate reports a false red</td><td class="mb">gates/version_assert.py — it hashes plugin-installed files against MANIFEST.sha256 and does not look at project-local .proof-os/gates copies at all</td></tr><tr><td class="id">F-0054</td><td class="cls">phantom-endpoint</td><td class="wh">src/admin/services/api-contracts.ts</td><td class="sym">15 admin endpoints the frontend declares and calls have no @Mapping anywhere in influora-api: dashboard/financial, dashboard/marketing, escrow/{id}/hold|release|refund, finance/payouts, finance/payouts/{id}/retry, finance/reconciliation(+resolve), finance/revenue, finance/tds/26q, marketing/acquisition|growth|reputation, moderation/suspensions/{id}/appeal</td><td class="mb">no gate parses frontend call paths against backend request mappings; tsc and eslint both pass because the paths are strings</td></tr><tr><td class="id">F-0055</td><td class="cls">machine-bound-config</td><td class="wh">scripts/prerender.mjs:107</td><td class="sym">npm run build exits 1: postbuild prerender resolves Chrome from 8 hardcoded absolute paths and PRERENDER_CHROME_PATH is set in no .env file, package.json script or CI workflow. dist/ on the laptop contains index.html and assets only — 0 of 16 prerendered route directories — so the marketing SEO shells are not being produced by any build</td><td class="mb">gates/build.sh runs npm run build and would catch this, but no row or pipeline step invoked it; the audit&#x27;s own first pass ran the command with an undeclared PRERENDER_CHROME_PATH override and recorded it green</td></tr><tr><td class="id">F-0056</td><td class="cls">truncated-gate-output</td><td class="wh">.proof-os/gates/frontend.sh:29</td><td class="sym">the gate pipes the eslint report through head -10, so it printed 6 errors while the same config actually reports 56 errors and 2 warnings across 26 files; the raw-hex step likewise showed 11 of 65 lines. A reader of the gate&#x27;s output undercounts its own findings by ~10x</td><td class="mb">gates/teeth.sh checks that a gate fails on bad input, not that it reports the full extent of what it found</td></tr><tr><td class="id">F-0057</td><td class="cls">silent-oracle</td><td class="wh">.proof-os/gates/security.sh, .proof-os/gates/frontend.sh</td><td class="sym">gitleaks reports UNAVAILABLE in both gates, so no secret scanning has ever run against this repo — .env.local and .env.production sit at the repo root and git history has never been scanned</td><td class="mb">both gates downgrade to exit 2 on a missing tool, which is correct, but nothing tracks that the tool has been missing every single run</td></tr><tr><td class="id">F-0058</td><td class="cls">stale-allowlist</td><td class="wh">src/lib/__tests__/api-contract.test.ts:118</td><td class="sym">the FE/BE contract guardrail passes because 38 paths are on a deferred allowlist. 19 of those now HAVE backend controllers but are still exempted, so the guardrail no longer checks their FE/BE parity; the remaining 18 have no backend mapping at all</td><td class="mb">the guardrail asserts only that non-allowlisted paths resolve; nothing asserts that allowlisted paths are STILL absent, so the list silently rots into a blind spot</td></tr><tr><td class="id">F-0059</td><td class="cls">model-attested-green</td><td class="wh">.proof-os/tasks/deep-audit-2026-08-03/report.v1-refuted.json</td><td class="sym">this audit&#x27;s own first-pass report recorded &#x27;dist/ production build&#x27; as aligned/exit 0 after running npm run build with an undeclared PRERENDER_CHROME_PATH override; the recorded command exits 1 without it. Two fresh-context checkers caught it independently and the row is now broken</td><td class="mb">gates/validate.py and gates/confirm.py check a report&#x27;s internal consistency and provenance shape; neither can see the environment a recorded command was run in</td></tr></table>
+
+<h2>What no oracle here could see</h2>
+<ul><li>whether any feature behaves correctly at runtime — no server was started and no browser session was driven, so every green row is a static or unit-level result</li><li>the Java backend beyond parsing its request mappings: mvn cannot resolve dependencies through this sandbox proxy, so 886 sources, 188 test classes and 96 Flyway migrations were never compiled or run</li><li>secrets — gitleaks is unavailable in both security gates, so nothing has ever scanned .env.local, .env.production or git history</li><li>whether the 18 phantom endpoints are wanted product or dead client code — that is a product decision, not an oracle&#x27;s</li><li>influora-ai behaviour against the real Claude/Gemini/Sarvam APIs — its 499 passing tests are all mocked</li><li>trendspark/n8n workflows, .github/workflows CI definitions and docker/ deployment config — none were executed</li><li>whether the two fresh-context checkers were themselves right; their objections were re-run by hand and three of their findings turned out to be artifacts of a partial file staging, not project defects</li></ul>
+
+<h2>Declared skips</h2>
+<ul><li><b>gates/e2e.sh with a live URL</b> — nothing is deployed and no URL was supplied; recorded as exit 2 unavailable, never as a pass</li><li><b>gates/citations.py, gates/deck.py</b> — both require a target file argument and have no subject in this audit; invoked bare they raise IndexError</li><li><b>gates/version_assert.py, gates/frontmatter.py</b> — both exit 2 — no plugin manifest and no SKILL.md under this project&#x27;s .proof-os, so there is nothing for them to hash or parse</li><li><b>scripts/independence.py --enforce</b> — left as a report; every judgment service has an undetermined catch rate, and an automatic ceiling change driven by an undetermined statistic would itself be an unproved claim rendering as a fact</li><li><b>staging influora-api/target, graphify-out and node_modules into the audit container</b> — the device bridge kills any process past 45s so the oracles had to run in the cloud; these were left on the laptop and queried there instead, which is why three of the checkers&#x27; objections about &#x27;missing&#x27; files were staging artifacts rather than defects</li></ul>
+
+<footer>Verdict: <b>believed</b> · isolation fresh-context · admissible through gates/confirm.py --verdict.<br>
+done_when: each available oracle ran, findings are classed into ledger records with missed_by, and the blind spots are named</footer>
+</div></body></html>

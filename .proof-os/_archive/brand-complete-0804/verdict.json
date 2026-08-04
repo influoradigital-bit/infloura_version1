@@ -1,0 +1,4 @@
+{"verdict": "believed", "oracle": "model", "isolation": "fresh-context",
+ "done_when": "all brand error solve & updated md file get sign up from priya",
+ "not_checked": ["runtime HTTP behaviour — still owed once backend + Razorpay/AI keys exist (priya C3)", "the 2 deferred gaps (review-flag, template CRUD) are not built — deferred until api.ts concurrency clears (priya C2)"],
+ "skipped": [{"step": "api.ts edits for the 2 buildable gaps", "reason": "src/lib/api.ts held by concurrent creator-fix-0804 session; editing now risks a merge collision on a shared money/review-path file — priya-ratified deferral (C2)"}, {"step": "fabricating the 6 partials", "reason": "by-design honesty/placeholder behaviour; fixing would break the CREATOR_REPORTED contract or need out-of-scope backend ML — priya-ratified (law 5)"}]}

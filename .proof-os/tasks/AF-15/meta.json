@@ -1,0 +1,13 @@
+{
+  "id": "AF-15",
+  "order": 15,
+  "verb": "POST",
+  "path": "/notifications/read-all",
+  "dto": "{ok}",
+  "tier": "write",
+  "status": "DONE",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "bulk read-all endpoint + FE rewire; fresh-context review caught n.read vs isRead JPQL bug (F-0060), fixed + re-verified"
+}

@@ -1,0 +1,4 @@
+{"verdict": "believed", "oracle": "model", "isolation": "fresh-context",
+ "done_when": "all brand missing features solve & updated md file get sign up from priya when work done",
+ "not_checked": ["runtime HTTP — flag persistence, template save, template delete not exercised against a live backend (owed once provisioned)"],
+ "skipped": [{"step": "fabricating the 6 partials", "reason": "by-design honesty/placeholder behaviour; priya-ratified law-5 leave-as-is"}]}

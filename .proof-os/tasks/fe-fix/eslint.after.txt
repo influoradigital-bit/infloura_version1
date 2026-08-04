@@ -1,0 +1,2270 @@
+(node:18308) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/eslint.config.js?mtime=1785739588781 is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\Sage world\Downloads\New Influora Ai\New Influora\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\dashboard\KpiCard.tsx
+  128:14  warning  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\dashboard\KpiCard.tsx:128:14
+  126 |           <span className="text-sm font-medium text-muted-foreground">{title}</span>
+  127 |           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+> 128 |             <Icon className="size-4.5" aria-hidden="true" />
+      |              ^^^^ This component is created during render
+  129 |           </span>
+  130 |         </div>
+  131 |
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\dashboard\KpiCard.tsx:86:16
+  84 | }: KpiCardProps) {
+  85 |   const shouldReduceMotion = useReducedMotion();
+> 86 |   const Icon = resolveIcon(icon);
+     |                ^^^^^^^^^^^^^^^^^ The component is created during render here
+  87 |
+  88 |   // `unknown` (no snapshot baseline yet — the value came in as `null`) is a
+  89 |   // distinct state from `neutral` (a genuine, measured 0% flat reading). It  react-hooks/static-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\moderation\FlagQueue.tsx
+  332:14  warning  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\moderation\FlagQueue.tsx:332:14
+  330 |         <SheetHeader>
+  331 |           <SheetTitle className="flex items-center gap-2">
+> 332 |             <ContentIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      |              ^^^^^^^^^^^ This component is created during render
+  333 |             {flag ? `${flag.contentType} · ${flag.contentId}` : 'Flag'}
+  334 |           </SheetTitle>
+  335 |           <SheetDescription>{flag?.flagReason ?? 'Content moderation flag detail'}</SheetDescription>
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\moderation\FlagQueue.tsx:317:30
+  315 |   }
+  316 |
+> 317 |   const ContentIcon = flag ? contentTypeIcon(flag.contentType) : Flag;
+      |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ The component is created during render here
+  318 |   const FlaggedByIcon = flag ? flaggedByIcon(flag.flaggedBy) : User;
+  319 |   const isOpenForAction = flag ? flag.status !== ContentFlagStatus.ACTIONED : false;
+  320 |  react-hooks/static-components
+  343:18  warning  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\moderation\FlagQueue.tsx:343:18
+  341 |               <StatusPill tone={statusPillTone(flag.status)}>{statusLabel(flag.status)}</StatusPill>
+  342 |               <Badge variant="outline" className="inline-flex items-center gap-1">
+> 343 |                 <FlaggedByIcon className="size-3.5" aria-hidden="true" />
+      |                  ^^^^^^^^^^^^^ This component is created during render
+  344 |                 Flagged by {flag.flaggedBy}
+  345 |               </Badge>
+  346 |             </div>
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\moderation\FlagQueue.tsx:318:32
+  316 |
+  317 |   const ContentIcon = flag ? contentTypeIcon(flag.contentType) : Flag;
+> 318 |   const FlaggedByIcon = flag ? flaggedByIcon(flag.flaggedBy) : User;
+      |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ The component is created during render here
+  319 |   const isOpenForAction = flag ? flag.status !== ContentFlagStatus.ACTIONED : false;
+  320 |
+  321 |   return (                       react-hooks/static-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\support\TicketList.tsx
+  229:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\support\TicketList.tsx:229:5
+  227 |   // drawer switches to a different ticket (or closes).
+  228 |   useEffect(() => {
+> 229 |     setReplyContent('');
+      |     ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  230 |     setAssigneeId('');
+  231 |     setActionNote(null);
+  232 |   }, [ticketId]);  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useAdminAuth.ts
+  247:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useAdminAuth.ts:247:10
+  245 |
+  246 |   useEffect(() => {
+> 247 |     void loadUser();
+      |          ^^^^^^^^ Avoid calling setState() directly within an effect
+  248 |   }, [loadUser]);
+  249 |
+  250 |   const hasPermission = useCallback(  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useAdminSocket.ts
+  61:3  warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useAdminSocket.ts:61:3
+  59 |
+  60 |   const handlerRef = useRef(handler);
+> 61 |   handlerRef.current = handler;
+     |   ^^^^^^^^^^^^^^^^^^ Cannot update ref during render
+  62 |
+  63 |   const [status, setStatus] = useState<AdminSocketStatus>(
+  64 |     () => getAdminSocket().getStatus(),                                                                                                                                                                                                                                                                                                                                                                                                                 react-hooks/refs
+  73:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useAdminSocket.ts:73:5
+  71 |
+  72 |     const offStatus = socket.onStatusChange(setStatus);
+> 73 |     setStatus(socket.getStatus());
+     |     ^^^^^^^^^ Avoid calling setState() directly within an effect
+  74 |
+  75 |     // Stable indirection so the subscription doesn't churn when `handler`
+  76 |     // identity changes between renders  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useAuditLog.ts
+  67:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useAuditLog.ts:67:5
+  65 |   useEffect(() => {
+  66 |     let cancelled = false;
+> 67 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  68 |     setError(null);
+  69 |
+  70 |     auditApi  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useBillingData.ts
+   52:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useBillingData.ts:52:5
+  50 |     let cancelled = false;
+  51 |
+> 52 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  53 |     setError(null);
+  54 |
+  55 |     billingApi          react-hooks/set-state-in-effect
+  119:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useBillingData.ts:119:5
+  117 |     let cancelled = false;
+  118 |
+> 119 |     setIsLoading(true);
+      |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  120 |     setError(null);
+  121 |
+  122 |     billingApi  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useBrandDetail.ts
+  45:7  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useBrandDetail.ts:45:7
+  43 |   useEffect(() => {
+  44 |     if (!brandId) {
+> 45 |       setData(null);
+     |       ^^^^^^^ Avoid calling setState() directly within an effect
+  46 |       setIsLoading(false);
+  47 |       setError(null);
+  48 |       return;  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useBrandList.ts
+  67:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useBrandList.ts:67:5
+  65 |   useEffect(() => {
+  66 |     let cancelled = false;
+> 67 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  68 |     setError(null);
+  69 |
+  70 |     brandApi  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useCampaignDetail.ts
+  43:7  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useCampaignDetail.ts:43:7
+  41 |   useEffect(() => {
+  42 |     if (!campaignId) {
+> 43 |       setData(null);
+     |       ^^^^^^^ Avoid calling setState() directly within an effect
+  44 |       setIsLoading(false);
+  45 |       setError(null);
+  46 |       return;  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useCampaignList.ts
+  63:9  warning  The 'allCampaigns' logical expression could make the dependencies of useMemo Hook (at line 101) change on every render. To fix this, wrap the initialization of 'allCampaigns' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useCreatorApplications.ts
+  52:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useCreatorApplications.ts:52:5
+  50 |   useEffect(() => {
+  51 |     let cancelled = false;
+> 52 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  53 |     setError(null);
+  54 |
+  55 |     creatorApi  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useCreatorDetail.ts
+  51:7  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useCreatorDetail.ts:51:7
+  49 |   useEffect(() => {
+  50 |     if (!creatorId) {
+> 51 |       setData(null);
+     |       ^^^^^^^ Avoid calling setState() directly within an effect
+  52 |       setIsLoading(false);
+  53 |       setError(null);
+  54 |       return;  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useCreatorList.ts
+  64:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useCreatorList.ts:64:5
+  62 |   useEffect(() => {
+  63 |     let cancelled = false;
+> 64 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  65 |     setError(null);
+  66 |
+  67 |     creatorApi  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useDisputeList.ts
+  62:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useDisputeList.ts:62:5
+  60 |   useEffect(() => {
+  61 |     let cancelled = false;
+> 62 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  63 |     setError(null);
+  64 |
+  65 |     disputeApi  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useEmailQueue.ts
+  87:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useEmailQueue.ts:87:5
+  85 |   useEffect(() => {
+  86 |     let cancelled = false;
+> 87 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  88 |     setError(null);
+  89 |
+  90 |     Promise.all([  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useErrorLog.ts
+  62:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useErrorLog.ts:62:5
+  60 |   useEffect(() => {
+  61 |     let cancelled = false;
+> 62 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  63 |     setError(null);
+  64 |
+  65 |     Promise.all([errorApi.getRecent(RECENT_ERRORS_LIMIT), errorApi.getStats()])  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useFeeConfig.ts
+  88:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useFeeConfig.ts:88:5
+  86 |   useEffect(() => {
+  87 |     let cancelled = false;
+> 88 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  89 |     setError(null);
+  90 |
+  91 |     Promise.all([financeApi.getFeeConfig(), financeApi.getFeeConfigHistory()])  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useFlagQueue.ts
+  80:9  warning  The 'allFlags' logical expression could make the dependencies of useMemo Hook (at line 108) change on every render. To fix this, wrap the initialization of 'allFlags' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useOperationsSummary.ts
+  55:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useOperationsSummary.ts:55:5
+  53 |     let cancelled = false;
+  54 |
+> 55 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  56 |     setError(null);
+  57 |
+  58 |     dashboardApi  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\usePulseData.ts
+  39:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\usePulseData.ts:39:5
+  37 |     let cancelled = false;
+  38 |
+> 39 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  40 |     setError(null);
+  41 |
+  42 |     dashboardApi  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useSupportStats.ts
+  51:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useSupportStats.ts:51:5
+  49 |     let cancelled = false;
+  50 |
+> 51 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  52 |     setError(null);
+  53 |
+  54 |     supportApi  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useTicketList.ts
+  83:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\hooks\useTicketList.ts:83:5
+  81 |   useEffect(() => {
+  82 |     let cancelled = false;
+> 83 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  84 |     setError(null);
+  85 |
+  86 |     supportApi  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\app\layout.tsx
+  9:14  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\3d\DiscoverCanvas.tsx
+   31:5   warning  Error: This value cannot be modified
+
+Modifying a value returned from a hook is not allowed. Consider moving the modification into the hook where the value is constructed.
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\3d\DiscoverCanvas.tsx:31:5
+  29 |
+  30 |   useFrame((state) => {
+> 31 |     camera.position.x = state.pointer.x * 0.3;
+     |     ^^^^^^^^^^^^^^^ `camera` cannot be modified
+  32 |     camera.position.y = state.pointer.y * 0.3;
+  33 |     camera.lookAt(0, 0, 0);
+  34 |   });                                                                                                                                                                                    react-hooks/immutability
+  135:17  warning  Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\3d\DiscoverCanvas.tsx:135:17
+  133 |     const arr = new Float32Array(60 * 3);
+  134 |     for (let i = 0; i < arr.length; i += 1) {
+> 135 |       arr[i] = (Math.random() - 0.5) * 6;
+      |                 ^^^^^^^^^^^^^ Cannot call impure function
+  136 |     }
+  137 |     return arr;
+  138 |   }, []);  react-hooks/purity
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\3d\HeroGlobe.tsx
+  122:5  warning  Error: This value cannot be modified
+
+Modifying a value returned from a hook is not allowed. Consider moving the modification into the hook where the value is constructed.
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\3d\HeroGlobe.tsx:122:5
+  120 |   const { camera } = useThree();
+  121 |   useFrame((state) => {
+> 122 |     camera.position.x += (state.pointer.x * 0.4 - camera.position.x) * 0.05;
+      |     ^^^^^^^^^^^^^^^ `camera` cannot be modified
+  123 |     camera.position.y += (state.pointer.y * 0.25 - camera.position.y) * 0.05;
+  124 |     camera.lookAt(0, 0, 0);
+  125 |   });  react-hooks/immutability
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ErrorBoundary.tsx
+  63:5  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\campaigns\campaign-form.tsx
+  213:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\campaigns\campaign-form.tsx:213:5
+  211 |     if (!campaignId) return;
+  212 |     let cancelled = false;
+> 213 |     setIsLoading(true);
+      |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  214 |     setLoadError(null);
+  215 |     (async () => {
+  216 |       try {                                              react-hooks/set-state-in-effect
+  266:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\campaigns\campaign-form.tsx:266:5
+  264 |     hintsAppliedRef.current = true;
+  265 |     if (!budgetHint && !dateHints.start && !dateHints.end) return;
+> 266 |     setFormData((prev) => ({
+      |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  267 |       ...prev,
+  268 |       ...(budgetHint
+  269 |         ? {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\campaigns\campaigns-list.tsx
+  263:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\campaigns\campaigns-list.tsx:263:5
+  261 |     if (!liveApi) return;
+  262 |     let cancelled = false;
+> 263 |     setIsLoading(true);
+      |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  264 |     setLoadError(null);
+  265 |     const t = window.setTimeout(async () => {
+  266 |       try {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\contracts\contracts-and-deliverables.tsx
+  573:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\contracts\contracts-and-deliverables.tsx:573:5
+  571 |
+  572 |   useEffect(() => {
+> 573 |     fetchContracts();
+      |     ^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  574 |   }, [fetchContracts]);
+  575 |
+  576 |   // Keep selection valid whenever the contracts list changes underneath it                                                                                                       react-hooks/set-state-in-effect
+  580:7  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\contracts\contracts-and-deliverables.tsx:580:7
+  578 |     if (contracts.length === 0) return;
+  579 |     if (!contracts.some((c) => c.id === selectedContractId)) {
+> 580 |       setSelectedContractId(contracts[0].id);
+      |       ^^^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  581 |     }
+  582 |     // eslint-disable-next-line react-hooks/exhaustive-deps
+  583 |   }, [contracts]);  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\dashboard\dashboard-page.tsx
+  206:57  warning  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\dashboard\dashboard-page.tsx:206:57
+  204 |             const Icon = getActionIcon(item.type);
+  205 |             const timeLeft = getTimeRemaining(item.deadline);
+> 206 |             const isOverdue = item.deadline.getTime() < Date.now();
+      |                                                         ^^^^^^^^^^ Cannot call impure function
+  207 |             const isUrgent = item.priority === 'urgent';
+  208 |             return (
+  209 |               <button  react-hooks/purity
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\deal-room\deal-room-step-progress.tsx
+  14:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\deals\deal-room-dashboard.tsx
+  265:27  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\deals\deal-room-dashboard.tsx:265:27
+  263 |
+  264 |   React.useEffect(() => {
+> 265 |     if (isApiLive()) void loadDeals();
+      |                           ^^^^^^^^^ Avoid calling setState() directly within an effect
+  266 |   }, [loadDeals]);
+  267 |
+  268 |   // Resolve a deep-linked deal (/brand/deals/:id or ?deal=) once the list is                                                                                                                     react-hooks/set-state-in-effect
+  275:16  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\deals\deal-room-dashboard.tsx:275:16
+  273 |     if (selectedDeal?.id === deepLinkDealId) return;
+  274 |     const match = dealRooms.find((deal) => deal.id === deepLinkDealId);
+> 275 |     if (match) setSelectedDeal(match);
+      |                ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  276 |   }, [deepLinkDealId, dealRooms, selectedDeal]);
+  277 |
+  278 |   const loadMessages = React.useCallback(async (dealId: string) => {  react-hooks/set-state-in-effect
+  296:12  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\deals\deal-room-dashboard.tsx:296:12
+  294 |   React.useEffect(() => {
+  295 |     if (isApiLive() && selectedDeal) {
+> 296 |       void loadMessages(selectedDeal.id);
+      |            ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  297 |     }
+  298 |   }, [selectedDeal, loadMessages]);
+  299 |                                                                                                                                              react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\deliverables\DeliverableViewer.tsx
+  48:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\deliverables\DeliverableViewer.tsx:48:5
+  46 |   // first 403: the fresh URL from refetch() is fetched but never attempted.
+  47 |   React.useEffect(() => {
+> 48 |     setHasError(false);
+     |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  49 |   }, [file.url]);
+  50 |
+  51 |   const handleError = () => {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\discover\creator-discovery.tsx
+  641:5  warning  React Hook React.useCallback has a missing dependency: 'toast'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\hype-campaign-card.tsx
+  68:82  warning  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\hype-campaign-card.tsx:68:82
+  66 |   }
+  67 |
+> 68 |   const hoursLeft = Math.max(0, Math.round((new Date(hype.liveUntil).getTime() - Date.now()) / 3600000));
+     |                                                                                  ^^^^^^^^^^ Cannot call impure function
+  69 |   const isLive = campaign.status === 'ACTIVE' && hoursLeft > 0;
+  70 |
+  71 |   return (  react-hooks/purity
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\onboarding\onboarding-steps.tsx
+  93:14  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\timeline\collaboration-timeline.tsx
+  211:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\timeline\collaboration-timeline.tsx:211:10
+  209 |   React.useEffect(() => {
+  210 |     if (!isApiLive()) return;
+> 211 |     void loadMessages();
+      |          ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  212 |   }, [loadMessages]);
+  213 |
+  214 |   const baseEvents = React.useMemo(  react-hooks/set-state-in-effect
+  282:6   warning  React Hook React.useMemo has an unnecessary dependency: 'refreshKey'. Either exclude it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\timeline\panels\deliverable-review-panel.tsx
+  68:16  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\timeline\panels\deliverable-review-panel.tsx:68:16
+  66 |
+  67 |   React.useEffect(() => {
+> 68 |     if (!open) resetState();
+     |                ^^^^^^^^^^ Avoid calling setState() directly within an effect
+  69 |   }, [open]);
+  70 |
+  71 |   // Real deliverable id used by the backend (POST /deliverables/:id/approve|revise) —  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\campaigns\tracking\CouponsTable.tsx
+  93:93  warning  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\campaigns\tracking\CouponsTable.tsx:93:93
+  91 |               <TableBody>
+  92 |                 {coupons.map((coupon) => {
+> 93 |                   const expired = coupon.expiresAt ? new Date(coupon.expiresAt).getTime() < Date.now() : false;
+     |                                                                                             ^^^^^^^^^^ Cannot call impure function
+  94 |                   const atLimit = coupon.usageLimit != null && coupon.usageCount >= coupon.usageLimit;
+  95 |                   const isActive = !expired && !atLimit;
+  96 |                   return (  react-hooks/purity
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\creator\deal-room\deliverable-submission.tsx
+  59:7  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\creator\deal-room\deliverable-submission.tsx:59:7
+  57 |   React.useEffect(() => {
+  58 |     if (deliverables.length > 0 && !selectedDeliverable) {
+> 59 |       setSelectedDeliverable(deliverables[0].id);
+     |       ^^^^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  60 |     }
+  61 |   }, [deliverables, selectedDeliverable]);
+  62 |  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\creator\hype-inbox-card.tsx
+  26:84  warning  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\creator\hype-inbox-card.tsx:26:84
+  24 |   const [state, setState] = React.useState<'idle' | 'loading' | 'accepted'>('idle');
+  25 |
+> 26 |   const hoursLeft = Math.max(0, Math.round((new Date(invite.liveUntil).getTime() - Date.now()) / 3600000));
+     |                                                                                    ^^^^^^^^^^ Cannot call impure function
+  27 |   const slotsLeft = Math.max(0, invite.slotCap - invite.slotsFilled);
+  28 |
+  29 |   const handleAccept = async () => {  react-hooks/purity
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\MeeraChatPanel.tsx
+  317:5  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+  333:7  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\MeeraChatPanel.tsx:333:7
+  331 |
+  332 |     if (revealCount >= turn.meeraResponses.length) {
+> 333 |       setPhase('awaiting-input')
+      |       ^^^^^^^^ Avoid calling setState() directly within an effect
+  334 |       return
+  335 |     }
+  336 |  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\StageSnapshot.tsx
+  107:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\StageSnapshot.tsx:107:5
+  105 |   const [loaderExpired, setLoaderExpired] = useState(false)
+  106 |   useEffect(() => {
+> 107 |     setLoaderExpired(false)
+      |     ^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  108 |     if (!analysisInFlight) return
+  109 |     const timer = window.setTimeout(() => setLoaderExpired(true), SNAPSHOT_LOADER_TIMEOUT_MS)
+  110 |     return () => window.clearTimeout(timer)  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\ThinkingState.tsx
+  21:7  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\ThinkingState.tsx:21:7
+  19 |   useEffect(() => {
+  20 |     if (reduceMotion) {
+> 21 |       setCompletedCount(steps.length)
+     |       ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  22 |       return
+  23 |     }
+  24 |     if (completedCount >= steps.length) return  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\VoiceMode.tsx
+  125:64  warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\VoiceMode.tsx:125:64
+  123 |   const loopState: LoopState = isSpeaking
+  124 |     ? 'speaking'
+> 125 |     : phase === 'thinking' || inputPhase === 'transcribing' || awaitingReplyRef.current
+      |                                                                ^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  126 |       ? 'processing'
+  127 |       : inputPhase === 'listening'
+  128 |         ? 'listening'                                                                                                                                                                                                                                                                                       react-hooks/refs
+  153:7   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\VoiceMode.tsx:153:7
+  151 |     // Web Speech), don't sit forever on "Getting ready…": say why. Real fix is HTTPS.
+  152 |     if (!supported) {
+> 153 |       setStatus('Voice needs a secure (HTTPS) connection')
+      |       ^^^^^^^^^ Avoid calling setState() directly within an effect
+  154 |       return
+  155 |     }
+  156 |     switch (loopState) {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\motion\CountUp.tsx
+  43:7  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\motion\CountUp.tsx:43:7
+  41 |   useEffect(() => {
+  42 |     if (reduceMotion) {
+> 43 |       setDisplay(value)
+     |       ^^^^^^^^^^ Avoid calling setState() directly within an effect
+  44 |       return
+  45 |     }
+  46 |     if (!isInView) return  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\motion\PulseAura.tsx
+  20:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\motion\PulseAura.tsx:20:5
+  18 |   useEffect(() => {
+  19 |     if (!reduceMotion) return
+> 20 |     setReducedVisible(false)
+     |     ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  21 |     // Mount hidden, then raise opacity on the next frame so the single
+  22 |     // 150ms aura fade (spec §5 reduced-motion) is actually visible instead
+  23 |     // of being a permanently-opacity-0 no-op (Priya m1)  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\shared\collaboration-reviews-panel.tsx
+  117:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\shared\collaboration-reviews-panel.tsx:117:10
+  115 |
+  116 |   React.useEffect(() => {
+> 117 |     void refreshDeals();
+      |          ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  118 |     void refreshReceived();
+  119 |   }, [refreshDeals, refreshReceived]);
+  120 |  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\badge.tsx
+  46:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\button-group.tsx
+  82:3  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\button.tsx
+  60:18  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\carousel.tsx
+  98:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\carousel.tsx:98:5
+   96 |   React.useEffect(() => {
+   97 |     if (!api) return
+>  98 |     onSelect(api)
+      |     ^^^^^^^^ Avoid calling setState() directly within an effect
+   99 |     api.on('reInit', onSelect)
+  100 |     api.on('select', onSelect)
+  101 |  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\form.tsx
+  159:3  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\navigation-menu.tsx
+  165:3  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\sidebar.tsx
+  611:26  warning  Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\sidebar.tsx:611:26
+  609 |   // Random width between 50 to 90%.
+  610 |   const width = React.useMemo(() => {
+> 611 |     return `${Math.floor(Math.random() * 40) + 50}%`
+      |                          ^^^^^^^^^^^^^ Cannot call impure function
+  612 |   }, [])
+  613 |
+  614 |   return (  react-hooks/purity
+  725:3   warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    react-refresh/only-export-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\toggle.tsx
+  47:18  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\use-mobile.tsx
+  14:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\use-mobile.tsx:14:5
+  12 |     }
+  13 |     mql.addEventListener('change', onChange)
+> 14 |     setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+     |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  15 |     return () => mql.removeEventListener('change', onChange)
+  16 |   }, [])
+  17 |  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useCampaignCoupons.ts
+  48:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useCampaignCoupons.ts:48:5
+  46 |
+  47 |   useEffect(() => {
+> 48 |     refresh();
+     |     ^^^^^^^ Avoid calling setState() directly within an effect
+  49 |   }, [refresh]);
+  50 |
+  51 |   const create = useCallback(  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useCampaignTrackingLinks.ts
+  57:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useCampaignTrackingLinks.ts:57:5
+  55 |
+  56 |   useEffect(() => {
+> 57 |     refresh();
+     |     ^^^^^^^ Avoid calling setState() directly within an effect
+  58 |   }, [refresh]);
+  59 |
+  60 |   const create = useCallback(  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useContentPerformance.ts
+  73:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useContentPerformance.ts:73:5
+  71 |
+  72 |   useEffect(() => {
+> 73 |     refresh();
+     |     ^^^^^^^ Avoid calling setState() directly within an effect
+  74 |   }, [refresh]);
+  75 |
+  76 |   return { data, loading, error, notImplemented, refresh };  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useCreatorDemographics.ts
+  55:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useCreatorDemographics.ts:55:5
+  53 |
+  54 |   useEffect(() => {
+> 55 |     refresh();
+     |     ^^^^^^^ Avoid calling setState() directly within an effect
+  56 |   }, [refresh]);
+  57 |
+  58 |   return { data, loading, error, refresh };  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useCreatorMetrics.ts
+  84:5  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+  88:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useCreatorMetrics.ts:88:5
+  86 |
+  87 |   useEffect(() => {
+> 88 |     refresh();
+     |     ^^^^^^^ Avoid calling setState() directly within an effect
+  89 |   }, [refresh]);
+  90 |
+  91 |   return { data, loading, error, refresh };  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useCreatorScores.ts
+  69:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useCreatorScores.ts:69:5
+  67 |
+  68 |   useEffect(() => {
+> 69 |     refresh();
+     |     ^^^^^^^ Avoid calling setState() directly within an effect
+  70 |   }, [refresh]);
+  71 |
+  72 |   return { data, loading, error, notFound, refresh };  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\brand\useDeliverableSafetyReview.ts
+  55:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\brand\useDeliverableSafetyReview.ts:55:10
+  53 |
+  54 |   useEffect(() => {
+> 55 |     void refresh();
+     |          ^^^^^^^ Avoid calling setState() directly within an effect
+  56 |   }, [refresh]);
+  57 |
+  58 |   return { review, loading, refresh };  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\brand\useStoreIntegration.ts
+  45:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\brand\useStoreIntegration.ts:45:5
+  43 |
+  44 |   useEffect(() => {
+> 45 |     refresh();
+     |     ^^^^^^^ Avoid calling setState() directly within an effect
+  46 |   }, [refresh]);
+  47 |
+  48 |   return { data, loading, error, refresh };  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\creator\useAffiliateEarnings.ts
+  57:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\creator\useAffiliateEarnings.ts:57:5
+  55 |
+  56 |   useEffect(() => {
+> 57 |     refresh();
+     |     ^^^^^^^ Avoid calling setState() directly within an effect
+  58 |   }, [refresh]);
+  59 |
+  60 |   return { data, summary, loading, error, notImplemented, refresh };  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\creator\useCreatorCoupons.ts
+  42:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\creator\useCreatorCoupons.ts:42:5
+  40 |
+  41 |   useEffect(() => {
+> 42 |     refresh();
+     |     ^^^^^^^ Avoid calling setState() directly within an effect
+  43 |   }, [refresh]);
+  44 |
+  45 |   return { data, loading, error, refresh };  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\creator\useServiceInvoices.ts
+  55:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\creator\useServiceInvoices.ts:55:10
+  53 |
+  54 |   useEffect(() => {
+> 55 |     void refresh();
+     |          ^^^^^^^ Avoid calling setState() directly within an effect
+  56 |   }, [refresh]);
+  57 |
+  58 |   return { campaignInvoices, commissionInvoices, loading, error, refresh };  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\use-mobile.ts
+  14:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\use-mobile.ts:14:5
+  12 |     }
+  13 |     mql.addEventListener('change', onChange)
+> 14 |     setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+     |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  15 |     return () => mql.removeEventListener('change', onChange)
+  16 |   }, [])
+  17 |  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useBrandTheme.ts
+  160:10  warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useBrandTheme.ts:160:10
+  158 |   }, [brandHex, rootRef])
+  159 |
+> 160 |   return theme.current
+      |          ^^^^^^^^^^^^^ Cannot access ref value during render
+  161 | }
+  162 |  react-hooks/refs
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useEscrowFund.ts
+  264:3  warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useEscrowFund.ts:264:3
+  262 |   // the stale closure without re-creating the timer loop on every status change.
+  263 |   const initiateFundRef = useRef(initiateFund);
+> 264 |   initiateFundRef.current = initiateFund;
+      |   ^^^^^^^^^^^^^^^^^^^^^^^ Cannot update ref during render
+  265 |
+  266 |   /**
+  267 |    * Start an inline top-up for the shortfall. Human-triggered via the same  react-hooks/refs
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useMeeraCredits.ts
+  99:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useMeeraCredits.ts:99:5
+   97 |   // Fetch credits on mount
+   98 |   useEffect(() => {
+>  99 |     refresh();
+      |     ^^^^^^^ Avoid calling setState() directly within an effect
+  100 |   }, [refresh]);
+  101 |
+  102 |   return {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useNotifications.ts
+  273:6  warning  React Hook useCallback has a missing dependency: 'authHeader'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      react-hooks/exhaustive-deps
+  277:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useNotifications.ts:277:5
+  275 |   // Fetch on mount / when the role changes
+  276 |   useEffect(() => {
+> 277 |     refresh();
+      |     ^^^^^^^ Avoid calling setState() directly within an effect
+  278 |   }, [refresh]);
+  279 |
+  280 |   return {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useVoiceInput.ts
+  127:39  warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useVoiceInput.ts:127:39
+  125 |   // dev is unaffected. Real fix for a deploy is TLS; this just makes the UI honest.
+  126 |   const secureContext = typeof window !== 'undefined' && window.isSecureContext
+> 127 |   const supported = secureContext && (recorderSupportedRef.current || browserSttSupportedRef.current)
+      |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  128 |
+  129 |   const [phase, setPhase] = useState<VoiceInputPhase>('idle')
+  130 |   const recognitionRef = useRef<SpeechRecognition | null>(null)  react-hooks/refs
+  456:10  warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useVoiceInput.ts:456:10
+  454 |   }, [])
+  455 |
+> 456 |   return { supported, phase, isListening: phase === 'listening', start, stop }
+      |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  457 | }
+  458 |                                                                                                                                                                                                                                                                                                             react-hooks/refs
+  456:12  warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useVoiceInput.ts:456:12
+  454 |   }, [])
+  455 |
+> 456 |   return { supported, phase, isListening: phase === 'listening', start, stop }
+      |            ^^^^^^^^^ Cannot access ref value during render
+  457 | }
+  458 |                                                                                                                                                                                                                                                                                                                                                                       react-hooks/refs
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useVoiceOutput.ts
+  117:21  warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useVoiceOutput.ts:117:21
+  115 | export function useVoiceOutput(): UseVoiceOutputResult {
+  116 |   const supportedRef = useRef(detectSupport())
+> 117 |   const supported = supportedRef.current
+      |                     ^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  118 |
+  119 |   const [enabled, setEnabledState] = useState(false)
+  120 |   const [isSpeaking, setIsSpeaking] = useState(false)                                                                                                                                                                                                                                                                                                                                                                                                                                                         react-hooks/refs
+  117:21  warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useVoiceOutput.ts:117:21
+  115 | export function useVoiceOutput(): UseVoiceOutputResult {
+  116 |   const supportedRef = useRef(detectSupport())
+> 117 |   const supported = supportedRef.current
+      |                     ^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  118 |
+  119 |   const [enabled, setEnabledState] = useState(false)
+  120 |   const [isSpeaking, setIsSpeaking] = useState(false)                                                                                                                                                                                                                                                                                                                                                                                                                                                         react-hooks/refs
+  117:21  warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useVoiceOutput.ts:117:21
+  115 | export function useVoiceOutput(): UseVoiceOutputResult {
+  116 |   const supportedRef = useRef(detectSupport())
+> 117 |   const supported = supportedRef.current
+      |                     ^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  118 |
+  119 |   const [enabled, setEnabledState] = useState(false)
+  120 |   const [isSpeaking, setIsSpeaking] = useState(false)                                                                                                                                                                                                                                                                                                                                                                                                                                                         react-hooks/refs
+  117:21  warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useVoiceOutput.ts:117:21
+  115 | export function useVoiceOutput(): UseVoiceOutputResult {
+  116 |   const supportedRef = useRef(detectSupport())
+> 117 |   const supported = supportedRef.current
+      |                     ^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  118 |
+  119 |   const [enabled, setEnabledState] = useState(false)
+  120 |   const [isSpeaking, setIsSpeaking] = useState(false)                                                                                                                                                                                                                                                                                                                                                                                                                                                         react-hooks/refs
+  138:28  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useVoiceOutput.ts:138:28
+  136 |     try {
+  137 |       const stored = window.localStorage.getItem(STORAGE_KEY)
+> 138 |       if (stored === 'on') setEnabledState(true)
+      |                            ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  139 |       const storedRate = Number(window.localStorage.getItem(RATE_STORAGE_KEY))
+  140 |       if (Number.isFinite(storedRate) && storedRate >= MIN_RATE && storedRate <= MAX_RATE) {
+  141 |         setRateState(storedRate)  react-hooks/set-state-in-effect
+  424:6   warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useVoiceOutput.ts:424:6
+  422 |       if (supported) window.speechSynthesis.cancel()
+  423 |     }
+> 424 |   }, [supported, releaseAudio])
+      |      ^^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  425 |
+  426 |   return { supported, enabled, setEnabled, isSpeaking, speak, speakSequence, stop, rate, setRate }
+  427 | }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                react-hooks/refs
+  426:10  warning  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useVoiceOutput.ts:426:10
+  424 |   }, [supported, releaseAudio])
+  425 |
+> 426 |   return { supported, enabled, setEnabled, isSpeaking, speak, speakSequence, stop, rate, setRate }
+      |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  427 | }
+  428 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              react-hooks/refs
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\lib\blog\markdown.tsx
+  31:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  45:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\lib\voice-usage.ts
+  13:5  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-analytics.tsx
+  123:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-analytics.tsx:123:10
+  121 |
+  122 |   React.useEffect(() => {
+> 123 |     void refreshRoster();
+      |          ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  124 |   }, [refreshRoster]);
+  125 |
+  126 |   const dateRange: AnalyticsDateRange = React.useMemo(() => {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-campaign-detail.tsx
+  559:5   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-campaign-detail.tsx:559:5
+  557 |     if (!liveApi || !id) return;
+  558 |     let cancelled = false;
+> 559 |     setIsLoading(true);
+      |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  560 |     setLoadError(null);
+  561 |     setNotFound(false);
+  562 |     (async () => {                                            react-hooks/set-state-in-effect
+  638:5   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-campaign-detail.tsx:638:5
+  636 |   React.useEffect(() => {
+  637 |     if (!liveApi) return;
+> 638 |     setActiveTab(isCompleted ? 'report' : 'bids');
+      |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  639 |     setBids(liveBidDeals.map(dealToBidView));
+  640 |   }, [liveApi, isCompleted, liveBidDeals]);
+  641 |  react-hooks/set-state-in-effect
+  659:56  warning  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-campaign-detail.tsx:659:56
+  657 |   const budgetProgress = campaign?.budget ? ((campaign.budget.spent || 0) / (campaign.budget.max || 1)) * 100 : 0;
+  658 |   const daysRemaining = campaign
+> 659 |     ? Math.ceil((campaign.timeline.endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      |                                                        ^^^^^^^^^^ Cannot call impure function
+  660 |     : 0;
+  661 |   const timelineProgress = campaign
+  662 |     ? (() => {                                                                                                                                                                                                                                                react-hooks/purity
+  664:25  warning  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-campaign-detail.tsx:664:25
+  662 |     ? (() => {
+  663 |         const total = campaign.timeline.endDate.getTime() - campaign.timeline.startDate.getTime();
+> 664 |         const elapsed = Date.now() - campaign.timeline.startDate.getTime();
+      |                         ^^^^^^^^^^ Cannot call impure function
+  665 |         return total > 0 ? Math.min(100, Math.max(0, (elapsed / total) * 100)) : 0;
+  666 |       })()
+  667 |     : 0;                                                                                                                                                                                                                                                                                     react-hooks/purity
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-chat.tsx
+   757:27  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-chat.tsx:757:27
+  755 |
+  756 |   React.useEffect(() => {
+> 757 |     if (isApiLive()) void loadDealRooms();
+      |                           ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  758 |   }, [loadDealRooms]);
+  759 |
+  760 |   /**                                                                                                                                                                                                                                                                                                                                                          react-hooks/set-state-in-effect
+   843:46  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-chat.tsx:843:46
+  841 |     if (!isApiLive() || !selectedDeal) return;
+  842 |     const updated = liveDealRooms.find((d) => d.id === selectedDeal.id);
+> 843 |     if (updated && updated !== selectedDeal) setSelectedDeal(updated);
+      |                                              ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  844 |     // eslint-disable-next-line react-hooks/exhaustive-deps
+  845 |   }, [liveDealRooms]);
+  846 |                                                                                                                                                     react-hooks/set-state-in-effect
+   850:47  warning  Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `selectedDeal`, but the source dependencies were [selectedDeal?.contractId]. Inferred less specific property than source.
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-chat.tsx:850:47
+  848 |   // brandSignedAt, creatorSignedAt — once a real contractId exists. Coarse
+  849 |   // deal.contractStatus already renders an honest state before this resolves.
+> 850 |   const fetchLiveContract = React.useCallback(async () => {
+      |                                               ^^^^^^^^^^^^^
+> 851 |     if (!isApiLive() || !selectedDeal?.contractId) {
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 852 |       setLiveContract(null);
+      …
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 865 |     }
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 866 |   }, [selectedDeal?.contractId]);
+      | ^^^^ Could not preserve existing manual memoization
+  867 |
+  868 |   React.useEffect(() => {
+  869 |     void fetchLiveContract();  react-hooks/preserve-manual-memoization
+   869:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-chat.tsx:869:10
+  867 |
+  868 |   React.useEffect(() => {
+> 869 |     void fetchLiveContract();
+      |          ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  870 |   }, [fetchLiveContract]);
+  871 |
+  872 |   // FE-4: the create trigger. POST /contracts { collaborationId, milestones }                                                                                                                                                                                                                                                                                                       react-hooks/set-state-in-effect
+   911:17  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-chat.tsx:911:17
+  909 |     if (dealIdFromUrl) {
+  910 |       const deal = mockDealRooms.find((d) => d.id === dealIdFromUrl);
+> 911 |       if (deal) setSelectedDeal(deal);
+      |                 ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  912 |     } else if (creatorIdFromUrl) {
+  913 |       const deal = mockDealRooms.find((d) => d.creatorId === creatorIdFromUrl);
+  914 |       if (deal) setSelectedDeal(deal);                                                                                                                                                                    react-hooks/set-state-in-effect
+   927:5   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-chat.tsx:927:5
+  925 |         ? liveDealRooms.find((d) => d.creatorId === creatorIdFromUrl)
+  926 |         : undefined;
+> 927 |     setSelectedDeal(match || liveDealRooms[0]);
+      |     ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  928 |   }, [liveDealRooms, selectedDeal, dealIdFromUrl, creatorIdFromUrl]);
+  929 |
+  930 |   React.useEffect(() => {                                                                                                                                                                                                                                      react-hooks/set-state-in-effect
+   933:7   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-chat.tsx:933:7
+  931 |     const valid: ToolsPanel[] = ['contract', 'deliverables', 'payments'];
+  932 |     if (tabFromUrl && (valid as string[]).includes(tabFromUrl)) {
+> 933 |       setOpenPanel(tabFromUrl as ToolsPanel);
+      |       ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  934 |     }
+  935 |   }, [tabFromUrl]);
+  936 |                                                                                                                                                                                                                                                              react-hooks/set-state-in-effect
+  1099:12  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-chat.tsx:1099:12
+  1097 |   React.useEffect(() => {
+  1098 |     if (isApiLive() && selectedDeal) {
+> 1099 |       void loadMessages(selectedDeal.id);
+       |            ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  1100 |       void loadDeliverables(selectedDeal.id);
+  1101 |     }
+  1102 |     // eslint-disable-next-line react-hooks/exhaustive-deps                                                                                                                                                                                                                                         react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-creator-profile.tsx
+  359:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-creator-profile.tsx:359:5
+  357 |     if (!liveApi || !id) return;
+  358 |     let cancelled = false;
+> 359 |     setLoadError(null);
+      |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  360 |     setNotFound(false);
+  361 |     (async () => {
+  362 |       try {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-disputes.tsx
+  63:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-disputes.tsx:63:10
+  61 |
+  62 |   React.useEffect(() => {
+> 63 |     void refresh();
+     |          ^^^^^^^ Avoid calling setState() directly within an effect
+  64 |   }, [refresh]);
+  65 |
+  66 |   return (  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-edit-campaign.tsx
+  32:7  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-edit-campaign.tsx:32:7
+  30 |   React.useEffect(() => {
+  31 |     if (!id) {
+> 32 |       setCampaignType(null);
+     |       ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  33 |       return;
+  34 |     }
+  35 |     let cancelled = false;  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-messages.tsx
+  390:27  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-messages.tsx:390:27
+  388 |
+  389 |   React.useEffect(() => {
+> 390 |     if (isApiLive()) void loadConversations();
+      |                           ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  391 |   }, [loadConversations]);
+  392 |
+  393 |   // Auto-select a conversation once the live list arrives (mock mode selects synchronously above)  react-hooks/set-state-in-effect
+  402:9   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-messages.tsx:402:9
+  400 |       const match = liveConversations.find((c) => c.creator.id === creatorIdFromUrl);
+  401 |       if (match) {
+> 402 |         setSelectedConversation(match);
+      |         ^^^^^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  403 |         setIsMobileConversationOpen(true);
+  404 |       }
+  405 |       return;    react-hooks/set-state-in-effect
+  429:12  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-messages.tsx:429:12
+  427 |   React.useEffect(() => {
+  428 |     if (isApiLive() && selectedConversation) {
+> 429 |       void loadMessages(selectedConversation.id);
+      |            ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  430 |     }
+  431 |   }, [selectedConversation, loadMessages]);
+  432 |                                                react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-new-campaign.tsx
+  95:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-new-campaign.tsx:95:5
+  93 |   React.useEffect(() => {
+  94 |     if (!templatesOpen || templates.length > 0 || templatesLoading) return;
+> 95 |     setTemplatesLoading(true);
+     |     ^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  96 |     setTemplatesError(null);
+  97 |     api.campaignTemplates
+  98 |       .list()  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-new-hype-campaign.tsx
+  79:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-new-hype-campaign.tsx:79:5
+  77 |     if (!campaignId) return;
+  78 |     let cancelled = false;
+> 79 |     setIsLoading(true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  80 |     setLoadError(null);
+  81 |     (async () => {
+  82 |       try {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-pipeline.tsx
+  319:27  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-pipeline.tsx:319:27
+  317 |
+  318 |   React.useEffect(() => {
+> 319 |     if (isApiLive()) void loadCollaborations();
+      |                           ^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  320 |   }, [loadCollaborations]);
+  321 |
+  322 |   const filteredCollabs = collaborations.filter((c) => {                                                                                                                                                                                                       react-hooks/set-state-in-effect
+  725:39  warning  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-pipeline.tsx:725:39
+  723 |         ) : (
+  724 |           <>
+> 725 |             {viewMode === 'board' && <BoardView />}
+      |                                       ^^^^^^^^^ This component is created during render
+  726 |             {viewMode === 'list' && <ListView />}
+  727 |             {viewMode === 'timeline' && <TimelineView />}
+  728 |           </>
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-pipeline.tsx:425:21
+  423 |
+  424 |   // Board View
+> 425 |   const BoardView = () => (
+      |                     ^^^^^^^
+> 426 |     <ScrollArea className="w-full">
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 427 |       <div className="flex gap-4 pb-4 min-w-max">
+      …
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 464 |     </ScrollArea>
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 465 |   );
+      | ^^^^ The component is created during render here
+  466 |
+  467 |   // List View
+  468 |   const ListView = () => (                                                                                  react-hooks/static-components
+  726:38  warning  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-pipeline.tsx:726:38
+  724 |           <>
+  725 |             {viewMode === 'board' && <BoardView />}
+> 726 |             {viewMode === 'list' && <ListView />}
+      |                                      ^^^^^^^^ This component is created during render
+  727 |             {viewMode === 'timeline' && <TimelineView />}
+  728 |           </>
+  729 |         )}
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-pipeline.tsx:468:20
+  466 |
+  467 |   // List View
+> 468 |   const ListView = () => (
+      |                    ^^^^^^^
+> 469 |     <div className="rounded-lg border overflow-hidden">
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 470 |       <table className="w-full">
+      …
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 554 |     </div>
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 555 |   );
+      | ^^^^ The component is created during render here
+  556 |
+  557 |   // Timeline View (simplified Gantt-like)
+  558 |   const TimelineView = () => (  react-hooks/static-components
+  727:42  warning  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-pipeline.tsx:727:42
+  725 |             {viewMode === 'board' && <BoardView />}
+  726 |             {viewMode === 'list' && <ListView />}
+> 727 |             {viewMode === 'timeline' && <TimelineView />}
+      |                                          ^^^^^^^^^^^^ This component is created during render
+  728 |           </>
+  729 |         )}
+  730 |       </div>
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-pipeline.tsx:558:24
+  556 |
+  557 |   // Timeline View (simplified Gantt-like)
+> 558 |   const TimelineView = () => (
+      |                        ^^^^^^^
+> 559 |     <div className="space-y-4">
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 560 |       {filteredCollabs.map((collab) => {
+      …
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 639 |     </div>
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 640 |   );
+      | ^^^^ The component is created during render here
+  641 |
+  642 |   return (
+  643 |     <TooltipProvider>                                                                                       react-hooks/static-components
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-settings.tsx
+  113:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-settings.tsx:113:5
+  111 |     if (!liveApi) return; // mock mode: local defaults are the whole story
+  112 |     let cancelled = false;
+> 113 |     setWorkspaceInfoLoading(true);
+      |     ^^^^^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  114 |     setWorkspaceInfoLoadError(null);
+  115 |     api.workspaces
+  116 |       .getMe()  react-hooks/set-state-in-effect
+  196:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-settings.tsx:196:5
+  194 |   React.useEffect(() => {
+  195 |     let cancelled = false;
+> 196 |     setEmailPrefLoading(true);
+      |     ^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  197 |     api.notifications
+  198 |       .getPreferences('brand')
+  199 |       .then((prefs) => {                                                    react-hooks/set-state-in-effect
+  328:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-settings.tsx:328:5
+  326 |
+  327 |   React.useEffect(() => {
+> 328 |     loadMembers();
+      |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  329 |   }, [loadMembers]);
+  330 |
+  331 |   // Invite Member dialog — POST /workspace/members/invite (Vikram, WorkspaceMemberController.java:51)                                                     react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-applications.tsx
+  46:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-applications.tsx:46:10
+  44 |
+  45 |   React.useEffect(() => {
+> 46 |     void fetchApplications();
+     |          ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  47 |   }, [fetchApplications]);
+  48 |
+  49 |   const counts = React.useMemo(() => {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-campaign-detail.tsx
+  103:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-campaign-detail.tsx:103:10
+  101 |
+  102 |   React.useEffect(() => {
+> 103 |     void loadCampaign();
+      |          ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  104 |   }, [loadCampaign]);
+  105 |
+  106 |   React.useEffect(() => {                                                                             react-hooks/set-state-in-effect
+  108:7   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-campaign-detail.tsx:108:7
+  106 |   React.useEffect(() => {
+  107 |     if (searchParams.get('apply') === '1' && campaign && !campaign.applicationStatus) {
+> 108 |       setApplyOpen(true);
+      |       ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  109 |     }
+  110 |   }, [searchParams, campaign]);
+  111 |  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-campaigns.tsx
+  112:5  warning  React Hook React.useCallback has a missing dependency: 'toast'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx
+    51:3   error    'Sheet' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 @typescript-eslint/no-unused-vars
+    52:3   error    'SheetContent' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+    53:3   error    'SheetHeader' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+    54:3   error    'SheetTitle' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+   676:5   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx:676:5
+  674 |
+  675 |   React.useEffect(() => {
+> 676 |     loadDeals();
+      |     ^^^^^^^^^ Avoid calling setState() directly within an effect
+  677 |   }, [loadDeals]);
+  678 |
+  679 |   /**                                                                                                                                                                                                                                                                                                                                                                                             react-hooks/set-state-in-effect
+   856:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx:856:10
+  854 |   React.useEffect(() => {
+  855 |     if (!liveApi || !selectedDeal) return;
+> 856 |     void loadMessages(selectedDeal.id);
+      |          ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  857 |   }, [liveApi, selectedDeal?.id, loadMessages]);
+  858 |
+  859 |   // Mark the thread read once opened (mirrors creator-deals.tsx openDeal flow)                                                                                                                                                                                                          react-hooks/set-state-in-effect
+   857:6   warning  React Hook React.useEffect has a missing dependency: 'selectedDeal'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   react-hooks/exhaustive-deps
+   865:6   warning  React Hook React.useEffect has a missing dependency: 'selectedDeal'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   react-hooks/exhaustive-deps
+   948:6   warning  React Hook React.useEffect has a missing dependency: 'selectedDeal'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   react-hooks/exhaustive-deps
+   995:47  warning  Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `selectedDeal`, but the source dependencies were [liveApi, selectedDeal?.contractId]. Inferred less specific property than source.
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx:995:47
+   993 |   // selected deal. Coarse status (deal.contractStatus) already renders an
+   994 |   // honest state before this resolves.
+>  995 |   const fetchLiveContract = React.useCallback(async () => {
+       |                                               ^^^^^^^^^^^^^
+>  996 |     if (!liveApi || !selectedDeal?.contractId) {
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  997 |       setLiveContract(null);
+       …
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1010 |     }
+       | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1011 |   }, [liveApi, selectedDeal?.contractId]);
+       | ^^^^ Could not preserve existing manual memoization
+  1012 |
+  1013 |   React.useEffect(() => {
+  1014 |     void fetchLiveContract();  react-hooks/preserve-manual-memoization
+  1014:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx:1014:10
+  1012 |
+  1013 |   React.useEffect(() => {
+> 1014 |     void fetchLiveContract();
+       |          ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  1015 |   }, [fetchLiveContract]);
+  1016 |
+  1017 |   // C19: real deliverable rows feed the submission dialog (was a hardcoded fake array)                                                                                                                                                                                                                                                                react-hooks/set-state-in-effect
+  1034:6   warning  React Hook React.useCallback has a missing dependency: 'selectedDeal'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 react-hooks/exhaustive-deps
+  1037:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx:1037:10
+  1035 |
+  1036 |   React.useEffect(() => {
+> 1037 |     void loadDeliverables();
+       |          ^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  1038 |   }, [loadDeliverables]);
+  1039 |
+  1040 |   React.useEffect(() => {                                                                                                                                                                                                                                                                                                                                 react-hooks/set-state-in-effect
+  1042:7   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx:1042:7
+  1040 |   React.useEffect(() => {
+  1041 |     if (dealId) {
+> 1042 |       setSelectedDealId(dealId);
+       |       ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  1043 |     }
+  1044 |   }, [dealId]);
+  1045 |                                                                                                                                                                                                                                                                                                                                            react-hooks/set-state-in-effect
+  1048:7   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx:1048:7
+  1046 |   React.useEffect(() => {
+  1047 |     if (tabFromUrl && (CREATOR_VALID_PANELS as string[]).includes(tabFromUrl)) {
+> 1048 |       setOpenPanel(tabFromUrl as CreatorToolsPanel);
+       |       ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  1049 |     }
+  1050 |   }, [tabFromUrl]);
+  1051 |   const [selectedContractEvent, setSelectedContractEvent] = React.useState<ChatTimelineEvent | null>(null);                                                                                                                                              react-hooks/set-state-in-effect
+  1106:6   warning  React Hook React.useCallback has a missing dependency: 'selectedDeal'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 react-hooks/exhaustive-deps
+  1109:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx:1109:10
+  1107 |
+  1108 |   React.useEffect(() => {
+> 1109 |     void fetchLiveShipment();
+       |          ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  1110 |   }, [fetchLiveShipment]);
+  1111 |
+  1112 |   // Reflect the real record into the address/status state the render tree already                                                                                                                                                                                                                                                                     react-hooks/set-state-in-effect
+  1118:7   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx:1118:7
+  1116 |     if (!liveApi || !liveShipment) return;
+  1117 |     if (liveShipment.status === 'AWAITING_ADDRESS') {
+> 1118 |       setShippingAddress(null);
+       |       ^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  1119 |     } else {
+  1120 |       setShippingAddress({
+  1121 |         fullName: liveShipment.recipientName ?? '',                                                                                                                                                                                                                 react-hooks/set-state-in-effect
+  1489:5   warning  React Hook React.useCallback has a missing dependency: 'resolveDealContractStatus'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    react-hooks/exhaustive-deps
+  1571:6   warning  React Hook React.useMemo has an unnecessary dependency: 'messageRefreshKey'. Either exclude it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           react-hooks/exhaustive-deps
+  2319:45  warning  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx:2319:45
+  2317 |                 trackingNumber={shipmentDisplay.trackingNumber}
+  2318 |                 trackingUrl={shipmentDisplay.trackingUrl}
+> 2319 |                 estimatedDelivery={new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()}
+       |                                             ^^^^^^^^^^ Cannot call impure function
+  2320 |                 notes={shipmentDisplay.notes}
+  2321 |                 onMarkReceived={handleMarkReceived}
+  2322 |               />                                                                                                                                                                                                                                                                                                                                                                                                                                                                            react-hooks/purity
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-deals.tsx
+   94:14  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      react-refresh/only-export-components
+  265:6   warning  React Hook React.useEffect has a missing dependency: 'toast'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      react-hooks/exhaustive-deps
+  550:38  warning  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-deals.tsx:550:38
+  548 | function DealRow({ deal, actionLoading, onOpen, onAccept, onCounter, onReject }: DealRowProps) {
+  549 |   const isNew = deal.status === 'new';
+> 550 |   const isFresh = deal.receivedAt && Date.now() - deal.receivedAt.getTime() < 1000 * 60 * 30;
+      |                                      ^^^^^^^^^^ Cannot call impure function
+  551 |   const progress = deal.deliverablesTotal
+  552 |     ? Math.round((deal.deliverablesDone / deal.deliverablesTotal) * 100)
+  553 |     : 0;  react-hooks/purity
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-disputes.tsx
+  91:10  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-disputes.tsx:91:10
+  89 |
+  90 |   React.useEffect(() => {
+> 91 |     void refreshList();
+     |          ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  92 |     void refreshEligible();
+  93 |   }, [refreshList, refreshEligible]);
+  94 |  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-portfolio-editor.tsx
+  73:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-portfolio-editor.tsx:73:5
+  71 |   React.useEffect(() => {
+  72 |     let cancelled = false;
+> 73 |     setLoading(true);
+     |     ^^^^^^^^^^ Avoid calling setState() directly within an effect
+  74 |     setLoadError(null);
+  75 |     Promise.all([api.portfolio.getMine(), api.portfolio.analytics()])
+  76 |       .then(([p, a]) => {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-portfolio-public.tsx
+  206:7  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-portfolio-public.tsx:206:7
+  204 |     let cancelled = false;
+  205 |     if (!username) {
+> 206 |       setLoading(false);
+      |       ^^^^^^^^^^ Avoid calling setState() directly within an effect
+  207 |       setError('Page not found');
+  208 |       return;
+  209 |     }  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-profile.tsx
+  106:5   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-profile.tsx:106:5
+  104 |
+  105 |   React.useEffect(() => {
+> 106 |     loadProfile();
+      |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  107 |   }, [loadProfile]);
+  108 |
+  109 |   const handleSyncStats = async (platform: string) => {  react-hooks/set-state-in-effect
+  118:18  warning  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-profile.tsx:118:18
+  116 |   const formatSyncTime = (date?: Date) => {
+  117 |     if (!date) return null;
+> 118 |     const diff = Date.now() - date.getTime();
+      |                  ^^^^^^^^^^ Cannot call impure function
+  119 |     const mins = Math.floor(diff / 60000);
+  120 |     const hours = Math.floor(diff / 3600000);
+  121 |     if (mins < 1) return 'Just now';                                                                                                                                                                                                                                                                      react-hooks/purity
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-settings.tsx
+  93:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-settings.tsx:93:5
+  91 |   React.useEffect(() => {
+  92 |     let cancelled = false;
+> 93 |     setEmailPrefLoading(true);
+     |     ^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  94 |     api.notifications
+  95 |       .getPreferences('creator')
+  96 |       .then((prefs) => {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-wallet.tsx
+  417:6  warning  React Hook React.useEffect has a missing dependency: 'toast'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          react-hooks/exhaustive-deps
+  434:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-wallet.tsx:434:5
+  432 |
+  433 |   React.useEffect(() => {
+> 434 |     loadPayoutMethods();
+      |     ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  435 |   }, [loadPayoutMethods]);
+  436 |
+  437 |   const handleWithdraw = async () => {  react-hooks/set-state-in-effect
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\trendspark\n8n\tagger-sync.check.js
+  104:3  warning  Unused eslint-disable directive (no problems were reported from 'no-eval')
+
+✖ 166 problems (4 errors, 162 warnings)
+  0 errors and 5 warnings potentially fixable with the `--fix` option.
+

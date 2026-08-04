@@ -79,7 +79,7 @@ export function stripMarkdownForSpeech(input: string): string {
   // the chat BUBBLE still shows the original text, this only affects speech.
   // Covers the main emoji blocks + variation selector + ZWJ + regional flags.
   text = text.replace(
-    /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}]/gu,
+    /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}]|\u{FE0F}|\u{200D}/gu,
     '',
   )
   // Collapse any double spaces an emoji removal left behind.

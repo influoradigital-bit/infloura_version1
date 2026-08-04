@@ -2,13 +2,19 @@ package com.influora.service.admin;
 
 import com.influora.common.ApiException;
 import com.influora.domain.entity.ContentFlag;
+import com.influora.domain.entity.CreatorProfile;
+import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.AdminRole;
 import com.influora.domain.enums.ContentFlagStatus;
 import com.influora.repository.ContentFlagRepository;
+import com.influora.repository.CreatorProfileRepository;
+import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.web.dto.admin.AdminModerationDtos.AccountSuspensionDto;
 import com.influora.web.dto.admin.AdminModerationDtos.ActionFlagRequest;
 import com.influora.web.dto.admin.AdminModerationDtos.FlagDto;
 import com.influora.web.dto.admin.AdminModerationDtos.PagedFlagsDto;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -48,17 +54,71 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AdminModerationService {
 
+    private static final String APPEAL_STATUS_NONE = "NONE";
+
     private final AdminContextService adminContext;
     private final AdminAuditLogService adminAuditLogService;
     private final ContentFlagRepository contentFlagRepository;
+    private final WorkspaceRepository workspaceRepository;
+    private final CreatorProfileRepository creatorProfileRepository;
 
     public AdminModerationService(
             AdminContextService adminContext,
             AdminAuditLogService adminAuditLogService,
-            ContentFlagRepository contentFlagRepository) {
+            ContentFlagRepository contentFlagRepository,
+            WorkspaceRepository workspaceRepository,
+            CreatorProfileRepository creatorProfileRepository) {
         this.adminContext = adminContext;
         this.adminAuditLogService = adminAuditLogService;
         this.contentFlagRepository = contentFlagRepository;
+        this.workspaceRepository = workspaceRepository;
+        this.creatorProfileRepository = creatorProfileRepository;
+    }
+
+    /**
+     * {@code GET /admin/moderation/suspensions} — every currently-suspended account (brands/agencies
+     * from {@code Workspace}, creators from {@code CreatorProfile}), newest {@code Workspace} rows
+     * then creator rows. Read-only. See {@link AccountSuspensionDto} for the exact per-field mapping
+     * and the two declared limitations ({@code appealStatus} always {@code NONE} — no appeal schema
+     * yet; {@code reinstatedAt}/{@code reinstatedBy} always {@code null} — these accounts are still
+     * suspended). Gated SUPER_ADMIN + ADMIN (account-management data, tighter than content triage).
+     */
+    @Transactional(readOnly = true)
+    public List<AccountSuspensionDto> getSuspensions(AuthPrincipal principal) {
+        adminContext.requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN);
+
+        List<AccountSuspensionDto> suspensions = new ArrayList<>();
+        for (Workspace w : workspaceRepository.findBySuspendedTrue()) {
+            suspensions.add(
+                    new AccountSuspensionDto(
+                            w.getId(),
+                            w.getId(),
+                            "BRAND",
+                            w.getName(),
+                            w.getSuspendedReason(),
+                            w.getSuspendedBy(),
+                            w.getSuspendedAt() == null ? null : w.getSuspendedAt().toString(),
+                            APPEAL_STATUS_NONE,
+                            null,
+                            null,
+                            null));
+        }
+        for (CreatorProfile c : creatorProfileRepository.findBySuspendedTrue()) {
+            suspensions.add(
+                    new AccountSuspensionDto(
+                            c.getUserId(),
+                            c.getUserId(),
+                            "CREATOR",
+                            c.getDisplayName(),
+                            c.getSuspendedReason(),
+                            c.getSuspendedBy(),
+                            c.getSuspendedAt() == null ? null : c.getSuspendedAt().toString(),
+                            APPEAL_STATUS_NONE,
+                            null,
+                            null,
+                            null));
+        }
+        return suspensions;
     }
 
     /**

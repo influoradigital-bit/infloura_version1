@@ -1,0 +1,5 @@
+{"verdict":"believed","oracle":"mvn","isolation":"fresh-context",
+ "done_when":"GET /admin/finance/revenue returns RevenueSnapshot[] with gmv (released escrow by period)+platformFees (commission by period) from real data, setupFees honest 0; mvn exit 0; fresh-context review REAL",
+ "evidence":{"oracle":"mvn","command":"gates/build.mvn.sh influora-api","result":"exit 0; fresh-context review REAL (6/6, both derived queries resolve to real JPA attributes, no fabrication)","where":"influora-api/src/main/java/com/influora/web/AdminRevenueController.java:1"},
+ "not_checked":["runtime — endpoint + 2 new derived queries not executed against a real DB (no @DataJpaTest); resolution proven structurally against real entity fields","in-memory bucketing over the date range is unbounded by row count — fine for admin windows, would need pagination for very wide ranges","setupFees structurally 0 (no setup-fee product)"],
+ "skipped":[{"step":"graphify update","reason":"AST re-index exceeds 2-min shell budget"}]}

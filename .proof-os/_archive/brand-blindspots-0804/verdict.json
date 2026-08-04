@@ -1,0 +1,4 @@
+{"verdict": "believed", "oracle": "grep", "isolation": "fresh-context",
+ "done_when": "Complete When final .md file with all dead blind spot errors & broken, missing & partial",
+ "not_checked": ["runtime HTTP behavior against a deployed backend (needs env + Razorpay/AI keys)", "backend service logic behind verified routes (route+call-site level only)", "the 74 policy-accepted eslint warnings were not re-adjudicated"],
+ "skipped": [{"step": "live E2E of money paths", "reason": "Razorpay keys are env placeholders; live behavior is untestable in this environment and is already tracked as an infra gate"}]}

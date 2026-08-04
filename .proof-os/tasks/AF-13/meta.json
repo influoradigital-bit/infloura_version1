@@ -1,0 +1,13 @@
+{
+  "id": "AF-13",
+  "order": 13,
+  "verb": "GET",
+  "path": "/admin/moderation/suspensions",
+  "dto": "Suspension[]",
+  "tier": "read",
+  "status": "DONE",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "AdminModerationController exists (flags) \u2014 extend"
+}

@@ -1,0 +1,6 @@
+{"verdict": "believed", "oracle": "tsc", "isolation": "fresh-context",
+ "done_when": "all creator missing features solve & updated md file get sign up from priya when work done",
+ "not_checked": ["live HTTP: no lifecycle action was submitted against a running backend (static reachability + tsc/eslint only)",
+                 "the multipart proof upload was not exercised at runtime",
+                 "remaining creator MISSING (review-flag, analytics me/media, brand-facing discovery routes) are out of this pass's scope"],
+ "skipped": [{"step": "browser preview verification", "reason": "deal-room deliverables panel needs an authenticated creator session + running backend + a deliverable in APPROVED state; unavailable here, reachability proven statically"}]}

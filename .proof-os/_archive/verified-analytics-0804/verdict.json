@@ -1,0 +1,6 @@
+{"verdict": "believed", "oracle": "junit", "isolation": "fresh-context",
+ "done_when": "Both creator and brand see deliverable analytics properly: Meta-verified is the default+only primary source; manual opens only when Meta genuinely fails for a connected account; brand sees verified vs self-reported per row; signed off by Swapnil",
+ "not_checked": ["live Meta Graph API path (key-gated: no real OAuth token / post exercised end-to-end)",
+                 "Pipeline-B roster/media analytics source labels (needs a backend AnalyticsDtos field — tracked follow-up)",
+                 "runtime rendering of the panel/badges against a running backend"],
+ "skipped": [{"step": "PROJECT-DEEP-AUDIT md update", "reason": "not in this task's done_when, and the md is being concurrently edited by another agent — avoided a collision"}]}

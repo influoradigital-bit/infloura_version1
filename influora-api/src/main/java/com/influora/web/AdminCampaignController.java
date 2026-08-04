@@ -5,6 +5,7 @@ import com.influora.service.admin.AdminCampaignService;
 import com.influora.service.admin.AdminCampaignService.PagedCampaignSummaries;
 import com.influora.web.dto.admin.AdminCampaignDtos.CampaignDetailDto;
 import com.influora.web.dto.admin.AdminCampaignDtos.CampaignSummaryDto;
+import com.influora.web.dto.admin.AdminCampaignDtos.HypeOpsDto;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -72,5 +73,28 @@ public class AdminCampaignController {
     public CampaignDetailDto getById(
             @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String id) {
         return adminCampaignService.getById(principal, id);
+    }
+
+    /**
+     * At-risk campaigns — {@code ACTIVE} campaigns with a live SLA breach ({@code slaBreachRate}
+     * &gt; 0). Backs {@code campaignApi.getAtRisk()}; returns a raw {@code CampaignSummaryDto[]}
+     * (unwrapped, same convention as {@link #list}'s body). Spring resolves the literal {@code
+     * /at-risk} ahead of {@link #getById}'s {@code /{id}} path variable, so there is no ambiguity.
+     * Role gate + the working "at-risk" definition live in {@link AdminCampaignService#atRisk}.
+     */
+    @GetMapping("/at-risk")
+    public List<CampaignSummaryDto> atRisk(@AuthenticationPrincipal AuthPrincipal principal) {
+        return adminCampaignService.atRisk(principal);
+    }
+
+    /**
+     * Operational snapshot of active HYPE campaigns (slot fill + recent approval rate). Backs
+     * {@code campaignApi.getHypeOps()}; returns a raw {@code HypeOpsDto}. The literal {@code
+     * /hype/ops} path resolves ahead of {@link #getById}'s {@code /{id}}. Derivation + role gate
+     * live in {@link AdminCampaignService#hypeOps}.
+     */
+    @GetMapping("/hype/ops")
+    public HypeOpsDto hypeOps(@AuthenticationPrincipal AuthPrincipal principal) {
+        return adminCampaignService.hypeOps(principal);
     }
 }

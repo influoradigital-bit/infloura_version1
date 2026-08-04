@@ -6,7 +6,6 @@ import { clearCreatorSession } from '@/lib/auth-session';
 import { useCreatorIdentity } from '@/hooks/use-creator-identity';
 import { useCreatorUnreadCount } from '@/hooks/use-creator-unread-count';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,

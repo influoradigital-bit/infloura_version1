@@ -73,7 +73,6 @@ import CreatorCouponsPage from '@/pages/creator-coupons';
 import CreatorAffiliateEarningsPage from '@/pages/creator-affiliate-earnings';
 import CreatorMetaCallbackPage from '@/pages/creator-meta-callback';
 import DevMotionSkillsPage from '@/pages/dev-motion-skills';
-import { CreatorLayout } from '@/components/creator/creator-layout';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {

@@ -1,0 +1,169 @@
+{"ts": "2026-07-31T13:30:34", "who": "human:Swapnil Maruti", "what": "create", "file": "registry.json", "task": "OS-SETUP", "stage": "setup", "gate_result": "approved"}
+{"ts": "2026-07-31T13:30:34", "who": "human:Swapnil Maruti", "what": "create", "file": "ledger/failures.jsonl", "task": "OS-SETUP", "stage": "setup", "gate_result": "seeded-22"}
+{"ts": "2026-07-31T13:30:34", "who": "human:Swapnil Maruti", "what": "create", "file": "gates/", "task": "OS-SETUP", "stage": "setup", "gate_result": "6-gates-installed"}
+{"ts": "2026-07-31T14:04:50", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "session bootstrap: .claude/plugins/synced/proof-os copied to device at 13:23", "task": "", "stage": "intake", "gate_result": "F-0023"}
+{"ts": "2026-07-31T14:10:04", "who": "human:Swapnil Maruti", "what": "edit", "file": "ledger/failures.jsonl", "task": "OS-SETUP", "stage": "repair", "gate_result": "reseeded-from-0.1.7-template (id-collision on F-0023)"}
+{"ts": "2026-07-31T14:10:04", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "session bootstrap: proof-os copied to device 13:23; seed-ledger + scan.py both pre-0.1.5", "task": "", "stage": "intake", "gate_result": "F-0024"}
+{"ts": "2026-07-31T14:14:09", "who": "human:Swapnil Maruti", "what": "edit", "file": "registry.json", "task": "OS-SETUP", "stage": "repair", "gate_result": "aligned-to-PROOFOS.md-roster"}
+{"ts": "2026-07-31T14:14:09", "who": "human:Swapnil Maruti", "what": "create", "file": "gates/build.sh", "task": "OS-SETUP", "stage": "promote", "gate_result": "meera-oracle"}
+{"ts": "2026-07-31T14:14:09", "who": "human:Swapnil Maruti", "what": "create", "file": "gates/e2e.sh", "task": "OS-SETUP", "stage": "promote", "gate_result": "neha-oracle"}
+{"ts": "2026-07-31T14:26:13", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "gates/build.sh step 1 (tsc --noEmit) on New Influora over a mounted folder", "task": "", "stage": "intake", "gate_result": "F-0025"}
+{"ts": "2026-07-31T14:27:04", "who": "human:Swapnil Maruti", "what": "edit", "file": "gates/build.sh", "task": "OS-SETUP", "stage": "promote", "gate_result": "F-0025 wall-clock bound"}
+{"ts": "2026-07-31T14:27:04", "who": "human:Swapnil Maruti", "what": "edit", "file": "gates/e2e.sh", "task": "OS-SETUP", "stage": "promote", "gate_result": "F-0025 wall-clock bound"}
+{"ts": "2026-07-31T14:35:29", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "this session: gates/build.sh run via device_bash background job", "task": "", "stage": "intake", "gate_result": "F-0026"}
+{"ts": "2026-07-31T14:37:36", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "scripts/work.py:49 terminal renderer", "task": "", "stage": "intake", "gate_result": "F-0027"}
+{"ts": "2026-07-31T19:49:14", "who": "human:Swapnil Maruti", "what": "edit", "file": "scripts/work.py", "task": "F-0027", "stage": "produce", "gate_result": "null may_claim renders as em dash"}
+{"ts": "2026-07-31T19:49:14", "who": "human:Swapnil Maruti", "what": "create", "file": "gates/registry_render.py", "task": "F-0027", "stage": "promote", "gate_result": "origin F-0027"}
+{"ts": "2026-07-31T19:49:14", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "PROOFOS.md \u00a74 roster -> registry.json: rohan, tara", "task": "", "stage": "intake", "gate_result": "F-0028"}
+{"ts": "2026-07-31T19:50:01", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "gates/meta_length.py regex vs index.html:7", "task": "", "stage": "intake", "gate_result": "F-0029"}
+{"ts": "2026-07-31T19:54:46", "who": "human:Swapnil Maruti", "what": "create", "file": "gates/version_assert.py", "task": "SHIP-0.1.8", "stage": "promote", "gate_result": "origin F-0018+F-0024"}
+{"ts": "2026-07-31T20:05:18", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "skills/ash/SKILL.md and skills/kashyap-register/SKILL.md frontmatter", "task": "", "stage": "intake", "gate_result": "F-0030"}
+{"ts": "2026-07-31T20:05:25", "who": "human:Swapnil Maruti", "what": "create", "file": "gates/frontmatter.py", "task": "SHIP-0.1.9", "stage": "promote", "gate_result": "origin F-0030"}
+{"ts": "2026-07-31T20:24:22", "who": "human:Swapnil Maruti", "what": "create", "file": "sage-suite/", "task": "SHIP-0.1.9", "stage": "install", "gate_result": "marketplace on laptop; both sources resolve, hashes verified"}
+{"ts": "2026-07-31T20:24:22", "who": "human:Swapnil Maruti", "what": "delete", "file": "proof-os-0.1.8/marketplace.json", "task": "SHIP-0.1.9", "stage": "install", "gate_result": "stale duplicate moved to _to_delete"}
+{"ts": "2026-07-31T20:24:22", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "proof-os-0.1.8/marketplace.json alongside sage-suite/.claude-plugin/marketplace.json", "task": "", "stage": "intake", "gate_result": "F-0031"}
+{"ts": "2026-07-31T20:45:44", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "skills/os-setup/SKILL.md step 2", "task": "", "stage": "intake", "gate_result": "F-0032"}
+{"ts": "2026-07-31T20:45:44", "who": "human:Swapnil Maruti", "what": "create", "file": ".proof-os/registry.approved-backup.json", "task": "GUARD", "stage": "repair", "gate_result": "pre-emptive backup before any os-setup rerun"}
+{"ts": "2026-07-31T20:50:16", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "scan.py skill_files(): ~/.claude/skills and ~/.claude/plugins/synced walked independently", "task": "", "stage": "intake", "gate_result": "F-0033"}
+{"ts": "2026-07-31T20:50:50", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "scan.py mention regex, built from skill basenames after split(':')[-1]", "task": "", "stage": "intake", "gate_result": "F-0034"}
+{"ts": "2026-07-31T20:56:54", "who": "human:Swapnil Maruti", "what": "refuse", "file": ".proof-os/registry.json", "task": "OS-SETUP", "stage": "gate", "gate_result": "F-0032 honored: rerun halted at step 2; approved registry preserved (24 services)"}
+{"ts": "2026-07-31T20:56:55", "who": "human:Swapnil Maruti", "what": "verify", "file": "sage-suite/proof-os", "task": "OS-SETUP", "stage": "gate", "gate_result": "F-0024 honored: plugin 0.1.9, 27/27 files md5-identical to cloud runtime"}
+{"ts": "2026-07-31T20:56:55", "who": "human:Swapnil Maruti", "what": "scan", "file": ".proof-os/graph.json", "task": "OS-SETUP", "stage": "derive", "gate_result": "843 nodes 2344 edges 96.2% (prev 95.7%)"}
+{"ts": "2026-07-31T20:56:55", "who": "human:Swapnil Maruti", "what": "render", "file": ".proof-os/map.html", "task": "OS-SETUP", "stage": "report", "gate_result": "9 open failures"}
+{"ts": "2026-07-31T21:28:51", "who": "human:Swapnil Maruti", "what": "create", "file": "scripts/adapt_graphify.py", "task": "GRAPHIFY", "stage": "produce", "gate_result": "schema learned from a real graphify run, not guessed"}
+{"ts": "2026-07-31T21:28:51", "who": "human:Swapnil Maruti", "what": "create", "file": "gates/graph_source.py", "task": "GRAPHIFY", "stage": "promote", "gate_result": "engine declared + no model edge green"}
+{"ts": "2026-07-31T21:28:51", "who": "human:Swapnil Maruti", "what": "edit", "file": "scripts/scan.py", "task": "GRAPHIFY", "stage": "produce", "gate_result": "declares engine scan.py-regex, oracle regex"}
+{"ts": "2026-07-31T21:29:02", "who": "human:Swapnil Maruti", "what": "ledger-add", "file": "scan.py regex topology, all 2406 edges", "task": "", "stage": "intake", "gate_result": "F-0035"}
+{"ts": "2026-08-01T18:34:34", "who": "assistant", "what": "ledger-add", "file": "gates/version_assert.py checks 2 (drift) and 3 (missing)", "task": "GRAPHIFY", "stage": "intake", "gate_result": "F-0036 -> gates/version_assert.py"}
+{"ts": "2026-08-01T18:34:34", "who": "assistant", "what": "ledger-add", "file": "scripts/adapt_graphify.py:47", "task": "GRAPHIFY", "stage": "intake", "gate_result": "F-0037 -> gates/adapter_roundtrip.py"}
+{"ts": "2026-08-01T18:41:56", "who": "assistant", "what": "ledger-close", "file": "gates/marketplace.py", "task": "MASTER-BUNDLE", "stage": "promote", "gate_result": "F-0031 closed -> gates/marketplace.py"}
+{"ts": "2026-08-01T18:55:51", "who": "human:Swapnil Maruti", "what": "edit", "file": "registry.json", "task": "OS-SETUP-RERUN", "stage": "promote", "gate_result": "24 aliases added; 24 prior approvals byte-identical; header stamped v0.2.1"}
+{"ts": "2026-08-01T18:55:51", "who": "assistant", "what": "edit", "file": "graph.json", "task": "OS-SETUP-RERUN", "stage": "produce", "gate_result": "scan.py-regex v0.2.1 \u00b7 928 nodes \u00b7 2657 edges \u00b7 91.7%"}
+{"ts": "2026-08-01T18:55:51", "who": "assistant", "what": "edit", "file": "map.html", "task": "OS-SETUP-RERUN", "stage": "produce", "gate_result": "rendered by work.py 0.2.1 from graph+registry+ledger"}
+{"ts": "2026-08-01T18:55:51", "who": "assistant", "what": "ledger-add", "file": "device_bash sandbox: --unshare-pid, background scan killed at call exit; 'still running' was a wrapper-process false positive", "task": "OS-SETUP-RERUN", "stage": "intake", "gate_result": "instance of F-0026 (liveness inferred, not proved)"}
+{"ts": "2026-08-01T19:12:46", "who": "assistant", "what": "create", "file": "graph.graphify.json", "task": "GRAPHIFY-EVAL", "stage": "produce", "gate_result": "graphify 0.9.32 extract --code-only \u00b7 7615 nodes / 19744 edges \u00b7 gates/graph_source.py exit 0 \u00b7 oracle_strength 100%"}
+{"ts": "2026-08-01T19:12:46", "who": "assistant", "what": "ledger-add", "file": "adapt_graphify.py status model: 'aligned' when target parsed, so an unresolved import yields NO edge, never a broken one \u2014 a graphify graph can only ever score 100%", "task": "GRAPHIFY-EVAL", "stage": "intake", "gate_result": "false-green: 100% is structural, not health"}
+{"ts": "2026-08-01T19:34:02", "who": "assistant", "what": "edit", "file": "sage-suite/proof-os/ (scan.py, version_assert.py, README.md + adapt_graphify.py, graph_source.py, adapter_roundtrip.py)", "task": "SOURCE-RECONCILE", "stage": "produce", "gate_result": "source was 0.1.9, installed was 0.2.1 \u2014 3 files absent, 5 differed"}
+{"ts": "2026-08-01T19:34:02", "who": "assistant", "what": "edit", "file": "sage-suite/proof-os/README.md", "task": "SOURCE-RECONCILE", "stage": "produce", "gate_result": "safishamsi/graphify -> Graphify-Labs/graphify"}
+{"ts": "2026-08-01T19:34:02", "who": "assistant", "what": "create", "file": "sage-suite/dist/proof-os-0.2.1.plugin", "task": "SOURCE-RECONCILE", "stage": "promote", "gate_result": "build-plugin.sh step 4/4 PROVED from inside archive \u00b7 33 files \u00b7 drifted 0 missing 0 unlisted 0 \u00b7 version_assert exit 0"}
+{"ts": "2026-08-01T19:34:02", "who": "assistant", "what": "ledger-add", "file": "sage-suite/proof-os was 2 versions behind the installed plugin; a rebuild would have shipped 0.1.9 and deleted graphify support", "task": "SOURCE-RECONCILE", "stage": "intake", "gate_result": "instance of F-0024 stale-runtime-copy / F-0036 version drift"}
+{"ts": "2026-08-01T19:37:38", "who": "assistant", "what": "create", "file": ".claude/skills/graphify/ (SKILL.md + 8 references)", "task": "GRAPHIFY-SKILL", "stage": "produce", "gate_result": "graphify 0.9.32 claude install --project; 10 files; no container paths"}
+{"ts": "2026-08-01T19:37:38", "who": "assistant", "what": "create", "file": ".claude/settings.json + CLAUDE.md", "task": "GRAPHIFY-SKILL", "stage": "produce", "gate_result": "hook cmd /root/.local/bin/graphify -> graphify (PATH-resolved); settings.local.json untouched"}
+{"ts": "2026-08-02T12:19:20", "who": "assistant", "what": "ledger-add", "file": "influora-api/hs_err_pid11648.log,23604,31460,8600", "task": "", "stage": "intake", "gate_result": "F-0038"}
+{"ts": "2026-08-02T12:19:20", "who": "assistant", "what": "ledger-add", "file": "src/components/3d/PortfolioCanvas.tsx:30", "task": "", "stage": "intake", "gate_result": "F-0039"}
+{"ts": "2026-08-02T12:19:20", "who": "assistant", "what": "ledger-add", "file": "src/hooks/useEscrowFund.ts:325,377", "task": "", "stage": "intake", "gate_result": "F-0040"}
+{"ts": "2026-08-02T12:19:20", "who": "assistant", "what": "ledger-add", "file": "src/admin/hooks/** (99 sites; e.g. useAdminSocket.ts:73,106)", "task": "", "stage": "intake", "gate_result": "F-0041"}
+{"ts": "2026-08-02T12:19:20", "who": "assistant", "what": "ledger-add", "file": "DEAD_CODE.md (132 exports / 44 files, src/**)", "task": "", "stage": "intake", "gate_result": "F-0042"}
+{"ts": "2026-08-02T12:19:20", "who": "assistant", "what": "ledger-add", "file": "src/components/brand/brand-layout.tsx:371", "task": "", "stage": "intake", "gate_result": "F-0043"}
+{"ts": "2026-08-02T12:31:52", "who": "human:Swapnil Maruti", "what": "verdict", "file": ".proof-os/tasks/F-0039", "task": "F-0039", "stage": "confirm", "gate_result": ""}
+{"ts": "2026-08-02T12:38:25", "who": "ananya", "what": "edit", "file": "src/components/3d/PortfolioCanvas.tsx", "task": "F-0039", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T12:38:25", "who": "priya", "what": "create", "file": ".proof-os/gates/eslint.hooks.mjs", "task": "F-0039", "stage": "gate", "gate_result": ""}
+{"ts": "2026-08-02T12:38:25", "who": "priya", "what": "create", "file": ".proof-os/gates/react_hooks.py", "task": "F-0039", "stage": "gate", "gate_result": ""}
+{"ts": "2026-08-02T12:38:26", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0039", "task": "F-0039", "stage": "verdict", "gate_result": ""}
+{"ts": "2026-08-02T12:39:05", "who": "priya", "what": "ledger-add", "file": "graphify-out/graph.json (rewritten during task F-0039 by ananya)", "task": "", "stage": "intake", "gate_result": "F-0044"}
+{"ts": "2026-08-02T12:48:04", "who": "priya", "what": "ledger-add", "file": "registry.json ananya jurisdiction vs src/hooks/*.ts", "task": "", "stage": "intake", "gate_result": "F-0045"}
+{"ts": "2026-08-02T12:48:04", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0040", "task": "F-0040", "stage": "confirm", "gate_result": ""}
+{"ts": "2026-08-02T13:08:54", "who": "ananya", "what": "edit", "file": "src/hooks/useEscrowFund.ts", "task": "F-0040", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T13:08:54", "who": "priya", "what": "create", "file": ".proof-os/gates/react_hooks_immutability.py", "task": "F-0040", "stage": "gate", "gate_result": ""}
+{"ts": "2026-08-02T13:08:54", "who": "priya", "what": "create", "file": ".proof-os/gates/eslint.hooks.immutability.mjs", "task": "F-0040", "stage": "gate", "gate_result": ""}
+{"ts": "2026-08-02T13:08:54", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0040", "task": "F-0040", "stage": "verdict", "gate_result": ""}
+{"ts": "2026-08-02T13:08:54", "who": "priya", "what": "ledger-add", "file": "src/pages/creator-chat.tsx:1035", "task": "", "stage": "intake", "gate_result": "F-0046"}
+{"ts": "2026-08-02T13:22:34", "who": "priya", "what": "create", "file": ".proof-os/tasks/F-0041/TRIAGE.md", "task": "F-0041", "stage": "verdict", "gate_result": ""}
+{"ts": "2026-08-02T13:32:01", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0042", "task": "F-0042", "stage": "confirm", "gate_result": ""}
+{"ts": "2026-08-02T14:00:18", "who": "ananya", "what": "delete", "file": "src/lib/token-store.ts", "task": "F-0042", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T14:00:18", "who": "ananya", "what": "edit", "file": "src/lib/types.ts", "task": "F-0042", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T14:00:18", "who": "priya", "what": "create", "file": ".proof-os/gates/dead_exports.py", "task": "F-0042", "stage": "gate", "gate_result": ""}
+{"ts": "2026-08-02T14:00:18", "who": "priya", "what": "edit", "file": "DEAD_CODE.md", "task": "F-0042", "stage": "verdict", "gate_result": ""}
+{"ts": "2026-08-02T14:00:19", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0042", "task": "F-0042", "stage": "verdict", "gate_result": ""}
+{"ts": "2026-08-02T14:17:05", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0043", "task": "F-0043", "stage": "confirm", "gate_result": ""}
+{"ts": "2026-08-02T14:26:29", "who": "ananya", "what": "edit", "file": "src/components/brand/brand-layout.tsx", "task": "F-0043", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T14:26:29", "who": "ananya", "what": "edit", "file": "src/lib/store.ts", "task": "F-0043", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T14:26:29", "who": "priya", "what": "create", "file": ".proof-os/gates/notifications_wired.py", "task": "F-0043", "stage": "gate", "gate_result": ""}
+{"ts": "2026-08-02T14:26:29", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0043", "task": "F-0043", "stage": "verdict", "gate_result": ""}
+{"ts": "2026-08-02T14:29:58", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0038", "task": "F-0038", "stage": "confirm", "gate_result": ""}
+{"ts": "2026-08-02T14:31:42", "who": "vikram", "what": "create", "file": "influora-api/.mvn/jvm.config", "task": "F-0038", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T14:31:42", "who": "vikram", "what": "edit", "file": "influora-api/pom.xml", "task": "F-0038", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T14:31:42", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0038", "task": "F-0038", "stage": "verdict", "gate_result": ""}
+{"ts": "2026-08-02T14:50:30", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0046", "task": "F-0046", "stage": "confirm", "gate_result": ""}
+{"ts": "2026-08-02T14:55:08", "who": "ananya", "what": "edit", "file": "src/pages/creator-chat.tsx", "task": "F-0046", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T14:55:08", "who": "priya", "what": "edit", "file": ".proof-os/gates/react_hooks_immutability.py", "task": "F-0046", "stage": "gate", "gate_result": ""}
+{"ts": "2026-08-02T14:55:08", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0046", "task": "F-0046", "stage": "verdict", "gate_result": ""}
+{"ts": "2026-08-02T15:21:54", "who": "priya", "what": "edit", "file": "graphify-out/graph.json", "task": "F-0044", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T15:21:54", "who": "priya", "what": "create", "file": ".proof-os/gates/graph_scope.py", "task": "F-0044", "stage": "gate", "gate_result": ""}
+{"ts": "2026-08-02T15:21:54", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0044", "task": "F-0044", "stage": "verdict", "gate_result": ""}
+{"ts": "2026-08-02T15:35:35", "who": "priya", "what": "create", "file": ".proof-os/tasks/session-2026-08-02/VERDICT.md", "task": "session-2026-08-02", "stage": "verdict", "gate_result": ""}
+{"ts": "2026-08-02T16:41:45", "who": "priya", "what": "ledger-add", "file": "CreditMeter.tsx:18 (Infinity shadow); contract-generator.ts:236 (lost error cause); strip-markdown-for-speech.ts:82 (misleading emoji char-class)", "task": "", "stage": "intake", "gate_result": "F-0047"}
+{"ts": "2026-08-02T16:41:45", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0047", "task": "F-0047", "stage": "confirm", "gate_result": ""}
+{"ts": "2026-08-02T16:50:19", "who": "ananya", "what": "edit", "file": "src/components/feature/meera/CreditMeter.tsx", "task": "F-0047", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T16:50:19", "who": "ananya", "what": "edit", "file": "src/lib/contract-generator.ts", "task": "F-0047", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T16:50:20", "who": "ananya", "what": "edit", "file": "src/lib/strip-markdown-for-speech.ts", "task": "F-0047", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T16:50:20", "who": "priya", "what": "create", "file": ".proof-os/gates/lint_singletons.py", "task": "F-0047", "stage": "gate", "gate_result": ""}
+{"ts": "2026-08-02T16:50:20", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0047", "task": "F-0047", "stage": "verdict", "gate_result": ""}
+{"ts": "2026-08-02T16:57:11", "who": "priya", "what": "ledger-add", "file": "src/** \u2014 173 @typescript-eslint/no-unused-vars across 57 files (top: creator-chat 15, brand-pipeline 10, creator-discovery 9, brand-wallet 9)", "task": "", "stage": "intake", "gate_result": "F-0048"}
+{"ts": "2026-08-02T16:57:11", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0048", "task": "F-0048", "stage": "confirm", "gate_result": ""}
+{"ts": "2026-08-02T22:52:53", "who": "ananya", "what": "edit", "file": "src (54-file unused-locals batch, API-interrupted)", "task": "F-0048", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T22:52:53", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/F-0048/VERDICT.md", "task": "F-0048", "stage": "verdict", "gate_result": ""}
+{"ts": "2026-08-02T20:49:55", "who": "human:Swapnil Maruti", "what": "create", "file": ".proof-os/registry.json", "task": "", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-02T20:58:00", "who": "human:Swapnil Maruti", "what": "approve", "file": ".proof-os/registry.json", "task": "", "stage": "produce", "gate_result": "", "isolation": "shared-context"}
+{"ts": "2026-08-03T02:43:31", "who": "vikram", "what": "read", "file": "influora-api/pom.xml", "task": "backend-error-sweep", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T02:44:03", "who": "kabir", "what": "inspect", "file": "influora-api/src/main/java/com/influora", "task": "backend-error-sweep", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T10:57:09", "who": "meera", "what": "verdict", "file": "influora-api/pom.xml", "task": "backend-error-sweep", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-03T10:57:09", "who": "meera", "what": "verdict", "file": "influora-ai/app/main.py", "task": "backend-error-sweep", "stage": "judgment", "gate_result": "believed", "isolation": "oracle"}
+{"ts": "2026-08-03T10:58:05", "who": "meera", "what": "read", "file": "tasks/backend-error-sweep/*", "task": "backend-error-sweep", "stage": "cleanup", "gate_result": "scanned 4 file(s) for failure markers before archive"}
+{"ts": "2026-08-03T10:58:05", "who": "meera", "what": "delete", "file": "tasks/backend-error-sweep/*", "task": "backend-error-sweep", "stage": "cleanup", "gate_result": "archived \u2192 _archive\\backend-error-sweep, purge 2026-09-02"}
+{"ts": "2026-08-03T11:12:05", "who": "vikram", "what": "create", "file": "BACKEND-ERRORS.html", "task": "error-html", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T11:12:05", "who": "vikram", "what": "read", "file": "tasks/error-html/*", "task": "error-html", "stage": "cleanup", "gate_result": "scanned 0 file(s) for failure markers before archive"}
+{"ts": "2026-08-03T11:12:05", "who": "vikram", "what": "delete", "file": "tasks/error-html/*", "task": "error-html", "stage": "cleanup", "gate_result": "archived \u2192 _archive\\error-html, purge 2026-09-02"}
+{"ts": "2026-08-03T12:02:04", "who": "priya", "what": "audit", "file": "api-connection-audit.html", "task": "missing-features-audit", "stage": "lookup", "gate_result": "", "isolation": "oracle"}
+{"ts": "2026-08-03T12:04:34", "who": "priya", "what": "read", "file": "influora-api/src/main/java/com/influora/web", "task": "missing-features-audit", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T12:04:35", "who": "priya", "what": "read", "file": "influora-api/src/main/java/com/influora/service", "task": "missing-features-audit", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T12:06:04", "who": "priya", "what": "create", "file": "MISSING-FEATURES.html", "task": "missing-features-audit", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T12:06:04", "who": "priya", "what": "audit", "file": "MISSING-FEATURES.html", "task": "missing-features-audit", "stage": "judgment", "gate_result": "believed", "isolation": "shared-context"}
+{"ts": "2026-08-03T12:06:04", "who": "priya", "what": "read", "file": "tasks/missing-features-audit/*", "task": "missing-features-audit", "stage": "cleanup", "gate_result": "scanned 0 file(s) for failure markers before archive"}
+{"ts": "2026-08-03T12:06:04", "who": "priya", "what": "delete", "file": "tasks/missing-features-audit/*", "task": "missing-features-audit", "stage": "cleanup", "gate_result": "archived \u2192 _archive/missing-features-audit, purge 2026-09-02"}
+{"ts": "2026-08-03T12:10:42", "who": "priya", "what": "read", "file": "influora-api/src/main/java/com/influora/service/meera/OnBehalfTokenService.java", "task": "cheap-wins", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T12:10:42", "who": "priya", "what": "read", "file": "influora-ai/app/routes/chat.py", "task": "cheap-wins", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T12:10:43", "who": "priya", "what": "read", "file": "src/lib/api.ts", "task": "cheap-wins", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T12:10:43", "who": "priya", "what": "read", "file": "influora-api/src/main/java/com/influora/service/meera/MeeraContextService.java", "task": "cheap-wins", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T12:10:43", "who": "priya", "what": "verdict", "file": "influora-api/src/main/java/com/influora/service/meera/OnBehalfTokenService.java", "task": "cheap-wins", "stage": "judgment", "gate_result": "believed", "isolation": "shared-context"}
+{"ts": "2026-08-03T12:10:43", "who": "priya", "what": "verdict", "file": "influora-ai/app/routes/chat.py", "task": "cheap-wins", "stage": "judgment", "gate_result": "believed", "isolation": "shared-context"}
+{"ts": "2026-08-03T12:11:26", "who": "priya", "what": "update", "file": "MISSING-FEATURES.html", "task": "cheap-wins", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T12:11:26", "who": "priya", "what": "read", "file": "tasks/cheap-wins/*", "task": "cheap-wins", "stage": "cleanup", "gate_result": "scanned 0 file(s) for failure markers before archive"}
+{"ts": "2026-08-03T12:11:26", "who": "priya", "what": "delete", "file": "tasks/cheap-wins/*", "task": "cheap-wins", "stage": "cleanup", "gate_result": "archived \u2192 _archive/cheap-wins, purge 2026-09-02"}
+{"ts": "2026-08-03T12:20:53", "who": "vikram", "what": "read", "file": "src/admin/services/api-contracts.ts", "task": "admin-finance-queue", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T12:20:53", "who": "vikram", "what": "read", "file": "src/admin/types/admin.types.ts", "task": "admin-finance-queue", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T12:20:53", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/repository/EscrowHoldRepository.java", "task": "admin-finance-queue", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T12:20:53", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/web/PlatformFeeAdminController.java", "task": "admin-finance-queue", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T12:20:53", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/service/admin/AdminBillingService.java", "task": "admin-finance-queue", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T12:20:53", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/domain/entity/EscrowHold.java", "task": "admin-finance-queue", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T12:22:11", "who": "vikram", "what": "create", "file": "influora-api/src/main/java/com/influora/web/dto/admin/AdminFinanceDtos.java", "task": "admin-finance-queue", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T12:22:11", "who": "vikram", "what": "create", "file": "influora-api/src/main/java/com/influora/repository/EscrowHoldRepository.java", "task": "admin-finance-queue", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T12:22:11", "who": "vikram", "what": "create", "file": "influora-api/src/main/java/com/influora/service/admin/AdminFinanceService.java", "task": "admin-finance-queue", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T12:22:12", "who": "vikram", "what": "create", "file": "influora-api/src/main/java/com/influora/web/AdminFinanceController.java", "task": "admin-finance-queue", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T12:25:16", "who": "kabir", "what": "verdict", "file": "influora-api/src/main/java/com/influora/web/AdminFinanceController.java", "task": "admin-finance-queue", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-03T12:46:19", "who": "ananya", "what": "ledger-add", "file": "src/components/feature/meera/FundEscrowButton.tsx:onFunded", "task": "", "stage": "intake", "gate_result": "F-0049"}
+{"ts": "2026-08-03T12:46:19", "who": "ananya", "what": "ledger-add", "file": "src/pages/brand-pipeline.tsx:425,468,558 (BoardView/ListView/TimelineView)", "task": "", "stage": "intake", "gate_result": "F-0050"}
+{"ts": "2026-08-03T12:46:19", "who": "meera", "what": "ledger-add", "file": "commit 066e7de (frontend lint fix, 13 files)", "task": "", "stage": "intake", "gate_result": "F-0051"}
+{"ts": "2026-08-03T12:50:39", "who": "priya", "what": "audit", "file": "influora-api/src/main/java/com/influora/web", "task": "missing-recheck", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-03T12:56:57", "who": "vikram", "what": "create", "file": ".proof-os/tasks/admin-endpoint-queue/queue.json", "task": "admin-endpoint-queue", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:06:49", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/web/dto/admin/AdminModerationDtos.java", "task": "AF-13", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:06:50", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/repository/WorkspaceRepository.java", "task": "AF-13", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:06:50", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/repository/CreatorProfileRepository.java", "task": "AF-13", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:06:50", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/service/admin/AdminModerationService.java", "task": "AF-13", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:06:50", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/web/AdminModerationController.java", "task": "AF-13", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:12:00", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/web/dto/admin/AdminModerationDtos.java", "task": "AF-13", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:12:00", "who": "kabir", "what": "verdict", "file": "influora-api/src/main/java/com/influora/web/AdminModerationController.java", "task": "AF-13", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-03T14:19:55", "who": "vikram", "what": "read", "file": "src/admin/services/api-contracts.ts", "task": "AF-09", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T14:19:55", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/service/admin/AdminCampaignService.java", "task": "AF-09", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T14:19:55", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/domain/entity/Campaign.java", "task": "AF-09", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-03T14:22:03", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/repository/CampaignRepository.java", "task": "AF-09", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:22:03", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/service/admin/AdminCampaignService.java", "task": "AF-09", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:22:04", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/web/AdminCampaignController.java", "task": "AF-09", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:25:19", "who": "kabir", "what": "verdict", "file": "influora-api/src/main/java/com/influora/web/AdminCampaignController.java", "task": "AF-09", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-03T14:30:59", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/web/dto/admin/AdminCampaignDtos.java", "task": "AF-10", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:30:59", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/repository/CampaignRepository.java", "task": "AF-10", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:30:59", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/service/admin/AdminCampaignService.java", "task": "AF-10", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:30:59", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/web/AdminCampaignController.java", "task": "AF-10", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-03T14:34:58", "who": "kabir", "what": "verdict", "file": "influora-api/src/main/java/com/influora/web/AdminCampaignController.java", "task": "AF-10", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-03T15:16:51", "who": "ananya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0049"}
+{"ts": "2026-08-03T15:16:51", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0049 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\fund_escrow_onfunded.sh"}

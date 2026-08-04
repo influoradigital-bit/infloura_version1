@@ -19,7 +19,6 @@ export function ProposalEventCard({
   const meta = event.metadata;
   const isAccepted = meta?.status === 'accepted';
   const isRejected = meta?.status === 'rejected';
-  const isFromBrand = event.senderType === 'brand';
 
   return (
     <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent">

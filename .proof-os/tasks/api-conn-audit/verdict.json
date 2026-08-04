@@ -1,0 +1,5 @@
+{"verdict":"proved","oracle":"tsc","isolation":"oracle",
+ "done_when":"npx tsc --noEmit exits 0 over src/ with zero type or import errors across brand, creator, admin and AI modules",
+ "evidence":{"oracle":"tsc","command":"npx --no-install tsc --noEmit","result":"exit 0, 0 errors","where":"src/lib/api.ts:1"},
+ "not_checked":["request/response BODY field-shape parity — a path can match while JSON field names diverge","runtime auth/CORS/HTTP-status behavior against a live server","the separate Python AI service at VITE_MEERA_STREAM_URL — its streamUrl is server-driven, never a FE-fabricated path","FE to BE path-alignment is proven only to BELIEVED, not PROVED: the api-contract.test.ts guardrail passed 3/3 but vitest is not in the deterministic oracle allowlist","eslint/gitleaks — frontend.sh gate exceeded the 2-minute tool budget"],
+ "skipped":[{"step":"journal.py / ledger.py / validate.py scoring","reason":"all import fcntl (Unix-only) and crash on this Windows host; validate.py also UnicodeEncodeErrors on cp1252. The API-connection oracles (tsc, vitest guardrail) ran independently of this bookkeeping layer."}]}

@@ -18,7 +18,6 @@
 import { useMemo, useState } from 'react';
 import {
   CreditCard,
-  FlaskConical,
   Gift,
   SlidersHorizontal,
   Wallet,
@@ -449,7 +448,7 @@ export interface BillingConsoleProps {
 export default function BillingConsole({ className }: BillingConsoleProps) {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
+  const [page] = useState(1);
   const [compModalOpen, setCompModalOpen] = useState(false);
   const [overrideModalOpen, setOverrideModalOpen] = useState(false);
 

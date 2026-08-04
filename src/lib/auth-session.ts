@@ -1,8 +1,6 @@
 /**
  * Maps backend TokenPair (§4) to client session + localStorage keys used by the UI.
  */
-import type { Role } from './api';
-
 export interface BackendTokenPair {
   user: {
     id: string;

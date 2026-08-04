@@ -1,0 +1,23 @@
+{"rows": [
+  {"subject": "Creator own-media analytics wired + reachable",
+   "owner": "ananya", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "tsc", "command": "npx tsc --noEmit",
+     "result": "0 errors; creatorAnalytics.getMyMedia -> useCreatorOwnMedia -> ContentPerformancePanel in creator-analytics.tsx:60",
+     "where": "src/hooks/creator/useCreatorOwnMedia.ts:30"}},
+  {"subject": "Creator received-reviews surface + flag wired + reachable",
+   "owner": "ananya", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "tsc", "command": "npx tsc --noEmit",
+     "result": "0 errors; CreatorReceivedReviews (mounted creator-analytics.tsx:214) lists received reviews + calls creatorReviews.flag -> POST /creator/reviews/:id/flag",
+     "where": "src/components/creator/creator-received-reviews.tsx:80"}},
+  {"subject": "Changed creator files pass eslint (no new defects)",
+   "owner": "ananya", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "eslint",
+     "command": "npx eslint src/lib/api.ts src/hooks/creator/useCreatorOwnMedia.ts src/components/creator/creator-received-reviews.tsx src/pages/creator-analytics.tsx",
+     "result": "0 errors (only the repo-standard set-state-in-effect warn-policy warning)",
+     "where": "src/components/creator/creator-received-reviews.tsx:1"}},
+  {"subject": "Deep-audit md Creator tally updated (4 -> 2 missing)",
+   "owner": "tara", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "grep", "command": "grep -n 'Creator .* 53 .* 1 .* 0 .* 2 .* 56' PROJECT-DEEP-AUDIT-2026-08-04.md",
+     "result": "Creator row 53/1/0/2/56; media + review-flag struck from orphan list; remaining 2 noted as brand-facing discovery",
+     "where": "PROJECT-DEEP-AUDIT-2026-08-04.md:53"}}
+]}

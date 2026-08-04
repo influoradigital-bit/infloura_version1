@@ -1,0 +1,5 @@
+{"verdict":"believed","oracle":"mvn","isolation":"fresh-context",
+ "done_when":"POST /notifications/read-all bulk-marks only the caller's unread notifications read (tenant-scoped single UPDATE); FE markAllRead calls it instead of looping; backend mvn exit 0 + FE tsc exit 0; fresh-context review REAL",
+ "evidence":{"oracle":"mvn","command":"gates/build.mvn.sh influora-api + npx tsc --noEmit","result":"mvn exit 0 + tsc exit 0; fresh-context review CAUGHT a real bug (n.read vs isRead), fixed + re-verified against entity field + 2 proven sibling queries","where":"influora-api/src/main/java/com/influora/repository/NotificationRepository.java:40"},
+ "not_checked":["JPQL resolution NOT proven by a context-load/@DataJpaTest (exactly the bug class just caught) — correctness inferred from the real entity attribute isRead (Notification.java:42, field access) + proven sibling queries","endpoint + FE markAllRead not executed live against a running app/DB"],
+ "skipped":[{"step":"browser-preview verification of markAllRead","reason":"requires an authenticated live API session not available in this env; the one-line endpoint swap is covered by tsc + the independent review"}]}

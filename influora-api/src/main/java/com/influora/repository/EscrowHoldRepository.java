@@ -3,6 +3,7 @@ package com.influora.repository;
 import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.enums.EscrowStatus;
 import java.math.BigDecimal;
+import java.time.Instant;
 import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
@@ -165,4 +166,12 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
                     + "WHERE status = 'RELEASED' AND funded_at IS NOT NULL AND released_at IS NOT NULL",
             nativeQuery = true)
     Double avgReleaseSeconds();
+
+    /**
+     * All RELEASED holds whose {@code released_at} falls in the half-open range [start, end) —
+     * powers the admin revenue report's GMV bucketing ({@code GET /admin/finance/revenue}, {@code
+     * AdminRevenueService}). Derived query on {@code status} + {@code released_at}.
+     */
+    List<EscrowHold> findByStatusAndReleasedAtGreaterThanEqualAndReleasedAtLessThan(
+            EscrowStatus status, Instant start, Instant end);
 }

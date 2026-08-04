@@ -1,0 +1,16 @@
+{
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint", "jsx-a11y"],
+  "rules": {
+    "@typescript-eslint/no-explicit-any": "error",
+    "no-console": ["error", {"allow": ["warn", "error"]}],
+    "no-unused-vars": "error",
+    "jsx-a11y/alt-text": "error",
+    "jsx-a11y/anchor-is-valid": "error",
+    "no-restricted-syntax": [
+      "error",
+      {"selector": "JSXAttribute[name.name='style']", "message": "kavya: no inline styles — Tailwind only"}
+    ]
+  },
+  "__origin": "kavya SKILL.md checklist items 1,2,3,4,alt-text,inline-styles — promoted 2026-07-31"
+}

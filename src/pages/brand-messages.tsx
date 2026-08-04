@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search,
   Send,
@@ -16,15 +16,11 @@ import {
   Archive,
   Trash2,
   Pin,
-  Bell,
   BellOff,
   Flag,
   FileText,
   DollarSign,
-  Calendar,
   Smile,
-  Mic,
-  X,
   Loader2,
 } from 'lucide-react';
 
@@ -56,7 +52,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Separator } from '@/components/ui/separator';
 
 // Types
 interface Message {

@@ -1,0 +1,8 @@
+{
+  "name": "proof-os",
+  "version": "0.2.1",
+  "description": "A trust layer for AI work. Derives your project's real connection graph, runs executable gates so 'done' means proved (not believed), journals every change with who/what/when, turns failures into permanent checks, and cleans up working files when tasks close. Skills are tenants; this is the landlord.",
+  "author": {
+    "name": "Sage Digital (built with Claude)"
+  }
+}

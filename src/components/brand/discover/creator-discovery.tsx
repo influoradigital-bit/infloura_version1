@@ -3,15 +3,9 @@ import { useNavigate, Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   Search,
-  Filter,
   X,
-  Heart,
-  MessageSquare,
   Send,
-  ExternalLink,
   CheckCircle2,
-  Users,
-  TrendingUp,
   MapPin,
   Grid3X3,
   List,
@@ -19,9 +13,7 @@ import {
   SlidersHorizontal,
   Bookmark,
   BookmarkCheck,
-  Sparkles,
   Plus,
-  IndianRupee,
   Loader2,
 } from 'lucide-react';
 
@@ -403,17 +395,6 @@ const categories = [
   'Education',
   'Entertainment',
   'Gaming',
-];
-
-const contentStyles = [
-  'Aesthetic',
-  'Educational',
-  'Entertainment',
-  'Tutorial',
-  'Review',
-  'Vlog',
-  'Comedy',
-  'Motivational',
 ];
 
 const languages = ['Hindi', 'English', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Bengali', 'Marathi', 'Gujarati', 'Punjabi'];

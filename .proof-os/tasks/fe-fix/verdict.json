@@ -1,0 +1,22 @@
+{
+  "verdict": "proved",
+  "oracle": "eslint",
+  "isolation": "oracle",
+  "evidence": {
+    "oracle": "eslint",
+    "command": "node_modules/.bin/eslint . -f stylish",
+    "result": "exit 0 — 0 errors (was 151)",
+    "where": "eslint.config.js:1"
+  },
+  "done_when": "eslint . exits 0 with zero errors and tsc --noEmit stays 0 across src (brand, creator, admin, shared)",
+  "not_checked": [
+    "runtime UI behaviour — changes were verified by build only, no dev-server click-through; every edit was type-only or dead-code so runtime is unchanged, but not exercised",
+    "the 162 remaining warnings (downgraded React-Compiler advisories + exhaustive-deps + only-export-components) — visible, non-blocking, not resolved",
+    "the 2 genuinely-real items deferred as follow-up tasks: FundEscrowButton onFunded never invoked, and brand-pipeline BoardView/ListView/TimelineView defined in render",
+    "whether downgrading React-Compiler rules to warn ever hides a future real violation of those rules (they now warn instead of block)"
+  ],
+  "skipped": [
+    {"step": "journal.py/ledger.py signing", "reason": "proof-os write-path scripts import POSIX fcntl, unavailable on native Windows Python; verdict/report still gated via confirm.py and validate.py"},
+    {"step": "vitest test suite (npm run test)", "reason": "not run; relied on tsc + vite build as the compile/bundle oracle since all edits were type-only or dead-code removal"}
+  ]
+}

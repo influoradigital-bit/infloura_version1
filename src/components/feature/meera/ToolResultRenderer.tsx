@@ -18,7 +18,7 @@
  */
 
 import { Link } from 'react-router-dom';
-import { Users, Calculator, FileText, Wallet, Rocket, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Users, Calculator, FileText, Wallet, Rocket, AlertCircle, Loader2 } from 'lucide-react';
 
 import {
   isRequestPaymentPayload,

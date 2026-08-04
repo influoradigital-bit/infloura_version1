@@ -1,0 +1,1 @@
+build.mvn.sh compiles influora-api (exit 0) with POST /admin/moderation/suspensions/{id}/appeal returning Suspension computed live from real repositories; independent fresh-context review returns REAL (no fabricated data, authz present)

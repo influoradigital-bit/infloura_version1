@@ -1,0 +1,16 @@
+{
+  "verdict": "broken",
+  "oracle": "eslint",
+  "isolation": "oracle",
+  "done_when": "each available oracle ran over the scope and its raw output is recorded",
+  "not_checked": [
+    "whether any flagged component actually misbehaves at runtime (react-hooks rules flag potential cascading re-renders, not proven bugs)",
+    "whether the UI renders correctly with real API data",
+    "visual regression, accessibility beyond loaded jsx-a11y rules, and bundle size",
+    "runtime console/network errors in the running app (no dev server was launched)"
+  ],
+  "skipped": [
+    {"step": "journal.py/ledger.py signing", "reason": "POSIX fcntl unavailable on native Windows Python; write-path scripts import fcntl while recall/resolve/confirm/validate do not, so reads/verdict could not be signed into the journal"},
+    {"step": "gitleaks + hex-color sub-checks of gates/frontend.sh", "reason": "ran tsc + eslint (the two frontend-error oracles) directly for cleaner per-area bucketing instead of the full gate wrapper; secrets/hex not the ask"}
+  ]
+}

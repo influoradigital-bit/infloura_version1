@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { CreatorLayout } from '@/components/creator/creator-layout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,8 +23,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Wallet,
-  TrendingUp,
   Clock,
   IndianRupee,
   ArrowUpRight,
@@ -32,12 +30,10 @@ import {
   Building,
   FileText,
   Download,
-  Calendar,
   Shield,
   AlertCircle,
   CreditCard,
   Loader2,
-  ChevronRight,
   Receipt,
   Banknote,
 } from 'lucide-react';

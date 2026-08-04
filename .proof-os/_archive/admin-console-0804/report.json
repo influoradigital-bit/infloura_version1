@@ -1,0 +1,20 @@
+{"rows": [
+  {"subject": "src/admin/components/finance/FinanceConsole.tsx",
+   "owner": "meera", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "tsc",
+     "command": "npx tsc --noEmit",
+     "result": "exit 0, 0 errors — new console hook/component/page typecheck clean",
+     "where": "src/admin/components/finance/FinanceConsole.tsx:1"}},
+  {"subject": "src/admin/hooks/useFinanceConsole.ts",
+   "owner": "meera", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "tsc",
+     "command": "npx tsc --noEmit; grep route+nav wiring",
+     "result": "tsc exit 0; consumes 7 real apiRequest wrappers (lines 114-120), 0 unavailable() stubs, 0 mock arrays; reachable via admin-console.tsx:58 + AdminLayout.tsx:64",
+     "where": "src/admin/hooks/useFinanceConsole.ts:114"}},
+  {"subject": "PROJECT-DEEP-AUDIT-2026-08-04.md#admin-console-remediation",
+   "owner": "priya", "status": "aligned", "isolation": "fresh-context",
+   "evidence": {"oracle": "model",
+     "command": "priya fresh-context sign-off (2 passes): artifact paths + done_when only; first pass REJECTED (8-vs-7 route overclaim, F-0078), re-approved after correction",
+     "result": "APPROVE — done_when met; recomputed 155/16/0/23/194, Admin 35, metrics /194 all exact; getRevenue + audit/entity + no-backend stubs honestly marked NOT done",
+     "where": "PROJECT-DEEP-AUDIT-2026-08-04.md:36"}}
+]}

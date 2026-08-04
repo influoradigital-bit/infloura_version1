@@ -1,0 +1,13 @@
+{
+  "id": "AF-16",
+  "order": 16,
+  "verb": "POST",
+  "path": "/admin/finance/payouts/{id}/retry",
+  "dto": "PayoutQueueItem",
+  "tier": "write",
+  "status": "BLOCKED",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "BLOCKED: depends on AF-03 payouts list, which is blocked on the missing TDS breakdown."
+}

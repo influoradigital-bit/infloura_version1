@@ -1,0 +1,1 @@
+gates/build.mvn.sh compiles influora-api (exit 0) with GET /admin/finance/escrow returning EscrowSummaryDto{totalLocked,pendingRelease,flaggedTransactions,averageReleaseTime} computed live from escrow_holds; no fabricated data
