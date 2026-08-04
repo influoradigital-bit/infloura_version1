@@ -74,6 +74,8 @@ class CreatorDeliverableServiceTest {
     @Mock private BrandContextService brandContext;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private CollaborationLifecycleService collaborationLifecycleService;
+    @Mock private com.influora.service.verification.DeliverableVerificationService verificationService;
+    @Mock private com.influora.repository.MetaOAuthTokenRepository metaOAuthTokenRepository;
 
     private CreatorDeliverableService service;
     private CreatorProfile profile;
@@ -94,7 +96,9 @@ class CreatorDeliverableServiceTest {
                         campaignRepository,
                         brandContext,
                         eventPublisher,
-                        collaborationLifecycleService);
+                        collaborationLifecycleService,
+                        verificationService,
+                        metaOAuthTokenRepository);
         profile = CreatorProfile.newForUser("profile1", CREATOR_USER_ID, "Test Creator");
         lenient().when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
     }
@@ -617,6 +621,11 @@ class CreatorDeliverableServiceTest {
         when(deliverableMetricRepository.findByMilestoneId(MILESTONE_ID)).thenReturn(Optional.empty());
         when(deliverableMetricRepository.save(any(DeliverableMetric.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
+        // verified-analytics-0804: manual self-report is only accepted when Meta verification fails.
+        when(verificationService.verify(any()))
+                .thenReturn(
+                        com.influora.service.verification.DeliverableVerificationService.Outcome
+                                .FALLBACK_API_ERROR);
 
         MetricsReportResponse response =
                 service.reportMetrics(principal, DELIVERABLE_ID, sampleMetricsRequest());
@@ -651,11 +660,36 @@ class CreatorDeliverableServiceTest {
         when(deliverableMetricRepository.findByMilestoneId(MILESTONE_ID)).thenReturn(Optional.empty());
         when(deliverableMetricRepository.save(any(DeliverableMetric.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
+        // verified-analytics-0804: manual self-report is only accepted when Meta verification fails.
+        when(verificationService.verify(any()))
+                .thenReturn(
+                        com.influora.service.verification.DeliverableVerificationService.Outcome
+                                .FALLBACK_API_ERROR);
 
         MetricsReportResponse response =
                 service.reportMetrics(principal, DELIVERABLE_ID, sampleMetricsRequest());
 
         assertEquals(DeliverableStatus.METRICS_REPORTED, response.status());
+    }
+
+    @Test
+    @DisplayName("reportMetrics: rejects manual entry when Meta verification succeeds (VERIFIED)")
+    void testReportMetricsRejectedWhenVerified() {
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        Deliverable deliverable = postedDeliverable();
+        when(deliverableRepository.findByIdAndCreatorUserId(DELIVERABLE_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(deliverable));
+        // verified-analytics-0804: Meta returned real numbers → manual self-report must be blocked.
+        when(verificationService.verify(any()))
+                .thenReturn(
+                        com.influora.service.verification.DeliverableVerificationService.Outcome
+                                .VERIFIED);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.reportMetrics(principal, DELIVERABLE_ID, sampleMetricsRequest()));
+        assertEquals("MANUAL_METRICS_NOT_ALLOWED", ex.getCode());
     }
 
     @Test

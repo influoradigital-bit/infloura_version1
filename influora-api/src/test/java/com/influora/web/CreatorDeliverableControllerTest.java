@@ -113,7 +113,10 @@ class CreatorDeliverableControllerTest {
                         null,
                         null,
                         null,
-                        new DeliverableActions(true, true, false));
+                        new DeliverableActions(true, true, false),
+                        null,
+                        null,
+                        false);
         when(creatorDeliverableService.getStatus(principal, DELIVERABLE_ID)).thenReturn(statusResponse);
 
         ResponseEntity<ApiResponse<DeliverableStatusResponse>> response =

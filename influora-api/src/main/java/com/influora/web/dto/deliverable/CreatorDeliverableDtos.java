@@ -42,9 +42,31 @@ public final class CreatorDeliverableDtos {
             String reviewNotes,
             Instant submittedAt,
             Instant reviewedAt,
-            DeliverableActions actions) {}
+            DeliverableActions actions,
+            /** Verified-analytics cached state (verified-analytics-0804). */
+            String metricSource,
+            Instant lastVerifiedAt,
+            boolean metaConnected) {}
 
     public record DeliverableActions(boolean canUploadNewVersion, boolean canSubmit, boolean canReportMetrics) {}
+
+    /**
+     * {@code POST /creator/deliverables/{id}/verify} — live verification attempt state
+     * (verified-analytics-0804). {@code outcome} is a {@code DeliverableVerificationService.Outcome}
+     * name; {@code manualFallbackAllowed} is true ONLY when Meta genuinely failed for a connected
+     * account (never for VERIFIED or not-connected). Verified numbers, when present, are the real
+     * aggregates persisted by the verification service.
+     */
+    public record VerificationStateResponse(
+            String deliverableId,
+            String outcome,
+            String metricSource,
+            Long reach,
+            Long impressions,
+            Long engagements,
+            Instant lastVerifiedAt,
+            boolean metaConnected,
+            boolean manualFallbackAllowed) {}
 
     /** {@code POST /creator/deliverables/{id}/submit} — optional caption/hashtags/notes on lean row. */
     public record SubmitRequest(String finalCaption, List<String> hashtags, String notes) {}
