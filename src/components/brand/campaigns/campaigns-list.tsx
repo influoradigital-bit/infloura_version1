@@ -1,14 +1,14 @@
 import * as React from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   Plus,
   Search,
-  Filter,
   MoreHorizontal,
   Eye,
   Edit,
   Trash2,
   Copy,
+  LayoutTemplate,
   Pause,
   Play,
   Calendar,
@@ -24,7 +24,6 @@ import {
   Loader2,
 } from 'lucide-react';
 
-import { cn } from '@/lib/utils';
 import { IconBadge } from '@/components/shared/icon-badge';
 import type { Campaign, CampaignStatus, Platform } from '@/lib/types';
 import { api, isApiLive, ApiError } from '@/lib/api';
@@ -35,7 +34,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -230,6 +229,10 @@ export function CampaignsList() {
   const [pendingActionId, setPendingActionId] = React.useState<string | null>(null);
   // Delete goes through a confirm dialog (deleting was previously immediate + irreversible).
   const [deleteTarget, setDeleteTarget] = React.useState<CampaignRow | null>(null);
+  // Save-as-template (F: POST /campaign-templates) — turn an existing campaign into a reusable template.
+  const [saveTemplateTarget, setSaveTemplateTarget] = React.useState<CampaignRow | null>(null);
+  const [templateName, setTemplateName] = React.useState('');
+  const [templateBusy, setTemplateBusy] = React.useState(false);
   // Caller's own workspace role, for UX gating of Edit/Delete. Null = unknown (loading or the
   // members fetch failed) — we fail OPEN in that case (let the server enforce + show its clear
   // error) rather than wrongly disabling a real Owner's buttons on a flaky request.
@@ -320,6 +323,25 @@ export function CampaignsList() {
       });
     } finally {
       setPendingActionId(null);
+    }
+  };
+
+  const handleSaveAsTemplate = async () => {
+    if (!saveTemplateTarget || !templateName.trim()) return;
+    setTemplateBusy(true);
+    try {
+      await api.campaignTemplates.create({ campaignId: saveTemplateTarget.id, name: templateName.trim() });
+      toast({ title: 'Saved as template', description: `"${templateName.trim()}" is now reusable when creating a campaign.` });
+      setSaveTemplateTarget(null);
+      setTemplateName('');
+    } catch (e) {
+      toast({
+        title: 'Could not save template',
+        description: e instanceof ApiError ? e.message : 'Try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setTemplateBusy(false);
     }
   };
 
@@ -714,6 +736,13 @@ export function CampaignsList() {
                         <Copy className="mr-2 h-4 w-4" />
                         Duplicate
                       </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={pendingActionId === campaign.id}
+                        onClick={() => setSaveTemplateTarget(campaign)}
+                      >
+                        <LayoutTemplate className="mr-2 h-4 w-4" />
+                        Save as template
+                      </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       {campaign.status === 'ACTIVE' ? (
                         <DropdownMenuItem
@@ -883,6 +912,13 @@ export function CampaignsList() {
                         <Copy className="mr-2 h-4 w-4" />
                         Duplicate
                       </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={pendingActionId === campaign.id}
+                        onClick={() => setSaveTemplateTarget(campaign)}
+                      >
+                        <LayoutTemplate className="mr-2 h-4 w-4" />
+                        Save as template
+                      </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       {campaign.status === 'ACTIVE' ? (
                         <DropdownMenuItem
@@ -942,6 +978,39 @@ export function CampaignsList() {
               }}
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!saveTemplateTarget}
+        onOpenChange={(open) => { if (!open) { setSaveTemplateTarget(null); setTemplateName(''); } }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save as template</AlertDialogTitle>
+            <AlertDialogDescription>
+              Reuse &ldquo;{saveTemplateTarget?.title}&rdquo;&rsquo;s setup when creating future
+              campaigns. Give this template a name.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Input
+              autoFocus
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value.slice(0, 200))}
+              placeholder="e.g. Diwali creator drop"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={templateBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={templateBusy || !templateName.trim()}
+              onClick={(e) => { e.preventDefault(); void handleSaveAsTemplate(); }}
+            >
+              {templateBusy && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+              Save template
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

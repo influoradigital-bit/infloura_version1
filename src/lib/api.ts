@@ -1413,6 +1413,21 @@ export const campaignTemplates = {
     isLive()
       ? http.request<CampaignTemplateResponse>('GET', `/campaign-templates/${templateId}`)
       : Promise.reject(new ApiError('NOT_AVAILABLE', 'Templates are not available in mock mode')),
+
+  /**
+   * POST /campaign-templates (CampaignTemplateController.java:54, @RequiresPlan CAMPAIGN_TEMPLATES)
+   * — save an existing campaign as a reusable CUSTOM template for the workspace.
+   */
+  create: (payload: { campaignId: string; name: string; description?: string }) =>
+    isLive()
+      ? http.request<CampaignTemplateResponse>('POST', '/campaign-templates', { body: payload })
+      : mockOr<CampaignTemplateResponse>({ id: 'tpl_new', name: payload.name } as CampaignTemplateResponse),
+
+  /** DELETE /campaign-templates/:id (CampaignTemplateController.java:62) — remove a CUSTOM template. */
+  remove: (templateId: string) =>
+    isLive()
+      ? http.request<{ ok: boolean }>('DELETE', `/campaign-templates/${templateId}`)
+      : mockOr<{ ok: boolean }>({ ok: true }),
 };
 
 // ---------------------------------------------------------------------------
@@ -3710,6 +3725,17 @@ export const brandReviews = {
     const rows = await http.request<ReviewApiResponse[]>('GET', '/brand/reviews/received', { role: 'brand' });
     return rows.map(mapReviewFromApi);
   },
+
+  /**
+   * POST /brand/reviews/:id/flag (BrandReviewController.java:51) — flag a received review as
+   * inappropriate/inaccurate for moderator attention. `reason` is required (max 255 chars).
+   */
+  flag: (reviewId: string, reason: string) =>
+    isLive()
+      ? http.request<{ flagId: string; status: string }>(
+          'POST', `/brand/reviews/${reviewId}/flag`, { role: 'brand', body: { reason } },
+        )
+      : mockOr<{ flagId: string; status: string }>({ flagId: 'flag_new', status: 'PENDING' }),
 };
 
 // ---------------------------------------------------------------------------
@@ -4007,6 +4033,44 @@ export interface CreatorDeliverableUploadResponse {
   status: CreatorDeliverableRowStatus;
 }
 
+/** GET /creator/deliverables/:id/status response — DeliverableStatusResponse (CreatorDeliverableDtos.java:29). */
+export interface CreatorDeliverableStatusResponse {
+  id: string;
+  collaborationId: string;
+  title: string;
+  status: CreatorDeliverableRowStatus;
+  versionNumber: number;
+  revisionCount: number;
+  actions: { canUploadNewVersion: boolean; canSubmit: boolean; canReportMetrics: boolean };
+}
+
+/** POST /creator/deliverables/:id/mark-posted response — MarkPostedResponse (CreatorDeliverableDtos.java:96). */
+export interface CreatorDeliverableMarkPostedResponse {
+  id: string;
+  status: CreatorDeliverableRowStatus;
+  postUrl: string;
+  postedAt: string;
+}
+
+/** POST /creator/deliverables/:id/metrics response — MetricsReportResponse (CreatorDeliverableDtos.java:81). */
+export interface CreatorDeliverableMetricsReportResponse {
+  deliverableId: string;
+  status: CreatorDeliverableRowStatus;
+  metrics: CreatorDeliverableMetricsPayload;
+  engagementRate: number | null;
+  verificationStatus: string;
+  message: string;
+}
+
+/** POST /creator/deliverables/:id/proof response — ProofUploadResponse (CreatorDeliverableDtos.java:90). */
+export interface CreatorDeliverableProofResponse {
+  id: string;
+  key: string;
+  url: string;
+  uploadedAt: string;
+  urlExpiresAt: string;
+}
+
 export const creatorDeliverables = {
   /** GET /creator/deliverables?collaboration_id= (CreatorDeliverableController.java:44) */
   listForDeal: (collaborationId: string) =>
@@ -4043,6 +4107,86 @@ export const creatorDeliverables = {
     (opts.hashtags ?? []).forEach((h) => formData.append('hashtags', h));
     return http.uploadForm<CreatorDeliverableUploadResponse>(
       `/creator/deliverables/${deliverableId}/upload`,
+      formData,
+      'creator',
+    );
+  },
+
+  /** GET /creator/deliverables/:id/status (CreatorDeliverableController.java:70) */
+  getStatus: (deliverableId: string) =>
+    isLive()
+      ? http.request<CreatorDeliverableStatusResponse>(
+          'GET',
+          `/creator/deliverables/${deliverableId}/status`,
+          { role: 'creator' },
+        )
+      : mockOr<CreatorDeliverableStatusResponse>({
+          id: deliverableId,
+          collaborationId: 'mock_deal',
+          title: 'Instagram Reel',
+          status: 'APPROVED' as CreatorDeliverableRowStatus,
+          versionNumber: 1,
+          revisionCount: 0,
+          actions: { canUploadNewVersion: false, canSubmit: false, canReportMetrics: true },
+        }),
+
+  /** POST /creator/deliverables/:id/mark-posted — DPF-3 live post URL (CreatorDeliverableController.java:104) */
+  markPosted: (deliverableId: string, livePostUrl: string) =>
+    isLive()
+      ? http.request<CreatorDeliverableMarkPostedResponse>(
+          'POST',
+          `/creator/deliverables/${deliverableId}/mark-posted`,
+          { body: { livePostUrl }, role: 'creator' },
+        )
+      : mockOr<CreatorDeliverableMarkPostedResponse>({
+          id: deliverableId,
+          status: 'POSTED' as CreatorDeliverableRowStatus,
+          postUrl: livePostUrl,
+          postedAt: '2026-08-04T00:00:00Z',
+        }),
+
+  /** POST /creator/deliverables/:id/metrics — self-reported performance (CreatorDeliverableController.java:86) */
+  reportMetrics: (
+    deliverableId: string,
+    payload: {
+      metrics: CreatorDeliverableMetricsPayload;
+      proofScreenshots?: string[];
+      reportedDaysAfterPosting?: number;
+    },
+  ) =>
+    isLive()
+      ? http.request<CreatorDeliverableMetricsReportResponse>(
+          'POST',
+          `/creator/deliverables/${deliverableId}/metrics`,
+          { body: payload, role: 'creator' },
+        )
+      : mockOr<CreatorDeliverableMetricsReportResponse>({
+          deliverableId,
+          status: 'METRICS_REPORTED' as CreatorDeliverableRowStatus,
+          metrics: payload.metrics,
+          engagementRate: null,
+          verificationStatus: 'PENDING',
+          message: 'Metrics recorded',
+        }),
+
+  /**
+   * POST /creator/deliverables/:id/proof — multipart, part name `screenshot`
+   * (CreatorDeliverableController.java:95). Ownership-bound proof of posting.
+   */
+  uploadProof: (deliverableId: string, screenshot: File) => {
+    if (!isLive()) {
+      return mockOr<CreatorDeliverableProofResponse>({
+        id: `mock_${deliverableId}`,
+        key: `mock_${screenshot.name}`,
+        url: URL.createObjectURL(screenshot),
+        uploadedAt: '2026-08-04T00:00:00Z',
+        urlExpiresAt: '2026-08-05T00:00:00Z',
+      });
+    }
+    const formData = new FormData();
+    formData.append('screenshot', screenshot);
+    return http.uploadForm<CreatorDeliverableProofResponse>(
+      `/creator/deliverables/${deliverableId}/proof`,
       formData,
       'creator',
     );

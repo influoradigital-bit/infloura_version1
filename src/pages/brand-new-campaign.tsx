@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, LayoutTemplate, Loader2, Megaphone, UserRoundSearch, Zap } from 'lucide-react';
+import { ArrowRight, LayoutTemplate, Loader2, Megaphone, Trash2, UserRoundSearch, Zap } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import type { CampaignType, ContentType, Platform } from '@/lib/types';
@@ -85,6 +85,21 @@ export default function BrandNewCampaignPage() {
   const [templatesLoading, setTemplatesLoading] = React.useState(false);
   const [templatesError, setTemplatesError] = React.useState<string | null>(null);
   const [applyingTemplateId, setApplyingTemplateId] = React.useState<string | null>(null);
+  // Delete a CUSTOM template (F: DELETE /campaign-templates/:id).
+  const [deletingTemplateId, setDeletingTemplateId] = React.useState<string | null>(null);
+
+  const handleDeleteTemplate = async (t: CampaignTemplateResponse) => {
+    setDeletingTemplateId(t.id);
+    setTemplateApplyError(null);
+    try {
+      await api.campaignTemplates.remove(t.id);
+      setTemplates((prev) => prev.filter((x) => x.id !== t.id));
+    } catch (err) {
+      setTemplateApplyError(err instanceof ApiError ? err.message : `Could not delete "${t.name}".`);
+    } finally {
+      setDeletingTemplateId(null);
+    }
+  };
   const [templateApplyError, setTemplateApplyError] = React.useState<string | null>(null);
   const [templateInitialValues, setTemplateInitialValues] = React.useState<Partial<CampaignFormData> | null>(
     null,
@@ -257,29 +272,45 @@ export default function BrandNewCampaignPage() {
             {!templatesLoading &&
               !templatesError &&
               templates.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  disabled={applyingTemplateId !== null}
-                  onClick={() => void applyTemplate(t.id)}
-                  className="flex w-full flex-col gap-1 rounded-lg border p-3 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{t.name}</span>
-                    {applyingTemplateId === t.id ? (
-                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
-                    ) : (
-                      t.scope === 'SYSTEM' && (
-                        <Badge variant="outline" className="shrink-0 text-[10px]">
-                          Preset
-                        </Badge>
-                      )
+                <div key={t.id} className="flex items-stretch gap-1">
+                  <button
+                    type="button"
+                    disabled={applyingTemplateId !== null || deletingTemplateId !== null}
+                    onClick={() => void applyTemplate(t.id)}
+                    className="flex flex-1 flex-col gap-1 rounded-lg border p-3 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{t.name}</span>
+                      {applyingTemplateId === t.id ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
+                      ) : (
+                        t.scope === 'SYSTEM' && (
+                          <Badge variant="outline" className="shrink-0 text-[10px]">
+                            Preset
+                          </Badge>
+                        )
+                      )}
+                    </div>
+                    {t.description && (
+                      <p className="text-sm text-muted-foreground">{t.description}</p>
                     )}
-                  </div>
-                  {t.description && (
-                    <p className="text-sm text-muted-foreground">{t.description}</p>
+                  </button>
+                  {t.scope === 'CUSTOM' && (
+                    <button
+                      type="button"
+                      aria-label={`Delete template ${t.name}`}
+                      disabled={deletingTemplateId !== null || applyingTemplateId !== null}
+                      onClick={() => void handleDeleteTemplate(t)}
+                      className="flex w-10 shrink-0 items-center justify-center rounded-lg border text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {deletingTemplateId === t.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      )}
+                    </button>
                   )}
-                </button>
+                </div>
               ))}
           </div>
           {templateApplyError && (
