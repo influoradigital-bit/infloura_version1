@@ -19,7 +19,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -33,8 +32,11 @@ import { useToast } from '@/hooks/use-toast';
  *   3. You're in (tour)  → api.onboarding.completeCreator
  *
  * Deferred (collected just-in-time):
- *   - PAN/Aadhaar KYC  → first withdrawal  (api.onboarding.submitCreatorKyc)
- *   - Payout method    → first withdrawal  (api.onboarding.saveCreatorPayout)
+ *   - PAN/Aadhaar KYC  → Settings › Identity Verification, and required before the
+ *                        first withdrawal  (api.onboarding.submitCreatorKyc,
+ *                        captured by KycIdentityForm)
+ *   - Payout method    → first withdrawal, via the wallet
+ *                        (GET/POST /wallet/payout-methods in creator-wallet.tsx)
  */
 
 const STEPS = [

@@ -1041,19 +1041,11 @@ export const onboarding = {
         })
       : mockOr({ kycStatus: 'PENDING' as const }),
 
-  /**
-   * POST /onboarding/creator/payout  — deferred to first withdrawal.
-   */
-  saveCreatorPayout: (payload:
-    | { method: 'upi'; upiId: string }
-    | { method: 'bank'; bankAccount: string; ifsc: string; accountName: string }
-  ) =>
-    isLive()
-      ? http.request<{ payoutId: string }>('POST', '/onboarding/creator/payout', {
-          body: payload,
-          role: 'creator',
-        })
-      : mockOr({ payoutId: 'po_1' }),
+  // NOTE: creator payout-method capture is NOT here. It is handled by the wallet
+  // (`GET/POST /wallet/payout-methods`, wired in creator-wallet.tsx) at first
+  // withdrawal. The former `saveCreatorPayout` (`POST /onboarding/creator/payout`)
+  // wrapper was removed 2026-08-04 as dead/superseded (0 callers) — see
+  // PROJECT-DEEP-AUDIT-2026-08-04.md §5.
 };
 
 // ---------------------------------------------------------------------------

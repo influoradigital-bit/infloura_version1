@@ -1130,10 +1130,11 @@ export default function CreatorChatPage() {
     ? liveShipment?.status === 'SHIPPED' || liveShipment?.status === 'RECEIVED' || liveShipment?.status === 'DAMAGED'
     : true; // mock/demo mode: keep the prior "brand always already shipped" assumption so the click-through demo still works
 
-  // Display fields ShipmentCard needs beyond status/address. Priya's Shipment entity has
-  // no `items`/`estimatedDelivery` fields at all (single `productName` string, no ETA) —
-  // those two stay demo placeholders in both modes until a future schema addition;
-  // courier/tracking/notes come from the real record once liveApi is on.
+  // Display fields ShipmentCard needs beyond status/address. Priya's Shipment entity has a
+  // single `productName` string and no ETA field. In live mode `items` is derived from the
+  // real `productName` (flattened to qty 1); only `estimatedDelivery` stays a hardcoded
+  // placeholder in both modes until a future schema addition. Courier/tracking/notes come
+  // from the real record once liveApi is on.
   const shipmentDisplay = React.useMemo(() => {
     if (liveApi) {
       return {

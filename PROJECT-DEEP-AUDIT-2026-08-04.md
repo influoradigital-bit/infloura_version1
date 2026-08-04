@@ -4,6 +4,12 @@
 **Method:** Static source analysis only. Four independent fresh-context audit agents (one per domain) each traced every feature from the UI → API client → backend controller route → service logic, reading primary source only (no prior audit doc trusted). Cross-checked by an independent connection reconciliation: every typed `request()` call diffed against all 277 backend routes by method + path.
 **Not verified:** Nothing was run live. "Working" = code-complete + correctly wired, **not** runtime-proven. The AI service refuses to boot without provisioned model keys, so all AI verdicts are code-truth only.
 
+> **Creator remediation update — 2026-08-04 (proof-os task `creator-fix-0804`).** The two genuinely-missing creator flows and the shipment wording were remediated after this audit; the **Creator** row and the sections marked *(remediated 2026-08-04)* below reflect the post-fix state:
+> - **KYC capture** — now built and reachable: `KycIdentityForm` (Settings › Identity Verification) → `useCreatorKyc` → `onboarding.submitCreatorKyc` → real `POST /onboarding/creator/kyc`. ⬜→✅.
+> - **Onboarding payout method** — the dead `saveCreatorPayout` wrapper was removed; payout-method capture already lives in the wallet (`/wallet/payout-methods`), so the row was a redundant duplicate and is dropped (not a separate feature).
+> - **Deal-room shipment** — wording corrected: in live mode `items` reflects the real `productName`; only `estimatedDelivery` is a hardcoded placeholder (no backend field). Still correctly PARTIAL.
+> Verified by `npx tsc --noEmit` (0 errors) + eslint (0 errors) on the changed files + call-site reachability greps. Ceiling: BELIEVED (static; no live HTTP). Brand numbers are unchanged here — they are governed by `BRAND-BLINDSPOT-AUDIT-2026-08-04.md`.
+
 ---
 
 ## 1. Executive Summary
@@ -12,14 +18,16 @@
 |---|---:|---:|---:|---:|---:|
 | **Admin** | 17 | 3 | 2 | 15 | 37 |
 | **Brand** | 53 | 6 | 0 | 10 | 69 |
-| **Creator** | 46 | 1 | 0 | 10 | 57 |
+| **Creator** | 47 | 1 | 0 | 8 | 56 |
 | **AI / Meera** | 27 | 6 | 0 | 1 | 34 |
-| **TOTAL** | **143** | **16** | **2** | **36** | **197** |
+| **TOTAL** | **144** | **16** | **2** | **34** | **196** |
+
+*Creator row is post-remediation (2026-08-04): +1 working (KYC built), −2 missing (KYC resolved; redundant onboarding-payout row dropped), −1 total. See the remediation update at the top.*
 
 **Completion metrics (transparent, code-truth):**
-- Fully working: **143 / 197 = 72.6%**
-- Wired to a real backend (working + partial): **159 / 197 = 80.7%**
-- Weighted (partial = ½): **151 / 197 = 76.6%**
+- Fully working: **144 / 196 = 73.5%**
+- Wired to a real backend (working + partial): **160 / 196 = 81.6%**
+- Weighted (partial = ½): **152 / 196 = 77.6%**
 
 ### The one-line story
 **The API wiring is excellent — the problems are not connection bugs.** All 140 typed `request()` calls in the main frontend client resolve to a real backend method+path (**zero phantom endpoints**). The real gaps are elsewhere: an unbuilt admin finance/escrow console (backend is ready, no UI), money flows that are code-complete but blocked on **infra/config** (live Razorpay keys) or **deliberate security scope exclusions**, analytics/scoring placeholders, and a handful of genuinely unbuilt user flows.
@@ -62,7 +70,7 @@ Both are low blast-radius (unreachable dead code), but they are genuine phantom 
 - 🟡 **TrendSpark nudge** — returns fallback templated placeholder copy when the AI client is unavailable. `CreatorNudgeService.java:215`.
 
 ### Creator (1)
-- 🟡 **Deal-room shipment** — routes match, but `items` / `estimatedDelivery` are demo placeholders even in live mode (no backend field). `creator-chat.tsx:1135,2302`.
+- 🟡 **Deal-room shipment** *(wording corrected 2026-08-04)* — routes match, and in **live mode `items` reflects the real `productName`** (`creator-chat.tsx:1140`, flattened to qty 1); only **`estimatedDelivery` is a hardcoded placeholder even in live mode** (`creator-chat.tsx:2313` = `now + 3d`, no backend field). PARTIAL on the strength of `estimatedDelivery` alone.
 
 ### AI / Meera (6)
 - 🟡 **Meera streaming generation** — the browser SSE path to Python `/chat` is fully built but short-circuited: the frontend returns the sync `reply` and `return`s **before** `stream.open`. Also key-gated. `MeeraChatPanel.tsx:487-495`.
@@ -80,8 +88,8 @@ Both are low blast-radius (unreachable dead code), but they are genuine phantom 
 ### Genuinely unbuilt user-facing features (build these)
 - ⬜ **Admin Finance / Escrow / Revenue console UI** — backend endpoints `/admin/finance/revenue`, `/admin/finance/escrow`, `/admin/escrow/flagged`, `/admin/dashboard/financial`, `/admin/campaigns/at-risk`, `/admin/campaigns/hype/ops`, `/admin/moderation/suspensions`, `/admin/marketing/reputation`, `/admin/audit/entity/*` all **exist and are real**, but the only finance UI is `FeeControlPanel.tsx`. No escrow/payout/revenue/at-risk console consumes them.
 - ⬜ **Admin marketing analytics** (acquisition/growth) + **appeal review** + **escrow mutate** — parked with typed `unavailable()`, no network call, no backend.
-- ⬜ **Creator KYC (PAN/Aadhaar)** — `submitCreatorKyc` wrapper exists (`api.ts:1036`) but is **never called**; no KYC capture UI. Backend `POST /onboarding/creator/kyc` orphaned.
-- ⬜ **Creator onboarding payout method** — `saveCreatorPayout` (`api.ts:1047`) never invoked; "deferred to first withdrawal" but withdrawal never calls it. (Payout methods *are* handled separately via `/wallet/payout-methods`.)
+- ✅ **Creator KYC (PAN/Aadhaar)** *(remediated 2026-08-04 — was ⬜ Missing)* — now built and reachable: `KycIdentityForm` mounted in Creator Settings (`creator-settings.tsx:472`, opened from the "Identity Verification (KYC)" menu row) → `useCreatorKyc` (`src/hooks/creator/useCreatorKyc.ts:44`) → `onboarding.submitCreatorKyc` → real `POST /onboarding/creator/kyc`. Selfie uploaded via `uploads.upload(file,'creator')`.
+- ~~⬜ **Creator onboarding payout method**~~ *(removed 2026-08-04 — redundant)* — the dead `saveCreatorPayout` (`POST /onboarding/creator/payout`) wrapper was deleted. Payout-method capture already lives in the wallet (`GET/POST /wallet/payout-methods`, wired in `creator-wallet.tsx`) and is counted there — this was a duplicate row, not a separate missing feature.
 
 ### Orphan backend routes (built, no consumer — lower priority)
 Creator deliverable `metrics` / `status` / `proof` / `mark-posted`; `POST /creator|brand/reviews/{id}/flag`; `GET /creator/analytics/me/media`; `GET /wallet/balance`; `POST /wallet/escrow/refund|payout`; `GET /contracts/unsigned`; `POST /deliverables/{id}/reject`; campaign-template create/delete; `POST /notifications/read-all|unsubscribe` (email-link handlers); extra creator-discovery routes (`/search`, `/featured`, `/{u}/similar`, `/suggestions`); most workspace-member management ops (accept/switch/remove/invites/revoke); `meera-help ?ask=` pre-seed constant.
@@ -117,7 +125,7 @@ Creator deliverable `metrics` / `status` / `proof` / `mark-posted`; `POST /creat
 2. **Build the Admin Finance/Escrow/Revenue console UI** — highest-value gap; the backend is already done and sitting idle.
 3. **Provision Razorpay live keys** — unblocks the entire money E2E (escrow fund/release, wallet, billing checkout) which is code-complete.
 4. **Security sign-off + scope for `request_payment`/`confirm_launch`** — unblocks Meera's money tools.
-5. **Build Creator KYC + onboarding-payout UI** — the only two genuinely missing creator flows.
+5. ~~**Build Creator KYC + onboarding-payout UI**~~ — ✅ **DONE 2026-08-04** (`creator-fix-0804`): KYC capture built in Settings; redundant onboarding-payout wrapper removed (payout lives in the wallet). No remaining genuinely-missing creator flow.
 6. **Finish analytics/scoring** — replace `QualityScoreService` audienceMatch placeholder and implement `FakeFollowerDetectionService`.
 
 ---

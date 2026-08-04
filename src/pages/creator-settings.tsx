@@ -28,6 +28,7 @@ import {
 import {
   Bell,
   Shield,
+  BadgeCheck,
   Lock,
   CreditCard,
   HelpCircle,
@@ -37,7 +38,6 @@ import {
   Smartphone,
   LogOut,
   Trash2,
-  Building,
   Loader2,
   CheckCircle2,
   AlertTriangle,
@@ -46,6 +46,7 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
 import { clearCreatorSession } from '@/lib/auth-session';
 import { TaxIdentityForm } from '@/components/creator/TaxIdentityForm';
+import { KycIdentityForm } from '@/components/creator/KycIdentityForm';
 import { api, isApiLive } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 
@@ -81,6 +82,7 @@ export default function CreatorSettingsPage() {
   const [emailPrefError, setEmailPrefError] = React.useState<string | null>(null);
 
   const [showTaxIdentityDialog, setShowTaxIdentityDialog] = React.useState(false);
+  const [showKycDialog, setShowKycDialog] = React.useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = React.useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [showLogoutDialog, setShowLogoutDialog] = React.useState(false);
@@ -215,6 +217,12 @@ export default function CreatorSettingsPage() {
           label: 'Tax Identity (GSTIN/PAN)',
           description: 'Add your GSTIN and PAN for correct invoicing',
           onClick: () => setShowTaxIdentityDialog(true),
+        },
+        {
+          icon: BadgeCheck,
+          label: 'Identity Verification (KYC)',
+          description: 'PAN, Aadhaar & selfie — required before your first withdrawal',
+          onClick: () => setShowKycDialog(true),
         },
         {
           icon: CreditCard,
@@ -449,6 +457,19 @@ export default function CreatorSettingsPage() {
             </DialogDescription>
           </DialogHeader>
           <TaxIdentityForm onSubmitted={() => {}} />
+        </DialogContent>
+      </Dialog>
+
+      {/* KYC Identity Dialog */}
+      <Dialog open={showKycDialog} onOpenChange={setShowKycDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Identity Verification (KYC)</DialogTitle>
+            <DialogDescription>
+              Verify your identity with your PAN, Aadhaar and a selfie so payouts can be released.
+            </DialogDescription>
+          </DialogHeader>
+          <KycIdentityForm onSubmitted={() => {}} />
         </DialogContent>
       </Dialog>
 
