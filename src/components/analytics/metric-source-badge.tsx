@@ -10,11 +10,10 @@ import * as React from 'react';
 import { BadgeCheck, Clock, UserPen } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import type { CreatorDeliverableMetricSource } from '@/lib/api';
 
 export interface MetricSourceBadgeProps {
   /** `PLATFORM_VERIFIED` | `CREATOR_REPORTED` | null/undefined (not yet verified). */
-  source: CreatorDeliverableMetricSource | null | undefined;
+  source: string | null | undefined;
   className?: string;
 }
 

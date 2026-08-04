@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { MetricSourceBadge } from '@/components/analytics/metric-source-badge';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -1445,28 +1446,26 @@ export default function BrandCampaignDetailPage() {
                 <TabsContent value="deliverables" className="mt-4 space-y-3">
                   {liveApi && completedAnalytics && completedAnalytics.deliverables.length > 0 ? (
                     <>
-                      <Alert>
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>Creator-reported</AlertTitle>
-                        <AlertDescription>
-                          These numbers are self-declared by creators, not pulled from a platform API.
-                        </AlertDescription>
-                      </Alert>
+                      {/* verified-analytics-0804 — per-row provenance, driven by the real
+                          DeliverableMetric.source (verified vs self-reported), not a static banner. */}
                       {completedAnalytics.deliverables.map((d) => (
                         <Card key={d.id}>
                           <CardContent className="p-4 flex items-center justify-between gap-4">
-                            <div className="grid grid-cols-3 gap-4 text-xs flex-1">
-                              <div>
-                                <p className="text-muted-foreground">Reach</p>
-                                <p className="font-bold">{formatNumber(d.reach)}</p>
-                              </div>
-                              <div>
-                                <p className="text-muted-foreground">Impressions</p>
-                                <p className="font-bold">{formatNumber(d.impressions)}</p>
-                              </div>
-                              <div>
-                                <p className="text-muted-foreground">Engagements</p>
-                                <p className="font-bold">{formatNumber(d.engagements)}</p>
+                            <div className="flex-1 space-y-2">
+                              <MetricSourceBadge source={d.source} />
+                              <div className="grid grid-cols-3 gap-4 text-xs">
+                                <div>
+                                  <p className="text-muted-foreground">Reach</p>
+                                  <p className="font-bold">{formatNumber(d.reach)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Impressions</p>
+                                  <p className="font-bold">{formatNumber(d.impressions)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Engagements</p>
+                                  <p className="font-bold">{formatNumber(d.engagements)}</p>
+                                </div>
                               </div>
                             </div>
                             {d.link && (
@@ -1597,15 +1596,35 @@ export default function BrandCampaignDetailPage() {
                   {liveApi && (
                     completedAnalytics ? (
                       <>
-                        <Alert>
-                          <AlertCircle className="h-4 w-4" />
-                          <AlertTitle>Creator-reported, not platform-verified</AlertTitle>
-                          <AlertDescription>
-                            These figures are self-declared by creators when they submit deliverables — this
-                            backend does not yet pull verified numbers from a platform API. Peer-benchmark
-                            comparison and AI-derived ROI aren&apos;t available (no backend support yet).
-                          </AlertDescription>
-                        </Alert>
+                        {/* verified-analytics-0804 — aggregate provenance derived from the real
+                            per-deliverable source, not a static "creator-reported" banner. */}
+                        {(() => {
+                          const dels = completedAnalytics.deliverables;
+                          const verifiedCount = dels.filter(
+                            (d) => d.source === 'PLATFORM_VERIFIED',
+                          ).length;
+                          const allVerified = dels.length > 0 && verifiedCount === dels.length;
+                          const someVerified = verifiedCount > 0;
+                          return (
+                            <Alert>
+                              <AlertCircle className="h-4 w-4" />
+                              <AlertTitle>
+                                {allVerified
+                                  ? 'Verified by Instagram'
+                                  : someVerified
+                                    ? `${verifiedCount} of ${dels.length} deliverables verified by Instagram`
+                                    : 'Creator-reported, not platform-verified'}
+                              </AlertTitle>
+                              <AlertDescription>
+                                {allVerified
+                                  ? 'These figures are pulled directly from Instagram via the Meta Graph API.'
+                                  : someVerified
+                                    ? 'Verified rows come straight from Instagram; the rest are creator self-reported. See the Deliverables tab for per-post provenance.'
+                                    : 'These figures are self-declared by creators when they submit deliverables. Verified numbers appear here once creators connect Instagram and the post is read via the Meta Graph API.'}
+                              </AlertDescription>
+                            </Alert>
+                          );
+                        })()}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                           {[
                             { label: 'Total Reach', value: formatNumber(completedAnalytics.totalReach), icon: <Eye className="h-4 w-4 text-blue-400" /> },
