@@ -3,9 +3,15 @@ package com.influora.web;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.admin.AdminFinanceService;
 import com.influora.web.dto.admin.AdminFinanceDtos.EscrowSummaryDto;
+import com.influora.web.dto.admin.AdminFinanceDtos.PayoutRetryResultDto;
+import com.influora.web.dto.admin.AdminFinanceDtos.ReconciliationItemDto;
+import java.util.List;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -38,5 +44,28 @@ public class AdminFinanceController {
     @GetMapping("/escrow")
     public EscrowSummaryDto getEscrowSummary(@AuthenticationPrincipal AuthPrincipal principal) {
         return adminFinanceService.getEscrowSummary(principal);
+    }
+
+    /**
+     * {@code GET /admin/finance/reconciliation?date=YYYY-MM-DD} → {@code ReconciliationItem[]}
+     * ({@code admin.types.ts}). Backs {@code financeApi.getReconciliation()}. Read-only; SUPER_ADMIN
+     * + ADMIN, MFA-gated (enforced in the service).
+     */
+    @GetMapping("/reconciliation")
+    public List<ReconciliationItemDto> getReconciliation(
+            @AuthenticationPrincipal AuthPrincipal principal, @RequestParam String date) {
+        return adminFinanceService.getReconciliation(principal, date);
+    }
+
+    /**
+     * {@code POST /admin/finance/payouts/{id}/retry} — re-initiates a definitively-failed creator
+     * payout. Backs {@code financeApi.retryPayout()}. Money movement; SUPER_ADMIN-only,
+     * MFA-gated (enforced in the service — see {@code AdminFinanceService#retryPayout}). See {@code
+     * PayoutReconciliationService#retryFailedPayout} for the full idempotency/re-credit guarantees.
+     */
+    @PostMapping("/payouts/{id}/retry")
+    public PayoutRetryResultDto retryPayout(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String id) {
+        return adminFinanceService.retryPayout(principal, id);
     }
 }

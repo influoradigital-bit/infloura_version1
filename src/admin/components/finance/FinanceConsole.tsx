@@ -12,11 +12,15 @@
  * Card-wrapped tables), split into tabs because this console has five
  * distinct data surfaces rather than one.
  *
- * Deliberately does NOT touch: payout retry, reconciliation, TDS report,
- * direct escrow hold/release/refund, acquisition/growth metrics, appeal
- * review, or suspension mutation — all `unavailable()` stubs with no backend
- * (see api-contracts.ts). `/admin/finance` (FeeControlPanel) already owns the
- * platform fee schedule; this console is additive, not a replacement.
+ * Reconciliation tab (ReconciliationPanel.tsx) wires the two finance routes
+ * that were flipped from `unavailable()` to real `apiRequest` 2026-08-04:
+ * `financeApi.getReconciliation(date)` and `financeApi.retryPayout(id)`.
+ * Still deliberately does NOT touch: reconciliation resolve/write-off, TDS
+ * report, direct escrow hold/release/refund, acquisition/growth metrics,
+ * appeal review, or suspension mutation — all remaining `unavailable()`
+ * stubs with no backend (see api-contracts.ts). `/admin/finance`
+ * (FeeControlPanel) already owns the platform fee schedule; this console is
+ * additive, not a replacement.
  */
 
 import { useState } from 'react';
@@ -26,6 +30,7 @@ import {
   Clock,
   Flag,
   Gauge,
+  ListChecks,
   ScrollText,
   ShieldOff,
   Sparkles,
@@ -56,6 +61,7 @@ import KpiCard from '../dashboard/KpiCard';
 import { useFinanceConsole, type FinancialPeriod } from '../../hooks/useFinanceConsole';
 import RevenueRangePanel from './RevenueRangePanel';
 import EntityAuditPanel from './EntityAuditPanel';
+import ReconciliationPanel from './ReconciliationPanel';
 
 // ============================================
 // FORMATTING
@@ -242,6 +248,10 @@ export default function FinanceConsole({ className }: FinanceConsoleProps) {
           <TabsTrigger value="entity-audit">
             <ScrollText className="size-4" aria-hidden="true" />
             Entity Audit
+          </TabsTrigger>
+          <TabsTrigger value="reconciliation">
+            <ListChecks className="size-4" aria-hidden="true" />
+            Reconciliation
           </TabsTrigger>
         </TabsList>
 
@@ -700,6 +710,11 @@ export default function FinanceConsole({ className }: FinanceConsoleProps) {
         {/* ---------------- Entity Audit (on-demand lookup) ---------------- */}
         <TabsContent value="entity-audit" className="flex flex-col gap-4">
           <EntityAuditPanel />
+        </TabsContent>
+
+        {/* ---------------- Reconciliation (on-demand, per-date) ---------------- */}
+        <TabsContent value="reconciliation" className="flex flex-col gap-4">
+          <ReconciliationPanel />
         </TabsContent>
       </Tabs>
     </div>

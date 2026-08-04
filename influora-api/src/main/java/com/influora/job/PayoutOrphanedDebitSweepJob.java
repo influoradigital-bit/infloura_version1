@@ -29,6 +29,14 @@ import org.springframework.stereotype.Component;
  * succeeded) and {@link PayoutReconciliationService#reconcileOrphanedPendingPayout} for the actual
  * retry-or-reverse resolution this job triggers per stuck row.
  *
+ * <p>[Red-team F2 fix] Also sweeps the SAME crash window for the admin payout-retry path ({@code
+ * PayoutReconciliationService#retryFailedPayout}): a retry attempt debits the creator's wallet
+ * again before its own RazorpayX call, but — unlike the original queue-time debit — never
+ * transitions the row into {@link Payout#STATUS_PENDING}, so it is invisible to the sweep above.
+ * {@link PayoutReconciliationService#reconcileFailedPayoutRetry} is that gap's counterpart,
+ * triggered here for every {@link Payout} sitting in a {@code FAILURE_STATUSES} status whose
+ * {@code updatedAt} is older than the same grace period.
+ *
  * <p>Same shape as {@code AffiliateEarningReconciliationJob}: single-flight guard, grace-period
  * query so this never races a payout that is still legitimately mid-flight on another node, and a
  * per-row try/catch so one bad row never aborts the rest of the sweep.
@@ -39,10 +47,11 @@ public class PayoutOrphanedDebitSweepJob {
     private static final Logger log = LoggerFactory.getLogger(PayoutOrphanedDebitSweepJob.class);
 
     /**
-     * How long a {@link Payout} may sit in {@link Payout#STATUS_PENDING} before this job treats it
-     * as orphaned rather than merely still in flight. Generous relative to how long a single
-     * {@code doQueuePayout} gateway call could plausibly take (fund-account resolution + one
-     * RazorpayX HTTP round trip).
+     * How long a {@link Payout} may sit in {@link Payout#STATUS_PENDING} (or, for the retry-path
+     * sweep, a {@code FAILURE_STATUSES} status with a stale {@code updatedAt}) before this job
+     * treats it as orphaned rather than merely still in flight. Generous relative to how long a
+     * single gateway call could plausibly take (fund-account resolution + one RazorpayX HTTP round
+     * trip).
      */
     static final Duration ORPHANED_DEBIT_GRACE_PERIOD = Duration.ofMinutes(15);
 
@@ -77,6 +86,11 @@ public class PayoutOrphanedDebitSweepJob {
     }
 
     private void runSweep() {
+        sweepOrphanedQueueDebits();
+        sweepStuckRetryDebits();
+    }
+
+    private void sweepOrphanedQueueDebits() {
         Instant olderThan = Instant.now().minus(ORPHANED_DEBIT_GRACE_PERIOD);
         List<Payout> stuck =
                 payoutRepository.findByStatusAndCreatedAtBefore(Payout.STATUS_PENDING, olderThan);
@@ -123,6 +137,56 @@ public class PayoutOrphanedDebitSweepJob {
                             "stuckPendingFound", stuck.size(),
                             "reconciled", reconciled,
                             "failed", failed));
+        }
+    }
+
+    /**
+     * [Red-team F2 fix] Retry-path counterpart to {@link #sweepOrphanedQueueDebits} — see class
+     * javadoc. {@code reconcileFailedPayoutRetry} itself checks whether each candidate actually has
+     * an orphaned retry debit before doing anything, so an ordinary (not stuck) failed payout that
+     * simply hasn't been retried yet is a safe, cheap no-op here.
+     */
+    private void sweepStuckRetryDebits() {
+        Instant olderThan = Instant.now().minus(ORPHANED_DEBIT_GRACE_PERIOD);
+        List<Payout> candidates =
+                payoutRepository.findByStatusInAndUpdatedAtBefore(
+                        PayoutReconciliationService.FAILURE_STATUSES, olderThan);
+
+        int checked = 0;
+        int failed = 0;
+
+        for (Payout payout : candidates) {
+            try {
+                reconciliationService.reconcileFailedPayoutRetry(payout);
+                checked++;
+            } catch (Exception e) {
+                // Same per-row isolation as sweepOrphanedQueueDebits — one payout's unexpected
+                // failure must never abort the rest of the sweep.
+                failed++;
+                log.error(
+                        "PayoutOrphanedDebitSweepJob: failed to reconcile retry state for payout {}"
+                                + " (milestone {}) — will retry next run",
+                        payout.getId(),
+                        payout.getMilestoneId(),
+                        e);
+            }
+        }
+
+        if (failed > 0) {
+            log.warn(
+                    "PayoutOrphanedDebitSweepJob: checked {} failed-status payout(s) for a stuck retry"
+                            + " debit, {} failed to reconcile",
+                    checked,
+                    failed);
+            auditLogService.recordToolCall(
+                    null,
+                    "PAYOUT_RETRY_SWEEP_COMPLETED",
+                    "SYSTEM",
+                    AuditLogService.OUTCOME_FAILED,
+                    null,
+                    null,
+                    null,
+                    Map.of("checked", checked, "failed", failed));
         }
     }
 }

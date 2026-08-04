@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -12,16 +13,25 @@ import com.influora.common.ApiException;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Dispute;
 import com.influora.domain.entity.EscrowHold;
+import com.influora.domain.entity.Payout;
 import com.influora.domain.enums.AdminRole;
 import com.influora.domain.enums.DisputeOpenerType;
 import com.influora.domain.enums.EscrowStatus;
+import com.influora.integration.razorpay.RazorpayClient;
+import com.influora.integration.razorpay.RazorpayXClient;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.DisputeRepository;
 import com.influora.repository.EscrowHoldRepository;
+import com.influora.repository.PayoutRepository;
+import com.influora.repository.WalletTopUpRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.PayoutReconciliationService;
 import com.influora.web.dto.admin.AdminFinanceDtos.EscrowSummaryDto;
 import com.influora.web.dto.admin.AdminFinanceDtos.FlaggedEscrowDto;
+import com.influora.web.dto.admin.AdminFinanceDtos.PayoutRetryResultDto;
+import com.influora.web.dto.admin.AdminFinanceDtos.ReconciliationItemDto;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -50,11 +60,24 @@ class AdminFinanceServiceTest {
     @Mock private EscrowHoldRepository escrowHoldRepository;
     @Mock private CampaignRepository campaignRepository;
     @Mock private DisputeRepository disputeRepository;
+    @Mock private PayoutRepository payoutRepository;
+    @Mock private WalletTopUpRepository walletTopUpRepository;
+    @Mock private RazorpayXClient razorpayXClient;
+    @Mock private RazorpayClient razorpayClient;
+    @Mock private PayoutReconciliationService payoutReconciliationService;
     @Mock private AuthPrincipal principal;
 
     private AdminFinanceService service() {
         return new AdminFinanceService(
-                adminContext, escrowHoldRepository, campaignRepository, disputeRepository);
+                adminContext,
+                escrowHoldRepository,
+                campaignRepository,
+                disputeRepository,
+                payoutRepository,
+                walletTopUpRepository,
+                razorpayXClient,
+                razorpayClient,
+                payoutReconciliationService);
     }
 
     // --- helpers: real entities via their builders (getters are non-mockable value accessors;
@@ -201,5 +224,131 @@ class AdminFinanceServiceTest {
         assertThrows(ApiException.class, () -> service().getFlaggedEscrows(principal));
 
         verify(escrowHoldRepository, never()).findByStatusOrderByCreatedAtDesc(any());
+    }
+
+    // ------------------------------------------------------------------
+    // getReconciliation
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("reconciliation: gates on SUPER_ADMIN+ADMIN before any read")
+    void getReconciliation_unauthorizedReadsNothing() {
+        when(adminContext.requireRoleWithMfaSatisfied(
+                        principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN))
+                .thenThrow(new ApiException("INSUFFICIENT_ROLE", "nope", HttpStatus.FORBIDDEN));
+
+        assertThrows(ApiException.class, () -> service().getReconciliation(principal, "2026-08-04"));
+
+        verify(payoutRepository, never()).findByCreatedAtBetween(any(), any());
+        verify(walletTopUpRepository, never()).findByCreatedAtBetween(any(), any());
+    }
+
+    @Test
+    @DisplayName("reconciliation: rejects a malformed date instead of a raw parse-exception 500")
+    void getReconciliation_malformedDateRejected() {
+        assertThrows(ApiException.class, () -> service().getReconciliation(principal, "not-a-date"));
+    }
+
+    @Test
+    @DisplayName(
+            "reconciliation: a queue-time payout with no real gateway id yet is PENDING, never a live"
+                    + " RazorpayX call")
+    void getReconciliation_payoutStillPendingNeverCallsGateway() {
+        Payout payout =
+                Payout.createPending(
+                        "01HRECONPAYOUT1234567",
+                        "01HRECONMILESTONE1234",
+                        "01HRECONCREATOR123456",
+                        "fa_recon",
+                        new BigDecimal("999.00"),
+                        "INR",
+                        "payout:recon",
+                        Instant.parse("2026-08-04T10:00:00Z"));
+        when(payoutRepository.findByCreatedAtBetween(any(), any())).thenReturn(List.of(payout));
+        when(walletTopUpRepository.findByCreatedAtBetween(any(), any())).thenReturn(List.of());
+
+        List<ReconciliationItemDto> items = service().getReconciliation(principal, "2026-08-04");
+
+        verify(adminContext)
+                .requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN);
+        assertEquals(1, items.size());
+        assertEquals("PENDING", items.get(0).status());
+        assertEquals(999.00, items.get(0).internalAmount(), 1e-9);
+        verify(razorpayXClient, never()).fetchPayout(any());
+    }
+
+    @Test
+    @DisplayName(
+            "reconciliation: a gateway-confirmed payout with a stored webhookPayload is compared"
+                    + " WITHOUT a live RazorpayX call, and matching amounts/status report MATCHED")
+    void getReconciliation_payoutMatchedFromStoredWebhookPayload() {
+        Payout payout =
+                Payout.createQueued(
+                        "01HRECONPAYOUT2234567",
+                        "01HRECONMILESTONE2234",
+                        "01HRECONCREATOR223456",
+                        "payout_live_1",
+                        "fa_recon",
+                        new BigDecimal("500.00"),
+                        "INR",
+                        "processed",
+                        "payout:recon2",
+                        Instant.parse("2026-08-04T10:00:00Z"));
+        payout.confirmStatus(
+                "processed",
+                "{\"payload\":{\"payout\":{\"entity\":{\"amount\":50000,\"status\":\"processed\"}}}}");
+        when(payoutRepository.findByCreatedAtBetween(any(), any())).thenReturn(List.of(payout));
+        when(walletTopUpRepository.findByCreatedAtBetween(any(), any())).thenReturn(List.of());
+
+        List<ReconciliationItemDto> items = service().getReconciliation(principal, "2026-08-04");
+
+        assertEquals(1, items.size());
+        assertEquals("MATCHED", items.get(0).status());
+        assertEquals(500.0, items.get(0).razorpayAmount(), 1e-9);
+        assertEquals(0.0, items.get(0).variance(), 1e-9);
+        verify(razorpayXClient, never()).fetchPayout(any());
+    }
+
+    // ------------------------------------------------------------------
+    // retryPayout
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "retryPayout: gates on SUPER_ADMIN ONLY (red-team F3 -- ADMIN must be rejected, unlike"
+                    + " the read-only finance endpoints) before ever delegating to reconciliation")
+    void retryPayout_unauthorizedNeverDelegates() {
+        when(adminContext.requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN))
+                .thenThrow(new ApiException("INSUFFICIENT_ROLE", "nope", HttpStatus.FORBIDDEN));
+
+        assertThrows(ApiException.class, () -> service().retryPayout(principal, "p1"));
+
+        verify(payoutReconciliationService, never()).retryFailedPayout(anyString());
+    }
+
+    @Test
+    @DisplayName("retryPayout: authorized caller delegates to PayoutReconciliationService and maps the result")
+    void retryPayout_delegatesAndMapsResult() {
+        Payout payout =
+                Payout.createQueued(
+                        "01HRETRYPAYOUT123456",
+                        "01HRETRYMILESTONE1234",
+                        "01HRETRYCREATOR123456",
+                        "payout_retried_1",
+                        "fa_retry",
+                        new BigDecimal("750.00"),
+                        "INR",
+                        "queued",
+                        "payout:retry",
+                        Instant.parse("2026-08-04T10:00:00Z"));
+        when(payoutReconciliationService.retryFailedPayout("p1")).thenReturn(payout);
+
+        PayoutRetryResultDto result = service().retryPayout(principal, "p1");
+
+        verify(adminContext).requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN);
+        verify(payoutReconciliationService).retryFailedPayout("p1");
+        assertEquals("01HRETRYPAYOUT123456", result.payoutId());
+        assertEquals("queued", result.status());
+        assertEquals("payout_retried_1", result.razorpayPayoutId());
     }
 }

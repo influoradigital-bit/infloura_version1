@@ -27,7 +27,6 @@ import type {
   CampaignFilters,
   RevenueSnapshot,
   EscrowSummary,
-  PayoutQueueItem,
   ReconciliationItem,
   PlatformFeeConfigWire,
   PlatformFeeUpdateRequest,
@@ -359,14 +358,24 @@ export const financeApi = {
 
   // getPayoutQueue REMOVED (2026-08-04, admin-fix-0804): called GET /admin/finance/payouts,
   // a phantom route no controller exposes; had zero UI callers (dead code). Deleted per
-  // PROJECT-DEEP-AUDIT §3 BROKEN #1. Payout retry stays as an explicit unavailable() stub below.
+  // PROJECT-DEEP-AUDIT §3 BROKEN #1.
+  //
+  // retryPayout wired 2026-08-04 (admin-finance-payout-retry): backed by real
+  // POST /admin/finance/payouts/{id}/retry (AdminFinanceController -> AdminFinanceService ->
+  // PayoutReconciliationService#retryFailedPayout — live RazorpayX rail, not the Route epic; that
+  // stub comment was stale). Response shape is the retried Payout row's own state, not
+  // PayoutQueueItem (which needs TDS/creator/campaign fields this endpoint has no data for and
+  // must never fabricate).
   retryPayout: (id: string) =>
-    unavailable<PayoutQueueItem>(`payout ${id} retry — blocked on Razorpay Route epic (Tier C)`),
+    apiRequest<{
+      payoutId: string;
+      status: string;
+      razorpayPayoutId: string;
+      updatedAt: string;
+    }>(`/finance/payouts/${id}/retry`, { method: 'POST' }),
 
   getReconciliation: (date: string) =>
-    unavailable<ReconciliationItem[]>(
-      `reconciliation (${date}) — PayoutReconciliationService is webhook-only, no admin read model yet (Tier A pending)`
-    ),
+    apiRequest<ReconciliationItem[]>(`/finance/reconciliation?date=${date}`),
 
   resolveReconciliation: (id: string, resolution: 'MATCH' | 'WRITE_OFF', reason: string) =>
     unavailable<ReconciliationItem>(

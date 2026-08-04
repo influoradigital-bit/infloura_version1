@@ -60,4 +60,47 @@ public final class AdminFinanceDtos {
             double amount,
             String flagReason,
             String createdAt) {}
+
+    /**
+     * {@code GET /admin/finance/reconciliation?date=YYYY-MM-DD} — one row per {@link
+     * com.influora.domain.entity.Payout}/{@link com.influora.domain.entity.WalletTopUp} whose
+     * {@code createdAt} falls on {@code date}, internal ledger figures compared against RazorpayX's
+     * own record for the same gateway id. Mirrors {@code ReconciliationItem} in {@code
+     * admin.types.ts}. Read-only — no write/resolve action; see {@code AdminFinanceService
+     * #getReconciliation} javadoc for exactly how each field is derived and why a WRITE action
+     * (match/write-off) is explicitly out of scope (no persistence column exists for it).
+     *
+     * <ul>
+     *   <li>{@code id}/{@code internalId} — the {@code Payout}/{@code WalletTopUp} row's own id.
+     *       There is no separate stored reconciliation-row entity, so both are the same value.
+     *   <li>{@code razorpayId} — the gateway-side id ({@code Payout.razorpayPayoutId} /
+     *       {@code WalletTopUp.razorpayOrderId}); empty string if the gateway was never called yet
+     *       (queue-time {@code "pending:"} placeholder / no order id on the top-up).
+     *   <li>{@code razorpayAmount}/{@code internalAmount} — rupees, straight comparison; {@code
+     *       variance = razorpayAmount - internalAmount}.
+     *   <li>{@code status} — {@code MATCHED} (amounts agree and both sides report a consistent
+     *       terminal outcome), {@code MISMATCH} (amounts differ, or the two sides disagree on
+     *       outcome), or {@code PENDING} (gateway record not yet resolvable — no gateway id yet, or
+     *       the gateway's own status is still in-flight, or the live gateway lookup itself failed).
+     * </ul>
+     */
+    public record ReconciliationItemDto(
+            String id,
+            String razorpayId,
+            String internalId,
+            double razorpayAmount,
+            double internalAmount,
+            double variance,
+            String status,
+            String createdAt) {}
+
+    /**
+     * {@code POST /admin/finance/payouts/{id}/retry} — result of re-initiating a definitively-failed
+     * creator payout. Mirrors {@link com.influora.domain.entity.Payout}'s own state after {@code
+     * PayoutReconciliationService#retryFailedPayout} runs (either a fresh gateway confirmation on
+     * success, or {@code reversed} again if the retry itself also failed — never a fabricated
+     * "success").
+     */
+    public record PayoutRetryResultDto(
+            String payoutId, String status, String razorpayPayoutId, String updatedAt) {}
 }
