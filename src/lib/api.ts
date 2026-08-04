@@ -3454,6 +3454,16 @@ export const creatorAnalytics = {
     isLive()
       ? http.request<CreatorDemographics>('GET', '/creator/analytics/me/demographics', { role: 'creator' })
       : mockOr<CreatorDemographics>(emptyDemographics),
+
+  /**
+   * GET /creator/analytics/me/media — the authenticated creator's own per-post content
+   * performance (CreatorAnalyticsController.java:65). Principal-scoped self-service mirror of the
+   * brand-facing `/analytics/creators/:id/media`; renders in ContentPerformancePanel.
+   */
+  getMyMedia: (): Promise<ContentPerformanceItem[]> =>
+    isLive()
+      ? http.request<ContentPerformanceItem[]>('GET', '/creator/analytics/me/media', { role: 'creator' })
+      : mockOr<ContentPerformanceItem[]>([]),
 };
 
 // ---------------------------------------------------------------------------
@@ -3706,6 +3716,17 @@ export const creatorReviews = {
     const rows = await http.request<ReviewApiResponse[]>('GET', '/creator/reviews/received', { role: 'creator' });
     return rows.map(mapReviewFromApi);
   },
+
+  /**
+   * POST /creator/reviews/:id/flag (CreatorReviewController.java:51) — creator flags a received
+   * review as inappropriate/inaccurate for moderator attention. `reason` is required (max 255 chars).
+   */
+  flag: (reviewId: string, reason: string) =>
+    isLive()
+      ? http.request<{ flagId: string; status: string }>(
+          'POST', `/creator/reviews/${reviewId}/flag`, { role: 'creator', body: { reason } },
+        )
+      : mockOr<{ flagId: string; status: string }>({ flagId: 'flag_new', status: 'PENDING' }),
 };
 
 export const brandReviews = {
