@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import {
   Eye,
   EyeOff,
-  Upload,
   X,
   CheckCircle2,
   Building2,
@@ -806,6 +805,43 @@ export function CompanyDetailsStep({
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [isUploadingLogo, setIsUploadingLogo] = React.useState(false);
   const [logoProgress, setLogoProgress] = React.useState(0);
+  // F-0071: the workspace-URL field previously did local regex only and never
+  // asked the server whether the slug was free, so onboarding could submit a
+  // duplicate slug and 409 at completion. Debounced live availability check
+  // against GET /workspaces/slug-check. Fails open — a check error never blocks
+  // onboarding (the completion call remains the authoritative uniqueness guard).
+  const [slugStatus, setSlugStatus] = React.useState<'idle' | 'checking' | 'available' | 'taken'>(
+    'idle',
+  );
+  const [slugSuggestions, setSlugSuggestions] = React.useState<string[]>([]);
+
+  React.useEffect(() => {
+    const slug = data.companySlug;
+    if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+      setSlugStatus('idle');
+      setSlugSuggestions([]);
+      return;
+    }
+    setSlugStatus('checking');
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      try {
+        const res = await api.workspaces.checkSlug(slug);
+        if (cancelled) return;
+        setSlugStatus(res.available ? 'available' : 'taken');
+        setSlugSuggestions(res.available ? [] : res.suggestions);
+      } catch {
+        if (!cancelled) {
+          setSlugStatus('idle');
+          setSlugSuggestions([]);
+        }
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [data.companySlug]);
 
   const generateSlug = (name: string) =>
     name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -848,6 +884,7 @@ export function CompanyDetailsStep({
     if (!data.companyName) e.companyName = 'Required';
     if (!data.companySlug) e.companySlug = 'Required';
     else if (!/^[a-z0-9-]+$/.test(data.companySlug)) e.companySlug = 'Lowercase letters, numbers, hyphens only';
+    else if (slugStatus === 'taken') e.companySlug = 'That workspace URL is already taken';
     if (!data.industry) e.industry = 'Required';
     if (!data.companySize) e.companySize = 'Required';
     setErrors(e);
@@ -912,6 +949,34 @@ export function CompanyDetailsStep({
             />
           </div>
           {errors.companySlug && <p className="text-xs text-destructive-foreground">{errors.companySlug}</p>}
+          {!errors.companySlug && slugStatus === 'checking' && (
+            <p className="text-xs text-muted-foreground">Checking availability…</p>
+          )}
+          {!errors.companySlug && slugStatus === 'available' && (
+            <p className="text-xs text-stage-approved-fg">This workspace URL is available.</p>
+          )}
+          {!errors.companySlug && slugStatus === 'taken' && (
+            <div className="text-xs text-destructive-foreground">
+              <p>That workspace URL is taken.</p>
+              {slugSuggestions.length > 0 && (
+                <p className="mt-1 text-muted-foreground">
+                  Try:{' '}
+                  {slugSuggestions.slice(0, 3).map((s, i) => (
+                    <React.Fragment key={s}>
+                      {i > 0 && ', '}
+                      <button
+                        type="button"
+                        className="underline hover:text-foreground"
+                        onClick={() => onUpdate({ companySlug: s })}
+                      >
+                        {s}
+                      </button>
+                    </React.Fragment>
+                  ))}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Workspace type */}

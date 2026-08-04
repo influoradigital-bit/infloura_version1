@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Search,
   Megaphone,
   Users,
   FileText,
@@ -9,9 +8,6 @@ import {
   Settings,
   MessageSquare,
   Plus,
-  ArrowRight,
-  User,
-  Building2,
   LayoutDashboard,
   Target,
 } from 'lucide-react';
@@ -26,6 +22,7 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from '@/components/ui/command';
+import { isApiLive } from '@/lib/api';
 
 interface CommandBarProps {
   open: boolean;
@@ -68,15 +65,18 @@ const navItems = [
   { id: 'settings', title: 'Settings', description: 'Workspace settings', icon: Settings, action: '/brand/settings' },
 ];
 
-// Recent creators (mock)
-const recentCreators = [
+// Demo-only "Recent" fixtures. These carry fabricated ids that navigate to
+// non-existent /brand/creators/1 etc. routes, so they must NEVER render in a
+// live build — they are shown only in mock mode (F-0072). A real recent-items
+// feed would come from the campaigns/creators clients; until that exists, live
+// mode simply omits these sections rather than showing fake data.
+const demoRecentCreators = [
   { id: '1', name: 'Priya Sharma', handle: '@priyasharma', avatar: 'PS' },
   { id: '2', name: 'Arjun Kapoor', handle: '@arjunkapoor', avatar: 'AK' },
   { id: '3', name: 'Sneha Reddy', handle: '@snehareddy', avatar: 'SR' },
 ];
 
-// Recent campaigns (mock)
-const recentCampaigns = [
+const demoRecentCampaigns = [
   { id: '1', name: 'Summer Fashion', status: 'Active' },
   { id: '2', name: 'Tech Review Series', status: 'Active' },
   { id: '3', name: 'Wellness Campaign', status: 'Draft' },
@@ -85,6 +85,11 @@ const recentCampaigns = [
 export function CommandBar({ open, onOpenChange }: CommandBarProps) {
   const navigate = useNavigate();
   const [search, setSearch] = React.useState('');
+
+  // In live mode we have no recent-items feed yet, so we show nothing rather
+  // than fabricated demo rows that link to non-existent ids (F-0072).
+  const recentCreators = isApiLive() ? [] : demoRecentCreators;
+  const recentCampaigns = isApiLive() ? [] : demoRecentCampaigns;
 
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {

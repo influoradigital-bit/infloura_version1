@@ -1,7 +1,6 @@
 import * as React from 'react';
 import {
   CreditCard,
-  Check,
   Zap,
   Users,
   BarChart3,
@@ -9,9 +8,7 @@ import {
   FileText,
   Sparkles,
   TrendingUp,
-  Calendar,
   AlertCircle,
-  ExternalLink,
   Crown,
   Building2,
   Loader2,
@@ -24,14 +21,21 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { api, brandInvoicing, type BillingInvoice, type CampaignServiceInvoice, type PlatformCommissionInvoice } from '@/lib/api';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { api, ApiError, brandInvoicing, type BillingInvoice, type CampaignServiceInvoice, type PlatformCommissionInvoice } from '@/lib/api';
 import { useBilling } from '@/hooks/brand/useBilling';
+import { toast } from '@/hooks/use-toast';
 
 interface UsageMeterRow {
   metric: string;
@@ -238,6 +242,50 @@ export default function BrandBillingSettingsPage() {
     refetch,
   } = useBilling();
 
+  const [checkoutBusy, setCheckoutBusy] = React.useState(false);
+  const [cancelBusy, setCancelBusy] = React.useState(false);
+
+  // F-0070: initiate a real Razorpay checkout (POST /billing/checkout) and hand
+  // off to the hosted checkout URL. Live behaviour is gated on provisioned
+  // Razorpay keys — a placeholder key surfaces as an API error here, same as the
+  // escrow-fund path, rather than a silently dead button.
+  const handleUpgrade = async () => {
+    setCheckoutBusy(true);
+    try {
+      const { checkoutUrl } = await api.billing.initiateCheckout('PRO');
+      window.location.assign(checkoutUrl);
+    } catch (err) {
+      toast({
+        title: 'Could not start checkout',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+      setCheckoutBusy(false);
+    }
+  };
+
+  // F-0073: cancel an active subscription (POST /billing/cancel). Backend marks
+  // cancelAtPeriodEnd; access continues until the current period ends.
+  const handleCancel = async () => {
+    setCancelBusy(true);
+    try {
+      await api.billing.cancelSubscription();
+      toast({
+        title: 'Subscription cancelled',
+        description: 'Your plan stays active until the end of the current billing period.',
+      });
+      refetch();
+    } catch (err) {
+      toast({
+        title: 'Could not cancel subscription',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCancelBusy(false);
+    }
+  };
+
   if (isLoading && !planStatus) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -406,9 +454,39 @@ export default function BrandBillingSettingsPage() {
               <>
                 <Separator />
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Next billing date</span>
+                  <span className="text-muted-foreground">
+                    {subscription.cancelAtPeriodEnd ? 'Access until' : 'Next billing date'}
+                  </span>
                   <span className="font-medium">{formatDate(subscription.currentPeriodEnd)}</span>
                 </div>
+                {!subscription.cancelAtPeriodEnd && (
+                  <div className="flex justify-end">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={cancelBusy}>
+                          {cancelBusy && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+                          Cancel subscription
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Cancel your Pro subscription?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            You'll keep Pro features until{' '}
+                            {formatDate(subscription.currentPeriodEnd)}. After that your workspace
+                            returns to the Free plan. You can re-subscribe at any time.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Keep Pro</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleCancel}>
+                            Cancel subscription
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                )}
               </>
             )}
           </CardContent>
@@ -460,17 +538,14 @@ export default function BrandBillingSettingsPage() {
                       Start growing with Pro — {formatCurrency(4999)}/month
                     </p>
                   </div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button disabled className="gap-2">
-                        <Crown className="h-4 w-4" />
-                        Upgrade to Pro
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Coming soon — Razorpay checkout integration</p>
-                    </TooltipContent>
-                  </Tooltip>
+                  <Button className="gap-2" onClick={handleUpgrade} disabled={checkoutBusy}>
+                    {checkoutBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Crown className="h-4 w-4" />
+                    )}
+                    Upgrade to Pro
+                  </Button>
                 </div>
               </div>
             </CardContent>

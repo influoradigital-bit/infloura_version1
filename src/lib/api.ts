@@ -2923,13 +2923,22 @@ export const billing = {
       ? http.downloadBlob(`/billing/invoices/${encodeURIComponent(invoiceId)}/pdf`)
       : Promise.reject(new ApiError('NOT_AVAILABLE', 'Invoice PDFs are not available in mock mode')),
 
-  /** POST /billing/checkout — Phase 2 (Razorpay Subscriptions); backend stub throws NOT_YET_IMPLEMENTED today. */
+  /**
+   * POST /billing/checkout — real Razorpay Subscriptions checkout. SubscriptionService
+   * lazily backfills the Pro plan's razorpay_plan_id on first call and returns a hosted
+   * checkoutUrl. Live behaviour is gated on provisioned Razorpay keys (placeholder keys
+   * surface as an API error, same as escrow-fund) — not a stub.
+   */
   initiateCheckout: (planCode: 'FREE' | 'PRO') =>
     isLive()
       ? http.request<{ checkoutUrl: string }>('POST', '/billing/checkout', { body: { planCode } })
       : Promise.reject(new ApiError('NOT_YET_IMPLEMENTED', 'Razorpay checkout ships in Phase 2')),
 
-  /** POST /billing/cancel — Phase 2; backend stub throws NOT_YET_IMPLEMENTED today. */
+  /**
+   * POST /billing/cancel — real cancellation. SubscriptionService calls Razorpay
+   * cancelSubscription and persists cancelAtPeriodEnd=true; access continues until the
+   * period ends. Not a stub.
+   */
   cancelSubscription: () =>
     isLive()
       ? http.request<void>('POST', '/billing/cancel')
