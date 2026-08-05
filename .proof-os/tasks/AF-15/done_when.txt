@@ -1,0 +1,1 @@
+build.mvn.sh compiles influora-api (exit 0) with POST /notifications/read-all returning {ok} computed live from real repositories; independent fresh-context review returns REAL (no fabricated data, authz present)

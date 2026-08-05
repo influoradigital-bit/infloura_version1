@@ -167,8 +167,7 @@ export function CampaignStateMachine({
         {STATES.map((state, idx) => {
           const isCompleted = idx < currentIndex;
           const isCurrent = idx === currentIndex;
-          const StateIcon = state.icon;
-          
+
           return (
             <TooltipProvider key={state.id}>
               <Tooltip>
@@ -354,10 +353,3 @@ export function CampaignStateMachine({
     </div>
   );
 }
-
-// Export for use in campaigns list
-export function getStateConfig(state: CampaignState): StateConfig {
-  return STATES.find(s => s.id === state) || STATES[0];
-}
-
-export { STATES as CAMPAIGN_STATES };

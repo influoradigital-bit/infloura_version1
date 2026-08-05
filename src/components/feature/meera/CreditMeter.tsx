@@ -15,7 +15,7 @@
  *   - Voice reply: 4 credits
  */
 
-import { Sparkles, Infinity, AlertTriangle } from 'lucide-react';
+import { Sparkles, Infinity as InfinityIcon, AlertTriangle } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 
 import type { CreditState } from '@/hooks/useMeeraCredits';
@@ -66,7 +66,7 @@ export function CreditMeter({
   if (state === 'unlimited') {
     return (
       <div className={cn('flex items-center gap-1.5 text-xs', className)}>
-        <Infinity className="h-3.5 w-3.5 text-meera-escrow" />
+        <InfinityIcon className="h-3.5 w-3.5 text-meera-escrow" />
         <span className="text-meera-text-muted">Unlimited while live</span>
       </div>
     );
@@ -140,51 +140,6 @@ export function CreditMeter({
         </span>
       )}
     </div>
-  );
-}
-
-/**
- * Compact credit badge for tight spaces (e.g., mobile header)
- */
-export function CreditBadge({
-  state,
-  creditsRemaining,
-  className,
-}: {
-  state: CreditState;
-  creditsRemaining: number;
-  className?: string;
-}) {
-  if (state === 'unlimited') {
-    return (
-      <span className={cn('flex items-center gap-1 text-xs text-meera-escrow', className)}>
-        <Infinity className="h-3 w-3" />
-      </span>
-    );
-  }
-
-  if (state === 'exhausted') {
-    return (
-      <span className={cn('flex items-center gap-1 rounded-full bg-meera-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-meera-danger', className)}>
-        0
-      </span>
-    );
-  }
-
-  const isLow = state === 'low';
-
-  return (
-    <span
-      className={cn(
-        'flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums',
-        isLow
-          ? 'bg-meera-warning/10 text-meera-warning'
-          : 'bg-meera-accent-soft text-meera-accent',
-        className
-      )}
-    >
-      {creditsRemaining}
-    </span>
   );
 }
 

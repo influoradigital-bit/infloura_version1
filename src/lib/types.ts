@@ -184,18 +184,6 @@ export interface Workspace {
   updatedAt: Date;
 }
 
-export interface WorkspaceMember {
-  id: string;
-  workspaceId: string;
-  userId: string;
-  role: MemberRole;
-  permissions: string[];
-  invitedBy?: string;
-  invitedAt?: Date;
-  joinedAt?: Date;
-  isActive: boolean;
-}
-
 export interface Address {
   street?: string;
   city?: string;
@@ -424,36 +412,6 @@ export interface Deliverable {
   updatedAt: Date;
 }
 
-export interface DeliverableRevision {
-  id: string;
-  deliverableId: string;
-  version: number;
-  files: MediaFile[];
-  caption?: string;
-  notes?: string;
-  feedback?: RevisionFeedback;
-  submittedAt: Date;
-  reviewedAt?: Date;
-  reviewedBy?: string;
-}
-
-export interface MediaFile {
-  id: string;
-  url: string;
-  filename: string;
-  mimeType: string;
-  size: number;
-  thumbnailUrl?: string;
-}
-
-export interface RevisionFeedback {
-  status: 'APPROVED' | 'REVISION_REQUESTED' | 'REJECTED';
-  comments: string;
-  requestedChanges?: string[];
-  givenBy: string;
-  givenAt: Date;
-}
-
 // ============================================
 // FINANCIAL DOMAIN
 // ============================================
@@ -511,17 +469,6 @@ export interface DisputeResolution {
   resolvedBy: string;
 }
 
-export interface DisputeEvidence {
-  id: string;
-  disputeId: string;
-  submittedBy: string;
-  type: 'DOCUMENT' | 'IMAGE' | 'VIDEO' | 'MESSAGE' | 'OTHER';
-  title: string;
-  description?: string;
-  fileUrl?: string;
-  createdAt: Date;
-}
-
 // ============================================
 // SYSTEM DOMAIN
 // ============================================
@@ -539,21 +486,22 @@ export interface Notification {
   createdAt: Date;
 }
 
-export interface AuditLog {
-  id: string;
-  userId?: string;
-  action: string;
-  entityType: string;
-  entityId: string;
-  changes?: Record<string, unknown>;
-  ipAddress?: string;
-  userAgent?: string;
-  createdAt: Date;
-}
-
 // ============================================
 // CREATOR PROFILE (for discovery)
 // ============================================
+
+/**
+ * BR-18 — denormalized read of `creator_scores` (append-only, one row per creator per run).
+ * Mirrors the backend's canonical `DiscoveryDtos.CreatorScores(quality, authenticity,
+ * brandSafety)` projection exactly — do not add loose score fields elsewhere. Per Priya's
+ * Score Exposure rule, an absent score is `null`, never `0` — render it as "not yet scored".
+ * `brandSafety` is `null` for every creator until BR-42 ships.
+ */
+export interface CreatorScoresSummary {
+  quality: number | null;
+  authenticity: number | null;
+  brandSafety: number | null;
+}
 
 export interface CreatorProfile {
   id: string;
@@ -575,6 +523,8 @@ export interface CreatorProfile {
   portfolioItems: PortfolioItem[];
   languages?: string[];
   contentStyles?: string[];
+  /** Nullable nested scores object (BR-18) — absent/not-yet-computed scores are `null`, not `0`. */
+  scores?: CreatorScoresSummary | null;
 }
 
 export interface PlatformStats {

@@ -43,15 +43,3 @@ export function mapDealApiContractStatus(
       return undefined;
   }
 }
-
-export function canCreatorSignDealStatus(status: DealContractStatus): boolean {
-  return status === 'brand_signed';
-}
-
-export function dealHasContractFromApi(deal: {
-  contractId?: string;
-  status: string;
-}): boolean {
-  if (deal.contractId) return true;
-  return ['contracted', 'in_progress', 'review', 'completed'].includes(deal.status);
-}

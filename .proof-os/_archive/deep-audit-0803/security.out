@@ -1,0 +1,9 @@
+· npm audit --audit-level=high (budget 200s)
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+· gitleaks UNAVAILABLE — NO secret detection ran (not a pass; this gate ships no fallback scanner)
+VERDICT: broken (real findings above)
+NOT CHECKED: secrets ENTIRELY (gitleaks is absent and there is no fallback: live AWS keys, tokens or private keys in this tree would NOT have been seen); response headers (no live URL was given); SAST / taint analysis (no semgrep, codeql or equivalent runs here); licence compliance; authentication and authorisation logic; secrets in git HISTORY; container, IaC and CI-workflow configuration; runtime behaviour

@@ -1,0 +1,58 @@
+{
+ "rows": [
+  {
+   "subject": "src/components/brand/discover/creator-discovery.tsx:536 \u2014 post-submit redirect target",
+   "owner": "meera",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "node",
+    "command": "npx --no-install vitest run src/components/brand/discover/creator-discovery-redirect.test.tsx",
+    "result": "exit 1 \u2014 2 tests failed, both with AssertionError: expected '/brand/chat' to match /[?&](deal|creator)=/. After a successful deals.create or creators.invite the modal navigates to a bare /brand/chat carrying no identifier for the creator it just messaged",
+    "where": "src/components/brand/discover/creator-discovery.tsx:536"
+   }
+  },
+  {
+   "subject": "src/pages/brand-chat.tsx:926 \u2014 silent fallback to an arbitrary deal room",
+   "owner": "meera",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -n 'creatorIdFromUrl|dealIdFromUrl' src/pages/brand-chat.tsx",
+    "result": "the live-mode effect computes match from ?deal= then ?creator=, then runs setSelectedDeal(match || liveDealRooms[0]). With neither param present match is undefined, so the brand is dropped into liveDealRooms[0] \u2014 a different creator's thread \u2014 and when liveDealRooms is still empty the effect returns at :920 and selectedDeal stays null, so no conversation opens at all",
+    "where": "src/pages/brand-chat.tsx:926"
+   }
+  },
+  {
+   "subject": "?creator= identifier space vs Deal.counterpartyId",
+   "owner": "meera",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -n resolveCounterparty influora-api/.../DealService.java ; grep -n counterpartyId src/pages/brand-chat.tsx src/pages/brand-messages.tsx",
+    "result": "DealService.resolveCounterparty returns collaboration.getCreatorId() and resolves the profile with creatorProfileRepository.findByUserId(...), so counterpartyId is a USER id. brand-chat.tsx:209 and brand-messages.tsx:274 both key their room list on that value, while every ?creator= producer passes a CreatorProfile id (api.ts:1551 states the contract). The two lookups compare different id spaces, so even the callers that DO pass ?creator= fall through to index 0",
+    "where": "influora-api/src/main/java/com/influora/service/DealService.java:1138"
+   }
+  },
+  {
+   "subject": "brand messaging entry points \u2014 three callers, two destinations",
+   "owner": "ananya",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -rnE \"navigate\\(['\\`]/brand/(messages|chat)\" src/",
+    "result": "three entry points disagree: creator-discovery.tsx:536 goes to /brand/chat with no param, brand-campaign-detail.tsx:1224 goes to /brand/chat?creator=, brand-creator-profile.tsx:571 goes to /brand/messages?creator=. Two different message surfaces are registered in App.tsx (:235 /brand/chat, :259 /brand/messages) for the same user intent",
+    "where": "src/pages/brand-creator-profile.tsx:571"
+   }
+  }
+ ],
+ "not_checked": [
+  "whether the id-space mismatch alone would still break the redirect once creator-discovery passes a param \u2014 the new test covers only the missing-param half, not the User-id vs CreatorProfile-id half",
+  "whether /brand/chat or /brand/messages is the intended destination for this flow \u2014 that is a product decision, not an oracle's",
+  "whether the deal created by this submit is present in GET /deals by the time BrandChatPage mounts; no server was run, so the list-freshness race is unmeasured",
+  "runtime behaviour in a real browser \u2014 gates/e2e.sh had no URL and @playwright/test is not installed"
+ ]
+}

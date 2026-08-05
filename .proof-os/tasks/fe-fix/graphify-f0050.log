@@ -1,0 +1,20 @@
+Re-extracting code files in . (no LLM needed)...
+  AST extraction: 100/774 uncached files (12%) [12 workers]
+  AST extraction: 200/774 uncached files (25%) [12 workers]
+  AST extraction: 300/774 uncached files (38%) [12 workers]
+  AST extraction: 400/774 uncached files (51%) [12 workers]
+  AST extraction: 500/774 uncached files (64%) [12 workers]
+  AST extraction: 600/774 uncached files (77%) [12 workers]
+  AST extraction: 700/774 uncached files (90%) [12 workers]
+  AST extraction: 774/774 uncached files (100%) [12 workers]
+  warning: 129 source file(s) produced zero nodes and are absent from the graph: launch.json, settings.json, settings.local.json, report.json, verdict.json (+124 more). A re-run will retry them (empties are no longer cached); if it persists, please report the file(s) (#1666).
+  warning: 96 .sql file(s) contributed nothing to the graph because a dependency is missing: tree_sitter_sql not installed. Install it with: pip install "graphifyy[sql]" (#1745)
+[graphify watch] community set changed since labeling (1056 saved labels, 1027 communities now; renamed 257 community(ies) by their hub). Run `graphify label` to refresh names with the LLM.
+[graphify] backed up curated graph (5 files) -> 2026-08-03/
+Graph has 25749 nodes (above 5000 limit). Building aggregated community view...
+graph.html written (aggregated: 1027 community nodes, 2453 cross-community edges)
+Tip: run with --obsidian for full node-level detail.
+[graphify watch] Rebuilt: 25749 nodes, 66224 edges, 1027 communities
+[graphify watch] graph.json, graph.html and GRAPH_REPORT.md updated in graphify-out
+Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.
+Tip: set GEMINI_API_KEY or GOOGLE_API_KEY to use Gemini for semantic extraction.

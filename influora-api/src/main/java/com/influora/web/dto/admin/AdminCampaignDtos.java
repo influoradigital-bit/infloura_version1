@@ -90,4 +90,30 @@ public final class AdminCampaignDtos {
     /** Matches {@code CampaignCreator} in admin.types.ts. One row per {@code Collaboration}. */
     public record CampaignCreatorDto(
             String creatorId, String creatorName, String status, BigDecimal amount) {}
+
+    /**
+     * {@code GET /admin/campaigns/hype/ops} — operational snapshot of active HYPE campaigns. Mirrors
+     * {@code campaignApi.getHypeOps()}'s inline shape in {@code api-contracts.ts}. Every field is
+     * derived live; no fabricated data:
+     *
+     * <ul>
+     *   <li>{@code activeHype} — count of campaigns with {@code campaignType == HYPE} and status
+     *       {@code ACTIVE}.
+     *   <li>{@code totalSlots}/{@code filledSlots} — sum of {@code slotCap}/{@code slotsFilled}
+     *       parsed from each active HYPE campaign's real {@code hype_config} JSON ({@code
+     *       HypeConfigDto}); a null/malformed config contributes 0, never a guessed value.
+     *   <li>{@code avgFillRate} — {@code filledSlots / totalSlots} as a fraction in [0,1] (0 when
+     *       there are no slots).
+     *   <li>{@code approvalsPerHour} — count of deliverables in these active HYPE campaigns whose
+     *       {@code approvedAt} is within the last 60 minutes ({@code approved_at} is stamped exactly
+     *       when a deliverable is APPROVED). This is the agreed working definition of the metric;
+     *       the 60-minute window is a declared choice, the count itself is real.
+     * </ul>
+     */
+    public record HypeOpsDto(
+            int activeHype,
+            int totalSlots,
+            int filledSlots,
+            double avgFillRate,
+            int approvalsPerHour) {}
 }

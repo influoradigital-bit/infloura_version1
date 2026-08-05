@@ -42,6 +42,10 @@ public class RefreshToken {
         return t;
     }
 
+    public String getId() {
+        return id;
+    }
+
     public String getTokenHash() {
         return tokenHash;
     }

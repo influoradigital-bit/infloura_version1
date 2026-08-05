@@ -1,0 +1,270 @@
+
+======================================================================
+BRAND: 26 files, 45 errors, 4 warnings
+======================================================================
+  [8e/0w] src/pages/brand-chat.tsx
+        renders×7, preserved×1
+  [5e/0w] src/pages/brand-campaign-detail.tsx
+        renders×2, render×2, @typescript-eslint/no-explicit-any×1
+  [4e/0w] src/pages/brand-pipeline.tsx
+        render×3, renders×1
+  [3e/0w] src/components/brand/deals/deal-room-dashboard.tsx
+        renders×3
+  [3e/0w] src/pages/brand-messages.tsx
+        renders×3
+  [3e/0w] src/pages/brand-settings.tsx
+        renders×3
+  [2e/0w] src/components/brand/campaigns/campaign-form.tsx
+        renders×2
+  [2e/0w] src/components/brand/contracts/contracts-and-deliverables.tsx
+        renders×2
+  [1e/1w] src/components/brand/timeline/collaboration-timeline.tsx
+        renders×1, react-hooks/exhaustive-deps×1
+  [1e/0w] src/components/brand/campaigns/campaigns-list.tsx
+        renders×1
+  [1e/0w] src/components/brand/dashboard/dashboard-page.tsx
+        render×1
+  [1e/0w] src/components/brand/deliverables/DeliverableViewer.tsx
+        renders×1
+  [1e/0w] src/components/brand/hype-campaign-card.tsx
+        render×1
+  [1e/0w] src/components/brand/timeline/event-cards/contract-card.tsx
+        @typescript-eslint/no-unused-vars×1
+  [1e/0w] src/components/brand/timeline/panels/deliverable-review-panel.tsx
+        renders×1
+  [1e/0w] src/hooks/brand/useDeliverableSafetyReview.ts
+        renders×1
+  [1e/0w] src/hooks/brand/useStoreIntegration.ts
+        renders×1
+  [1e/0w] src/pages/brand-analytics.tsx
+        renders×1
+  [1e/0w] src/pages/brand-creator-profile.tsx
+        renders×1
+  [1e/0w] src/pages/brand-disputes.tsx
+        renders×1
+  [1e/0w] src/pages/brand-edit-campaign.tsx
+        renders×1
+  [1e/0w] src/pages/brand-new-campaign.tsx
+        renders×1
+  [1e/0w] src/pages/brand-new-hype-campaign.tsx
+        renders×1
+  [0e/1w] src/components/brand/deal-room/deal-room-step-progress.tsx
+        react-refresh/only-export-components×1
+  [0e/1w] src/components/brand/discover/creator-discovery.tsx
+        react-hooks/exhaustive-deps×1
+  [0e/1w] src/components/brand/onboarding/onboarding-steps.tsx
+        react-refresh/only-export-components×1
+
+======================================================================
+CREATOR: 17 files, 29 errors, 11 warnings
+======================================================================
+  [12e/7w] src/pages/creator-chat.tsx
+        renders×8, react-hooks/exhaustive-deps×7, preserved×1, @typescript-eslint/no-unused-vars×1, render×1, no-constant-binary-expression×1
+  [2e/0w] src/pages/creator-campaign-detail.tsx
+        renders×2
+  [2e/0w] src/pages/creator-profile.tsx
+        renders×1, render×1
+  [1e/2w] src/pages/creator-deals.tsx
+        react-refresh/only-export-components×1, react-hooks/exhaustive-deps×1, render×1
+  [1e/1w] src/pages/creator-wallet.tsx
+        react-hooks/exhaustive-deps×1, renders×1
+  [1e/0w] src/components/creator/deal-room/deliverable-card.tsx
+        @typescript-eslint/no-unused-vars×1
+  [1e/0w] src/components/creator/deal-room/deliverable-submission.tsx
+        renders×1
+  [1e/0w] src/components/creator/hype-inbox-card.tsx
+        render×1
+  [1e/0w] src/hooks/creator/useAffiliateEarnings.ts
+        renders×1
+  [1e/0w] src/hooks/creator/useCreatorCoupons.ts
+        renders×1
+  [1e/0w] src/hooks/creator/useServiceInvoices.ts
+        renders×1
+  [1e/0w] src/pages/creator-applications.tsx
+        renders×1
+  [1e/0w] src/pages/creator-disputes.tsx
+        renders×1
+  [1e/0w] src/pages/creator-portfolio-editor.tsx
+        renders×1
+  [1e/0w] src/pages/creator-portfolio-public.tsx
+        renders×1
+  [1e/0w] src/pages/creator-settings.tsx
+        renders×1
+  [0e/1w] src/pages/creator-campaigns.tsx
+        react-hooks/exhaustive-deps×1
+
+======================================================================
+ADMIN: 24 files, 28 errors, 2 warnings
+======================================================================
+  [3e/0w] src/admin/components/moderation/FlagQueue.tsx
+        render×2, @typescript-eslint/no-explicit-any×1
+  [3e/0w] src/admin/services/websocket.ts
+        @typescript-eslint/no-explicit-any×3
+  [2e/0w] src/admin/hooks/useAdminSocket.ts
+        render×1, renders×1
+  [2e/0w] src/admin/hooks/useBillingData.ts
+        renders×2
+  [1e/0w] src/admin/components/dashboard/KpiCard.tsx
+        render×1
+  [1e/0w] src/admin/components/support/TicketList.tsx
+        renders×1
+  [1e/0w] src/admin/hooks/useAdminAuth.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useAuditLog.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useBrandDetail.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useBrandList.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useCampaignDetail.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useCreatorApplications.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useCreatorDetail.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useCreatorList.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useDisputeList.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useEmailQueue.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useErrorLog.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useFeeConfig.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useOperationsSummary.ts
+        renders×1
+  [1e/0w] src/admin/hooks/usePulseData.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useSupportStats.ts
+        renders×1
+  [1e/0w] src/admin/hooks/useTicketList.ts
+        renders×1
+  [0e/1w] src/admin/hooks/useCampaignList.ts
+        react-hooks/exhaustive-deps×1
+  [0e/1w] src/admin/hooks/useFlagQueue.ts
+        react-hooks/exhaustive-deps×1
+
+======================================================================
+OTHER: 59 files, 52 errors, 47 warnings
+======================================================================
+  [7e/0w] src/hooks/useVoiceOutput.ts
+        render×6, renders×1
+  [3e/0w] src/hooks/useVoiceInput.ts
+        render×3
+  [3e/0w] src/lib/api.ts
+        @typescript-eslint/no-explicit-any×3
+  [2e/1w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/client/eventEmitter.js
+        internal-playwright/await-promise-in-class-returns×2, 'no-console')×1
+  [2e/1w] src/app/layout.tsx
+        @typescript-eslint/no-unused-vars×2, react-refresh/only-export-components×1
+  [2e/1w] src/components/feature/meera/MeeraChatPanel.tsx
+        'react-hooks/exhaustive-deps')×1, renders×1, @typescript-eslint/no-unused-vars×1
+  [2e/1w] src/hooks/useNotifications.ts
+        @typescript-eslint/no-explicit-any×1, react-hooks/exhaustive-deps×1, renders×1
+  [2e/0w] src/components/3d/DiscoverCanvas.tsx
+        modified×1, render×1
+  [2e/0w] src/components/feature/meera/VoiceMode.tsx
+        render×1, renders×1
+  [2e/0w] src/lib/helpers.ts
+        @typescript-eslint/no-explicit-any×2
+  [2e/0w] src/lib/meera-api.ts
+        @typescript-eslint/no-explicit-any×2
+  [1e/1w] src/components/ui/sidebar.tsx
+        render×1, react-refresh/only-export-components×1
+  [1e/1w] src/hooks/analytics/useCreatorMetrics.ts
+        'react-hooks/exhaustive-deps')×1, renders×1
+  [1e/0w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/utils/isomorphic/cssTokenizer.js
+        notice/notice×1
+  [1e/0w] src/components/3d/HeroGlobe.tsx
+        modified×1
+  [1e/0w] src/components/campaigns/tracking/CouponsTable.tsx
+        render×1
+  [1e/0w] src/components/feature/meera/FundEscrowButton.tsx
+        @typescript-eslint/no-unused-vars×1
+  [1e/0w] src/components/feature/meera/StageSnapshot.tsx
+        renders×1
+  [1e/0w] src/components/feature/meera/ThinkingState.tsx
+        renders×1
+  [1e/0w] src/components/motion/CountUp.tsx
+        renders×1
+  [1e/0w] src/components/motion/PulseAura.tsx
+        renders×1
+  [1e/0w] src/components/shared/collaboration-reviews-panel.tsx
+        renders×1
+  [1e/0w] src/components/ui/carousel.tsx
+        renders×1
+  [1e/0w] src/components/ui/use-mobile.tsx
+        renders×1
+  [1e/0w] src/hooks/analytics/useCampaignCoupons.ts
+        renders×1
+  [1e/0w] src/hooks/analytics/useCampaignTrackingLinks.ts
+        renders×1
+  [1e/0w] src/hooks/analytics/useContentPerformance.ts
+        renders×1
+  [1e/0w] src/hooks/analytics/useCreatorDemographics.ts
+        renders×1
+  [1e/0w] src/hooks/analytics/useCreatorScores.ts
+        renders×1
+  [1e/0w] src/hooks/use-mobile.ts
+        renders×1
+  [1e/0w] src/hooks/useBrandTheme.ts
+        render×1
+  [1e/0w] src/hooks/useEscrowFund.ts
+        render×1
+  [1e/0w] src/hooks/useMeeraCredits.ts
+        renders×1
+  [1e/0w] src/lib/contract-generator.ts
+        @typescript-eslint/no-unused-vars×1
+  [0e/8w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/server/registry/dependencies.js
+        'no-console')×8
+  [0e/4w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/server/registry/oopDownloadBrowserMain.js
+        'no-restricted-properties')×3, 'no-console')×1
+  [0e/4w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/utils/processLauncher.js
+        'no-restricted-properties')×4
+  [0e/2w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/server/registry/browserFetcher.js
+        'no-console')×2
+  [0e/2w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/server/registry/index.js
+        'no-console')×2
+  [0e/2w] src/lib/blog/markdown.tsx
+        react-refresh/only-export-components×2
+  [0e/1w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/index.js
+        'no-console')×1
+  [0e/1w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/cli/driver.js
+        'no-console')×1
+  [0e/1w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/cli/program.js
+        'no-console')×1
+  [0e/1w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/cli/programWithTestStub.js
+        'no-console')×1
+  [0e/1w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/server/bidi/third_party/bidiDeserializer.js
+        'object-curly-spacing')×1
+  [0e/1w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/server/bidi/third_party/bidiKeyboard.js
+        'curly')×1
+  [0e/1w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/server/bidi/third_party/bidiSerializer.js
+        'indent')×1
+  [0e/1w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/server/bidi/third_party/firefoxPrefs.js
+        'indent')×1
+  [0e/1w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/server/frames.js
+        'no-console')×1
+  [0e/1w] influora-ai/.venv/Lib/site-packages/playwright/driver/package/lib/server/trace/viewer/traceViewer.js
+        'no-console')×1
+  [0e/1w] src/components/ErrorBoundary.tsx
+        'no-console')×1
+  [0e/1w] src/components/ui/badge.tsx
+        react-refresh/only-export-components×1
+  [0e/1w] src/components/ui/button-group.tsx
+        react-refresh/only-export-components×1
+  [0e/1w] src/components/ui/button.tsx
+        react-refresh/only-export-components×1
+  [0e/1w] src/components/ui/form.tsx
+        react-refresh/only-export-components×1
+  [0e/1w] src/components/ui/navigation-menu.tsx
+        react-refresh/only-export-components×1
+  [0e/1w] src/components/ui/toggle.tsx
+        react-refresh/only-export-components×1
+  [0e/1w] src/lib/voice-usage.ts
+        'no-console')×1
+  [0e/1w] trendspark/n8n/tagger-sync.check.js
+        'no-eval')×1
+
+GRAND TOTAL: 154 errors, 64 warnings across 126 files

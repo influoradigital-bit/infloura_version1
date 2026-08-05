@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
-import { FileText, Download, PenTool, CheckCircle2, Lock, Loader2 } from 'lucide-react';
+import { Download, PenTool, CheckCircle2, Lock, Loader2 } from 'lucide-react';
 import { TimelineEvent } from '@/lib/types';
 import { downloadContractPDF, signContract } from '@/lib/contract-generator';
 import { ApiError } from '@/lib/api';

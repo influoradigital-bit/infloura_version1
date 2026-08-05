@@ -19,9 +19,16 @@ import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.web.dto.admin.AdminCampaignDtos.CampaignCreatorDto;
 import com.influora.web.dto.admin.AdminCampaignDtos.CampaignDetailDto;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.influora.domain.enums.CampaignIntentType;
+import com.influora.domain.enums.CampaignStatus;
 import com.influora.web.dto.admin.AdminCampaignDtos.CampaignSummaryDto;
+import com.influora.web.dto.admin.AdminCampaignDtos.HypeOpsDto;
 import com.influora.web.dto.admin.AdminCampaignDtos.DeliverableRequirementDto;
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.HashMap;
@@ -74,6 +81,7 @@ public class AdminCampaignService {
     private final EscrowHoldRepository escrowHoldRepository;
     private final DeliverableRepository deliverableRepository;
     private final UserRepository userRepository;
+    private final ObjectMapper objectMapper;
 
     public AdminCampaignService(
             AdminContextService adminContextService,
@@ -82,7 +90,8 @@ public class AdminCampaignService {
             CollaborationRepository collaborationRepository,
             EscrowHoldRepository escrowHoldRepository,
             DeliverableRepository deliverableRepository,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            ObjectMapper objectMapper) {
         this.adminContextService = adminContextService;
         this.campaignRepository = campaignRepository;
         this.workspaceRepository = workspaceRepository;
@@ -90,6 +99,72 @@ public class AdminCampaignService {
         this.escrowHoldRepository = escrowHoldRepository;
         this.deliverableRepository = deliverableRepository;
         this.userRepository = userRepository;
+        this.objectMapper = objectMapper;
+    }
+
+    /**
+     * {@code GET /admin/campaigns/hype/ops} — live operational snapshot of active HYPE campaigns.
+     * Backs {@code campaignApi.getHypeOps()}. See {@link HypeOpsDto} for the exact per-field
+     * derivation and the declared 60-minute {@code approvalsPerHour} window. Same role gate as
+     * {@link #list}. Read-only; batched (never a per-campaign query).
+     */
+    @Transactional(readOnly = true)
+    public HypeOpsDto hypeOps(AuthPrincipal principal) {
+        adminContextService.requireRoleWithMfaSatisfied(
+                principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.SUPPORT);
+
+        List<Campaign> hype =
+                campaignRepository.findByCampaignTypeAndStatus(
+                        CampaignIntentType.HYPE, CampaignStatus.ACTIVE);
+
+        int totalSlots = 0;
+        int filledSlots = 0;
+        for (Campaign c : hype) {
+            JsonNode cfg = parseHypeConfig(c.getHypeConfigJson());
+            if (cfg != null) {
+                totalSlots += cfg.path("slotCap").asInt(0);
+                filledSlots += cfg.path("slotsFilled").asInt(0);
+            }
+        }
+        double avgFillRate = totalSlots == 0 ? 0.0 : (double) filledSlots / totalSlots;
+
+        // approvalsPerHour: deliverables in these active HYPE campaigns whose approvedAt is within
+        // the last 60 minutes. approved_at is stamped exactly when a deliverable is APPROVED
+        // (Deliverable.approve()), so this is a real count over a declared window.
+        Instant cutoff = Instant.now().minus(Duration.ofHours(1));
+        List<String> hypeCampaignIds = hype.stream().map(Campaign::getId).toList();
+        List<Collaboration> collaborations =
+                hypeCampaignIds.isEmpty()
+                        ? List.of()
+                        : collaborationRepository.findByCampaignIdIn(hypeCampaignIds);
+        List<String> collaborationIds = collaborations.stream().map(Collaboration::getId).toList();
+        List<Deliverable> deliverables =
+                collaborationIds.isEmpty()
+                        ? List.of()
+                        : deliverableRepository.findByCollaborationIdIn(collaborationIds);
+        int approvalsPerHour =
+                (int)
+                        deliverables.stream()
+                                .filter(d -> d.getApprovedAt() != null && d.getApprovedAt().isAfter(cutoff))
+                                .count();
+
+        return new HypeOpsDto(hype.size(), totalSlots, filledSlots, avgFillRate, approvalsPerHour);
+    }
+
+    /**
+     * Parses a campaign's {@code hype_config} JSON, returning {@code null} for a null/blank/malformed
+     * value — a read must never throw on stored JSON it did not write. Callers treat {@code null} as
+     * "no slots" (contributes 0), never a fabricated default.
+     */
+    private JsonNode parseHypeConfig(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(json);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** {@code page}/{@code pageSize} default to the first {@link #DEFAULT_PAGE_SIZE}-row page. */
@@ -116,14 +191,26 @@ public class AdminCampaignService {
         Page<Campaign> campaignPage = campaignRepository.findAll(pageable);
         List<Campaign> campaigns = campaignPage.getContent();
 
+        List<CampaignSummaryDto> items = assembleSummaries(campaigns);
+
+        return new PagedCampaignSummaries(items, campaignPage.getTotalElements(), safePage, safePageSize);
+    }
+
+    /**
+     * Builds a {@link CampaignSummaryDto} for each campaign with all real per-campaign aggregates
+     * (spend, creators, deliverable counts, SLA breach) — batched for the whole list in 3 queries
+     * (not 3*N). Shared by {@link #list} and {@link #atRisk} so there is exactly one definition of
+     * every computed field. Order of the input list is preserved.
+     *
+     * <p>H-22: collaborations -&gt; escrow holds (spend) and collaborations -&gt; deliverables
+     * (pending/approved/SLA breach) both hang off the collaboration, not the campaign directly, so
+     * collaborations are fetched first and everything else groups off of it.
+     */
+    private List<CampaignSummaryDto> assembleSummaries(List<Campaign> campaigns) {
         Map<String, String> workspaceNames = loadWorkspaceNames(campaigns);
 
         List<String> campaignIds = campaigns.stream().map(Campaign::getId).toList();
 
-        // H-22: real per-campaign aggregates, batched for the whole page in 3 queries (not
-        // 3*N) -- collaborations -> escrow holds (spend) and collaborations -> deliverables
-        // (pending/approved/SLA breach) both hang off the collaboration, not the campaign
-        // directly, so collaborations are fetched first and everything else groups off of it.
         List<Collaboration> collaborations =
                 campaignIds.isEmpty() ? List.of() : collaborationRepository.findByCampaignIdIn(campaignIds);
         Map<String, List<Collaboration>> collabsByCampaign =
@@ -140,19 +227,39 @@ public class AdminCampaignService {
         Map<String, List<Deliverable>> deliverablesByCollaboration =
                 deliverables.stream().collect(Collectors.groupingBy(Deliverable::getCollaborationId));
 
-        List<CampaignSummaryDto> items =
-                campaigns.stream()
-                        .map(
-                                c ->
-                                        toSummaryDto(
-                                                c,
-                                                workspaceNames,
-                                                collabsByCampaign.getOrDefault(c.getId(), List.of()),
-                                                holdsByCampaign.getOrDefault(c.getId(), List.of()),
-                                                deliverablesByCollaboration))
-                        .collect(Collectors.toList());
+        return campaigns.stream()
+                .map(
+                        c ->
+                                toSummaryDto(
+                                        c,
+                                        workspaceNames,
+                                        collabsByCampaign.getOrDefault(c.getId(), List.of()),
+                                        holdsByCampaign.getOrDefault(c.getId(), List.of()),
+                                        deliverablesByCollaboration))
+                .collect(Collectors.toList());
+    }
 
-        return new PagedCampaignSummaries(items, campaignPage.getTotalElements(), safePage, safePageSize);
+    /**
+     * {@code GET /admin/campaigns/at-risk} — {@code ACTIVE} campaigns with a live SLA breach. Backs
+     * {@code campaignApi.getAtRisk()} ({@code CampaignSummary[]}, unwrapped). Same role gate and the
+     * same real aggregation ({@link #assembleSummaries}) as {@link #list}.
+     *
+     * <p><b>Declared working definition (NOT yet product-ratified):</b> the formal at-risk SLA rule
+     * is deferred (see {@link #getById}'s {@code timelineStatus} note). Until product ratifies a
+     * threshold, "at-risk" here means an {@code ACTIVE} campaign whose live {@code slaBreachRate}
+     * &gt; 0 — at least one deliverable is past its deadline and not yet done, computed from real
+     * deliverable deadlines in {@link #toSummaryDto}, never a placeholder. Only the threshold
+     * ({@code &gt; 0}) is a working choice product may tighten; the underlying number is real.
+     */
+    @Transactional(readOnly = true)
+    public List<CampaignSummaryDto> atRisk(AuthPrincipal principal) {
+        adminContextService.requireRoleWithMfaSatisfied(
+                principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.SUPPORT);
+
+        List<Campaign> active = campaignRepository.findByStatus(CampaignStatus.ACTIVE);
+        return assembleSummaries(active).stream()
+                .filter(dto -> dto.slaBreachRate() != null && dto.slaBreachRate() > 0.0)
+                .toList();
     }
 
     public record PagedCampaignSummaries(

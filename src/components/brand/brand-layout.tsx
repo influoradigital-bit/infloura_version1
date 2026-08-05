@@ -21,15 +21,14 @@ import {
   BarChart3,
   Star,
   AlertTriangle,
-  User,
   Sparkles,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { useAuthStore, useNotificationStore, useUIStore } from '@/lib/store';
+import { useAuthStore, useUIStore } from '@/lib/store';
+import { useNotifications } from '@/hooks/useNotifications';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -118,22 +117,34 @@ interface BrandLayoutProps {
   children: React.ReactNode;
 }
 
+/**
+ * Format relative time (mirrors NotificationBell's helper — no shared util
+ * module exists yet, so this stays a small local copy).
+ */
+function formatRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+}
+
 export function BrandLayout({ children }: BrandLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
-  const { unreadCount } = useNotificationStore();
+  const { notifications, unreadCount, loading, error, markRead, markAllRead } = useNotifications('brand');
   const { mobileMenuOpen, toggleMobileMenu, setMobileMenuOpen, closeMobileMenu } = useUIStore();
   const [showLogoutDialog, setShowLogoutDialog] = React.useState(false);
   const [commandBarOpen, setCommandBarOpen] = React.useState(false);
   const [notificationsOpen, setNotificationsOpen] = React.useState(false);
-
-  const mockNotifications = [
-    { id: '1', type: 'deal', title: 'New proposal received', body: 'Priya Sharma sent a counter-offer on Summer Fashion Campaign', time: '5 min ago', read: false },
-    { id: '2', type: 'payment', title: 'Payment released', body: 'Milestone 1 payment of ₹25,000 was released to Sneha Reddy', time: '1 hr ago', read: false },
-    { id: '3', type: 'contract', title: 'Contract signed', body: 'Rahul Verma signed the Product Launch contract', time: '3 hrs ago', read: true },
-    { id: '4', type: 'system', title: 'Campaign approved', body: 'Your Tech Review campaign has been approved and is now live', time: '1 day ago', read: true },
-  ];
 
   const getInitials = (name?: string | null, fallback = 'IN') => {
     if (!name?.trim()) return fallback;
@@ -362,31 +373,63 @@ export function BrandLayout({ children }: BrandLayoutProps) {
                 <PopoverContent align="end" className="w-80 p-0">
                   <div className="flex items-center justify-between border-b border-border px-4 py-3">
                     <p className="text-sm font-semibold">Notifications</p>
-                    <Button variant="ghost" size="sm" className="h-auto px-2 text-xs text-muted-foreground">
-                      Mark all read
-                    </Button>
+                    {unreadCount > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto px-2 text-xs text-muted-foreground"
+                        onClick={() => markAllRead()}
+                      >
+                        Mark all read
+                      </Button>
+                    )}
                   </div>
                   <ScrollArea className="h-80">
-                    <div className="p-1">
-                      {mockNotifications.map((notification) => (
-                        <div
-                          key={notification.id}
-                          className={cn(
-                            'flex gap-3 p-3 hover:bg-accent cursor-pointer rounded-lg transition-colors',
-                            !notification.read && 'bg-primary/5',
-                          )}
-                        >
-                          {!notification.read && (
-                            <span className="bg-primary h-2 w-2 rounded-full mt-1.5 shrink-0" />
-                          )}
-                          <div className={cn('flex-1 min-w-0', notification.read && 'ml-5')}>
-                            <p className="text-sm font-medium">{notification.title}</p>
-                            <p className="text-xs text-muted-foreground line-clamp-2">{notification.body}</p>
-                            <p className="text-xs text-muted-foreground mt-1">{notification.time}</p>
+                    {loading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-primary" />
+                      </div>
+                    ) : error && notifications.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-center px-4">
+                        <Bell className="mb-2 h-8 w-8 text-muted-foreground/50" />
+                        <p className="text-sm text-muted-foreground">Couldn’t load notifications</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground/80">Please try again shortly.</p>
+                      </div>
+                    ) : notifications.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-center px-4">
+                        <Bell className="mb-2 h-8 w-8 text-muted-foreground/50" />
+                        <p className="text-sm text-muted-foreground">No notifications yet</p>
+                      </div>
+                    ) : (
+                      <div className="p-1">
+                        {notifications.map((notification) => (
+                          <div
+                            key={notification.id}
+                            onClick={() => {
+                              if (!notification.read) markRead(notification.id);
+                              if (notification.link) window.location.href = notification.link;
+                            }}
+                            className={cn(
+                              'flex gap-3 p-3 hover:bg-accent cursor-pointer rounded-lg transition-colors',
+                              !notification.read && 'bg-primary/5',
+                            )}
+                          >
+                            {!notification.read && (
+                              <span className="bg-primary h-2 w-2 rounded-full mt-1.5 shrink-0" />
+                            )}
+                            <div className={cn('flex-1 min-w-0', notification.read && 'ml-5')}>
+                              <p className="text-sm font-medium">{notification.title}</p>
+                              {notification.body && (
+                                <p className="text-xs text-muted-foreground line-clamp-2">{notification.body}</p>
+                              )}
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {formatRelativeTime(notification.createdAt)}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </ScrollArea>
                   <div className="border-t border-border p-2">
                     <Button

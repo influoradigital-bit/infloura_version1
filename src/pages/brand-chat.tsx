@@ -11,7 +11,6 @@ import {
   FileText,
   Image as ImageIcon,
   Clock,
-  ChevronRight,
   Shield,
   IndianRupee,
   Calendar,
@@ -42,6 +41,7 @@ import {
   type Deal,
   type ContractApiRecord,
   type ContractStatus,
+  type ShipmentApiStatus,
 } from '@/lib/api';
 // CR-24 — the one switch over CollaborationStatus. CR-34 — and the one mirror of
 // Collaboration.canAccept(), which this file used to duplicate. See lib/deal-stage.ts.
@@ -567,6 +567,29 @@ interface ProposalFeedback {
 }
 
 /**
+ * Maps the backend `ShipmentApiStatus` (5 states, `wiki/decisions/shipment-backend-design-2026-07-24.md`)
+ * onto the local `ShipmentStatus` UI enum (`components/shared/shipment-card.tsx`). Mirrors
+ * `mapShipmentApiStatusToUiStatus` in `creator-chat.tsx` — kept as a local copy since the two
+ * pages don't share a module for this. The brand only ever sees this right after a successful
+ * `markShipped` call, where the record's status is 'SHIPPED', which maps to the UI's 'delivered'.
+ */
+function mapShipmentApiStatusToUiStatus(status: ShipmentApiStatus): ShipmentStatus {
+  switch (status) {
+    case 'AWAITING_ADDRESS':
+    case 'ADDRESS_PROVIDED':
+      return 'created';
+    case 'SHIPPED':
+      return 'delivered';
+    case 'RECEIVED':
+      return 'received';
+    case 'DAMAGED':
+      return 'damaged';
+    default:
+      return 'created';
+  }
+}
+
+/**
  * CR-07 — turns an accept rejection into copy the brand can act on.
  *
  * A 409 here is never "try again": the deal has genuinely moved, and retrying fails identically
@@ -929,12 +952,54 @@ export default function BrandChatPage() {
   const [showShipmentForm, setShowShipmentForm] = React.useState(false);
   const [isSubmittingShipment, setIsSubmittingShipment] = React.useState(false);
 
+  // Wired to POST /deals/:id/shipment (brand-only, DealController.java:199 markShipped).
+  // Mock mode keeps the old client-only simulation so the demo flow still works offline.
   const handleSubmitShipment = async (data: ShipmentData) => {
+    if (!selectedDeal) return;
     setIsSubmittingShipment(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setShipment({ ...data, status: 'created' });
-    setShowShipmentForm(false);
-    setIsSubmittingShipment(false);
+    try {
+      if (isApiLive()) {
+        // Backend models a single `productName` string (ShipmentDtos.MarkShippedRequest),
+        // no `items[]` concept — fold the form's item list into one string rather than
+        // dropping all but the first item.
+        const productName = data.items
+          .map((it) => (it.quantity > 1 ? `${it.name} (x${it.quantity})` : it.name))
+          .join(', ');
+        const record = await api.shipments.markShipped(selectedDeal.id, {
+          carrier: data.courier,
+          trackingNumber: data.trackingNumber,
+          trackingUrl: data.trackingUrl || undefined,
+          productName,
+          // creator-shipment-eta-0804: the form's `type="date"` value is already YYYY-MM-DD,
+          // exactly what the backend LocalDate expects. Now persisted (was dropped before).
+          estimatedDelivery: data.estimatedDelivery || undefined,
+        });
+        // `items`/`notes` still have no backend column — keep what the brand just entered for
+        // those. `estimatedDelivery` now comes back on the record; courier/tracking/status also
+        // come from the persisted record so the card reflects truth.
+        setShipment({
+          ...data,
+          courier: record.carrier ?? data.courier,
+          trackingNumber: record.trackingNumber ?? data.trackingNumber,
+          trackingUrl: record.trackingUrl ?? data.trackingUrl,
+          estimatedDelivery: record.estimatedDelivery ?? data.estimatedDelivery,
+          status: mapShipmentApiStatusToUiStatus(record.status),
+        });
+      } else {
+        await new Promise((r) => setTimeout(r, 800));
+        setShipment({ ...data, status: 'created' });
+      }
+      setShowShipmentForm(false);
+    } catch (err) {
+      console.error('Failed to mark shipment as shipped', err);
+      toast({
+        title: 'Could not save shipment',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmittingShipment(false);
+    }
   };
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
@@ -1161,11 +1226,11 @@ export default function BrandChatPage() {
     setTimeout(scrollToBottom, 50);
   };
 
-  const handleApproveDeliverable = (itemId: string, _feedback: string) => {
+  const handleApproveDeliverable = (itemId: string) => {
     setDeliverableStatuses((prev) => ({ ...prev, [itemId]: 'approved' }));
   };
 
-  const handleRequestRevision = (itemId: string, _feedback: string) => {
+  const handleRequestRevision = (itemId: string) => {
     setDeliverableStatuses((prev) => ({ ...prev, [itemId]: 'revision' }));
   };
 
@@ -2325,8 +2390,8 @@ export default function BrandChatPage() {
                       total={selectedDeal.deliverablesTotal}
                       dealValue={selectedDeal.dealValue}
                       items={deliverableItems}
-                      onApprove={(id) => handleApproveDeliverable(id, '')}
-                      onRequestRevision={(id) => handleRequestRevision(id, '')}
+                      onApprove={(id) => handleApproveDeliverable(id)}
+                      onRequestRevision={(id) => handleRequestRevision(id)}
                     />
                   )
                 )}

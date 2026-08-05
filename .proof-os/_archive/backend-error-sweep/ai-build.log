@@ -1,0 +1,5 @@
+· py_compile · 41 files
+· no linter installed (ruff/pyflakes, module or binary) — unavailable, NOT a finding
+· no tests found — unavailable, NOT a pass
+VERDICT: partial — some oracles could not run (believed, not proved)
+NOT CHECKED: lint (no linter installed); tests (none exist); types (no type checker runs — neither mypy nor pyright is invoked; py_compile proves parsing only); runtime behaviour, data correctness, mocked responses, security

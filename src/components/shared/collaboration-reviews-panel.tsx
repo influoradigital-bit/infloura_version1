@@ -10,6 +10,15 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { toast } from '@/hooks/use-toast';
+import {
   api,
   ApiError,
   isApiLive,
@@ -77,6 +86,32 @@ export function CollaborationReviewsPanel({
   >({});
 
   const reviewsClient = role === 'creator' ? api.creatorReviews : api.brandReviews;
+
+  // Brand review-flag (F: POST /brand/reviews/:id/flag). Creators have no flag route.
+  const [flagTarget, setFlagTarget] = React.useState<ReviewDisplayRecord | null>(null);
+  const [flagReason, setFlagReason] = React.useState('');
+  const [flagBusy, setFlagBusy] = React.useState(false);
+  const [flaggedIds, setFlaggedIds] = React.useState<Set<string>>(new Set());
+
+  const submitFlag = React.useCallback(async () => {
+    if (!flagTarget || !flagReason.trim()) return;
+    setFlagBusy(true);
+    try {
+      await api.brandReviews.flag(flagTarget.id, flagReason.trim());
+      setFlaggedIds((prev) => new Set(prev).add(flagTarget.id));
+      toast({ title: 'Review flagged', description: 'Our moderators will take a look.' });
+      setFlagTarget(null);
+      setFlagReason('');
+    } catch (err) {
+      toast({
+        title: 'Could not flag review',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setFlagBusy(false);
+    }
+  }, [flagTarget, flagReason]);
 
   const refreshDeals = React.useCallback(async () => {
     setLoadingDeals(true);
@@ -321,12 +356,49 @@ export function CollaborationReviewsPanel({
           ) : (
             <div className="space-y-3">
               {receivedReviews.map((review) => (
-                <ReviewCard key={review.id} review={review} />
+                <ReviewCard
+                  key={review.id}
+                  review={review}
+                  onFlag={role === 'brand' ? () => setFlagTarget(review) : undefined}
+                  flagged={flaggedIds.has(review.id)}
+                />
               ))}
             </div>
           )}
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={flagTarget !== null} onOpenChange={(open) => { if (!open) { setFlagTarget(null); setFlagReason(''); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Flag this review</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tell our moderators why this review is inappropriate or inaccurate. This does not
+              remove the review — it opens a moderation case.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="flag-reason">Reason</Label>
+            <Textarea
+              id="flag-reason"
+              value={flagReason}
+              onChange={(e) => setFlagReason(e.target.value.slice(0, 255))}
+              placeholder="e.g. contains false claims about the collaboration"
+              rows={3}
+            />
+            <p className="text-xs text-muted-foreground">{flagReason.length}/255</p>
+          </div>
+          <AlertDialogFooter>
+            <Button variant="outline" onClick={() => { setFlagTarget(null); setFlagReason(''); }} disabled={flagBusy}>
+              Cancel
+            </Button>
+            <Button onClick={() => void submitFlag()} disabled={flagBusy || !flagReason.trim()}>
+              {flagBusy && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+              Submit flag
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

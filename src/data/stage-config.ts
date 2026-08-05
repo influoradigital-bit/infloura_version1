@@ -80,12 +80,6 @@ export const STAGE_CONFIG: Record<MeeraStageId, StageConfigEntry> = {
 
 export const STAGE_ORDER: MeeraStageId[] = ['snapshot', 'recommend', 'matching', 'funding', 'live', 'performance']
 
-export function nextStage(current: MeeraStageId): MeeraStageId | null {
-  const idx = STAGE_ORDER.indexOf(current)
-  if (idx === -1 || idx === STAGE_ORDER.length - 1) return null
-  return STAGE_ORDER[idx + 1]
-}
-
 /** Reverse lookup of STAGE_CONFIG's `trigger` field — the single source of truth for call→stage. */
 export function stageForFunctionCall(call: MeeraFunctionCall): MeeraStageId | null {
   const entry = STAGE_ORDER.map((id) => STAGE_CONFIG[id]).find((e) => e.trigger === call)

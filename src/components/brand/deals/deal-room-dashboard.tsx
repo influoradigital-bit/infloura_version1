@@ -29,7 +29,6 @@ import {
   FileText,
   Plus,
   Search,
-  Calendar,
   CheckCircle2,
   Clock,
   AlertCircle,
@@ -37,7 +36,6 @@ import {
   Paperclip,
   ArrowRight,
   IndianRupee,
-  X,
   History,
   Eye,
   Lock,
@@ -499,7 +497,6 @@ export function DealRoomDashboard() {
                 </Card>
               ) : (
                 filteredDeals.map((deal) => {
-                  const StatusIcon = statusConfig[deal.status].icon;
                   const isSelected = selectedDeal?.id === deal.id;
                   return (
                     <button

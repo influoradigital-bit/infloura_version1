@@ -1,15 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import { ChevronRight, X, Plus, Minus, IndianRupee, DollarSign } from 'lucide-react';
+import { ChevronRight, X, Plus, Minus, IndianRupee } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { uniqueId } from '@/lib/unique-id';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,

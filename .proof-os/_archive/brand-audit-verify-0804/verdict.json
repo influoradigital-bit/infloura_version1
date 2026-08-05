@@ -1,0 +1,4 @@
+{"verdict": "believed", "oracle": "grep", "isolation": "fresh-context",
+ "done_when": "The Checking Report compare with your report only brand",
+ "not_checked": ["runtime behavior — nothing was run live, same limit as the audit itself", "the 53 WORKING rows were sampled (7 checked), not exhaustively re-traced", "the 140-request() reconciliation claim was not independently recomputed"],
+ "skipped": [{"step": "liveness.py build gate", "reason": "artifact under check is a document; no code was modified, so there is no build to prove alive"}]}

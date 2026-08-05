@@ -4,13 +4,10 @@ import {
   ArrowLeft,
   ArrowRight,
   Save,
-  Eye,
   Loader2,
   Plus,
   X,
   Calendar,
-  DollarSign,
-  Users,
   ImageIcon,
   Video,
   FileText,
@@ -35,7 +32,6 @@ import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -80,7 +76,7 @@ const contentTypeOptions: { value: ContentType; label: string; icon: React.Compo
   { value: 'PODCAST', label: 'Podcast', icon: FileText },
 ];
 
-interface CampaignFormData {
+export interface CampaignFormData {
   title: string;
   description: string;
   objectives: string[];
@@ -147,13 +143,27 @@ function clampToBudgetStep(n: number): number {
   return Math.min(500000, Math.max(1000, stepped));
 }
 
-export function CampaignForm({ campaignId }: { campaignId?: string }) {
+export function CampaignForm({
+  campaignId,
+  initialValues,
+}: {
+  campaignId?: string;
+  /**
+   * BR-14 Phase 1 — client-side prefill from a campaign template (`api.campaignTemplates.get`).
+   * There is no apply-template REST route: the brand still walks Basics → Review like any other
+   * campaign, just starting from the template's saved values instead of blank defaults. Ignored
+   * when `campaignId` is set — an edit's fetched values always win over a stale template seed.
+   */
+  initialValues?: Partial<CampaignFormData>;
+}) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { addCampaign } = useCampaignStore();
   const [searchParams] = useSearchParams();
   const [currentStep, setCurrentStep] = React.useState<Step>('basics');
-  const [formData, setFormData] = React.useState<CampaignFormData>(initialFormData);
+  const [formData, setFormData] = React.useState<CampaignFormData>(() =>
+    initialValues ? { ...initialFormData, ...initialValues } : initialFormData,
+  );
   const [errors, setErrors] = React.useState<Record<string, string>>({});
 
   // Meera completion-flow hints (Ash §7.2): a create_campaign draft can deep-link

@@ -9,6 +9,9 @@ import { FakeFollowerIndicator } from '@/components/analytics/FakeFollowerIndica
 import { QualityScoreDisplay } from '@/components/analytics/QualityScoreDisplay';
 import { BrandSafetyBadge } from '@/components/analytics/BrandSafetyBadge';
 import { AudienceDemographicsPanel } from '@/components/analytics/AudienceDemographicsPanel';
+import { ContentPerformancePanel } from '@/components/analytics/ContentPerformancePanel';
+import { CreatorReceivedReviews } from '@/components/creator/creator-received-reviews';
+import { useCreatorOwnMedia } from '@/hooks/creator/useCreatorOwnMedia';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -53,6 +56,8 @@ export default function CreatorAnalyticsPage() {
     error: demographicsError,
     refresh: refreshDemographics,
   } = useCreatorDemographics(CREATOR_ANALYTICS_SELF);
+  // creator-missing-0804 — the creator's own per-post content performance (GET /me/media).
+  const { data: myMedia, loading: myMediaLoading, error: myMediaError } = useCreatorOwnMedia();
 
   // C27: scoresError no longer fires for a 404 SCORE_NOT_FOUND (useCreatorScores
   // treats that as an honest empty state via `notFound`) — only a real load
@@ -202,6 +207,11 @@ export default function CreatorAnalyticsPage() {
               loading={demographicsLoading}
               error={demographicsError}
             />
+
+            {/* creator-missing-0804 — your own per-post content performance + received reviews */}
+            <ContentPerformancePanel data={myMedia} loading={myMediaLoading} error={myMediaError} />
+
+            <CreatorReceivedReviews />
           </div>
         )}
       </div>

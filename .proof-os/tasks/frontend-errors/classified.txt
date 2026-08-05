@@ -1,0 +1,278 @@
+
+########################################################################
+# BRAND  —  45 errors, 4 warnings, 26 files
+########################################################################
+  by rule:
+     35e   0w  set-state-in-effect (cascading renders)
+      4e   0w  other: Error: Cannot call impure function during render
+      3e   0w  component-created-in-render
+      0e   2w  react-refresh/only-export-components
+      0e   2w  exhaustive-deps
+      1e   0w  no-unused-vars
+      1e   0w  no-explicit-any
+      1e   0w  other: Compilation Skipped: Existing memoization could no
+  by file:
+    [8e/0w] src/pages/brand-chat.tsx
+          set-state-in-effect (cascading renders)×7, other: Compilation Skipped: Existing memoization could no×1
+    [5e/0w] src/pages/brand-campaign-detail.tsx
+          set-state-in-effect (cascading renders)×2, other: Error: Cannot call impure function during render×2, no-explicit-any×1
+    [4e/0w] src/pages/brand-pipeline.tsx
+          component-created-in-render×3, set-state-in-effect (cascading renders)×1
+    [3e/0w] src/components/brand/deals/deal-room-dashboard.tsx
+          set-state-in-effect (cascading renders)×3
+    [3e/0w] src/pages/brand-messages.tsx
+          set-state-in-effect (cascading renders)×3
+    [3e/0w] src/pages/brand-settings.tsx
+          set-state-in-effect (cascading renders)×3
+    [2e/0w] src/components/brand/campaigns/campaign-form.tsx
+          set-state-in-effect (cascading renders)×2
+    [2e/0w] src/components/brand/contracts/contracts-and-deliverables.tsx
+          set-state-in-effect (cascading renders)×2
+    [1e/1w] src/components/brand/timeline/collaboration-timeline.tsx
+          set-state-in-effect (cascading renders)×1, exhaustive-deps×1
+    [1e/0w] src/components/brand/campaigns/campaigns-list.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/components/brand/dashboard/dashboard-page.tsx
+          other: Error: Cannot call impure function during render×1
+    [1e/0w] src/components/brand/deliverables/DeliverableViewer.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/components/brand/hype-campaign-card.tsx
+          other: Error: Cannot call impure function during render×1
+    [1e/0w] src/components/brand/timeline/event-cards/contract-card.tsx
+          no-unused-vars×1
+    [1e/0w] src/components/brand/timeline/panels/deliverable-review-panel.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/hooks/brand/useDeliverableSafetyReview.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/hooks/brand/useStoreIntegration.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/pages/brand-analytics.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/pages/brand-creator-profile.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/pages/brand-disputes.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/pages/brand-edit-campaign.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/pages/brand-new-campaign.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/pages/brand-new-hype-campaign.tsx
+          set-state-in-effect (cascading renders)×1
+    [0e/1w] src/components/brand/deal-room/deal-room-step-progress.tsx
+          react-refresh/only-export-components×1
+    [0e/1w] src/components/brand/discover/creator-discovery.tsx
+          exhaustive-deps×1
+    [0e/1w] src/components/brand/onboarding/onboarding-steps.tsx
+          react-refresh/only-export-components×1
+
+########################################################################
+# CREATOR  —  29 errors, 11 warnings, 17 files
+########################################################################
+  by rule:
+     21e   0w  set-state-in-effect (cascading renders)
+      0e  10w  exhaustive-deps
+      4e   0w  other: Error: Cannot call impure function during render
+      2e   0w  no-unused-vars
+      1e   0w  other: Compilation Skipped: Existing memoization could no
+      1e   0w  other: Unexpected constant truthiness on the left-hand si
+      0e   1w  react-refresh/only-export-components
+  by file:
+    [12e/7w] src/pages/creator-chat.tsx
+          set-state-in-effect (cascading renders)×8, exhaustive-deps×7, other: Compilation Skipped: Existing memoization could no×1, no-unused-vars×1, other: Error: Cannot call impure function during render×1, other: Unexpected constant truthiness on the left-hand si×1
+    [2e/0w] src/pages/creator-campaign-detail.tsx
+          set-state-in-effect (cascading renders)×2
+    [2e/0w] src/pages/creator-profile.tsx
+          set-state-in-effect (cascading renders)×1, other: Error: Cannot call impure function during render×1
+    [1e/2w] src/pages/creator-deals.tsx
+          react-refresh/only-export-components×1, exhaustive-deps×1, other: Error: Cannot call impure function during render×1
+    [1e/1w] src/pages/creator-wallet.tsx
+          exhaustive-deps×1, set-state-in-effect (cascading renders)×1
+    [1e/0w] src/components/creator/deal-room/deliverable-card.tsx
+          no-unused-vars×1
+    [1e/0w] src/components/creator/deal-room/deliverable-submission.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/components/creator/hype-inbox-card.tsx
+          other: Error: Cannot call impure function during render×1
+    [1e/0w] src/hooks/creator/useAffiliateEarnings.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/hooks/creator/useCreatorCoupons.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/hooks/creator/useServiceInvoices.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/pages/creator-applications.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/pages/creator-disputes.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/pages/creator-portfolio-editor.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/pages/creator-portfolio-public.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/pages/creator-settings.tsx
+          set-state-in-effect (cascading renders)×1
+    [0e/1w] src/pages/creator-campaigns.tsx
+          exhaustive-deps×1
+
+########################################################################
+# ADMIN  —  28 errors, 2 warnings, 24 files
+########################################################################
+  by rule:
+     20e   0w  set-state-in-effect (cascading renders)
+      4e   0w  no-explicit-any
+      3e   0w  component-created-in-render
+      0e   2w  exhaustive-deps
+      1e   0w  ref-access-in-render
+  by file:
+    [3e/0w] src/admin/components/moderation/FlagQueue.tsx
+          component-created-in-render×2, no-explicit-any×1
+    [3e/0w] src/admin/services/websocket.ts
+          no-explicit-any×3
+    [2e/0w] src/admin/hooks/useAdminSocket.ts
+          ref-access-in-render×1, set-state-in-effect (cascading renders)×1
+    [2e/0w] src/admin/hooks/useBillingData.ts
+          set-state-in-effect (cascading renders)×2
+    [1e/0w] src/admin/components/dashboard/KpiCard.tsx
+          component-created-in-render×1
+    [1e/0w] src/admin/components/support/TicketList.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useAdminAuth.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useAuditLog.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useBrandDetail.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useBrandList.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useCampaignDetail.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useCreatorApplications.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useCreatorDetail.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useCreatorList.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useDisputeList.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useEmailQueue.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useErrorLog.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useFeeConfig.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useOperationsSummary.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/usePulseData.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useSupportStats.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/admin/hooks/useTicketList.ts
+          set-state-in-effect (cascading renders)×1
+    [0e/1w] src/admin/hooks/useCampaignList.ts
+          exhaustive-deps×1
+    [0e/1w] src/admin/hooks/useFlagQueue.ts
+          exhaustive-deps×1
+
+########################################################################
+# SHARED  —  49 errors, 16 warnings, 42 files
+########################################################################
+  by rule:
+     19e   0w  set-state-in-effect (cascading renders)
+     12e   0w  ref-access-in-render
+      0e  10w  react-refresh/only-export-components
+      8e   0w  no-explicit-any
+      5e   0w  no-unused-vars
+      3e   0w  other: Error: Cannot call impure function during render
+      0e   3w  exhaustive-deps
+      2e   0w  other: Error: This value cannot be modified
+      0e   2w  no-console
+      0e   1w  unused-eslint-disable
+  by file:
+    [7e/0w] src/hooks/useVoiceOutput.ts
+          ref-access-in-render×6, set-state-in-effect (cascading renders)×1
+    [3e/0w] src/hooks/useVoiceInput.ts
+          ref-access-in-render×3
+    [3e/0w] src/lib/api.ts
+          no-explicit-any×3
+    [2e/1w] src/app/layout.tsx
+          no-unused-vars×2, react-refresh/only-export-components×1
+    [2e/1w] src/components/feature/meera/MeeraChatPanel.tsx
+          exhaustive-deps×1, set-state-in-effect (cascading renders)×1, no-unused-vars×1
+    [2e/1w] src/hooks/useNotifications.ts
+          no-explicit-any×1, exhaustive-deps×1, set-state-in-effect (cascading renders)×1
+    [2e/0w] src/components/3d/DiscoverCanvas.tsx
+          other: Error: This value cannot be modified×1, other: Error: Cannot call impure function during render×1
+    [2e/0w] src/components/feature/meera/VoiceMode.tsx
+          ref-access-in-render×1, set-state-in-effect (cascading renders)×1
+    [2e/0w] src/lib/helpers.ts
+          no-explicit-any×2
+    [2e/0w] src/lib/meera-api.ts
+          no-explicit-any×2
+    [1e/1w] src/components/ui/sidebar.tsx
+          other: Error: Cannot call impure function during render×1, react-refresh/only-export-components×1
+    [1e/1w] src/hooks/analytics/useCreatorMetrics.ts
+          exhaustive-deps×1, set-state-in-effect (cascading renders)×1
+    [1e/0w] src/components/3d/HeroGlobe.tsx
+          other: Error: This value cannot be modified×1
+    [1e/0w] src/components/campaigns/tracking/CouponsTable.tsx
+          other: Error: Cannot call impure function during render×1
+    [1e/0w] src/components/feature/meera/FundEscrowButton.tsx
+          no-unused-vars×1
+    [1e/0w] src/components/feature/meera/StageSnapshot.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/components/feature/meera/ThinkingState.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/components/motion/CountUp.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/components/motion/PulseAura.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/components/shared/collaboration-reviews-panel.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/components/ui/carousel.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/components/ui/use-mobile.tsx
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/hooks/analytics/useCampaignCoupons.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/hooks/analytics/useCampaignTrackingLinks.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/hooks/analytics/useContentPerformance.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/hooks/analytics/useCreatorDemographics.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/hooks/analytics/useCreatorScores.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/hooks/use-mobile.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/hooks/useBrandTheme.ts
+          ref-access-in-render×1
+    [1e/0w] src/hooks/useEscrowFund.ts
+          ref-access-in-render×1
+    [1e/0w] src/hooks/useMeeraCredits.ts
+          set-state-in-effect (cascading renders)×1
+    [1e/0w] src/lib/contract-generator.ts
+          no-unused-vars×1
+    [0e/2w] src/lib/blog/markdown.tsx
+          react-refresh/only-export-components×2
+    [0e/1w] src/components/ErrorBoundary.tsx
+          no-console×1
+    [0e/1w] src/components/ui/badge.tsx
+          react-refresh/only-export-components×1
+    [0e/1w] src/components/ui/button-group.tsx
+          react-refresh/only-export-components×1
+    [0e/1w] src/components/ui/button.tsx
+          react-refresh/only-export-components×1
+    [0e/1w] src/components/ui/form.tsx
+          react-refresh/only-export-components×1
+    [0e/1w] src/components/ui/navigation-menu.tsx
+          react-refresh/only-export-components×1
+    [0e/1w] src/components/ui/toggle.tsx
+          react-refresh/only-export-components×1
+    [0e/1w] src/lib/voice-usage.ts
+          no-console×1
+    [0e/1w] trendspark/n8n/tagger-sync.check.js
+          unused-eslint-disable×1
+
+########################################################################
+# VENDORED  —  0 errors, 0 warnings, 0 files
+########################################################################
+  by rule:
+  by file:

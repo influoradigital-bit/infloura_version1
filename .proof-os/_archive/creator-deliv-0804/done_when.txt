@@ -1,0 +1,5 @@
+creatorDeliverables gains reachable UI (deal-room deliverables panel) for mark-posted,
+report-metrics, upload-proof, and status — each api wrapper called from a creator
+deliverable UI component; npx tsc --noEmit + eslint 0 errors on changed files;
+PROJECT-DEEP-AUDIT-2026-08-04.md Creator §5 + tally updated (4 lifecycle routes ⬜→✅);
+priya signs off (fresh-context review).

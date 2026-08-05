@@ -1,0 +1,20 @@
+{"rows": [
+  {"subject": "src/admin/services/api-contracts.ts",
+   "owner": "meera", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "tsc",
+     "command": "npx tsc --noEmit",
+     "result": "exit 0, 0 errors after deleting getPayoutQueue + getReferrals",
+     "where": "src/admin/services/api-contracts.ts:360"}},
+  {"subject": "src/lib/__tests__/api-contract.test.ts",
+   "owner": "meera", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "tsc",
+     "command": "npx tsc --noEmit; grep -rn getPayoutQueue|getReferrals src/",
+     "result": "0 live references; baseline shrunk by 2 phantom paths; tsc exit 0",
+     "where": "src/lib/__tests__/api-contract.test.ts:128"}},
+  {"subject": "PROJECT-DEEP-AUDIT-2026-08-04.md#admin-remediation",
+   "owner": "priya", "status": "aligned", "isolation": "fresh-context",
+   "evidence": {"oracle": "model",
+     "command": "priya fresh-context sign-off: artifact paths + done_when only",
+     "result": "APPROVE — done_when met; tally 17/3/0/15=35, TOTAL 194, metrics /194 all recomputed correct; 3 PARTIAL by-design retained, 15 MISSING backlog retained",
+     "where": "PROJECT-DEEP-AUDIT-2026-08-04.md:7"}}
+]}

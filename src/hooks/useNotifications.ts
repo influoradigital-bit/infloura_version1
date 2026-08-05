@@ -20,7 +20,7 @@ import { toast } from '@/hooks/use-toast';
 // ---------------------------------------------------------------------------
 
 const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+  import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 
 const ROLE_TOKEN_KEYS: Record<Role, string> = {
   brand: 'brand_token',
@@ -183,13 +183,15 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
         await new Promise((r) => setTimeout(r, 300));
         setNotifications(MOCK_NOTIFICATIONS);
       } else {
-        // NotificationController.list() returns the raw NotificationListResponse shape
-        // ({notifications, unreadCount, page, size}) — not the {success,data,error} envelope
-        // most other controllers use, so this reads the body directly rather than `.data`.
+        // BR-34: NotificationController.list() is now wrapped in the standard
+        // {success, data, error} ApiResponse envelope (feature-audit-brand-creator-2026-07-23.md
+        // P2 fix) like every other controller — the NotificationListResponse shape
+        // ({notifications, unreadCount, page, size}) lives under `.data`, not the body root.
         const res = await fetch(`${API_BASE_URL}/notifications`, { headers: authHeader() });
         if (!res.ok) throw new Error('Failed to fetch notifications');
-        const data = (await res.json()) as NotificationListWire;
-        setNotifications((data.notifications ?? []).map(fromWire));
+        const envelope = (await res.json()) as { success: boolean; data?: NotificationListWire };
+        if (!envelope.success || !envelope.data) throw new Error('Failed to fetch notifications');
+        setNotifications((envelope.data.notifications ?? []).map(fromWire));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notifications');
@@ -230,9 +232,9 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
   }, [role]);
 
   /**
-   * Mark all notifications as read. `NotificationController` has no bulk `/read-all` route —
-   * only single-notification `POST /notifications/read` exists — so this fires one call per
-   * currently-unread notification instead of hitting a 404.
+   * Mark all notifications as read via the bulk `POST /notifications/read-all` route (a single
+   * server-side UPDATE). Previously this fired one `POST /notifications/read` per unread
+   * notification because no bulk route existed; the backend now has one.
    */
   const markAllRead = useCallback(async () => {
     const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
@@ -242,27 +244,20 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
 
     if (isApiLive()) {
-      const results = await Promise.allSettled(
-        unreadIds.map((id) =>
-          fetch(`${API_BASE_URL}/notifications/read`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...authHeader() },
-            body: JSON.stringify({ notificationId: id }),
-          }).then((res) => {
-            if (!res.ok) throw new Error('Failed to mark notification read');
-          }),
-        ),
-      );
-      const failedIds = new Set(
-        unreadIds.filter((_, i) => results[i].status === 'rejected'),
-      );
-      if (failedIds.size > 0) {
-        // Revert only the ones that actually failed.
+      try {
+        const res = await fetch(`${API_BASE_URL}/notifications/read-all`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader() },
+        });
+        if (!res.ok) throw new Error('Failed to mark all notifications read');
+      } catch {
+        // Revert the optimistic update — restore exactly the rows we flipped.
+        const revertIds = new Set(unreadIds);
         setNotifications((prev) =>
-          prev.map((n) => (failedIds.has(n.id) ? { ...n, read: false } : n)),
+          prev.map((n) => (revertIds.has(n.id) ? { ...n, read: false } : n)),
         );
         toast({
-          title: 'Some notifications couldn’t be marked read',
+          title: 'Couldn’t mark notifications read',
           description: 'Please try again.',
           variant: 'destructive',
         });

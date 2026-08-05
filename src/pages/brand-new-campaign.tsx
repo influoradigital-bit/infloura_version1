@@ -1,14 +1,43 @@
 import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Megaphone, UserRoundSearch, Zap } from 'lucide-react';
+import { ArrowRight, LayoutTemplate, Loader2, Megaphone, Trash2, UserRoundSearch, Zap } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import type { CampaignType } from '@/lib/types';
-import { CampaignForm } from '@/components/brand/campaigns/campaign-form';
+import type { CampaignType, ContentType, Platform } from '@/lib/types';
+import { CampaignForm, type CampaignFormData } from '@/components/brand/campaigns/campaign-form';
 import { BrandKycPrompt } from '@/components/brand/campaigns/brand-kyc-prompt';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { HypeLiveIndicator } from '@/components/ui/hype-live-indicator';
+import { api, ApiError, type CampaignTemplateResponse } from '@/lib/api';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+
+/**
+ * BR-14 Phase 1 — maps a fetched `CampaignTemplateResponse` onto the subset of
+ * `CampaignFormData` the template actually carries. Read is client-side prefill only: there is
+ * no apply-template REST route, and `templateId` is never sent to `POST /campaigns` (that would
+ * duplicate Meera's CreateCampaignExecutor). Fields the template didn't set are omitted rather
+ * than zeroed, so `CampaignForm`'s own `initialFormData` defaults fill the gaps.
+ */
+function templateToInitialValues(t: CampaignTemplateResponse): Partial<CampaignFormData> {
+  const values: Partial<CampaignFormData> = {};
+  if (t.budgetMin != null) values.budgetMin = t.budgetMin;
+  if (t.budgetMax != null) values.budgetMax = t.budgetMax;
+  if (t.platforms?.length) values.platforms = t.platforms as Platform[];
+  if (t.contentTypes?.length) values.contentTypes = t.contentTypes as ContentType[];
+  if (t.objectives?.length) values.objectives = t.objectives;
+  if (t.requirements?.length) values.requirements = t.requirements;
+  if (t.hashtags?.length) values.hashtags = t.hashtags;
+  if (t.targetAudience) values.targetAudience = t.targetAudience;
+  if (t.brandGuidelines) values.brandGuidelines = t.brandGuidelines;
+  return values;
+}
 
 /**
  * Step 0 of campaign creation: pick the campaign type.
@@ -50,6 +79,46 @@ export default function BrandNewCampaignPage() {
   const navigate = useNavigate();
   const [selectedType, setSelectedType] = React.useState<CampaignType | null>(null);
 
+  // BR-14 Phase 1 — template picker dialog + client-side prefill.
+  const [templatesOpen, setTemplatesOpen] = React.useState(false);
+  const [templates, setTemplates] = React.useState<CampaignTemplateResponse[]>([]);
+  const [templatesLoading, setTemplatesLoading] = React.useState(false);
+  const [templatesError, setTemplatesError] = React.useState<string | null>(null);
+  const [applyingTemplateId, setApplyingTemplateId] = React.useState<string | null>(null);
+  // Delete a CUSTOM template (F: DELETE /campaign-templates/:id).
+  const [deletingTemplateId, setDeletingTemplateId] = React.useState<string | null>(null);
+
+  const handleDeleteTemplate = async (t: CampaignTemplateResponse) => {
+    setDeletingTemplateId(t.id);
+    setTemplateApplyError(null);
+    try {
+      await api.campaignTemplates.remove(t.id);
+      setTemplates((prev) => prev.filter((x) => x.id !== t.id));
+    } catch (err) {
+      setTemplateApplyError(err instanceof ApiError ? err.message : `Could not delete "${t.name}".`);
+    } finally {
+      setDeletingTemplateId(null);
+    }
+  };
+  const [templateApplyError, setTemplateApplyError] = React.useState<string | null>(null);
+  const [templateInitialValues, setTemplateInitialValues] = React.useState<Partial<CampaignFormData> | null>(
+    null,
+  );
+
+  React.useEffect(() => {
+    if (!templatesOpen || templates.length > 0 || templatesLoading) return;
+    setTemplatesLoading(true);
+    setTemplatesError(null);
+    api.campaignTemplates
+      .list()
+      .then(setTemplates)
+      .catch((err) => {
+        console.error('Failed to load campaign templates', err);
+        setTemplatesError(err instanceof ApiError ? err.message : 'Could not load templates.');
+      })
+      .finally(() => setTemplatesLoading(false));
+  }, [templatesOpen, templates.length, templatesLoading]);
+
   const choose = (type: CampaignType) => {
     if (type === 'HYPE') {
       navigate('/brand/campaigns/new/hype');
@@ -58,8 +127,23 @@ export default function BrandNewCampaignPage() {
     setSelectedType(type);
   };
 
-  if (selectedType) {
-    return <CampaignForm />;
+  const applyTemplate = async (templateId: string) => {
+    setApplyingTemplateId(templateId);
+    setTemplateApplyError(null);
+    try {
+      const full = await api.campaignTemplates.get(templateId);
+      setTemplateInitialValues(templateToInitialValues(full));
+      setTemplatesOpen(false);
+    } catch (err) {
+      console.error('Failed to load campaign template', err);
+      setTemplateApplyError(err instanceof ApiError ? err.message : 'Could not load this template. Try again.');
+    } finally {
+      setApplyingTemplateId(null);
+    }
+  };
+
+  if (selectedType || templateInitialValues) {
+    return <CampaignForm initialValues={templateInitialValues ?? undefined} />;
   }
 
   return (
@@ -74,7 +158,7 @@ export default function BrandNewCampaignPage() {
       {/* B-5: optional, dismissible KYC prompt (never blocks campaign creation). */}
       <BrandKycPrompt />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {TYPE_OPTIONS.map((option) => {
           const Icon = option.icon;
           return (
@@ -129,7 +213,111 @@ export default function BrandNewCampaignPage() {
             </Card>
           );
         })}
+
+        {/* BR-14 Phase 1 — 4th card: pick a preset template instead of starting blank.
+            Zero backend for "apply" — this opens a picker, fetches the template, and prefills
+            CampaignForm client-side. Free to every plan tier (read is not @RequiresPlan). */}
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => setTemplatesOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setTemplatesOpen(true);
+            }
+          }}
+          className="group cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:hover:translate-y-0"
+        >
+          <CardContent className="flex h-full flex-col gap-3 p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+              <LayoutTemplate className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div className="flex-1">
+              <h2 className="font-semibold">Start from a template</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Pick one of Influora&apos;s preset campaign templates and prefill the wizard.
+              </p>
+            </div>
+            <div className="flex items-center justify-between">
+              <span />
+              <ArrowRight
+                className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:group-hover:translate-x-0"
+                aria-hidden="true"
+              />
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Template picker dialog */}
+      <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Choose a template</DialogTitle>
+            <DialogDescription>
+              Start from a preset and adjust anything before you publish.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[50vh] space-y-2 overflow-y-auto py-2">
+            {templatesLoading && (
+              <p className="text-sm text-muted-foreground">Loading templates…</p>
+            )}
+            {!templatesLoading && templatesError && (
+              <p className="text-sm text-destructive-foreground">{templatesError}</p>
+            )}
+            {!templatesLoading && !templatesError && templates.length === 0 && (
+              <p className="text-sm text-muted-foreground">No templates available yet.</p>
+            )}
+            {!templatesLoading &&
+              !templatesError &&
+              templates.map((t) => (
+                <div key={t.id} className="flex items-stretch gap-1">
+                  <button
+                    type="button"
+                    disabled={applyingTemplateId !== null || deletingTemplateId !== null}
+                    onClick={() => void applyTemplate(t.id)}
+                    className="flex flex-1 flex-col gap-1 rounded-lg border p-3 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{t.name}</span>
+                      {applyingTemplateId === t.id ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
+                      ) : (
+                        t.scope === 'SYSTEM' && (
+                          <Badge variant="outline" className="shrink-0 text-[10px]">
+                            Preset
+                          </Badge>
+                        )
+                      )}
+                    </div>
+                    {t.description && (
+                      <p className="text-sm text-muted-foreground">{t.description}</p>
+                    )}
+                  </button>
+                  {t.scope === 'CUSTOM' && (
+                    <button
+                      type="button"
+                      aria-label={`Delete template ${t.name}`}
+                      disabled={deletingTemplateId !== null || applyingTemplateId !== null}
+                      onClick={() => void handleDeleteTemplate(t)}
+                      className="flex w-10 shrink-0 items-center justify-center rounded-lg border text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {deletingTemplateId === t.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      )}
+                    </button>
+                  )}
+                </div>
+              ))}
+          </div>
+          {templateApplyError && (
+            <p className="text-xs text-destructive-foreground">{templateApplyError}</p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

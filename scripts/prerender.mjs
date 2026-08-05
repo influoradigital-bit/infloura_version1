@@ -57,7 +57,7 @@
  */
 import puppeteer from 'puppeteer-core';
 import { JSDOM } from 'jsdom';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
@@ -89,27 +89,84 @@ const MARKETING_ROUTES = [
   '/support',
 ];
 
-/** Resolve a Chrome/Chromium binary without downloading one (same list as ci/lighthouse-meera.mjs). */
+/**
+ * Resolve a Chrome/Chromium binary WITHOUT downloading one (puppeteer-core is deliberate;
+ * see the header + wiki/tech/approved-deps.md — we do not bundle Chromium).
+ *
+ * Resolution order (F-0055 hardening — a build host with a browser installed anywhere
+ * standard must not fail with a bare "no Chrome found"):
+ *   1. PRERENDER_CHROME_PATH / PUPPETEER_EXECUTABLE_PATH / CHROME_PATH  (CI escape hatch)
+ *   2. a static candidate list, expanded from env vars so it is not machine-bound to
+ *      one user's drive layout (ProgramFiles, LOCALAPPDATA per-user installs, snap/flatpak)
+ *   3. an OS PATH lookup: `where` on Windows, `command -v` on POSIX
+ * Only if all three miss do we throw — and the message names every path tried plus the
+ * one env var a CI operator sets to fix it.
+ */
 function resolveChrome() {
-  if (process.env.PRERENDER_CHROME_PATH) return process.env.PRERENDER_CHROME_PATH;
-  const candidates = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+  const envPath =
+    process.env.PRERENDER_CHROME_PATH ||
+    process.env.PUPPETEER_EXECUTABLE_PATH ||
+    process.env.CHROME_PATH;
+  if (envPath) {
+    if (existsSync(envPath)) return envPath;
+    throw new Error(
+      `PRERENDER_CHROME_PATH/PUPPETEER_EXECUTABLE_PATH/CHROME_PATH is set to "${envPath}" but no file exists there.`,
+    );
+  }
+
+  const PF = process.env['ProgramFiles'] || 'C:\\Program Files';
+  const PFx86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+  const LOCAL = process.env['LOCALAPPDATA'] || '';
+  const winCandidates = [
+    `${PF}\\Google\\Chrome\\Application\\chrome.exe`,
+    `${PFx86}\\Google\\Chrome\\Application\\chrome.exe`,
+    LOCAL ? `${LOCAL}\\Google\\Chrome\\Application\\chrome.exe` : '',
+    `${PF}\\Google\\Chrome Beta\\Application\\chrome.exe`,
+    `${PF}\\Microsoft\\Edge\\Application\\msedge.exe`,
+    `${PFx86}\\Microsoft\\Edge\\Application\\msedge.exe`,
+  ];
+  const nixCandidates = [
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium-browser',
     '/usr/bin/chromium',
+    '/snap/bin/chromium',
+    '/usr/bin/microsoft-edge',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
   ];
+  const candidates = (process.platform === 'win32' ? winCandidates : nixCandidates).filter(Boolean);
   const found = candidates.find((p) => existsSync(p));
-  if (!found) {
-    throw new Error(
-      'No Chrome/Chromium found. Set PRERENDER_CHROME_PATH to a Chrome binary. Tried:\n  ' +
-        candidates.join('\n  '),
-    );
+  if (found) return found;
+
+  // Last resort: ask the OS PATH. Never throws out of the helper — a lookup miss just
+  // falls through to the actionable error below.
+  try {
+    if (process.platform === 'win32') {
+      for (const exe of ['chrome.exe', 'msedge.exe']) {
+        const out = execFileSync('where', [exe], { encoding: 'utf8' }).split(/\r?\n/)[0]?.trim();
+        if (out && existsSync(out)) return out;
+      }
+    } else {
+      for (const exe of ['google-chrome', 'chromium', 'chromium-browser', 'microsoft-edge']) {
+        const out = execFileSync('command', ['-v', exe], {
+          encoding: 'utf8',
+          shell: true,
+        }).trim();
+        if (out && existsSync(out)) return out;
+      }
+    }
+  } catch {
+    /* PATH lookup unavailable — fall through to the actionable error */
   }
-  return found;
+
+  throw new Error(
+    'No Chrome/Chromium/Edge binary found for prerender. Install Chrome on the build host, ' +
+      'or set PRERENDER_CHROME_PATH to a Chrome/Edge executable (CI must provision one — ' +
+      'e.g. browser-actions/setup-chrome). Tried:\n  ' +
+      candidates.join('\n  '),
+  );
 }
 
 async function waitForServer(url, timeoutMs = 60_000) {

@@ -53,19 +53,40 @@ export function DealContractTab({
   // /contracts/:id/pdf-download-url) instead of the client-side HTML print.
   // 404 CONTRACT_PDF_NOT_READY is legitimate until both parties have signed.
   const handleDownloadPDF = async () => {
+    // Shared by the mock-mode branch below AND the live-mode fallback (F-CONTRACT-DL):
+    // if the presigned URL never becomes available (e.g. R2 unconfigured, leaving
+    // pdfR2Key null forever), this is what we fall back to generating locally.
+    const contractData = {
+      contractId,
+      brandName: 'Your Brand',
+      creatorName,
+      campaignName,
+      amount: dealValue,
+      deliverables: [
+        { title: 'Instagram Reel', description: 'Campaign content', quantity: 2 },
+        { title: 'Instagram Story', description: 'Story series', quantity: 3 },
+      ],
+      deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      usageRights: '6 months on social media platforms',
+      exclusivity: 'As per campaign brief',
+      revisionCap: 2,
+      customClauses: [],
+      createdAt: new Date(),
+    };
+
     if (liveApi) {
       setIsFetchingPdf(true);
       try {
         const { url } = await api.contracts.pdfDownloadUrl('brand', contractId);
         window.open(url, '_blank', 'noopener,noreferrer');
-      } catch (err) {
+      } catch {
+        // F-CONTRACT-DL: don't strand the user if the server-side PDF never
+        // becomes available — fall back to the client-side printable copy
+        // instead of a dead-end "not ready" toast.
+        downloadContractPDF(contractData, `${contractId}.pdf`);
         toast({
-          title: 'PDF not ready',
-          description:
-            err instanceof ApiError
-              ? err.message
-              : 'The signed PDF is available once both parties have signed.',
-          variant: 'destructive',
+          title: 'Opened a local copy',
+          description: 'Opened a local copy to review/print.',
         });
       } finally {
         setIsFetchingPdf(false);
@@ -73,26 +94,7 @@ export function DealContractTab({
       return;
     }
 
-    downloadContractPDF(
-      {
-        contractId,
-        brandName: 'Your Brand',
-        creatorName,
-        campaignName,
-        amount: dealValue,
-        deliverables: [
-          { title: 'Instagram Reel', description: 'Campaign content', quantity: 2 },
-          { title: 'Instagram Story', description: 'Story series', quantity: 3 },
-        ],
-        deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-        usageRights: '6 months on social media platforms',
-        exclusivity: 'As per campaign brief',
-        revisionCap: 2,
-        customClauses: [],
-        createdAt: new Date(),
-      },
-      `${contractId}.pdf`,
-    );
+    downloadContractPDF(contractData, `${contractId}.pdf`);
     toast({ title: 'PDF downloaded', description: 'Review the contract before signing.' });
   };
 

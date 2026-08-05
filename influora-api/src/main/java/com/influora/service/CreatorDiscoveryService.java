@@ -1,6 +1,7 @@
 package com.influora.service;
 
 import com.influora.common.ApiException;
+import com.influora.common.CreatorScoreMath;
 import com.influora.common.JsonLists;
 import com.influora.common.PageMeta;
 import com.influora.common.Ulids;
@@ -178,6 +179,10 @@ public class CreatorDiscoveryService {
                                 .map(SavedCreator::getCreatorProfileId)
                                 .toList());
 
+        // BR-18 — one batch query for the whole page, never a per-creator lookup inside the .map()
+        // below (see CreatorScoreRepository#findLatestByCreatorProfileIdIn javadoc).
+        Map<String, CreatorScores> scoresByCreator = loadScoresByCreator(profileIds);
+
         List<CreatorResponse> items =
                 profiles.stream()
                         .map(
@@ -186,7 +191,8 @@ public class CreatorDiscoveryService {
                                                 p,
                                                 platformsByCreator.getOrDefault(
                                                         p.getId(), List.of()),
-                                                savedIds.contains(p.getId())))
+                                                savedIds.contains(p.getId()),
+                                                scoresByCreator.get(p.getId())))
                         .toList();
 
         long total = result.getTotalElements();
@@ -386,9 +392,15 @@ public class CreatorDiscoveryService {
                             .getContent();
         }
 
+        Map<String, CreatorScores> scoresByCreator =
+                loadScoresByCreator(candidates.stream().map(CreatorProfile::getId).toList());
+
         List<CreatorSuggestionItem> suggestions =
                 candidates.stream()
-                        .map(profile -> toSuggestionItem(principal, profile, inferredCategories, budget))
+                        .map(
+                                profile ->
+                                        toSuggestionItem(
+                                                principal, profile, inferredCategories, budget, scoresByCreator))
                         .sorted(Comparator.comparingDouble(CreatorSuggestionItem::matchScore).reversed())
                         .limit(10)
                         .toList();
@@ -465,7 +477,8 @@ public class CreatorDiscoveryService {
                         .findByWorkspaceIdAndCreatorProfileId(workspace.getId(), profile.getId())
                         .map(SavedCreator::isSaved)
                         .orElse(false);
-        return CreatorMapper.toResponse(profile, platforms, saved);
+        CreatorScores scores = loadScoresByCreator(List.of(profile.getId())).get(profile.getId());
+        return CreatorMapper.toResponse(profile, platforms, saved, scores);
     }
 
     private List<CreatorResponse> mapResponses(AuthPrincipal principal, List<CreatorProfile> profiles) {
@@ -481,13 +494,15 @@ public class CreatorDiscoveryService {
                                 .stream()
                                 .map(SavedCreator::getCreatorProfileId)
                                 .toList());
+        Map<String, CreatorScores> scoresByCreator = loadScoresByCreator(profileIds);
         return profiles.stream()
                 .map(
                         p ->
                                 CreatorMapper.toResponse(
                                         p,
                                         platformsByCreator.getOrDefault(p.getId(), List.of()),
-                                        savedIds.contains(p.getId())))
+                                        savedIds.contains(p.getId()),
+                                        scoresByCreator.get(p.getId())))
                 .toList();
     }
 
@@ -535,8 +550,10 @@ public class CreatorDiscoveryService {
             String category, Specification<CreatorProfile> spec, Sort sort, int limit) {
         List<CreatorProfile> profiles =
                 creatorProfileRepository.findAll(spec, PageRequest.of(0, limit, sort)).getContent();
+        Map<String, CreatorScores> scoresByCreator =
+                loadScoresByCreator(profiles.stream().map(CreatorProfile::getId).toList());
         return new FeaturedSection(category, titleForCategory(category), profiles.stream()
-                .map(p -> CreatorMapper.toResponse(p, List.of(), false))
+                .map(p -> CreatorMapper.toResponse(p, List.of(), false, scoresByCreator.get(p.getId())))
                 .toList());
     }
 
@@ -594,7 +611,8 @@ public class CreatorDiscoveryService {
             AuthPrincipal principal,
             CreatorProfile profile,
             List<String> inferredCategories,
-            int budget) {
+            int budget,
+            Map<String, CreatorScores> scoresByCreator) {
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
         List<PlatformStat> platforms = platformStatRepository.findByCreatorProfileId(profile.getId());
         boolean saved =
@@ -602,7 +620,8 @@ public class CreatorDiscoveryService {
                         .findByWorkspaceIdAndCreatorProfileId(workspace.getId(), profile.getId())
                         .map(SavedCreator::isSaved)
                         .orElse(false);
-        CreatorResponse creator = CreatorMapper.toResponse(profile, platforms, saved);
+        CreatorResponse creator =
+                CreatorMapper.toResponse(profile, platforms, saved, scoresByCreator.get(profile.getId()));
 
         List<String> profileCategories = JsonLists.stringListFromJson(profile.getCategoriesJson());
         double score = 0.5;
@@ -788,8 +807,34 @@ public class CreatorDiscoveryService {
         if (score == null) {
             return null;
         }
+        // Priya ruling (BR-18, 2026-07-30): authenticity is the inverse of the fake-follower
+        // suspicion score, not the raw value — see CreatorScoreMath#toAuthenticity javadoc. Null
+        // in (never scored) stays null out; never fabricated as 0 or 100.
         return new CreatorScores(
-                score.getQualityScore(), score.getFakeFollowerScore(), score.getBrandSafetyScore());
+                score.getQualityScore(),
+                CreatorScoreMath.toAuthenticity(score.getFakeFollowerScore()),
+                score.getBrandSafetyScore());
+    }
+
+    /**
+     * BR-18 — one batch query (greatest-n-per-group over {@code idx_creator_scores_creator_time})
+     * for every id in {@code profileIds}, never a per-creator lookup. Every call site below feeds
+     * one of the four discovery endpoints ({@code /creators}, {@code /creators/{id}}, {@code
+     * /creators/featured}, {@code /creators/suggestions}) that render a page of up to 100
+     * creators — see TECH-STACK.md "Score Exposure". A creator with no row yet (never
+     * scored) is simply absent from the returned map, so callers get {@code null} from {@code
+     * .get(id)} and must NOT substitute a fabricated {@code BigDecimal.ZERO} for it (see {@code
+     * AdminCreatorService#latestQualityScore} for the anti-pattern this deliberately avoids).
+     */
+    private Map<String, CreatorScores> loadScoresByCreator(List<String> profileIds) {
+        if (profileIds.isEmpty()) {
+            return Map.of();
+        }
+        return creatorScoreRepository.findLatestByCreatorProfileIdIn(profileIds).stream()
+                .collect(
+                        Collectors.toMap(
+                                CreatorScore::getCreatorProfileId,
+                                CreatorDiscoveryService::buildScores));
     }
 
     /**

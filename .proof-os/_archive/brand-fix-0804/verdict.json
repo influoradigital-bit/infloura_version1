@@ -1,0 +1,4 @@
+{"verdict": "believed", "oracle": "grep", "isolation": "fresh-context",
+ "done_when": "all brand error solve & updated md file",
+ "not_checked": ["runtime HTTP behaviour of the 4 fixes — checkout redirect, cancel persistence, slug availability response — needs a deployed backend + provisioned Razorpay keys", "the 6 reclassifications are source-verified but not runtime-exercised"],
+ "skipped": [{"step": "live E2E of billing checkout/cancel", "reason": "Razorpay keys are env placeholders; the new buttons surface an API-error toast under placeholder keys — infra-gated, not a code defect"}]}

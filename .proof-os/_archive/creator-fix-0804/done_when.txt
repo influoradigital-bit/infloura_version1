@@ -1,0 +1,6 @@
+submitCreatorKyc has >=1 real call-site in the creator settings UI (KYC capture reachable);
+the dead saveCreatorPayout wrapper is removed (0 references remain, payout is via /wallet/payout-methods);
+the shipment §4 doc line is corrected (items real in live, only estimatedDelivery hardcoded);
+npx tsc --noEmit and eslint on changed creator files exit 0;
+PROJECT-DEEP-AUDIT-2026-08-04.md Creator section + tally updated;
+priya signs off (fresh-context review).

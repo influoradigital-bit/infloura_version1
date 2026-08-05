@@ -1,0 +1,52 @@
+{
+  "rows": [
+    {
+      "subject": "src/admin/services/api-contracts.ts \u2014 FE<->BE admin contract",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "node",
+        "command": "python .proof-os/gates/fe_be_endpoints.py .",
+        "result": "aligned \u2014 54/54 admin FE call paths resolve to a backend @Mapping, exit 0",
+        "where": "src/admin/services/api-contracts.ts:1"
+      }
+    },
+    {
+      "subject": "src/** \u2014 TypeScript typecheck after hide",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "npx tsc --noEmit",
+        "result": "typecheck clean; every admin caller still compiles",
+        "where": "tsconfig.json:1"
+      }
+    },
+    {
+      "subject": "dist/ \u2014 production build with hardened resolveChrome",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "node",
+        "command": "npm run build",
+        "result": "exit 0 \u2014 16/16 routes prerendered",
+        "where": "scripts/prerender.mjs:92"
+      }
+    },
+    {
+      "subject": "package-lock.json \u2014 dependency high-sev vulns",
+      "owner": "meera",
+      "status": "partial",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm-audit",
+        "command": "npm audit --audit-level=high",
+        "result": "4 high -> 2; residual react-router RSC-CSRF accepted (SECURITY-ACCEPTED-RISKS.md), not reachable in this SPA",
+        "where": "package-lock.json:1"
+      }
+    }
+  ]
+}

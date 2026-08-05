@@ -8,13 +8,10 @@ import {
   Heart,
   Bookmark,
   BookmarkCheck,
-  ExternalLink,
   Users,
   Star,
   Play,
   Eye,
-  MessageCircle,
-  Clock,
   Instagram,
   Youtube,
   Twitter,
@@ -96,7 +93,13 @@ interface CreatorDisplayModel {
     gender: { female: number; male: number; other: number };
     topCities: { city: string; percentage: number }[];
     interests: string[];
-    authenticity: number;
+    /**
+     * BR-18 — real `100 - fakeFollowerScore` from `creator.scores.authenticity`
+     * (DiscoveryDtos.CreatorScores), or `null` when the creator hasn't been scored yet. Never
+     * coerce to `0`: a `0` here used to render as "0% — Excellent authenticity", live misleading
+     * UI (Priya, Score Exposure §4).
+     */
+    authenticity: number | null;
   };
   portfolio: { id: number | string; type: string; brand: string; views: number; likes: number }[];
   rates: {
@@ -316,7 +319,10 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
       gender: { female: 0, male: 0, other: 0 },
       topCities: [],
       interests: [],
-      authenticity: 0,
+      // BR-18 fix: was hardcoded to 0, which rendered as "0% — Excellent authenticity" — live
+      // misleading UI. `row.scores.authenticity` is the real `100 - fakeFollowerScore` value;
+      // `null` (not yet scored) stays null all the way to the ring below.
+      authenticity: row.scores?.authenticity ?? null,
     },
     // TODO(vikram): PortfolioItemResponse (id/title/description/thumbnailUrl/mediaUrl/platform)
     // has no brand/type/views/likes fields, so it can't be mapped into this grid without inventing data
@@ -743,28 +749,41 @@ export default function BrandCreatorProfilePage() {
                 </div>
               </div>
 
-              {/* Authenticity */}
+              {/* Authenticity — BR-18. `null` means this creator hasn't been scored yet (the
+                  common case for anyone not yet polled by Meta), and must render as an explicit
+                  "not yet scored" state rather than a fabricated 0%/ring. When a real score
+                  exists, the caption reflects the actual tier instead of a hardcoded "Excellent". */}
               <div className="rounded-lg border p-5">
                 <h3 className="mb-4 font-medium">Audience Authenticity</h3>
-                <div className="flex items-center gap-4">
-                  <div className="relative h-24 w-24">
-                    <svg className="h-24 w-24 -rotate-90" viewBox="0 0 36 36">
-                      <circle cx="18" cy="18" r="16" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted" />
-                      <circle
-                        cx="18" cy="18" r="16" fill="none" stroke="currentColor" strokeWidth="2"
-                        strokeDasharray={`${creator.audience.authenticity} 100`}
-                        className="text-green-500"
-                      />
-                    </svg>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-xl font-semibold">{creator.audience.authenticity}%</span>
+                {creator.audience.authenticity == null ? (
+                  <p className="text-sm text-muted-foreground">Not yet scored</p>
+                ) : (
+                  <div className="flex items-center gap-4">
+                    <div className="relative h-24 w-24">
+                      <svg className="h-24 w-24 -rotate-90" viewBox="0 0 36 36">
+                        <circle cx="18" cy="18" r="16" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted" />
+                        <circle
+                          cx="18" cy="18" r="16" fill="none" stroke="currentColor" strokeWidth="2"
+                          strokeDasharray={`${creator.audience.authenticity} 100`}
+                          className="text-green-500"
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-xl font-semibold">{Math.round(creator.audience.authenticity)}%</span>
+                      </div>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      <p>Real followers verified</p>
+                      <p className="mt-1 text-stage-approved-fg font-medium">
+                        {creator.audience.authenticity >= 80
+                          ? 'Excellent authenticity'
+                          : creator.audience.authenticity >= 50
+                            ? 'Fair authenticity'
+                            : 'Needs review'}
+                      </p>
                     </div>
                   </div>
-                  <div className="text-sm text-muted-foreground">
-                    <p>Real followers verified</p>
-                    <p className="mt-1 text-stage-approved-fg font-medium">Excellent authenticity</p>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           </TabsContent>

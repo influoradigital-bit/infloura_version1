@@ -16,9 +16,10 @@ import java.lang.annotation.Target;
  * com.influora.domain.entity.Plan} for the request (it runs after {@code JwtAuthenticationFilter}
  * in {@code SecurityConfig}) — this annotation only makes sense on brand-authenticated routes.
  *
- * <p>No endpoint uses this yet as of Task 22 (Phase 3b) — export and campaign-template endpoints
- * are not built in this codebase. This annotation + {@link PlanGateInterceptor} are the ready
- * mechanism for whichever future endpoint adds it.
+ * <p>As of BR-14, {@code CampaignTemplateController#saveAsTemplate} uses this with {@code
+ * feature = PlanFeature.CAMPAIGN_TEMPLATES}. {@code EXPORT} still has no annotated endpoint; this
+ * annotation + {@link PlanGateInterceptor} remain the ready mechanism for whichever future export
+ * endpoint adds it.
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)

@@ -1,12 +1,9 @@
 import * as React from 'react';
-import { Link } from 'react-router-dom';
 import {
   Copy,
   ExternalLink,
   Eye,
   EyeOff,
-  GripVertical,
-  Image as ImageIcon,
   Loader2,
   Plus,
   RefreshCw,
@@ -29,7 +26,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
   Select,
   SelectContent,
@@ -146,7 +142,7 @@ export default function CreatorPortfolioEditorPage() {
       });
       setDirty(false);
       toast({ title: 'Saved', description: 'Your public page is updated.' });
-    } catch (err) {
+    } catch {
       toast({ title: 'Couldn\'t save', description: 'Try again in a moment.', variant: 'destructive' });
     } finally {
       setSaving(false);
@@ -171,7 +167,7 @@ export default function CreatorPortfolioEditorPage() {
     try {
       await api.portfolio.syncPlatforms();
       toast({ title: 'Synced', description: 'Platform stats refreshed.' });
-    } catch (err: any) {
+    } catch {
       toast({
         title: 'Sync limit reached',
         description: 'You can manually sync once per hour.',

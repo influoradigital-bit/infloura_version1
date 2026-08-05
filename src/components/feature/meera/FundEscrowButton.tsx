@@ -138,6 +138,8 @@ export function FundEscrowButton({
   const topUpCheckoutOpenRef = useRef(false);
   // Guards the insufficient_funds -> beginTopUp auto-advance so it fires once per attempt.
   const topUpStartedRef = useRef(false);
+  // One-shot guard so the parent's `onFunded` is called exactly once per fund.
+  const fundedFiredRef = useRef(false);
 
   /**
    * Handle button click - the ONLY way to initiate funding.
@@ -208,6 +210,22 @@ export function FundEscrowButton({
   useEffect(() => {
     if (status === 'idle') topUpStartedRef.current = false;
   }, [status]);
+
+  // Notify the parent exactly once when funding is SERVER-confirmed. `status`
+  // only reaches 'funded' from useEscrowFund's poll on a verified FUNDED escrow
+  // (never from the Razorpay client callback), and stays there until reset().
+  // The one-shot ref makes a re-render while still 'funded' — or a StrictMode
+  // double-invoke — safe; re-arming on 'idle' lets a fresh attempt notify again.
+  useEffect(() => {
+    if (status === 'funded') {
+      if (!fundedFiredRef.current) {
+        fundedFiredRef.current = true;
+        onFunded?.();
+      }
+    } else if (status === 'idle') {
+      fundedFiredRef.current = false;
+    }
+  }, [status, onFunded]);
 
   // Open Razorpay Checkout for the TOP-UP shortfall order.
   useEffect(() => {

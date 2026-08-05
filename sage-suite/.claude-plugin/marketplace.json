@@ -1,0 +1,22 @@
+{
+  "name": "sage-digital",
+  "owner": { "name": "Sage Digital", "email": "theagilebrands@gmail.com" },
+  "plugins": [
+    {
+      "name": "proof-os",
+      "source": "./proof-os",
+      "description": "A trust layer for AI work. Derives your project's real connection graph, runs executable gates so 'done' means proved (not believed), journals every change with who/what/when, turns failures into permanent checks, and cleans up working files when tasks close. Skills are tenants; this is the landlord.",
+      "version": "0.1.9",
+      "category": "quality",
+      "keywords": ["verification", "gates", "provenance", "trust", "audit", "governance"]
+    },
+    {
+      "name": "sage-team",
+      "source": "./sage-team",
+      "description": "The Sage Digital virtual agency as governed services: CEO, CTO, eng lead, CFO, CMO, developers, QA, security red-team, E2E, AI reviewer, content, SEO, design, automation, reporting. Tenants for proof-os.",
+      "version": "0.1.0",
+      "category": "workflow",
+      "keywords": ["agency", "agents", "team", "qa", "security", "content"]
+    }
+  ]
+}

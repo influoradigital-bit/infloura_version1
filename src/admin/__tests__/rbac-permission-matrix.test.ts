@@ -17,28 +17,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { renderHook } from '@testing-library/react';
-import { useAdminAuth, Permission } from '../hooks/useAdminAuth';
-import { AdminRole } from '../types/admin.types';
+import { Permission } from '../hooks/useAdminAuth';
 import type { AdminUser } from '../types/admin.types';
 
 // ============================================
 // TEST HELPERS
 // ============================================
-
-/**
- * Mock admin user factory. Returns a minimal AdminUser with the given role.
- */
-function mockAdminUser(role: AdminRole): AdminUser {
-  return {
-    id: `admin-${role.toLowerCase()}`,
-    email: `${role.toLowerCase()}@influora.test`,
-    role,
-    mfaEnabled: false,
-    lastLogin: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
-  };
-}
 
 /**
  * Mock useAdminAuth hook state. In a real test environment, you would mock
@@ -78,8 +62,6 @@ function mockAuthState(user: AdminUser | null) {
 describe('Admin RBAC Permission Matrix', () => {
 
   describe('SUPER_ADMIN — Full Access', () => {
-    const user = mockAdminUser(AdminRole.SUPER_ADMIN);
-
     it('should grant ALL permissions to SUPER_ADMIN', () => {
       const allPermissions = Object.values(Permission);
 
@@ -118,8 +100,6 @@ describe('Admin RBAC Permission Matrix', () => {
   });
 
   describe('ADMIN — Operational Access', () => {
-    const user = mockAdminUser(AdminRole.ADMIN);
-
     // ===== GRANTED PERMISSIONS =====
 
     it('should grant brand:edit', () => {
@@ -219,8 +199,6 @@ describe('Admin RBAC Permission Matrix', () => {
   });
 
   describe('SUPPORT — Limited Access', () => {
-    const user = mockAdminUser(AdminRole.SUPPORT);
-
     // ===== GRANTED PERMISSIONS =====
 
     it('should grant dashboard:view (operations summary only)', () => {
@@ -380,7 +358,6 @@ describe('Admin RBAC Permission Matrix', () => {
       expect(state.user).toBeNull();
 
       // Expected: hasPermission(any) === false for all permissions
-      const allPermissions = Object.values(Permission);
 
       // When mocked:
       // allPermissions.forEach(permission => {
@@ -421,8 +398,6 @@ describe('Admin RBAC Permission Matrix', () => {
 
   describe('hasAllPermissions helper', () => {
     it('should return true only if user has EVERY listed permission', () => {
-      const adminUser = mockAdminUser(AdminRole.ADMIN);
-
       // Case 1: ADMIN has [brand:edit, creator:edit] → true
       // Case 2: ADMIN has [brand:edit, admin:manage] → false (missing admin:manage)
 
@@ -436,8 +411,6 @@ describe('Admin RBAC Permission Matrix', () => {
 
   describe('hasAnyPermission helper', () => {
     it('should return true if user has AT LEAST ONE listed permission', () => {
-      const supportUser = mockAdminUser(AdminRole.SUPPORT);
-
       // Case 1: SUPPORT has [support:view] → true
       // Case 2: SUPPORT has [brand:edit, creator:edit] → false (has neither)
       // Case 3: SUPPORT has [brand:edit, support:view] → true (has support:view)

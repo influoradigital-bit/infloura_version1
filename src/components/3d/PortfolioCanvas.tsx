@@ -26,9 +26,7 @@ type StatOrbitProps = {
   radius: number;
 };
 
-function AvatarDisc({ avatarUrl }: { avatarUrl?: string }) {
-  const texture = avatarUrl ? useLoader(THREE.TextureLoader, avatarUrl) : null;
-
+function AvatarDiscView({ texture }: { texture: THREE.Texture | null }) {
   return (
     <group>
       <Ring args={[0.92, 1.05, 64]} rotation={[Math.PI / 2, 0, 0]}>
@@ -44,6 +42,16 @@ function AvatarDisc({ avatarUrl }: { avatarUrl?: string }) {
       </mesh>
     </group>
   );
+}
+
+function AvatarDiscTextured({ avatarUrl }: { avatarUrl: string }) {
+  const texture = useLoader(THREE.TextureLoader, avatarUrl);
+
+  return <AvatarDiscView texture={texture} />;
+}
+
+function AvatarDisc({ avatarUrl }: { avatarUrl?: string }) {
+  return avatarUrl ? <AvatarDiscTextured avatarUrl={avatarUrl} /> : <AvatarDiscView texture={null} />;
 }
 
 function StatOrbit({ label, value, angleOffset, radius }: StatOrbitProps) {

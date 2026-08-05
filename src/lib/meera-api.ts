@@ -18,14 +18,14 @@ import { ApiError, extractInsufficientFundsDetails, isApiLive, type ApiErrorPayl
 // ---------------------------------------------------------------------------
 
 const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+  import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 
 /**
  * Python AI service stream URL. In production this is returned by Spring in
  * the sendTurn response (streamUrl field). For mock mode, this is not used.
  */
 const MEERA_STREAM_BASE_URL =
-  (import.meta as any).env?.VITE_MEERA_STREAM_URL || 'https://ai.influora.internal';
+  import.meta.env?.VITE_MEERA_STREAM_URL || 'https://ai.influora.internal';
 
 // ---------------------------------------------------------------------------
 // Types (match 02-API-CONTRACT-BRAND.md exactly)
@@ -145,16 +145,6 @@ export interface MeeraEscrowStatus {
   milestoneId: string | null;
   fundedAt: string | null;
 }
-
-/** SSE event types from Python (04 section 4) */
-export type MeeraSSEEventType =
-  | 'token'
-  | 'thinking'
-  | 'tool_start'
-  | 'tool_result'
-  | 'prompt_meta'
-  | 'done'
-  | 'error';
 
 export interface MeeraTokenEvent {
   text: string;

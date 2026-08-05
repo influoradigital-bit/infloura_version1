@@ -441,6 +441,75 @@ public class AuthService {
         refreshTokenRepository.revokeAllForUser(user.getId());
     }
 
+    /**
+     * BR-05 — POST /me/password, the only in-session (already-authenticated) password-change
+     * path; distinct from {@link #resetPassword} which is the logged-out forgot-password flow off
+     * a mailed token. Re-authenticates on {@code currentPassword} against the stored BCrypt hash
+     * before accepting the new one — same {@code passwordEncoder.matches} check {@link
+     * #brandLogin}/{@link #creatorLogin} use — and rejects with 401 rather than 400 so a stolen
+     * session cookie/access token alone still can't rotate the password without knowing it.
+     *
+     * <p><b>[SEC: Priya audit, e60d249 follow-up — fixed]</b> On success, revokes every OTHER
+     * outstanding refresh token (same "kill leaked/stale sessions on password change" intent as
+     * {@link #resetPassword}) but deliberately leaves the CALLER's own current refresh token alone.
+     * This used to call {@code revokeAllForUser}, which burns the caller's own session too — the
+     * user who just proved they know the new password would then be silently logged out on their
+     * very next token refresh, with no error and no explanation (a UI-honesty violation: the
+     * response says {@code changed: true} and gives no hint the session is about to die). {@code
+     * currentRawRefreshToken} is the raw value read from the caller's own HttpOnly refresh cookie by
+     * {@code AccountController} — if present and it resolves to a live token row, that row's id is
+     * excluded from the revoke. If it's absent or already invalid/expired (e.g. a non-browser client
+     * that never had a refresh cookie), there is nothing to preserve and this falls back to the old
+     * revoke-all behavior — correct, just not seamless for that caller.
+     */
+    @Transactional
+    public void changePassword(
+            String userId, String currentPassword, String newPassword, String currentRawRefreshToken) {
+        User user =
+                userRepository
+                        .findById(userId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "USER_NOT_FOUND", "User not found", HttpStatus.NOT_FOUND));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new ApiException(
+                    "INVALID_CURRENT_PASSWORD",
+                    "Current password is incorrect",
+                    HttpStatus.UNAUTHORIZED);
+        }
+
+        PasswordPolicy.validate(newPassword);
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+
+        String currentTokenId = currentRefreshTokenId(currentRawRefreshToken);
+        if (currentTokenId != null) {
+            refreshTokenRepository.revokeAllForUserExcept(user.getId(), currentTokenId);
+        } else {
+            refreshTokenRepository.revokeAllForUser(user.getId());
+        }
+    }
+
+    /**
+     * Resolves the caller's own live refresh-token row id from the raw cookie value, or {@code
+     * null} if there isn't one (absent cookie, unknown hash, already revoked, or expired) — any of
+     * which just means {@link #changePassword} has nothing to preserve and falls back to revoking
+     * everything.
+     */
+    private String currentRefreshTokenId(String rawRefreshToken) {
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            return null;
+        }
+        return refreshTokenRepository
+                .findByTokenHashAndRevokedFalse(JwtService.hashToken(rawRefreshToken))
+                .filter(t -> t.getExpiresAt().isAfter(Instant.now()))
+                .map(RefreshToken::getId)
+                .orElse(null);
+    }
+
     private void createPasswordResetToken(User user) {
         String raw = jwtService.createRefreshTokenValue();
         String hash = JwtService.hashToken(raw);

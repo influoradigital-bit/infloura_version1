@@ -1,0 +1,2 @@
+graph engine: scan.py-regex · 2657 edges · oracles {'regex': 2657} · oracle_strength 100.0% (deterministic 2657/2657, of which parser-derived 0)
+NOT CHECKED: whether the edges are TRUE — this gate audits provenance and status, never re-derives the topology from source | whether evidence.where still points at the line it was captured from (see gates/citations.py for that check) | nodes: only edges are audited

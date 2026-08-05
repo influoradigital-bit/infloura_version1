@@ -1,0 +1,13 @@
+{
+  "id": "AF-19",
+  "order": 19,
+  "verb": "POST",
+  "path": "/admin/escrow/{id}/release",
+  "dto": "EscrowActionResult",
+  "tier": "money",
+  "status": "DEFERRED",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "DEFERRED-BY-DESIGN (human decision 2026-08-03, SCOPE.md Tier B). Admin release/refund of disputed escrow ALREADY exists via the audited dispute path: POST /admin/disputes/{id}/resolve -> DisputeService.resolveDispute -> EscrowService.adminReleaseForDispute/adminRefundForDispute/adminSplitForDispute (writes admin_audit_log, security-review cleared). Direct by-holdId manipulation would BYPASS that audit trail. Real gap (if any) is FRONTEND wiring."
+}

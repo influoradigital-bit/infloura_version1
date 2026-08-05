@@ -1,0 +1,13 @@
+{
+  "id": "AF-01",
+  "order": 1,
+  "verb": "GET",
+  "path": "/admin/finance/revenue",
+  "dto": "RevenueSnapshot[]",
+  "tier": "read",
+  "status": "DONE",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "revenue report: gmv (escrow released by period) + platformFees (commission by period) real; setupFees honest structural 0; zero-collision new files"
+}

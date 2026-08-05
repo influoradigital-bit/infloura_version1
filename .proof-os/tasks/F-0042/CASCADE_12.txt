@@ -1,0 +1,12 @@
+src/lib/auth-session.ts:140 - clearBrandSession
+src/lib/brand-deliverable-utils.ts:5 - isBrandReviewableApiStatus
+src/lib/brand-deliverable-utils.ts:13 - mapApiStatusToTabStatus
+src/lib/demo-data.ts:91 - AdminUserRow
+src/lib/demo-data.ts:112 - demoAdminDisputes
+src/lib/demo-data.ts:119 - AdminTransactionRow
+src/lib/demo-data.ts:141 - demoAdminKycQueue
+src/lib/demo-data.ts:147 - AdminPlatformStats
+src/lib/types.ts:415 - MediaFile
+src/lib/types.ts:424 - RevisionFeedback
+src/admin/types/admin.types.ts:181 - RoleCapabilities
+src/admin/types/admin.types.ts:202 - MFA_REQUIRED_ACTIONS

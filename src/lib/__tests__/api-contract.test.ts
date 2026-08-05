@@ -68,16 +68,16 @@ describe('api facade shape', () => {
  * CreatorOnboardingController, UploadController, and the payout-methods routes).
  */
 const KNOWN_PHANTOM_PATHS = new Set<string>([
-  '/notifications/read-all',
   // NOTE (2026-07-26): '/wallet/recharge' removed — the dead `wallet.recharge` wrapper that
   // called it was deleted from src/lib/api.ts (no callers, no controller, never had one).
   //
-  // '/deliverables/{}/approve' and '/deliverables/{}/revise' are STALE entries: both are real
-  // today (BrandDeliverableController.java:46 and :53) and are called from four brand UI sites.
-  // They stay listed only because this set may not shrink without re-running the generator that
-  // built it; remove them the next time this baseline is regenerated.
-  '/deliverables/{}/approve',
-  '/deliverables/{}/revise',
+  // NOTE (2026-08-03): three stale entries removed as their contracts are now settled —
+  //   '/notifications/read-all'   — the dead `api.notifications.markAllRead` wrapper (its only
+  //                                 reference) was deleted from src/lib/api.ts; nothing calls it.
+  //   '/deliverables/{}/approve'  — real today (BrandDeliverableController.java:46), matched live.
+  //   '/deliverables/{}/revise'   — real today (BrandDeliverableController.java:53), matched live.
+  // Baseline only shrinks (guardrail contract): each was verified to no longer be an unmatched
+  // FE phantom before removal.
 
   // -------------------------------------------------------------------------
   // ADMIN PANEL — deferred by explicit CTO scope decision (Priya, 2026-07-15).
@@ -125,7 +125,8 @@ const KNOWN_PHANTOM_PATHS = new Set<string>([
   '/admin/campaigns/hype/ops',
   '/admin/finance/revenue',
   '/admin/finance/escrow',
-  '/admin/finance/payouts',
+  // '/admin/finance/payouts' REMOVED (2026-08-04, admin-fix-0804): the dead `financeApi.getPayoutQueue`
+  // wrapper that emitted it was deleted — no longer an emitted FE phantom. Baseline only shrinks.
   '/admin/finance/payouts/{}/retry',
   '/admin/finance/reconciliation',
   '/admin/finance/reconciliation/{}/resolve',
@@ -138,15 +139,14 @@ const KNOWN_PHANTOM_PATHS = new Set<string>([
   '/admin/moderation/suspensions',
   '/admin/moderation/suspensions/{}/appeal',
 
-  // Same decision, same evidence: these four api-contracts.ts exports have NO
-  // importer anywhere in src/ — errorApi, emailApi, marketingApi, auditApi are
-  // dead in their entirety (not just individual methods), as is escrowApi above.
-  // They were NOT in the original phantom report, which was truncated; the real
-  // count was 38, not 25. Surfaced only by running the guardrail to completion.
-  '/admin/errors/recent',
-  '/admin/errors/{}',
-  '/admin/errors/{}/resolve',
-  '/admin/errors/stats',
+  // Same decision, same evidence: these api-contracts.ts exports have NO importer
+  // anywhere in src/ — emailApi, marketingApi, auditApi are dead in their entirety,
+  // as is escrowApi above. They were NOT in the original phantom report, which was
+  // truncated; the real count was 38, not 25. Surfaced by running the guardrail fully.
+  //
+  // NOTE (2026-08-03): the four '/admin/errors/*' entries were REMOVED — errorApi is now
+  // LIVE (AdminErrorLogController, committed 9d22e4c) AND wired (useErrorLog.ts /
+  // ErrorLogPage.tsx), so those paths resolve to real controllers and are no longer phantom.
   '/admin/emails/queue',
   '/admin/emails/queue/{}/retry',
   '/admin/emails/templates',
@@ -154,7 +154,8 @@ const KNOWN_PHANTOM_PATHS = new Set<string>([
   '/admin/emails/stats',
   '/admin/marketing/acquisition',
   '/admin/marketing/growth',
-  '/admin/marketing/referrals',
+  // '/admin/marketing/referrals' REMOVED (2026-08-04, admin-fix-0804): the dead `marketingApi.getReferrals`
+  // wrapper that emitted it was deleted — no longer an emitted FE phantom. Baseline only shrinks.
   '/admin/marketing/reputation',
 
   // Non-admin, also verified zero live callers (2026-07-15): the api.ts methods

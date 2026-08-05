@@ -1,0 +1,95 @@
+
+changed 22 packages, and audited 739 packages in 4s
+
+102 packages are looking for funding
+  run `npm fund` for details
+
+# npm audit report
+
+@opentelemetry/core  <2.8.0
+Severity: moderate
+OpenTelemetry Core: Unbounded memory allocation in W3C Baggage propagation - https://github.com/advisories/GHSA-8988-4f7v-96qf
+fix available via `npm audit fix --force`
+Will install lighthouse@12.6.1, which is a breaking change
+node_modules/@opentelemetry/core
+  @opentelemetry/instrumentation-amqplib  <=0.46.1
+  Depends on vulnerable versions of @opentelemetry/core
+  node_modules/@opentelemetry/instrumentation-amqplib
+    @sentry/node  8.0.0-alpha.1 - 10.53.1
+    Depends on vulnerable versions of @opentelemetry/core
+    Depends on vulnerable versions of @opentelemetry/instrumentation-amqplib
+    Depends on vulnerable versions of @opentelemetry/instrumentation-connect
+    Depends on vulnerable versions of @opentelemetry/instrumentation-express
+    Depends on vulnerable versions of @opentelemetry/instrumentation-fs
+    Depends on vulnerable versions of @opentelemetry/instrumentation-hapi
+    Depends on vulnerable versions of @opentelemetry/instrumentation-http
+    Depends on vulnerable versions of @opentelemetry/instrumentation-koa
+    Depends on vulnerable versions of @opentelemetry/instrumentation-mongoose
+    Depends on vulnerable versions of @opentelemetry/instrumentation-mysql2
+    Depends on vulnerable versions of @opentelemetry/instrumentation-pg
+    Depends on vulnerable versions of @opentelemetry/instrumentation-undici
+    Depends on vulnerable versions of @opentelemetry/resources
+    Depends on vulnerable versions of @opentelemetry/sdk-trace-base
+    node_modules/@sentry/node
+      lighthouse  12.6.1-dev.20250602 - 12.6.1-dev.20250626 || 12.7.0-dev.20250627 - 13.4.0
+      Depends on vulnerable versions of @sentry/node
+      node_modules/lighthouse
+  @opentelemetry/instrumentation-connect  <=0.43.1
+  Depends on vulnerable versions of @opentelemetry/core
+  node_modules/@opentelemetry/instrumentation-connect
+  @opentelemetry/instrumentation-express  <=0.47.1
+  Depends on vulnerable versions of @opentelemetry/core
+  node_modules/@opentelemetry/instrumentation-express
+  @opentelemetry/instrumentation-fs  <=0.19.1
+  Depends on vulnerable versions of @opentelemetry/core
+  node_modules/@opentelemetry/instrumentation-fs
+  @opentelemetry/instrumentation-hapi  0.24.0 - 0.45.2
+  Depends on vulnerable versions of @opentelemetry/core
+  node_modules/@opentelemetry/instrumentation-hapi
+  @opentelemetry/instrumentation-http  <=0.16.0 || 0.19.1-alpha.7 - 0.218.0
+  Depends on vulnerable versions of @opentelemetry/core
+  node_modules/@opentelemetry/instrumentation-http
+  @opentelemetry/instrumentation-koa  <=0.15.0 || 0.20.0 - 0.47.1
+  Depends on vulnerable versions of @opentelemetry/core
+  node_modules/@opentelemetry/instrumentation-koa
+  @opentelemetry/instrumentation-mongoose  <=0.46.1
+  Depends on vulnerable versions of @opentelemetry/core
+  node_modules/@opentelemetry/instrumentation-mongoose
+  @opentelemetry/instrumentation-pg  0.34.0 - 0.51.1
+  Depends on vulnerable versions of @opentelemetry/core
+  Depends on vulnerable versions of @opentelemetry/sql-common
+  node_modules/@opentelemetry/instrumentation-pg
+  @opentelemetry/instrumentation-undici  <=0.10.1
+  Depends on vulnerable versions of @opentelemetry/core
+  node_modules/@opentelemetry/instrumentation-undici
+  @opentelemetry/resources  0.8.0 - 2.7.1
+  Depends on vulnerable versions of @opentelemetry/core
+  node_modules/@opentelemetry/resources
+  @opentelemetry/sdk-trace-base  <=2.7.1
+  Depends on vulnerable versions of @opentelemetry/core
+  Depends on vulnerable versions of @opentelemetry/resources
+  node_modules/@opentelemetry/sdk-trace-base
+  @opentelemetry/sql-common  <=0.40.1
+  Depends on vulnerable versions of @opentelemetry/core
+  node_modules/@opentelemetry/sql-common
+    @opentelemetry/instrumentation-mysql2  0.34.1 - 0.45.2
+    Depends on vulnerable versions of @opentelemetry/sql-common
+    node_modules/@opentelemetry/instrumentation-mysql2
+
+react-router  7.12.0 - 8.2.0
+Severity: high
+React Router: RSC Mode CSRF Bypass Allows Action Execution Before 400 Response - https://github.com/advisories/GHSA-qwww-vcr4-c8h2
+fix available via `npm audit fix --force`
+Will install react-router-dom@7.11.0, which is a breaking change
+node_modules/react-router
+  react-router-dom  >=7.12.0-pre.0
+  Depends on vulnerable versions of react-router
+  node_modules/react-router-dom
+
+19 vulnerabilities (17 moderate, 2 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force

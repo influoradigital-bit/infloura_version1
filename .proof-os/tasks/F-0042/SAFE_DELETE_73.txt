@@ -1,0 +1,110 @@
+src/admin/hooks/useAdminSocket.ts  (1)
+    L97  useAdminSocketStatus
+src/admin/services/websocket.ts  (1)
+    L526  resetAdminSocket
+src/admin/types/admin.types.ts  (4)
+    L36  SuspensionStatus
+    L191  ROLE_CAPABILITIES
+    L238  MfaVerificationStatus
+    L261  actionRequiresMfa
+src/admin/utils/auditLogger.ts  (1)
+    L297  getAuditRetryQueueStatus
+src/components/brand/campaigns/campaign-state-machine.tsx  (2)
+    L359  getStateConfig
+    L363  CAMPAIGN_STATES
+src/components/brand/deal-room/bid-card.tsx  (1)
+    L20  CreatorBidCard
+src/components/brand/deal-room/brand-deal-counter-modal.tsx  (1)
+    L34  BrandDealCounterModal
+src/components/brand/deal-room/brand-deliverable-revise-modal.tsx  (1)
+    L26  BrandDeliverableReviseModal
+src/components/brand/deal-room/campaign-brief-card.tsx  (1)
+    L25  CampaignBriefCard
+src/components/brand/deal-room/deal-room-explainer.tsx  (1)
+    L16  DealRoomExplainer
+src/components/brand/deal-room/proposal-card.tsx  (1)
+    L31  ProposalCard
+src/components/brand/onboarding/onboarding-steps.tsx  (4)
+    L1028  VerificationDocsStep
+    L1247  TeamSetupStep
+    L1376  TrustPrimerStep
+    L1450  WalletFundingStep
+src/components/brand/onboarding/product-tour.tsx  (1)
+    L56  ProductTour
+src/components/creator/deal-room/metrics-report-form.tsx  (1)
+    L64  MetricsReportForm
+src/components/feature/meera/CreditMeter.tsx  (1)
+    L149  CreditBadge
+src/components/shared/aurora-background.tsx  (1)
+    L27  AuroraBackground
+src/components/shared/escrow-status-bar.tsx  (1)
+    L22  EscrowStatusBar
+src/components/shared/jargon-tooltip.tsx  (1)
+    L42  JargonTooltip
+src/components/theme-provider.tsx  (1)
+    L11  ThemeProvider
+src/components/ui/skeletons.tsx  (7)
+    L7  DashboardSkeleton
+    L103  PipelineSkeleton
+    L155  DiscoverSkeleton
+    L204  WalletSkeleton
+    L262  CampaignDetailSkeleton
+    L341  TableSkeleton
+    L363  CardGridSkeleton
+src/data/meera-copy.ts  (2)
+    L115  MEERA_QUICK_REPLIES
+    L172  MEERA_MESSAGE_ROLE
+src/data/meera-mock.ts  (1)
+    L191  MockScriptedMessage
+src/data/motion-tokens.ts  (5)
+    L53  MEERA_COUNTUP_DURATION
+    L68  MEERA_PRESS_SCALE
+    L69  MEERA_PRESS_TRANSITION
+    L76  MEERA_PRESENCE_IDLE_DURATION
+    L77  MEERA_PRESENCE_THINKING_DURATION
+src/data/stage-config.ts  (1)
+    L83  nextStage
+src/hooks/useAuth.ts  (1)
+    L5  useAuth
+src/lib/brand-deliverable-utils.ts  (5)
+    L15  isBrandReviewableStatus
+    L43  mapApiStatusToTimelineUi
+    L59  mapTabStatusToApiStatus
+    L78  isApiBackedDeliverableId
+    L87  mapApiStatusToInlineTimelineStatus
+src/lib/creator-contract-mappers.ts  (2)
+    L47  canCreatorSignDealStatus
+    L51  dealHasContractFromApi
+src/lib/demo-data.ts  (4)
+    L87  demoHypeInvite
+    L119  demoAdminUsers
+    L158  demoAdminTransactions
+    L196  demoAdminStats
+src/lib/legal/legal-docs.ts  (1)
+    L61  getAllLegalDocSlugs
+src/lib/meera-api.ts  (1)
+    L150  MeeraSSEEventType
+src/lib/motion-config.ts  (2)
+    L1  DURATION_FAST
+    L3  DURATION_SLOW
+src/lib/razorpay.ts  (1)
+    L116  unloadRazorpayScript
+src/lib/scroll/smooth-scroll.ts  (1)
+    L42  getLenisInstance
+src/lib/store.ts  (2)
+    L107  useCollaborationStore
+    L201  useDiscoveryStore
+src/lib/token-store.ts  (4)
+    L21  getMemoryToken
+    L25  setMemoryToken
+    L29  clearMemoryToken
+    L33  hasMemoryToken
+src/lib/types.ts  (4)
+    L187  WorkspaceMember
+    L427  DeliverableRevision
+    L514  DisputeEvidence
+    L542  AuditLog
+src/lib/upload.ts  (3)
+    L86  deleteFromR2
+    L153  buildR2Path
+    L186  generatePresignedUrl

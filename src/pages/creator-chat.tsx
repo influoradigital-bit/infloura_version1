@@ -9,24 +9,15 @@ import {
   Paperclip,
   Search,
   MoreVertical,
-  Check,
   CheckCheck,
   FileText,
-  Image as ImageIcon,
-  Clock,
-  ChevronRight,
-  Shield,
   IndianRupee,
-  Calendar,
   Video,
   Upload,
   CheckCircle2,
   AlertCircle,
-  Pen,
-  Eye,
   Building2,
   Reply,
-  MessageSquare,
   FileSignature,
   Package,
   CreditCard,
@@ -57,12 +48,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -71,16 +56,15 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { CounterProposalForm, type CounterProposalFormData } from '@/components/creator/deal-room/counter-proposal-form';
-import { CounterProposalCard } from '@/components/creator/deal-room/counter-proposal-card';
 import { CreatorContractPanel } from '@/components/creator/deal-room/creator-contract-panel';
 import { CreatorContractCard } from '@/components/creator/deal-room/creator-contract-card';
 import { DeliverableSubmission, type DeliverableSubmissionData } from '@/components/creator/deal-room/deliverable-submission';
-import { DeliverableCard } from '@/components/creator/deal-room/deliverable-card';
+import { DeliverableLifecyclePanel } from '@/components/creator/deal-room/deliverable-lifecycle-panel';
 import { RevisionHandler } from '@/components/creator/deal-room/revision-handler';
 import { ShippingAddressForm, type ShippingAddressData } from '@/components/creator/deal-room/shipping-address-form';
 import { ReceiptConfirmation, type ReceiptData } from '@/components/creator/deal-room/receipt-confirmation';
 import { ShipmentCard, type ShipmentStatus } from '@/components/shared/shipment-card';
-import { MapPin, Truck } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 // CR-34 — `CollaborationStatus` is no longer imported here: the only value-level use was the
 // local canAccept() mirror, which now lives in lib/deal-stage.ts. It survives in prose below.
 import type { TimelineEvent as LibTimelineEvent, TimelineEventMetadata } from '@/lib/types';
@@ -1000,8 +984,6 @@ export default function CreatorChatPage() {
     if (selectedDeal) syncUrl(selectedDeal.id, panel);
   };
 
-  const openContractTab = () => openTool('contract');
-
   // FE-2: fetch the full contract once a real contractId exists on the
   // selected deal. Coarse status (deal.contractStatus) already renders an
   // honest state before this resolves.
@@ -1030,6 +1012,9 @@ export default function CreatorChatPage() {
   // C19: real deliverable rows feed the submission dialog (was a hardcoded fake array).
   // The chat page can only LIST them — rows are created server-side when the contract is
   // generated, so an empty list here means "no contract yet, nothing to submit".
+  // Real deliverable rows for the selected collaboration — GET /creator/deliverables?collaboration_id=.
+  // Empty until a contract materializes the rows (ContractService.materializeDeliverables).
+  const [liveDeliverables, setLiveDeliverables] = React.useState<CreatorDeliverableListItem[]>([]);
   const loadDeliverables = React.useCallback(async () => {
     if (!liveApi || !selectedDeal) {
       setLiveDeliverables([]);
@@ -1063,13 +1048,10 @@ export default function CreatorChatPage() {
   const [showCounterForm, setShowCounterForm] = React.useState(false);
   const [isSubmittingCounter, setIsSubmittingCounter] = React.useState(false);
   const [showDeliverableDialog, setShowDeliverableDialog] = React.useState(false);
-  // Real deliverable rows for the selected collaboration — GET /creator/deliverables?collaboration_id=.
-  // Empty until a contract materializes the rows (ContractService.materializeDeliverables).
-  const [liveDeliverables, setLiveDeliverables] = React.useState<CreatorDeliverableListItem[]>([]);
   const [counterAmount, setCounterAmount] = React.useState('');
   const [counterMessage, setCounterMessage] = React.useState('');
   const [showRevisionHandler, setShowRevisionHandler] = React.useState(false);
-  const [selectedDeliverableForRevision, setSelectedDeliverableForRevision] = React.useState<string | null>(null);
+  const [selectedDeliverableForRevision] = React.useState<string | null>(null);
   const [isSubmittingDeliverable, setIsSubmittingDeliverable] = React.useState(false);
   const [isAcceptingProposal, setIsAcceptingProposal] = React.useState(false);
   const [isDecliningProposal, setIsDecliningProposal] = React.useState(false);
@@ -1149,10 +1131,10 @@ export default function CreatorChatPage() {
     ? liveShipment?.status === 'SHIPPED' || liveShipment?.status === 'RECEIVED' || liveShipment?.status === 'DAMAGED'
     : true; // mock/demo mode: keep the prior "brand always already shipped" assumption so the click-through demo still works
 
-  // Display fields ShipmentCard needs beyond status/address. Priya's Shipment entity has
-  // no `items`/`estimatedDelivery` fields at all (single `productName` string, no ETA) —
-  // those two stay demo placeholders in both modes until a future schema addition;
-  // courier/tracking/notes come from the real record once liveApi is on.
+  // Display fields ShipmentCard needs beyond status/address. In live mode `items` is derived
+  // from the real `productName` (flattened to qty 1), and `estimatedDelivery` is now the real
+  // brand-supplied ETA (creator-shipment-eta-0804) — null until the brand marks it shipped with
+  // a date. Courier/tracking/notes come from the real record once liveApi is on.
   const shipmentDisplay = React.useMemo(() => {
     if (liveApi) {
       return {
@@ -1160,6 +1142,7 @@ export default function CreatorChatPage() {
         courier: liveShipment?.carrier || 'Courier pending',
         trackingNumber: liveShipment?.trackingNumber || 'Pending',
         trackingUrl: liveShipment?.trackingUrl || undefined,
+        estimatedDelivery: liveShipment?.estimatedDelivery ?? null,
         notes: liveShipment?.conditionNote || undefined,
       };
     }
@@ -1168,6 +1151,7 @@ export default function CreatorChatPage() {
       courier: 'Delhivery',
       trackingNumber: 'DLV789456123',
       trackingUrl: 'https://www.delhivery.com/track',
+      estimatedDelivery: '2026-08-10',
       notes: 'Please unbox on camera if you can. Care: dry-clean only.',
     };
   }, [liveApi, liveShipment]);
@@ -1397,10 +1381,6 @@ export default function CreatorChatPage() {
     }
   };
 
-  const handleSubmitDeliverable = () => {
-    setShowDeliverableDialog(false);
-  };
-
   const handleSubmitDeliverableForm = async (data: DeliverableSubmissionData) => {
     setIsSubmittingDeliverable(true);
     try {
@@ -1420,7 +1400,7 @@ export default function CreatorChatPage() {
     }
   };
 
-  const handleStartRevision = async (revisionNotes: string) => {
+  const handleStartRevision = async (_revisionNotes: string) => {
     // No dedicated "start revision" endpoint exists (or is needed) — a revision
     // is just a re-submission of the same deliverable row via
     // creatorDeliverables.upload + deliverables.submit, which
@@ -1819,8 +1799,8 @@ export default function CreatorChatPage() {
                 onClick={() => setShowShippingAddressForm(true)}
                 className="gap-1.5"
               >
-                <Truck className="h-4 w-4" />
-                <span className="hidden sm:inline">Shipping</span>
+                <MapPin className="h-4 w-4" />
+                <span className="hidden sm:inline">Edit shipping address</span>
               </Button>
             )}
             {selectedDeal.status === 'in_progress' && (
@@ -2333,7 +2313,7 @@ export default function CreatorChatPage() {
                 courier={shipmentDisplay.courier}
                 trackingNumber={shipmentDisplay.trackingNumber}
                 trackingUrl={shipmentDisplay.trackingUrl}
-                estimatedDelivery={new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()}
+                estimatedDelivery={shipmentDisplay.estimatedDelivery}
                 notes={shipmentDisplay.notes}
                 onMarkReceived={handleMarkReceived}
               />
@@ -2432,12 +2412,33 @@ export default function CreatorChatPage() {
               )}
 
               {openPanel === 'deliverables' && (
-                <DealDeliverablesTab
-                  done={selectedDeal.deliverablesDone}
-                  total={selectedDeal.deliverablesTotal}
-                  dealValue={selectedDeal.dealAmount}
-                  items={deliverableItems}
-                />
+                <div className="space-y-4">
+                  <DealDeliverablesTab
+                    done={selectedDeal.deliverablesDone}
+                    total={selectedDeal.deliverablesTotal}
+                    dealValue={selectedDeal.dealAmount}
+                    items={deliverableItems}
+                  />
+                  {/* Post-approval lifecycle: mark-posted → report metrics / upload proof.
+                      Wires the four previously-orphan CreatorDeliverableController routes
+                      (PROJECT-DEEP-AUDIT-2026-08-04.md §5). Live mode only. */}
+                  {liveApi &&
+                    liveDeliverables
+                      .filter((d) =>
+                        (['APPROVED', 'POSTED', 'METRICS_REPORTED', 'VERIFIED'] as const).includes(
+                          d.status as 'APPROVED' | 'POSTED' | 'METRICS_REPORTED' | 'VERIFIED',
+                        ),
+                      )
+                      .map((d) => (
+                        <DeliverableLifecyclePanel
+                          key={d.id}
+                          deliverableId={d.id}
+                          title={d.title}
+                          status={d.status}
+                          onChanged={() => void loadDeliverables()}
+                        />
+                      ))}
+                </div>
               )}
 
               {openPanel === 'payments' && (
@@ -2452,63 +2453,6 @@ export default function CreatorChatPage() {
           </ToolsSheetContent>
         </ToolsSheet>
       </div>
-
-      {/* Contract Details Sheet */}
-      {false && (
-      <Sheet open={false} onOpenChange={() => {}}>
-        <SheetContent className="w-full sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle>Contract Details</SheetTitle>
-          </SheetHeader>
-          <div className="mt-6 space-y-6">
-            <div>
-              <p className="text-sm text-muted-foreground mb-1">Contract ID</p>
-              <p className="font-mono">CTR-2024-001</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground mb-1">Brand</p>
-              <p className="font-medium">{selectedDeal.brandName}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground mb-1">Campaign</p>
-              <p className="font-medium">{selectedDeal.campaignName}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground mb-1">Contract Value</p>
-              <p className="text-2xl font-bold">{formatINR(selectedDeal.dealAmount)}</p>
-            </div>
-            <div className="pt-4 border-t">
-              <p className="text-sm font-medium mb-3">Your Earnings</p>
-              <div className="space-y-2 text-sm">
-                {(() => {
-                  const earnings = calculateEarnings(selectedDeal.dealAmount);
-                  return (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Contract Value</span>
-                        <span>{formatINR(selectedDeal.dealAmount)}</span>
-                      </div>
-                      <div className="flex justify-between text-stage-disputed-fg">
-                        <span>Platform Fee (15%)</span>
-                        <span>-{formatINR(earnings.platformFee)}</span>
-                      </div>
-                      <div className="flex justify-between font-semibold text-stage-approved-fg pt-2 border-t">
-                        <span>You Receive</span>
-                        <span>{formatINR(earnings.netEarnings)}</span>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-            <Button className="w-full">
-              <FileText className="h-4 w-4 mr-2" />
-              Download Contract PDF
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
-      )}
 
       {/* Counter Proposal Dialog */}
       <Dialog open={showCounterDialog} onOpenChange={setShowCounterDialog}>

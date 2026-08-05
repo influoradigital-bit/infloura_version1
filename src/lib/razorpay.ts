@@ -109,19 +109,6 @@ export function loadRazorpayScript(): Promise<void> {
 }
 
 /**
- * Removes the injected script tag. Not required for normal operation (the
- * script is tiny and safe to keep loaded for the session) but exposed for
- * tests/storybook environments that need a clean teardown.
- */
-export function unloadRazorpayScript(): void {
-  const existing = document.getElementById(SCRIPT_ID);
-  if (existing?.parentNode) {
-    existing.parentNode.removeChild(existing);
-  }
-  scriptLoadPromise = null;
-}
-
-/**
  * Fetches the publishable Razorpay Key ID from `GET /config/razorpay` and
  * caches it for the session (it is a static, environment-scoped value, not
  * per-request). NEVER a secret — see `PublicConfigController` on the backend.

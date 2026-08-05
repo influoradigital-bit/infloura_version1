@@ -4,9 +4,12 @@ import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DealSenderType;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -58,12 +61,12 @@ public final class DealDtos {
             @NotBlank String campaignId,
             @NotBlank String creatorId,
             @NotNull @DecimalMin("0.01") BigDecimal amount,
-            List<DeliverableSlot> deliverables,
+            @NotEmpty(message = "At least one deliverable is required") @Valid List<DeliverableSlot> deliverables,
             String deadline,
             String usageRights,
             @Size(max = 2000) String message) {}
 
-    public record DeliverableSlot(@NotBlank String type, @NotNull Integer qty) {}
+    public record DeliverableSlot(@NotBlank String type, @NotNull @Positive Integer qty) {}
 
     /**
      * A counter-offer from either party. Aligned with {@link CreateDealRequest} on 2026-07-26:
@@ -81,7 +84,7 @@ public final class DealDtos {
     public record CounterRequest(
             @NotNull @DecimalMin("0.01") BigDecimal amount,
             @Size(max = 2000) String message,
-            List<DeliverableSlot> deliverables,
+            @NotEmpty(message = "At least one deliverable is required") @Valid List<DeliverableSlot> deliverables,
             String deadline,
             String usageRights) {}
 

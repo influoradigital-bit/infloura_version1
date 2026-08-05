@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
-  BadgeCheck,
   FileSignature,
   MessageSquareText,
   Search,

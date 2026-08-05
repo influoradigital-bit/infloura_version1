@@ -1,0 +1,6 @@
+{"verdict": "believed", "oracle": "grep", "isolation": "oracle",
+ "done_when": "Creator blind-spot report compares PROJECT-DEEP-AUDIT-2026-08-04.md Creator claims against code truth",
+ "not_checked": ["live HTTP behaviour of any creator route (static call-site reachability only)",
+                 "exact wrapper-name mapping of the §5 creator orphan routes (labeled MISSING, so no WORKING->broken risk)",
+                 "backend service logic behind verified routes"],
+ "skipped": [{"step": "fresh-context checker subagent", "reason": "CHECK/AUDIT verb runs oracles directly, no agents (FLOW law 4)"}]}

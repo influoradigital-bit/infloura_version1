@@ -1,0 +1,13 @@
+{
+  "id": "AF-10",
+  "order": 10,
+  "verb": "GET",
+  "path": "/admin/campaigns/hype/ops",
+  "dto": "HypeOps",
+  "tier": "read",
+  "status": "DONE",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "4/5 fields buildable from real hype_config (activeHype/totalSlots/filledSlots/avgFillRate); approvalsPerHour has no defined source+window \u2014 needs one metric decision"
+}

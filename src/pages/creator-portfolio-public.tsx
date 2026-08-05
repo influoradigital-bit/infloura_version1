@@ -10,12 +10,10 @@ import {
   GraduationCap,
   Heart,
   Image as ImageIcon,
-  IndianRupee,
   Instagram,
   Loader2,
   Mail,
   MapPin,
-  MessageSquare,
   Play,
   RefreshCw,
   Send,
@@ -45,7 +43,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Separator } from '@/components/ui/separator';
 
 import { cn, formatINR, publicProfileLabel } from '@/lib/utils';
 import {

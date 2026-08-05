@@ -1,0 +1,1788 @@
+{
+ "backend": [
+  "DELETE /campaign-templates/{}",
+  "DELETE /campaigns/{}",
+  "DELETE /integrations/store/disconnect",
+  "DELETE /me/account",
+  "DELETE /webhook-secret",
+  "DELETE /workspace/members/{}",
+  "GET /.well-known/jwks.json",
+  "GET /admin/audit",
+  "GET /admin/audit/entity/{}/{}",
+  "GET /admin/auth/me",
+  "GET /admin/billing/metrics",
+  "GET /admin/billing/subscriptions",
+  "GET /admin/brands",
+  "GET /admin/brands/{}",
+  "GET /admin/campaigns",
+  "GET /admin/campaigns/{}",
+  "GET /admin/creators",
+  "GET /admin/creators/applications/pending",
+  "GET /admin/creators/{}",
+  "GET /admin/dashboard/operations",
+  "GET /admin/dashboard/pulse",
+  "GET /admin/disputes",
+  "GET /admin/emails/queue",
+  "GET /admin/emails/stats",
+  "GET /admin/emails/templates",
+  "GET /admin/errors/recent",
+  "GET /admin/errors/stats",
+  "GET /admin/errors/{}",
+  "GET /admin/finance/fee-config",
+  "GET /admin/finance/fee-config/history",
+  "GET /admin/moderation/approvals/pending",
+  "GET /admin/moderation/flags",
+  "GET /admin/support/stats",
+  "GET /admin/support/tickets",
+  "GET /admin/support/tickets/stats",
+  "GET /admin/support/tickets/{}",
+  "GET /analytics/creators/{}/demographics",
+  "GET /analytics/creators/{}/media",
+  "GET /analytics/creators/{}/metrics",
+  "GET /analytics/creators/{}/scores",
+  "GET /billing/campaign-invoices",
+  "GET /billing/campaign-invoices/{}/pdf",
+  "GET /billing/commission-invoices",
+  "GET /billing/commission-invoices/{}/pdf",
+  "GET /billing/invoices",
+  "GET /billing/invoices/{}/pdf",
+  "GET /billing/plan",
+  "GET /billing/usage",
+  "GET /brand/disputes",
+  "GET /brand/disputes/list",
+  "GET /brand/platform-fee",
+  "GET /brand/reviews/received",
+  "GET /brand/trendspark/nudge",
+  "GET /campaign-templates",
+  "GET /campaign-templates/{}",
+  "GET /campaigns",
+  "GET /campaigns/{}",
+  "GET /campaigns/{}/analytics",
+  "GET /campaigns/{}/coupons",
+  "GET /campaigns/{}/export",
+  "GET /campaigns/{}/tracking-links",
+  "GET /config/public",
+  "GET /config/razorpay",
+  "GET /contracts",
+  "GET /contracts/unsigned",
+  "GET /contracts/{}",
+  "GET /contracts/{}/pdf-download-url",
+  "GET /creator/affiliate-earnings",
+  "GET /creator/analytics/me/demographics",
+  "GET /creator/analytics/me/media",
+  "GET /creator/analytics/me/metrics",
+  "GET /creator/analytics/me/scores",
+  "GET /creator/applications",
+  "GET /creator/campaign-invoices",
+  "GET /creator/campaign-invoices/{}/pdf",
+  "GET /creator/campaigns",
+  "GET /creator/campaigns/{}",
+  "GET /creator/commission-invoices",
+  "GET /creator/commission-invoices/{}/pdf",
+  "GET /creator/copilot/suggestion/today",
+  "GET /creator/coupons",
+  "GET /creator/deliverables",
+  "GET /creator/deliverables/{}/status",
+  "GET /creator/disputes",
+  "GET /creator/platform-fee",
+  "GET /creator/reviews/received",
+  "GET /creators",
+  "GET /creators/featured",
+  "GET /creators/profile/{}",
+  "GET /creators/search",
+  "GET /creators/{}",
+  "GET /creators/{}/similar",
+  "GET /dashboard/actions",
+  "GET /dashboard/pipeline",
+  "GET /deals",
+  "GET /deals/{}",
+  "GET /deals/{}/deliverables",
+  "GET /deals/{}/messages",
+  "GET /deals/{}/messages/stream",
+  "GET /deals/{}/shipment",
+  "GET /deliverables/{}",
+  "GET /deliverables/{}/safety-review",
+  "GET /health",
+  "GET /integrations/store/status",
+  "GET /me/creator-profile",
+  "GET /me/portfolio",
+  "GET /me/portfolio/analytics",
+  "GET /meera/brand-profile",
+  "GET /meera/credits",
+  "GET /meera/sessions/{}/messages",
+  "GET /meta/oauth/authorize",
+  "GET /meta/oauth/callback",
+  "GET /notifications",
+  "GET /notifications/preferences",
+  "GET /notifications/unsubscribe-link",
+  "GET /portfolio/{}",
+  "GET /shopify/oauth/authorize",
+  "GET /shopify/oauth/callback",
+  "GET /track/click/{}",
+  "GET /users/me",
+  "GET /wallet",
+  "GET /wallet/balance",
+  "GET /wallet/escrow",
+  "GET /wallet/escrow/{}",
+  "GET /wallet/payout-methods",
+  "GET /wallet/transactions",
+  "GET /workspace/members",
+  "GET /workspace/members/invites",
+  "GET /workspaces/me",
+  "GET /workspaces/slug-check",
+  "PATCH /campaigns/{}",
+  "PATCH /me/creator-profile",
+  "PATCH /me/portfolio",
+  "PATCH /users/me",
+  "PATCH /workspaces/me",
+  "POST /admin/audit",
+  "POST /admin/auth/login",
+  "POST /admin/auth/logout",
+  "POST /admin/auth/mfa/setup",
+  "POST /admin/auth/mfa/verify",
+  "POST /admin/auth/refresh",
+  "POST /admin/billing/comp",
+  "POST /admin/billing/override",
+  "POST /admin/brands/{}/campaigns/{}/budget-override",
+  "POST /admin/brands/{}/reinstate",
+  "POST /admin/brands/{}/suspend",
+  "POST /admin/brands/{}/verify-kyc",
+  "POST /admin/creators/{}/instagram/force-reauth",
+  "POST /admin/creators/{}/reinstate",
+  "POST /admin/creators/{}/review-application",
+  "POST /admin/creators/{}/suspend",
+  "POST /admin/disputes/{}/resolve",
+  "POST /admin/emails/queue/{}/retry",
+  "POST /admin/emails/send-bulk",
+  "POST /admin/errors/{}/resolve",
+  "POST /admin/moderation/approvals/{}",
+  "POST /admin/moderation/flags/{}/action",
+  "POST /admin/support/tickets/{}/assign",
+  "POST /admin/support/tickets/{}/escalate",
+  "POST /admin/support/tickets/{}/reply",
+  "POST /auth/brand/login",
+  "POST /auth/brand/register",
+  "POST /auth/brand/send-email-otp",
+  "POST /auth/brand/verify-email",
+  "POST /auth/creator/login",
+  "POST /auth/creator/register",
+  "POST /auth/creator/send-email-otp",
+  "POST /auth/creator/verify-email",
+  "POST /auth/forgot-password",
+  "POST /auth/logout",
+  "POST /auth/refresh",
+  "POST /auth/reset-password",
+  "POST /billing/cancel",
+  "POST /billing/checkout",
+  "POST /brand/reviews",
+  "POST /brand/reviews/{}/flag",
+  "POST /brand/trendspark/nudge/{}/click",
+  "POST /brand/trendspark/nudge/{}/purchase",
+  "POST /campaign-templates",
+  "POST /campaigns",
+  "POST /campaigns/{}/coupons",
+  "POST /campaigns/{}/duplicate",
+  "POST /campaigns/{}/tracking-links",
+  "POST /client-errors",
+  "POST /contracts",
+  "POST /contracts/{}/sign",
+  "POST /creator/campaigns/{}/apply",
+  "POST /creator/copilot/suggestion/{}/acted",
+  "POST /creator/copilot/suggestion/{}/dismiss",
+  "POST /creator/deliverables/{}/mark-posted",
+  "POST /creator/deliverables/{}/metrics",
+  "POST /creator/deliverables/{}/proof",
+  "POST /creator/deliverables/{}/submit",
+  "POST /creator/deliverables/{}/upload",
+  "POST /creator/reviews",
+  "POST /creator/reviews/{}/flag",
+  "POST /creators/suggestions",
+  "POST /creators/{}/invite",
+  "POST /creators/{}/save",
+  "POST /deals",
+  "POST /deals/{}/accept",
+  "POST /deals/{}/counter",
+  "POST /deals/{}/disputes",
+  "POST /deals/{}/messages",
+  "POST /deals/{}/messages/read",
+  "POST /deals/{}/reject",
+  "POST /deals/{}/shipment",
+  "POST /deals/{}/shipment/confirm-receipt",
+  "POST /deals/{}/shipping-address",
+  "POST /deliverables/{}/approve",
+  "POST /deliverables/{}/reject",
+  "POST /deliverables/{}/revise",
+  "POST /internal/meera/analyze_site_result",
+  "POST /internal/meera/calculate_budget",
+  "POST /internal/meera/confirm_launch",
+  "POST /internal/meera/context",
+  "POST /internal/meera/create_campaign",
+  "POST /internal/meera/get_campaign_performance",
+  "POST /internal/meera/interaction-log",
+  "POST /internal/meera/messages",
+  "POST /internal/meera/request_payment",
+  "POST /internal/meera/show_creators",
+  "POST /internal/meera/turns/release",
+  "POST /me/password",
+  "POST /me/portfolio/cover",
+  "POST /me/portfolio/sync",
+  "POST /me/tax-identity",
+  "POST /meera/sessions",
+  "POST /meera/sessions/{}/messages",
+  "POST /meera/voice/speak",
+  "POST /meera/voice/transcribe",
+  "POST /notifications/preferences",
+  "POST /notifications/read",
+  "POST /notifications/unsubscribe",
+  "POST /onboarding/brand/company",
+  "POST /onboarding/brand/complete",
+  "POST /onboarding/brand/kyc",
+  "POST /onboarding/creator/complete",
+  "POST /onboarding/creator/kyc",
+  "POST /onboarding/creator/payout",
+  "POST /onboarding/creator/profile",
+  "POST /onboarding/creator/socials",
+  "POST /portfolio/{}/contact",
+  "POST /uploads",
+  "POST /wallet/escrow/fund",
+  "POST /wallet/escrow/payout",
+  "POST /wallet/escrow/refund",
+  "POST /wallet/escrow/release",
+  "POST /wallet/payout-methods",
+  "POST /wallet/topup",
+  "POST /wallet/withdraw",
+  "POST /webhook-secret/generate",
+  "POST /webhooks/conversion",
+  "POST /webhooks/razorpay",
+  "POST /webhooks/redemption",
+  "POST /webhooks/shopify",
+  "POST /webhooks/woocommerce",
+  "POST /woocommerce/connect",
+  "POST /workspace/members/accept",
+  "POST /workspace/members/invite",
+  "POST /workspace/members/invites/{}/revoke",
+  "POST /workspace/members/switch",
+  "POST /workspaces/{}/meera/interactions/option-tapped",
+  "PUT /admin/brands/{}",
+  "PUT /admin/creators/{}",
+  "PUT /admin/creators/{}/tier",
+  "PUT /admin/finance/fee-config",
+  "PUT /admin/support/tickets/{}",
+  "PUT /deliverables/{}/metrics",
+  "PUT /wallet/payout-methods/{}/primary"
+ ],
+ "results": {
+  "exact": [
+   {
+    "verb": "POST",
+    "path": "/auth/brand/login",
+    "norm": "/auth/brand/login",
+    "file": "src/lib/api.ts",
+    "line": 667
+   },
+   {
+    "verb": "POST",
+    "path": "/auth/creator/login",
+    "norm": "/auth/creator/login",
+    "file": "src/lib/api.ts",
+    "line": 696
+   },
+   {
+    "verb": "POST",
+    "path": "/auth/brand/register",
+    "norm": "/auth/brand/register",
+    "file": "src/lib/api.ts",
+    "line": 717
+   },
+   {
+    "verb": "POST",
+    "path": "/auth/creator/register",
+    "norm": "/auth/creator/register",
+    "file": "src/lib/api.ts",
+    "line": 733
+   },
+   {
+    "verb": "POST",
+    "path": "/auth/brand/verify-email",
+    "norm": "/auth/brand/verify-email",
+    "file": "src/lib/api.ts",
+    "line": 761
+   },
+   {
+    "verb": "POST",
+    "path": "/auth/forgot-password",
+    "norm": "/auth/forgot-password",
+    "file": "src/lib/api.ts",
+    "line": 795
+   },
+   {
+    "verb": "POST",
+    "path": "/auth/reset-password",
+    "norm": "/auth/reset-password",
+    "file": "src/lib/api.ts",
+    "line": 809
+   },
+   {
+    "verb": "POST",
+    "path": "/me/password",
+    "norm": "/me/password",
+    "file": "src/lib/api.ts",
+    "line": 821
+   },
+   {
+    "verb": "POST",
+    "path": "/auth/logout",
+    "norm": "/auth/logout",
+    "file": "src/lib/api.ts",
+    "line": 828
+   },
+   {
+    "verb": "GET",
+    "path": "/workspace/members",
+    "norm": "/workspace/members",
+    "file": "src/lib/api.ts",
+    "line": 900
+   },
+   {
+    "verb": "POST",
+    "path": "/workspace/members/invite",
+    "norm": "/workspace/members/invite",
+    "file": "src/lib/api.ts",
+    "line": 912
+   },
+   {
+    "verb": "GET",
+    "path": "/workspaces/me",
+    "norm": "/workspaces/me",
+    "file": "src/lib/api.ts",
+    "line": 942
+   },
+   {
+    "verb": "PATCH",
+    "path": "/workspaces/me",
+    "norm": "/workspaces/me",
+    "file": "src/lib/api.ts",
+    "line": 962
+   },
+   {
+    "verb": "POST",
+    "path": "/onboarding/brand/company",
+    "norm": "/onboarding/brand/company",
+    "file": "src/lib/api.ts",
+    "line": 981
+   },
+   {
+    "verb": "POST",
+    "path": "/onboarding/brand/complete",
+    "norm": "/onboarding/brand/complete",
+    "file": "src/lib/api.ts",
+    "line": 987
+   },
+   {
+    "verb": "POST",
+    "path": "/onboarding/brand/kyc",
+    "norm": "/onboarding/brand/kyc",
+    "file": "src/lib/api.ts",
+    "line": 997
+   },
+   {
+    "verb": "POST",
+    "path": "/onboarding/creator/profile",
+    "norm": "/onboarding/creator/profile",
+    "file": "src/lib/api.ts",
+    "line": 1021
+   },
+   {
+    "verb": "POST",
+    "path": "/onboarding/creator/complete",
+    "norm": "/onboarding/creator/complete",
+    "file": "src/lib/api.ts",
+    "line": 1030
+   },
+   {
+    "verb": "POST",
+    "path": "/onboarding/creator/kyc",
+    "norm": "/onboarding/creator/kyc",
+    "file": "src/lib/api.ts",
+    "line": 1038
+   },
+   {
+    "verb": "POST",
+    "path": "/onboarding/creator/payout",
+    "norm": "/onboarding/creator/payout",
+    "file": "src/lib/api.ts",
+    "line": 1052
+   },
+   {
+    "verb": "GET",
+    "path": "/campaigns",
+    "norm": "/campaigns",
+    "file": "src/lib/api.ts",
+    "line": 1179
+   },
+   {
+    "verb": "GET",
+    "path": "/campaigns/${id}",
+    "norm": "/campaigns/{}",
+    "file": "src/lib/api.ts",
+    "line": 1193
+   },
+   {
+    "verb": "POST",
+    "path": "/campaigns",
+    "norm": "/campaigns",
+    "file": "src/lib/api.ts",
+    "line": 1200
+   },
+   {
+    "verb": "PATCH",
+    "path": "/campaigns/${id}",
+    "norm": "/campaigns/{}",
+    "file": "src/lib/api.ts",
+    "line": 1209
+   },
+   {
+    "verb": "DELETE",
+    "path": "/campaigns/${id}",
+    "norm": "/campaigns/{}",
+    "file": "src/lib/api.ts",
+    "line": 1218
+   },
+   {
+    "verb": "POST",
+    "path": "/campaigns/${id}/duplicate",
+    "norm": "/campaigns/{}/duplicate",
+    "file": "src/lib/api.ts",
+    "line": 1224
+   },
+   {
+    "verb": "GET",
+    "path": "/campaigns/${id}/analytics",
+    "norm": "/campaigns/{}/analytics",
+    "file": "src/lib/api.ts",
+    "line": 1235
+   },
+   {
+    "verb": "GET",
+    "path": "/creators",
+    "norm": "/creators",
+    "file": "src/lib/api.ts",
+    "line": 1329
+   },
+   {
+    "verb": "GET",
+    "path": "/creators/${id}",
+    "norm": "/creators/{}",
+    "file": "src/lib/api.ts",
+    "line": 1346
+   },
+   {
+    "verb": "POST",
+    "path": "/creators/${id}/save",
+    "norm": "/creators/{}/save",
+    "file": "src/lib/api.ts",
+    "line": 1353
+   },
+   {
+    "verb": "POST",
+    "path": "/creators/${creatorId}/invite",
+    "norm": "/creators/{}/invite",
+    "file": "src/lib/api.ts",
+    "line": 1359
+   },
+   {
+    "verb": "GET",
+    "path": "/campaign-templates",
+    "norm": "/campaign-templates",
+    "file": "src/lib/api.ts",
+    "line": 1398
+   },
+   {
+    "verb": "GET",
+    "path": "/campaign-templates/${templateId}",
+    "norm": "/campaign-templates/{}",
+    "file": "src/lib/api.ts",
+    "line": 1404
+   },
+   {
+    "verb": "GET",
+    "path": "/deals",
+    "norm": "/deals",
+    "file": "src/lib/api.ts",
+    "line": 1463
+   },
+   {
+    "verb": "GET",
+    "path": "/deals/${id}",
+    "norm": "/deals/{}",
+    "file": "src/lib/api.ts",
+    "line": 1469
+   },
+   {
+    "verb": "POST",
+    "path": "/deals/${id}/accept",
+    "norm": "/deals/{}/accept",
+    "file": "src/lib/api.ts",
+    "line": 1481
+   },
+   {
+    "verb": "POST",
+    "path": "/deals/${id}/reject",
+    "norm": "/deals/{}/reject",
+    "file": "src/lib/api.ts",
+    "line": 1491
+   },
+   {
+    "verb": "POST",
+    "path": "/deals/${id}/counter",
+    "norm": "/deals/{}/counter",
+    "file": "src/lib/api.ts",
+    "line": 1521
+   },
+   {
+    "verb": "POST",
+    "path": "/deals",
+    "norm": "/deals",
+    "file": "src/lib/api.ts",
+    "line": 1554
+   },
+   {
+    "verb": "GET",
+    "path": "/deals/${dealId}/messages",
+    "norm": "/deals/{}/messages",
+    "file": "src/lib/api.ts",
+    "line": 1598
+   },
+   {
+    "verb": "POST",
+    "path": "/deals/${dealId}/messages",
+    "norm": "/deals/{}/messages",
+    "file": "src/lib/api.ts",
+    "line": 1604
+   },
+   {
+    "verb": "POST",
+    "path": "/deals/${dealId}/messages/read",
+    "norm": "/deals/{}/messages/read",
+    "file": "src/lib/api.ts",
+    "line": 1623
+   },
+   {
+    "verb": "GET",
+    "path": "/deals/${dealId}/shipment",
+    "norm": "/deals/{}/shipment",
+    "file": "src/lib/api.ts",
+    "line": 1985
+   },
+   {
+    "verb": "POST",
+    "path": "/deals/${dealId}/shipping-address",
+    "norm": "/deals/{}/shipping-address",
+    "file": "src/lib/api.ts",
+    "line": 1991
+   },
+   {
+    "verb": "POST",
+    "path": "/deals/${dealId}/shipment/confirm-receipt",
+    "norm": "/deals/{}/shipment/confirm-receipt",
+    "file": "src/lib/api.ts",
+    "line": 2003
+   },
+   {
+    "verb": "POST",
+    "path": "/deals/${dealId}/shipment",
+    "norm": "/deals/{}/shipment",
+    "file": "src/lib/api.ts",
+    "line": 2016
+   },
+   {
+    "verb": "GET",
+    "path": "/contracts",
+    "norm": "/contracts",
+    "file": "src/lib/api.ts",
+    "line": 2092
+   },
+   {
+    "verb": "GET",
+    "path": "/contracts/${id}",
+    "norm": "/contracts/{}",
+    "file": "src/lib/api.ts",
+    "line": 2098
+   },
+   {
+    "verb": "POST",
+    "path": "/contracts",
+    "norm": "/contracts",
+    "file": "src/lib/api.ts",
+    "line": 2109
+   },
+   {
+    "verb": "POST",
+    "path": "/contracts/${id}/sign",
+    "norm": "/contracts/{}/sign",
+    "file": "src/lib/api.ts",
+    "line": 2129
+   },
+   {
+    "verb": "GET",
+    "path": "/contracts/${id}/pdf-download-url",
+    "norm": "/contracts/{}/pdf-download-url",
+    "file": "src/lib/api.ts",
+    "line": 2152
+   },
+   {
+    "verb": "GET",
+    "path": "/deals/${dealId}/deliverables",
+    "norm": "/deals/{}/deliverables",
+    "file": "src/lib/api.ts",
+    "line": 2224
+   },
+   {
+    "verb": "GET",
+    "path": "/deliverables/${id}",
+    "norm": "/deliverables/{}",
+    "file": "src/lib/api.ts",
+    "line": 2230
+   },
+   {
+    "verb": "POST",
+    "path": "/deliverables/${id}/approve",
+    "norm": "/deliverables/{}/approve",
+    "file": "src/lib/api.ts",
+    "line": 2273
+   },
+   {
+    "verb": "POST",
+    "path": "/deliverables/${id}/revise",
+    "norm": "/deliverables/{}/revise",
+    "file": "src/lib/api.ts",
+    "line": 2279
+   },
+   {
+    "verb": "GET",
+    "path": "/deliverables/${id}/safety-review",
+    "norm": "/deliverables/{}/safety-review",
+    "file": "src/lib/api.ts",
+    "line": 2297
+   },
+   {
+    "verb": "GET",
+    "path": "/config/razorpay",
+    "norm": "/config/razorpay",
+    "file": "src/lib/api.ts",
+    "line": 2410
+   },
+   {
+    "verb": "GET",
+    "path": "/config/public",
+    "norm": "/config/public",
+    "file": "src/lib/api.ts",
+    "line": 2426
+   },
+   {
+    "verb": "GET",
+    "path": "/wallet",
+    "norm": "/wallet",
+    "file": "src/lib/api.ts",
+    "line": 2437
+   },
+   {
+    "verb": "POST",
+    "path": "/wallet/topup",
+    "norm": "/wallet/topup",
+    "file": "src/lib/api.ts",
+    "line": 2452
+   },
+   {
+    "verb": "POST",
+    "path": "/wallet/withdraw",
+    "norm": "/wallet/withdraw",
+    "file": "src/lib/api.ts",
+    "line": 2497
+   },
+   {
+    "verb": "GET",
+    "path": "/wallet/transactions",
+    "norm": "/wallet/transactions",
+    "file": "src/lib/api.ts",
+    "line": 2507
+   },
+   {
+    "verb": "GET",
+    "path": "/wallet/payout-methods",
+    "norm": "/wallet/payout-methods",
+    "file": "src/lib/api.ts",
+    "line": 2513
+   },
+   {
+    "verb": "POST",
+    "path": "/wallet/payout-methods",
+    "norm": "/wallet/payout-methods",
+    "file": "src/lib/api.ts",
+    "line": 2527
+   },
+   {
+    "verb": "PUT",
+    "path": "/wallet/payout-methods/${id}/primary",
+    "norm": "/wallet/payout-methods/{}/primary",
+    "file": "src/lib/api.ts",
+    "line": 2539
+   },
+   {
+    "verb": "GET",
+    "path": "/wallet/escrow",
+    "norm": "/wallet/escrow",
+    "file": "src/lib/api.ts",
+    "line": 2550
+   },
+   {
+    "verb": "GET",
+    "path": "/me/creator-profile",
+    "norm": "/me/creator-profile",
+    "file": "src/lib/api.ts",
+    "line": 2639
+   },
+   {
+    "verb": "PATCH",
+    "path": "/me/creator-profile",
+    "norm": "/me/creator-profile",
+    "file": "src/lib/api.ts",
+    "line": 2645
+   },
+   {
+    "verb": "DELETE",
+    "path": "/me/account",
+    "norm": "/me/account",
+    "file": "src/lib/api.ts",
+    "line": 2659
+   },
+   {
+    "verb": "POST",
+    "path": "/wallet/escrow/release",
+    "norm": "/wallet/escrow/release",
+    "file": "src/lib/api.ts",
+    "line": 2692
+   },
+   {
+    "verb": "GET",
+    "path": "/notifications",
+    "norm": "/notifications",
+    "file": "src/lib/api.ts",
+    "line": 2750
+   },
+   {
+    "verb": "POST",
+    "path": "/notifications/read",
+    "norm": "/notifications/read",
+    "file": "src/lib/api.ts",
+    "line": 2756
+   },
+   {
+    "verb": "GET",
+    "path": "/notifications/preferences",
+    "norm": "/notifications/preferences",
+    "file": "src/lib/api.ts",
+    "line": 2777
+   },
+   {
+    "verb": "POST",
+    "path": "/notifications/preferences",
+    "norm": "/notifications/preferences",
+    "file": "src/lib/api.ts",
+    "line": 2787
+   },
+   {
+    "verb": "GET",
+    "path": "/billing/plan",
+    "norm": "/billing/plan",
+    "file": "src/lib/api.ts",
+    "line": 2893
+   },
+   {
+    "verb": "GET",
+    "path": "/billing/invoices",
+    "norm": "/billing/invoices",
+    "file": "src/lib/api.ts",
+    "line": 2899
+   },
+   {
+    "verb": "GET",
+    "path": "/billing/usage",
+    "norm": "/billing/usage",
+    "file": "src/lib/api.ts",
+    "line": 2905
+   },
+   {
+    "verb": "POST",
+    "path": "/billing/checkout",
+    "norm": "/billing/checkout",
+    "file": "src/lib/api.ts",
+    "line": 2917
+   },
+   {
+    "verb": "POST",
+    "path": "/billing/cancel",
+    "norm": "/billing/cancel",
+    "file": "src/lib/api.ts",
+    "line": 2923
+   },
+   {
+    "verb": "GET",
+    "path": "/billing/campaign-invoices",
+    "norm": "/billing/campaign-invoices",
+    "file": "src/lib/api.ts",
+    "line": 2996
+   },
+   {
+    "verb": "GET",
+    "path": "/billing/commission-invoices",
+    "norm": "/billing/commission-invoices",
+    "file": "src/lib/api.ts",
+    "line": 3008
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/campaign-invoices",
+    "norm": "/creator/campaign-invoices",
+    "file": "src/lib/api.ts",
+    "line": 3023
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/commission-invoices",
+    "norm": "/creator/commission-invoices",
+    "file": "src/lib/api.ts",
+    "line": 3035
+   },
+   {
+    "verb": "POST",
+    "path": "/me/tax-identity",
+    "norm": "/me/tax-identity",
+    "file": "src/lib/api.ts",
+    "line": 3069
+   },
+   {
+    "verb": "GET",
+    "path": "/portfolio/${encodeURIComponent(username)}",
+    "norm": "/portfolio/{}",
+    "file": "src/lib/api.ts",
+    "line": 3217
+   },
+   {
+    "verb": "GET",
+    "path": "/me/portfolio",
+    "norm": "/me/portfolio",
+    "file": "src/lib/api.ts",
+    "line": 3223
+   },
+   {
+    "verb": "PATCH",
+    "path": "/me/portfolio",
+    "norm": "/me/portfolio",
+    "file": "src/lib/api.ts",
+    "line": 3229
+   },
+   {
+    "verb": "POST",
+    "path": "/me/portfolio/sync",
+    "norm": "/me/portfolio/sync",
+    "file": "src/lib/api.ts",
+    "line": 3238
+   },
+   {
+    "verb": "POST",
+    "path": "/portfolio/${encodeURIComponent(username)}/contact",
+    "norm": "/portfolio/{}/contact",
+    "file": "src/lib/api.ts",
+    "line": 3253
+   },
+   {
+    "verb": "GET",
+    "path": "/me/portfolio/analytics",
+    "norm": "/me/portfolio/analytics",
+    "file": "src/lib/api.ts",
+    "line": 3267
+   },
+   {
+    "verb": "GET",
+    "path": "/analytics/creators/${creatorId}/metrics",
+    "norm": "/analytics/creators/{}/metrics",
+    "file": "src/lib/api.ts",
+    "line": 3387
+   },
+   {
+    "verb": "GET",
+    "path": "/analytics/creators/${creatorId}/scores",
+    "norm": "/analytics/creators/{}/scores",
+    "file": "src/lib/api.ts",
+    "line": 3395
+   },
+   {
+    "verb": "GET",
+    "path": "/analytics/creators/${creatorId}/demographics",
+    "norm": "/analytics/creators/{}/demographics",
+    "file": "src/lib/api.ts",
+    "line": 3401
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/analytics/me/metrics",
+    "norm": "/creator/analytics/me/metrics",
+    "file": "src/lib/api.ts",
+    "line": 3413
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/analytics/me/scores",
+    "norm": "/creator/analytics/me/scores",
+    "file": "src/lib/api.ts",
+    "line": 3421
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/analytics/me/demographics",
+    "norm": "/creator/analytics/me/demographics",
+    "file": "src/lib/api.ts",
+    "line": 3427
+   },
+   {
+    "verb": "GET",
+    "path": "/analytics/creators/${creatorId}/media",
+    "norm": "/analytics/creators/{}/media",
+    "file": "src/lib/api.ts",
+    "line": 3470
+   },
+   {
+    "verb": "GET",
+    "path": "/campaigns/${campaignId}/tracking-links",
+    "norm": "/campaigns/{}/tracking-links",
+    "file": "src/lib/api.ts",
+    "line": 3531
+   },
+   {
+    "verb": "POST",
+    "path": "/campaigns/${campaignId}/tracking-links",
+    "norm": "/campaigns/{}/tracking-links",
+    "file": "src/lib/api.ts",
+    "line": 3538
+   },
+   {
+    "verb": "GET",
+    "path": "/campaigns/${campaignId}/coupons",
+    "norm": "/campaigns/{}/coupons",
+    "file": "src/lib/api.ts",
+    "line": 3551
+   },
+   {
+    "verb": "POST",
+    "path": "/campaigns/${campaignId}/coupons",
+    "norm": "/campaigns/{}/coupons",
+    "file": "src/lib/api.ts",
+    "line": 3558
+   },
+   {
+    "verb": "GET",
+    "path": "/shopify/oauth/authorize",
+    "norm": "/shopify/oauth/authorize",
+    "file": "src/lib/api.ts",
+    "line": 3591
+   },
+   {
+    "verb": "POST",
+    "path": "/woocommerce/connect",
+    "norm": "/woocommerce/connect",
+    "file": "src/lib/api.ts",
+    "line": 3599
+   },
+   {
+    "verb": "GET",
+    "path": "/integrations/store/status",
+    "norm": "/integrations/store/status",
+    "file": "src/lib/api.ts",
+    "line": 3605
+   },
+   {
+    "verb": "DELETE",
+    "path": "/integrations/store/disconnect",
+    "norm": "/integrations/store/disconnect",
+    "file": "src/lib/api.ts",
+    "line": 3611
+   },
+   {
+    "verb": "POST",
+    "path": "/creator/reviews",
+    "norm": "/creator/reviews",
+    "file": "src/lib/api.ts",
+    "line": 3671
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/reviews/received",
+    "norm": "/creator/reviews/received",
+    "file": "src/lib/api.ts",
+    "line": 3678
+   },
+   {
+    "verb": "POST",
+    "path": "/brand/reviews",
+    "norm": "/brand/reviews",
+    "file": "src/lib/api.ts",
+    "line": 3690
+   },
+   {
+    "verb": "GET",
+    "path": "/brand/reviews/received",
+    "norm": "/brand/reviews/received",
+    "file": "src/lib/api.ts",
+    "line": 3697
+   },
+   {
+    "verb": "GET",
+    "path": "/meta/oauth/authorize",
+    "norm": "/meta/oauth/authorize",
+    "file": "src/lib/api.ts",
+    "line": 3731
+   },
+   {
+    "verb": "GET",
+    "path": "/meta/oauth/callback",
+    "norm": "/meta/oauth/callback",
+    "file": "src/lib/api.ts",
+    "line": 3740
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/coupons",
+    "norm": "/creator/coupons",
+    "file": "src/lib/api.ts",
+    "line": 3870
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/affiliate-earnings",
+    "norm": "/creator/affiliate-earnings",
+    "file": "src/lib/api.ts",
+    "line": 3878
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/applications",
+    "norm": "/creator/applications",
+    "file": "src/lib/api.ts",
+    "line": 3910
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/campaigns",
+    "norm": "/creator/campaigns",
+    "file": "src/lib/api.ts",
+    "line": 3919
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/campaigns/${id}",
+    "norm": "/creator/campaigns/{}",
+    "file": "src/lib/api.ts",
+    "line": 3932
+   },
+   {
+    "verb": "POST",
+    "path": "/creator/campaigns/${id}/apply",
+    "norm": "/creator/campaigns/{}/apply",
+    "file": "src/lib/api.ts",
+    "line": 3938
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/deliverables",
+    "norm": "/creator/deliverables",
+    "file": "src/lib/api.ts",
+    "line": 4001
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/disputes",
+    "norm": "/creator/disputes",
+    "file": "src/lib/api.ts",
+    "line": 4114
+   },
+   {
+    "verb": "POST",
+    "path": "/deals/${dealId}/disputes",
+    "norm": "/deals/{}/disputes",
+    "file": "src/lib/api.ts",
+    "line": 4129
+   },
+   {
+    "verb": "GET",
+    "path": "/brand/disputes/list",
+    "norm": "/brand/disputes/list",
+    "file": "src/lib/api.ts",
+    "line": 4150
+   },
+   {
+    "verb": "GET",
+    "path": "/brand/trendspark/nudge",
+    "norm": "/brand/trendspark/nudge",
+    "file": "src/lib/api.ts",
+    "line": 4216
+   },
+   {
+    "verb": "POST",
+    "path": "/brand/trendspark/nudge/${nudgeId}/click",
+    "norm": "/brand/trendspark/nudge/{}/click",
+    "file": "src/lib/api.ts",
+    "line": 4222
+   },
+   {
+    "verb": "POST",
+    "path": "/brand/trendspark/nudge/${nudgeId}/purchase",
+    "norm": "/brand/trendspark/nudge/{}/purchase",
+    "file": "src/lib/api.ts",
+    "line": 4228
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/copilot/suggestion/today",
+    "norm": "/creator/copilot/suggestion/today",
+    "file": "src/lib/api.ts",
+    "line": 4276
+   },
+   {
+    "verb": "POST",
+    "path": "/creator/copilot/suggestion/${id}/dismiss",
+    "norm": "/creator/copilot/suggestion/{}/dismiss",
+    "file": "src/lib/api.ts",
+    "line": 4282
+   },
+   {
+    "verb": "POST",
+    "path": "/creator/copilot/suggestion/${id}/acted",
+    "norm": "/creator/copilot/suggestion/{}/acted",
+    "file": "src/lib/api.ts",
+    "line": 4288
+   },
+   {
+    "verb": "POST",
+    "path": "/auth/brand/send-email-otp",
+    "norm": "/auth/brand/send-email-otp",
+    "file": "src/lib/api.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/auth/creator/send-email-otp",
+    "norm": "/auth/creator/send-email-otp",
+    "file": "src/lib/api.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/auth/creator/verify-email",
+    "norm": "/auth/creator/verify-email",
+    "file": "src/lib/api.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/workspaces/slug-check",
+    "norm": "/workspaces/slug-check",
+    "file": "src/lib/api.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/onboarding/creator/socials",
+    "norm": "/onboarding/creator/socials",
+    "file": "src/lib/api.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/creator/deliverables/${id}/submit",
+    "norm": "/creator/deliverables/{}/submit",
+    "file": "src/lib/api.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/creator/platform-fee",
+    "norm": "/creator/platform-fee",
+    "file": "src/lib/api.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/brand/platform-fee",
+    "norm": "/brand/platform-fee",
+    "file": "src/lib/api.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/wallet/escrow/fund",
+    "norm": "/wallet/escrow/fund",
+    "file": "src/lib/api.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/auth/login",
+    "norm": "/admin/auth/login",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/auth/logout",
+    "norm": "/admin/auth/logout",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/auth/refresh",
+    "norm": "/admin/auth/refresh",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/auth/me",
+    "norm": "/admin/auth/me",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/auth/mfa/setup",
+    "norm": "/admin/auth/mfa/setup",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/auth/mfa/verify",
+    "norm": "/admin/auth/mfa/verify",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/dashboard/pulse",
+    "norm": "/admin/dashboard/pulse",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/dashboard/operations",
+    "norm": "/admin/dashboard/operations",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/brands/${id}",
+    "norm": "/admin/brands/{}",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "PUT",
+    "path": "/admin/brands/${id}",
+    "norm": "/admin/brands/{}",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/brands/${action.brandId}/verify-kyc",
+    "norm": "/admin/brands/{}/verify-kyc",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/brands/${id}/suspend",
+    "norm": "/admin/brands/{}/suspend",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/brands/${id}/reinstate",
+    "norm": "/admin/brands/{}/reinstate",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/brands/${id}/campaigns/${campaignId}/budget-override",
+    "norm": "/admin/brands/{}/campaigns/{}/budget-override",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/creators/${id}",
+    "norm": "/admin/creators/{}",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "PUT",
+    "path": "/admin/creators/${id}",
+    "norm": "/admin/creators/{}",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/creators/${action.creatorId}/review-application",
+    "norm": "/admin/creators/{}/review-application",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "PUT",
+    "path": "/admin/creators/${adjustment.creatorId}/tier",
+    "norm": "/admin/creators/{}/tier",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/creators/${id}/instagram/force-reauth",
+    "norm": "/admin/creators/{}/instagram/force-reauth",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/creators/${id}/suspend",
+    "norm": "/admin/creators/{}/suspend",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/creators/${id}/reinstate",
+    "norm": "/admin/creators/{}/reinstate",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/campaigns",
+    "norm": "/admin/campaigns",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/campaigns/${id}",
+    "norm": "/admin/campaigns/{}",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/finance/fee-config",
+    "norm": "/admin/finance/fee-config",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/finance/fee-config/history",
+    "norm": "/admin/finance/fee-config/history",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/support/tickets/${id}",
+    "norm": "/admin/support/tickets/{}",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "PUT",
+    "path": "/admin/support/tickets/${id}",
+    "norm": "/admin/support/tickets/{}",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/support/tickets/${id}/reply",
+    "norm": "/admin/support/tickets/{}/reply",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/support/tickets/${id}/escalate",
+    "norm": "/admin/support/tickets/{}/escalate",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/support/tickets/${id}/assign",
+    "norm": "/admin/support/tickets/{}/assign",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/support/stats",
+    "norm": "/admin/support/stats",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/moderation/flags/${id}/action",
+    "norm": "/admin/moderation/flags/{}/action",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/moderation/approvals/${id}",
+    "norm": "/admin/moderation/approvals/{}",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/disputes?${params}",
+    "norm": "/admin/disputes",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/disputes/${id}/resolve",
+    "norm": "/admin/disputes/{}/resolve",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/audit/entity/${entityType}/${entityId}",
+    "norm": "/admin/audit/entity/{}/{}",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/errors/recent?limit=${limit}",
+    "norm": "/admin/errors/recent",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/errors/${id}",
+    "norm": "/admin/errors/{}",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/errors/${id}/resolve",
+    "norm": "/admin/errors/{}/resolve",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/errors/stats",
+    "norm": "/admin/errors/stats",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/emails/queue/${id}/retry",
+    "norm": "/admin/emails/queue/{}/retry",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/emails/templates",
+    "norm": "/admin/emails/templates",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/emails/send-bulk",
+    "norm": "/admin/emails/send-bulk",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/emails/stats",
+    "norm": "/admin/emails/stats",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/billing/subscriptions?${params}",
+    "norm": "/admin/billing/subscriptions",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/billing/metrics",
+    "norm": "/admin/billing/metrics",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/billing/comp",
+    "norm": "/admin/billing/comp",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/billing/override",
+    "norm": "/admin/billing/override",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "PUT",
+    "path": "/admin/finance/fee-config",
+    "norm": "/admin/finance/fee-config",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   }
+  ],
+  "path-only": [
+   {
+    "verb": "*",
+    "path": "/notifications",
+    "norm": "/notifications",
+    "file": "src/hooks/useNotifications.ts",
+    "line": 190
+   },
+   {
+    "verb": "*",
+    "path": "/notifications/read",
+    "norm": "/notifications/read",
+    "file": "src/hooks/useNotifications.ts",
+    "line": 216
+   },
+   {
+    "verb": "*",
+    "path": "/auth/refresh",
+    "norm": "/auth/refresh",
+    "file": "src/lib/api.ts",
+    "line": 268
+   },
+   {
+    "verb": "*",
+    "path": "/deals/${dealId}/messages/stream",
+    "norm": "/deals/{}/messages/stream",
+    "file": "src/lib/api.ts",
+    "line": 1704
+   },
+   {
+    "verb": "*",
+    "path": "/client-errors",
+    "norm": "/client-errors",
+    "file": "src/lib/api.ts",
+    "line": 4367
+   },
+   {
+    "verb": "*",
+    "path": "/meera/voice/speak",
+    "norm": "/meera/voice/speak",
+    "file": "src/lib/meera-api.ts",
+    "line": 659
+   },
+   {
+    "verb": "*",
+    "path": "/meera/voice/transcribe",
+    "norm": "/meera/voice/transcribe",
+    "file": "src/lib/meera-api.ts",
+    "line": 709
+   }
+  ],
+  "verb-mismatch": [],
+  "missing": [
+   {
+    "verb": "POST",
+    "path": "/notifications/read-all",
+    "norm": "/notifications/read-all",
+    "file": "src/lib/api.ts",
+    "line": 2762
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/dashboard/financial?period=${period}",
+    "norm": "/admin/dashboard/financial",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/dashboard/marketing",
+    "norm": "/admin/dashboard/marketing",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/campaigns/at-risk",
+    "norm": "/admin/campaigns/at-risk",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/campaigns/hype/ops",
+    "norm": "/admin/campaigns/hype/ops",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/finance/revenue?startDate=${startDate}&endDate=${endDate}&groupBy=${groupBy}",
+    "norm": "/admin/finance/revenue",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/finance/escrow",
+    "norm": "/admin/finance/escrow",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/finance/payouts/${id}/retry",
+    "norm": "/admin/finance/payouts/{}/retry",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/finance/reconciliation?date=${date}",
+    "norm": "/admin/finance/reconciliation",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/finance/reconciliation/${id}/resolve",
+    "norm": "/admin/finance/reconciliation/{}/resolve",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/finance/tds/26q?quarter=${quarter}",
+    "norm": "/admin/finance/tds/26q",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/escrow/flagged",
+    "norm": "/admin/escrow/flagged",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/escrow/${id}/release",
+    "norm": "/admin/escrow/{}/release",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/escrow/${id}/hold",
+    "norm": "/admin/escrow/{}/hold",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/escrow/${id}/refund",
+    "norm": "/admin/escrow/{}/refund",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/moderation/approvals/pending${type ? ",
+    "norm": "/admin/moderation/approvals/pending${type ",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/moderation/suspensions${status ? ",
+    "norm": "/admin/moderation/suspensions${status ",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin/moderation/suspensions/${id}/appeal",
+    "norm": "/admin/moderation/suspensions/{}/appeal",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/marketing/acquisition?startDate=${startDate}&endDate=${endDate}",
+    "norm": "/admin/marketing/acquisition",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/marketing/growth",
+    "norm": "/admin/marketing/growth",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin/marketing/reputation",
+    "norm": "/admin/marketing/reputation",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "GET",
+    "path": "/admin${endpoint}",
+    "norm": "/admin{}",
+    "file": "src/admin/services/api-contracts.ts",
+    "line": -1
+   },
+   {
+    "verb": "POST",
+    "path": "/admin${AUDIT_ENDPOINT}",
+    "norm": "/admin{}",
+    "file": "src/admin/utils/auditLogger.ts",
+    "line": -1
+   }
+  ]
+ }
+}

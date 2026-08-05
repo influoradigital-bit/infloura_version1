@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Influora — Error List &amp; Missing Features (2026-08-03)</title>
+<style>
+  :root{
+    --bg:#f7f8fb; --panel:#ffffff; --ink:#1a1d29; --muted:#5b6072; --line:#e5e8f0;
+    --hi-bg:#eef1f8; --accent:#5b4db3; --accent-ink:#fff;
+    --hi:#c0392b; --med:#b8860b; --low:#2c7a4b; --info:#2b6cb0; --done:#2c7a4b;
+    --hi-tint:#fbeceb; --med-tint:#fbf4e3; --low-tint:#eaf6ef; --info-tint:#e8f1fb; --done-tint:#e7f5ec;
+    --code:#f0f1f6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1117; --panel:#171a23; --ink:#e6e8ef; --muted:#9aa0b4; --line:#272b38;
+      --hi-bg:#1d212e; --accent:#8b7ce8;
+      --hi:#ff6b5e; --med:#e0b64a; --low:#5fce93; --info:#6fb3f2; --done:#5fce93;
+      --hi-tint:#2a1a1a; --med-tint:#2a2414; --low-tint:#152417; --info-tint:#132234; --done-tint:#132a1c;
+      --code:#1e222d;
+    }
+  }
+  :root[data-theme="light"]{ --bg:#f7f8fb; --panel:#fff; --ink:#1a1d29; --muted:#5b6072; --line:#e5e8f0; --hi-bg:#eef1f8; --code:#f0f1f6; --hi-tint:#fbeceb; --med-tint:#fbf4e3; --low-tint:#eaf6ef; --info-tint:#e8f1fb; --done-tint:#e7f5ec; }
+  :root[data-theme="dark"]{ --bg:#0f1117; --panel:#171a23; --ink:#e6e8ef; --muted:#9aa0b4; --line:#272b38; --hi-bg:#1d212e; --code:#1e222d; --hi-tint:#2a1a1a; --med-tint:#2a2414; --low-tint:#152417; --info-tint:#132234; --done-tint:#132a1c; }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px;margin:0 auto;padding:32px 20px 80px}
+  header{border-bottom:2px solid var(--line);padding-bottom:20px;margin-bottom:8px}
+  h1{font-size:26px;margin:0 0 6px;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:14px}
+  .verdict{display:inline-block;margin-top:14px;padding:6px 12px;border-radius:8px;background:var(--hi-tint);color:var(--hi);font-weight:600;font-size:13px;border:1px solid var(--line)}
+
+  .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:26px 0}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .stat .n{font-size:24px;font-weight:700;letter-spacing:-.02em}
+  .stat .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+  .stat.hi .n{color:var(--hi)} .stat.med .n{color:var(--med)} .stat.ok .n{color:var(--done)} .stat.info .n{color:var(--info)}
+
+  h2{font-size:19px;margin:38px 0 4px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+  h2 .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+  .sectnote{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:16px 18px;margin:12px 0}
+  .card.hi{border-left-color:var(--hi)} .card.med{border-left-color:var(--med)}
+  .card.low{border-left-color:var(--low)} .card.info{border-left-color:var(--info)} .card.done{border-left-color:var(--done)}
+  .card h3{margin:0 0 4px;font-size:16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  .fid{font:600 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);background:var(--code);padding:3px 6px;border-radius:5px}
+  .badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.04em}
+  .b-hi{background:var(--hi-tint);color:var(--hi)} .b-med{background:var(--med-tint);color:var(--med)}
+  .b-low{background:var(--low-tint);color:var(--low)} .b-info{background:var(--info-tint);color:var(--info)} .b-done{background:var(--done-tint);color:var(--done)}
+  .loc{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent);word-break:break-all;margin:2px 0 10px}
+  .row{margin:8px 0}
+  .row .k{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;display:block;margin-bottom:1px}
+  .row .v{font-size:14.5px}
+  code{background:var(--code);padding:1px 5px;border-radius:4px;font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .fix{background:var(--hi-bg);border-radius:8px;padding:8px 12px;margin-top:10px;font-size:14px}
+  .fix .k{color:var(--accent);font-weight:700}
+
+  footer{margin-top:50px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin:8px 0 0;font-size:12.5px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Influora — Error List &amp; Missing Features</h1>
+    <div class="sub">Deep codebase audit · 2026-08-03 · branch <code>fix/brand-audit-remediation</code> · generated by proof-os oracle run (mvn · tsc · node · npm-audit · graph)</div>
+    <span class="verdict">Aggregate verdict: BELIEVED · proved 38.9% of scored rows · backend compiles, frontend types clean, but not shippable from this host</span>
+  </header>
+
+  <div class="strip">
+    <div class="stat hi"><div class="n">3</div><div class="l">Ship-blocking</div></div>
+    <div class="stat hi"><div class="n">4</div><div class="l">High-sev vulns</div></div>
+    <div class="stat med"><div class="n">5</div><div class="l">Product bugs</div></div>
+    <div class="stat info"><div class="n">11</div><div class="l">Tooling / meta</div></div>
+    <div class="stat ok"><div class="n">1</div><div class="l">Fixed this run</div></div>
+  </div>
+
+  <p class="sectnote">
+    Every item below is a real, reproduced finding recorded in the proof-os ledger with a <em>missed_by</em>
+    (why it slipped past the existing checks). Severity reflects user/ship impact. Items are grouped so you can
+    triage top-down: <strong>fix the red first</strong>. Nothing here is a model opinion — each was produced by a
+    deterministic tool exit code or a direct source read.
+  </p>
+  <div class="legend">
+    <span><i style="background:var(--hi)"></i> High — blocks ship or exposes data</span>
+    <span><i style="background:var(--med)"></i> Medium — broken UX / correctness</span>
+    <span><i style="background:var(--low)"></i> Low — hygiene</span>
+    <span><i style="background:var(--info)"></i> Meta — audit tooling itself</span>
+    <span><i style="background:var(--done)"></i> Fixed</span>
+  </div>
+
+  <!-- ============ SHIP-BLOCKING ============ -->
+  <h2><span class="dot" style="background:var(--hi)"></span> 1 · Ship-blocking errors</h2>
+  <p class="sectnote">These prevent a correct production build or expose the app. Address before any deploy.</p>
+
+  <div class="card hi">
+    <h3>Production build fails — Chrome path is hardcoded <span class="fid">F-0055</span> <span class="badge b-hi">High</span></h3>
+    <div class="loc">scripts/prerender.mjs:107</div>
+    <div class="row"><span class="k">Symptom</span><span class="v"><code>npm run build</code> exits 1. The postbuild prerender step resolves Chrome from 8 hardcoded absolute paths, and <code>PRERENDER_CHROME_PATH</code> is set in no <code>.env</code>, <code>package.json</code> script, or CI workflow. <code>dist/</code> contains only <code>index.html</code> + assets — <strong>0 of 16 prerendered route directories</strong>, so the marketing/SEO shells are never produced.</span></div>
+    <div class="row"><span class="k">Why it slipped</span><span class="v"><code>gates/build.sh</code> would catch this, but no pipeline step invoked it; the earlier audit pass even ran the command with an <em>undeclared</em> <code>PRERENDER_CHROME_PATH</code> override and recorded it green (see F-0059).</span></div>
+    <div class="fix"><span class="k">Fix →</span> Make Chrome discovery env-driven: read <code>PRERENDER_CHROME_PATH</code>, fall back to <code>puppeteer</code>'s bundled binary, and fail loudly with an actionable message. Wire <code>gates/build.sh</code> into CI so a broken build can never merge.</div>
+  </div>
+
+  <div class="card hi">
+    <h3>23 dependency vulnerabilities (4 high) <span class="fid">F-0052</span> <span class="badge b-hi">High</span></h3>
+    <div class="loc">package-lock.json</div>
+    <div class="row"><span class="k">Symptom</span><span class="v"><code>npm audit --audit-level=high</code> exits 1: 23 advisories — 4 high, 18 moderate, 1 low. Notably <code>react-router-dom &lt;=7.17.0</code> (open redirect, SSR constructor injection, DoS) and <code>vite &lt;=6.4.2</code> (<code>server.fs.deny</code> bypass, launch-editor NTLM hash disclosure).</span></div>
+    <div class="row"><span class="k">Why it slipped</span><span class="v"><code>gates/security.sh</code> exists and runs <code>npm audit</code>, but nothing in the pipeline invoked it — 23 advisories accumulated unseen.</span></div>
+    <div class="fix"><span class="k">Fix →</span> Bump <code>react-router-dom</code> and <code>vite</code> to patched majors, run <code>npm audit fix</code>, re-verify, and gate every PR on <code>security.sh</code>.</div>
+  </div>
+
+  <div class="card hi">
+    <h3>15+ phantom admin endpoints — frontend calls, no backend <span class="fid">F-0054</span> <span class="badge b-hi">High</span></h3>
+    <div class="loc">src/admin/services/api-contracts.ts</div>
+    <div class="row"><span class="k">Symptom</span><span class="v">The admin console declares and calls endpoints that have <strong>no <code>@Mapping</code></strong> anywhere in <code>influora-api</code>: <code>dashboard/financial</code>, <code>dashboard/marketing</code>, <code>escrow/{id}/hold|release|refund</code>, <code>finance/payouts(+/retry)</code>, <code>finance/reconciliation(+resolve)</code>, <code>finance/revenue</code>, <code>finance/tds/26q</code>, <code>marketing/acquisition|growth|reputation</code>, <code>moderation/suspensions/{id}/appeal</code>. Recent work has since mapped <code>/escrow/flagged</code> and <code>/finance/escrow</code>, so the set is shrinking — but ~20 admin paths still 404 at runtime.</span></div>
+    <div class="row"><span class="k">Why it slipped</span><span class="v">No gate parses frontend call paths against backend request mappings. <code>tsc</code> and <code>eslint</code> both pass because the paths are just strings.</span></div>
+    <div class="fix"><span class="k">Fix →</span> Build a FE↔BE endpoint-diff gate (a starter <code>endpoint_diff.py</code> already exists in the prior audit task). Either implement the missing controllers or remove/disable the dead admin UI so it doesn't present broken buttons.</div>
+  </div>
+
+  <!-- ============ SECURITY / GOVERNANCE ============ -->
+  <h2><span class="dot" style="background:var(--hi)"></span> 2 · Security &amp; governance gap</h2>
+  <p class="sectnote">Not a bug in the code — a hole in what is being <em>checked</em>. This is the single largest blind spot in the whole audit.</p>
+
+  <div class="card hi">
+    <h3>No secret scanning has ever run on this repo <span class="fid">F-0057</span> <span class="badge b-hi">High</span></h3>
+    <div class="loc">.proof-os/gates/security.sh · .proof-os/gates/frontend.sh</div>
+    <div class="row"><span class="k">Symptom</span><span class="v"><code>gitleaks</code> reports UNAVAILABLE in both gates, so <strong>no credential scan has ever executed</strong>. <code>.env.local</code> and <code>.env.production</code> sit at the repo root and git history has never been scanned. Live AWS keys, tokens, or private keys in this tree would not have been seen.</span></div>
+    <div class="row"><span class="k">Why it slipped</span><span class="v">Both gates correctly downgrade to exit 2 (unavailable) on a missing tool — but nothing tracks that the tool has been missing <em>every single run</em>, so "unavailable" quietly reads as "fine".</span></div>
+    <div class="fix"><span class="k">Fix →</span> Install <code>gitleaks</code> (or <code>trufflehog</code>) locally and in CI; scan the working tree <em>and</em> full history; confirm <code>.env*</code> is gitignored and rotate anything that was ever committed.</div>
+  </div>
+
+  <!-- ============ PRODUCT BUGS ============ -->
+  <h2><span class="dot" style="background:var(--med)"></span> 3 · Product bugs (broken UX for real users)</h2>
+  <p class="sectnote">These compile and type-check cleanly but do the wrong thing at runtime — mostly brand-side messaging/navigation.</p>
+
+  <div class="card med">
+    <h3>Offer/invite redirect drops the record id <span class="fid">F-0060</span> <span class="badge b-med">Medium</span></h3>
+    <div class="loc">src/components/brand/discover/creator-discovery.tsx:536</div>
+    <div class="row"><span class="k">Symptom</span><span class="v">After a brand sends an offer or invite from Discover Creators, <code>navigate('/brand/chat')</code> carries no <code>?deal=</code> or <code>?creator=</code>. BrandChatPage has nothing to select, so it opens <code>liveDealRooms[0]</code> — a <em>different</em> creator's thread — or nothing. Both submit paths (<code>deals.create</code> :507, <code>creators.invite</code> :522) already return a usable id (<code>DealResponse.id</code>, <code>InviteResponse.collaborationId</code>) that simply isn't passed.</span></div>
+    <div class="row"><span class="k">Why it slipped</span><span class="v">A route string is just a string to <code>tsc</code>/<code>eslint</code>; nothing asserted a post-submit redirect identifies the record it just created.</span></div>
+    <div class="fix"><span class="k">Fix →</span> Append <code>?deal=&lt;id&gt;</code> (or <code>?creator=</code>) to the redirect from both submit handlers. A vitest guard <code>creator-discovery-redirect.test.tsx</code> is the assertion.</div>
+  </div>
+
+  <div class="card med">
+    <h3>Brand chat latches onto an arbitrary room <span class="fid">F-0061</span> <span class="badge b-med">Medium</span></h3>
+    <div class="loc">src/pages/brand-chat.tsx:921,927</div>
+    <div class="row"><span class="k">Symptom</span><span class="v"><code>setSelectedDeal(match || liveDealRooms[0])</code> opens an arbitrary room whenever the URL param is absent <em>or</em> unmatched, and the effect's guard makes that pick permanent — no later <code>loadDealRooms()</code> refresh corrects it. <code>brand-messages.tsx</code> already has the correct shape (return without selecting when a supplied param is unmatched); <code>brand-chat.tsx</code> never got that fix.</span></div>
+    <div class="row"><span class="k">Why it slipped</span><span class="v">The "audit #10" fix was applied to <code>brand-messages.tsx</code> only. Nothing checks that a fix to one of two parallel message surfaces reaches the other (RETENTION rule 4 — closure closes detection, not the remaining sites).</span></div>
+    <div class="fix"><span class="k">Fix →</span> Port the <code>brand-messages.tsx:396-405</code> guard: if a param was supplied but unmatched, return without auto-selecting.</div>
+  </div>
+
+  <div class="card med">
+    <h3>"Message" button lands on an empty thread — id-space mismatch <span class="fid">F-0062</span> <span class="badge b-med">Medium</span></h3>
+    <div class="loc">src/pages/brand-creator-profile.tsx:571</div>
+    <div class="row"><span class="k">Symptom</span><span class="v">The Message button navigates to <code>/brand/messages?creator=&lt;CreatorProfile id&gt;</code>, but <code>brand-messages.tsx:274</code> keys its thread list on <code>deal.counterpartyId</code>, which the backend populates from <code>collaboration.getCreatorId()</code> — a <em>User</em> id. The lookup can never match, so the brand lands with no thread selected. The FE <code>CreatorProfile</code> already carries <code>userId</code> (<code>src/lib/types.ts:508</code>); it's just not used.</span></div>
+    <div class="row"><span class="k">Why it slipped</span><span class="v">No gate compares the id space a URL param is produced in against the id space its consumer indexes on; <code>tsc</code> sees two strings.</span></div>
+    <div class="fix"><span class="k">Fix →</span> Pass <code>creator=&lt;profile.userId&gt;</code> instead of the profile id.</div>
+  </div>
+
+  <div class="card med">
+    <h3>FE/BE contract guardrail has rotted <span class="fid">F-0058</span> <span class="badge b-med">Medium</span></h3>
+    <div class="loc">src/lib/__tests__/api-contract.test.ts:118</div>
+    <div class="row"><span class="k">Symptom</span><span class="v">The contract test passes only because 38 paths are on a deferred allowlist. <strong>19 of them now HAVE backend controllers but are still exempted</strong>, so their FE/BE parity is no longer checked; the other 18 have no backend mapping at all.</span></div>
+    <div class="row"><span class="k">Why it slipped</span><span class="v">The guardrail asserts only that non-allowlisted paths resolve; nothing asserts that allowlisted paths are <em>still</em> absent, so the list silently rots into a blind spot.</span></div>
+    <div class="fix"><span class="k">Fix →</span> Add a reverse assertion: fail if an allowlisted path now resolves (it should graduate off the list). Prune the 19 that are implemented.</div>
+  </div>
+
+  <div class="card med">
+    <h3>Frontend logic untested at runtime <span class="fid">F-0051</span> <span class="badge b-med">Medium</span></h3>
+    <div class="loc">commit 066e7de (13 files)</div>
+    <div class="row"><span class="k">Symptom</span><span class="v">The 151-error lint cleanup was proven by <code>tsc</code> + <code>eslint</code> + <code>vite build</code> only — no dev-server click-through and the vitest suite was not run, so runtime behaviour of touched screens is <em>believed, not proved</em>.</span></div>
+    <div class="row"><span class="k">Why it slipped</span><span class="v">No E2E / live-UI pass and <code>npm run test</code> not executed against the touched files.</span></div>
+    <div class="fix"><span class="k">Fix →</span> Run the vitest suite and a live click-through of the affected brand/creator/admin screens.</div>
+  </div>
+
+  <!-- ============ MISSING FEATURES / COVERAGE ============ -->
+  <h2><span class="dot" style="background:var(--info)"></span> 4 · Missing features &amp; coverage</h2>
+  <p class="sectnote">Not broken code — capabilities that don't exist yet, or checks the audit couldn't perform.</p>
+
+  <div class="card info">
+    <h3>No end-to-end / live-UI test layer <span class="badge b-info">Coverage</span></h3>
+    <div class="loc">e2e/** (Playwright suite absent) · npm test unavailable this run</div>
+    <div class="row"><span class="k">Gap</span><span class="v">There is no runnable E2E suite, and the unit/component tests could not execute in this environment. Backend tests are compiled but skipped (<code>-DskipTests</code>). <strong>No regression is catchable</strong> in the current pipeline — runtime behaviour, real-vs-mock API responses, and full user journeys are entirely unverified.</span></div>
+    <div class="fix"><span class="k">Add →</span> A Playwright E2E pass over the core brand + creator journeys, and make <code>npm test</code> / <code>mvn test</code> part of the gate set.</div>
+  </div>
+
+  <div class="card info">
+    <h3>Secret scanning tool not installed <span class="badge b-info">Missing tool</span></h3>
+    <div class="loc">host environment</div>
+    <div class="row"><span class="k">Gap</span><span class="v">Covered as F-0057 above — restated here because it is a <em>missing capability</em>, not a code defect. Until <code>gitleaks</code> exists on the host and in CI, the "secrets" column of every security run is blank.</span></div>
+  </div>
+
+  <div class="card info">
+    <h3>Frontend <code>.ts</code> logic has no clean owner <span class="fid">F-0045</span> <span class="badge b-info">Minor</span></h3>
+    <div class="loc">src/hooks/*.ts · src/lib/*.ts</div>
+    <div class="row"><span class="k">Gap</span><span class="v">React hooks written as <code>.ts</code> (<code>useEscrowFund.ts</code>, <code>useMeeraCredits.ts</code>, …) match no writer jurisdiction — the ownership globs assume all frontend code is <code>.tsx</code>. Organisational, not user-facing.</span></div>
+    <div class="fix"><span class="k">Fix →</span> Extend the ananya jurisdiction glob to include <code>src/hooks/**</code> and <code>src/lib/**</code>.</div>
+  </div>
+
+  <!-- ============ FIXED ============ -->
+  <h2><span class="dot" style="background:var(--done)"></span> 5 · Fixed this run (verified)</h2>
+  <div class="card done">
+    <h3>Pipeline views no longer remount on every render <span class="fid">F-0050</span> <span class="badge b-done">Fixed</span></h3>
+    <div class="loc">src/pages/brand-pipeline.tsx:428</div>
+    <div class="row"><span class="k">Was</span><span class="v"><code>BoardView</code>/<code>ListView</code>/<code>TimelineView</code> were defined inside the page's render body and remounted the whole subtree on every parent re-render.</span></div>
+    <div class="row"><span class="k">Now</span><span class="v">Verified this run: the views are module-level render helpers (called, not mounted as <code>&lt;BoardView/&gt;</code>) reading module-level state — commit <code>900b737</code>. No remount.</span></div>
+  </div>
+
+  <!-- ============ META ============ -->
+  <h2><span class="dot" style="background:var(--info)"></span> 6 · Audit-tooling meta-issues (proof-os itself)</h2>
+  <p class="sectnote">These are defects in the <em>audit machinery</em>, not the product. They matter because a broken checker gives false confidence — but none of them affect the shipping app.</p>
+
+  <div class="card info">
+    <h3>Gate output truncated ~10× <span class="fid">F-0056</span> <span class="badge b-info">Meta</span></h3>
+    <div class="loc">.proof-os/gates/frontend.sh:29</div>
+    <div class="row"><span class="k">Symptom</span><span class="v">The gate pipes the eslint report through <code>head -10</code>, so it printed 6 errors while the same config actually reports <strong>56 errors + 2 warnings across 26 files</strong>; the raw-hex step likewise showed 11 of 65 lines. Readers undercount the gate's own findings.</span></div>
+  </div>
+
+  <div class="card info">
+    <h3>Whole file graph is regex-derived, 0% parser <span class="fid">F-0035</span> <span class="badge b-info">Meta</span></h3>
+    <div class="loc">scan.py regex topology · 2,657 edges</div>
+    <div class="row"><span class="k">Symptom</span><span class="v">Every dependency edge is pattern-matched (<code>oracle_strength 0%</code>), yet it rendered identically to parser-derived truth. Phantom edges like <code>ash → work</code> (invented from the phrase "How does it work?") are what this weakness looks like when it surfaces (see F-0034).</span></div>
+  </div>
+
+  <div class="card info">
+    <h3>False-GREEN SEO meta gate <span class="fid">F-0029</span> <span class="badge b-info">Meta</span></h3>
+    <div class="loc">.proof-os/gates/meta_length.py vs index.html:7</div>
+    <div class="row"><span class="k">Symptom</span><span class="v">Gate returns "meta checks failed: 0" (proved) while <code>index.html:7</code> carries a 169-char meta description (9 over its own 160 limit). Its regex expects <code>description:</code>, but HTML writes <code>name="description" content="…"</code> — so every HTML meta tag is invisible to it. A false green, worse than a false red.</span></div>
+  </div>
+
+  <div class="card info">
+    <h3>Stale project-local gate copy reports false red <span class="fid">F-0053</span> <span class="badge b-info">Meta</span></h3>
+    <div class="loc">.proof-os/gates/registry_render.py</div>
+    <div class="row"><span class="k">Symptom</span><span class="v">The project copy is proof-os 0.3.x and rejects <code>may_claim: echo</code> for 7 services; the registry declares 0.4.1 and the 0.4.2 plugin copy exits 0 on the same file. <code>version_assert.py</code> only hashes plugin-installed files, never project-local <code>.proof-os/gates</code> copies.</span></div>
+  </div>
+
+  <div class="card info">
+    <h3>os-setup destroys the human-approved registry on rerun <span class="fid">F-0032</span> <span class="badge b-info">Meta</span></h3>
+    <div class="loc">skills/os-setup/SKILL.md step 2</div>
+    <div class="row"><span class="k">Symptom</span><span class="v">Re-running os-setup copies the template over <code>registry.json</code> unconditionally, silently destroying every trust ceiling, jurisdiction, and cap and dropping the map to DRAFT — on the one file the rules mark human-only.</span></div>
+  </div>
+
+  <div class="card info">
+    <h3>Other recorded meta-defects <span class="badge b-info">Meta</span></h3>
+    <div class="row"><span class="k">Also open</span><span class="v">
+      <strong>F-0001</strong> pipeline runs paid review before free build ·
+      <strong>F-0005</strong> meera SKILL.md frontmatter (<code>sonnet</code>) contradicts body (<code>Ollama glm4:9b</code>) ·
+      <strong>F-0026</strong> a stale log line was read as process liveness ·
+      <strong>F-0028</strong> rohan &amp; tara granted <code>may_claim:proved</code> with no gate ·
+      <strong>F-0033</strong> same skill counted twice (account + plugin) ·
+      <strong>F-0034</strong> common-word phantom routing edges ·
+      <strong>F-0059</strong> the earlier audit's own first pass recorded <code>dist/</code> green under an undeclared env override (caught &amp; refuted).
+    </span></div>
+  </div>
+
+  <footer>
+    <strong>What the oracles could NOT see</strong> (declared blind spots): secrets entirely (no scanner ran) · backend &amp; frontend tests (skipped / unavailable) · runtime behaviour, real-vs-mock responses, live E2E · whether unmapped endpoints are dead UI or pending backend · the Go module (no toolchain) · SAST/taint, auth logic, response headers, secrets in git history, container/IaC/CI config.
+    <br><br>
+    Generated from the proof-os ledger (23 open records) + a live 5-oracle run on 2026-08-03. Findings are deterministic tool results; the aggregate verdict is BELIEVED, not proved. "eslint clean" is not "frontend correct" — a hardcoded mock passes every linter ever written.
+  </footer>
+</div>
+<script>
+  // Respect an explicit theme toggle if the host stamps data-theme; otherwise follow the OS.
+  (function(){try{var t=document.documentElement.getAttribute('data-theme');if(!t){}}catch(e){}})();
+</script>
+</body>
+</html>

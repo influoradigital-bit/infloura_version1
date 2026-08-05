@@ -3,15 +3,9 @@ import { useNavigate, Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   Search,
-  Filter,
   X,
-  Heart,
-  MessageSquare,
   Send,
-  ExternalLink,
   CheckCircle2,
-  Users,
-  TrendingUp,
   MapPin,
   Grid3X3,
   List,
@@ -19,9 +13,7 @@ import {
   SlidersHorizontal,
   Bookmark,
   BookmarkCheck,
-  Sparkles,
   Plus,
-  IndianRupee,
   Loader2,
 } from 'lucide-react';
 
@@ -346,6 +338,30 @@ const mockCampaigns = [
   { id: 'c3', name: 'Fitness App Promotion', status: 'DRAFT' },
 ];
 
+// BR-18 — score badges rendered from `creator.scores` (DiscoveryDtos.CreatorScores: quality,
+// authenticity, brandSafety). Per Priya's Score Exposure rule, `null` is a value — it means "not
+// yet scored", never "0%". `brandSafety` is null for every creator until BR-42 ships.
+function ScoreBadge({ label, value }: { label: string; value: number | null | undefined }) {
+  if (value == null) {
+    return (
+      <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+        {label}: Not yet scored
+      </Badge>
+    );
+  }
+  const tone =
+    value >= 80
+      ? 'border-stage-approved-border bg-stage-approved text-stage-approved-fg'
+      : value >= 50
+        ? 'border-stage-negotiating-border bg-stage-negotiating text-stage-negotiating-fg'
+        : 'border-destructive text-destructive-foreground';
+  return (
+    <Badge variant="outline" className={cn('text-[10px] font-medium', tone)}>
+      {label}: {Math.round(value)}%
+    </Badge>
+  );
+}
+
 // Format currency in INR
 const formatINR = (amount: number): string => {
   if (amount >= 100000) {
@@ -379,17 +395,6 @@ const categories = [
   'Education',
   'Entertainment',
   'Gaming',
-];
-
-const contentStyles = [
-  'Aesthetic',
-  'Educational',
-  'Entertainment',
-  'Tutorial',
-  'Review',
-  'Vlog',
-  'Comedy',
-  'Motivational',
 ];
 
 const languages = ['Hindi', 'English', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Bengali', 'Marathi', 'Gujarati', 'Punjabi'];
@@ -1188,6 +1193,14 @@ export function CreatorDiscovery() {
                         {cat}
                       </Badge>
                     ))}
+                  </div>
+
+                  {/* BR-18 score badges — only meaningful in live mode (mock creators carry no
+                      `scores` field, so both render as "Not yet scored", which is honest). */}
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    <ScoreBadge label="Quality" value={creator.scores?.quality} />
+                    <ScoreBadge label="Authenticity" value={creator.scores?.authenticity} />
+                    <ScoreBadge label="Brand safety" value={creator.scores?.brandSafety} />
                   </div>
 
                   {/* Stats */}

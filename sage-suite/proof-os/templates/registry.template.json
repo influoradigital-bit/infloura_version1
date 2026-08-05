@@ -1,0 +1,15 @@
+{
+  "os": "proof-os v0.1",
+  "channels": {
+    "1_intent": {"who": "OWNER_NAME", "trust": "sovereign"},
+    "2_state":  {"what": ["graph.json","registry.json","gates/","ledger/"], "trust": "verified-at-write"},
+    "3_claims": {"what": "any service output", "trust": "never — input to a gate, not a fact"}
+  },
+  "services": {
+    "_example": {"kind": "producer|oracle|judgment|scheduler|governor|syslog|diagnostic",
+                 "jurisdiction": ["glob/**"], "may_claim": "proved|believed",
+                 "gates": ["gates/x.sh"], "caps": {"retries": 2, "then": "escalate:HUMAN"}}
+  },
+  "libraries": [],
+  "dispatch_order": ["gates (proved, free, fast)", "judgment (believed)", "governor (always watching)"]
+}

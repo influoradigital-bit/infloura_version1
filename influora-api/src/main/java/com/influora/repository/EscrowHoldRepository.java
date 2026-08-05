@@ -3,6 +3,7 @@ package com.influora.repository;
 import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.enums.EscrowStatus;
 import java.math.BigDecimal;
+import java.time.Instant;
 import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
@@ -134,4 +135,43 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT e FROM EscrowHold e WHERE e.id = :id")
     Optional<EscrowHold> findByIdForUpdate(@Param("id") String id);
+
+    /**
+     * Platform-wide COUNT of holds in one status — powers the admin Finance/Escrow summary
+     * ({@code GET /admin/finance/escrow}): {@code pendingRelease} passes {@link EscrowStatus#FUNDED}
+     * (holds awaiting release), {@code flaggedTransactions} passes {@link EscrowStatus#FROZEN} (the
+     * held-for-review state — {@code EscrowStatus} has no {@code FLAGGED} value). Derived query;
+     * {@code status} is {@code @Enumerated(STRING)}.
+     */
+    long countByStatus(EscrowStatus status);
+
+    /**
+     * Platform-wide list of holds in one status, newest first — powers {@code GET
+     * /admin/escrow/flagged} ({@link EscrowStatus#FROZEN} = the held-for-review state). Derived query;
+     * {@code status} is {@code @Enumerated(STRING)}. Unpaginated: the flagged set is expected to be
+     * small (holds actively frozen for dispute); revisit with {@code Pageable} if that stops holding.
+     */
+    List<EscrowHold> findByStatusOrderByCreatedAtDesc(EscrowStatus status);
+
+    /**
+     * AVERAGE release latency in SECONDS across {@code RELEASED} holds — {@code AVG(released_at −
+     * funded_at)} — for the admin escrow summary's {@code averageReleaseTime} (the service divides
+     * by 3600 to hours). Returns {@code null} when no hold has been released yet (SQL {@code AVG} of
+     * an empty set), which the service maps to 0. Native ({@code TIMESTAMPDIFF}, MySQL — the app's
+     * dialect); filters {@code RELEASED} only so REFUNDED holds (which also set {@code released_at})
+     * do not skew the figure.
+     */
+    @Query(
+            value = "SELECT AVG(TIMESTAMPDIFF(SECOND, funded_at, released_at)) FROM escrow_holds "
+                    + "WHERE status = 'RELEASED' AND funded_at IS NOT NULL AND released_at IS NOT NULL",
+            nativeQuery = true)
+    Double avgReleaseSeconds();
+
+    /**
+     * All RELEASED holds whose {@code released_at} falls in the half-open range [start, end) —
+     * powers the admin revenue report's GMV bucketing ({@code GET /admin/finance/revenue}, {@code
+     * AdminRevenueService}). Derived query on {@code status} + {@code released_at}.
+     */
+    List<EscrowHold> findByStatusAndReleasedAtGreaterThanEqualAndReleasedAtLessThan(
+            EscrowStatus status, Instant start, Instant end);
 }

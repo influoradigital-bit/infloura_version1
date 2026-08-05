@@ -18,11 +18,13 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.method.HandlerMethod;
 
 /**
- * Task 22 — real object test of {@link PlanGateInterceptor#preHandle}. No {@code @RequiresPlan}
- * endpoint exists yet in this codebase (export/campaign-template write endpoints aren't built),
- * so this test builds a throwaway annotated handler method the same way Spring MVC would resolve
- * a real one, and drives the real interceptor against it — proving the mechanism itself is
- * correctly wired for whichever future endpoint adds the annotation.
+ * Task 22 — real object test of {@link PlanGateInterceptor#preHandle}. Exercised here against a
+ * throwaway {@code EXPORT}-annotated handler method (that feature still has no real endpoint), the
+ * same way Spring MVC would resolve a real one, proving the mechanism itself is correctly wired.
+ * The other {@link com.influora.domain.enums.PlanFeature}, {@code CAMPAIGN_TEMPLATES}, now has a
+ * real annotated endpoint ({@code CampaignTemplateController#saveAsTemplate}, BR-14) — see {@code
+ * CampaignTemplateControllerTest} for the 402 case driven against that real controller method
+ * instead of a fake one.
  */
 class PlanGateInterceptorTest {
 

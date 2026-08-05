@@ -9,6 +9,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.time.LocalDate;
 
 /**
  * Product-seeding shipment — 1:1 with {@link Collaboration} ({@code UNIQUE(collaboration_id)}),
@@ -74,6 +75,10 @@ public class Shipment {
 
     @Column(name = "tracking_url", length = 500)
     private String trackingUrl;
+
+    /** Brand-supplied ETA on mark-shipped (optional). Real value — replaces the old FE now+3d fake. */
+    @Column(name = "estimated_delivery")
+    private LocalDate estimatedDelivery;
 
     /** Creator's note on receipt, especially when {@link #receivedCondition} is {@code DAMAGED}. */
     @Column(name = "condition_note", columnDefinition = "TEXT")
@@ -142,11 +147,17 @@ public class Shipment {
 
     /** ADDRESS_PROVIDED or DAMAGED -> SHIPPED. Guard (can't ship before an address exists) lives in ShipmentService. */
     public void markShipped(
-            String carrier, String trackingNumber, String trackingUrl, String productName, Instant now) {
+            String carrier,
+            String trackingNumber,
+            String trackingUrl,
+            String productName,
+            LocalDate estimatedDelivery,
+            Instant now) {
         this.carrier = carrier;
         this.trackingNumber = trackingNumber;
         this.trackingUrl = trackingUrl;
         this.productName = productName;
+        this.estimatedDelivery = estimatedDelivery;
         this.status = ShipmentStatus.SHIPPED;
         this.updatedAt = now;
     }
@@ -213,6 +224,10 @@ public class Shipment {
 
     public String getTrackingUrl() {
         return trackingUrl;
+    }
+
+    public LocalDate getEstimatedDelivery() {
+        return estimatedDelivery;
     }
 
     public String getConditionNote() {

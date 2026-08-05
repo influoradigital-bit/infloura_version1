@@ -1,0 +1,13 @@
+{
+  "id": "AF-05",
+  "order": 5,
+  "verb": "GET",
+  "path": "/admin/marketing/acquisition",
+  "dto": "MarketingAcquisition",
+  "tier": "read",
+  "status": "BLOCKED",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "AcquisitionMetrics needs CAC (ad-spend, untracked) + sourceAttribution (signup-source, untracked) \u2014 no honest data; only 2 conversion rates are real, not the whole shape"
+}

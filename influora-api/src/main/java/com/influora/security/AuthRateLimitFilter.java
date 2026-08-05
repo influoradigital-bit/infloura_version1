@@ -353,6 +353,19 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             // login, brand/login, brand/register, forgot-password, reset-password, logout
             return "sensitive";
         }
+        // [SEC: Priya audit, e60d249 follow-up] POST /me/password (BR-05, in-session password
+        // change) re-authenticates the caller against their stored BCrypt hash via
+        // AuthService#changePassword — an unconditional passwordEncoder.matches() call is itself a
+        // CPU-exhaustion vector, and with no throttle a stolen/leaked access token let an attacker
+        // brute-force `currentPassword` at unlimited rate. Shares the "sensitive" bucket (same shape
+        // as login: a credential check against a stored hash), deliberately IP-keyed like the rest
+        // of that bucket rather than user-keyed — an attacker retrying with a stolen token from a
+        // fresh IP must not get a clean rate-limit window. Exact-match only (not a `/me/` prefix) so
+        // this cannot accidentally throttle other `/me/...` routes (e.g. GET /me, PATCH /me,
+        // DELETE /me/account) that have nothing to do with credential verification.
+        if (path.equals("/me/password")) {
+            return "sensitive";
+        }
         return null;
     }
 

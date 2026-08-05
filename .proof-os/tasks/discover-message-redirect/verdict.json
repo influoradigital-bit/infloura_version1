@@ -1,0 +1,11 @@
+{"verdict":"believed","oracle":"node","isolation":"fresh-context",
+ "done_when":"the file:line breaking the discover-to-message redirect is named AND a new vitest test fails on it",
+ "not_checked":[
+  "whether /brand/chat or /brand/messages is the intended destination — a product decision, not an oracle's",
+  "whether the new collaboration is present in GET /deals by the time BrandChatPage mounts; no server was run",
+  "runtime behaviour in a real browser — no URL to test and @playwright/test is not installed",
+  "whether fixing only creator-discovery.tsx:536 is sufficient — brand-chat.tsx:927 still mis-selects for any unmatched param, so the two fixes are independent"],
+ "skipped":[
+  {"step":"writing the fix","reason":"the human chose the diagnose-and-prove done_when; no src/ behaviour was changed, only a new failing test file was added"},
+  {"step":"gates/e2e.sh","reason":"nothing is deployed, no URL supplied, and @playwright/test is absent — recorded as unavailable, never as a pass"},
+  {"step":"promote.py on the three new records","reason":"promotion closes DETECTION against a gate that exists; the redirect gate exists and fails, so the records stay open until the code is fixed"}]}

@@ -45,7 +45,7 @@
  *     absorb webhook lag without hard-failing.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, type InsufficientFundsDetails } from '@/lib/api';
 import { meeraApi, type MeeraEscrowStatus } from '@/lib/meera-api';
 
@@ -307,8 +307,18 @@ export function useEscrowFund(): UseEscrowFundResult {
    * lock - if the webhook genuinely hasn't landed, it will correctly 402
    * again and, within MAX_TOPUP_ROUNDS, offer another top-up round).
    */
-  const recheckBalanceThenRetry = useCallback(
-    async (attempt = 0) => {
+  // Plain async arrow held in a ref (not a memoized `useCallback` value) and
+  // assigned once in a mount-only effect: recursion goes through
+  // `recheckBalanceThenRetryRef.current?.(...)` inside the (non-awaited)
+  // setTimeout, so this keeps the original fire-and-forget contract - one
+  // round-trip, then the next attempt detaches onto its own timer tick - and
+  // never stores a memoized hook value inside a ref (which is what tripped
+  // the immutability/refs lint rules in the useCallback-based attempts).
+  const recheckBalanceThenRetryRef = useRef<((attempt?: number) => Promise<void>) | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    recheckBalanceThenRetryRef.current = async (attempt = 0): Promise<void> => {
       if (attempt >= BALANCE_RECHECK_MAX_ATTEMPTS) {
         const pending = pendingFundRef.current;
         if (pending) await initiateFundRef.current(pending.campaignId, pending.milestoneId);
@@ -322,12 +332,10 @@ export function useEscrowFund(): UseEscrowFundResult {
         // ignore - fall through to retry anyway
       }
       balanceRecheckTimerRef.current = window.setTimeout(() => {
-        recheckBalanceThenRetry(attempt + 1);
+        void recheckBalanceThenRetryRef.current?.(attempt + 1);
       }, BALANCE_RECHECK_INTERVAL_MS);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+    };
+  }, []);
 
   /**
    * Called after the TOP-UP Razorpay checkout success callback fires.
@@ -344,44 +352,52 @@ export function useEscrowFund(): UseEscrowFundResult {
       setError('Lost track of the campaign to fund. Please try again.');
       return;
     }
-    await recheckBalanceThenRetry(0);
-  }, [recheckBalanceThenRetry]);
+    await recheckBalanceThenRetryRef.current?.(0);
+  }, []);
 
   /**
    * Poll for FUNDED status after Razorpay callback.
    * SECURITY: Never trust client Razorpay callback alone - verify server-side.
    */
-  const pollForFunded = useCallback(async (holdId: string, attempt = 0): Promise<void> => {
-    if (attempt >= POLL_MAX_ATTEMPTS) {
-      setStatus('error');
-      setError('Payment verification timed out. Please contact support.');
-      return;
-    }
-
-    try {
-      const escrowStatus: MeeraEscrowStatus = await meeraApi.getEscrowStatus(holdId);
-
-      if (escrowStatus.status === 'FUNDED') {
-        setStatus('funded');
-        return;
-      }
-
-      if (escrowStatus.status === 'CANCELLED') {
+  // Same plain-async-arrow-in-a-ref treatment as `recheckBalanceThenRetry` above -
+  // recursion goes through `pollForFundedRef.current?.(...)` inside the
+  // (non-awaited) setTimeout, preserving the original fire-and-forget contract.
+  const pollForFundedRef = useRef<((holdId: string, attempt?: number) => Promise<void>) | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    pollForFundedRef.current = async (holdId: string, attempt = 0): Promise<void> => {
+      if (attempt >= POLL_MAX_ATTEMPTS) {
         setStatus('error');
-        setError('Payment was cancelled.');
+        setError('Payment verification timed out. Please contact support.');
         return;
       }
 
-      // Still pending - poll again
-      pollTimerRef.current = window.setTimeout(() => {
-        pollForFunded(holdId, attempt + 1);
-      }, POLL_INTERVAL_MS);
-    } catch (err) {
-      // Network error during polling - retry
-      pollTimerRef.current = window.setTimeout(() => {
-        pollForFunded(holdId, attempt + 1);
-      }, POLL_INTERVAL_MS);
-    }
+      try {
+        const escrowStatus: MeeraEscrowStatus = await meeraApi.getEscrowStatus(holdId);
+
+        if (escrowStatus.status === 'FUNDED') {
+          setStatus('funded');
+          return;
+        }
+
+        if (escrowStatus.status === 'CANCELLED') {
+          setStatus('error');
+          setError('Payment was cancelled.');
+          return;
+        }
+
+        // Still pending - poll again
+        pollTimerRef.current = window.setTimeout(() => {
+          void pollForFundedRef.current?.(holdId, attempt + 1);
+        }, POLL_INTERVAL_MS);
+      } catch {
+        // Network error during polling - retry
+        pollTimerRef.current = window.setTimeout(() => {
+          void pollForFundedRef.current?.(holdId, attempt + 1);
+        }, POLL_INTERVAL_MS);
+      }
+    };
   }, []);
 
   /**
@@ -396,8 +412,8 @@ export function useEscrowFund(): UseEscrowFundResult {
     }
 
     setStatus('verifying');
-    await pollForFunded(escrowHoldId);
-  }, [escrowHoldId, pollForFunded]);
+    await pollForFundedRef.current?.(escrowHoldId);
+  }, [escrowHoldId]);
 
   return {
     status,

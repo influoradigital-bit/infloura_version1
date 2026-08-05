@@ -1,0 +1,5 @@
+{"verdict":"believed","oracle":"mvn","isolation":"fresh-context",
+ "done_when":"gates/build.mvn.sh compiles influora-api (exit 0) with GET /admin/finance/escrow returning EscrowSummaryDto{totalLocked,pendingRelease,flaggedTransactions,averageReleaseTime} computed live from escrow_holds; no fabricated data",
+ "evidence":{"oracle":"mvn","command":"PROOF_MVN_HEAP=3g gates/build.mvn.sh influora-api","result":"exit 0 — module compiles (aligned proved)","where":"influora-api/src/main/java/com/influora/web/AdminFinanceController.java:1"},
+ "not_checked":["runtime behaviour — the native TIMESTAMPDIFF query and derived counts were NOT executed against a real MySQL database (no @DataJpaTest harness in this module)","that MFA/role enforcement actually blocks a SUPPORT/unauthenticated caller at runtime — only that the gate call is present and compiles","whether pendingRelease should be an amount not a count — declared assumption, needs product confirmation"],
+ "skipped":[{"step":"PROOF_MVN_TESTS=1 (test execution)","reason":"no @DataJpaTest for EscrowHoldRepository exists in this module; compile is the available oracle"}]}

@@ -1,0 +1,5 @@
+{"verdict":"proved","oracle":"mvn","isolation":"oracle",
+ "done_when":"influora-api test-compiles (mvn exit 0) and AdminFinanceServiceTest executes green (Tests run: 3, Failures: 0) — proving the SUPER_ADMIN+ADMIN/MFA gate is invoked, a rejected caller reads no escrow data, and null SUM/AVG default to 0.0",
+ "evidence":{"oracle":"mvn","command":"mvn -o surefire:test -Dtest=AdminFinanceServiceTest","result":"Tests run: 3, Failures: 0, Errors: 0, Skipped: 0","where":"influora-api/src/test/java/com/influora/service/admin/AdminFinanceServiceTest.java:40"},
+ "not_checked":["the native avgReleaseSeconds() TIMESTAMPDIFF SQL against real MySQL — mocked here; needs a Testcontainers/@DataJpaTest harness this module lacks","full-context HTTP authz (that Spring Security actually routes an unauth request into the gate) — the service-layer gate call is proven, the web filter chain is not","the pendingRelease amount-vs-count product assumption (unchanged from item 1)"],
+ "skipped":[{"step":"proof-os ledger/journal","reason":"fcntl-unavailable on Windows; recorded here + in the commit instead"}]}

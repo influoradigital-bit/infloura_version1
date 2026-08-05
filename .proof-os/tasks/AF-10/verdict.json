@@ -1,0 +1,5 @@
+{"verdict":"believed","oracle":"mvn","isolation":"fresh-context",
+ "done_when":"build.mvn.sh compiles influora-api (exit 0) with GET /admin/campaigns/hype/ops returning {activeHype,totalSlots,filledSlots,avgFillRate,approvalsPerHour} live; approvalsPerHour=deliverables approved in last 60min across active HYPE campaigns; fresh-context review REAL",
+ "evidence":{"oracle":"mvn","command":"PROOF_MVN_HEAP=3g gates/build.mvn.sh influora-api && mvn -o test-compile","result":"compile exit 0 + test-compile exit 0 (ctor change safe); fresh-context review REAL","where":"influora-api/src/main/java/com/influora/web/AdminCampaignController.java:1"},
+ "not_checked":["runtime — endpoint + new derived query not executed against a real DB (no @DataJpaTest)","avgFillRate returned as a [0,1] fraction — FE may expect a percentage; a formatting choice, documented","the 60-minute approvalsPerHour window is a declared working definition (user-agreed), not a product-ratified metric"],
+ "skipped":[{"step":"graphify update","reason":"AST re-index exceeds the 2-min shell budget; re-syncs next run, does not affect the gate"}]}

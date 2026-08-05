@@ -1,0 +1,13 @@
+{
+  "id": "AF-11",
+  "order": 11,
+  "verb": "GET",
+  "path": "/admin/dashboard/financial",
+  "dto": "DashboardFinancial",
+  "tier": "read",
+  "status": "DONE",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "financial dashboard: last 12 buckets (day/week/month/quarter) reusing AdminRevenueService; gmv+platformFees real, setupFees honest 0; getRevenue refactor verified consistent"
+}

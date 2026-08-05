@@ -16,6 +16,8 @@ import com.influora.domain.enums.AdminRole;
 import com.influora.domain.enums.ContentFlagStatus;
 import com.influora.domain.enums.ContentFlagType;
 import com.influora.repository.ContentFlagRepository;
+import com.influora.repository.CreatorProfileRepository;
+import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.web.dto.admin.AdminModerationDtos.ActionFlagRequest;
 import com.influora.web.dto.admin.AdminModerationDtos.FlagDto;
@@ -48,6 +50,10 @@ class AdminModerationServiceTest {
     @Mock private AdminContextService adminContext;
     @Mock private AdminAuditLogService adminAuditLogService;
     @Mock private ContentFlagRepository contentFlagRepository;
+    // Added 2026-08-03 to match AdminModerationService's new constructor (AF-13 added workspace +
+    // creator-profile lookups). Mocks only — no existing test exercises these paths.
+    @Mock private WorkspaceRepository workspaceRepository;
+    @Mock private CreatorProfileRepository creatorProfileRepository;
     @Mock private AuthPrincipal principal;
     @Mock private HttpServletRequest request;
 
@@ -57,7 +63,12 @@ class AdminModerationServiceTest {
     @BeforeEach
     void setUp() {
         adminModerationService =
-                new AdminModerationService(adminContext, adminAuditLogService, contentFlagRepository);
+                new AdminModerationService(
+                        adminContext,
+                        adminAuditLogService,
+                        contentFlagRepository,
+                        workspaceRepository,
+                        creatorProfileRepository);
         supportAdmin = AdminUser.create(ADMIN_ID, "support@influora.ai", "hash", AdminRole.SUPPORT);
     }
 

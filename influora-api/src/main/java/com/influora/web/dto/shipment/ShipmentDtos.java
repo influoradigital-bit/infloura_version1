@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
+import java.time.LocalDate;
 
 /**
  * DTOs for the shipment endpoints on {@code DealController}
@@ -36,7 +37,9 @@ public final class ShipmentDtos {
             @NotBlank @Size(max = 120) String carrier,
             @NotBlank @Size(max = 120) String trackingNumber,
             @Size(max = 500) String trackingUrl,
-            @NotBlank @Size(max = 300) String productName) {}
+            @NotBlank @Size(max = 300) String productName,
+            /** Optional brand-supplied ETA (creator-shipment-eta-0804). */
+            LocalDate estimatedDelivery) {}
 
     public record ConfirmReceiptRequest(
             @NotNull ShipmentCondition condition, @Size(max = 2000) String note) {}
@@ -57,7 +60,9 @@ public final class ShipmentDtos {
             String trackingUrl,
             String conditionNote,
             ShipmentCondition receivedCondition,
-            Instant updatedAt) {
+            Instant updatedAt,
+            /** Brand-supplied ETA (creator-shipment-eta-0804); null until the brand marks it shipped with a date. */
+            LocalDate estimatedDelivery) {
 
         /** Synthetic response for a collaboration with no {@code Shipment} row yet. */
         public static ShipmentResponse awaitingAddress(String dealId) {
@@ -66,7 +71,7 @@ public final class ShipmentDtos {
                     ShipmentStatus.AWAITING_ADDRESS,
                     null, null, null, null, null, null, null,
                     null, null, null, null,
-                    null, null, null);
+                    null, null, null, null);
         }
     }
 }

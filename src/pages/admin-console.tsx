@@ -9,6 +9,8 @@
  * - /admin/users/* → UsersPage (Brands/Creators list + BrandProfile/CreatorProfile detail, Task #8)
  * - /admin/campaigns → CampaignTable
  * - /admin/finance → FeeControlPanel
+ * - /admin/revenue → RevenuePage (Finance/Escrow/Revenue console — GMV, escrow
+ *   health, flagged escrow, at-risk campaigns, HYPE ops, suspensions — read-only)
  * - /admin/support → TicketList
  * - /admin/moderation → ModerationPage (Content Flags + Approvals tabs, A7)
  * - /admin/disputes → DisputesPage (Task #9)
@@ -28,6 +30,7 @@ import PulseDashboard from '@/admin/components/dashboard/PulseDashboard';
 import UsersPage from '@/admin/pages/UsersPage';
 import CampaignTable from '@/admin/components/campaigns/CampaignTable';
 import FeeControlPanel from '@/admin/components/finance/FeeControlPanel';
+import RevenuePage from '@/admin/pages/RevenuePage';
 import TicketList from '@/admin/components/support/TicketList';
 import ModerationPage from '@/admin/pages/ModerationPage';
 import DisputesPage from '@/admin/pages/DisputesPage';
@@ -52,6 +55,7 @@ export default function AdminConsolePage() {
         <Route path="users/*" element={<UsersPage />} />
         <Route path="campaigns" element={<CampaignTable />} />
         <Route path="finance" element={<FeeControlPanel />} />
+        <Route path="revenue" element={<RevenuePage />} />
         <Route path="support" element={<TicketList />} />
         <Route path="moderation" element={<ModerationPage />} />
         <Route path="disputes" element={<DisputesPage />} />

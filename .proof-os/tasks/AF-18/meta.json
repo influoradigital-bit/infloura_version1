@@ -1,0 +1,13 @@
+{
+  "id": "AF-18",
+  "order": 18,
+  "verb": "POST",
+  "path": "/admin/moderation/suspensions/{id}/appeal",
+  "dto": "Suspension",
+  "tier": "write",
+  "status": "BLOCKED",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "no appeal entity/table exists in the schema (AF-13 suspensions list is DONE); needs an appeal subsystem designed first \u2014 CEO ruled BLOCKED"
+}

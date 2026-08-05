@@ -1,0 +1,13 @@
+{
+  "id": "AF-02",
+  "order": 2,
+  "verb": "GET",
+  "path": "/admin/finance/reconciliation",
+  "dto": "ReconciliationItem[]",
+  "tier": "read",
+  "status": "BLOCKED",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "gate": "gates/build.mvn.sh exit 0 + fresh-context review confirms the field values come from real queries, no fabricated/mock data",
+  "note": "No general finance-reconciliation ledger/entity exists. The only reconciliation code is affiliate-specific (AffiliateEarningReconciliationJob, AffiliateSettlementBatch) - not a queryable ReconciliationItem[] source mapping internal-vs-Razorpay discrepancies. Building it = building the reconciliation subsystem itself."
+}

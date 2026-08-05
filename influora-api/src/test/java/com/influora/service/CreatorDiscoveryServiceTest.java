@@ -3,6 +3,7 @@ package com.influora.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -229,6 +230,85 @@ class CreatorDiscoveryServiceTest {
 
         assertEquals("CREATOR_NOT_FOUND", ex.getCode());
         assertEquals(404, ex.getStatus().value());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // BR-18 — batch score exposure via get() -> toResponseForWorkspace() -> loadScoresByCreator()
+    // -> the real CreatorScoreRepository#findLatestByCreatorProfileIdIn batch finder (mocked here,
+    // real query proven separately at the repository/migration level). get() feeds /creators/{id};
+    // toResponse()/buildScores() is the exact same code path search()/featured()/suggestions() go
+    // through for their own pages, so this single call site is a faithful proxy for all four.
+    // ------------------------------------------------------------------------------------------
+
+    private void stubSingleCreatorLookup(CreatorProfile profile) {
+        when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(profile));
+        when(platformStatRepository.findByCreatorProfileId(CREATOR_PROFILE_ID)).thenReturn(List.of());
+        when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileId(WORKSPACE_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.empty());
+    }
+
+    @Test
+    @DisplayName(
+            "get: CreatorResponse.scores().authenticity() is 100 - fakeFollowerScore (80 -> 20), never the raw suspicion score")
+    void testGetInvertsFakeFollowerScoreIntoAuthenticity() {
+        stubWorkspace();
+        CreatorProfile profile = stubDiscoverableProfile();
+        stubSingleCreatorLookup(profile);
+
+        CreatorScore score = mock(CreatorScore.class);
+        when(score.getCreatorProfileId()).thenReturn(CREATOR_PROFILE_ID);
+        when(score.getQualityScore()).thenReturn(new BigDecimal("81.00"));
+        when(score.getFakeFollowerScore()).thenReturn(new BigDecimal("80.00"));
+        when(score.getBrandSafetyScore()).thenReturn(new BigDecimal("95.00"));
+        when(creatorScoreRepository.findLatestByCreatorProfileIdIn(List.of(CREATOR_PROFILE_ID)))
+                .thenReturn(List.of(score));
+
+        var response = service.get(principal, CREATOR_PROFILE_ID);
+
+        assertNotNull(response.scores());
+        assertEquals(new BigDecimal("20.00"), response.scores().authenticity());
+        // Nice-to-have: quality/brandSafety pass straight through, untouched by the inversion.
+        assertEquals(new BigDecimal("81.00"), response.scores().quality());
+        assertEquals(new BigDecimal("95.00"), response.scores().brandSafety());
+    }
+
+    @Test
+    @DisplayName(
+            "get: a creator with no fake-follower score yet reports null authenticity, never fabricated as 0 or 100")
+    void testGetNullFakeFollowerScoreStaysNullAuthenticity() {
+        stubWorkspace();
+        CreatorProfile profile = stubDiscoverableProfile();
+        stubSingleCreatorLookup(profile);
+
+        CreatorScore score = mock(CreatorScore.class);
+        when(score.getCreatorProfileId()).thenReturn(CREATOR_PROFILE_ID);
+        when(score.getQualityScore()).thenReturn(new BigDecimal("70.00"));
+        when(score.getFakeFollowerScore()).thenReturn(null);
+        when(score.getBrandSafetyScore()).thenReturn(null);
+        when(creatorScoreRepository.findLatestByCreatorProfileIdIn(List.of(CREATOR_PROFILE_ID)))
+                .thenReturn(List.of(score));
+
+        var response = service.get(principal, CREATOR_PROFILE_ID);
+
+        assertNotNull(response.scores());
+        assertNull(response.scores().authenticity());
+        assertNull(response.scores().brandSafety());
+        assertEquals(new BigDecimal("70.00"), response.scores().quality());
+    }
+
+    @Test
+    @DisplayName("get: no computed score row at all -> CreatorResponse.scores() is null, not fabricated")
+    void testGetNoScoreRowYieldsNullScores() {
+        stubWorkspace();
+        CreatorProfile profile = stubDiscoverableProfile();
+        stubSingleCreatorLookup(profile);
+        when(creatorScoreRepository.findLatestByCreatorProfileIdIn(List.of(CREATOR_PROFILE_ID)))
+                .thenReturn(List.of());
+
+        var response = service.get(principal, CREATOR_PROFILE_ID);
+
+        assertNull(response.scores());
     }
 
     // ------------------------------------------------------------------------------------------

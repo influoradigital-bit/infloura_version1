@@ -30,6 +30,7 @@ import type {
   CreatorScores,
   DeliverableStatus,
   Platform,
+  TargetAudience,
   VerificationStatus,
 } from './types';
 import {
@@ -47,10 +48,10 @@ export type { DeliverableStatus, ContractStatus } from './types';
 // ---------------------------------------------------------------------------
 
 const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+  import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 
 const API_MODE: 'live' | 'mock' =
-  (import.meta as any).env?.VITE_API_MODE === 'live' ? 'live' : 'mock';
+  import.meta.env?.VITE_API_MODE === 'live' ? 'live' : 'mock';
 
 /** True when `VITE_API_MODE=live` */
 export function isApiLive(): boolean {
@@ -384,7 +385,7 @@ class HttpClient {
       !!this.getToken(role),
     );
 
-    const envelope = await this.parseEnvelope<T>(res, path);
+    const envelope = await this.parseEnvelope<T>(res);
 
     if (!res.ok || !envelope.success) {
       throw new ApiError(
@@ -406,7 +407,7 @@ class HttpClient {
    * "Invalid JSON" made a transient outage look like a data bug; instead we tell the user
    * the server was briefly unavailable so the UI's "Try again" reads correctly.
    */
-  private async parseEnvelope<T>(res: Response, path: string): Promise<ApiEnvelope<T>> {
+  private async parseEnvelope<T>(res: Response): Promise<ApiEnvelope<T>> {
     const raw = await res.text();
     try {
       return JSON.parse(raw) as ApiEnvelope<T>;
@@ -457,7 +458,7 @@ class HttpClient {
       role,
       !!this.getToken(role),
     );
-    const envelope = await this.parseEnvelope<T>(res, path);
+    const envelope = await this.parseEnvelope<T>(res);
     if (!res.ok || !envelope.success) {
       throw new ApiError(
         envelope.error?.code || 'UNKNOWN',
@@ -508,7 +509,7 @@ class HttpClient {
       !!this.getToken(role),
     );
     if (res.status === 204) return null;
-    const envelope = await this.parseEnvelope<T>(res, path);
+    const envelope = await this.parseEnvelope<T>(res);
     if (!res.ok || !envelope.success) {
       throw new ApiError(
         envelope.error?.code || 'UNKNOWN',
@@ -795,6 +796,32 @@ export const auth = {
     return { sent: true };
   },
 
+  /**
+   * POST /auth/reset-password — BR-03. Consumes the `token` from the emailed reset link
+   * (`webBaseUrl + "/reset-password?token=" + raw` — AuthService.forgotPassword) plus the
+   * user's chosen `newPassword`. Field names match `ResetPasswordRequest`
+   * (web/dto/auth/ResetPasswordRequest.java) exactly: `token`, `newPassword`. Unauthenticated
+   * route — the token itself is the credential, so no `role`/Bearer header is sent, same as
+   * `forgotPassword` above.
+   */
+  resetPassword: async (payload: { token: string; newPassword: string }) => {
+    if (!isLive()) return mockOr({ reset: true });
+    await http.request<{ message: string }>('POST', '/auth/reset-password', { body: payload });
+    return { reset: true };
+  },
+
+  /**
+   * POST /me/password — BR-05. In-session password change (current + new, re-auth on current).
+   * Distinct from `resetPassword` (unauthenticated, token-from-email flow) — this one requires
+   * the caller's current password and an active session. Landing in parallel on the backend
+   * (Vikram); a 404 here means it hasn't shipped yet, not that the client is wrong.
+   */
+  changePassword: async (payload: { currentPassword: string; newPassword: string }) => {
+    if (!isLive()) return mockOr({ changed: true });
+    await http.request<{ message: string }>('POST', '/me/password', { body: payload });
+    return { changed: true };
+  },
+
   /** POST /auth/logout */
   logout: (role: Role) => {
     http.clearToken(role);
@@ -851,6 +878,16 @@ export interface WorkspaceMemberRow {
   active: boolean;
 }
 
+/** POST /workspace/members/invite response — WorkspaceMemberDtos.InviteResponse. */
+export interface WorkspaceInviteResponse {
+  id: string;
+  workspaceId: string;
+  email: string;
+  role: string;
+  status: string;
+  expiresAt: string;
+}
+
 export const workspaceMembers = {
   /**
    * GET /workspace/members (WorkspaceMemberController.java:74) — the only endpoint that exposes
@@ -864,6 +901,25 @@ export const workspaceMembers = {
       : mockOr<WorkspaceMemberRow[]>([
           { id: 'm_1', workspaceId: 'ws_1', userId: 'u_1', role: 'OWNER', active: true },
         ]),
+
+  /**
+   * POST /workspace/members/invite (WorkspaceMemberController.java:51) — server derives
+   * `workspaceId` from the authenticated principal, never from the client. `role` must be one of
+   * ADMIN, MANAGER, MEMBER, VIEWER (OWNER is not assignable via invite).
+   */
+  invite: (email: string, role: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER') =>
+    isLive()
+      ? http.request<WorkspaceInviteResponse>('POST', '/workspace/members/invite', {
+          body: { email, role },
+        })
+      : mockOr<WorkspaceInviteResponse>({
+          id: 'inv_mock',
+          workspaceId: 'ws_1',
+          email,
+          role,
+          status: 'PENDING',
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
 };
 
 export const workspaces = {
@@ -985,19 +1041,11 @@ export const onboarding = {
         })
       : mockOr({ kycStatus: 'PENDING' as const }),
 
-  /**
-   * POST /onboarding/creator/payout  — deferred to first withdrawal.
-   */
-  saveCreatorPayout: (payload:
-    | { method: 'upi'; upiId: string }
-    | { method: 'bank'; bankAccount: string; ifsc: string; accountName: string }
-  ) =>
-    isLive()
-      ? http.request<{ payoutId: string }>('POST', '/onboarding/creator/payout', {
-          body: payload,
-          role: 'creator',
-        })
-      : mockOr({ payoutId: 'po_1' }),
+  // NOTE: creator payout-method capture is NOT here. It is handled by the wallet
+  // (`GET/POST /wallet/payout-methods`, wired in creator-wallet.tsx) at first
+  // withdrawal. The former `saveCreatorPayout` (`POST /onboarding/creator/payout`)
+  // wrapper was removed 2026-08-04 as dead/superseded (0 callers) — see
+  // PROJECT-DEEP-AUDIT-2026-08-04.md §5.
 };
 
 // ---------------------------------------------------------------------------
@@ -1018,10 +1066,29 @@ type CampaignApiRow = Campaign & {
   totalSpend?: number;
 };
 
+// FE CampaignType ('OPEN' | 'DIRECT' | 'HYPE' — src/lib/types.ts:15) and the backend's
+// CampaignIntentType (HYPE | DIRECT | REVIEW | STANDARD) do not share a vocabulary: FE 'OPEN'
+// is the backend's 'STANDARD', and the backend's 'REVIEW' has no FE surface (never created by
+// the brand form; treated as an open campaign on read). These two tables are the single, explicit
+// translation at the HTTP boundary so campaignType round-trips losslessly instead of leaking a
+// raw 'STANDARD' into a field the FE union claims can only be OPEN/DIRECT/HYPE.
+const CAMPAIGN_TYPE_TO_API = { OPEN: 'STANDARD', DIRECT: 'DIRECT', HYPE: 'HYPE' } as const;
+const CAMPAIGN_TYPE_FROM_API = {
+  STANDARD: 'OPEN',
+  REVIEW: 'OPEN',
+  DIRECT: 'DIRECT',
+  HYPE: 'HYPE',
+} as const;
+
 function mapCampaignFromApi(row: CampaignApiRow): Campaign {
   const timeline = row.timeline as Campaign['timeline'];
   return {
     ...row,
+    // Map the backend CampaignIntentType back to the FE CampaignType union so this field is
+    // never the runtime lie it used to be ('STANDARD' arriving where the type says OPEN/DIRECT/HYPE).
+    campaignType: row.campaignType
+      ? CAMPAIGN_TYPE_FROM_API[row.campaignType as keyof typeof CAMPAIGN_TYPE_FROM_API] ?? 'OPEN'
+      : undefined,
     timeline: {
       startDate: timeline?.startDate ? new Date(timeline.startDate) : new Date(),
       endDate: timeline?.endDate ? new Date(timeline.endDate) : new Date(),
@@ -1068,14 +1135,13 @@ function campaignToPayload(payload: Partial<Campaign>) {
   // jackson-datatype-jsr310, so a typed Instant would fail on persist).
   const fmtIso = (d: Date | string) => (d instanceof Date ? d : new Date(d)).toISOString();
 
-  // FE CampaignType ('OPEN' | 'DIRECT' | 'HYPE' — src/lib/types.ts:15) does not
-  // match the backend's CampaignIntentType enum (HYPE | DIRECT | REVIEW |
-  // STANDARD). 'OPEN' has no backend equivalent and would 400, so only forward
-  // campaignType when it's a value the backend actually accepts; omitting it
-  // otherwise preserves today's behavior for non-Hype creates (backend
-  // defaults absent/null campaignType to STANDARD — CampaignService.java:115-116).
-  // Reconciling the full OPEN/STANDARD mismatch is a separate, pre-existing item.
-  const campaignType = payload.campaignType !== 'OPEN' ? payload.campaignType : undefined;
+  // Translate the FE CampaignType to the backend CampaignIntentType via the explicit table
+  // (CAMPAIGN_TYPE_TO_API above): FE 'OPEN' -> 'STANDARD' (the backend's equivalent), DIRECT/HYPE
+  // pass through. Sending 'STANDARD' explicitly is identical in outcome to the old omit-and-let-
+  // the-backend-default-to-STANDARD (CampaignService.java:115-116) but is lossless and honest.
+  const campaignType = payload.campaignType
+    ? CAMPAIGN_TYPE_TO_API[payload.campaignType] ?? undefined
+    : undefined;
 
   const hype = payload.hype
     ? {
@@ -1307,6 +1373,64 @@ export const creators = {
 };
 
 // ---------------------------------------------------------------------------
+// Campaign templates (BR-14 Phase 1) — CampaignTemplateController @ /campaign-templates.
+// Read is free to every plan tier (4 SYSTEM presets are seeded); only POST (save-as-template,
+// not built in this pass) carries @RequiresPlan. No FE plan gate needed for list/get.
+// ---------------------------------------------------------------------------
+
+/** GET /campaign-templates[/:id] — CampaignTemplateDtos.CampaignTemplateResponse (@JsonInclude NON_NULL). */
+export interface CampaignTemplateResponse {
+  id: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  scope: 'SYSTEM' | 'CUSTOM' | string;
+  workspaceId?: string | null;
+  createdBy?: string | null;
+  campaignType?: string | null;
+  budgetMin?: number | null;
+  budgetMax?: number | null;
+  platforms?: string[];
+  contentTypes?: string[];
+  objectives?: string[];
+  requirements?: string[];
+  hashtags?: string[];
+  targetAudience?: TargetAudience | null;
+  brandGuidelines?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export const campaignTemplates = {
+  /** GET /campaign-templates — the 4 SYSTEM presets plus any CUSTOM templates for the workspace. */
+  list: () =>
+    isLive()
+      ? http.request<CampaignTemplateResponse[]>('GET', '/campaign-templates')
+      : mockOr<CampaignTemplateResponse[]>([]),
+
+  /** GET /campaign-templates/:id */
+  get: (templateId: string) =>
+    isLive()
+      ? http.request<CampaignTemplateResponse>('GET', `/campaign-templates/${templateId}`)
+      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Templates are not available in mock mode')),
+
+  /**
+   * POST /campaign-templates (CampaignTemplateController.java:54, @RequiresPlan CAMPAIGN_TEMPLATES)
+   * — save an existing campaign as a reusable CUSTOM template for the workspace.
+   */
+  create: (payload: { campaignId: string; name: string; description?: string }) =>
+    isLive()
+      ? http.request<CampaignTemplateResponse>('POST', '/campaign-templates', { body: payload })
+      : mockOr<CampaignTemplateResponse>({ id: 'tpl_new', name: payload.name } as CampaignTemplateResponse),
+
+  /** DELETE /campaign-templates/:id (CampaignTemplateController.java:62) — remove a CUSTOM template. */
+  remove: (templateId: string) =>
+    isLive()
+      ? http.request<{ ok: boolean }>('DELETE', `/campaign-templates/${templateId}`)
+      : mockOr<{ ok: boolean }>({ ok: true }),
+};
+
+// ---------------------------------------------------------------------------
 // Deals (collaborations) — unified for both brand + creator UIs
 // ---------------------------------------------------------------------------
 
@@ -1476,7 +1600,7 @@ export interface DealMessage {
   senderId: string;
   senderType: 'brand' | 'creator' | 'system';
   content?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   createdAt: string;
   readBy: string[];
 }
@@ -1839,6 +1963,8 @@ export interface ShipmentApiRecord {
   receivedCondition?: ShipmentCondition | null;
   createdAt?: string;
   updatedAt?: string;
+  /** Brand-supplied ETA (creator-shipment-eta-0804), ISO date `YYYY-MM-DD`; null until shipped with a date. */
+  estimatedDelivery?: string | null;
 }
 
 /** Body for `POST /deals/:id/shipping-address` — creator-supplied delivery address. */
@@ -1863,6 +1989,22 @@ export interface ShipmentAddressSubmission {
 export interface ShipmentReceiptSubmission {
   condition: ShipmentCondition;
   note?: string;
+}
+
+/**
+ * Body for `POST /deals/:id/shipment` — brand-only, marks the deal SHIPPED.
+ * Field names match `ShipmentDtos.MarkShippedRequest` (influora-api
+ * `web/dto/shipment/ShipmentDtos.java`) exactly: `carrier` (not `courier`),
+ * `trackingNumber`, optional `trackingUrl`, and `productName` (a single
+ * string — the backend has no `items[]` concept).
+ */
+export interface ShipmentMarkShippedSubmission {
+  carrier: string;
+  trackingNumber: string;
+  trackingUrl?: string;
+  productName: string;
+  /** Optional brand-supplied ETA (creator-shipment-eta-0804), ISO date `YYYY-MM-DD`. */
+  estimatedDelivery?: string;
 }
 
 export const shipments = {
@@ -1895,6 +2037,22 @@ export const shipments = {
           status: body.condition === 'GOOD' ? 'RECEIVED' : 'DAMAGED',
           receivedCondition: body.condition,
           conditionNote: body.note ?? null,
+        }),
+
+  /** POST /deals/:id/shipment — brand only. Transitions ADDRESS_PROVIDED -> SHIPPED (DealController.java:199). */
+  markShipped: (dealId: string, body: ShipmentMarkShippedSubmission) =>
+    isLive()
+      ? http.request<ShipmentApiRecord>('POST', `/deals/${dealId}/shipment`, {
+          role: 'brand',
+          body,
+        })
+      : mockOr<ShipmentApiRecord>({
+          status: 'SHIPPED',
+          carrier: body.carrier,
+          trackingNumber: body.trackingNumber,
+          trackingUrl: body.trackingUrl ?? null,
+          productName: body.productName,
+          estimatedDelivery: body.estimatedDelivery ?? null,
         }),
 };
 
@@ -2628,12 +2786,6 @@ export const notifications = {
       ? http.request<{ ok: true }>('POST', '/notifications/read', { role, body: { notificationId: id } })
       : mockOr({ ok: true as const }),
 
-  /** POST /notifications/read-all */
-  markAllRead: (role: Role) =>
-    isLive()
-      ? http.request<{ ok: true }>('POST', '/notifications/read-all', { role })
-      : mockOr({ ok: true as const }),
-
   /**
    * GET /notifications/preferences — per-event-type email unsubscribe state for the
    * authenticated user (Domain B, 07-NOTIFICATION-SYSTEM-SPEC.md EmailPreference model).
@@ -2783,17 +2935,44 @@ export const billing = {
       ? http.downloadBlob(`/billing/invoices/${encodeURIComponent(invoiceId)}/pdf`)
       : Promise.reject(new ApiError('NOT_AVAILABLE', 'Invoice PDFs are not available in mock mode')),
 
-  /** POST /billing/checkout — Phase 2 (Razorpay Subscriptions); backend stub throws NOT_YET_IMPLEMENTED today. */
+  /**
+   * POST /billing/checkout — real Razorpay Subscriptions checkout. SubscriptionService
+   * lazily backfills the Pro plan's razorpay_plan_id on first call and returns a hosted
+   * checkoutUrl. Live behaviour is gated on provisioned Razorpay keys (placeholder keys
+   * surface as an API error, same as escrow-fund) — not a stub.
+   */
   initiateCheckout: (planCode: 'FREE' | 'PRO') =>
     isLive()
       ? http.request<{ checkoutUrl: string }>('POST', '/billing/checkout', { body: { planCode } })
       : Promise.reject(new ApiError('NOT_YET_IMPLEMENTED', 'Razorpay checkout ships in Phase 2')),
 
-  /** POST /billing/cancel — Phase 2; backend stub throws NOT_YET_IMPLEMENTED today. */
+  /**
+   * POST /billing/cancel — real cancellation. SubscriptionService calls Razorpay
+   * cancelSubscription and persists cancelAtPeriodEnd=true; access continues until the
+   * period ends. Not a stub.
+   */
   cancelSubscription: () =>
     isLive()
       ? http.request<void>('POST', '/billing/cancel')
       : Promise.reject(new ApiError('NOT_YET_IMPLEMENTED', 'Cancellation ships in Phase 2')),
+};
+
+// ---------------------------------------------------------------------------
+// BR-37 report export — ReportExportController @ /campaigns/:id/export.
+// Pro-gated (@RequiresPlan EXPORT) — a non-Pro workspace gets a 402, which the caller
+// surfaces as an upgrade prompt rather than letting the download silently fail.
+// ---------------------------------------------------------------------------
+
+export type ReportExportFormat = 'csv' | 'pdf';
+
+export const reports = {
+  /** GET /campaigns/:campaignId/export?format=csv|pdf — raw file bytes, not the JSON envelope. */
+  exportCampaign: (campaignId: string, format: ReportExportFormat) =>
+    isLive()
+      ? http.downloadBlob(
+          `/campaigns/${encodeURIComponent(campaignId)}/export?format=${format}`,
+        )
+      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Report export is not available in mock mode')),
 };
 
 // ---------------------------------------------------------------------------
@@ -3280,6 +3459,16 @@ export const creatorAnalytics = {
     isLive()
       ? http.request<CreatorDemographics>('GET', '/creator/analytics/me/demographics', { role: 'creator' })
       : mockOr<CreatorDemographics>(emptyDemographics),
+
+  /**
+   * GET /creator/analytics/me/media — the authenticated creator's own per-post content
+   * performance (CreatorAnalyticsController.java:65). Principal-scoped self-service mirror of the
+   * brand-facing `/analytics/creators/:id/media`; renders in ContentPerformancePanel.
+   */
+  getMyMedia: (): Promise<ContentPerformanceItem[]> =>
+    isLive()
+      ? http.request<ContentPerformanceItem[]>('GET', '/creator/analytics/me/media', { role: 'creator' })
+      : mockOr<ContentPerformanceItem[]>([]),
 };
 
 // ---------------------------------------------------------------------------
@@ -3532,6 +3721,17 @@ export const creatorReviews = {
     const rows = await http.request<ReviewApiResponse[]>('GET', '/creator/reviews/received', { role: 'creator' });
     return rows.map(mapReviewFromApi);
   },
+
+  /**
+   * POST /creator/reviews/:id/flag (CreatorReviewController.java:51) — creator flags a received
+   * review as inappropriate/inaccurate for moderator attention. `reason` is required (max 255 chars).
+   */
+  flag: (reviewId: string, reason: string) =>
+    isLive()
+      ? http.request<{ flagId: string; status: string }>(
+          'POST', `/creator/reviews/${reviewId}/flag`, { role: 'creator', body: { reason } },
+        )
+      : mockOr<{ flagId: string; status: string }>({ flagId: 'flag_new', status: 'PENDING' }),
 };
 
 export const brandReviews = {
@@ -3551,6 +3751,17 @@ export const brandReviews = {
     const rows = await http.request<ReviewApiResponse[]>('GET', '/brand/reviews/received', { role: 'brand' });
     return rows.map(mapReviewFromApi);
   },
+
+  /**
+   * POST /brand/reviews/:id/flag (BrandReviewController.java:51) — flag a received review as
+   * inappropriate/inaccurate for moderator attention. `reason` is required (max 255 chars).
+   */
+  flag: (reviewId: string, reason: string) =>
+    isLive()
+      ? http.request<{ flagId: string; status: string }>(
+          'POST', `/brand/reviews/${reviewId}/flag`, { role: 'brand', body: { reason } },
+        )
+      : mockOr<{ flagId: string; status: string }>({ flagId: 'flag_new', status: 'PENDING' }),
 };
 
 // ---------------------------------------------------------------------------
@@ -3848,6 +4059,82 @@ export interface CreatorDeliverableUploadResponse {
   status: CreatorDeliverableRowStatus;
 }
 
+/** GET /creator/deliverables/:id/status response — DeliverableStatusResponse (CreatorDeliverableDtos.java:29). */
+export interface CreatorDeliverableStatusResponse {
+  id: string;
+  collaborationId: string;
+  title: string;
+  status: CreatorDeliverableRowStatus;
+  versionNumber: number;
+  revisionCount: number;
+  actions: { canUploadNewVersion: boolean; canSubmit: boolean; canReportMetrics: boolean };
+  /** verified-analytics-0804 — cached metric source / verification state. */
+  metricSource: CreatorDeliverableMetricSource | null;
+  lastVerifiedAt: string | null;
+  metaConnected: boolean;
+}
+
+/** Metric provenance — the honesty signal (DeliverableMetric.source). */
+export type CreatorDeliverableMetricSource = 'PLATFORM_VERIFIED' | 'CREATOR_REPORTED';
+
+/** DeliverableVerificationService.Outcome (verified-analytics-0804). */
+export type CreatorDeliverableVerifyOutcome =
+  | 'VERIFIED'
+  | 'FALLBACK_NO_POST_URL'
+  | 'FALLBACK_NO_MILESTONE'
+  | 'FALLBACK_UNRECOGNIZED_URL'
+  | 'FALLBACK_YOUTUBE_UNSUPPORTED'
+  | 'FALLBACK_NO_TOKEN'
+  | 'FALLBACK_TOKEN_EXPIRED'
+  | 'FALLBACK_RATE_LIMITED'
+  | 'FALLBACK_NOT_FOUND'
+  | 'FALLBACK_API_ERROR'
+  | 'FALLBACK_DATA_INTEGRITY';
+
+/**
+ * POST /creator/deliverables/:id/verify response — VerificationStateResponse
+ * (CreatorDeliverableDtos.java). `manualFallbackAllowed` is true ONLY when Meta genuinely failed
+ * for a connected account — the sole condition under which the manual form may open.
+ */
+export interface CreatorDeliverableVerificationState {
+  deliverableId: string;
+  outcome: CreatorDeliverableVerifyOutcome;
+  metricSource: CreatorDeliverableMetricSource | null;
+  reach: number | null;
+  impressions: number | null;
+  engagements: number | null;
+  lastVerifiedAt: string | null;
+  metaConnected: boolean;
+  manualFallbackAllowed: boolean;
+}
+
+/** POST /creator/deliverables/:id/mark-posted response — MarkPostedResponse (CreatorDeliverableDtos.java:96). */
+export interface CreatorDeliverableMarkPostedResponse {
+  id: string;
+  status: CreatorDeliverableRowStatus;
+  postUrl: string;
+  postedAt: string;
+}
+
+/** POST /creator/deliverables/:id/metrics response — MetricsReportResponse (CreatorDeliverableDtos.java:81). */
+export interface CreatorDeliverableMetricsReportResponse {
+  deliverableId: string;
+  status: CreatorDeliverableRowStatus;
+  metrics: CreatorDeliverableMetricsPayload;
+  engagementRate: number | null;
+  verificationStatus: string;
+  message: string;
+}
+
+/** POST /creator/deliverables/:id/proof response — ProofUploadResponse (CreatorDeliverableDtos.java:90). */
+export interface CreatorDeliverableProofResponse {
+  id: string;
+  key: string;
+  url: string;
+  uploadedAt: string;
+  urlExpiresAt: string;
+}
+
 export const creatorDeliverables = {
   /** GET /creator/deliverables?collaboration_id= (CreatorDeliverableController.java:44) */
   listForDeal: (collaborationId: string) =>
@@ -3884,6 +4171,113 @@ export const creatorDeliverables = {
     (opts.hashtags ?? []).forEach((h) => formData.append('hashtags', h));
     return http.uploadForm<CreatorDeliverableUploadResponse>(
       `/creator/deliverables/${deliverableId}/upload`,
+      formData,
+      'creator',
+    );
+  },
+
+  /** GET /creator/deliverables/:id/status (CreatorDeliverableController.java:70) */
+  getStatus: (deliverableId: string) =>
+    isLive()
+      ? http.request<CreatorDeliverableStatusResponse>(
+          'GET',
+          `/creator/deliverables/${deliverableId}/status`,
+          { role: 'creator' },
+        )
+      : mockOr<CreatorDeliverableStatusResponse>({
+          id: deliverableId,
+          collaborationId: 'mock_deal',
+          title: 'Instagram Reel',
+          status: 'APPROVED' as CreatorDeliverableRowStatus,
+          versionNumber: 1,
+          revisionCount: 0,
+          actions: { canUploadNewVersion: false, canSubmit: false, canReportMetrics: true },
+          metricSource: null,
+          lastVerifiedAt: null,
+          metaConnected: false,
+        }),
+
+  /**
+   * POST /creator/deliverables/:id/verify — on-demand Meta verification
+   * (CreatorDeliverableController.java, verified-analytics-0804). Runs the same verification the 6h
+   * batch job runs and returns the live outcome + verified numbers + whether the manual form may open.
+   */
+  verifyNow: (deliverableId: string) =>
+    isLive()
+      ? http.request<CreatorDeliverableVerificationState>(
+          'POST',
+          `/creator/deliverables/${deliverableId}/verify`,
+          { role: 'creator' },
+        )
+      : mockOr<CreatorDeliverableVerificationState>({
+          deliverableId,
+          outcome: 'VERIFIED',
+          metricSource: 'PLATFORM_VERIFIED',
+          reach: 48200,
+          impressions: 61300,
+          engagements: 7850,
+          lastVerifiedAt: '2026-08-04T00:00:00Z',
+          metaConnected: true,
+          manualFallbackAllowed: false,
+        }),
+
+  /** POST /creator/deliverables/:id/mark-posted — DPF-3 live post URL (CreatorDeliverableController.java:104) */
+  markPosted: (deliverableId: string, livePostUrl: string) =>
+    isLive()
+      ? http.request<CreatorDeliverableMarkPostedResponse>(
+          'POST',
+          `/creator/deliverables/${deliverableId}/mark-posted`,
+          { body: { livePostUrl }, role: 'creator' },
+        )
+      : mockOr<CreatorDeliverableMarkPostedResponse>({
+          id: deliverableId,
+          status: 'POSTED' as CreatorDeliverableRowStatus,
+          postUrl: livePostUrl,
+          postedAt: '2026-08-04T00:00:00Z',
+        }),
+
+  /** POST /creator/deliverables/:id/metrics — self-reported performance (CreatorDeliverableController.java:86) */
+  reportMetrics: (
+    deliverableId: string,
+    payload: {
+      metrics: CreatorDeliverableMetricsPayload;
+      proofScreenshots?: string[];
+      reportedDaysAfterPosting?: number;
+    },
+  ) =>
+    isLive()
+      ? http.request<CreatorDeliverableMetricsReportResponse>(
+          'POST',
+          `/creator/deliverables/${deliverableId}/metrics`,
+          { body: payload, role: 'creator' },
+        )
+      : mockOr<CreatorDeliverableMetricsReportResponse>({
+          deliverableId,
+          status: 'METRICS_REPORTED' as CreatorDeliverableRowStatus,
+          metrics: payload.metrics,
+          engagementRate: null,
+          verificationStatus: 'PENDING',
+          message: 'Metrics recorded',
+        }),
+
+  /**
+   * POST /creator/deliverables/:id/proof — multipart, part name `screenshot`
+   * (CreatorDeliverableController.java:95). Ownership-bound proof of posting.
+   */
+  uploadProof: (deliverableId: string, screenshot: File) => {
+    if (!isLive()) {
+      return mockOr<CreatorDeliverableProofResponse>({
+        id: `mock_${deliverableId}`,
+        key: `mock_${screenshot.name}`,
+        url: URL.createObjectURL(screenshot),
+        uploadedAt: '2026-08-04T00:00:00Z',
+        urlExpiresAt: '2026-08-05T00:00:00Z',
+      });
+    }
+    const formData = new FormData();
+    formData.append('screenshot', screenshot);
+    return http.uploadForm<CreatorDeliverableProofResponse>(
+      `/creator/deliverables/${deliverableId}/proof`,
       formData,
       'creator',
     );
@@ -4244,6 +4638,7 @@ export const api = {
   workspaceMembers,
   onboarding,
   campaigns,
+  campaignTemplates,
   creators,
   deals,
   messages,
@@ -4258,6 +4653,7 @@ export const api = {
   dashboard,
   notifications,
   billing,
+  reports,
   uploads,
   portfolio,
   analytics,

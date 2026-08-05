@@ -34,17 +34,6 @@ export function generateContractHTML(data: ContractData): string {
     currency: 'INR',
   }).format(data.amount);
 
-  const deliverablesList = data.deliverables
-    .map(
-      (d, i) =>
-        `${i + 1}. ${d.title} (Qty: ${d.quantity}): ${d.description}`
-    )
-    .join('<br/>')
-
-  const customClausesList = data.customClauses
-    .map((clause, i) => `${i + 7}. ${clause}`)
-    .join('<br/>')
-
   return `
     <!DOCTYPE html>
     <html>
@@ -186,7 +175,7 @@ export function generateContractHTML(data: ContractData): string {
  * Generate a downloadable PDF from contract data
  * Uses browser's print-to-PDF or requires backend PDF library
  */
-export function downloadContractPDF(data: ContractData, filename: string = 'contract.pdf') {
+export function downloadContractPDF(data: ContractData, _filename: string = 'contract.pdf') {
   const html = generateContractHTML(data)
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
   const url = URL.createObjectURL(blob)
@@ -233,6 +222,6 @@ export async function signContract(
     };
   } catch (err) {
     if (err instanceof ApiError) throw err;
-    throw new Error('Could not sign contract. Please try again.');
+    throw new Error('Could not sign contract. Please try again.', { cause: err });
   }
 }

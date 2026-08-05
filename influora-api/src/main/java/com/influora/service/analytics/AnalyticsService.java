@@ -1,6 +1,7 @@
 package com.influora.service.analytics;
 
 import com.influora.common.ApiException;
+import com.influora.common.CreatorScoreMath;
 import com.influora.common.JsonLists;
 import com.influora.domain.entity.AudienceDemographics;
 import com.influora.domain.entity.CreatorMetric;
@@ -218,8 +219,13 @@ public class AnalyticsService {
                                                 "No computed score yet for this creator",
                                                 HttpStatus.NOT_FOUND));
 
+        // Priya ruling (BR-18, 2026-07-30): authenticityScore is the inverse of the raw
+        // fake-follower suspicion score — see CreatorScoreMath#toAuthenticity javadoc. Same
+        // derivation CreatorDiscoveryService#buildScores uses for discovery's CreatorScores, so
+        // this brand-facing analytics endpoint doesn't serve an inverted value under a field name
+        // that means the opposite. Null in (never scored) stays null out.
         return new CreatorScoresResponse(
-                score.getFakeFollowerScore(),
+                CreatorScoreMath.toAuthenticity(score.getFakeFollowerScore()),
                 JsonLists.stringListFromJson(score.getFakeFollowerReasonsJson()).stream()
                         .collect(Collectors.toList()),
                 score.getQualityScore(),

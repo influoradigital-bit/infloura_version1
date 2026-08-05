@@ -1,0 +1,112 @@
+{
+  "rows": [
+    {
+      "subject": "influora-api/** \u2014 Spring Boot backend (886 java sources)",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "gates/build.mvn.sh influora-api (mvn -q -o compile)",
+        "result": "aligned (proved) \u2014 the module compiles",
+        "where": "influora-api/pom.xml:1"
+      }
+    },
+    {
+      "subject": "src/** \u2014 TypeScript typecheck",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "gates/build.sh (tsc --noEmit)",
+        "result": "0 errors \u2014 tsc passed before eslint step",
+        "where": "tsconfig.json:1"
+      }
+    },
+    {
+      "subject": ".proof-os/graph.json \u2014 dependency graph provenance",
+      "owner": "meera",
+      "status": "partial",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "graph_source",
+        "command": "gates/graph_source.py .proof-os/graph.json",
+        "result": "provenance honest: 2657 edges 100% regex-derived, 0 parser-derived (F-0035 weak topology)",
+        "where": ".proof-os/graph.json:1"
+      }
+    },
+    {
+      "subject": "dist/ \u2014 production build (npm run build + prerender)",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "node",
+        "command": "gates/build.sh (npm run build; npm test)",
+        "result": "partial/unavailable exit 2: prerender machine-bound Chrome path (F-0055), npm test could not run",
+        "where": "scripts/prerender.mjs:107"
+      }
+    },
+    {
+      "subject": "package-lock.json \u2014 dependency vulnerabilities",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm-audit",
+        "command": "gates/security.sh (npm audit --audit-level=high)",
+        "result": "23 vulnerabilities: 4 high, 18 moderate, 1 low (F-0052)",
+        "where": "package-lock.json:1"
+      }
+    },
+    {
+      "subject": "whole tree \u2014 secret scanning",
+      "owner": "meera",
+      "status": "missing",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm-audit",
+        "command": "gates/security.sh + gates/frontend.sh",
+        "result": "gitleaks UNAVAILABLE in both gates: NO secret scan has ever run on this tree (F-0057)",
+        "where": ".proof-os/gates/security.sh:1"
+      }
+    },
+    {
+      "subject": "src/** \u2014 sage design-token discipline (raw hex outside tokens)",
+      "owner": "meera",
+      "status": "partial",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "eslint",
+        "command": "gates/frontend.sh (hex-grep; eslint timed out >300s = unavailable)",
+        "result": "raw hex flagged in 3d/CanvasFallback, 3d/DiscoverCanvas, moderation/FlagQueue; most justified-in-code (3D gradients, brand violet); kavya full ruleset UNAVAILABLE (F-0056)",
+        "where": "src/components/3d/DiscoverCanvas.tsx:16"
+      }
+    },
+    {
+      "subject": "src/admin/services/api-contracts.ts \u2014 phantom admin endpoints",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "node",
+        "command": "endpoint_diff.py (FE declared paths vs @Mapping in influora-api)",
+        "result": "~20 admin paths FE calls with no backend @Mapping (F-0054); reduced from prior run (escrow/flagged, finance/escrow now mapped)",
+        "where": "src/admin/services/api-contracts.ts:1"
+      }
+    },
+    {
+      "subject": "src/pages/brand-pipeline.tsx \u2014 components created in render (F-0050)",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "node",
+        "command": "grep for <BoardView/> mount vs render-helper call",
+        "result": "FIXED (commit 900b737): views are module-level render helpers, not remounted child components",
+        "where": "src/pages/brand-pipeline.tsx:428"
+      }
+    }
+  ]
+}

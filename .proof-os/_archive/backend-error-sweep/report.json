@@ -1,0 +1,52 @@
+{
+  "rows": [
+    {
+      "subject": "influora-api (Java/Spring backend — brand, creator, admin controllers + services)",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "PROOF_MVN_HEAP=3g gates/build.mvn.sh influora-api  (mvn -q -o compile)",
+        "result": "0 errors — the module compiles (exit 0, VERDICT: aligned proved)",
+        "where": "influora-api/pom.xml:1"
+      }
+    },
+    {
+      "subject": "influora-api test sources (compilation)",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "MAVEN_OPTS=-Xmx3g mvn -q -o test-compile  (in influora-api)",
+        "result": "exit 0 — all test sources compile (no DealControllerTest ctor break on this branch)",
+        "where": "influora-api/pom.xml:1"
+      }
+    },
+    {
+      "subject": "influora-ai/app (Python AI service — Meera: chat, brand_safety, creator_suggestion, trendspark, voice)",
+      "owner": "meera",
+      "status": "partial",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "py_compile",
+        "command": "gates/build.py influora-ai/app",
+        "result": "41 files parse clean; lint (ruff/pyflakes) + tests + type-check UNAVAILABLE on host (exit 2 partial)",
+        "where": "influora-ai/app/main.py:1"
+      }
+    },
+    {
+      "subject": "influora-ai tests + evals (compilation)",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "py_compile",
+        "command": "python -m py_compile influora-ai/evals/*.py influora-ai/tests/*.py",
+        "result": "syntax OK (exit 0)",
+        "where": "influora-ai/tests/test_cors.py:1"
+      }
+    }
+  ]
+}

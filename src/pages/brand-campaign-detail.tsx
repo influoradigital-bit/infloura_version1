@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, Calendar, Users, IndianRupee, Edit, Pause, Play,
-  Copy, Trash2, MoreHorizontal, Send, MessageSquare, CheckCircle2,
+  Copy, Trash2, MoreHorizontal, MessageSquare, CheckCircle2,
   XCircle, Clock, Star, TrendingUp, Instagram, Youtube, Twitter,
   FileText, Download, AlertCircle, Sparkles, Filter, Search,
   BadgeCheck, Heart, Eye, BarChart2, Target, Award, RefreshCcw,
@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { MetricSourceBadge } from '@/components/analytics/metric-source-badge';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -34,10 +35,10 @@ import {
 } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { CampaignStateMachine, type CampaignState } from '@/components/brand/campaigns/campaign-state-machine';
+import { CampaignStateMachine } from '@/components/brand/campaigns/campaign-state-machine';
 import { CollaborationTimeline } from '@/components/brand/timeline/collaboration-timeline';
 import { api, isApiLive, ApiError, type Deal, type CampaignAnalytics } from '@/lib/api';
-import type { Campaign as ApiCampaign } from '@/lib/types';
+import type { Campaign as ApiCampaign, Collaboration } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -460,14 +461,6 @@ const formatCurrency = (amount: number, currency = 'INR'): string =>
 const formatDate = (date: Date): string =>
   new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 
-const statusConfig = {
-  DRAFT:     { label: 'Draft',     color: 'border bg-stage-draft text-stage-draft-fg border-stage-draft-border' },
-  ACTIVE:    { label: 'Active',    color: 'border bg-stage-approved text-stage-approved-fg border-stage-approved-border' },
-  PAUSED:    { label: 'Paused',    color: 'border bg-stage-paused text-stage-paused-fg border-stage-paused-border' },
-  COMPLETED: { label: 'Completed', color: 'border bg-stage-approved text-stage-approved-fg border-stage-approved-border' },
-  CANCELLED: { label: 'Cancelled', color: 'border bg-stage-cancelled text-stage-cancelled-fg border-stage-cancelled-border' },
-};
-
 const bidStatusConfig: Record<string, { label: string; color: string }> = {
   PENDING:     { label: 'Pending Review',  color: 'border bg-stage-outreach text-stage-outreach-fg border-stage-outreach-border' },
   SHORTLISTED: { label: 'Shortlisted',     color: 'border bg-stage-outreach text-stage-outreach-fg border-stage-outreach-border' },
@@ -523,12 +516,43 @@ export default function BrandCampaignDetailPage() {
   const [liveCampaign, setLiveCampaign] = React.useState<ApiCampaign | null>(null);
   const [liveDeals, setLiveDeals] = React.useState<Deal[]>([]);
   const [liveAnalytics, setLiveAnalytics] = React.useState<CampaignAnalytics | null>(null);
-  const [isLoading, setIsLoading] = React.useState(liveApi);
+  const [, setIsLoading] = React.useState(liveApi);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [notFound, setNotFound] = React.useState(false);
   const [reloadToken, setReloadToken] = React.useState(0);
   const [mutatingId, setMutatingId] = React.useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+
+  // BR-37 — GET /campaigns/:id/export?format=csv|pdf (ReportExportController). Pro-gated
+  // (@RequiresPlan EXPORT); a non-Pro workspace gets a 402, surfaced below as an upgrade
+  // prompt rather than a silent failure.
+  const [exportingFormat, setExportingFormat] = React.useState<'csv' | 'pdf' | null>(null);
+  const handleExportReport = async (format: 'csv' | 'pdf') => {
+    if (!id) return;
+    setExportingFormat(format);
+    try {
+      const blob = await api.reports.exportCampaign(id, format);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `campaign-${id}-report.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export campaign report', err);
+      const message =
+        err instanceof ApiError && err.status === 402
+          ? 'Report export is a Pro feature. Upgrade your plan to export campaign reports.'
+          : err instanceof ApiError
+            ? err.message
+            : 'Could not export the report. Try again.';
+      toast({ title: 'Export failed', description: message, variant: 'destructive' });
+    } finally {
+      setExportingFormat(null);
+    }
+  };
 
   React.useEffect(() => {
     if (!liveApi || !id) return;
@@ -893,10 +917,32 @@ export default function BrandCampaignDetailPage() {
                     Edit
                   </Button>
                 )}
-                <Button variant="outline" size="sm" className="gap-1.5" disabled title="Report export isn't available yet">
-                  <Download className="h-4 w-4" />
-                  <span className="hidden sm:inline">Export</span>
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1.5" disabled={exportingFormat !== null}>
+                      {exportingFormat ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      <span className="hidden sm:inline">Export</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      disabled={exportingFormat !== null}
+                      onClick={() => void handleExportReport('csv')}
+                    >
+                      <Download className="mr-2 h-4 w-4" />Export as CSV
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={exportingFormat !== null}
+                      onClick={() => void handleExportReport('pdf')}
+                    >
+                      <Download className="mr-2 h-4 w-4" />Export as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="icon">
@@ -906,9 +952,6 @@ export default function BrandCampaignDetailPage() {
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem disabled={mutatingId === id} onClick={handleDuplicateCampaign}>
                       <Copy className="mr-2 h-4 w-4" />Duplicate Campaign
-                    </DropdownMenuItem>
-                    <DropdownMenuItem disabled title="Report export isn't available yet">
-                      <Download className="mr-2 h-4 w-4" />Export Full Report
                     </DropdownMenuItem>
                     {!isCompleted && (
                       <>
@@ -1403,28 +1446,26 @@ export default function BrandCampaignDetailPage() {
                 <TabsContent value="deliverables" className="mt-4 space-y-3">
                   {liveApi && completedAnalytics && completedAnalytics.deliverables.length > 0 ? (
                     <>
-                      <Alert>
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>Creator-reported</AlertTitle>
-                        <AlertDescription>
-                          These numbers are self-declared by creators, not pulled from a platform API.
-                        </AlertDescription>
-                      </Alert>
+                      {/* verified-analytics-0804 — per-row provenance, driven by the real
+                          DeliverableMetric.source (verified vs self-reported), not a static banner. */}
                       {completedAnalytics.deliverables.map((d) => (
                         <Card key={d.id}>
                           <CardContent className="p-4 flex items-center justify-between gap-4">
-                            <div className="grid grid-cols-3 gap-4 text-xs flex-1">
-                              <div>
-                                <p className="text-muted-foreground">Reach</p>
-                                <p className="font-bold">{formatNumber(d.reach)}</p>
-                              </div>
-                              <div>
-                                <p className="text-muted-foreground">Impressions</p>
-                                <p className="font-bold">{formatNumber(d.impressions)}</p>
-                              </div>
-                              <div>
-                                <p className="text-muted-foreground">Engagements</p>
-                                <p className="font-bold">{formatNumber(d.engagements)}</p>
+                            <div className="flex-1 space-y-2">
+                              <MetricSourceBadge source={d.source} />
+                              <div className="grid grid-cols-3 gap-4 text-xs">
+                                <div>
+                                  <p className="text-muted-foreground">Reach</p>
+                                  <p className="font-bold">{formatNumber(d.reach)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Impressions</p>
+                                  <p className="font-bold">{formatNumber(d.impressions)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Engagements</p>
+                                  <p className="font-bold">{formatNumber(d.engagements)}</p>
+                                </div>
                               </div>
                             </div>
                             {d.link && (
@@ -1555,15 +1596,35 @@ export default function BrandCampaignDetailPage() {
                   {liveApi && (
                     completedAnalytics ? (
                       <>
-                        <Alert>
-                          <AlertCircle className="h-4 w-4" />
-                          <AlertTitle>Creator-reported, not platform-verified</AlertTitle>
-                          <AlertDescription>
-                            These figures are self-declared by creators when they submit deliverables — this
-                            backend does not yet pull verified numbers from a platform API. Peer-benchmark
-                            comparison and AI-derived ROI aren&apos;t available (no backend support yet).
-                          </AlertDescription>
-                        </Alert>
+                        {/* verified-analytics-0804 — aggregate provenance derived from the real
+                            per-deliverable source, not a static "creator-reported" banner. */}
+                        {(() => {
+                          const dels = completedAnalytics.deliverables;
+                          const verifiedCount = dels.filter(
+                            (d) => d.source === 'PLATFORM_VERIFIED',
+                          ).length;
+                          const allVerified = dels.length > 0 && verifiedCount === dels.length;
+                          const someVerified = verifiedCount > 0;
+                          return (
+                            <Alert>
+                              <AlertCircle className="h-4 w-4" />
+                              <AlertTitle>
+                                {allVerified
+                                  ? 'Verified by Instagram'
+                                  : someVerified
+                                    ? `${verifiedCount} of ${dels.length} deliverables verified by Instagram`
+                                    : 'Creator-reported, not platform-verified'}
+                              </AlertTitle>
+                              <AlertDescription>
+                                {allVerified
+                                  ? 'These figures are pulled directly from Instagram via the Meta Graph API.'
+                                  : someVerified
+                                    ? 'Verified rows come straight from Instagram; the rest are creator self-reported. See the Deliverables tab for per-post provenance.'
+                                    : 'These figures are self-declared by creators when they submit deliverables. Verified numbers appear here once creators connect Instagram and the post is read via the Meta Graph API.'}
+                              </AlertDescription>
+                            </Alert>
+                          );
+                        })()}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                           {[
                             { label: 'Total Reach', value: formatNumber(completedAnalytics.totalReach), icon: <Eye className="h-4 w-4 text-blue-400" /> },
@@ -1667,10 +1728,6 @@ export default function BrandCampaignDetailPage() {
                           ].map((b) => {
                             const delta = Math.round(((b.campaign - b.peer) / b.peer) * 100);
                             const isGood = b.better === 'higher' ? delta > 0 : delta < 0;
-                            const campWidth = b.better === 'higher'
-                              ? (b.campaign / Math.max(b.campaign, b.peer)) * 100
-                              : (b.peer / Math.max(b.campaign, b.peer)) * 100 * (b.peer / b.campaign);
-                            const peerWidth = 60;
                             return (
                               <div key={b.label}>
                                 <div className="flex items-center justify-between mb-2 text-sm">
@@ -1966,8 +2023,10 @@ export default function BrandCampaignDetailPage() {
                     id: selectedCollaboration.id,
                     creatorId: selectedCollaboration.creator.id,
                     creatorName: selectedCollaboration.creator.name,
-                    // Add other required fields from Collaboration type
-                  } as any}
+                    // Partial view-model: the timeline only reads id/creatorId/
+                    // creatorName. Asserted to Collaboration rather than `any` so
+                    // the component's own field access stays type-checked.
+                  } as unknown as Collaboration}
                   currentUserType="brand"
                 />
               </div>

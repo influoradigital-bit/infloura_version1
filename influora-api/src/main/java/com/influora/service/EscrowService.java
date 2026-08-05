@@ -34,8 +34,10 @@ import com.influora.service.notification.event.EscrowFundedEvent;
 import com.influora.service.notification.event.PayoutReleasedEvent;
 import com.influora.web.dto.money.MoneyDtos.EscrowFundResponse;
 import com.influora.web.dto.money.MoneyDtos.EscrowStatusResponse;
+import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -44,6 +46,7 @@ import java.util.List;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -88,6 +91,38 @@ public class EscrowService {
     private final ApplicationEventPublisher eventPublisher;
     private final CollaborationLifecycleService collaborationLifecycleService;
     private final EscrowBackend escrowBackend;
+
+    /**
+     * CR-51 step 2 — cutover for the {@link #assertReleaseConditionSatisfied} gate. ISO-8601
+     * instant (e.g. {@code 2026-07-30T00:00:00Z}), or blank/unset to keep the gate fully
+     * disabled (pre-CR-51 behavior: always fail open). Deliberately NOT derived from "has
+     * deliverables" — that is the circular condition CR-51 exists to fix. Swapnil's ruling: the
+     * boundary is wall-clock time (milestone {@code created_at} vs. this deploy-time cutover),
+     * not the presence of deliverable rows.
+     */
+    @Value("${influora.escrow.release-gate.cutover-instant:}")
+    private String releaseGateCutoverInstantRaw;
+
+    private Instant releaseGateCutoverInstant;
+
+    @PostConstruct
+    void initReleaseGateCutoverInstant() {
+        if (releaseGateCutoverInstantRaw == null || releaseGateCutoverInstantRaw.isBlank()) {
+            releaseGateCutoverInstant = null;
+            return;
+        }
+        try {
+            releaseGateCutoverInstant = Instant.parse(releaseGateCutoverInstantRaw.trim());
+        } catch (RuntimeException e) {
+            log.error(
+                    "Invalid influora.escrow.release-gate.cutover-instant value '{}' — expected an"
+                            + " ISO-8601 instant (e.g. 2026-07-30T00:00:00Z). Gate stays disabled"
+                            + " (fail-open) until this is fixed.",
+                    releaseGateCutoverInstantRaw,
+                    e);
+            releaseGateCutoverInstant = null;
+        }
+    }
 
     public EscrowService(
             EscrowHoldRepository escrowHoldRepository,
@@ -1046,34 +1081,99 @@ public class EscrowService {
     /**
      * [B5] {@code EscrowService#release} previously never consulted {@link
      * PaymentMilestone#getReleaseCondition()} at all ("dead schema"). This is the actual gate: a
-     * release is blocked unless every {@link Deliverable} linked to this milestone (via {@code
-     * deliverables.milestone_id}) has reached a status that satisfies the milestone's {@code
-     * release_condition}.
+     * release is blocked unless every {@link Deliverable} in this milestone's <b>collaboration</b>
+     * has reached a status that satisfies the milestone's {@code release_condition}.
      *
-     * <p>Deliberately fails OPEN (no gate applied) when NO deliverable is linked to the milestone
-     * at all — many existing/legacy milestones (lump-sum payments, product-seeding milestones, etc.
-     * predating per-slot deliverable tracking) have no {@code deliverables.milestone_id} pointing
-     * at them, and retroactively blocking ALL of those releases would be a production-breaking
-     * change unrelated to this fix's intent (closing the specific "content approval was gated on
-     * nothing" gap, not inventing a new requirement that every milestone must have a deliverable).
+     * <p>[CR-51 step 2 / Priya's Option B ruling] The gate is COLLABORATION-scoped, not
+     * milestone-scoped: it reads all deliverables for {@link PaymentMilestone#getCollaborationId()}
+     * via {@code findByCollaborationIdOrderBySlotIndexAsc}, not {@code deliverables.milestone_id}.
+     * Milestones (brand-chosen payment installments, keyed by {@code sequenceNo}) and deliverables
+     * (proposal-metadata content slots, keyed by {@code slotIndex}) come from independent sources
+     * with no linking field and no principled N:M mapping between them — {@code milestone_id} on
+     * {@code Deliverable} stays permanently NULL by design; materialization does not set it. Because
+     * deliverable statuses only move forward, gating a milestone release on the collaboration's full
+     * deliverable set is strictly conservative: it never releases before the collaboration's content
+     * is ready, and never starves a later milestone waiting on the same deliverables.
+     *
+     * <p>Discriminates on {@link PaymentMilestone#getCreatedAt()} vs. {@link
+     * #releaseGateCutoverInstant} (config: {@code influora.escrow.release-gate.cutover-instant}),
+     * per Swapnil's ruling — deliberately NOT on "has deliverables", which is the exact circular
+     * condition that caused the original CR-51 bug (a guard that cannot see its own precondition
+     * always scores "safe"). This cutover discrimination is unchanged by the collaboration re-key.
+     *
+     * <ul>
+     *   <li>Cutover unset, or milestone {@code created_at} at/before cutover: legacy — fail open,
+     *       unconditionally, regardless of whether the collaboration has deliverables. Lump-sum /
+     *       product-seeding milestones predating per-slot deliverable tracking must not suddenly
+     *       start throwing {@code RELEASE_CONDITION_NOT_MET}.
+     *   <li>Milestone {@code created_at} after cutover, collaboration has deliverables: gate
+     *       normally (unchanged logic below).
+     *   <li>Milestone {@code created_at} after cutover, collaboration has ZERO deliverables:
+     *       CR-51 step 3 is DECIDED (Swapnil: forbid) — a new, post-cutover, escrow-funded deal may
+     *       NOT have zero deliverables, so this throws {@code RELEASE_CONDITION_NOT_MET} rather
+     *       than releasing. Reusing that code (not a new one) keeps {@link
+     *       #isExpectedReleaseSkip(String)} whitelisting it, so {@link
+     *       #tryReleaseOnApproval(String, String)} still skips gracefully (approval succeeds, hold
+     *       stays FUNDED) instead of the approve() transaction blowing up. {@code refund()} remains
+     *       the recovery escape hatch — it does not go through this gate. Staying inside the
+     *       cutover guard above means this is unreachable for legacy pre-cutover milestones, and a
+     *       blank/unset cutover instant disables the whole gate, so this ships DISABLED BY DEFAULT.
+     * </ul>
      */
     private void assertReleaseConditionSatisfied(PaymentMilestone milestone) {
-        List<Deliverable> linked = deliverableRepository.findByMilestoneId(milestone.getId());
-        if (linked.isEmpty()) {
+        if (!isPostCutover(milestone)) {
+            // Legacy milestone (cutover unset, or created_at at/before the cutover): keep failing
+            // open unconditionally, even if the collaboration has deliverables — this is the
+            // pre-existing production behavior and must not change for deals already in flight.
             return;
+        }
+        List<Deliverable> deliverables =
+                deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(
+                        milestone.getCollaborationId());
+        if (deliverables.isEmpty()) {
+            // CR-51 step 3 (DECIDED — Swapnil: forbid): a new, post-cutover, escrow-funded deal
+            // may NOT have zero deliverables. Block the release rather than fail open.
+            log.warn(
+                    "Escrow release blocked: milestone {} was created after the CR-51 release-gate"
+                            + " cutover ({}) but its collaboration {} has no deliverables to satisfy"
+                            + " the release condition. Milestone created_at={}",
+                    milestone.getId(),
+                    releaseGateCutoverInstant,
+                    milestone.getCollaborationId(),
+                    milestone.getCreatedAt());
+            throw new ApiException(
+                    "RELEASE_CONDITION_NOT_MET",
+                    "Escrow cannot release: collaboration "
+                            + milestone.getCollaborationId()
+                            + " has no deliverables to satisfy the release condition.",
+                    HttpStatus.CONFLICT);
         }
         ReleaseCondition condition =
                 milestone.getReleaseCondition() != null
                         ? milestone.getReleaseCondition()
                         : ReleaseCondition.ON_POSTED;
         Set<DeliverableStatus> satisfying = satisfyingStatusesFor(condition);
-        boolean allSatisfied = linked.stream().map(Deliverable::getStatus).allMatch(satisfying::contains);
+        boolean allSatisfied =
+                deliverables.stream().map(Deliverable::getStatus).allMatch(satisfying::contains);
         if (!allSatisfied) {
             throw new ApiException(
                     "RELEASE_CONDITION_NOT_MET",
                     "Milestone release_condition (" + condition + ") is not yet satisfied by its deliverable(s)",
                     HttpStatus.CONFLICT);
         }
+    }
+
+    /**
+     * True only when a cutover is configured AND this milestone's {@code created_at} is strictly
+     * after it. A milestone with a {@code null created_at} (should not happen in practice — the
+     * column is {@code NOT NULL}) is treated as pre-cutover / legacy, not post-cutover, so a data
+     * anomaly fails open rather than unexpectedly gating a release.
+     */
+    private boolean isPostCutover(PaymentMilestone milestone) {
+        if (releaseGateCutoverInstant == null || milestone.getCreatedAt() == null) {
+            return false;
+        }
+        return milestone.getCreatedAt().isAfter(releaseGateCutoverInstant);
     }
 
     private static Set<DeliverableStatus> satisfyingStatusesFor(ReleaseCondition condition) {

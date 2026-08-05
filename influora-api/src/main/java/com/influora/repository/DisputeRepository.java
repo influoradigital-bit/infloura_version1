@@ -16,6 +16,14 @@ public interface DisputeRepository extends JpaRepository<Dispute, String> {
     boolean existsByCollaborationIdAndStatusIn(String collaborationId, Collection<DisputeStatus> statuses);
 
     /**
+     * Disputes for a set of collaborations — used by the admin escrow console ({@code GET
+     * /admin/escrow/flagged}) to attach each FROZEN hold's flag reason (a hold is frozen precisely
+     * because a dispute was opened on its collaboration). Caller de-dupes to the most-recent dispute
+     * per collaboration. Returns an empty list for an empty input.
+     */
+    List<Dispute> findByCollaborationIdIn(Collection<String> collaborationIds);
+
+    /**
      * Brand-scoped dispute list (B7). Disputes carry no {@code workspace_id} of their own — the
      * trust boundary is resolved through {@code collaboration.campaign_id -> campaign.workspace_id},
      * same discipline as {@code CollaborationRepository.findByWorkspaceId}.
@@ -66,4 +74,17 @@ public interface DisputeRepository extends JpaRepository<Dispute, String> {
             @Param("brandId") String brandId,
             @Param("creatorId") String creatorId,
             Pageable pageable);
+
+    /**
+     * Average dispute resolution time in SECONDS across every resolved dispute (has a {@code
+     * resolved_at}) — powers {@code disputeResolutionSpeed} on the admin reputation score ({@code
+     * GET /admin/marketing/reputation}, converted to hours in the service). Returns {@code null}
+     * when no dispute has been resolved yet, never a fabricated 0.
+     */
+    @Query(
+            value =
+                    "SELECT AVG(TIMESTAMPDIFF(SECOND, created_at, resolved_at)) FROM disputes "
+                            + "WHERE resolved_at IS NOT NULL",
+            nativeQuery = true)
+    Double avgResolutionSeconds();
 }

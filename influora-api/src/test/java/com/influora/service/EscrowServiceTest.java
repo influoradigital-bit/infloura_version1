@@ -5,22 +5,29 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+
 import com.influora.common.ApiException;
 import com.influora.common.InsufficientFundsException;
 import com.influora.domain.entity.Collaboration;
+import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.PaymentMilestone;
 import com.influora.domain.entity.Wallet;
 import com.influora.domain.entity.WalletTransaction;
 import com.influora.domain.entity.WorkspaceMember;
+import com.influora.domain.enums.DeliverableStatus;
+import com.influora.domain.enums.DeliverableType;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MemberRole;
+import com.influora.domain.enums.ReleaseCondition;
 import com.influora.domain.enums.UserType;
 import com.influora.domain.entity.Contract;
 import com.influora.domain.enums.ContractStatus;
@@ -37,7 +44,10 @@ import com.influora.service.EscrowService.PagedEscrowHolds;
 import com.influora.service.escrow.EscrowBackend;
 import com.influora.service.escrow.LedgerEscrowBackend;
 import com.influora.web.dto.money.MoneyDtos.EscrowStatusResponse;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +61,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /** Task #10 — creator-scoped escrow read isolation (deal room payments tab). */
 @ExtendWith(MockitoExtension.class)
@@ -1089,5 +1100,152 @@ class EscrowServiceTest {
         // And nothing moved: no ledger posting, no second release on the hold.
         verify(escrowHoldRepository, never()).save(any(EscrowHold.class));
         assertEquals(EscrowStatus.RELEASED, lockedTruth.getStatus());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // [CR-51 step 2] assertReleaseConditionSatisfied cutover boundary. Swapnil's ruling: gate on
+    // milestone created_at vs. a configurable deploy-time cutover, NOT on "has deliverables" (the
+    // exact circular condition CR-51 step 1 fixed). These call the private gate method directly
+    // via reflection — release()/tryReleaseOnApproval() have a long up-front chain (hold lookup,
+    // dispute checks, wallet backend) that is already covered elsewhere; these tests isolate just
+    // the cutover boundary logic Priya flagged as needing scrutiny.
+    // ------------------------------------------------------------------------------------------
+
+    private static final Instant CUTOVER = Instant.parse("2026-07-30T00:00:00Z");
+
+    /** Sets {@code releaseGateCutoverInstantRaw} and runs the same parse {@code @PostConstruct} would. */
+    private void setCutover(String iso8601OrNull) {
+        ReflectionTestUtils.setField(service, "releaseGateCutoverInstantRaw", iso8601OrNull);
+        ReflectionTestUtils.invokeMethod(service, "initReleaseGateCutoverInstant");
+    }
+
+    private static PaymentMilestone milestoneCreatedAt(Instant createdAt, ReleaseCondition condition) {
+        PaymentMilestone m =
+                PaymentMilestone.builder()
+                        .id(MILESTONE_ID)
+                        .collaborationId(COLLAB_ID)
+                        .amount(BigDecimal.valueOf(5000))
+                        .releaseCondition(condition)
+                        .build();
+        ReflectionTestUtils.setField(m, "createdAt", createdAt);
+        return m;
+    }
+
+    private static Deliverable deliverableWithStatus(DeliverableStatus status) {
+        return Deliverable.builder()
+                .id("01HDELIVERABLE1234AB")
+                .collaborationId(COLLAB_ID)
+                .creatorProfileId("01HCREATORPROFILE12AB")
+                .slotIndex(0)
+                .type(DeliverableType.INSTAGRAM_REEL)
+                .status(status)
+                .build();
+    }
+
+    /** Invokes the private gate directly, unwrapping the ApiException reflection wraps it in. */
+    private void invokeAssertReleaseConditionSatisfied(PaymentMilestone milestone) {
+        try {
+            Method method =
+                    EscrowService.class.getDeclaredMethod(
+                            "assertReleaseConditionSatisfied", PaymentMilestone.class);
+            method.setAccessible(true);
+            method.invoke(service, milestone);
+        } catch (InvocationTargetException e) {
+            if (e.getCause() instanceof RuntimeException re) {
+                throw re;
+            }
+            throw new RuntimeException(e.getCause());
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "CR-51 gate: cutover unset (default/disabled) fails open even with an UNSATISFIED linked"
+                    + " deliverable — matches pre-CR-51 production behavior for every existing deal")
+    void gateCutoverUnsetFailsOpenRegardlessOfLinkedDeliverables() {
+        // setCutover not called — releaseGateCutoverInstant stays null, exactly as it does for
+        // every EscrowService bean until the config property is explicitly set post-deploy. Gate
+        // disabled entirely: never even queries deliverableRepository.
+        PaymentMilestone milestone = milestoneCreatedAt(CUTOVER.plusSeconds(3600), ReleaseCondition.ON_POSTED);
+
+        assertDoesNotThrow(() -> invokeAssertReleaseConditionSatisfied(milestone));
+        verify(deliverableRepository, never()).findByCollaborationIdOrderBySlotIndexAsc(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "CR-51 gate: milestone created_at AT/BEFORE the cutover fails open unconditionally, even"
+                    + " though the collaboration HAS a deliverable and it does NOT satisfy the release"
+                    + " condition — legacy deals in flight must not start throwing"
+                    + " RELEASE_CONDITION_NOT_MET")
+    void gatePreCutoverFailsOpenEvenWithUnsatisfiedLinkedDeliverable() {
+        setCutover("2026-07-30T00:00:00Z");
+        PaymentMilestone milestone = milestoneCreatedAt(CUTOVER, ReleaseCondition.ON_POSTED); // == cutover, not after
+
+        assertDoesNotThrow(() -> invokeAssertReleaseConditionSatisfied(milestone));
+        // Pre-cutover legacy path must not even consult the collaboration's deliverable statuses.
+        verify(deliverableRepository, never()).findByCollaborationIdOrderBySlotIndexAsc(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "CR-51 step 3 (DECIDED, Swapnil: forbid): post-cutover milestone whose collaboration has"
+                    + " NO deliverables throws RELEASE_CONDITION_NOT_MET — no legitimate flow relies on"
+                    + " zero-deliverable escrow")
+    void gatePostCutoverEmptyLinkedThrows() {
+        setCutover("2026-07-30T00:00:00Z");
+        PaymentMilestone milestone = milestoneCreatedAt(CUTOVER.plusSeconds(1), ReleaseCondition.ON_POSTED);
+        when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(COLLAB_ID))
+                .thenReturn(List.of());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> invokeAssertReleaseConditionSatisfied(milestone));
+        assertEquals("RELEASE_CONDITION_NOT_MET", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+    }
+
+    @Test
+    @DisplayName(
+            "CR-51 gate: post-cutover milestone whose collaboration has a deliverable NOT yet"
+                    + " satisfying release_condition throws RELEASE_CONDITION_NOT_MET — the gate now"
+                    + " actually fires")
+    void gatePostCutoverUnsatisfiedLinkedDeliverableThrows() {
+        setCutover("2026-07-30T00:00:00Z");
+        PaymentMilestone milestone = milestoneCreatedAt(CUTOVER.plusSeconds(1), ReleaseCondition.ON_POSTED);
+        when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(COLLAB_ID))
+                .thenReturn(List.of(deliverableWithStatus(DeliverableStatus.DRAFT)));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> invokeAssertReleaseConditionSatisfied(milestone));
+        assertEquals("RELEASE_CONDITION_NOT_MET", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+    }
+
+    @Test
+    @DisplayName(
+            "CR-51 gate: post-cutover milestone whose collaboration has a deliverable that DOES"
+                    + " satisfy release_condition passes cleanly — the happy path the gate exists to"
+                    + " allow")
+    void gatePostCutoverSatisfiedLinkedDeliverablePasses() {
+        setCutover("2026-07-30T00:00:00Z");
+        PaymentMilestone milestone = milestoneCreatedAt(CUTOVER.plusSeconds(1), ReleaseCondition.ON_POSTED);
+        when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(COLLAB_ID))
+                .thenReturn(List.of(deliverableWithStatus(DeliverableStatus.POSTED)));
+
+        assertDoesNotThrow(() -> invokeAssertReleaseConditionSatisfied(milestone));
+    }
+
+    @Test
+    @DisplayName("CR-51 gate: an unparseable cutover value logs and behaves as disabled (fails open)")
+    void gateInvalidCutoverValueFailsOpen() {
+        setCutover("not-an-instant");
+        PaymentMilestone milestone = milestoneCreatedAt(CUTOVER.plusSeconds(3600), ReleaseCondition.ON_POSTED);
+
+        assertDoesNotThrow(() -> invokeAssertReleaseConditionSatisfied(milestone));
+        verify(deliverableRepository, never()).findByCollaborationIdOrderBySlotIndexAsc(anyString());
     }
 }

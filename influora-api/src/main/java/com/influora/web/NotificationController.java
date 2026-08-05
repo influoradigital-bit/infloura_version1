@@ -27,6 +27,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -113,6 +114,21 @@ public class NotificationController {
 
         long newUnreadCount = notificationRepository.countByUserIdAndIsReadFalse(user.getUserId());
 
+        return ResponseEntity.ok(new MarkReadResponse(true, newUnreadCount));
+    }
+
+    /**
+     * POST /notifications/read-all - mark ALL of the caller's unread notifications as read in a
+     * single bulk UPDATE, replacing the frontend's previous one-request-per-notification loop
+     * (see {@code src/hooks/useNotifications.ts}). Tenant-safe: the UPDATE is scoped to the
+     * authenticated user's own {@code userId}, so it can never touch another user's rows.
+     * {@code @Transactional} because {@code @Modifying} bulk updates require an active transaction.
+     */
+    @PostMapping("/read-all")
+    @Transactional
+    public ResponseEntity<MarkReadResponse> markAllRead(@AuthenticationPrincipal AuthPrincipal user) {
+        notificationRepository.markAllReadForUser(user.getUserId());
+        long newUnreadCount = notificationRepository.countByUserIdAndIsReadFalse(user.getUserId());
         return ResponseEntity.ok(new MarkReadResponse(true, newUnreadCount));
     }
 

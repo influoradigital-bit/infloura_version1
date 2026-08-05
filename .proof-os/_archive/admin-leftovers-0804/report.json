@@ -1,0 +1,20 @@
+{"rows": [
+  {"subject": "src/admin/components/finance/RevenueRangePanel.tsx",
+   "owner": "meera", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "tsc",
+     "command": "npx tsc --noEmit; grep caller",
+     "result": "exit 0; calls financeApi.getRevenue at RevenueRangePanel.tsx:96, rendered from FinanceConsole Revenue Range tab; no mock data",
+     "where": "src/admin/components/finance/RevenueRangePanel.tsx:96"}},
+  {"subject": "src/admin/components/finance/EntityAuditPanel.tsx",
+   "owner": "meera", "status": "aligned", "isolation": "oracle",
+   "evidence": {"oracle": "tsc",
+     "command": "npx tsc --noEmit; grep caller",
+     "result": "exit 0; calls auditApi.getByEntity at EntityAuditPanel.tsx:100, rendered from FinanceConsole Entity Audit tab; no mock data",
+     "where": "src/admin/components/finance/EntityAuditPanel.tsx:100"}},
+  {"subject": "PROJECT-DEEP-AUDIT-2026-08-04.md#admin-leftovers",
+   "owner": "priya", "status": "aligned", "isolation": "fresh-context",
+   "evidence": {"oracle": "model",
+     "command": "priya fresh-context sign-off, 2 passes: first REJECTED (3 stale md lines, F-0079), re-approved after correction",
+     "result": "APPROVE; code reachable + live-fetch-only, md consistent — Admin 26/4/0/5, TOTAL 160/16/0/18, console 9 routes 0 orphan",
+     "where": "PROJECT-DEEP-AUDIT-2026-08-04.md:66"}}
+]}

@@ -9,7 +9,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 
 export interface CounterProposalFormData {
@@ -48,12 +47,6 @@ export function CounterProposalForm({
   // Deadline must be today or later — a delivery date in the past is never valid.
   const todayStr = React.useMemo(() => new Date().toISOString().split('T')[0], []);
   const deadlineInPast = formData.deadline !== '' && formData.deadline < todayStr;
-  const steps = [
-    { num: 1, title: 'Review Proposal', subtitle: 'Check the details' },
-    { num: 2, title: 'Your Rate', subtitle: 'Propose your amount' },
-    { num: 3, title: 'Terms', subtitle: 'Any changes needed?' },
-    { num: 4, title: 'Message', subtitle: 'Send your counter offer' },
-  ];
 
   // Live platform fee — GET /creator/platform-fee (api.wallet.platformFee). Defaults to the
   // 15% global default (1500 bps) while loading so the breakdown never shows a stale 10%.

@@ -1,0 +1,447 @@
+{
+  "os": "proof-os v0.1.9",
+  "approved_by": "human:Swapnil Maruti",
+  "approved_on": "2026-07-31",
+  "project": "New Influora",
+  "source_of_truth": "sage-team plugin — keys namespaced because plugin skills are discovered as sage-team:<name>",
+  "channels": {
+    "1_intent": {
+      "who": "Swapnil Maruti",
+      "trust": "sovereign"
+    },
+    "2_state": {
+      "what": [
+        "graph.json",
+        "registry.json",
+        "gates/",
+        "ledger/"
+      ],
+      "trust": "verified-at-write"
+    },
+    "3_claims": {
+      "what": "any service output",
+      "trust": "never — input to a gate, not a fact"
+    }
+  },
+  "services": {
+    "sage-team:swapnil": {
+      "kind": "root",
+      "jurisdiction": [
+        "**"
+      ],
+      "may_claim": null,
+      "gates": [],
+      "caps": {
+        "retries": 0,
+        "then": "final-authority"
+      },
+      "note": "CEO — channel 1, sovereign. Above the registry; done_when comes from here."
+    },
+    "sage-team:arjun": {
+      "kind": "scheduler",
+      "jurisdiction": [
+        "TASK_INBOX.md",
+        "wiki/processes/**"
+      ],
+      "may_claim": "believed",
+      "gates": [],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:swapnil"
+      },
+      "note": "pipeline order fixed by OS: gates before judgment. F-0001 flips meera before kavya."
+    },
+    "sage-team:priya": {
+      "kind": "judgment",
+      "jurisdiction": [
+        "TECH-STACK.md",
+        "wiki/tech/**"
+      ],
+      "may_claim": "believed",
+      "gates": [],
+      "caps": {
+        "retries": 1,
+        "then": "escalate:swapnil"
+      },
+      "note": "sign-off; overridden only by swapnil"
+    },
+    "sage-team:rohan": {
+      "kind": "governor",
+      "jurisdiction": [
+        "wiki/processes/cost-log.json",
+        "wiki/processes/monthly-pl.md",
+        "wiki/decisions/budget-proposals/**"
+      ],
+      "may_claim": "proved",
+      "gates": [],
+      "caps": {
+        "retries": 0,
+        "then": "halt:swapnil"
+      },
+      "note": "promoted from cost reporter to daemon with HALT power; budget numbers are measured, not opined"
+    },
+    "sage-team:tejas": {
+      "kind": "judgment",
+      "jurisdiction": [
+        "wiki/decisions/brand-voice.md",
+        "wiki/decisions/campaigns/**",
+        "wiki/decisions/marketing-strategy.md"
+      ],
+      "may_claim": "believed",
+      "gates": [],
+      "caps": {
+        "retries": 1,
+        "then": "escalate:swapnil"
+      },
+      "note": "supervises nisha + aditya"
+    },
+    "sage-team:meera": {
+      "kind": "oracle",
+      "jurisdiction": [
+        "package.json",
+        "docker/**",
+        "Dockerfile",
+        "prisma/migrations/**",
+        "deploy/**"
+      ],
+      "may_claim": "proved",
+      "gates": [
+        "gates/build.sh"
+      ],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:priya"
+      },
+      "note": "tsc · build · curl · test — exit codes, not opinion"
+    },
+    "sage-team:neha": {
+      "kind": "oracle",
+      "jurisdiction": [
+        "e2e/**",
+        "deployed-urls"
+      ],
+      "may_claim": "proved",
+      "gates": [
+        "gates/e2e.sh"
+      ],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:kavya"
+      },
+      "note": "live E2E in a real browser; smoke_test.py"
+    },
+    "sage-team:kavya": {
+      "kind": "judgment",
+      "jurisdiction": [
+        "src/**",
+        "app/**"
+      ],
+      "may_claim": "believed",
+      "runs_after": [
+        "gates/frontend.sh"
+      ],
+      "gates": [],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:priya"
+      },
+      "note": "her 9 checklist items are ALREADY gates/frontend.sh. She reviews intent & logic only — the gate claims proved, she cannot."
+    },
+    "sage-team:kabir": {
+      "kind": "judgment",
+      "jurisdiction": [
+        "**"
+      ],
+      "may_claim": "believed",
+      "runs_after": [
+        "gates/security.sh"
+      ],
+      "gates": [],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:priya"
+      },
+      "note": "F-0003: ADVISORY. Paper findings never block the pipeline; only gates/security.sh exit codes bind."
+    },
+    "sage-team:ash": {
+      "kind": "judgment",
+      "jurisdiction": [
+        "src/ai/**",
+        "influora-ai/**"
+      ],
+      "may_claim": "believed",
+      "gates": [],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:priya"
+      },
+      "note": "non-blocking"
+    },
+    "sage-team:ananya": {
+      "kind": "producer",
+      "jurisdiction": [
+        "src/components/**",
+        "**/*.tsx"
+      ],
+      "may_claim": "believed",
+      "runs_after": [
+        "gates/frontend.sh"
+      ],
+      "gates": [],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:arjun"
+      }
+    },
+    "sage-team:vikram": {
+      "kind": "producer",
+      "jurisdiction": [
+        "app/api/**",
+        "prisma/**",
+        "influora-api/**"
+      ],
+      "may_claim": "believed",
+      "runs_after": [
+        "gates/frontend.sh"
+      ],
+      "gates": [],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:arjun"
+      }
+    },
+    "sage-team:riya": {
+      "kind": "producer",
+      "jurisdiction": [
+        "decks/**",
+        "*.pptx",
+        "*.pdf"
+      ],
+      "may_claim": "believed",
+      "runs_after": [
+        "gates/deck.py"
+      ],
+      "gates": [],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:tejas"
+      },
+      "note": "keeps her intake-refusal — the G1 template for all services. The gate claims proved, she claims believed."
+    },
+    "sage-team:ishaan": {
+      "kind": "producer",
+      "jurisdiction": [
+        "content/**",
+        "wiki/content/**"
+      ],
+      "may_claim": "believed",
+      "runs_after": [
+        "gates/meta_length.py"
+      ],
+      "gates": [],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:nisha"
+      },
+      "note": "approver: nisha"
+    },
+    "sage-team:nisha": {
+      "kind": "judgment",
+      "jurisdiction": [
+        "wiki/processes/content-calendar.md",
+        "wiki/decisions/campaigns/**",
+        "wiki/processes/content-templates.md"
+      ],
+      "may_claim": "believed",
+      "gates": [],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:tejas"
+      },
+      "note": "final approval on written content"
+    },
+    "sage-team:zara": {
+      "kind": "producer",
+      "jurisdiction": [
+        "wiki/assets/**",
+        "public/**"
+      ],
+      "may_claim": "believed",
+      "gates": [],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:nisha"
+      },
+      "note": "approver: nisha"
+    },
+    "sage-team:aditya": {
+      "kind": "judgment",
+      "jurisdiction": [
+        "app/**/metadata*",
+        "public/sitemap.xml",
+        "public/robots.txt",
+        "wiki/processes/seo-*"
+      ],
+      "may_claim": "believed",
+      "runs_after": [
+        "gates/meta_length.py"
+      ],
+      "gates": [],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:tejas"
+      }
+    },
+    "sage-team:dev": {
+      "kind": "producer",
+      "jurisdiction": [
+        "scripts/**",
+        "ci/**",
+        "wiki/processes/n8n-backup.json"
+      ],
+      "may_claim": "believed",
+      "gates": [],
+      "caps": {
+        "retries": 2,
+        "then": "escalate:arjun"
+      },
+      "note": "localhost:5678 -> config (repair record open, F-0004 detection closed)"
+    },
+    "sage-team:tara": {
+      "kind": "syslog",
+      "jurisdiction": [
+        "wiki/reports/**"
+      ],
+      "may_claim": "proved",
+      "gates": [],
+      "caps": {
+        "retries": 1,
+        "then": "escalate:arjun"
+      },
+      "note": "renders journal + ledger QUERIES; never compiles prose by hand — that is why she may claim proved"
+    },
+    "sage-team:q-pipeline": {
+      "kind": "diagnostic",
+      "jurisdiction": [
+        "wiki/qa/pipeline-questions.md"
+      ],
+      "may_claim": "believed",
+      "gates": [],
+      "caps": {
+        "retries": 1,
+        "then": "escalate:arjun"
+      },
+      "note": "perspective-diverse questioner, blind to q-tools"
+    },
+    "sage-team:q-tools": {
+      "kind": "diagnostic",
+      "jurisdiction": [
+        "wiki/qa/tools-questions.md"
+      ],
+      "may_claim": "believed",
+      "gates": [],
+      "caps": {
+        "retries": 1,
+        "then": "escalate:arjun"
+      },
+      "note": "perspective-diverse questioner, blind to q-pipeline"
+    },
+    "sage-team:q-answerer": {
+      "kind": "diagnostic",
+      "jurisdiction": [
+        "wiki/qa/answers.md"
+      ],
+      "may_claim": "proved",
+      "gates": [
+        "gates/citations.py"
+      ],
+      "caps": {
+        "retries": 1,
+        "then": "escalate:arjun"
+      },
+      "note": "proved ONLY because gates/citations.py verifies every cited file:line"
+    },
+    "sage-team:model-scheduler-audit": {
+      "kind": "diagnostic",
+      "jurisdiction": [
+        "**"
+      ],
+      "may_claim": "proved",
+      "gates": [
+        "scripts/validate.py"
+      ],
+      "caps": {
+        "retries": 1,
+        "then": "escalate:priya"
+      },
+      "note": "its overall_pct override bug became F-0006 -> anti-self-scoring law; validate.py computes the score"
+    },
+    "sage-team:tester": {
+      "kind": "dispatcher",
+      "jurisdiction": [
+        "**"
+      ],
+      "may_claim": "inherits",
+      "gates": [],
+      "caps": {
+        "retries": 1,
+        "then": "escalate:arjun"
+      },
+      "note": "single entry point; individual testers lose ALWAYS-triggers. Claims nothing of its own."
+    }
+  },
+  "libraries": [
+    "docx",
+    "pptx",
+    "xlsx",
+    "pdf",
+    "3d-cinematic-web",
+    "dataviz",
+    "kashyap-register",
+    "lean-output",
+    "skill-creator",
+    "morning",
+    "session-start-hook",
+    "cowork-plugin",
+    "explain-usage",
+    "setup-cowork",
+    "claude-in-chrome",
+    "design:accessibility-review",
+    "design:design-critique",
+    "design:design-handoff",
+    "design:design-system",
+    "design:research-synthesis",
+    "design:user-research",
+    "design:ux-copy",
+    "legal:brief",
+    "legal:compliance-check",
+    "legal:legal-response",
+    "legal:legal-risk-assessment",
+    "legal:meeting-briefing",
+    "legal:review-contract",
+    "legal:signature-request",
+    "legal:triage-nda",
+    "legal:vendor-check",
+    "marketing:brand-review",
+    "marketing:campaign-plan",
+    "marketing:competitive-brief",
+    "marketing:content-creation",
+    "marketing:draft-content",
+    "marketing:email-sequence",
+    "marketing:performance-report",
+    "marketing:seo-audit",
+    "productivity:memory-management",
+    "productivity:start",
+    "productivity:task-management",
+    "productivity:update",
+    "cowork-plugin-management:cowork-plugin-customizer",
+    "cowork-plugin-management:create-cowork-plugin",
+    "proof-os:os-setup",
+    "proof-os:work"
+  ],
+  "dispatch_order": [
+    "gates (proved, free, fast)",
+    "judgment (believed)",
+    "governor (always watching)"
+  ]
+}

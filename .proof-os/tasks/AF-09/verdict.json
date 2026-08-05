@@ -1,0 +1,5 @@
+{"verdict":"believed","oracle":"mvn","isolation":"fresh-context",
+ "done_when":"build.mvn.sh compiles influora-api (exit 0) with GET /admin/campaigns/at-risk returning CampaignSummary[] computed live from real data; independent fresh-context review returns REAL",
+ "evidence":{"oracle":"mvn","command":"PROOF_MVN_HEAP=3g gates/build.mvn.sh influora-api","result":"exit 0 — module compiles (aligned proved); fresh-context review REAL, list() unchanged","where":"influora-api/src/main/java/com/influora/web/AdminCampaignController.java:1"},
+ "not_checked":["runtime behaviour — endpoint + findByStatus not executed against a real DB (no @DataJpaTest)","the at-risk THRESHOLD (slaBreachRate>0) is a declared working definition, NOT product-ratified — the underlying rate is real, the cutoff is a working choice","findByStatus(ACTIVE) is unpaginated — fine for intent, materializes all ACTIVE campaigns"],
+ "skipped":[{"step":"graphify update","reason":"AST re-index exceeds the 2-min shell budget on this host; graph re-syncs next run, does not affect the gate"},{"step":"PROOF_MVN_TESTS=1","reason":"no @DataJpaTest for CampaignRepository in the module"}]}

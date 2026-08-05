@@ -1,0 +1,5 @@
+{"verdict": "believed", "oracle": "tsc", "isolation": "fresh-context",
+ "done_when": "all creator missing features solve & updated md file get sign up from priya when work done",
+ "not_checked": ["live HTTP: /me/media + /reviews/:id/flag not exercised against a running backend (static reachability + tsc/eslint only)",
+                 "runtime rendering of the media panel / reviews dialog against real data"],
+ "skipped": [{"step": "brand-facing creator-discovery routes", "reason": "not creator features (brands discovering creators) — out of the creator scope; tracked under Brand"}]}

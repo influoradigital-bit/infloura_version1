@@ -1,0 +1,18 @@
+{
+  "verdict": "believed",
+  "oracle": "model",
+  "isolation": "oracle",
+  "done_when": "each available oracle ran, findings are classed into ledger records with missed_by, and the blind spots are named",
+  "not_checked": [
+    "secrets ENTIRELY — gitleaks absent in both gates; no scan has ever run on this tree; live keys/tokens would not have been seen (F-0057)",
+    "backend tests — skipped by -DskipTests; frontend tests could not run; no regression can be caught in this mode",
+    "runtime behaviour, data correctness, mocked-vs-real responses, live E2E click-through (F-0051 open)",
+    "whether the ~20 unmapped admin endpoints are dead UI or pending backend — only that no @Mapping matches (F-0054)",
+    "Go module — build.go.sh skipped, no Go toolchain on host",
+    "SAST/taint, auth/authz logic, response headers, secrets in git history, container/IaC/CI config"
+  ],
+  "skipped": [
+    {"step": "gates/build.go.sh", "reason": "no Go toolchain present on host (oracles_skipped_no_toolchain)"},
+    {"step": "kavya full eslint ruleset", "reason": "exceeded 300s budget, rendered UNAVAILABLE not run (F-0056)"}
+  ]
+}

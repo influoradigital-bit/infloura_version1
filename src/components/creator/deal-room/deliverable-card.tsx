@@ -38,7 +38,6 @@ interface DeliverableCardProps {
 }
 
 export function DeliverableCard({
-  id,
   title,
   status,
   caption,

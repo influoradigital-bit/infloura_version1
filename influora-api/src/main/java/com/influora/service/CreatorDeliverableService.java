@@ -38,6 +38,10 @@ import com.influora.web.dto.deliverable.CreatorDeliverableDtos.ProofUploadRespon
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.SubmitRequest;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.SubmitResponse;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.UploadResponse;
+import com.influora.web.dto.deliverable.CreatorDeliverableDtos.VerificationStateResponse;
+import com.influora.service.verification.DeliverableVerificationService;
+import com.influora.service.verification.DeliverableVerificationService.Outcome;
+import com.influora.repository.MetaOAuthTokenRepository;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -104,6 +108,8 @@ public class CreatorDeliverableService {
     private final BrandContextService brandContext;
     private final ApplicationEventPublisher eventPublisher;
     private final CollaborationLifecycleService collaborationLifecycleService;
+    private final DeliverableVerificationService verificationService;
+    private final MetaOAuthTokenRepository metaOAuthTokenRepository;
 
     public CreatorDeliverableService(
             CreatorContextService creatorContext,
@@ -116,7 +122,9 @@ public class CreatorDeliverableService {
             CampaignRepository campaignRepository,
             BrandContextService brandContext,
             ApplicationEventPublisher eventPublisher,
-            CollaborationLifecycleService collaborationLifecycleService) {
+            CollaborationLifecycleService collaborationLifecycleService,
+            DeliverableVerificationService verificationService,
+            MetaOAuthTokenRepository metaOAuthTokenRepository) {
         this.creatorContext = creatorContext;
         this.collaborationRepository = collaborationRepository;
         this.deliverableRepository = deliverableRepository;
@@ -128,6 +136,74 @@ public class CreatorDeliverableService {
         this.brandContext = brandContext;
         this.eventPublisher = eventPublisher;
         this.collaborationLifecycleService = collaborationLifecycleService;
+        this.verificationService = verificationService;
+        this.metaOAuthTokenRepository = metaOAuthTokenRepository;
+    }
+
+    /**
+     * Verified-analytics-0804 — which {@link Outcome}s let the creator fall back to MANUAL
+     * self-reported metrics. Manual is a failure-only escape hatch: it opens ONLY when Meta
+     * genuinely failed for a connected account (rate-limited / token-expired / API error /
+     * not-found / data-integrity) or the platform is unsupported (YouTube). It never opens for
+     * {@code VERIFIED} (real numbers exist) nor for the not-connected / bad-URL cases (those are
+     * "Connect Instagram" / "fix your post URL", not "type it yourself"). Unit-tested over all
+     * {@link Outcome} values.
+     */
+    static boolean manualFallbackAllowed(Outcome outcome) {
+        return switch (outcome) {
+            case FALLBACK_TOKEN_EXPIRED,
+                    FALLBACK_RATE_LIMITED,
+                    FALLBACK_API_ERROR,
+                    FALLBACK_NOT_FOUND,
+                    FALLBACK_DATA_INTEGRITY,
+                    FALLBACK_YOUTUBE_UNSUPPORTED ->
+                    true;
+            case VERIFIED,
+                    FALLBACK_NO_POST_URL,
+                    FALLBACK_NO_MILESTONE,
+                    FALLBACK_UNRECOGNIZED_URL,
+                    FALLBACK_NO_TOKEN ->
+                    false;
+        };
+    }
+
+    private boolean isMetaConnected(String creatorProfileId) {
+        return creatorProfileId != null
+                && !metaOAuthTokenRepository
+                        .findByCreatorProfileIdAndRevokedFalse(creatorProfileId)
+                        .isEmpty();
+    }
+
+    /**
+     * On-demand verification (verified-analytics-0804). Runs the SAME
+     * {@link DeliverableVerificationService#verify} the 6h batch job runs, so a creator/brand does
+     * not wait for the batch. Returns the live outcome + the resulting verified numbers + whether a
+     * manual fallback is permitted. This is the ONLY thing that unlocks the manual form.
+     */
+    @Transactional
+    public VerificationStateResponse verifyNow(AuthPrincipal principal, String deliverableId) {
+        creatorContext.requireCreatorProfile(principal);
+        Deliverable deliverable = requireOwnedDeliverable(principal, deliverableId);
+        Outcome outcome = verificationService.verify(deliverable);
+        return buildVerificationState(deliverable, outcome);
+    }
+
+    private VerificationStateResponse buildVerificationState(Deliverable deliverable, Outcome outcome) {
+        String milestoneId = deliverable.getMilestoneId();
+        DeliverableMetric metric =
+                milestoneId == null
+                        ? null
+                        : deliverableMetricRepository.findByMilestoneId(milestoneId).orElse(null);
+        return new VerificationStateResponse(
+                deliverable.getId(),
+                outcome.name(),
+                metric != null ? metric.getSource() : null,
+                metric != null ? metric.getReach() : null,
+                metric != null ? metric.getImpressions() : null,
+                metric != null ? metric.getEngagements() : null,
+                metric != null ? metric.getVerifiedAt() : null,
+                isMetaConnected(deliverable.getCreatorProfileId()),
+                manualFallbackAllowed(outcome));
     }
 
     @Transactional
@@ -379,6 +455,22 @@ public class CreatorDeliverableService {
 
         MetricsPayload metrics = request.metrics();
         validateNonNegativeMetrics(metrics);
+
+        // verified-analytics-0804 — manual self-report is a failure-only escape hatch. Verified
+        // (Meta) numbers are the default and only primary source. After the cheap validations,
+        // run the authoritative verification; only a genuine Meta-API failure for a connected
+        // account unlocks manual entry. VERIFIED (real numbers exist), not-connected, and bad-URL
+        // are rejected — the UI then shows "verified", "Connect Instagram", or "add your post URL".
+        Outcome outcome = verificationService.verify(deliverable);
+        if (!manualFallbackAllowed(outcome)) {
+            throw new ApiException(
+                    "MANUAL_METRICS_NOT_ALLOWED",
+                    outcome == Outcome.VERIFIED
+                            ? "Verified metrics are available from Instagram — manual entry is not needed."
+                            : "Manual metrics are only allowed when Meta verification fails for a"
+                                    + " connected account (current outcome: " + outcome.name() + ").",
+                    HttpStatus.CONFLICT);
+        }
 
         long reach = intOrZero(metrics.reach());
         long impressions = metrics.impressions() != null ? metrics.impressions() : intOrZero(metrics.views());
@@ -941,6 +1033,13 @@ public class CreatorDeliverableService {
     private DeliverableStatusResponse toStatusResponse(Deliverable deliverable) {
         List<StoredFile> files = readFilesJson(deliverable.getFilesJson());
         DeliverableStatus status = deliverable.getStatus();
+        // verified-analytics-0804 — cached verification state (no live Meta call here; the batch
+        // job / verifyNow write it). Lets the UI render "verified" vs "pending" without a fetch.
+        String milestoneId = deliverable.getMilestoneId();
+        DeliverableMetric metric =
+                milestoneId == null
+                        ? null
+                        : deliverableMetricRepository.findByMilestoneId(milestoneId).orElse(null);
         return new DeliverableStatusResponse(
                 deliverable.getId(),
                 deliverable.getCollaborationId(),
@@ -960,7 +1059,10 @@ public class CreatorDeliverableService {
                 new DeliverableActions(
                         canUploadNewVersion(status),
                         canSubmit(status) && !files.isEmpty(),
-                        canReportMetrics(status)));
+                        canReportMetrics(status)),
+                metric != null ? metric.getSource() : null,
+                metric != null ? metric.getVerifiedAt() : null,
+                isMetaConnected(deliverable.getCreatorProfileId()));
     }
 
     /**

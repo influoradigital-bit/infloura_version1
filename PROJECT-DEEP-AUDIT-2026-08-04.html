@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Influora — Deep Project Audit · 2026-08-04</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --border:#2a3038;
+    --fg:#e6edf3; --muted:#8b949e; --accent:#58a6ff;
+    --ok:#3fb950; --partial:#d29922; --broken:#f85149; --missing:#6e7681;
+    --ok-bg:rgba(63,185,80,.13); --partial-bg:rgba(210,153,34,.13);
+    --broken-bg:rgba(248,81,73,.14); --missing-bg:rgba(110,118,129,.13);
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f6; --border:#d0d7de;
+      --fg:#1f2328; --muted:#59636e; --accent:#0969da; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--fg);line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 20px 80px}
+  header h1{font-size:26px;margin:0 0 4px;letter-spacing:-.02em}
+  header .sub{color:var(--muted);font-size:14px;margin-bottom:22px}
+  .headline{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--accent);
+    border-radius:10px;padding:16px 18px;margin-bottom:24px;font-size:15px}
+  .headline b{color:var(--fg)}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:12px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px}
+  .card .n{font-size:30px;font-weight:700;line-height:1}
+  .card .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:6px}
+  .card.ok .n{color:var(--ok)} .card.partial .n{color:var(--partial)}
+  .card.broken .n{color:var(--broken)} .card.missing .n{color:var(--missing)}
+  .card.total .n{color:var(--accent)}
+  .barwrap{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:26px}
+  .barwrap h3{margin:0 0 14px;font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .drow{display:flex;align-items:center;gap:12px;margin-bottom:10px;font-size:13px}
+  .drow .dn{width:70px;font-weight:600}
+  .bar{flex:1;height:22px;border-radius:5px;overflow:hidden;display:flex;background:var(--panel2)}
+  .bar span{display:block;height:100%}
+  .seg-ok{background:var(--ok)} .seg-partial{background:var(--partial)}
+  .seg-broken{background:var(--broken)} .seg-missing{background:var(--missing)}
+  .drow .pct{width:70px;text-align:right;color:var(--muted)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:middle}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;position:sticky;top:0;
+    background:var(--bg);padding:12px 0;z-index:5;border-bottom:1px solid var(--border)}
+  .controls input{flex:1;min-width:180px;background:var(--panel);border:1px solid var(--border);color:var(--fg);
+    padding:9px 12px;border-radius:8px;font-size:14px}
+  .chip{background:var(--panel);border:1px solid var(--border);color:var(--muted);padding:7px 13px;border-radius:20px;
+    font-size:13px;cursor:pointer;user-select:none;white-space:nowrap}
+  .chip.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .count{color:var(--muted);font-size:13px;margin:0 0 10px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;padding:10px 12px;color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;
+    letter-spacing:.04em;border-bottom:1px solid var(--border);position:sticky;top:64px;background:var(--bg)}
+  td{padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+  tr:hover td{background:var(--panel)}
+  .st{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;text-transform:uppercase;letter-spacing:.03em}
+  .st.WORKING{background:var(--ok-bg);color:var(--ok)}
+  .st.PARTIAL{background:var(--partial-bg);color:var(--partial)}
+  .st.BROKEN{background:var(--broken-bg);color:var(--broken)}
+  .st.MISSING{background:var(--missing-bg);color:var(--missing)}
+  .feat{font-weight:600}
+  .dom{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .path{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--muted);
+    word-break:break-word}
+  .why{color:var(--muted);font-size:12.5px}
+  .conn{font-family:ui-monospace,monospace;font-size:11px;padding:2px 6px;border-radius:4px;background:var(--panel2);color:var(--muted)}
+  .conn.bad{color:var(--broken)} .conn.warn{color:var(--partial)}
+  h2.sec{font-size:18px;margin:34px 0 10px;padding-top:10px}
+  .note{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;font-size:13.5px;color:var(--muted);margin-bottom:20px}
+  .note b{color:var(--fg)}
+  .hide{display:none!important}
+  footer{margin-top:40px;color:var(--muted);font-size:12px;text-align:center}
+  @media (max-width:720px){ .path,.why{font-size:11.5px} th:nth-child(4),td:nth-child(4){display:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Influora — Whole-Project Deep Audit</h1>
+  <div class="sub">Code-truth · 2026-08-04 · 197 features across Admin · Brand · Creator · AI &nbsp;|&nbsp; static source analysis, not live-proven</div>
+</header>
+
+<div class="headline">
+  <b>The wiring is not the problem.</b> All 140 typed <code>request()</code> calls in the main frontend client resolve to a real backend
+  method+path — <b>zero phantom endpoints</b>. The real gaps are an unbuilt admin finance/escrow console (backend ready, no UI),
+  money flows blocked on <b>infra/config</b> (live Razorpay keys) or <b>deliberate security scope exclusions</b>, analytics/scoring
+  placeholders, and a few genuinely unbuilt user flows. Only <b>2 true broken items</b> exist — both unreachable admin dead-code endpoints.
+</div>
+
+<div class="grid" id="cards"></div>
+
+<div class="barwrap">
+  <h3>Status by domain</h3>
+  <div id="bars"></div>
+  <div class="legend">
+    <span><i style="background:var(--ok)"></i>Working 143 (72.6%)</span>
+    <span><i style="background:var(--partial)"></i>Partial 16</span>
+    <span><i style="background:var(--broken)"></i>Broken 2</span>
+    <span><i style="background:var(--missing)"></i>Missing 36</span>
+    <span style="margin-left:auto">Wired to real backend (working+partial): <b style="color:var(--fg)">80.7%</b></span>
+  </div>
+</div>
+
+<div class="note">
+  <b>How to read "status".</b>
+  <b style="color:var(--ok)">Working</b> = frontend calls a real endpoint (method+path match) backed by real logic.
+  <b style="color:var(--partial)">Partial</b> = connected but backend returns a stub/placeholder, is gated behind an unprovisioned key, or the flow is only half-wired.
+  <b style="color:var(--broken)">Broken</b> = phantom endpoint (frontend calls a route that doesn't exist → 404).
+  <b style="color:var(--missing)">Missing</b> = UI not built, <i>or</i> a real backend route with no frontend consumer (orphan). &nbsp;
+  <b>Limits:</b> nothing was run live; the AI service is key-gated; "working" means code-complete, not runtime-proven.
+</div>
+
+<div class="controls">
+  <input id="q" placeholder="Search feature, path, or reason…" autocomplete="off">
+  <span class="chip active" data-f="dom" data-v="all">All domains</span>
+  <span class="chip" data-f="dom" data-v="admin">Admin</span>
+  <span class="chip" data-f="dom" data-v="brand">Brand</span>
+  <span class="chip" data-f="dom" data-v="creator">Creator</span>
+  <span class="chip" data-f="dom" data-v="ai">AI</span>
+  <span class="chip active" data-f="st" data-v="all">All status</span>
+  <span class="chip" data-f="st" data-v="WORKING">Working</span>
+  <span class="chip" data-f="st" data-v="PARTIAL">Partial</span>
+  <span class="chip" data-f="st" data-v="BROKEN">Broken</span>
+  <span class="chip" data-f="st" data-v="MISSING">Missing</span>
+</div>
+
+<div class="count" id="count"></div>
+<table>
+  <thead><tr><th>Feature</th><th>Status</th><th>Frontend</th><th>Backend route</th><th>Why / note</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<footer>
+  Generated by a 4-agent fresh-context audit + independent connection reconciliation. Every verdict cites primary source.<br>
+  Companion report: PROJECT-DEEP-AUDIT-2026-08-04.md
+</footer>
+</div>
+
+<script>
+const D = [
+/* ADMIN */
+{d:"admin",f:"Auth (login/logout/refresh/me/mfa)",s:"WORKING",fe:"api-contracts.ts:117",be:"/admin/auth/** (AdminAuthController)",c:"connected",w:"All 6 paths+methods align"},
+{d:"admin",f:"Dashboard CEO pulse",s:"PARTIAL",fe:"api-contracts.ts:151",be:"GET /admin/dashboard/pulse",c:"stub",w:"WoW *Change deltas null pending kpi_daily_snapshot table; ESCROW_LOW/SLA_BREACH alerts unimplemented. Core metrics real."},
+{d:"admin",f:"Dashboard operations summary",s:"WORKING",fe:"api-contracts.ts:157",be:"GET /admin/dashboard/operations",c:"connected",w:"M-28 fix replaced hardcoded 0s with real counts"},
+{d:"admin",f:"Dashboard financial summary",s:"MISSING",fe:"api-contracts.ts:154",be:"GET /admin/dashboard/financial",c:"no-frontend",w:"Backend real but 0 UI consumers"},
+{d:"admin",f:"Dashboard marketing summary",s:"MISSING",fe:"api-contracts.ts:166",be:"none (unavailable())",c:"no-backend",w:"Marketing metrics service not built; typed unavailable, no network call"},
+{d:"admin",f:"Brands (list/detail/update/kyc/suspend/reinstate/budget-override)",s:"WORKING",fe:"api-contracts.ts:192-231",be:"/admin/brands/** (7 routes)",c:"connected",w:"All align; service real"},
+{d:"admin",f:"Creators (9 endpoints)",s:"WORKING",fe:"api-contracts.ts:251-298",be:"/admin/creators/** (9 routes)",c:"connected",w:"All align; service real"},
+{d:"admin",f:"Campaigns listAll",s:"WORKING",fe:"api-contracts.ts:329",be:"GET /admin/campaigns",c:"connected",w:"H-22 fixed hardcoded metrics"},
+{d:"admin",f:"Campaign getById",s:"WORKING",fe:"api-contracts.ts:331",be:"GET /admin/campaigns/{id}",c:"connected",w:"Real; minor: type hardcoded STANDARD until taxonomy ratified"},
+{d:"admin",f:"Campaign list (paginated variant)",s:"MISSING",fe:"api-contracts.ts:316",be:"GET /admin/campaigns",c:"no-frontend",w:"0 consumers (superseded by listAll); expects envelope but backend returns bare array"},
+{d:"admin",f:"Campaigns at-risk",s:"MISSING",fe:"api-contracts.ts:334",be:"GET /admin/campaigns/at-risk",c:"no-frontend",w:"0 UI consumers; backend real but timelineStatus hardcoded"},
+{d:"admin",f:"Campaigns hype ops",s:"MISSING",fe:"api-contracts.ts:337",be:"GET /admin/campaigns/hype/ops",c:"no-frontend",w:"0 UI consumers"},
+{d:"admin",f:"Finance fee-config (get/history/update)",s:"WORKING",fe:"FeeControlPanel.tsx",be:"/admin/finance/fee-config[/history]",c:"connected",w:"Real; optimistic-concurrency 409 enforced"},
+{d:"admin",f:"Finance revenue",s:"MISSING",fe:"api-contracts.ts:352",be:"GET /admin/finance/revenue",c:"no-frontend",w:"Backend real but 0 UI consumers"},
+{d:"admin",f:"Finance escrow summary",s:"MISSING",fe:"api-contracts.ts:357",be:"GET /admin/finance/escrow",c:"no-frontend",w:"Backend real but 0 UI consumers"},
+{d:"admin",f:"Finance payout queue",s:"BROKEN",fe:"api-contracts.ts:360",be:"GET /admin/finance/payouts — ABSENT",c:"phantom",w:"No such route in any controller → 404. Also dead code (0 consumers)."},
+{d:"admin",f:"Finance retryPayout/reconciliation/TDS",s:"MISSING",fe:"api-contracts.ts:369-383",be:"none (unavailable())",c:"no-backend",w:"Parked: Razorpay Route / webhook-only / TDS engine epics unbuilt"},
+{d:"admin",f:"Escrow flagged holds",s:"MISSING",fe:"api-contracts.ts:472",be:"GET /admin/escrow/flagged",c:"no-frontend",w:"Backend real (F2) but 0 UI consumers; no escrow/payout/revenue console exists"},
+{d:"admin",f:"Escrow release/hold/refund",s:"MISSING",fe:"api-contracts.ts:482-495",be:"none (unavailable())",c:"no-backend",w:"Tier B parked; dispute-mediated flow only"},
+{d:"admin",f:"Support tickets (list/detail/update/reply/escalate/assign)",s:"WORKING",fe:"api-contracts.ts:509-545",be:"/admin/support/tickets/**",c:"connected",w:"All align; service real"},
+{d:"admin",f:"Support stats",s:"WORKING",fe:"api-contracts.ts:547",be:"GET /admin/support/stats",c:"connected",w:"Real"},
+{d:"admin",f:"Moderation content-flags list",s:"WORKING",fe:"api-contracts.ts:562",be:"GET /admin/moderation/flags",c:"connected",w:"Real"},
+{d:"admin",f:"Moderation action flag",s:"WORKING",fe:"api-contracts.ts:571",be:"POST /admin/moderation/flags/{id}/action",c:"connected",w:"AdminModerationService real"},
+{d:"admin",f:"Moderation pending approvals",s:"WORKING",fe:"api-contracts.ts:577",be:"GET /admin/moderation/approvals/pending",c:"connected",w:"Real KYC + application queues"},
+{d:"admin",f:"Moderation process approval",s:"PARTIAL",fe:"api-contracts.ts:582",be:"POST /admin/moderation/approvals/{id}",c:"stub",w:"Works for BRAND_KYC + CREATOR_APPLICATION; throws 501 for CONTENT_MODERATION (read-only queue)"},
+{d:"admin",f:"Moderation suspensions list",s:"MISSING",fe:"api-contracts.ts:588",be:"GET /admin/moderation/suspensions",c:"no-frontend",w:"0 UI consumers"},
+{d:"admin",f:"Moderation review appeal",s:"MISSING",fe:"api-contracts.ts:593",be:"none (unavailable())",c:"no-backend",w:"Appeal subsystem not built"},
+{d:"admin",f:"Disputes list + resolve",s:"WORKING",fe:"api-contracts.ts:616",be:"GET /admin/disputes, POST /{id}/resolve",c:"connected",w:"Real; resolve settles escrow via EscrowService"},
+{d:"admin",f:"Audit log list",s:"WORKING",fe:"api-contracts.ts:652",be:"GET /admin/audit",c:"connected",w:"Real"},
+{d:"admin",f:"Audit log getByEntity",s:"MISSING",fe:"api-contracts.ts:666",be:"GET /admin/audit/entity/{type}/{id}",c:"no-frontend",w:"No UI consumer; backend POST /admin/audit create also unconsumed"},
+{d:"admin",f:"Error log (recent/detail/resolve/stats)",s:"WORKING",fe:"api-contracts.ts:675-684",be:"/admin/errors/**",c:"connected",w:"All 4 align; service real"},
+{d:"admin",f:"Email queue/retry/templates/stats",s:"WORKING",fe:"api-contracts.ts:698-719",be:"/admin/emails/**",c:"connected",w:"All 4 align"},
+{d:"admin",f:"Email send-bulk",s:"PARTIAL",fe:"api-contracts.ts:713",be:"POST /admin/emails/send-bulk",c:"stub",w:"Backend deliberately returns 501 BULK_SEND_DISABLED pending abuse controls/rate-limit/security review"},
+{d:"admin",f:"Marketing reputation",s:"MISSING",fe:"api-contracts.ts:741",be:"GET /admin/marketing/reputation",c:"no-frontend",w:"Backend real (live aggregates) but 0 UI consumers"},
+{d:"admin",f:"Marketing referrals",s:"BROKEN",fe:"api-contracts.ts:744",be:"GET /admin/marketing/referrals — ABSENT",c:"phantom",w:"Controller only exposes /reputation → 404. Dead code (0 consumers)."},
+{d:"admin",f:"Marketing acquisition/growth",s:"MISSING",fe:"api-contracts.ts:733-739",be:"none (unavailable())",c:"no-backend",w:"Marketing analytics not built"},
+{d:"admin",f:"Billing console (subscriptions/metrics/comp/override)",s:"WORKING",fe:"BillingConsole.tsx:455 via useBillingData",be:"/admin/billing/**",c:"connected",w:"All 4 align; wired through hook"},
+/* BRAND */
+{d:"brand",f:"Brand onboarding (company/complete/kyc)",s:"WORKING",fe:"onboarding-steps.tsx",be:"POST /onboarding/brand/**",c:"connected",w:""},
+{d:"brand",f:"Campaigns list",s:"WORKING",fe:"campaigns-list.tsx",be:"GET /campaigns",c:"connected",w:"demoHypeCampaign only in mock mode"},
+{d:"brand",f:"Campaign get",s:"WORKING",fe:"brand-campaign-detail.tsx",be:"GET /campaigns/{id}",c:"connected",w:""},
+{d:"brand",f:"Campaign create",s:"WORKING",fe:"campaign-form.tsx",be:"POST /campaigns",c:"connected",w:""},
+{d:"brand",f:"Campaign update",s:"WORKING",fe:"brand-edit-campaign.tsx",be:"PATCH /campaigns/{id}",c:"connected",w:""},
+{d:"brand",f:"Campaign delete",s:"WORKING",fe:"campaigns-list.tsx",be:"DELETE /campaigns/{id}",c:"connected",w:""},
+{d:"brand",f:"Campaign duplicate",s:"WORKING",fe:"campaigns-list.tsx",be:"POST /campaigns/{id}/duplicate",c:"connected",w:""},
+{d:"brand",f:"Campaign analytics",s:"PARTIAL",fe:"brand-campaign-tracking.tsx",be:"GET /campaigns/{id}/analytics",c:"connected",w:"All metrics are CREATOR_REPORTED, never platform-verified — honest by design"},
+{d:"brand",f:"HYPE campaign create",s:"WORKING",fe:"brand-new-hype-campaign.tsx",be:"POST /campaigns",c:"connected",w:"HYPE is a campaign type on the standard route"},
+{d:"brand",f:"Campaign templates prefill (list/get)",s:"WORKING",fe:"brand-new-campaign.tsx",be:"GET /campaign-templates, /{id}",c:"connected",w:""},
+{d:"brand",f:"Campaign template create/delete",s:"MISSING",fe:"none",be:"POST /campaign-templates; DELETE /{id}",c:"no-frontend",w:"Backend routes exist; no brand FE consumer"},
+{d:"brand",f:"Campaign tracking links",s:"WORKING",fe:"useCampaignTrackingLinks.ts",be:"GET/POST /campaigns/{id}/tracking-links",c:"connected",w:""},
+{d:"brand",f:"Campaign coupons",s:"WORKING",fe:"useCampaignCoupons.ts",be:"GET/POST /campaigns/{id}/coupons",c:"connected",w:"RedemptionService defers per-user redemption limits (TODO); core works"},
+{d:"brand",f:"Campaign report export",s:"WORKING",fe:"api.ts:2952",be:"GET /campaigns/{id}/export",c:"connected",w:"TODO: R2 presigned for large exports; small exports work"},
+{d:"brand",f:"Creator discovery/search",s:"WORKING",fe:"creator-discovery.tsx",be:"GET /creators",c:"connected",w:"search maps to the list route"},
+{d:"brand",f:"Creator save/invite",s:"WORKING",fe:"creator-discovery.tsx",be:"POST /creators/{id}/save,/invite",c:"connected",w:""},
+{d:"brand",f:"Creator detail",s:"WORKING",fe:"brand-creator-profile.tsx",be:"GET /creators/{id}",c:"connected",w:""},
+{d:"brand",f:"Creator endpoints unused by brand (search/featured/similar/profile/suggestions)",s:"MISSING",fe:"none",be:"GET /creators/search,/featured,/{u}/similar…",c:"no-frontend",w:"Orphan backend routes; no brand FE consumer"},
+{d:"brand",f:"Creator analytics — metrics",s:"PARTIAL",fe:"useCreatorMetrics.ts",be:"GET /analytics/creators/{id}/metrics",c:"connected",w:"Real rows; empty typed shape until a snapshot is computed"},
+{d:"brand",f:"Creator analytics — scores",s:"PARTIAL",fe:"useCreatorScores.ts",be:"GET /analytics/creators/{id}/scores",c:"connected",w:"audienceMatch is placeholder neutral 50; FakeFollowerDetection not implemented"},
+{d:"brand",f:"Creator analytics — demographics",s:"PARTIAL",fe:"useCreatorDemographics.ts",be:"GET /analytics/creators/{id}/demographics",c:"connected",w:"Empty typed shape (never 404) until snapshot exists"},
+{d:"brand",f:"Creator analytics — content performance",s:"WORKING",fe:"useContentPerformance.ts",be:"GET /analytics/creators/{id}/media",c:"connected",w:"Route added to fix prior 404"},
+{d:"brand",f:"Brand analytics roster page",s:"PARTIAL",fe:"brand-analytics.tsx:49",be:"GET /analytics/creators/*",c:"connected",w:"Falls back to demoCreators in mock mode; live needs real creator IDs"},
+{d:"brand",f:"Deals list/get",s:"WORKING",fe:"deal-room-dashboard.tsx",be:"GET /deals, /{id}",c:"connected",w:""},
+{d:"brand",f:"Deal create/accept/reject/counter",s:"WORKING",fe:"proposal-form.tsx",be:"POST /deals, /{id}/accept|reject|counter",c:"connected",w:""},
+{d:"brand",f:"Deal messages list/send/read",s:"WORKING",fe:"brand-messages.tsx",be:"GET/POST /deals/{id}/messages, /read",c:"connected",w:""},
+{d:"brand",f:"Deal messages SSE stream",s:"WORKING",fe:"api.ts:1722",be:"GET /deals/{id}/messages/stream",c:"connected",w:"Raw fetch for EventStream"},
+{d:"brand",f:"Deal deliverables list",s:"WORKING",fe:"deal-deliverables-tab.tsx",be:"GET /deals/{dealId}/deliverables",c:"connected",w:""},
+{d:"brand",f:"Deal dispute create",s:"WORKING",fe:"deal-room-dashboard.tsx",be:"POST /deals/{dealId}/disputes",c:"connected",w:""},
+{d:"brand",f:"Deal shipment (address/ship/confirm/get)",s:"WORKING",fe:"shipment-form.tsx",be:"POST/GET /deals/{id}/shipment*",c:"connected",w:"Code exists; prior live 404 was a deploy gap, not code"},
+{d:"brand",f:"Contracts list/get",s:"WORKING",fe:"contracts-and-deliverables.tsx",be:"GET /contracts, /{id}",c:"connected",w:""},
+{d:"brand",f:"Contract create/generate",s:"WORKING",fe:"deal-contract-generate.tsx",be:"POST /contracts",c:"connected",w:""},
+{d:"brand",f:"Contract e-sign",s:"WORKING",fe:"contract-panel.tsx",be:"POST /contracts/{id}/sign",c:"connected",w:"Signer role server-derived; brand-sign 400 FIXED"},
+{d:"brand",f:"Contract PDF download",s:"WORKING",fe:"contracts-and-deliverables.tsx",be:"GET /contracts/{id}/pdf-download-url",c:"connected",w:""},
+{d:"brand",f:"Contracts unsigned",s:"MISSING",fe:"none",be:"GET /contracts/unsigned",c:"no-frontend",w:"No brand FE consumer"},
+{d:"brand",f:"Deliverable review get/approve/revise",s:"WORKING",fe:"deliverable-review-panel.tsx",be:"GET /deliverables/{id}; POST /approve,/revise",c:"connected",w:""},
+{d:"brand",f:"Deliverable safety review",s:"WORKING",fe:"DeliverableSafetyReviewCard.tsx",be:"GET /deliverables/{id}/safety-review",c:"connected",w:""},
+{d:"brand",f:"Deliverable reject",s:"MISSING",fe:"none",be:"POST /deliverables/{id}/reject",c:"no-frontend",w:"Brand FE uses approve/revise only"},
+{d:"brand",f:"Deliverable metrics submit",s:"MISSING",fe:"none (brand)",be:"PUT /deliverables/{milestoneId}/metrics",c:"no-frontend",w:"Creator-side write; brand reads via campaign analytics"},
+{d:"brand",f:"Wallet summary",s:"WORKING",fe:"brand-wallet.tsx",be:"GET /wallet",c:"connected",w:""},
+{d:"brand",f:"Wallet top-up",s:"WORKING",fe:"useWalletTopUp.ts",be:"POST /wallet/topup",c:"connected",w:"Real Razorpay order; live credit gated on live keys + webhook (infra)"},
+{d:"brand",f:"Wallet withdraw",s:"WORKING",fe:"brand-wallet.tsx",be:"POST /wallet/withdraw",c:"connected",w:""},
+{d:"brand",f:"Wallet transactions",s:"WORKING",fe:"brand-wallet.tsx",be:"GET /wallet/transactions",c:"connected",w:""},
+{d:"brand",f:"Wallet payout-methods (list/add/primary)",s:"WORKING",fe:"brand-wallet.tsx",be:"GET/POST /wallet/payout-methods; PUT /{id}/primary",c:"connected",w:""},
+{d:"brand",f:"Wallet balance",s:"MISSING",fe:"none",be:"GET /wallet/balance",c:"no-frontend",w:"FE reads /wallet summary; /balance has no consumer"},
+{d:"brand",f:"Escrow list",s:"WORKING",fe:"brand-wallet.tsx",be:"GET /wallet/escrow",c:"connected",w:""},
+{d:"brand",f:"Escrow fund",s:"WORKING",fe:"useEscrowFund.ts:208",be:"POST /wallet/escrow/fund",c:"connected",w:"Real amount-derivation; live 500 on placeholder Razorpay keys is INFRA, not a code stub"},
+{d:"brand",f:"Escrow release",s:"WORKING",fe:"deal-payments-tab.tsx",be:"POST /wallet/escrow/release",c:"connected",w:"Payee resolved server-side from milestone"},
+{d:"brand",f:"Escrow status by id",s:"WORKING",fe:"meera-api.ts:583",be:"GET /wallet/escrow/{id}",c:"connected",w:""},
+{d:"brand",f:"Escrow refund/payout",s:"MISSING",fe:"none (brand)",be:"POST /wallet/escrow/refund,/payout",c:"no-frontend",w:"Admin/Meera paths; no brand FE consumer"},
+{d:"brand",f:"Billing plan/invoices/usage/pdf/cancel",s:"WORKING",fe:"useBilling.ts",be:"GET /billing/**; POST /cancel",c:"connected",w:""},
+{d:"brand",f:"Billing checkout (subscribe)",s:"WORKING",fe:"brand-billing-settings.tsx",be:"POST /billing/checkout",c:"connected",w:"Returns Razorpay checkoutUrl; gated on live keys; Pro plan seeded with null razorpay_plan_id placeholder"},
+{d:"brand",f:"Brand invoicing (campaign + commission)",s:"WORKING",fe:"brand-billing-settings.tsx:164",be:"GET /billing/campaign-invoices,/commission-invoices (+pdf)",c:"connected",w:"Escrow-invoice backfill gap (CR-51) is observability-only; ledger intact"},
+{d:"brand",f:"Brand platform fee",s:"WORKING",fe:"proposal-form.tsx:52",be:"GET /brand/platform-fee",c:"connected",w:""},
+{d:"brand",f:"Dashboard actions",s:"WORKING",fe:"dashboard-page.tsx",be:"GET /dashboard/actions",c:"connected",w:"Real items / honest empty list"},
+{d:"brand",f:"Dashboard pipeline",s:"WORKING",fe:"brand-pipeline.tsx",be:"GET /dashboard/pipeline",c:"connected",w:""},
+{d:"brand",f:"Notifications list/read/preferences",s:"WORKING",fe:"useNotifications.ts",be:"GET /notifications; POST /read,/preferences",c:"connected",w:""},
+{d:"brand",f:"Notifications read-all/unsubscribe",s:"MISSING",fe:"none (app)",be:"POST /notifications/read-all,/unsubscribe",c:"no-frontend",w:"Email-link handlers; no in-app consumer"},
+{d:"brand",f:"Reviews submit + received",s:"WORKING",fe:"collaboration-reviews-panel.tsx",be:"POST /brand/reviews; GET /received",c:"connected",w:"receivedNotImplemented is a defensive 501 guard; backend implements it"},
+{d:"brand",f:"Review flag",s:"MISSING",fe:"none",be:"POST /brand/reviews/{id}/flag",c:"no-frontend",w:"Orphan backend route"},
+{d:"brand",f:"Disputes list",s:"WORKING",fe:"brand-disputes.tsx:52",be:"GET /brand/disputes/list",c:"connected",w:"Base GET /brand/disputes is an unused duplicate"},
+{d:"brand",f:"TrendSpark nudge (get/click/purchase)",s:"PARTIAL",fe:"useTrendSparkNudge.ts",be:"GET /brand/trendspark/nudge; POST /click,/purchase",c:"connected",w:"Returns fallback templated placeholder copy when AI client unavailable"},
+{d:"brand",f:"Store integrations (Shopify/Woo/status/disconnect)",s:"WORKING",fe:"StoreIntegrationSetup.tsx",be:"shopify/woo/integrations/store/*",c:"connected",w:""},
+{d:"brand",f:"Workspace me (get/patch)",s:"WORKING",fe:"brand-settings.tsx",be:"GET/PATCH /workspaces/me",c:"connected",w:""},
+{d:"brand",f:"Workspace slug-check",s:"WORKING",fe:"brand-onboarding.tsx",be:"GET /workspaces/slug-check",c:"connected",w:""},
+{d:"brand",f:"Workspace members list/invite",s:"WORKING",fe:"brand-settings.tsx",be:"GET /workspace/members; POST /invite",c:"connected",w:""},
+{d:"brand",f:"Workspace member accept/remove/invites/revoke/switch",s:"MISSING",fe:"none",be:"POST /accept,/switch; DELETE /{id}; GET /invites…",c:"no-frontend",w:"No brand FE consumer wired"},
+{d:"brand",f:"Uploads",s:"WORKING",fe:"upload.ts",be:"POST /uploads",c:"connected",w:"Unused presign flow noted; live path uses /uploads"},
+{d:"brand",f:"Command bar",s:"WORKING",fe:"command-bar.tsx",be:"reuses campaigns/deals/creators clients",c:"connected",w:"Client-side launcher over wired clients"},
+/* CREATOR */
+{d:"creator",f:"Onboarding — connect socials",s:"WORKING",fe:"creator-onboarding.tsx:94",be:"POST /onboarding/creator/socials",c:"connected",w:""},
+{d:"creator",f:"Onboarding — build profile",s:"WORKING",fe:"creator-onboarding.tsx:150",be:"POST /onboarding/creator/profile",c:"connected",w:""},
+{d:"creator",f:"Onboarding — complete",s:"WORKING",fe:"creator-onboarding.tsx:195",be:"POST /onboarding/creator/complete",c:"connected",w:""},
+{d:"creator",f:"Onboarding — KYC (PAN/Aadhaar)",s:"MISSING",fe:"api.ts:1036 (never called)",be:"POST /onboarding/creator/kyc",c:"no-frontend",w:"submitCreatorKyc wrapper never invoked anywhere; no KYC capture UI. Backend route orphaned."},
+{d:"creator",f:"Onboarding — payout method",s:"MISSING",fe:"api.ts:1047 (never called)",be:"POST /onboarding/creator/payout",c:"no-frontend",w:"saveCreatorPayout never invoked; 'deferred to first withdrawal' but withdrawal never calls it"},
+{d:"creator",f:"Tax identity (GSTIN/PAN) submit",s:"WORKING",fe:"TaxIdentityForm.tsx:6",be:"POST /me/tax-identity",c:"connected",w:"Write-only; backend has POST only. Matches."},
+{d:"creator",f:"Creator profile self get/patch",s:"WORKING",fe:"creator-profile.tsx:89",be:"GET/PATCH /me/creator-profile",c:"connected",w:""},
+{d:"creator",f:"Browse campaigns list",s:"WORKING",fe:"creator-campaigns.tsx",be:"GET /creator/campaigns",c:"connected",w:""},
+{d:"creator",f:"Campaign detail",s:"WORKING",fe:"creator-campaign-detail.tsx",be:"GET /creator/campaigns/{id}",c:"connected",w:""},
+{d:"creator",f:"Campaign apply",s:"WORKING",fe:"creator-campaign-detail.tsx",be:"POST /creator/campaigns/{id}/apply",c:"connected",w:""},
+{d:"creator",f:"Applications list",s:"WORKING",fe:"creator-applications.tsx:35",be:"GET /creator/applications",c:"connected",w:""},
+{d:"creator",f:"Deals list",s:"WORKING",fe:"creator-deals.tsx",be:"GET /deals",c:"connected",w:""},
+{d:"creator",f:"Deal detail/accept/reject/counter",s:"WORKING",fe:"creator-chat.tsx",be:"GET/POST /deals/{id}(/accept,/reject,/counter)",c:"connected",w:""},
+{d:"creator",f:"Deal create",s:"WORKING",fe:"api.ts:1572",be:"POST /deals",c:"connected",w:""},
+{d:"creator",f:"Deal messages + read + stream",s:"WORKING",fe:"creator-chat.tsx",be:"GET/POST /deals/{id}/messages(/read,/stream)",c:"connected",w:""},
+{d:"creator",f:"Deal-room shipment",s:"PARTIAL",fe:"creator-chat.tsx:2302",be:"POST/GET /deals/{id}/shipment*",c:"connected",w:"Routes match but items/estimatedDelivery are demo placeholders even in live mode (no backend field)"},
+{d:"creator",f:"Deliverables list per deal",s:"WORKING",fe:"creator-chat.tsx:1011",be:"GET /creator/deliverables?collaboration_id",c:"connected",w:"C19 fix — real rows feed submit dialog"},
+{d:"creator",f:"Deliverable upload (multipart)",s:"WORKING",fe:"api.ts:4024",be:"POST /creator/deliverables/{id}/upload",c:"connected",w:"Part name files; matches controller"},
+{d:"creator",f:"Deliverable submit",s:"WORKING",fe:"api.ts:2279",be:"POST /creator/deliverables/{id}/submit",c:"connected",w:""},
+{d:"creator",f:"Deliverable metrics",s:"MISSING",fe:"none",be:"POST /creator/deliverables/{id}/metrics",c:"no-frontend",w:"No caller in src. Orphan route."},
+{d:"creator",f:"Deliverable status poll",s:"MISSING",fe:"none",be:"GET /creator/deliverables/{id}/status",c:"no-frontend",w:"No caller. Orphan route."},
+{d:"creator",f:"Deliverable proof upload",s:"MISSING",fe:"none",be:"POST /creator/deliverables/{id}/proof",c:"no-frontend",w:"No caller. Orphan route."},
+{d:"creator",f:"Deliverable mark-posted",s:"MISSING",fe:"none",be:"POST /creator/deliverables/{id}/mark-posted",c:"no-frontend",w:"No caller. Orphan route."},
+{d:"creator",f:"Deliverable safety review (view)",s:"WORKING",fe:"api.ts:2313",be:"GET /deliverables/{id}/safety-review",c:"connected",w:"Advisory display; matches"},
+{d:"creator",f:"Disputes list",s:"WORKING",fe:"creator-disputes.tsx",be:"GET /creator/disputes",c:"connected",w:"Creator-scoped server-side"},
+{d:"creator",f:"Open dispute",s:"WORKING",fe:"creator-disputes.tsx",be:"POST /deals/{dealId}/disputes",c:"connected",w:""},
+{d:"creator",f:"Reviews submit",s:"WORKING",fe:"collaboration-reviews-panel",be:"POST /creator/reviews",c:"connected",w:""},
+{d:"creator",f:"Reviews received",s:"WORKING",fe:"api.ts:3690",be:"GET /creator/reviews/received",c:"connected",w:""},
+{d:"creator",f:"Review flag",s:"MISSING",fe:"none",be:"POST /creator/reviews/{id}/flag",c:"no-frontend",w:"No caller. Orphan route."},
+{d:"creator",f:"Wallet summary",s:"WORKING",fe:"creator-wallet.tsx:362",be:"GET /wallet",c:"connected",w:""},
+{d:"creator",f:"Wallet balance",s:"MISSING",fe:"none",be:"GET /wallet/balance",c:"no-frontend",w:"FE uses /wallet summary; /balance has no caller"},
+{d:"creator",f:"Wallet top-up",s:"WORKING",fe:"api.ts:2470",be:"POST /wallet/topup",c:"connected",w:"Shared with brand"},
+{d:"creator",f:"Wallet withdraw",s:"WORKING",fe:"creator-wallet.tsx:453",be:"POST /wallet/withdraw",c:"connected",w:""},
+{d:"creator",f:"Wallet transactions",s:"WORKING",fe:"creator-wallet.tsx:393",be:"GET /wallet/transactions",c:"connected",w:""},
+{d:"creator",f:"Payout methods list/add/set-primary",s:"WORKING",fe:"creator-wallet.tsx:424",be:"GET/POST /wallet/payout-methods; PUT /{id}/primary",c:"connected",w:""},
+{d:"creator",f:"Platform fee",s:"WORKING",fe:"creator-wallet.tsx:341",be:"GET /creator/platform-fee",c:"connected",w:""},
+{d:"creator",f:"Escrow list/fund/release",s:"WORKING",fe:"api.ts:2568",be:"GET /wallet/escrow, POST /fund, /release",c:"connected",w:""},
+{d:"creator",f:"Escrow refund/payout/detail (creator)",s:"MISSING",fe:"none",be:"POST /wallet/escrow/refund,/payout; GET /{id}",c:"no-frontend",w:"No creator caller; brand/admin paths or unused"},
+{d:"creator",f:"Coupons",s:"WORKING",fe:"useCreatorCoupons.ts:32",be:"GET /creator/coupons",c:"connected",w:""},
+{d:"creator",f:"Affiliate earnings",s:"WORKING",fe:"useAffiliateEarnings.ts:42",be:"GET /creator/affiliate-earnings",c:"connected",w:""},
+{d:"creator",f:"Campaign invoices (list + PDF)",s:"WORKING",fe:"api.ts:3035",be:"GET /creator/campaign-invoices(/{id}/pdf)",c:"connected",w:""},
+{d:"creator",f:"Commission invoices (list + PDF)",s:"WORKING",fe:"api.ts:3047",be:"GET /creator/commission-invoices(/{id}/pdf)",c:"connected",w:""},
+{d:"creator",f:"Portfolio public view",s:"WORKING",fe:"creator-portfolio-public.tsx:446",be:"GET /portfolio/{username}",c:"connected",w:"Prior toFixed crash FIXED — all calls null-guarded"},
+{d:"creator",f:"Portfolio contact form",s:"WORKING",fe:"creator-portfolio-public.tsx:942",be:"POST /portfolio/{username}/contact",c:"connected",w:""},
+{d:"creator",f:"Portfolio editor get/update",s:"WORKING",fe:"creator-portfolio-editor.tsx",be:"GET/PATCH /me/portfolio",c:"connected",w:""},
+{d:"creator",f:"Portfolio sync",s:"WORKING",fe:"creator-portfolio-editor.tsx",be:"POST /me/portfolio/sync",c:"connected",w:""},
+{d:"creator",f:"Portfolio cover upload",s:"WORKING",fe:"creator-portfolio-editor.tsx",be:"POST /me/portfolio/cover",c:"connected",w:""},
+{d:"creator",f:"Portfolio analytics",s:"WORKING",fe:"creator-portfolio-editor.tsx",be:"GET /me/portfolio/analytics",c:"connected",w:""},
+{d:"creator",f:"Analytics metrics/scores/demographics",s:"WORKING",fe:"useCreatorMetrics.ts",be:"GET /creator/analytics/me/{metrics,scores,demographics}",c:"connected",w:""},
+{d:"creator",f:"Analytics media",s:"MISSING",fe:"none",be:"GET /creator/analytics/me/media",c:"no-frontend",w:"No caller. Orphan route."},
+{d:"creator",f:"Meta OAuth authorize",s:"WORKING",fe:"connected-accounts.tsx",be:"GET /meta/oauth/authorize",c:"connected",w:""},
+{d:"creator",f:"Meta OAuth callback",s:"WORKING",fe:"creator-meta-callback.tsx:54",be:"GET /meta/oauth/callback",c:"connected",w:""},
+{d:"creator",f:"Notifications list/read/preferences",s:"WORKING",fe:"creator-settings.tsx:124",be:"GET /notifications, POST /read, /preferences",c:"connected",w:""},
+{d:"creator",f:"Notifications mark-all-read",s:"WORKING",fe:"useNotifications.ts:248",be:"POST /notifications/read-all",c:"connected",w:"Called via direct fetch (api.ts wrapper dead) but route reached"},
+{d:"creator",f:"Account delete",s:"WORKING",fe:"creator-settings.tsx:181",be:"DELETE /me/account",c:"connected",w:""},
+{d:"creator",f:"Change password",s:"WORKING",fe:"api.ts:821",be:"POST /me/password",c:"connected",w:""},
+{d:"creator",f:"Copilot daily suggestion/dismiss/acted",s:"WORKING",fe:"DailySuggestionSection.tsx",be:"GET /creator/copilot/suggestion/today; POST /dismiss,/acted",c:"connected",w:""},
+/* AI */
+{d:"ai",f:"Meera start session",s:"WORKING",fe:"meera-api.ts:470",be:"MeeraController:95 → startOrResume",c:"connected",w:""},
+{d:"ai",f:"Meera send turn (charge + token mint)",s:"WORKING",fe:"meera-api.ts:498",be:"MeeraController:117; mints stream + on-behalf tokens",c:"connected",w:""},
+{d:"ai",f:"Meera streaming generation (LLM brain)",s:"PARTIAL",fe:"useMeeraStream.ts:259 (dormant)",be:"Python chat.py:170 SSE tool-loop",c:"key-gated",w:"FE returns sync reply and returns before stream.open; SSE path wired but not exercised by current sync backend. Also key-gated."},
+{d:"ai",f:"Meera message history",s:"WORKING",fe:"meera-api.ts:598",be:"MeeraController:166 → listMessages",c:"connected",w:""},
+{d:"ai",f:"Meera credits",s:"WORKING",fe:"meera-api.ts:519",be:"MeeraController:181 → AICreditService",c:"connected",w:""},
+{d:"ai",f:"Meera brand-profile",s:"WORKING",fe:"meera-api.ts:537",be:"MeeraController:199 → getBrandProfile",c:"connected",w:""},
+{d:"ai",f:"Tool: show_creators (read)",s:"WORKING",fe:"loop.py:391",be:"MeeraInternalController:141 → ShowCreatorsExecutor",c:"connected",w:""},
+{d:"ai",f:"Tool: calculate_budget (read)",s:"WORKING",fe:"loop.py:391",be:"MeeraInternalController:156 → CalculateBudgetExecutor",c:"connected",w:"price_source re-derived server-side"},
+{d:"ai",f:"Tool: create_campaign (write)",s:"WORKING",fe:"schemas.py:127",be:"MeeraInternalController:168 → CreateCampaignExecutor",c:"connected",w:"Scope bug FIXED — create_campaign now in minted SCOPE_DEFAULT"},
+{d:"ai",f:"Tool: get_campaign_performance (read)",s:"PARTIAL",fe:"ToolResultRenderer.tsx:404",be:"MeeraInternalController:233 → GetCampaignPerformanceExecutor",c:"connected",w:"Data flows + Living-Canvas advances, but no inline chat-bubble renderer branch"},
+{d:"ai",f:"Tool: request_payment (money)",s:"PARTIAL",fe:"schemas.py:292",be:"MeeraInternalController:191 → RequestPaymentExecutor (real)",c:"scope-bug",w:"Deliberately excluded from minted on-behalf scope → 403 ON_BEHALF_SCOPE_INSUFFICIENT before executor. Non-functional E2E by design, awaiting security sign-off."},
+{d:"ai",f:"Tool: confirm_launch (money)",s:"PARTIAL",fe:"schemas.py:311",be:"MeeraInternalController:211 → ConfirmLaunchExecutor (real)",c:"scope-bug",w:"Same scope exclusion → 403 E2E"},
+{d:"ai",f:"Local tool: analyze_site",s:"WORKING",fe:"loop.py:288",be:"analyze_site.py (SSRF guard + Gemini classify); write-back :308",c:"connected",w:"Result upserts BrandProfile"},
+{d:"ai",f:"Local tool: present_options",s:"WORKING",fe:"loop.py:293",be:"echo + MeeraInteractionLogService",c:"connected",w:"Display-only; flywheel logs OPTIONS_PRESENTED"},
+{d:"ai",f:"Meera context (Block B server-sourced)",s:"WORKING",fe:"chat.py:99",be:"MeeraInternalController:133 → MeeraContextService.assemble",c:"connected",w:"Client brand/prompt_version ignored (anti-spoof)"},
+{d:"ai",f:"Meera outcome_digest (Phase 2 moat)",s:"WORKING",fe:"chat.py:154",be:"assembler.py:201,301 renders",c:"connected",w:"Previously BROKEN (chat.py dropped field) — now FIXED"},
+{d:"ai",f:"Meera turn persist / write-back",s:"WORKING",fe:"chat.py:497",be:"MeeraInternalController:252 → persistAssistantWriteback",c:"connected",w:"Idempotency-Key = verified messageId"},
+{d:"ai",f:"Meera credit refund",s:"WORKING",fe:"chat.py:311",be:"MeeraInternalController:283 → releaseTurnCredit",c:"connected",w:"Refund only on provider failure, never client-disconnect"},
+{d:"ai",f:"Meera voice TTS",s:"WORKING",fe:"meera-api.ts:659 → MeeraController:237",be:"Python voice.py:250 (Sarvam bulbul:v3)",c:"key-gated",w:"Requires SARVAM_API_KEY; silent text fallback otherwise"},
+{d:"ai",f:"Meera voice STT",s:"WORKING",fe:"meera-api.ts:709 → MeeraController:279",be:"Python voice.py:146 (Sarvam saarika:v2 + Gemini cleanup)",c:"key-gated",w:"Requires SARVAM + GEMINI keys; graceful fallback"},
+{d:"ai",f:"Meera escrow fund/status (chat CTA)",s:"WORKING",fe:"meera-api.ts:561/583",be:"EscrowController /wallet/escrow/fund,/{id}",c:"connected",w:""},
+{d:"ai",f:"meera-help ?ask= pre-seed",s:"MISSING",fe:"meera-help.ts:25 (constants)",be:"none",c:"no-backend",w:"Self-documented as unwired; /brand/meera never reads it"},
+{d:"ai",f:"Creator Copilot daily suggestion",s:"WORKING",fe:"useDailySuggestion.ts:123",be:"CreatorCopilotController:42 → CreatorNudgeService → creator_suggestion.py:200 (Haiku)",c:"key-gated",w:"Gated enabled:isConnected (IG link); live phrasing key-gated, templated fallback otherwise"},
+{d:"ai",f:"Creator Copilot dismiss / acted",s:"WORKING",fe:"api.ts:4292",be:"CreatorCopilotController:54/63",c:"connected",w:""},
+{d:"ai",f:"TrendSpark nudge",s:"WORKING",fe:"useTrendSparkNudge.ts:41",be:"TrendSparkController:40 → trendspark.py:160 (Haiku)",c:"key-gated",w:"Empty until Trend table populated; live phrasing key-gated, templated fallback"},
+{d:"ai",f:"TrendSpark click / purchase",s:"WORKING",fe:"api.ts:4232",be:"TrendSparkController:50/59",c:"connected",w:""},
+{d:"ai",f:"TrendSpark LLM recovery tagger",s:"PARTIAL",fe:"external n8n theme-tagger.js",be:"Python trend_tag.py:126",c:"no-frontend",w:"Orphaned from Java — only consumer is external n8n; static shared-secret auth is tracked tech-debt"},
+{d:"ai",f:"Brand-safety GARM classification",s:"WORKING",fe:"BrandSafetyAiClient.java:44 ← DeliverableSafetyReviewService",be:"brand_safety.py:260 (Sonnet forced-tool)",c:"key-gated",w:"Requires Anthropic key; not browser-facing"},
+{d:"ai",f:"Website analyzer (onboarding)",s:"WORKING",fe:"AnalyzeSiteAiClient.java",be:"analyze_site.py:289 (Gemini-2.5-flash + JSON-LD)",c:"key-gated",w:"Static-HTML fetch only (no JS render); requires GEMINI key"},
+{d:"ai",f:"Model configuration",s:"WORKING",fe:"n/a",be:"config.py:67 (Claude sonnet-4-5, Haiku-4-5, Gemini-2.5-flash, Sarvam v3/v2 pinned)",c:"connected",w:"Overridable via env"},
+{d:"ai",f:"Tool schema combinator (400-risk) check",s:"WORKING",fe:"n/a",be:"no anyOf/oneOf/allOf in influora-ai/app (grep clean)",c:"connected",w:"No tool-schema 400 risk"},
+{d:"ai",f:"Prompt caching",s:"WORKING",fe:"n/a",be:"assembler.py:126,311 Block A/B cache_control ephemeral",c:"connected",w:""},
+{d:"ai",f:"SSE streaming integrity (blank-turn fix)",s:"WORKING",fe:"claude.py:187",be:"loop.py truncation+retry; chat.py refund",c:"connected",w:"~28% blank-turn defect fixed; max_tokens 384→1536"},
+{d:"ai",f:"Whole AI service boot",s:"PARTIAL",fe:"n/a",be:"config.py:434 require_boot_secrets",c:"key-gated",w:"Refuses boot without Anthropic/Gemini/Sarvam/JWKS/HMAC/service-token keys — every AI feature live-gated on provisioning"},
+];
+
+const domCounts={};
+["admin","brand","creator","ai"].forEach(dm=>{
+  domCounts[dm]={WORKING:0,PARTIAL:0,BROKEN:0,MISSING:0,total:0};
+});
+let tot={WORKING:0,PARTIAL:0,BROKEN:0,MISSING:0};
+D.forEach(r=>{domCounts[r.d][r.s]++;domCounts[r.d].total++;tot[r.s]++;});
+
+// summary cards
+const cards=[["total","TOTAL",D.length],["ok","Working",tot.WORKING],["partial","Partial",tot.PARTIAL],["broken","Broken",tot.BROKEN],["missing","Missing",tot.MISSING]];
+document.getElementById("cards").innerHTML=cards.map(([cls,l,n])=>
+  `<div class="card ${cls}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+
+// bars
+const domNames={admin:"Admin",brand:"Brand",creator:"Creator",ai:"AI"};
+document.getElementById("bars").innerHTML=Object.keys(domNames).map(dm=>{
+  const c=domCounts[dm],t=c.total;
+  const seg=(n,cls)=>n?`<span class="${cls}" style="width:${(n/t*100).toFixed(1)}%" title="${n}"></span>`:"";
+  const pct=(c.WORKING/t*100).toFixed(0);
+  return `<div class="drow"><div class="dn">${domNames[dm]}</div>
+    <div class="bar">${seg(c.WORKING,"seg-ok")}${seg(c.PARTIAL,"seg-partial")}${seg(c.BROKEN,"seg-broken")}${seg(c.MISSING,"seg-missing")}</div>
+    <div class="pct">${pct}% ok</div></div>`;
+}).join("");
+
+// table + filters
+let fDom="all",fSt="all",fQ="";
+const rowsEl=document.getElementById("rows"),countEl=document.getElementById("count");
+function connClass(c){ if(c==="phantom")return "conn bad"; if(c==="scope-bug"||c==="key-gated"||c==="stub"||c==="no-backend"||c==="no-frontend")return "conn warn"; return "conn"; }
+function render(){
+  const q=fQ.toLowerCase();
+  const list=D.filter(r=>(fDom==="all"||r.d===fDom)&&(fSt==="all"||r.s===fSt)&&
+    (!q||(r.f+r.fe+r.be+r.w).toLowerCase().includes(q)));
+  countEl.textContent=`${list.length} of ${D.length} features`;
+  rowsEl.innerHTML=list.map(r=>`<tr>
+    <td><div class="feat">${esc(r.f)}</div><div class="dom">${domNames[r.d]}</div></td>
+    <td><span class="st ${r.s}">${r.s}</span></td>
+    <td class="path">${esc(r.fe)}</td>
+    <td class="path">${esc(r.be)} <span class="${connClass(r.c)}">${r.c}</span></td>
+    <td class="why">${esc(r.w)||"—"}</td></tr>`).join("")||
+    `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">No features match.</td></tr>`;
+}
+function esc(s){return (s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+document.querySelectorAll(".chip").forEach(ch=>ch.addEventListener("click",()=>{
+  const f=ch.dataset.f,v=ch.dataset.v;
+  document.querySelectorAll(`.chip[data-f="${f}"]`).forEach(c=>c.classList.remove("active"));
+  ch.classList.add("active");
+  if(f==="dom")fDom=v; else fSt=v;
+  render();
+}));
+document.getElementById("q").addEventListener("input",e=>{fQ=e.target.value;render();});
+render();
+</script>
+</body>
+</html>

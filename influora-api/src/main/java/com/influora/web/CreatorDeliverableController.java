@@ -13,6 +13,7 @@ import com.influora.web.dto.deliverable.CreatorDeliverableDtos.ProofUploadRespon
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.SubmitRequest;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.SubmitResponse;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.UploadResponse;
+import com.influora.web.dto.deliverable.CreatorDeliverableDtos.VerificationStateResponse;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -108,5 +109,17 @@ public class CreatorDeliverableController {
             @RequestBody MarkPostedRequest body) {
         return ResponseEntity.ok(
                 ApiResponse.ok(creatorDeliverableService.markPosted(principal, deliverableId, body)));
+    }
+
+    /**
+     * verified-analytics-0804 — on-demand Meta verification. Runs the same verification the 6h batch
+     * job runs, on request, and returns the live outcome + verified numbers + whether a manual
+     * fallback is permitted (only when Meta genuinely failed for a connected account).
+     */
+    @PostMapping("/{deliverableId}/verify")
+    public ResponseEntity<ApiResponse<VerificationStateResponse>> verify(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String deliverableId) {
+        return ResponseEntity.ok(
+                ApiResponse.ok(creatorDeliverableService.verifyNow(principal, deliverableId)));
     }
 }
