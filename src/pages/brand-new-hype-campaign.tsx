@@ -3,7 +3,10 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Hash, IndianRupee, Link2, Loader2, Music2, Plus, Users, X, Zap } from 'lucide-react';
 
 import { api, ApiError } from '@/lib/api';
-import type { Campaign } from '@/lib/types';
+import { isWorkspaceNotVerified } from '@/lib/api-errors';
+import type { Campaign, CampaignStatus } from '@/lib/types';
+import { useWorkspaceVerification } from '@/hooks/brand/useWorkspaceVerification';
+import { VerificationRequiredBox } from '@/components/brand/VerificationRequiredBox';
 import { cn, formatINR } from '@/lib/utils';
 import { validateCampaignTitle } from '@/lib/campaign-validation';
 import { useToast } from '@/hooks/use-toast';
@@ -64,6 +67,9 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
   const [errors, setErrors] = React.useState<Partial<Record<keyof HypeFormState, string>>>({});
   const [submitting, setSubmitting] = React.useState(false);
   const [customLane, setCustomLane] = React.useState('');
+  // Publish (ACTIVE launch) refused because the workspace isn't verified — shown inline.
+  const [verificationBlocked, setVerificationBlocked] = React.useState(false);
+  const { canVerify } = useWorkspaceVerification();
 
   const isEditing = !!campaignId;
 
@@ -163,10 +169,15 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
     return Object.keys(next).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    void submit('ACTIVE');
+  };
+
+  const submit = async (status: CampaignStatus) => {
     if (!validate()) return;
     setSubmitting(true);
+    setVerificationBlocked(false);
     try {
       const hashtag = form.hashtag.startsWith('#') ? form.hashtag : `#${form.hashtag}`;
       // Same shape whether this is a fresh launch or resuming a Meera draft —
@@ -178,7 +189,7 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
         title: form.title.trim(),
         description: form.description.trim() || undefined,
         campaignType: 'HYPE',
-        status: 'ACTIVE',
+        status,
         budget: { min: totalBudget, max: totalBudget, currency: 'INR' },
         platforms: ['INSTAGRAM'],
         contentTypes: ['REEL'],
@@ -209,16 +220,17 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
       }
       navigate('/brand/campaigns');
     } catch (err) {
-      // Previously the failure was swallowed — the button just re-enabled with no
-      // feedback. The most common failure is launching (status ACTIVE) from an
-      // unverified workspace: the backend returns 403 WORKSPACE_NOT_VERIFIED
-      // (CampaignValidator.validateStatusForWorkspace), whose message we surface.
+      // The most common failure is launching (status ACTIVE) from an unverified workspace
+      // (403 WORKSPACE_NOT_VERIFIED). That is now handled inline with a persistent box that
+      // offers a way forward, not a disappearing toast. Every other failure stays a toast.
+      if (isWorkspaceNotVerified(err)) {
+        setVerificationBlocked(true);
+        return;
+      }
       const description =
-        err instanceof ApiError && err.code === 'WORKSPACE_NOT_VERIFIED'
-          ? 'Your workspace must be verified before launching a live Hype campaign.'
-          : err instanceof ApiError
-            ? err.message
-            : 'Failed to launch campaign. Please try again.';
+        err instanceof ApiError
+          ? err.message
+          : 'Failed to launch campaign. Please try again.';
       toast({ title: 'Could not launch Hype campaign', description, variant: 'destructive' });
     } finally {
       setSubmitting(false);
@@ -288,7 +300,7 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} noValidate>
+      <form onSubmit={handleFormSubmit} noValidate>
         <div className="space-y-6">
           <Card className="border-hype-border">
             <CardHeader>
@@ -483,6 +495,14 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
               )}
             </CardContent>
           </Card>
+
+          {verificationBlocked && (
+            <VerificationRequiredBox
+              canVerify={canVerify}
+              savingDraft={submitting}
+              onSaveDraft={() => void submit('DRAFT')}
+            />
+          )}
 
           <div className="flex items-center justify-end gap-3">
             <Button type="button" variant="ghost" onClick={() => navigate('/brand/campaigns')}>

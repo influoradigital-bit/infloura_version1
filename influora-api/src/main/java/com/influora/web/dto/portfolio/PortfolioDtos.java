@@ -82,6 +82,14 @@ public final class PortfolioDtos {
     public record PortfolioAnalyticsResponse(
             PageViews pageViews,
             long profileClicks,
+            /**
+             * CR-71 — {@code profileClicks} above is {@code totalFollowers / 100}, a rough proxy,
+             * not a real click measurement (no click-tracking event exists for this metric today,
+             * unlike {@code pageViews}/{@code mediaKitDownloads}, which are real {@code
+             * portfolio_events} counts). This flag lets the client label it honestly instead of
+             * presenting it as measured. Always {@code true} until real tracking is built.
+             */
+            boolean profileClicksEstimated,
             List<LinkClick> linkClicks,
             long brandInquiries,
             long mediaKitDownloads) {
@@ -92,7 +100,7 @@ public final class PortfolioDtos {
 
         public static PortfolioAnalyticsResponse empty() {
             return new PortfolioAnalyticsResponse(
-                    new PageViews(0, 0), 0, List.of(), 0, 0);
+                    new PageViews(0, 0), 0, true, List.of(), 0, 0);
         }
     }
 

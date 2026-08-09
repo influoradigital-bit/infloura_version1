@@ -327,11 +327,29 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "Return verified performance for ONE of this brand's own campaigns: spend, "
             "reach, engagement, ROI, response rate, and attributed revenue. Read-only, no "
             "money. Only works for a campaign owned by the current workspace -- every number "
-            "returned is a real platform-verified figure, never estimated or guessed."
+            "returned is a real platform-verified figure, never estimated or guessed. "
+            # F-18: nothing in the prompt produced a campaign_id, so the model
+            # had to fabricate one, which Spring 404s -- on the one tool that
+            # exists specifically to stop it estimating. Block B now renders
+            # `[id=...]` next to each past campaign when the context payload
+            # carries one; this says plainly where the id must come from and
+            # that inventing one is not an option.
+            "The campaign_id MUST be copied verbatim from an [id=...] marker in the brand "
+            "context's past-campaign or outcome lines. Never construct, guess, or infer a "
+            "campaign_id -- if no [id=...] is listed, this tool cannot be called for that "
+            "campaign and you must say the verified figures are not available yet."
         ),
         "input_schema": {
             "type": "object",
-            "properties": {"campaign_id": {"type": "string"}},
+            "properties": {
+                "campaign_id": {
+                    "type": "string",
+                    "description": (
+                        "Verbatim id from an [id=...] marker in the brand context. "
+                        "Never invented."
+                    ),
+                }
+            },
             "required": ["campaign_id"],
         },
     },
@@ -407,11 +425,31 @@ PRESENT_OPTIONS_SCHEMA: dict[str, Any] = {
 def get_tool_schemas() -> list[dict[str, Any]]:
     """Returns the tool schemas in the exact shape the Claude Messages API expects
     (`tools=[...]`). This is Block A content — identical for every brand. Includes
-    the 5 Spring-contract tools PLUS the local analyze_site and present_options
+    the Spring-contract tools PLUS the local analyze_site and present_options
     tools (see their notes above for why they're tracked separately from the
     Spring structures).
+
+    ME-2 (BrandF.md §115): money tools (`request_payment`, `confirm_launch`)
+    were offered here unconditionally even though every real on-behalf token
+    today is minted with `SCOPE_DEFAULT` (OnBehalfTokenService.java), which
+    excludes both — so Claude would propose one, Spring would 403 it on scope,
+    and the loop's only recourse was to feed that error back and let Claude
+    freestyle an apology (see loop.py's SpringCallError handling). Excluded
+    here instead: if a tool is never offered, Claude has nothing to propose,
+    and there is no rejection to narrate around in the first place. `is_known_tool`
+    still recognizes both names (Priya review: NOT because replayed history can
+    reintroduce a tool_use for one — assembler.py strips tool_use/tool_result
+    blocks from history entirely — but as a live-code defense against a future
+    scope widening or schema edit that reintroduces one of these without also
+    updating this exclusion). `loop.py` still has a deterministic decline for
+    that path as a second layer.
+    Un-exclude here the day scope actually grants these tools to some caller.
     """
-    return [*TOOL_SCHEMAS, ANALYZE_SITE_SCHEMA, PRESENT_OPTIONS_SCHEMA]
+    return [
+        *(t for t in TOOL_SCHEMAS if not is_money_tool(t["name"])),
+        ANALYZE_SITE_SCHEMA,
+        PRESENT_OPTIONS_SCHEMA,
+    ]
 
 
 def is_known_tool(name: str) -> bool:

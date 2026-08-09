@@ -207,7 +207,7 @@ export default function CreatorCampaignDetailPage() {
                 </div>
                 {daysLeft != null && (
                   <Badge variant={daysLeft <= 3 ? 'destructive' : 'secondary'} className="shrink-0">
-                    {daysLeft <= 0 ? 'Deadline passed' : `${daysLeft} days left`}
+                    {deadlinePassed ? 'Deadline passed' : `${daysLeft} days left`}
                   </Badge>
                 )}
               </div>
@@ -386,12 +386,16 @@ export default function CreatorCampaignDetailPage() {
                 <div className="flex flex-col items-center py-6 text-center">
                   <CheckCircle2 className="mb-3 h-12 w-12 text-success-foreground" />
                   <p className="text-sm text-muted-foreground">
-                    Track progress in your Deals inbox once the brand responds.
+                    You can track this application under My Applications, and it will also
+                    appear in your Deals inbox once the brand responds.
                   </p>
                 </div>
                 <DialogFooter className="flex-col gap-2 sm:flex-col">
                   <Button className="w-full" onClick={closeApplyDialog}>
                     Done
+                  </Button>
+                  <Button variant="outline" className="w-full" asChild>
+                    <Link to="/creator/applications">View my applications</Link>
                   </Button>
                   <Button variant="outline" className="w-full" asChild>
                     <Link to="/creator/deals">Go to deals</Link>

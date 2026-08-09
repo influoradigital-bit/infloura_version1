@@ -314,7 +314,6 @@ export function MeeraChatPanel({
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live])
 
   // R3b — persist the transcript whenever a turn settles (phase back to
@@ -765,7 +764,13 @@ export function MeeraChatPanel({
                   status={tr.status}
                   data={tr.data}
                   errorMessage={tr.errorMessage}
-                  onOptionPick={(opt) => handleSend(opt.label)}
+                  onOptionPick={(opt) => {
+                    // ME-1 (BrandF.md §115) — log the tap before sending the
+                    // choice as the next turn; conversationId is guaranteed
+                    // here since a turn is about to be sent against it.
+                    if (conversationId) meeraApi.logOptionTapped(conversationId, tr.name, opt.recommended)
+                    handleSend(opt.label)
+                  }}
                   className="ml-9 mt-1.5"
                 />
               ))}

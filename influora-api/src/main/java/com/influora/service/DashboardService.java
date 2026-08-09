@@ -33,16 +33,24 @@ public class DashboardService {
     private static final int REVIEW_SLA_DAYS = 3;
 
     /**
-     * Display order for the pipeline funnel. The granular {@link CollaborationStatus} enum collapses
-     * into these four brand-facing buckets; terminal CANCELLED/DISPUTED states are excluded (they
-     * are not "in flight" and would distort the funnel).
+     * Display order for the pipeline funnel. PL-2 (BrandF.md §69): this used to be its own,
+     * 4-bucket collapse of {@link CollaborationStatus} that disagreed with the brand pipeline
+     * board's 6-column vocabulary (src/lib/brand-pipeline-stage.ts) on three points — INVITED/
+     * APPLIED/SHORTLISTED counted as Negotiating here but Outreach there, REVIEW_PENDING/
+     * REVISION_REQUESTED counted as In Progress here but Review there, and the terminal bucket
+     * was labelled Completed here vs Settled there — so the same deal could show a different
+     * stage on the Dashboard card than on the Pipeline page in the same session. Now mirrors
+     * mapCollaborationStatusToPipelineStage() exactly. Terminal CANCELLED/DISPUTED states are
+     * still excluded (not "in flight", would distort the funnel).
      */
+    private static final String OUTREACH = "Outreach";
     private static final String NEGOTIATING = "Negotiating";
     private static final String CONTRACTED = "Contracted";
     private static final String IN_PROGRESS = "In Progress";
-    private static final String COMPLETED = "Completed";
+    private static final String REVIEW = "Review";
+    private static final String SETTLED = "Settled";
     private static final List<String> STAGE_ORDER =
-            List.of(NEGOTIATING, CONTRACTED, IN_PROGRESS, COMPLETED);
+            List.of(OUTREACH, NEGOTIATING, CONTRACTED, IN_PROGRESS, REVIEW, SETTLED);
 
     private final CollaborationRepository collaborationRepository;
     private final PaymentMilestoneRepository milestoneRepository;
@@ -125,10 +133,12 @@ public class DashboardService {
 
     private static String bucketFor(CollaborationStatus status) {
         return switch (status) {
-            case INVITED, APPLIED, SHORTLISTED, IN_NEGOTIATION, TERMS_AGREED -> NEGOTIATING;
+            case INVITED, APPLIED, SHORTLISTED -> OUTREACH;
+            case IN_NEGOTIATION, TERMS_AGREED -> NEGOTIATING;
             case CONTRACT_PENDING, CONTRACTED -> CONTRACTED;
-            case IN_PROGRESS, REVIEW_PENDING, REVISION_REQUESTED -> IN_PROGRESS;
-            case COMPLETED -> COMPLETED;
+            case IN_PROGRESS -> IN_PROGRESS;
+            case REVIEW_PENDING, REVISION_REQUESTED -> REVIEW;
+            case COMPLETED -> SETTLED;
             case CANCELLED, DISPUTED -> null;
         };
     }

@@ -5,7 +5,6 @@ import com.influora.common.CreatorScoreMath;
 import com.influora.common.JsonLists;
 import com.influora.common.PageMeta;
 import com.influora.common.Ulids;
-import com.influora.common.UsernameUtils;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
@@ -26,6 +25,7 @@ import com.influora.repository.PlatformStatRepository;
 import com.influora.repository.ReviewRepository;
 import com.influora.repository.SavedCreatorRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.portfolio.PortfolioService;
 import com.influora.web.dto.creator.CreatorDtos.CreatorResponse;
 import com.influora.web.dto.creator.CreatorDtos.InviteResponse;
 import com.influora.web.dto.creator.CreatorDtos.SaveResponse;
@@ -96,6 +96,7 @@ public class CreatorDiscoveryService {
     private final FeaturedCreatorRepository featuredCreatorRepository;
     private final CreatorScoreRepository creatorScoreRepository;
     private final ReviewRepository reviewRepository;
+    private final PortfolioService portfolioService;
 
     public CreatorDiscoveryService(
             BrandContextService brandContext,
@@ -106,7 +107,8 @@ public class CreatorDiscoveryService {
             CollaborationRepository collaborationRepository,
             FeaturedCreatorRepository featuredCreatorRepository,
             CreatorScoreRepository creatorScoreRepository,
-            ReviewRepository reviewRepository) {
+            ReviewRepository reviewRepository,
+            PortfolioService portfolioService) {
         this.brandContext = brandContext;
         this.creatorProfileRepository = creatorProfileRepository;
         this.platformStatRepository = platformStatRepository;
@@ -116,6 +118,7 @@ public class CreatorDiscoveryService {
         this.featuredCreatorRepository = featuredCreatorRepository;
         this.creatorScoreRepository = creatorScoreRepository;
         this.reviewRepository = reviewRepository;
+        this.portfolioService = portfolioService;
     }
 
     public record PagedCreators(List<CreatorResponse> items, PageMeta meta) {}
@@ -478,7 +481,11 @@ public class CreatorDiscoveryService {
                         .map(SavedCreator::isSaved)
                         .orElse(false);
         CreatorScores scores = loadScoresByCreator(List.of(profile.getId())).get(profile.getId());
-        return CreatorMapper.toResponse(profile, platforms, saved, scores);
+        // M-2 (BrandF.md §87): this is the single-profile read (GET /creators/{id}, the brand
+        // profile detail view) — the one surface where hydrating the real portfolio is worth the
+        // extra read, unlike the batch/list paths elsewhere in this file.
+        return CreatorMapper.toResponse(
+                profile, platforms, saved, scores, portfolioService.getVisiblePinnedPosts(profile));
     }
 
     private List<CreatorResponse> mapResponses(AuthPrincipal principal, List<CreatorProfile> profiles) {
@@ -767,11 +774,26 @@ public class CreatorDiscoveryService {
         return matches;
     }
 
+    // Every CreatorProfile#id is a 26-char lowercase-able ULID, and UsernameUtils#isValid's regex
+    // (^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$) matches any lowercased alphanumeric string of length
+    // 3-30 -- so a real ULID always passes isValid() too. Sniffing "is this a username or an id"
+    // from shape alone is therefore not possible; try id first (the only value every live caller
+    // actually passes -- creator-discovery, brand-campaign-detail, command-bar, this page's own
+    // Similar Creators grid), then fall back to username. Both branches keep the exact
+    // discoverable + not-suspended filtering requireDiscoverableProfile/requireDiscoverableByUsername
+    // already enforced.
     private CreatorProfile resolveDiscoverableProfile(String usernameOrId) {
-        if (UsernameUtils.isValid(usernameOrId)) {
-            return requireDiscoverableByUsername(usernameOrId);
-        }
-        return requireDiscoverableProfile(usernameOrId);
+        return creatorProfileRepository
+                .findByIdAndDiscoverableTrue(usernameOrId)
+                .or(() ->
+                        creatorProfileRepository
+                                .findByUsernameIgnoreCase(usernameOrId)
+                                .filter(CreatorProfile::isDiscoverable))
+                .filter(p -> !p.isSuspended())
+                .orElseThrow(
+                        () ->
+                                new ApiException(
+                                        "CREATOR_NOT_FOUND", "Creator not found", HttpStatus.NOT_FOUND));
     }
 
     // [SEC: Wave-1 S4-discovery] Both lookups below now also reject a suspended profile, not just

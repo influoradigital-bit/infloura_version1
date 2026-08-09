@@ -28,6 +28,26 @@ public final class OnboardingDtos {
 
     public record OkResponse(boolean ok) {}
 
+    /**
+     * OB-2 (BrandF.md §102) — server-authoritative onboarding state, read fresh from the
+     * {@code User} row rather than trusted from a client-cached token/localStorage flag. Backs
+     * {@code GET /onboarding/brand/status}, the guard `/brand/dashboard` previously had no
+     * server-side equivalent of.
+     *
+     * <p>OB-1 (BrandF.md §105/§91) extension: {@code kycPromptDismissed} is the server-side
+     * mirror of the KYC prompt's "skip for now" state ({@code User.kycPromptDismissed}), read
+     * here so a frontend can hide the prompt across devices instead of relying on its
+     * per-browser localStorage flag alone. This is deliberately a separate field from workspace
+     * KYC/verification status ({@code GET /workspaces/me} → {@code verificationStatus}) — a
+     * brand can be {@code UNVERIFIED} and have still explicitly dismissed the nag; the frontend
+     * is expected to hide the prompt when EITHER {@code kycPromptDismissed} is true OR
+     * {@code verificationStatus != UNVERIFIED}.
+     */
+    public record OnboardingStatusResponse(boolean onboardingCompleted, boolean kycPromptDismissed) {}
+
+    /** POST /onboarding/brand/kyc-prompt-dismissed — no request body, principal-scoped. */
+    public record KycPromptDismissedResponse(boolean kycPromptDismissed) {}
+
     public record KycRequest(
             @NotBlank
                     @Pattern(

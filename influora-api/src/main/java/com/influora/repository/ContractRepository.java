@@ -45,6 +45,9 @@ public interface ContractRepository extends JpaRepository<Contract, String> {
 
     List<Contract> findByWorkspaceId(String workspaceId);
 
+    /** Brand-scoped list filtered to a single deal (collaboration) — C-1 fix. */
+    List<Contract> findByWorkspaceIdAndCollaborationId(String workspaceId, String collaborationId);
+
     /** All contracts for collaborations owned by this creator user. */
     @Query(
             "SELECT c FROM Contract c WHERE c.collaborationId IN "

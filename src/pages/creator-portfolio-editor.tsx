@@ -248,7 +248,16 @@ export default function CreatorPortfolioEditorPage() {
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <Stat label="Page views" value={analytics.pageViews.last30Days} delta={analytics.pageViews.deltaPercent} />
-                <Stat label="Profile clicks" value={analytics.profileClicks} />
+                {/* CR-71 — profileClicks (PortfolioService.java) is totalFollowers / 100, a rough
+                    proxy — no real click-tracking event exists for it, unlike pageViews above.
+                    Labeled from the server's own profileClicksEstimated flag rather than a
+                    hardcoded note, so this stops claiming "estimated" the moment real tracking
+                    ships without needing a matching frontend change. */}
+                <Stat
+                  label="Profile clicks"
+                  value={analytics.profileClicks}
+                  note={analytics.profileClicksEstimated ? 'Estimated from follower count' : undefined}
+                />
                 <Stat label="Brand inquiries" value={analytics.brandInquiries} />
               </div>
             </CardContent>
@@ -554,7 +563,7 @@ function VisibilityRow({
   );
 }
 
-function Stat({ label, value, delta }: { label: string; value: number; delta?: number }) {
+function Stat({ label, value, delta, note }: { label: string; value: number; delta?: number; note?: string }) {
   return (
     <div>
       <p className="text-xl font-bold leading-none">{formatN(value)}</p>
@@ -569,6 +578,10 @@ function Stat({ label, value, delta }: { label: string; value: number; delta?: n
           </span>
         )}
       </p>
+      {/* CR-71 — profileClicks is a follower-count proxy, not a real click measurement. Labeled
+          rather than presented as a real number, same discipline as this file's other real
+          fields (pageViews/mediaKitDownloads are genuine portfolio_events counts). */}
+      {note && <p className="text-[10px] text-muted-foreground/70 italic">{note}</p>}
     </div>
   );
 }

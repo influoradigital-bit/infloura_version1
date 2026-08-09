@@ -17,7 +17,12 @@ import pytest
 
 from app.clients.spring import SpringResponse
 from app.providers.claude import ClaudeStreamEvent
-from app.tools.loop import ToolLoopCapExceeded, ToolLoopContext, _accumulate_usage, run_tool_loop
+from app.tools.loop import (
+    ToolLoopCapExceeded,
+    ToolLoopContext,
+    _accumulate_usage,
+    run_tool_loop,
+)
 
 
 class _FakeClaude:

@@ -96,6 +96,7 @@ class BrandDeliverableControllerTest {
                         null,
                         null,
                         true,
+                        true,
                         true);
         when(brandDeliverableService.getDetail(eq(principal), eq(DELIVERABLE_ID)))
                 .thenReturn(detail);

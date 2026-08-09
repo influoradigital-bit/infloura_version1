@@ -1,0 +1,4 @@
+{"verdict": "believed", "oracle": "model", "isolation": "fresh-context",
+ "done_when": "CR-99 resolved for all LIVE Instagram Graph API path calls: no production site passes the ULID creatorProfileId where Meta needs the numeric IG Business Account ID. BrandOwnContentService now uses token.getIgBusinessAccountId() for the path (keeps getCreatorProfileId() for the token lookup) and fails closed when it's missing; the 3 tracker-cited sites + CreatorCaptionSyncJob already used igBusinessAccountId; influora-api compiles offline.",
+ "not_checked": ["live Meta Graph round-trip confirming real 200s + populated analytics/demographics/verification (Neha's gate)", "InstagramMetricsFetcher:129/150 still passes creatorProfileId but has NO production caller (only its test) — latent, spun off as a follow-up task, not a live 400"],
+ "skipped": []}

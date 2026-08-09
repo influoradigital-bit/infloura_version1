@@ -77,6 +77,12 @@ interface Contract {
   escrowAmount: number;
   createdAt: string;
   hash?: string;
+  /**
+   * C-2 (BrandF.md §62): the real deal/collaboration id this contract belongs to
+   * (ContractApiRecord.collaborationId) — what "Open in Deal Room"/"Message" should
+   * link to. Empty string in demo mode (no live collaboration backs a mock contract).
+   */
+  collaborationId: string;
 }
 
 interface ContractDeliverable {
@@ -94,17 +100,19 @@ interface ContractDeliverable {
   maxRevisions: number;
 }
 
-/** Demo mapping: Contracts inbox → Deal Room deep link */
-const CONTRACT_DEAL_ROOM: Record<string, string> = {
-  'contract-1': 'deal-1',
-  'contract-2': 'deal-3',
-  'contract-3': 'deal-4',
-};
 
 // Mock Data
 const mockContracts: Contract[] = [
   {
     id: 'contract-1',
+    // C-2 follow-up (Priya review): was 'deal-1' — the demo Deal Room fixtures
+    // (brand-chat.tsx mockDealRooms) belong to Priya Sharma/Summer Fashion, not
+    // Sarah Johnson/Summer Collection Launch. Pointing this at 'deal-1' anyway
+    // replaced "every contract → one wrong room" with "each contract → its own
+    // wrong room" — still a hardcoded literal belonging to a different deal, just
+    // 3 of them instead of 1. No mock deal room exists for this creator, so '' (no
+    // link) is the honest state, same as the field's own original doc comment.
+    collaborationId: '',
     campaignId: 'active-1',
     campaignName: 'Summer Collection Launch',
     creatorId: 'creator-1',
@@ -198,6 +206,7 @@ const mockContracts: Contract[] = [
   },
   {
     id: 'contract-2',
+    collaborationId: '', // see contract-1's comment above
     campaignId: 'active-1',
     campaignName: 'Summer Collection Launch',
     creatorId: 'creator-2',
@@ -252,6 +261,7 @@ const mockContracts: Contract[] = [
   },
   {
     id: 'contract-3',
+    collaborationId: '', // see contract-1's comment above
     campaignId: 'campaign-2',
     campaignName: 'Tech Product Review',
     creatorId: 'creator-3',
@@ -326,6 +336,8 @@ interface ApiContractRow {
   escrowAmount?: number;
   createdAt?: string;
   hash?: string;
+  /** C-2 (BrandF.md §62): the real deal/collaboration id — see Contract['collaborationId']. */
+  collaborationId?: string;
 }
 
 /**
@@ -391,6 +403,7 @@ function mergeContractRow(row: ApiContractRow, fallback?: Contract): Contract {
     escrowAmount: row.escrowAmount ?? fallback?.escrowAmount ?? 0,
     createdAt: row.createdAt ?? fallback?.createdAt ?? '',
     hash: row.hash ?? fallback?.hash,
+    collaborationId: row.collaborationId ?? fallback?.collaborationId ?? '',
   };
 }
 
@@ -427,6 +440,7 @@ function adaptContractRecord(rec: ContractApiRecord, deal?: Deal): ApiContractRo
     value: rec.totalAmount,
     currency: rec.currency,
     createdAt: rec.createdAt,
+    collaborationId: rec.collaborationId,
   };
 }
 
@@ -525,6 +539,7 @@ export function ContractsAndDeliverables() {
   const [isApproving, setIsApproving] = useState(false);
   const [isRequestingRevision, setIsRequestingRevision] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
+  const [isFetchingPdf, setIsFetchingPdf] = useState(false);
 
   // Canvas for signature
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -711,6 +726,37 @@ export function ContractsAndDeliverables() {
     );
     setShowSignDialog(false);
     setSignatureText('');
+  };
+
+  // C-3 (BrandF.md §62): GET /contracts/:id/pdf-download-url exists
+  // (api.ts:2392 -> ContractController:114) and is already used successfully
+  // by deal-contract-tab.tsx and creator-deal-contract-tab.tsx — the
+  // "no PDF-export endpoint exists" comment that used to gate this button was
+  // stale/false. Mints a fresh short-lived presigned URL and opens it.
+  const handleDownloadPDF = async () => {
+    if (!selectedContract) return;
+    if (!liveApi) {
+      toast({ title: 'PDF download requires a live session', variant: 'destructive' });
+      return;
+    }
+    setIsFetchingPdf(true);
+    try {
+      const { url } = await api.contracts.pdfDownloadUrl('brand', selectedContract.id);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      toast({
+        title: 'Could not download PDF',
+        description:
+          err instanceof ApiError && err.code === 'CONTRACT_PDF_NOT_READY'
+            ? 'The PDF is generated once both parties have signed.'
+            : err instanceof ApiError
+              ? err.message
+              : 'Try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsFetchingPdf(false);
+    }
   };
 
   // Canvas drawing functions
@@ -900,30 +946,71 @@ export function ContractsAndDeliverables() {
                         </Badge>
                       )}
                       {selectedContract.status === 'signed' && (
-                        // No PDF-export endpoint exists in src/lib/api.ts (contracts facade
-                        // only has list/get/generate/sign) — left as a non-functional stub
-                        // rather than faking a download.
-                        <Button variant="outline" size="sm" className="gap-2" disabled>
-                          <Download className="w-4 h-4" />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={handleDownloadPDF}
+                          disabled={isFetchingPdf}
+                        >
+                          {isFetchingPdf ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Download className="w-4 h-4" />
+                          )}
                           Download PDF
                         </Button>
                       )}
-                      <Button variant="outline" size="sm" className="gap-2" asChild>
-                        <Link
-                          to={`/brand/chat?deal=${CONTRACT_DEAL_ROOM[selectedContract.id] ?? 'deal-1'}&tab=messages`}
-                        >
-                          <MessageSquare className="w-4 h-4" />
-                          Message
-                        </Link>
-                      </Button>
-                      <Button size="sm" className="gap-2" asChild>
-                        <Link
-                          to={`/brand/chat?deal=${CONTRACT_DEAL_ROOM[selectedContract.id] ?? 'deal-1'}&tab=contract`}
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                          Open in Deal Room
-                        </Link>
-                      </Button>
+                      {/* C-2 (BrandF.md §62): was a hardcoded 3-entry demo lookup table
+                          (`CONTRACT_DEAL_ROOM`) falling back to the literal 'deal-1' for
+                          every contract not in that table — every real contract in live
+                          mode landed on the same wrong deal room. `collaborationId` is the
+                          real deal id the contract already carries (ContractApiRecord) — but
+                          it's a required field with no honest value for a demo-mode contract
+                          (no live collaboration backs one), so those render a real disabled
+                          state instead of a link built on an empty/guessed id. */}
+                      {selectedContract.collaborationId ? (
+                        <>
+                          <Button variant="outline" size="sm" className="gap-2" asChild>
+                            <Link
+                              to={`/brand/chat?deal=${selectedContract.collaborationId}&tab=messages`}
+                            >
+                              <MessageSquare className="w-4 h-4" />
+                              Message
+                            </Link>
+                          </Button>
+                          <Button size="sm" className="gap-2" asChild>
+                            <Link
+                              to={`/brand/chat?deal=${selectedContract.collaborationId}&tab=contract`}
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              Open in Deal Room
+                            </Link>
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            disabled
+                            title="No deal room available for this demo contract"
+                          >
+                            <MessageSquare className="w-4 h-4" />
+                            Message
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="gap-2"
+                            disabled
+                            title="No deal room available for this demo contract"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            Open in Deal Room
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
 

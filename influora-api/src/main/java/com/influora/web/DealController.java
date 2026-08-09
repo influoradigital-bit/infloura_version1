@@ -130,14 +130,23 @@ public class DealController {
      * the exact ownership check {@link DealService#listMessages}/{@link DealService#sendMessage}
      * use — an unauthorized caller gets the normal 404/403 JSON error and no emitter is ever
      * created or registered.
+     *
+     * <p>CR-95: reconnects carry the standard {@code Last-Event-ID} header (browsers set this
+     * automatically from the SSE {@code id:} field of the last event they processed); it is
+     * passed straight through to {@link
+     * DealMessageStreamRegistry#register(String, SseEmitter, String)} so any messages sent during
+     * the {@link DealMessageStreamRegistry#EMITTER_TIMEOUT_MS} reconnect gap are replayed instead
+     * of silently dropped.
      */
     @GetMapping("/{dealId}/messages/stream")
     public SseEmitter streamMessages(
-            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String dealId) {
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String dealId,
+            @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId) {
         dealService.authorizeMessageStream(principal, dealId);
 
         SseEmitter emitter = new SseEmitter(DealMessageStreamRegistry.EMITTER_TIMEOUT_MS);
-        messageStreamRegistry.register(dealId, emitter);
+        messageStreamRegistry.register(dealId, emitter, lastEventId);
         try {
             // Heartbeat comment (":...") so the connection opens cleanly — a bare comment line
             // is valid SSE and doesn't fire the client's onmessage handler.

@@ -1,0 +1,4 @@
+{"verdict": "believed", "oracle": "model", "isolation": "fresh-context",
+ "done_when": "CR-91 fixed: api.auth.logout sends POST /auth/logout while the access token is still present so the server revokes refresh tokens (revokeAllForUser), clears the local token only afterward in finally so the session always ends, callers still navigate out on failure; tsc --noEmit passes.",
+ "not_checked": ["live re-test against a deployed backend confirming the refresh_token rows are actually revoked in the DB after a real logout (Neha's gate) — verified in code + independent review, not exercised at runtime"],
+ "skipped": []}

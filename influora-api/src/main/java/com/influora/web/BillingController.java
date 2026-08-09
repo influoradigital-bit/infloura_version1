@@ -1,11 +1,14 @@
 package com.influora.web;
 
+import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
 import com.influora.domain.entity.BrandAiCredit;
 import com.influora.domain.entity.Invoice;
 import com.influora.domain.entity.Plan;
 import com.influora.domain.entity.Subscription;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.entity.WorkspaceMember;
+import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.UsageMetric;
 import com.influora.repository.BrandAiCreditRepository;
 import com.influora.security.AuthPrincipal;
@@ -21,10 +24,12 @@ import com.influora.web.dto.billing.BillingDtos.PlanDto;
 import com.influora.web.dto.billing.BillingDtos.PlanStatusResponse;
 import com.influora.web.dto.billing.BillingDtos.SubscriptionDto;
 import com.influora.web.dto.billing.BillingDtos.UsageSummaryResponse;
+import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -154,29 +159,51 @@ public class BillingController {
                 .body(pdf);
     }
 
-    /** Phase 2 (Task 19) — real Razorpay Subscriptions hosted-checkout URL. */
+    /**
+     * Phase 2 (Task 19) — real Razorpay Subscriptions hosted-checkout URL.
+     *
+     * <p>BL-4 (BrandF.md §105, static-certain): {@code requireBrandWorkspace} only checks the
+     * caller is a BRAND user with a resolvable workspace — it never inspects {@link MemberRole},
+     * so any active member (including VIEWER) could start the company's paid subscription. Same
+     * {@code requireMember} + {@code requireRole(OWNER, ADMIN)} two-step already established at
+     * {@code WorkspaceMemberService.java:127-130} for workspace-mutating actions, and the pattern
+     * the wallet/escrow path uses ({@code EscrowController#fund}).
+     */
     @PostMapping("/checkout")
     public ResponseEntity<ApiResponse<CheckoutResponse>> checkout(
-            @AuthenticationPrincipal AuthPrincipal principal, @RequestBody CheckoutRequest body) {
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @Valid @RequestBody CheckoutRequest body) {
         Workspace workspace = brandContextService.requireBrandWorkspace(principal);
+        WorkspaceMember actingMember = brandContextService.requireMember(principal, workspace.getId());
+        brandContextService.requireRole(actingMember, MemberRole.OWNER, MemberRole.ADMIN);
         String checkoutUrl =
                 subscriptionService.initiateCheckout(workspace.getId(), parsePlanCode(body.planCode()));
         return ResponseEntity.ok(ApiResponse.ok(new CheckoutResponse(checkoutUrl)));
     }
 
-    /** Phase 2 (Task 19/20) — real Razorpay Subscriptions cancel-at-period-end. */
+    /** Phase 2 (Task 19/20) — real Razorpay Subscriptions cancel-at-period-end. BL-4: same role gate as {@link #checkout}. */
     @PostMapping("/cancel")
     public ResponseEntity<ApiResponse<Void>> cancel(@AuthenticationPrincipal AuthPrincipal principal) {
         Workspace workspace = brandContextService.requireBrandWorkspace(principal);
+        WorkspaceMember actingMember = brandContextService.requireMember(principal, workspace.getId());
+        brandContextService.requireRole(actingMember, MemberRole.OWNER, MemberRole.ADMIN);
         subscriptionService.cancel(workspace.getId());
         return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
+    /**
+     * BL-1: an unrecognized {@code planCode} is now rejected with 400 {@code INVALID_PLAN_CODE}
+     * instead of being silently coerced to {@code PRO}. The coercion previously meant garbage
+     * input still reached {@code SubscriptionService#initiateCheckout} /
+     * {@code ensureRazorpayPlanId} / {@code createSubscription}, creating real Razorpay-side
+     * objects for a plan the caller never actually specified.
+     */
     private static com.influora.domain.enums.PlanCode parsePlanCode(String raw) {
         try {
             return com.influora.domain.enums.PlanCode.valueOf(raw);
         } catch (Exception e) {
-            return com.influora.domain.enums.PlanCode.PRO;
+            throw new ApiException(
+                    "INVALID_PLAN_CODE", "Unrecognized planCode: " + raw, HttpStatus.BAD_REQUEST);
         }
     }
 

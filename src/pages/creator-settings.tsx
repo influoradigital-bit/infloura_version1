@@ -202,7 +202,7 @@ export default function CreatorSettingsPage() {
     setIsChangingPassword(true);
     try {
       if (liveApi) {
-        await api.auth.changePassword({ currentPassword, newPassword });
+        await api.auth.changePassword('creator', { currentPassword, newPassword });
       } else {
         await new Promise((resolve) => setTimeout(resolve, 800));
       }

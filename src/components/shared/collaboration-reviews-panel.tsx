@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Loader2, MessageSquareQuote, Star } from 'lucide-react';
 
 import { ReviewCard } from '@/components/shared/review-card';
@@ -317,6 +318,20 @@ export function CollaborationReviewsPanel({
         </TabsContent>
 
         <TabsContent value="received" className="space-y-4">
+          {role === 'creator' && (
+            // CR-79: cross-link to the other "reviews about you" surface (Analytics page)
+            <p className="text-xs text-muted-foreground">
+              These also appear on your{' '}
+              <Link
+                to="/creator/analytics"
+                className="font-medium underline underline-offset-2 hover:text-foreground"
+              >
+                Analytics
+              </Link>{' '}
+              page.
+            </p>
+          )}
+
           {receivedNotImplemented && (
             <Alert className="border-amber-300 bg-amber-50">
               <AlertTriangle className="h-4 w-4 text-amber-700" />

@@ -10,22 +10,23 @@
  *   - ai.site_analyzed, escrow.funded, creator.campaign_live, etc.
  */
 
-import { useCallback, useEffect, useState } from 'react';
-import { isApiLive, type Role } from '@/lib/api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { isApiLive, notifications as notificationsApi, type Role } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 
 // ---------------------------------------------------------------------------
-// Environment / config — same local-const pattern as src/lib/meera-api.ts
-// (API_BASE_URL is not exported from src/lib/api.ts).
+// N-1 (BrandF.md §74): this hook used to call the API directly with a raw
+// `fetch` + a locally-declared API_BASE_URL/authHeader, bypassing the shared
+// HTTP client entirely — no 401 refresh, no credentials, a bare `new Error`
+// on failure. All three calls now go through `api.ts`'s `notifications`
+// client (`http.request` → `fetchWithAuthRetry`), which gets that for free.
 // ---------------------------------------------------------------------------
 
-const API_BASE_URL =
-  import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
-
-const ROLE_TOKEN_KEYS: Record<Role, string> = {
-  brand: 'brand_token',
-  creator: 'creator_token',
-};
+// M-B (BrandF.md §78): bell data used to be fetched once on mount and never
+// again for the life of the session. Poll on this interval as a floor, plus
+// an open-triggered refresh wired in by the bell's own consumer (e.g.
+// brand-layout.tsx calls `refresh()` when the popover opens).
+const REFRESH_INTERVAL_MS = 60_000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -64,50 +65,12 @@ export interface UseNotificationsResult {
 }
 
 // ---------------------------------------------------------------------------
-// Wire shape (NotificationController.java / NotificationDtos.java) — raw, NOT
-// wrapped in the {success,data,error} envelope most other controllers use.
+// Wire shape (NotificationController.java / NotificationDtos.java) is handled
+// by src/lib/api.ts's `notifications.list()` now (N-1 fix) — it returns
+// already-classified NotificationItem rows matching this hook's own
+// Notification shape one-for-one, so no separate wire type/mapper lives here
+// any more.
 // ---------------------------------------------------------------------------
-
-interface NotificationWire {
-  id: string;
-  eventType: string;
-  title: string;
-  body: string | null;
-  link: string | null;
-  isRead: boolean;
-  createdAt: string;
-}
-
-interface NotificationListWire {
-  notifications: NotificationWire[];
-  unreadCount: number;
-  page: number;
-  size: number;
-}
-
-/**
- * `eventType` is a free-form `domain.event` string (`escrow.funded`, `ai.site_analyzed`,
- * `subscription.payment_failed`, …) — not one of the UI's four coarse buckets. Classify it
- * for iconography rather than pretending it already matches `NotificationType`.
- */
-function classifyEventType(eventType: string): NotificationType {
-  if (eventType.startsWith('ai.')) return 'meera_nudge';
-  if (/failed|rejected|halted|low_balance|exhausted|disputed/i.test(eventType)) return 'warning';
-  if (/funded|signed|accepted|released|approved|received|reset|completed/i.test(eventType)) return 'success';
-  return 'info';
-}
-
-function fromWire(n: NotificationWire): Notification {
-  return {
-    id: n.id,
-    type: classifyEventType(n.eventType),
-    title: n.title,
-    body: n.body ?? undefined,
-    read: n.isRead,
-    createdAt: n.createdAt,
-    link: n.link ?? undefined,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -166,15 +129,22 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Priya review finding (M-B follow-up): `loading` used to be set on every
+  // refresh, including the 60s poll and the open-popover trigger — each one
+  // blanked an already-populated, currently-open list back to a spinner.
+  // `loading` now means "no data yet at all"; background refreshes after the
+  // first successful load don't re-arm it.
+  const hasLoadedOnceRef = useRef(false);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
-  const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem(ROLE_TOKEN_KEYS[role])}` });
 
   /**
-   * Fetch notifications from server (or mock)
+   * Fetch notifications from server (or mock). N-1: routed through
+   * `notificationsApi.list()` (src/lib/api.ts) instead of a raw `fetch` — gets
+   * 401-refresh-and-retry, credentials, and typed errors for free.
    */
   const refresh = useCallback(async () => {
-    setLoading(true);
+    if (!hasLoadedOnceRef.current) setLoading(true);
     setError(null);
 
     try {
@@ -183,16 +153,10 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
         await new Promise((r) => setTimeout(r, 300));
         setNotifications(MOCK_NOTIFICATIONS);
       } else {
-        // BR-34: NotificationController.list() is now wrapped in the standard
-        // {success, data, error} ApiResponse envelope (feature-audit-brand-creator-2026-07-23.md
-        // P2 fix) like every other controller — the NotificationListResponse shape
-        // ({notifications, unreadCount, page, size}) lives under `.data`, not the body root.
-        const res = await fetch(`${API_BASE_URL}/notifications`, { headers: authHeader() });
-        if (!res.ok) throw new Error('Failed to fetch notifications');
-        const envelope = (await res.json()) as { success: boolean; data?: NotificationListWire };
-        if (!envelope.success || !envelope.data) throw new Error('Failed to fetch notifications');
-        setNotifications((envelope.data.notifications ?? []).map(fromWire));
+        const { items } = await notificationsApi.list(role);
+        setNotifications(items);
       }
+      hasLoadedOnceRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notifications');
     } finally {
@@ -213,12 +177,7 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
 
     if (isApiLive()) {
       try {
-        const res = await fetch(`${API_BASE_URL}/notifications/read`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeader() },
-          body: JSON.stringify({ notificationId: id }),
-        });
-        if (!res.ok) throw new Error('Failed to mark notification read');
+        await notificationsApi.markRead(role, id);
       } catch {
         // Revert on error + tell the user (was a silent revert — the notification
         // just popped back to unread with no explanation).
@@ -245,11 +204,7 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
 
     if (isApiLive()) {
       try {
-        const res = await fetch(`${API_BASE_URL}/notifications/read-all`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeader() },
-        });
-        if (!res.ok) throw new Error('Failed to mark all notifications read');
+        await notificationsApi.markAllRead(role);
       } catch {
         // Revert the optimistic update — restore exactly the rows we flipped.
         const revertIds = new Set(unreadIds);
@@ -263,11 +218,25 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
         });
       }
     }
-  }, [notifications]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notifications, role]);
 
   // Fetch on mount / when the role changes
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  // M-B: the bell used to fetch once at mount and never again for the rest of
+  // the session. Poll on a fixed interval as a floor so unread state doesn't
+  // go stale for a brand/creator who leaves the tab open all day; consumers
+  // that also want an open-triggered refresh (e.g. popover onOpenChange) can
+  // still call `refresh()` themselves — this doesn't replace that.
+  useEffect(() => {
+    if (!isApiLive()) return;
+    const id = setInterval(() => {
+      refresh();
+    }, REFRESH_INTERVAL_MS);
+    return () => clearInterval(id);
   }, [refresh]);
 
   return {

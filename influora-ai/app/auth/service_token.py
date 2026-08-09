@@ -22,14 +22,17 @@ swapping HTTP-JWKS for a static dev key is a one-line change.
 
 from __future__ import annotations
 
+import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-import httpx
+import anyio
 import jwt
 from fastapi import Header, HTTPException, Request, status
 from jwt import PyJWKClient
+from jwt.exceptions import PyJWKClientError
 
 from app.auth import replay_guard
 from app.config import get_settings
@@ -105,12 +108,59 @@ class JwksSource(Protocol):
     def get_signing_key(self, kid: str | None) -> Any: ...
 
 
+class JwksUnavailableError(Exception):
+    """A JWKS lookup was refused WITHOUT a network call (F-09 cooldown), or the
+    fetch itself failed. Always a 401 to the caller — never a fall-through."""
+
+
 class HttpJwksSource:
     """Fetches and caches Spring's rotating JWKS via PyJWKClient (honors `kid`,
-    caches keys, refetches on unknown `kid`)."""
+    caches keys, refetches on unknown `kid`).
 
-    def __init__(self, jwks_url: str, cache_seconds: int = 300):
-        self._client = PyJWKClient(jwks_url, cache_keys=True, lifespan=cache_seconds)
+    F-09 hardening. Before this, an UNAUTHENTICATED request could carry a JWT
+    header with an attacker-chosen `kid` and a garbage signature, and
+    `_decode_and_verify` would call `get_signing_key_from_jwt` before
+    `jwt.decode`. A cache miss then triggered `urlopen` with PyJWKClient's
+    default 30-second timeout and no rate limit. Two consequences, neither
+    needing a credential:
+
+      (a) amplification — one inbound request became one outbound HTTPS GET to
+          Spring, so N req/s of junk became N req/s of load on the auth server;
+      (b) event-loop stall — `verify_token` is synchronous and was awaited
+          un-offloaded from six routes, so a 30s `urlopen` blocked every
+          coroutine in the worker.
+
+    Three controls, all applied before any socket is opened:
+      1. `kid` is validated for shape and length (`_validate_kid`).
+      2. A refetch triggered by an unknown `kid` is rate-limited by a cooldown;
+         inside the window the lookup is refused with ZERO network I/O.
+      3. The client carries an explicit, short timeout.
+    """
+
+    def __init__(
+        self,
+        jwks_url: str,
+        cache_seconds: int = 300,
+        *,
+        timeout: float | None = None,
+        refetch_cooldown_seconds: float | None = None,
+    ):
+        settings = get_settings()
+        self._timeout = timeout if timeout is not None else settings.spring_jwks_timeout_seconds
+        self._cooldown = (
+            refetch_cooldown_seconds
+            if refetch_cooldown_seconds is not None
+            else settings.spring_jwks_refetch_cooldown_seconds
+        )
+        self._client = PyJWKClient(
+            jwks_url,
+            cache_keys=True,
+            lifespan=cache_seconds,
+            # PyJWKClient types `timeout` as int; keep at least 1s.
+            timeout=max(1, round(self._timeout)),
+        )
+        self._last_refetch_at = 0.0
+        self._lock = threading.Lock()
 
     def get_signing_key(self, kid: str | None):
         # PyJWKClient resolves the key from the token itself (reads header `kid`),
@@ -118,6 +168,28 @@ class HttpJwksSource:
         raise NotImplementedError("use get_signing_key_from_jwt")
 
     def get_signing_key_from_jwt(self, token: str):
+        # A cached hit costs nothing and is always allowed — the cooldown exists
+        # only to bound REFETCHES, which are what an attacker can force.
+        try:
+            return self._client.get_signing_key_from_jwt(token)
+        except PyJWKClientError:
+            pass
+
+        now = time.monotonic()
+        with self._lock:
+            since = now - self._last_refetch_at
+            if since < self._cooldown:
+                raise JwksUnavailableError(
+                    f"unknown kid and a JWKS refetch was attempted {since:.1f}s ago "
+                    f"(cooldown {self._cooldown:.0f}s) — refused without a network call"
+                )
+            self._last_refetch_at = now
+
+        # Cooldown consumed: allow exactly one refetch attempt.
+        try:
+            self._client.fetch_data()
+        except Exception as exc:  # network/parse failure -> 401, never fall through
+            raise JwksUnavailableError(f"JWKS refetch failed: {exc}") from exc
         return self._client.get_signing_key_from_jwt(token)
 
 
@@ -155,7 +227,9 @@ class StaticDevJwksSource:
         return _Key(self._secret)
 
 
-_jwks_source_singleton: JwksSource | None = None
+# `Any`, not `JwksSource | None`: StaticDevJwksSource deliberately does not
+# implement the full protocol (it only supports get_signing_key_from_jwt).
+_jwks_source_singleton: Any = None
 
 
 def _assert_dev_jwks_source_is_dev_only(source: Any) -> None:
@@ -181,7 +255,10 @@ def _get_jwks_source() -> Any:
     settings = get_settings()
     if settings.spring_jwks_url:
         _jwks_source_singleton = HttpJwksSource(
-            settings.spring_jwks_url, settings.spring_jwks_cache_seconds
+            settings.spring_jwks_url,
+            settings.spring_jwks_cache_seconds,
+            timeout=settings.spring_jwks_timeout_seconds,
+            refetch_cooldown_seconds=settings.spring_jwks_refetch_cooldown_seconds,
         )
     else:
         # StaticDevJwksSource.__init__ itself refuses construction when env != dev
@@ -199,6 +276,36 @@ def set_jwks_source_for_testing(source: Any) -> None:
 def reset_jwks_source() -> None:
     global _jwks_source_singleton
     _jwks_source_singleton = None
+
+
+# A JWK `kid` is a thumbprint/identifier, not free text. Anything outside this
+# charset or over the configured length is junk and is refused before any lookup.
+# `\Z`, not `$`: `$` also matches immediately before a trailing newline, so
+# "abc\n" would have passed this check.
+# Deliberately excludes `/`: a JWK thumbprint is base64URL (`-`/`_`), never
+# base64 (`+`/`/`), so a slash buys nothing legitimate and lets path-shaped
+# values like "../../etc/passwd" through the charset check. Priya's sign-off
+# review caught that.
+_KID_SAFE_RE = re.compile(r"\A[A-Za-z0-9_.:~+=-]+\Z")
+
+
+def _validate_kid(kid: Any) -> None:
+    """F-09 — reject an attacker-shaped `kid` with zero network I/O.
+
+    A missing `kid` is allowed (single-key JWKS sets legitimately omit it); a
+    present one must be a bounded, thumbprint-shaped string.
+    """
+    if kid is None:
+        return
+    if not isinstance(kid, str) or not kid:
+        raise AuthError(status.HTTP_401_UNAUTHORIZED, "invalid_kid", "kid must be a non-empty string")
+    max_len = get_settings().spring_jwks_max_kid_length
+    if len(kid) > max_len:
+        raise AuthError(
+            status.HTTP_401_UNAUTHORIZED, "invalid_kid", f"kid exceeds {max_len} characters"
+        )
+    if not _KID_SAFE_RE.match(kid):
+        raise AuthError(status.HTTP_401_UNAUTHORIZED, "invalid_kid", "kid has invalid characters")
 
 
 def _decode_and_verify(token: str, *, expected_aud: str | tuple[str, ...]) -> dict[str, Any]:
@@ -221,8 +328,17 @@ def _decode_and_verify(token: str, *, expected_aud: str | tuple[str, ...]) -> di
     ):
         raise AuthError(status.HTTP_401_UNAUTHORIZED, "invalid_alg", f"algorithm not allowed: {alg}")
 
+    # F-09: the `kid` is fully attacker-controlled on an UNAUTHENTICATED request
+    # and was never validated before being handed to the JWKS client, where a
+    # miss meant an outbound HTTPS GET to Spring. Reject a malformed kid here,
+    # before any lookup, so junk costs zero network I/O.
+    _validate_kid(unverified_header.get("kid"))
+
     try:
         signing_key = source.get_signing_key_from_jwt(token)
+    except JwksUnavailableError as exc:
+        # Refused by the refetch cooldown, or the refetch failed. Fails closed.
+        raise AuthError(status.HTTP_401_UNAUTHORIZED, "jwks_unavailable", str(exc)) from exc
     except Exception as exc:  # jwt.PyJWKClientError, httpx errors, etc.
         raise AuthError(status.HTTP_401_UNAUTHORIZED, "jwks_lookup_failed", str(exc)) from exc
 
@@ -387,7 +503,12 @@ async def verify_token_async(
     whose ENDPOINT_SCOPES entry ever allows `chat:stream`, so it's the only
     caller of this wrapper.
     """
-    verified = verify_token(token, endpoint=endpoint, body_workspace_id=body_workspace_id)
+    # F-09: `verify_token` is synchronous and can perform a blocking JWKS fetch.
+    # Awaiting it inline parked the whole event loop for the fetch timeout on an
+    # unauthenticated request. Run it on a worker thread.
+    verified = await anyio.to_thread.run_sync(
+        lambda: verify_token(token, endpoint=endpoint, body_workspace_id=body_workspace_id)
+    )
 
     if verified.scope != SCOPE_CHAT_STREAM:
         return verified

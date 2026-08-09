@@ -254,7 +254,11 @@ public class PortfolioService {
                 portfolioEventRepository.countByCreatorProfileIdAndEventType(
                         profile.getId(), PortfolioEventType.MEDIA_KIT_DOWNLOAD);
 
-        // Profile clicks from platform stats (total followers as proxy metric)
+        // CR-71 — profile clicks from platform stats (total followers as proxy metric). No
+        // real click-tracking event exists for this metric (unlike pageViews/mediaKitDownloads
+        // below, which are real portfolio_events counts) — this is, and stays, an estimate.
+        // profileClicksEstimated=true on the response so the client labels it honestly rather
+        // than presenting a proxy number as a measurement.
         long profileClicks = profile.getTotalFollowers() > 0 ?
                 profile.getTotalFollowers() / 100 : 0; // Rough estimate
 
@@ -265,6 +269,7 @@ public class PortfolioService {
         return new PortfolioAnalyticsResponse(
                 pageViews,
                 profileClicks,
+                true, // profileClicksEstimated — see CR-71 note above
                 List.of(), // Link clicks require custom link tracking (not implemented)
                 totalInquiries,
                 mediaKitDownloads
@@ -589,6 +594,19 @@ public class PortfolioService {
             return profile.getUsername();
         }
         return UsernameUtils.normalize(profile.getDisplayName());
+    }
+
+    /**
+     * M-2 (BrandF.md §87): public accessor for {@link CreatorMapper} (via
+     * CreatorDiscoveryService) so the brand-facing creator profile can show real pinned posts
+     * instead of the {@code Collections.emptyList()} stub {@code CreatorMapper.java:47} used to
+     * hardcode. Respects the same {@code contentPortfolio} visibility flag {@link #assemble} gates
+     * the public portfolio page on — a creator who's turned that section off shouldn't have it
+     * leak into the brand discovery card just because a different caller reads it.
+     */
+    public List<PortfolioPinnedPost> getVisiblePinnedPosts(CreatorProfile profile) {
+        PortfolioSettings settings = loadSettings(profile);
+        return settings.getVisibility().contentPortfolio() ? settings.getPinnedPosts() : List.of();
     }
 
     private PortfolioSettings loadSettings(CreatorProfile profile) {

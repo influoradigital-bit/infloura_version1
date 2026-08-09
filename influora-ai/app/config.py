@@ -66,7 +66,24 @@ def _get_optional_float(name: str) -> float | None:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.07.24.12"
+PROMPT_VERSION = "meera-2026.08.10.1"
+# ^ bumped for ME-2 (BrandF.md §115): the request_payment/confirm_launch tool
+# bullets in Block A used to tell Meera to "propose a payment"/"propose
+# launching" via those tools — but get_tool_schemas() (schemas.py) no longer
+# offers either (they're scope-gated out for every real caller today), so the
+# old copy described capabilities Meera didn't actually have. Rewritten to
+# point the brand at the direct wallet/campaign controls instead, and to
+# explicitly forbid claiming she took a funding/launch action she didn't.
+#
+# Previously: bumped for the 2026-08-08 deep-audit fixes. Persona text changed
+# (F-17: the money caveat rail referenced `price_confidence`, a field that
+# exists nowhere in the repo — the real field is `price_source`, so the rail
+# never fired and Meera quoted model-guessed prices as confirmed facts). Block
+# C assembly also changed (F-08/F-15: replayed history no longer produces
+# native tool_use /
+# tool_result blocks). Both are part of Block A/C, and prompt_version is a
+# component of `cache_key_for`, so without this bump sessions cached under `.12`
+# would keep serving the stale persona and the old replay shape.
 # ^ bumped for the Meera campaign-completion flow build (Vikram, 2026-07-24,
 # wiki/build/meera-completion-flow-2026-07-23.md): persona.py gained a
 # "Completing a campaign after create_campaign" section (STANDARD Option B --
@@ -196,7 +213,16 @@ class CircuitBreakerConfig:
 @dataclass(frozen=True)
 class Settings:
     # --- Service identity / environment ---
-    env: str = field(default_factory=lambda: os.getenv("APP_ENV", "dev"))
+    # F-10: this defaulted to "dev". A prod deploy manifest that dropped or
+    # typo'd APP_ENV booted successfully into the HS256 dev auth path, where
+    # anyone holding the one symmetric secret can mint a token for ANY
+    # workspace_id. Both "defense-in-depth" guards in auth/service_token.py
+    # compare against this same field, so they were never two gates — they were
+    # one gate read twice, and an unset env var opened both at once.
+    #
+    # Fail-safe direction is "prod": an unset APP_ENV must break local dev
+    # loudly (set APP_ENV=dev), never silently weaken production auth.
+    env: str = field(default_factory=lambda: os.getenv("APP_ENV", "prod"))
     service_name: str = "influora-ai"
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
 
@@ -209,6 +235,25 @@ class Settings:
     spring_jwks_url: str = field(default_factory=lambda: os.getenv("SPRING_JWKS_URL", ""))
     spring_jwks_cache_seconds: int = field(
         default_factory=lambda: _get_int("SPRING_JWKS_CACHE_SECONDS", 300)
+    )
+    # F-09: PyJWKClient's default urlopen timeout is 30s and HttpJwksSource
+    # passed none, so one unauthenticated request with an attacker-chosen `kid`
+    # could park the event loop for 30 seconds. Tight, explicit, overridable.
+    spring_jwks_timeout_seconds: float = field(
+        default_factory=lambda: _get_float("SPRING_JWKS_TIMEOUT_SECONDS", 3.0)
+    )
+    # F-09: minimum seconds between two JWKS refetches triggered by an UNKNOWN
+    # kid. Without this, `kid` is fully attacker-controlled and every miss is one
+    # outbound HTTPS GET to Spring — N req/s of unauthenticated traffic becomes
+    # N req/s of amplified load on the auth server. Inside the cooldown an
+    # unknown kid is rejected with zero network I/O.
+    spring_jwks_refetch_cooldown_seconds: float = field(
+        default_factory=lambda: _get_float("SPRING_JWKS_REFETCH_COOLDOWN_SECONDS", 10.0)
+    )
+    # F-09: a `kid` longer than this, or carrying characters outside the JWK
+    # thumbprint charset, is rejected before any lookup.
+    spring_jwks_max_kid_length: int = field(
+        default_factory=lambda: _get_int("SPRING_JWKS_MAX_KID_LENGTH", 128)
     )
     spring_expected_iss: str = field(
         default_factory=lambda: os.getenv("SPRING_JWT_ISSUER", "influora-api")
@@ -399,6 +444,33 @@ class Settings:
         default_factory=lambda: _get_optional_float("WORKSPACE_DAILY_HARD_CAP_USD")
     )
 
+    # --- F-05 spend reservations ---
+    # Pessimistic per-call estimate held between the gate check and the recorded
+    # spend, so concurrent callers see each other's in-flight cost instead of
+    # all reading the same stale total. Deliberately generous: an over-estimate
+    # briefly under-authorizes (a caller waits), an under-estimate lets the
+    # ceiling be overshot, which is the failure this exists to prevent. Set to
+    # 0 to disable reservations entirely (restores pre-fix behaviour).
+    ai_reservation_per_call_usd: float = field(
+        default_factory=lambda: _get_float("AI_RESERVATION_PER_CALL_USD", 0.02)
+    )
+    # Lowered 0.10 -> 0.02 on Priya's sign-off review. At 0.10 x
+    # tool_loop_max_iterations (6) a chat turn held $0.60, so a $15 ceiling
+    # admitted only 25 concurrent turns per process AT ZERO ACTUAL SPEND — the
+    # 26th user got a 503 AI_SPEND_CEILING_REACHED. The F-05 fix must close a
+    # money leak, not convert it into an availability cliff. $0.02 x 6 = $0.12
+    # per turn (~125 concurrent turns) and still comfortably exceeds a real
+    # Sonnet turn's cost, which is what the reservation needs to cover.
+    #
+    # How long a reservation is held before it self-expires. The chat tool loop
+    # can legitimately run for minutes (SSRF fetch is 15s/hop, Gemini read 20s,
+    # up to tool_loop_max_iterations turns), so it needs a longer hold than a
+    # single provider call. Under-setting this silently reopens the F-05 race
+    # for exactly the slow tail the reservation exists to cover.
+    ai_reservation_chat_ttl_seconds: float = field(
+        default_factory=lambda: _get_float("AI_RESERVATION_CHAT_TTL_SECONDS", 300.0)
+    )
+
     # --- CORS (browser-direct Meera SSE stream) ---
     # Comma-separated list of exact allowed origins for the browser's cross-origin
     # POST /chat call (Authorization + Content-Type: application/json --
@@ -443,8 +515,18 @@ class Settings:
             missing.append("GEMINI_API_KEY")
         if not self.sarvam_api_key:
             missing.append("SARVAM_API_KEY")
-        if not self.spring_jwks_url and not self.dev_shared_jwt_secret:
-            missing.append("SPRING_JWKS_URL (or DEV_SHARED_JWT_SECRET for local dev)")
+        # F-10: DEV_SHARED_JWT_SECRET is an acceptable substitute for
+        # SPRING_JWKS_URL **only** in env=dev. Accepting it everywhere meant the
+        # symmetric-secret path could satisfy the boot check in any environment.
+        if not self.spring_jwks_url:
+            if self.env == "dev":
+                if not self.dev_shared_jwt_secret:
+                    missing.append("SPRING_JWKS_URL (or DEV_SHARED_JWT_SECRET for local dev)")
+            else:
+                missing.append(
+                    f"SPRING_JWKS_URL (required when APP_ENV={self.env!r}; the "
+                    "DEV_SHARED_JWT_SECRET fallback is accepted only when APP_ENV=dev)"
+                )
         if not self.internal_hmac_key:
             missing.append("INTERNAL_HMAC_KEY")
         if not self.service_token_signing_key:

@@ -86,14 +86,20 @@ const EMPTY_PENDING: PendingBreakdown = {
   total: 0,
 };
 
+/**
+ * CR-51 — was one `listForDeal` HTTP call per active deal (N+1 waterfall on every dashboard
+ * load). Now a single batched `listForDeals` call covering every active deal id at once; see
+ * CreatorDeliverableService#listForCollaborations for the server-side query-count reasoning.
+ */
 async function loadDeliverablePendingCount(dealIds: string[]): Promise<number> {
   if (dealIds.length === 0) return 0;
-  const lists = await Promise.all(
-    dealIds.map((id) =>
-      api.creatorDeliverables.listForDeal(id).catch(() => [] as CreatorDeliverableListItem[]),
-    ),
+  const byDeal = await api.creatorDeliverables
+    .listForDeals(dealIds)
+    .catch(() => ({}) as Record<string, CreatorDeliverableListItem[]>);
+  return dealIds.reduce(
+    (sum, id) => sum + countSubmittableDeliverables(byDeal[id] ?? []),
+    0,
   );
-  return lists.reduce((sum, items) => sum + countSubmittableDeliverables(items), 0);
 }
 
 /**

@@ -1,0 +1,4 @@
+{"verdict": "believed", "oracle": "model", "isolation": "fresh-context",
+ "done_when": "CR-97 fixed: deal-room-dashboard.tsx opens the deal-message SSE stream for the selected deal (live mode) so counterparty accept/reject/message updates the timeline without reload; upsert-by-id merge; status-implying frames refresh the deal list; reconnect refetches messages+deals; keyed on selectedDeal?.id with cleanup closing the stream; tsc passes.",
+ "not_checked": ["live SSE round-trip in a running browser against the deployed backend — counterparty action actually appearing on the dashboard without reload (Neha's gate)", "a visible reconnecting/offline banner was NOT added (onStatusChange unused) — transport auto-reconnects and refetches, but there is no UI indicator that the stream is temporarily down; minor, deferred"],
+ "skipped": []}

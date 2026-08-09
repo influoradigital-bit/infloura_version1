@@ -67,8 +67,18 @@ import {
   type WalletTopUpResponse,
   type EscrowHoldRow,
 } from '@/lib/api';
+import type { Campaign } from '@/lib/types';
 import { openRazorpayCheckout } from '@/lib/razorpay';
 import { runwayTone as computeRunwayTone } from '@/lib/wallet-runway';
+// P-2 (BrandF.md §48): the only production caller of escrow funding was
+// MeeraWorkspace.tsx — a brand who wanted to fund a campaign outside the AI chat
+// had no path at all. FundEscrowButton is the real, security-reviewed control
+// (P11 commit-tier: human-click-only, server-authoritative amount, real Razorpay
+// Checkout, inline top-up-if-short) — it already existed, fully built, imported
+// by nothing but its own test file. This mounts it on the one other money surface
+// a brand actually visits.
+import { FundEscrowButton } from '@/components/feature/meera/FundEscrowButton';
+import { FundEscrowStatus } from '@/components/brand/wallet/FundEscrowStatus';
 
 // Types
 interface Transaction {
@@ -389,6 +399,11 @@ export default function BrandWalletPage() {
   const [escrowLoading, setEscrowLoading] = React.useState(isApiLive());
   const [escrowError, setEscrowError] = React.useState<string | null>(null);
 
+  // P-2: direct "Fund Escrow" — a brand's own ACTIVE campaigns to pick from.
+  const [fundableCampaigns, setFundableCampaigns] = React.useState<Campaign[]>([]);
+  const [fundableCampaignsLoading, setFundableCampaignsLoading] = React.useState(isApiLive());
+  const [selectedFundCampaignId, setSelectedFundCampaignId] = React.useState<string>('');
+
   const loadWallet = React.useCallback(async () => {
     if (!isApiLive()) return;
     setLoading(true);
@@ -421,16 +436,62 @@ export default function BrandWalletPage() {
     }
   }, []);
 
+  // P-2: campaigns a brand could plausibly want to fund. ACTIVE only — a
+  // DRAFT/PAUSED/COMPLETED/CANCELLED campaign isn't something you'd lock money
+  // against from this control (funding still ultimately re-validates server-side
+  // via EscrowService regardless of what this list shows).
+  const loadFundableCampaigns = React.useCallback(async () => {
+    if (!isApiLive()) return;
+    setFundableCampaignsLoading(true);
+    try {
+      const { campaigns: rows } = await api.campaigns.list({ status: 'ACTIVE', limit: 100 });
+      setFundableCampaigns(rows);
+    } catch {
+      // Non-fatal — the Fund Escrow card just shows "no campaigns to fund" instead of a
+      // hard error; the brand can still fund from Meera chat or retry via this card.
+      setFundableCampaigns([]);
+    } finally {
+      setFundableCampaignsLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      await Promise.all([loadWallet(), loadEscrow()]);
+      await Promise.all([loadWallet(), loadEscrow(), loadFundableCampaigns()]);
       if (cancelled) return;
     })();
     return () => {
       cancelled = true;
     };
+  }, [loadWallet, loadEscrow, loadFundableCampaigns]);
+
+  const handleEscrowFunded = React.useCallback(async () => {
+    // Priya review (P-2): was clearing the selection synchronously here, which unmounted
+    // FundEscrowButton (via the `key`) on the same tick the "Secured" state rendered — the
+    // brand's only confirmation a real payment moved flashed for about one frame. Selection
+    // now only clears from the explicit "Change campaign" action below, so the confirmed
+    // state stays visible until the human deliberately moves on.
+    await Promise.all([loadWallet(), loadEscrow()]);
   }, [loadWallet, loadEscrow]);
+
+  // Priya review (P-2): campaigns that already have a PENDING or FUNDED hold are excluded —
+  // without this, re-selecting an already-locked campaign mints a fresh idempotency key
+  // (useEscrowFund.ts) and creates a SECOND hold + a second debit, since server-side dedupe
+  // is keyed on idempotency key, not "does this campaign already have money locked."
+  const campaignIdsWithActiveHold = React.useMemo(
+    () =>
+      new Set(
+        escrowRows
+          .filter((r) => r.status === 'PENDING' || r.status === 'FUNDED')
+          .map((r) => r.campaignId),
+      ),
+    [escrowRows],
+  );
+  const selectableFundCampaigns = React.useMemo(
+    () => fundableCampaigns.filter((c) => !campaignIdsWithActiveHold.has(c.id)),
+    [fundableCampaigns, campaignIdsWithActiveHold],
+  );
 
   // Changing the amount starts a new logical submission, not a retry of the last one — drop any
   // held idempotency key so the next confirm mints a fresh one.
@@ -1179,6 +1240,99 @@ export default function BrandWalletPage() {
 
           {/* Escrow Tab */}
           <TabsContent value="escrow" className="space-y-4">
+            {/* P-2 (BrandF.md §48): escrow funding used to be reachable only through the
+                Meera AI chat (MeeraWorkspace.tsx's hardcoded MEERA_DEMO_CAMPAIGN_ID demo
+                flow) — no direct control existed anywhere else. */}
+            {isApiLive() && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <IndianRupee className="h-5 w-5 text-primary" />
+                    Fund Campaign Escrow
+                  </CardTitle>
+                  <CardDescription>
+                    Lock funds for one of your active campaigns directly from here — the same
+                    server-authoritative flow Meera's chat uses, no chat detour required.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* F-0131: polite live region so screen readers hear this card's state changes —
+                      the loading/empty text and, critically, the FundEscrowButton's appearance
+                      after a campaign is picked (an otherwise-silent DOM insertion). Visually
+                      hidden; the visible content below is unchanged. */}
+                  <FundEscrowStatus
+                    loading={fundableCampaignsLoading}
+                    selectableCount={selectableFundCampaigns.length}
+                    totalCount={fundableCampaigns.length}
+                    selectedId={selectedFundCampaignId}
+                    selectedTitle={
+                      fundableCampaigns.find((c) => c.id === selectedFundCampaignId)?.title
+                    }
+                  />
+                  {fundableCampaignsLoading ? (
+                    <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                      <RefreshCw className="h-4 w-4 animate-spin" /> Loading your campaigns…
+                    </p>
+                  ) : selectableFundCampaigns.length === 0 ? (
+                    <p className="py-2 text-sm text-muted-foreground">
+                      {fundableCampaigns.length === 0
+                        ? 'No active campaigns to fund right now.'
+                        : 'Every active campaign already has funds locked.'}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="fund-escrow-campaign">Campaign</Label>
+                        <Select
+                          value={selectedFundCampaignId}
+                          onValueChange={setSelectedFundCampaignId}
+                          // Priya review (P-2): locked once a campaign is chosen so a stray click
+                          // can't swap the id out from under an in-flight Razorpay checkout —
+                          // useEscrowFund has no unmount cleanup for its poll/retry timers, so a
+                          // silent switch mid-flow would orphan them. "Change campaign" below is
+                          // the only way out, a deliberate action instead of an accidental one.
+                          disabled={!!selectedFundCampaignId}
+                        >
+                          <SelectTrigger id="fund-escrow-campaign">
+                            <SelectValue placeholder="Choose a campaign to fund" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {selectableFundCampaigns.map((c) => (
+                              <SelectItem key={c.id} value={c.id}>
+                                {c.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {selectedFundCampaignId && (
+                        <div className="space-y-2">
+                          <FundEscrowButton
+                            key={selectedFundCampaignId}
+                            campaignId={selectedFundCampaignId}
+                            displayAmount={
+                              fundableCampaigns.find((c) => c.id === selectedFundCampaignId)
+                                ?.budget?.max
+                            }
+                            onFunded={handleEscrowFunded}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="w-full text-xs text-muted-foreground"
+                            onClick={() => setSelectedFundCampaignId('')}
+                          >
+                            Change campaign
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">

@@ -15,8 +15,8 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, cast
 
 import anthropic
 
@@ -143,33 +143,82 @@ class ClaudeProvider:
         """
         self._breaker.before_call()
         try:
+            # The SDK types `system`/`messages`/`tools` as TypedDict iterables;
+            # this service builds them dynamically as plain dicts (Block A/B/C
+            # assembly). cast is the narrow, explicit acknowledgement of that
+            # boundary rather than an untyped call.
             async with self._client.messages.stream(
                 model=CLAUDE_MODEL,
                 max_tokens=max_tokens,
-                system=system_blocks,
-                messages=messages,
-                tools=tools,
+                system=cast("Any", system_blocks),
+                messages=cast("Any", messages),
+                tools=cast("Any", tools),
             ) as stream:
                 current_tool: dict[str, Any] | None = None
+                # F-02: usage was emitted ONLY at message_stop, so a cancelled
+                # stream returned with no usage at all and chat.py's
+                # `if final_usage:` guard skipped record_spend entirely. The
+                # provider still bills the full cached prefix and every token it
+                # generated before the disconnect, so a loop of
+                # connect-and-hang-up drove unbounded real spend while
+                # get_global_total_today() never moved. These fields are
+                # accumulated as the stream runs and flushed on cancellation.
+                partial_usage: dict[str, Any] = {}
+
+                def _snapshot_usage(source: Any) -> None:
+                    """Merge whatever usage fields this event carries."""
+                    if source is None:
+                        return
+                    for key in (
+                        "input_tokens",
+                        "output_tokens",
+                        "cache_read_input_tokens",
+                        "cache_creation_input_tokens",
+                    ):
+                        value = getattr(source, key, None)
+                        if value is not None:
+                            partial_usage[key] = value
+
                 async for event in stream:
+                    if event.type == "message_start":
+                        # Carries input_tokens + both cache-token fields up front.
+                        _snapshot_usage(getattr(getattr(event, "message", None), "usage", None))
+                    elif event.type == "message_delta":
+                        # Carries the running output_tokens count.
+                        _snapshot_usage(getattr(event, "usage", None))
+
                     if is_cancelled and is_cancelled():
                         await stream.close()
+                        # Flush what the provider has already billed us for.
+                        if partial_usage:
+                            partial_usage.setdefault("input_tokens", 0)
+                            partial_usage.setdefault("output_tokens", 0)
+                            yield ClaudeStreamEvent(
+                                type="usage",
+                                usage={**partial_usage, "partial": True},
+                                stop_reason="client_disconnected",
+                            )
                         return
 
                     if event.type == "content_block_start":
                         block = event.content_block
                         if getattr(block, "type", None) == "tool_use":
+                            # getattr, not attribute access: the union also holds
+                            # TextBlock, which has neither `id` nor `name`. mypy
+                            # flagged exactly this — and an SDK block shape that
+                            # ever fails the `type` check would have been an
+                            # AttributeError crash mid-stream, not a skipped block.
                             current_tool = {
-                                "id": block.id,
-                                "name": block.name,
+                                "id": getattr(block, "id", ""),
+                                "name": getattr(block, "name", ""),
                                 "partial_json": "",
                             }
                     elif event.type == "content_block_delta":
                         delta = event.delta
                         if getattr(delta, "type", None) == "text_delta":
-                            yield ClaudeStreamEvent(type="text", text=delta.text)
+                            yield ClaudeStreamEvent(type="text", text=getattr(delta, "text", ""))
                         elif getattr(delta, "type", None) == "input_json_delta" and current_tool:
-                            current_tool["partial_json"] += delta.partial_json
+                            current_tool["partial_json"] += getattr(delta, "partial_json", "")
                     elif event.type == "content_block_stop" and current_tool:
                         import json as _json
 
@@ -280,7 +329,7 @@ class ClaudeProvider:
             self._breaker.on_failure()
             logger.warning("claude complete_text failed: %s", type(exc).__name__)
             return ClaudeTextResult(ok=False, error="provider_error")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - provider SDKs raise anything; callers degrade on ok=False
             self._breaker.on_failure()
             logger.warning("claude complete_text failed: %s", type(exc).__name__)
             return ClaudeTextResult(ok=False, error="provider_error")
@@ -338,38 +387,46 @@ class ClaudeProvider:
             response = await self._client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
-                system=system_blocks,
-                messages=messages,
-                tools=[tool_schema],
-                tool_choice={"type": "tool", "name": tool_schema["name"]},
+                system=cast("Any", system_blocks),
+                messages=cast("Any", messages),
+                tools=cast("Any", [tool_schema]),
+                tool_choice=cast("Any", {"type": "tool", "name": tool_schema["name"]}),
             )
             self._breaker.on_success()
         except anthropic.APIError as exc:
             self._breaker.on_failure()
             logger.warning("claude complete_with_forced_tool failed: %s", type(exc).__name__)
             return ClaudeToolResult(ok=False, error="provider_error")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - provider SDKs raise anything; callers degrade on ok=False
             self._breaker.on_failure()
             logger.warning("claude complete_with_forced_tool failed: %s", type(exc).__name__)
             return ClaudeToolResult(ok=False, error="provider_error")
+
+        usage = getattr(response, "usage", None)
+        usage_dict = {
+            "input_tokens": getattr(usage, "input_tokens", None),
+            "output_tokens": getattr(usage, "output_tokens", None),
+            "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", None),
+            "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", None),
+        } if usage else None
 
         tool_use_block = next(
             (block for block in response.content if getattr(block, "type", None) == "tool_use"),
             None,
         )
         if tool_use_block is None:
-            return ClaudeToolResult(ok=False, error="no_tool_use_in_response")
+            # F-06: this DISCARDED a populated usage object. The call succeeded
+            # at HTTP 200 and was billed in full — a brand-safety batch that
+            # hits max_tokens costs ~$0.07 and used to record $0, because every
+            # caller records spend only on `ok`. Carry the usage so the caller
+            # can bill what the provider billed.
+            return ClaudeToolResult(
+                ok=False, error="no_tool_use_in_response", usage=usage_dict
+            )
 
-        usage = getattr(response, "usage", None)
         return ClaudeToolResult(
             ok=True,
-            tool_input=dict(tool_use_block.input or {}),
-            usage={
-                "input_tokens": getattr(usage, "input_tokens", None),
-                "output_tokens": getattr(usage, "output_tokens", None),
-                "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", None),
-                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", None),
-            }
-            if usage
-            else None,
+            # getattr: the content union also holds TextBlock, which has no `input`.
+            tool_input=dict(getattr(tool_use_block, "input", None) or {}),
+            usage=usage_dict,
         )

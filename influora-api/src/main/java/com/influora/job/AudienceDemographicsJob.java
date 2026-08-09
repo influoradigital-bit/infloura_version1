@@ -116,9 +116,10 @@ public class AudienceDemographicsJob {
         for (MetaOAuthToken tokenRow : connectedTokens) {
             String workspaceId = tokenRow.getWorkspaceId();
             String creatorProfileId = tokenRow.getCreatorProfileId();
+            String igBusinessAccountId = tokenRow.getIgBusinessAccountId();
 
             try {
-                if (pollOne(workspaceId, creatorProfileId)) {
+                if (pollOne(workspaceId, creatorProfileId, igBusinessAccountId)) {
                     polled++;
                 } else {
                     failed++;
@@ -148,7 +149,16 @@ public class AudienceDemographicsJob {
     }
 
     /** @return true if a demographics snapshot was successfully written for this creator. */
-    private boolean pollOne(String workspaceId, String creatorProfileId) {
+    private boolean pollOne(String workspaceId, String creatorProfileId, String igBusinessAccountId) {
+        // CR-99/F-0113 fix: same ULID-vs-real-Meta-ID bug as MetricsPollingJob — Meta's Graph API
+        // path segment must be the numeric IG Business Account ID, never our internal ULID.
+        if (igBusinessAccountId == null || igBusinessAccountId.isBlank()) {
+            log.warn(
+                    "AudienceDemographicsJob: no igBusinessAccountId on file for creator {}, skipping",
+                    creatorProfileId);
+            return false;
+        }
+
         Optional<String> token = tokenStorage.getValidToken(workspaceId, creatorProfileId);
         if (token.isEmpty()) {
             log.warn(
@@ -168,7 +178,7 @@ public class AudienceDemographicsJob {
 
         try {
             AudienceDemographicsResponse response =
-                    instagramClient.getAudienceDemographics(creatorProfileId, token.get());
+                    instagramClient.getAudienceDemographics(igBusinessAccountId, token.get());
 
             if (response == null || response.data() == null || response.data().isEmpty()) {
                 // Accounts under Meta's 100+ follower threshold (or with no audience data yet) return

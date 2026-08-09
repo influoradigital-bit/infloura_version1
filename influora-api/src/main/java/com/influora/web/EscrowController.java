@@ -98,13 +98,31 @@ public class EscrowController {
         return ApiResponse.ok(escrowService.getStatus(principal, workspace.getId(), escrowHoldId));
     }
 
+    /**
+     * [P-1' fix, BrandF.md §47a] Accepts EITHER {@code milestoneId} (existing, B5-gated path) OR
+     * {@code escrowHoldId} (new — for holds funded with no milestone, e.g. Meera's campaign-level
+     * escrow, which {@code milestoneId} can never address since no {@code PaymentMilestone} row
+     * exists for them). Exactly one must be supplied.
+     */
     @PostMapping("/release")
     public ApiResponse<EscrowStatusResponse> release(
             @AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody EscrowReleaseRequest body) {
         var workspace = brandContext.requireBrandWorkspace(principal);
-        // Payee is resolved inside EscrowService from the milestone's collaboration — not
-        // accepted from the request, so an attacker cannot redirect a release to another user.
-        return ApiResponse.ok(escrowService.release(principal, workspace.getId(), body.milestoneId()));
+        boolean hasMilestone = body.milestoneId() != null && !body.milestoneId().isBlank();
+        boolean hasHold = body.escrowHoldId() != null && !body.escrowHoldId().isBlank();
+        if (hasMilestone == hasHold) {
+            throw new ApiException(
+                    "ESCROW_RELEASE_TARGET_REQUIRED",
+                    "Provide exactly one of milestoneId or escrowHoldId",
+                    HttpStatus.BAD_REQUEST);
+        }
+        // Payee is resolved inside EscrowService from the collaboration — not accepted from the
+        // request, so an attacker cannot redirect a release to another user, on either path.
+        if (hasMilestone) {
+            return ApiResponse.ok(escrowService.release(principal, workspace.getId(), body.milestoneId()));
+        }
+        return ApiResponse.ok(
+                escrowService.releaseByHoldId(principal, workspace.getId(), body.escrowHoldId()));
     }
 
     @PostMapping("/refund")

@@ -821,8 +821,22 @@ public class ContractService {
     /** Brand-scoped contract list — all contracts belonging to the caller's own workspace. */
     @Transactional(readOnly = true)
     public List<ContractResponse> listForBrand(AuthPrincipal principal, String workspaceId) {
+        return listForBrand(principal, workspaceId, null);
+    }
+
+    /**
+     * Brand-scoped contract list — optional {@code dealId} filters to one collaboration (C-1 fix,
+     * BrandF.md §62: the param was accepted and documented on {@code ContractController} but
+     * silently dropped on the brand branch, unlike {@link #listForCreator}). Mirrors the
+     * creator-side filtering discipline: still scoped to the caller's workspace either way.
+     */
+    @Transactional(readOnly = true)
+    public List<ContractResponse> listForBrand(AuthPrincipal principal, String workspaceId, String dealId) {
         brandContext.requireMember(principal, workspaceId);
-        List<Contract> contracts = contractRepository.findByWorkspaceId(workspaceId);
+        List<Contract> contracts =
+                dealId != null && !dealId.isBlank()
+                        ? contractRepository.findByWorkspaceIdAndCollaborationId(workspaceId, dealId)
+                        : contractRepository.findByWorkspaceId(workspaceId);
         return contracts.stream().map(this::toResponseWithMilestones).toList();
     }
 

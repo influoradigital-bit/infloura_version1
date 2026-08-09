@@ -279,7 +279,7 @@ export function ConfirmLaunchResult({ data, className }: ConfirmLaunchResultProp
 interface OptionsCardsProps {
   data: OptionsPayload;
   /** Tapping a card sends that choice as the brand's next turn. */
-  onPick?: (option: { key: string; label: string }) => void;
+  onPick?: (option: { key: string; label: string; recommended?: boolean }) => void;
   className?: string;
 }
 
@@ -294,7 +294,7 @@ export function OptionsCards({ data, onPick, className }: OptionsCardsProps) {
           <button
             key={opt.key}
             type="button"
-            onClick={() => onPick?.({ key: opt.key, label: opt.label })}
+            onClick={() => onPick?.({ key: opt.key, label: opt.label, recommended: opt.recommended })}
             className={cn(
               'flex flex-col items-start gap-0.5 rounded-lg border p-3 text-left transition-colors',
               opt.recommended
@@ -397,7 +397,7 @@ interface ToolResultRendererProps {
   data?: unknown;
   errorMessage?: string;
   /** For the `present_options` pattern: tapping a card sends that choice as the next turn. */
-  onOptionPick?: (option: { key: string; label: string }) => void;
+  onOptionPick?: (option: { key: string; label: string; recommended?: boolean }) => void;
   className?: string;
 }
 

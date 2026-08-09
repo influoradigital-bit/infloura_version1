@@ -128,11 +128,27 @@ export default function CreatorProfilePage() {
     loadProfile();
   }, [loadProfile]);
 
+  /**
+   * CR-84 — was a bare `setTimeout` with no API call at all, showing a fabricated "synced"
+   * confirmation. Now calls the same real `POST /portfolio/sync` the portfolio editor's own
+   * sync button already uses — that endpoint is itself a documented server-side no-op today
+   * (a separate, already-flagged backend gap this fix doesn't claim to close), but a real
+   * network round trip that can genuinely fail is honest in a way a client-only timer never was.
+   */
   const handleSyncStats = async (platform: string) => {
     setSyncingPlatform(platform);
-    await new Promise((resolve) => setTimeout(resolve, 1800));
-    setLastSynced((prev) => ({ ...prev, [platform]: new Date() }));
-    setSyncingPlatform(null);
+    try {
+      await api.portfolio.syncPlatforms();
+      setLastSynced((prev) => ({ ...prev, [platform]: new Date() }));
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: `Could not sync ${platform}`,
+        description: err instanceof ApiError ? err.message : 'Please try again in a moment.',
+      });
+    } finally {
+      setSyncingPlatform(null);
+    }
   };
 
   /**

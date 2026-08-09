@@ -148,11 +148,11 @@ Correcting the record before work starts — the generic company stack template 
 | CR-59 | 🟡 Medium | Brand-invited creators have no dedicated surface to track the invite | Ananya | ASSIGNED |
 | CR-60 | 🟡 Medium | Deadline badge and Apply button disagree on the final day. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — both now read the same `deadlinePassed` variable; see §5.** | Ananya | IN VERIFY |
 | CR-61 | 🟡 Medium | Client-side campaign search hides Load More and only searches already-fetched rows. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — Load More no longer hidden during search; messaging now honest about loaded-vs-all; see §5.** | Ananya | IN VERIFY |
-| CR-62 | 🟡 Medium | Niche filter sends lowercased value; server-side case sensitivity unverified | Kavya | ASSIGNED |
+| CR-62 | 🟡 Medium | Niche filter sends lowercased value; server-side case sensitivity unverified. **✅ VERIFIED + FIXED + INDEPENDENT QA PASS (2026-08-10) — backend was already case-insensitive; removed the now-redundant frontend lowercasing, documented + test-proven; see §5.** | Kavya | IN VERIFY |
 | CR-63 | 🟠 High | accountType dropped on OAuth callback makes BusinessAccountRequired unreachable, traps personal-account creators in a loop | Ananya | ASSIGNED |
-| CR-64 | 🟠 High | no_suggestion_today status renders a completely blank Co-pilot page | Ananya | ASSIGNED |
-| CR-65 | 🟡 Medium | OAuth callback always navigates to Settings instead of back to Co-pilot | Ananya | ASSIGNED |
-| CR-66 | 🟡 Medium | "Try Again" button on OAuth failure screen does not retry — it just navigates to Settings | Ananya | ASSIGNED |
+| CR-64 | 🟠 High | no_suggestion_today status renders a completely blank Co-pilot page | Ananya | IN QA |
+| CR-65 | 🟡 Medium | OAuth callback always navigates to Settings instead of back to Co-pilot. **✅ FIXED by a concurrent session (`e30e9bc`) + INDEPENDENT QA PASS (2026-08-10, this session) — setConnectReturnTo/consumeConnectReturnTo marker wired at Co-pilot + Deal Room entry points, confirmed correct; see §5.** | Ananya | IN VERIFY |
+| CR-66 | 🟡 Medium | "Try Again" button on OAuth failure screen does not retry — it just navigates to Settings. **✅ FIXED by a concurrent session (`e30e9bc`) + INDEPENDENT QA PASS (2026-08-10, this session) — Try Again now re-invokes the OAuth authorize flow; confirmed correct; see §5.** | Ananya | IN VERIFY |
 | CR-67 | 🟡 Medium | Content-performance load error is visible but has no retry affordance. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — reload wired into a Retry button; see §5.** | Ananya | IN VERIFY |
 | CR-68 | 🟡 Medium | No retry path for received reviews on load error. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — internal Try Again button matching the sibling AffiliateEarningsView pattern; see §5.** | Ananya | IN VERIFY |
 | CR-69 | 🟡 Medium | Analytics date range hardcoded to 30 days with no UI picker despite backend support. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — date range now changeable state with a picker, default still 30 days; see §5.** | Ananya | IN VERIFY |
@@ -179,7 +179,7 @@ Correcting the record before work starts — the generic company stack template 
 | CR-90 | 🟠 High | Sidebar logout (the primary, easiest-to-reach path) never calls the server logout endpoint | Ananya | IN QA |
 | CR-91 | 🔴 Critical | Server-side logout invalidation never actually runs on either logout path — refresh tokens stay live in the database after every logout | Kabir | IN VERIFY |
 | CR-92 | 🟢 Low | Edit Profile dialog can only update 5 of 13 patchable profile fields | Ananya | ASSIGNED |
-| CR-93 | 🟠 High | Counterparty has no polling fallback when their SSE connection is dead — misses accept/reject/messages until reload | Vikram | ASSIGNED |
+| CR-93 | 🟠 High | Counterparty has no polling fallback when their SSE connection is dead — misses accept/reject/messages until reload | Vikram | IN QA |
 | CR-94 | 🟠 High | In-memory SSE registry silently drops events across backend replicas | Vikram | ASSIGNED |
 | CR-95 | 🟡 Medium | 30-minute SSE emitter timeout creates recurring blind windows for missed events | Vikram | ASSIGNED |
 | CR-96 | 🟡 Medium | Deal deliverable progress counts are hardcoded to zero, hiding the entire Deliverables panel for every live deal. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — real data + batched query for list callers; the cited brand-chat.tsx gate turned out to be mock-only, live panel unaffected; see §5.** | Vikram | IN VERIFY |
@@ -1703,13 +1703,15 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-64 · 🟠 High · no_suggestion_today status renders a completely blank Co-pilot page
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN QA
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/components/creator/copilot/DailySuggestionSection.tsx / DailySuggestionCard.tsx / SuggestionEmptyState.tsx`
 
 **What:** The hook maps 'no_suggestion_today' to UI status 'dismissed', which passes suggestion=null to a card that returns null. A purpose-built empty-state component exists but no call site ever passes it.
+
+> ✅ **2026-08-10 — FIXED, 2 review rounds (proof-os /work loop, F-0107).** `DailySuggestionSection` now special-cases `status === 'dismissed' && !suggestion` (the only way to reach `no_suggestion_today`, traced through the hook — a creator-dismissed suggestion always carries a real `suggestion` object) and routes it to `SuggestionEmptyState reason="no_suggestion_today"`, which already had the right copy and simply had no call site. **Round 1 review — Priya REJECT**: the new test file covered `dismissed`/`ready`/`loading` but not `idle` or `error`, and she proved via a hoisted-guard mutation (a realistic "simplification" the code's own comment placement invites) that the missing coverage would let a refactor silently kill the Instagram-connect CTA or the error retry path. **Round 2:** added the 3 missing tests (idle plain, idle+requiresBusinessAccount, error). **Re-review — Priya APPROVE**, re-ran the exact same mutation and confirmed it now fails loudly across all 3. Full suite **7/7 green**, byte-identical file restore verified by hash both rounds. **Gate:** [`.proof-os/gates/F-0107-copilot-empty-state-fix.sh`](../../.proof-os/gates/F-0107-copilot-empty-state-fix.sh). **Remaining for `DONE`:** Neha's live re-test.
 
 ---
 
@@ -2046,13 +2048,15 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-93 · 🟠 High · Counterparty has no polling fallback when their SSE connection is dead — misses accept/reject/messages until reload
-**Owner:** Vikram · **Status:** ASSIGNED
+**Owner:** Vikram · **Status:** IN QA
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/pages/creator-chat.tsx (L895-943) / src/pages/brand-chat.tsx (L1142-1194) / DealMessageStreamRegistry.java:67-80`
 
 **What:** If the counterparty's SSE connection is dead (30-min timeout, network drop, backgrounded tab), the event is silently discarded server-side with no periodic poll fallback on either chat page — the primary mechanism behind the reported 'accept/reject/message not showing on the other side' bug.
+
+> ⚠️ **Re-verified against current source first (2026-08-10) — this row was STALE.** CR-31 (already `IN VERIFY`) had already given `messages.stream` exponential-backoff reconnect with an `onReconnect` refetch hook, in **both** `creator-chat.tsx` and `brand-chat.tsx` — the "silently discarded with no fallback, ever" framing no longer matched the code. **The real remaining gap, narrower than the original finding:** a backgrounded tab, where a browser can suspend/throttle an in-flight `fetch` read with no error or close event ever firing, so `onReconnect` never triggers even though the connection is effectively dead. **Fix:** a `document.visibilitychange` listener in both pages, scoped to the selected deal, that unconditionally re-fetches messages + deal state on foreground — independent of what the SSE transport believes, additive to CR-31 (does not touch the reconnect path). **Verified:** two new test files (`creator-chat-visibility-resync.test.tsx`, `brand-chat-visibility-resync.test.tsx`), each proving both that hiding the tab alone triggers nothing and that foregrounding triggers both refetches — confirmed red on two independent mutations (whole effect removed; only the visible-guard removed) and green restored. Full related-suite regression: **19/19 green**, no collateral breakage. **Independent review: Priya APPROVE** — she re-ran both mutations herself and confirmed the fix is additive to, not a replacement for, CR-31's reconnect logic. Two non-blocking follow-ups logged rather than expanding this ticket: **F-0151** (brand-chat's loading spinner now flashes on every foreground — creator is unaffected), **F-0152** (brand-chat's `loadMessages` has no request-token guard against overlapping calls, pre-existing but easier to hit now). **Gate:** [`.proof-os/gates/F-0110-chat-visibility-resync.sh`](../../.proof-os/gates/F-0110-chat-visibility-resync.sh). **Remaining for `DONE`:** Neha's live re-test (background a tab mid-negotiation on a real device, confirm the counterparty's action appears on foreground).
 
 ---
 
@@ -2977,5 +2981,31 @@ Two genuine (non-blocking) gaps the re-verification surfaced, neither introduced
 - No backend changes in this batch — everything above is frontend-only.
 
 **Remaining Medium rows not yet started** (next batch): CR-11 (unreproduced — needs a live repro or a captured stack, not something fixable from source reading alone), CR-15/CR-22b (blocked on non-code decisions, unchanged), CR-57, 59, 62, 67, 68, 69, 70, 71, 72, 79, 84, 95, 96, 104, 106, 107, 108, 110, 111, 112, 113, 114, 119.
+
+*— arjun (implementation), proof-os `/work` loop, 2026-08-10*
+
+---
+
+## 13. Medium-Severity Remediation Loop (batch 2) — 2026-08-10 (arjun, via proof-os)
+
+**Process note.** Re-checked the tracker/source fresh before starting each item this round (per this section's own precedent) and found the concurrent session had continued closing rows in real time while batch 1 was in progress — including several this section had just listed as "not yet started." Re-verified rather than assumed: CR-62 (`matchesNiche` case-insensitive comparison, `CreatorCampaignService.java`), CR-67 (`onRetry` prop, `ContentPerformancePanel.tsx`), CR-69 (real date-range state, `creator-analytics.tsx`), CR-72 (`selectedPeriod` wired into `loadTransactions`, `creator-wallet.tsx`), CR-78 (creator flag path, `collaboration-reviews-panel.tsx`), CR-79 (both cross-links), CR-95 (full `Last-Event-ID` replay buffer, `DealMessageStreamRegistry.java`), CR-96 (batched deliverable loading, `DealService.java`) were all genuinely already fixed — confirmed by reading the actual code, not by trusting a status label. A first attempt at CR-71's backend half (a `profileClicksEstimated` DTO field) briefly *appeared* overwritten by a concurrent write mid-edit — re-checked the actual on-disk file rather than trusting that appearance, and it had in fact survived; wired through end-to-end below rather than left as the frontend-only fallback that first scare produced.
+
+### 13.1 Fixed this batch
+
+| CR | What changed | Files |
+|---|---|---|
+| **CR-57** | `creatorCampaigns.browse`/`get` mocks returned an empty list / `null`, so the entire browse → detail → apply loop was empty/not-found in demo mode. Added 3 illustrative mock campaigns (clearly synthetic, live mode untouched) so the loop is actually demonstrable. | `src/lib/api.ts` |
+| **CR-59** | My Applications' data source deliberately excludes brand-initiated invites (`Collaboration.source = APPLICATION` only) — a real `/creator/invites` surface needs a new backend query, out of proportion here. Added a cross-link telling a creator where invites actually show up (Discover Campaigns) instead of leaving no path at all. | `creator-applications.tsx` |
+| **CR-70** | All four analytics mocks (`emptyMetrics`/`emptyScores`/`emptyDemographics`, used only in mock-mode branches — confirmed no live-mode caller depended on the "empty" semantics) returned zero/null everywhere, making every analytics panel look broken in a demo. Replaced with illustrative mock-only values; live mode is untouched — a creator with genuinely no data still gets exactly what the server returns. | `src/lib/api.ts` |
+| **CR-71** | `profileClicks` (`totalFollowers / 100`, a rough proxy — no real click-tracking event exists for it) was rendered as if it were a real measurement. New `profileClicksEstimated` boolean on `PortfolioAnalyticsResponse` (always `true` today, until real tracking ships), read end-to-end by the frontend to show "Estimated from follower count" rather than a hardcoded label — one new backend test pins it. | `PortfolioDtos.java`, `PortfolioService.java`, `PortfolioServiceTest.java`, `src/lib/api.ts`, `creator-portfolio-editor.tsx` |
+| **CR-84** | The profile page's per-platform sync button was a bare `setTimeout` with no API call at all — a fully fabricated "synced" confirmation. Now calls the same real `POST /portfolio/sync` the portfolio editor's button already uses (that endpoint is itself a documented server-side no-op — a separate, already-flagged gap this fix doesn't claim to close) — a real network round trip that can genuinely fail, not a client-only timer. | `creator-profile.tsx` |
+
+### 13.2 Verification
+
+- `npm run typecheck`: clean. One transient error appeared mid-round in `dashboard-page.tsx` (a file this pass never touched — `walletRunwayHealth` undefined) from concurrent in-flight work elsewhere on the branch; gone on the next re-run, not fixed here, flagged rather than silently worked around.
+- Full `vitest run`: **51 files, 388 tests, all green.**
+- Backend: CR-71's DTO change compiles clean (`mvn -o -q compile`) and `PortfolioServiceTest` is green (8/8, including the new `profileClicksEstimated` test).
+
+**Remaining Medium work**: the Meta-connection cluster is the only substantial chunk nobody has touched — CR-104, 106, 107, 108, 110, 111, 113, 114 (correctness/plumbing fixes) and CR-112/119 (two genuinely unbuilt features: brand-side Meta connect, non-Meta platform OAuth — likely disproportionate for this loop, same category as CR-76/77's deferral, pending confirmation). CR-11/15/22b unchanged (non-code blockers).
 
 *— arjun (implementation), proof-os `/work` loop, 2026-08-10*

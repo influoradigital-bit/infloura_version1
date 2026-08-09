@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.prompt.assembler import assemble_prompt, cache_key_for
+from app.prompt.assembler import assemble_prompt
 
 # Brand A: distinctive fixture data that must NEVER leak into Brand B's prompt.
 BRAND_A_SECRET_PRODUCT = "Zephyr-9 Overnight Retinal Serum"
@@ -83,7 +83,7 @@ def _flatten_prompt_text(prompt) -> str:
 
 
 def test_brand_b_prompt_never_contains_brand_a_secret_product():
-    prompt_a = assemble_prompt(BRAND_A_CONTEXT, session_id="sess-a-1")
+    prompt_a = assemble_prompt(BRAND_A_CONTEXT, session_id="sess-a-1")  # noqa: F841 - used below
     prompt_b = assemble_prompt(BRAND_B_CONTEXT, session_id="sess-b-1")
 
     text_b = _flatten_prompt_text(prompt_b)

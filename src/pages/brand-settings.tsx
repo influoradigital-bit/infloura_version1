@@ -381,7 +381,7 @@ export default function BrandSettingsPage() {
     setPasswordSubmitting(true);
     setPasswordError(null);
     try {
-      await api.auth.changePassword({ currentPassword, newPassword });
+      await api.auth.changePassword('brand', { currentPassword, newPassword });
       toast({ title: 'Password changed', description: 'Your password has been updated.' });
       setIsPasswordOpen(false);
       setCurrentPassword('');

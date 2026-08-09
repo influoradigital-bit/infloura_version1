@@ -210,6 +210,7 @@ const mockDealRooms: DealRoom[] = [
     brandName: 'StyleCo Fashion',
     brandLogo: '',
     brandInitials: 'SC',
+    brandVerified: true,
     campaignName: 'Summer Fashion 2024',
     status: 'in_progress',
     collaborationStatus: 'IN_PROGRESS',
@@ -226,6 +227,7 @@ const mockDealRooms: DealRoom[] = [
     brandName: 'TechGadgets Pro',
     brandLogo: '',
     brandInitials: 'TG',
+    brandVerified: true,
     campaignName: 'Product Launch Q1',
     status: 'new',
     collaborationStatus: 'INVITED',
@@ -242,6 +244,7 @@ const mockDealRooms: DealRoom[] = [
     brandName: 'FitLife Nutrition',
     brandLogo: '',
     brandInitials: 'FL',
+    brandVerified: true,
     campaignName: 'Wellness Campaign',
     status: 'negotiating',
     collaborationStatus: 'IN_NEGOTIATION',
@@ -258,6 +261,7 @@ const mockDealRooms: DealRoom[] = [
     brandName: 'BeautyGlow',
     brandLogo: '',
     brandInitials: 'BG',
+    brandVerified: true,
     campaignName: 'Skincare Series',
     status: 'contracted',
     collaborationStatus: 'CONTRACTED',
@@ -274,6 +278,7 @@ const mockDealRooms: DealRoom[] = [
     brandName: 'HomeDecor Plus',
     brandLogo: '',
     brandInitials: 'HD',
+    brandVerified: true,
     campaignName: 'Interior Design Tips',
     status: 'review',
     collaborationStatus: 'REVIEW_PENDING',
@@ -942,6 +947,26 @@ export default function CreatorChatPage() {
     };
   }, [liveApi, selectedDeal?.id, refreshDeal, loadMessages]);
 
+  // CR-93/F-0110 — a backgrounded tab is the one dead-connection shape CR-31's reconnect
+  // logic does not reliably catch: browsers throttle/suspend timers (and can stall an
+  // in-flight `fetch` read) for a hidden tab, but the underlying TCP connection can look
+  // perfectly fine to the transport, so no error/close ever fires to trigger `onReconnect`.
+  // The counterparty's accept/reject/message then simply never appears until something else
+  // (a manual reload, a deal switch) forces a refetch. Foregrounding the tab is an
+  // unconditional resync, independent of what `streamStatus` currently believes — cheap
+  // (two GETs) and correct even if the stream was secretly fine the whole time.
+  React.useEffect(() => {
+    if (!liveApi || !selectedDeal) return;
+    const dealId = selectedDeal.id;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void loadMessages(dealId);
+      void refreshDeal(dealId);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [liveApi, selectedDeal?.id, refreshDeal, loadMessages]);
+
   const [message, setMessage] = React.useState('');
   const [messageRefreshKey, setMessageRefreshKey] = React.useState(0);
   // CR-04 — the Radix ScrollArea viewport for the message thread. The
@@ -1053,6 +1078,11 @@ export default function CreatorChatPage() {
   const [showRevisionHandler, setShowRevisionHandler] = React.useState(false);
   const [selectedDeliverableForRevision] = React.useState<string | null>(null);
   const [isSubmittingDeliverable, setIsSubmittingDeliverable] = React.useState(false);
+  // CR-53 — if upload succeeds but the submit step fails, remember the exact
+  // (deliverableId, file) pair that already made it to the server so a retry can
+  // skip re-uploading and go straight to submit. Ref, not state: it must survive
+  // across retries without triggering a re-render of its own.
+  const uploadedDeliverableRef = React.useRef<{ deliverableId: string; file: File } | null>(null);
   const [isAcceptingProposal, setIsAcceptingProposal] = React.useState(false);
   const [isDecliningProposal, setIsDecliningProposal] = React.useState(false);
   // CR-03 — persistent per-card outcome of the last accept/decline. See
@@ -1387,8 +1417,33 @@ export default function CreatorChatPage() {
       if (liveApi) {
         // Two steps: upload the file to the deliverable-specific multipart route (part name
         // `files`), THEN submit. Submitting with no uploaded version returns 400 NO_CONTENT.
-        await api.creatorDeliverables.upload(data.deliverableId, [data.file], { caption: data.caption });
-        await api.deliverables.submit(data.deliverableId, { finalCaption: data.caption });
+        //
+        // CR-53: if a prior attempt for this exact (deliverableId, file) already uploaded
+        // successfully and only submit failed, skip the upload again on retry — re-upload
+        // would waste the round trip and can create a duplicate version server-side. The
+        // dialog keeps the same File object in state across a failed attempt (it does not
+        // reset on error), so a reference-equal match here reliably means "already uploaded".
+        const alreadyUploaded =
+          uploadedDeliverableRef.current?.deliverableId === data.deliverableId &&
+          uploadedDeliverableRef.current?.file === data.file;
+
+        if (!alreadyUploaded) {
+          await api.creatorDeliverables.upload(data.deliverableId, [data.file], { caption: data.caption });
+          uploadedDeliverableRef.current = { deliverableId: data.deliverableId, file: data.file };
+        }
+
+        try {
+          await api.deliverables.submit(data.deliverableId, { finalCaption: data.caption });
+        } catch (submitErr) {
+          // Tag the error so DeliverableSubmission can tell "upload also failed" apart from
+          // "upload is done, only submit needs a retry" and show the right recovery message.
+          if (submitErr && typeof submitErr === 'object') {
+            (submitErr as { uploaded?: boolean }).uploaded = true;
+          }
+          throw submitErr;
+        }
+
+        uploadedDeliverableRef.current = null;
         await loadDeliverables();
       } else {
         await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -1771,10 +1826,19 @@ export default function CreatorChatPage() {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-semibold">{selectedDeal.brandName}</h3>
-                <Badge variant="outline" className="text-[10px]">
-                  <Building2 className="h-3 w-3 mr-1" />
-                  Verified Brand
-                </Badge>
+                {/* M-1 (BrandF.md §83c/§87) — was unconditional JSX, so every deal showed
+                    "Verified Brand" regardless of the brand's real verification state.
+                    Now gated on the real `counterpartyVerificationStatus` field; renders
+                    nothing for PENDING/UNVERIFIED/REJECTED, matching the honest
+                    conditional-badge pattern already used for verification elsewhere
+                    (e.g. `invite.brandVerified && <VerifiedBadge />` in
+                    `hype-inbox-card.tsx`) rather than inventing new copy for those states. */}
+                {selectedDeal.brandVerified && (
+                  <Badge variant="outline" className="text-[10px]">
+                    <Building2 className="h-3 w-3 mr-1" />
+                    Verified Brand
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-muted-foreground">{selectedDeal.campaignName}</p>
             </div>

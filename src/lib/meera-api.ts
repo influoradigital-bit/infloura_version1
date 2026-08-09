@@ -744,6 +744,29 @@ export const meeraApi = {
       return null;
     }
   },
+
+  /**
+   * POST /workspaces/{workspaceId}/meera/interactions/option-tapped — ME-1
+   * (BrandF.md §115) fix: this endpoint (MeeraInteractionController.java)
+   * existed with zero FE callers. Fire-and-forget flywheel telemetry for the
+   * `present_options` tappable-card pattern; never blocks or surfaces errors
+   * to the brand — a dropped analytics event isn't worth interrupting the
+   * chat turn that's already in flight (ToolResultRenderer.tsx's onOptionPick).
+   *
+   * The `{workspaceId}` path segment is deliberately ignored server-side —
+   * the controller resolves the workspace from the authenticated principal
+   * only (IDOR fix, see its class javadoc) — so `'me'` is used here the same
+   * way `/workspaces/me` already does for the self-scoped workspace routes
+   * in src/lib/api.ts.
+   */
+  logOptionTapped: (sessionId: string, toolName: string, recommended?: boolean): void => {
+    if (!isApiLive()) return;
+    request<void>('POST', '/workspaces/me/meera/interactions/option-tapped', {
+      body: { sessionId, toolName, recommended: recommended ?? null },
+    }).catch(() => {
+      // Telemetry only — swallow failures.
+    });
+  },
 };
 
 export default meeraApi;

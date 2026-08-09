@@ -329,6 +329,21 @@ const STAGE_COLOR: Record<string, string> = {
   'In Progress': 'bg-stage-progress',
   Review: 'bg-stage-review',
   Settled: 'bg-stage-approved',
+  Completed: 'bg-stage-approved',
+};
+
+// PL-3 follow-up (Priya review): every `--stage-*` background (src/app/globals.css) is a pale
+// pastel meant to pair with its own dark `-fg` token (src/lib/stage-colors.ts's
+// STAGE_BADGE_CLASS does exactly this) — the segment bar was hardcoding `text-white` on top of
+// those pastels instead, which is ~1:1 contrast, worse than the `bg-muted` fallback it replaced.
+const STAGE_TEXT: Record<string, string> = {
+  Outreach: 'text-stage-outreach-fg',
+  Negotiating: 'text-stage-negotiating-fg',
+  Contracted: 'text-stage-contracted-fg',
+  'In Progress': 'text-stage-progress-fg',
+  Review: 'text-stage-review-fg',
+  Settled: 'text-stage-approved-fg',
+  Completed: 'text-stage-approved-fg',
 };
 
 function PipelineCard({ pipeline, total, onClickStage, onViewAll }: PipelineCardProps) {
@@ -349,8 +364,9 @@ function PipelineCard({ pipeline, total, onClickStage, onViewAll }: PipelineCard
               key={stage.stage}
               type="button"
               className={cn(
-                'flex items-center justify-center text-[10px] font-medium text-white hover:opacity-90 transition-opacity',
+                'flex items-center justify-center text-[10px] font-medium hover:opacity-90 transition-opacity',
                 STAGE_COLOR[stage.stage] || 'bg-muted',
+                STAGE_TEXT[stage.stage] || 'text-foreground',
               )}
               style={{ width: total ? `${(stage.count / total) * 100}%` : '0%' }}
               title={`${stage.stage}: ${stage.count}`}

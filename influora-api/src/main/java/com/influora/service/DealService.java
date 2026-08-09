@@ -11,12 +11,14 @@ import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Contract;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.DealMessage;
+import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DealSenderType;
+import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.UserType;
@@ -45,6 +47,7 @@ import com.influora.web.dto.deal.DealDtos.SendMessageRequest;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.DeliverableListItem;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -54,6 +57,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -125,9 +129,21 @@ public class DealService {
         UserType role = requireRole(principal);
         List<Collaboration> collaborations = loadCollaborations(principal, role);
         List<CollaborationStatus> allowed = statusesForFilter(statusFilter, role);
-        return collaborations.stream()
-                .filter(c -> allowed == null || allowed.contains(c.getStatus()))
-                .map(c -> toDealResponse(c, principal, role))
+        List<Collaboration> filtered =
+                collaborations.stream()
+                        .filter(c -> allowed == null || allowed.contains(c.getStatus()))
+                        .toList();
+        Map<String, List<Deliverable>> deliverablesByCollaboration =
+                loadDeliverablesByCollaboration(filtered);
+        return filtered.stream()
+                .map(
+                        c ->
+                                toDealResponse(
+                                        c,
+                                        principal,
+                                        role,
+                                        deliverablesByCollaboration.getOrDefault(
+                                                c.getId(), List.of())))
                 .toList();
     }
 
@@ -743,6 +759,34 @@ public class DealService {
         // "countered" is styled by the SPA and is != "pending", so the stale cards go inert.
         Optional<DealMessage> supersededCard =
                 settleLatestProposal(collaboration.getId(), "countered");
+
+        // Carry forward deliverables from the superseded proposal when the counter does not
+        // revise them (e.g. a creator countering on price/deadline only). Without this, a counter
+        // with no deliverables field produces a proposal card with an empty deliverables list,
+        // which breaks the contract generator even though the parties never renegotiated scope.
+        // Slots are stored as List<LinkedHashMap> after JSON round-trip (Jackson deserialises
+        // them as Map, not DeliverableSlot records), so we rehydrate them here.
+        var effectiveDeliverables = body.deliverables();
+        if ((effectiveDeliverables == null || effectiveDeliverables.isEmpty())
+                && supersededCard.isPresent()) {
+            Map<String, Object> supersededMetadata =
+                    parseMetadata(supersededCard.get().getMetadataJson());
+            Object rawSlots = supersededMetadata == null ? null : supersededMetadata.get("deliverables");
+            if (rawSlots instanceof List<?> slotList && !slotList.isEmpty()) {
+                effectiveDeliverables = slotList.stream()
+                        .filter(item -> item instanceof Map)
+                        .map(item -> {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> m = (Map<String, Object>) item;
+                            String type = String.valueOf(m.getOrDefault("type", ""));
+                            int qty = ((Number) m.getOrDefault("qty", 1)).intValue();
+                            return new com.influora.web.dto.deal.DealDtos.DeliverableSlot(type, qty);
+                        })
+                        .filter(slot -> !slot.type().isBlank())
+                        .toList();
+            }
+        }
+
         DealMessage newProposal =
                 persistProposalMessage(
                         collaboration,
@@ -750,7 +794,7 @@ public class DealService {
                         senderType,
                         body.amount(),
                         body.message(),
-                        body.deliverables(),
+                        effectiveDeliverables,
                         body.deadline());
 
         // CR-08 — publish the superseded card BEFORE the new one. This mirrors the [H1] persistence
@@ -834,6 +878,64 @@ public class DealService {
         }
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
         return collaborationRepository.findByWorkspaceId(workspace.getId());
+    }
+
+    /** CR-80 — statuses a dispute can never be opened against; see {@link #listEligibleForDispute}. */
+    private static final Set<CollaborationStatus> DISPUTE_INELIGIBLE_STATUSES =
+            Set.of(
+                    CollaborationStatus.DISPUTED,
+                    CollaborationStatus.COMPLETED,
+                    CollaborationStatus.CANCELLED);
+
+    /**
+     * CR-80 — backs the creator "open a dispute" deal dropdown ({@code GET
+     * /creator/disputes/eligible-deals}, {@code CreatorDisputeController}). Eligible = funded
+     * escrow, not already disputed/completed/cancelled — same rule the client used to apply in JS
+     * after fetching {@code GET /deals?status=all} (the creator's ENTIRE deal history).
+     *
+     * <p>The status half of the rule is now a real {@code WHERE status NOT IN (...)} ({@link
+     * CollaborationRepository#findByCreatorIdAndStatusNotIn}), so terminal-state deals never reach
+     * this service, let alone {@link #toDealResponse}'s per-row enrichment (campaign/contract/
+     * escrow/deliverable lookups). {@code escrowFunded} is not a {@link Collaboration} column —
+     * it's derived per-row in {@link #toDealResponse} from {@link EscrowHoldRepository} — so it
+     * stays a final in-memory filter, but now over only the creator's non-terminal deals instead
+     * of their whole history.
+     */
+    @Transactional(readOnly = true)
+    public List<DealResponse> listEligibleForDispute(AuthPrincipal principal) {
+        CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
+        List<Collaboration> collaborations =
+                collaborationRepository.findByCreatorIdAndStatusNotIn(
+                        profile.getUserId(), DISPUTE_INELIGIBLE_STATUSES);
+        Map<String, List<Deliverable>> deliverablesByCollaboration =
+                loadDeliverablesByCollaboration(collaborations);
+        return collaborations.stream()
+                .map(
+                        c ->
+                                toDealResponse(
+                                        c,
+                                        principal,
+                                        UserType.CREATOR,
+                                        deliverablesByCollaboration.getOrDefault(
+                                                c.getId(), List.of())))
+                .filter(DealResponse::escrowFunded)
+                .toList();
+    }
+
+    /**
+     * CR-96 — batch source for {@link #list} and {@link #listEligibleForDispute}'s deliverable
+     * aggregation, mirroring {@code AdminCampaignService}'s H-22 pattern: one {@link
+     * DeliverableRepository#findByCollaborationIdIn} for the whole page of collaborations instead
+     * of {@link #toDealResponse} issuing a per-row query when called in a loop.
+     */
+    private Map<String, List<Deliverable>> loadDeliverablesByCollaboration(
+            List<Collaboration> collaborations) {
+        if (collaborations.isEmpty()) {
+            return Map.of();
+        }
+        List<String> collaborationIds = collaborations.stream().map(Collaboration::getId).toList();
+        return deliverableRepository.findByCollaborationIdIn(collaborationIds).stream()
+                .collect(Collectors.groupingBy(Deliverable::getCollaborationId));
     }
 
     private UserType requireRole(AuthPrincipal principal) {
@@ -1060,8 +1162,29 @@ public class DealService {
         return message;
     }
 
+    /**
+     * Single-collaboration convenience overload for the non-list call sites ({@code get},
+     * {@code accept}, {@code reject}, {@code counter}, {@code createProposal}, {@code
+     * sendMessage}) — one deliverable query for one row is not the N+1 the batched overload below
+     * exists to avoid.
+     */
     private DealResponse toDealResponse(
             Collaboration collaboration, AuthPrincipal principal, UserType role) {
+        List<Deliverable> deliverables =
+                deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(collaboration.getId());
+        return toDealResponse(collaboration, principal, role, deliverables);
+    }
+
+    /**
+     * CR-96 — batched-friendly overload: callers iterating a list of collaborations ({@link #list},
+     * {@link #listEligibleForDispute}) pass in deliverables pre-fetched via {@link
+     * #loadDeliverablesByCollaboration} instead of triggering a per-row query here.
+     */
+    private DealResponse toDealResponse(
+            Collaboration collaboration,
+            AuthPrincipal principal,
+            UserType role,
+            List<Deliverable> deliverables) {
         Campaign campaign =
                 campaignRepository.findById(collaboration.getCampaignId()).orElse(null);
         String campaignName = campaign != null ? campaign.getTitle() : "Campaign";
@@ -1098,6 +1221,28 @@ public class DealService {
                 escrowHoldRepository.hasEscrowForCollaboration(
                         collaboration.getId(), Set.of(EscrowStatus.FUNDED));
 
+        // PL-1 (BrandF.md §69) / creatorF.md C-4: deliverablesDone/Total/nextDeadline used to be
+        // hardcoded 0/0/null here regardless of real deliverable state, which is why the brand
+        // pipeline board's SLA "at-risk" filter was structurally always empty in live mode — there
+        // was never a deadline for it to compare against. Computed for real below from the
+        // `deliverables` param (single-row query for single-item callers, batched via {@link
+        // #loadDeliverablesByCollaboration} for list callers — see the two overloads above).
+        int deliverablesTotal = deliverables.size();
+        int deliverablesDone =
+                (int)
+                        deliverables.stream()
+                                .filter(d -> DELIVERABLE_DONE_STATUSES.contains(d.getStatus()))
+                                .count();
+        Instant nextDeadline =
+                deliverables.stream()
+                        .filter(d -> !DELIVERABLE_DONE_STATUSES.contains(d.getStatus()))
+                        .filter(d -> d.getStatus() != DeliverableStatus.REJECTED)
+                        .map(Deliverable::getDeadline)
+                        .filter(java.util.Objects::nonNull)
+                        .min(java.util.Comparator.naturalOrder())
+                        .map(d -> d.atStartOfDay(ZoneOffset.UTC).toInstant())
+                        .orElse(null);
+
         return new DealResponse(
                 collaboration.getId(),
                 collaboration.getCampaignId(),
@@ -1106,33 +1251,45 @@ public class DealService {
                 counterparty.name(),
                 counterparty.avatar(),
                 counterparty.handle(),
+                counterparty.verificationStatus(),
                 collaboration.getStatus(),
                 collaboration.getAgreedRate(),
                 collaboration.getCurrency(),
                 lastMsg.map(DealMessage::getContent).orElse(collaboration.getNotes()),
                 lastMsg.map(DealMessage::getCreatedAt).orElse(collaboration.getUpdatedAt()),
                 unread,
-                0,
-                0,
-                null,
+                deliverablesDone,
+                deliverablesTotal,
+                nextDeadline,
                 latest != null ? latest.getId() : null,
                 latest != null ? latest.getStatus() : null,
                 escrowFunded);
     }
+
+    /** Brand-approved-or-beyond — see {@link #toDealResponse} deliverable aggregation. */
+    private static final Set<DeliverableStatus> DELIVERABLE_DONE_STATUSES =
+            Set.of(
+                    DeliverableStatus.APPROVED,
+                    DeliverableStatus.POSTED,
+                    DeliverableStatus.METRICS_REPORTED,
+                    DeliverableStatus.VERIFIED);
 
     private Counterparty resolveCounterparty(
             Collaboration collaboration, Campaign campaign, UserType viewerRole) {
         if (viewerRole == UserType.CREATOR) {
             String workspaceId = campaign != null ? campaign.getWorkspaceId() : null;
             if (workspaceId == null) {
-                return new Counterparty("unknown", "Brand", null, null);
+                return new Counterparty("unknown", "Brand", null, null, null);
             }
             Workspace workspace = workspaceRepository.findById(workspaceId).orElse(null);
             return new Counterparty(
                     workspaceId,
                     workspace != null ? workspace.getName() : "Brand",
                     workspace != null ? workspace.getLogoUrl() : null,
-                    null);
+                    null,
+                    workspace != null && workspace.getVerificationStatus() != null
+                            ? workspace.getVerificationStatus().name()
+                            : null);
         }
         CreatorProfile creator =
                 creatorProfileRepository.findByUserId(collaboration.getCreatorId()).orElse(null);
@@ -1140,7 +1297,8 @@ public class DealService {
                 collaboration.getCreatorId(),
                 creator != null ? creator.getDisplayName() : "Creator",
                 creator != null ? creator.getAvatarUrl() : null,
-                creator != null ? creator.getUsername() : null);
+                creator != null ? creator.getUsername() : null,
+                null);
     }
 
     private DealMessageResponse seedNotesMessage(Collaboration collaboration) {
@@ -1336,5 +1494,6 @@ public class DealService {
         }
     }
 
-    private record Counterparty(String id, String name, String avatar, String handle) {}
+    private record Counterparty(
+            String id, String name, String avatar, String handle, String verificationStatus) {}
 }

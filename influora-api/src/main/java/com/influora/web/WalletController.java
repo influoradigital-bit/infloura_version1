@@ -131,12 +131,18 @@ public class WalletController {
      * {@code Wallet.ownerId} is a generic owner column (already shared by {@code
      * WalletService#requireWorkspaceWallet} and {@code #getTransactionsForUser}), so the brand
      * branch reuses the same service method with the workspace id in place of a user id.
+     *
+     * <p>{@code period} (CR-72) is optional and matches the creator-wallet History tab's dropdown
+     * values verbatim ("this-month" / "last-month" / "3-months" / "all") — resolved to a date
+     * range server-side by {@code WalletService#resolvePeriodRange}. Omitted, {@code null}, or
+     * "all" is unfiltered, preserving prior behavior.
      */
     @GetMapping("/transactions")
     public ResponseEntity<ApiResponse<List<WalletTransactionRowResponse>>> transactions(
             @AuthenticationPrincipal AuthPrincipal principal,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int limit) {
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(required = false) String period) {
         String ownerId;
         if (principal.getUserType() == UserType.CREATOR) {
             creatorContext.requireCreator(principal);
@@ -146,7 +152,7 @@ public class WalletController {
             brandContext.requireMember(principal, workspace.getId());
             ownerId = workspace.getId();
         }
-        var result = walletService.getTransactionsForUser(ownerId, page, limit);
+        var result = walletService.getTransactionsForUser(ownerId, page, limit, period);
         return ResponseEntity.ok(ApiResponse.ok(result.items(), result.meta()));
     }
 

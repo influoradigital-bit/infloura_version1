@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -47,6 +48,9 @@ class AudienceDemographicsJobTest {
     private static final String WORKSPACE_ID = "01HWXYZWORKSPACE1234567";
     private static final String CREATOR_ID = "01HWXYZCREATOR000000001";
     private static final String TOKEN = "valid-access-token";
+    // CR-99/F-0113 regression coverage: Meta's Graph API takes this numeric IG Business Account
+    // ID in the request path, never the internal ULID creatorProfileId above.
+    private static final String IG_BUSINESS_ACCOUNT_ID = "17841400000000021";
 
     @Mock private MetaOAuthTokenRepository tokenRepository;
     @Mock private MetaTokenStorage tokenStorage;
@@ -97,7 +101,7 @@ class AudienceDemographicsJobTest {
                                         "audience_locale",
                                         "lifetime",
                                         List.of(new DemographicValue(Map.of("en_US", 900L), null)))));
-        when(instagramClient.getAudienceDemographics(CREATOR_ID, TOKEN)).thenReturn(response);
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN)).thenReturn(response);
 
         job.pollDemographics();
 
@@ -146,7 +150,7 @@ class AudienceDemographicsJobTest {
                 .thenReturn(List.of(token));
         when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(0);
-        when(instagramClient.getAudienceDemographics(CREATOR_ID, TOKEN))
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
                 .thenReturn(new AudienceDemographicsResponse(Collections.emptyList()));
 
         job.pollDemographics();
@@ -162,7 +166,7 @@ class AudienceDemographicsJobTest {
                 .thenReturn(List.of(token));
         when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(0);
-        when(instagramClient.getAudienceDemographics(CREATOR_ID, TOKEN)).thenReturn(null);
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN)).thenReturn(null);
 
         job.pollDemographics();
 
@@ -192,7 +196,7 @@ class AudienceDemographicsJobTest {
                 .thenReturn(List.of(token));
         when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
-        when(instagramClient.getAudienceDemographics(CREATOR_ID, TOKEN))
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
                 .thenThrow(new MetaRateLimitException("rate limited"));
 
         job.pollDemographics();
@@ -209,7 +213,7 @@ class AudienceDemographicsJobTest {
                 .thenReturn(List.of(token));
         when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
-        when(instagramClient.getAudienceDemographics(CREATOR_ID, TOKEN))
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
                 .thenThrow(new MetaApiException("boom"));
 
         job.pollDemographics();
@@ -235,7 +239,7 @@ class AudienceDemographicsJobTest {
 
         when(tokenStorage.getValidToken(WORKSPACE_ID, creator2)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(creator2)).thenReturn(10);
-        when(instagramClient.getAudienceDemographics(creator2, TOKEN))
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
                 .thenReturn(
                         new AudienceDemographicsResponse(
                                 List.of(
@@ -249,6 +253,49 @@ class AudienceDemographicsJobTest {
         ArgumentCaptor<AudienceDemographics> captor = ArgumentCaptor.forClass(AudienceDemographics.class);
         verify(demographicsRepository, times(1)).save(captor.capture());
         assertEquals(creator2, captor.getValue().getCreatorProfileId());
+    }
+
+    @Test
+    @DisplayName(
+            "CR-99/F-0113 regression — passes igBusinessAccountId, never the internal creatorProfileId"
+                    + " ULID, to Meta's Graph API")
+    void testUsesIgBusinessAccountIdNotUlid() {
+        MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID, IG_BUSINESS_ACCOUNT_ID);
+        when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
+                .thenReturn(List.of(token));
+        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
+                .thenReturn(
+                        new AudienceDemographicsResponse(
+                                List.of(
+                                        new DemographicBreakdown(
+                                                "audience_country",
+                                                "lifetime",
+                                                List.of(new DemographicValue(Map.of("US", 500L), null))))));
+
+        job.pollDemographics();
+
+        verify(instagramClient, never()).getAudienceDemographics(eq(CREATOR_ID), anyString());
+        verify(instagramClient).getAudienceDemographics(eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN));
+    }
+
+    @Test
+    @DisplayName("a token row with no igBusinessAccountId on file is skipped, no API call attempted")
+    void testSkipsWhenIgBusinessAccountIdMissing() {
+        MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID, null);
+        when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
+                .thenReturn(List.of(token));
+        // Priya review finding C: a valid token must be stubbed so the igBusinessAccountId guard,
+        // not the unrelated no-valid-token branch, is what actually stops this call.
+        lenient().when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        lenient().when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
+
+        job.pollDemographics();
+
+        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString());
+        verify(demographicsRepository, never()).save(any());
+        verify(auditLog).recordToolCall(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -278,7 +325,7 @@ class AudienceDemographicsJobTest {
                             return Optional.of(TOKEN);
                         });
         when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
-        when(instagramClient.getAudienceDemographics(CREATOR_ID, TOKEN))
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
                 .thenReturn(
                         new AudienceDemographicsResponse(
                                 List.of(
@@ -301,6 +348,11 @@ class AudienceDemographicsJobTest {
     }
 
     private MetaOAuthToken createTestToken(String workspaceId, String creatorProfileId) {
+        return createTestToken(workspaceId, creatorProfileId, IG_BUSINESS_ACCOUNT_ID);
+    }
+
+    private MetaOAuthToken createTestToken(
+            String workspaceId, String creatorProfileId, String igBusinessAccountId) {
         return new MetaOAuthToken() {
             @Override
             public String getId() {
@@ -315,6 +367,11 @@ class AudienceDemographicsJobTest {
             @Override
             public String getCreatorProfileId() {
                 return creatorProfileId;
+            }
+
+            @Override
+            public String getIgBusinessAccountId() {
+                return igBusinessAccountId;
             }
 
             @Override

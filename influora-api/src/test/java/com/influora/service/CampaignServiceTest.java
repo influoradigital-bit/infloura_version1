@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -13,12 +14,17 @@ import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
 import com.influora.domain.entity.Campaign;
+import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.CampaignIntentType;
 import com.influora.domain.enums.CampaignStatus;
+import com.influora.domain.enums.CollaborationStatus;
+import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.VerificationStatus;
 import com.influora.repository.CampaignRepository;
+import com.influora.repository.CollaborationRepository;
+import com.influora.repository.EscrowHoldRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.web.dto.campaign.CampaignDtos.BudgetDto;
 import com.influora.web.dto.campaign.CampaignDtos.CampaignPatchRequest;
@@ -28,6 +34,7 @@ import com.influora.web.dto.campaign.CampaignDtos.HypeConfigDto;
 import com.influora.web.dto.campaign.CampaignDtos.TimelineDto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -37,6 +44,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -55,6 +66,8 @@ class CampaignServiceTest {
     private static final String CAMPAIGN_ID = "01HCAMPAIGN123456789A";
 
     @Mock private CampaignRepository campaignRepository;
+    @Mock private CollaborationRepository collaborationRepository;
+    @Mock private EscrowHoldRepository escrowHoldRepository;
     @Mock private BrandContextService brandContext;
     @Mock private IntegrationHealthService integrationHealthService;
     @Mock private BrandCampaignFeeService brandCampaignFeeService;
@@ -71,6 +84,8 @@ class CampaignServiceTest {
         service =
                 new CampaignService(
                         campaignRepository,
+                        collaborationRepository,
+                        escrowHoldRepository,
                         brandContext,
                         new CampaignValidator(),
                         integrationHealthService,
@@ -642,5 +657,172 @@ class CampaignServiceTest {
         return new CampaignPatchRequest(
                 null, null, null, null, hype, null, null, null, null, null, null, null, null,
                 null, null, null);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // D-5 (BrandF.md Section 19/20) — CampaignMetrics must reflect real collaboration/escrow
+    // data, never CampaignMapper.CampaignMetrics.empty(). Every campaign card previously showed
+    // "0/N creators" regardless of how many real, non-cancelled collaborations existed.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "[D-5] get(): CampaignMetrics reflects real collaboration counts by status + RELEASED"
+                    + " escrow spend, not empty()")
+    void testGetComputesRealCampaignMetrics() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        Campaign campaign = activatableCampaign(CampaignStatus.ACTIVE);
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+
+        // 5 collaborations: 2 IN_PROGRESS + 1 CONTRACTED = 3 active, 1 COMPLETED, 1 APPLIED
+        // (pre-contract negotiation — neither active nor completed).
+        List<Collaboration> collaborations =
+                List.of(
+                        collaboration("c1", CollaborationStatus.IN_PROGRESS),
+                        collaboration("c2", CollaborationStatus.IN_PROGRESS),
+                        collaboration("c3", CollaborationStatus.CONTRACTED),
+                        collaboration("c4", CollaborationStatus.COMPLETED),
+                        collaboration("c5", CollaborationStatus.APPLIED));
+        when(collaborationRepository.findByCampaignId(CAMPAIGN_ID)).thenReturn(collaborations);
+        when(escrowHoldRepository.sumAmountByCampaignIdAndStatus(CAMPAIGN_ID, EscrowStatus.RELEASED))
+                .thenReturn(BigDecimal.valueOf(15000));
+
+        CampaignResponse response = service.get(principal, CAMPAIGN_ID);
+
+        assertEquals(5, response.collaboratorsCount());
+        assertEquals(3, response.activeCollaborations());
+        assertEquals(1, response.completedCollaborations());
+        assertEquals(0, BigDecimal.valueOf(15000).compareTo(response.totalSpend()));
+    }
+
+    @Test
+    @DisplayName(
+            "[D-5] get(): a campaign with zero collaborations and zero RELEASED escrow still"
+                    + " returns real (all-zero) metrics, not a special-cased empty()")
+    void testGetWithNoCollaborationsReturnsRealZeroMetrics() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        Campaign campaign = activatableCampaign(CampaignStatus.DRAFT);
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+        when(collaborationRepository.findByCampaignId(CAMPAIGN_ID)).thenReturn(List.of());
+        when(escrowHoldRepository.sumAmountByCampaignIdAndStatus(CAMPAIGN_ID, EscrowStatus.RELEASED))
+                .thenReturn(BigDecimal.ZERO);
+
+        CampaignResponse response = service.get(principal, CAMPAIGN_ID);
+
+        assertEquals(0, response.collaboratorsCount());
+        assertEquals(0, response.activeCollaborations());
+        assertEquals(0, response.completedCollaborations());
+        assertEquals(0, BigDecimal.ZERO.compareTo(response.totalSpend()));
+    }
+
+    @Test
+    @DisplayName(
+            "[D-5] list(): batches CampaignMetrics for a whole page via exactly one GROUP BY"
+                    + " collaboration-count query and one GROUP BY escrow-spend query — never one"
+                    + " findByCampaignId per campaign row (N+1)")
+    void testListBatchesMetricsAcrossPageWithoutPerRowQueries() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        String secondCampaignId = "01HCAMPAIGN222222222B";
+        Campaign c1 = activatableCampaign(CampaignStatus.ACTIVE);
+        Campaign c2 =
+                Campaign.builder()
+                        .id(secondCampaignId)
+                        .workspaceId(WORKSPACE_ID)
+                        .title("Second Campaign")
+                        .status(CampaignStatus.ACTIVE)
+                        .build();
+
+        Page<Campaign> page = new PageImpl<>(List.of(c1, c2));
+        when(campaignRepository.findAll(any(Specification.class), any(PageRequest.class)))
+                .thenReturn(page);
+
+        when(collaborationRepository.countByCampaignIdInGroupByStatus(anyList()))
+                .thenReturn(
+                        List.of(
+                                countRow(CAMPAIGN_ID, CollaborationStatus.IN_PROGRESS, 2),
+                                countRow(CAMPAIGN_ID, CollaborationStatus.COMPLETED, 1),
+                                countRow(secondCampaignId, CollaborationStatus.APPLIED, 4)));
+        when(escrowHoldRepository.sumAmountByCampaignIdInAndStatusGroupByCampaignId(
+                        anyList(), eq(EscrowStatus.RELEASED)))
+                .thenReturn(List.of(spendRow(CAMPAIGN_ID, BigDecimal.valueOf(9000))));
+
+        var result = service.list(principal, 1, 20, null, null, null, null);
+
+        CampaignResponse r1 =
+                result.items().stream().filter(r -> r.id().equals(CAMPAIGN_ID)).findFirst().orElseThrow();
+        CampaignResponse r2 =
+                result.items().stream()
+                        .filter(r -> r.id().equals(secondCampaignId))
+                        .findFirst()
+                        .orElseThrow();
+
+        assertEquals(3, r1.collaboratorsCount());
+        assertEquals(2, r1.activeCollaborations());
+        assertEquals(1, r1.completedCollaborations());
+        assertEquals(0, BigDecimal.valueOf(9000).compareTo(r1.totalSpend()));
+
+        // second campaign has counts but zero RELEASED escrow rows at all -> defaults to zero,
+        // never null, never left over from the first campaign's figure.
+        assertEquals(4, r2.collaboratorsCount());
+        assertEquals(0, r2.activeCollaborations());
+        assertEquals(0, r2.completedCollaborations());
+        assertEquals(0, BigDecimal.ZERO.compareTo(r2.totalSpend()));
+
+        verify(collaborationRepository, times(1)).countByCampaignIdInGroupByStatus(anyList());
+        verify(escrowHoldRepository, times(1))
+                .sumAmountByCampaignIdInAndStatusGroupByCampaignId(anyList(), eq(EscrowStatus.RELEASED));
+        // The N+1 guard: batched list() must never fall back to the single-campaign query path.
+        verify(collaborationRepository, never()).findByCampaignId(anyString());
+        verify(escrowHoldRepository, never())
+                .sumAmountByCampaignIdAndStatus(anyString(), eq(EscrowStatus.RELEASED));
+    }
+
+    private static Collaboration collaboration(String id, CollaborationStatus status) {
+        Collaboration c = Collaboration.invite(id, CAMPAIGN_ID, "creator-" + id, "hi", "INR");
+        c.transitionTo(status);
+        return c;
+    }
+
+    private static CollaborationRepository.CampaignStatusCount countRow(
+            String campaignId, CollaborationStatus status, long total) {
+        return new CollaborationRepository.CampaignStatusCount() {
+            @Override
+            public String getCampaignId() {
+                return campaignId;
+            }
+
+            @Override
+            public CollaborationStatus getStatus() {
+                return status;
+            }
+
+            @Override
+            public long getTotal() {
+                return total;
+            }
+        };
+    }
+
+    private static EscrowHoldRepository.CampaignSpend spendRow(String campaignId, BigDecimal total) {
+        return new EscrowHoldRepository.CampaignSpend() {
+            @Override
+            public String getCampaignId() {
+                return campaignId;
+            }
+
+            @Override
+            public BigDecimal getTotal() {
+                return total;
+            }
+        };
     }
 }

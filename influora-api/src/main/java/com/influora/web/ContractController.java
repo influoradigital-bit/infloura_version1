@@ -51,7 +51,7 @@ public class ContractController {
             return ApiResponse.ok(contractService.listForCreator(principal, dealId));
         }
         var workspace = brandContext.requireBrandWorkspace(principal);
-        return ApiResponse.ok(contractService.listForBrand(principal, workspace.getId()));
+        return ApiResponse.ok(contractService.listForBrand(principal, workspace.getId(), dealId));
     }
 
     /** Contracts awaiting the authenticated creator's signature (exec plan Week 3). */

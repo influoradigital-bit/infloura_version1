@@ -3560,6 +3560,10 @@ export interface PortfolioPage {
 export interface PortfolioAnalytics {
   pageViews: { last30Days: number; deltaPercent: number };
   profileClicks: number;
+  /** CR-71 — profileClicks is a follower-count proxy, not a real click measurement. Always
+   *  true today (no real click-tracking event exists yet); read from the server rather than
+   *  hardcoded so the label stops being true the moment real tracking ships. */
+  profileClicksEstimated: boolean;
   linkClicks: Array<{ linkId: string; label: string; clicks: number }>;
   brandInquiries: number;
   mediaKitDownloads: number;
@@ -3626,6 +3630,7 @@ export const portfolio = {
       : mockOr<PortfolioAnalytics>({
           pageViews: { last30Days: 1247, deltaPercent: 18 },
           profileClicks: 342,
+          profileClicksEstimated: true,
           linkClicks: [
             { linkId: 'l_1', label: 'Amazon Wishlist', clicks: 34 },
             { linkId: 'l_2', label: 'Photography Course', clicks: 22 },
@@ -3722,20 +3727,49 @@ function mockPortfolio(username: string): PortfolioPage {
 // Analytics — brand-facing reads (AnalyticsController @ /analytics/creators)
 // ---------------------------------------------------------------------------
 
-const emptyMetrics: CreatorMetrics = {
-  totalReach: 0, totalImpressions: 0, totalEngagements: 0,
-  engagementRate: null, followerGrowth: 0, avgViewsPerPost: null, trendData: [],
+/**
+ * CR-70 — mock/demo mode is used to evaluate the product, and all four analytics mocks
+ * previously returned zero/null everywhere (via now-deleted `emptyMetrics`/`emptyScores`/
+ * `emptyDemographics` constants, which had exactly one caller each — the mock-mode branch below
+ * — never a live-mode fallback, so nothing depended on them meaning "zero"), which made every
+ * analytics panel look broken or empty in a demo. These replace them with illustrative
+ * mock-mode-only values, following the same pattern already used elsewhere in this file for demo
+ * data (e.g. `mockCreatorProfileSelf`, portfolio mocks) — clearly synthetic round numbers, never
+ * claimed as real by any UI copy. Live mode is untouched; a creator who genuinely has no data yet
+ * still gets exactly what the server returns, never a fabricated number.
+ */
+const mockMetrics: CreatorMetrics = {
+  totalReach: 284000,
+  totalImpressions: 412000,
+  totalEngagements: 18650,
+  engagementRate: 4.5,
+  followerGrowth: 1240,
+  avgViewsPerPost: 22400,
+  trendData: Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(Date.now() - (6 - i) * 24 * 60 * 60 * 1000);
+    return {
+      date: date.toISOString().slice(0, 10),
+      followers: 18400 + i * 40,
+      impressions: 55000 + i * 3200,
+      reach: 38000 + i * 2100,
+      engagementRate: 4.1 + i * 0.08,
+    };
+  }),
 };
-const emptyScores: CreatorScores = {
-  authenticityScore: null, fakeFollowerReasons: [], qualityScore: null,
-  engagementConsistency: null, postingFrequency: null, audienceMatchScore: null,
-  brandSafetyScore: null, garmFlags: null, contentSentiment: null,
-  estimatedRateMin: null, estimatedRateMax: null, rateCurrency: null,
-  rateConfidence: null, algorithmVersion: null, computedAt: null,
+const mockScores: CreatorScores = {
+  authenticityScore: 92, fakeFollowerReasons: [], qualityScore: 87,
+  engagementConsistency: 81, postingFrequency: 76, audienceMatchScore: 84,
+  brandSafetyScore: 95, garmFlags: [], contentSentiment: 78,
+  estimatedRateMin: 15000, estimatedRateMax: 30000, rateCurrency: 'INR',
+  rateConfidence: 0.7, algorithmVersion: 'demo', computedAt: new Date().toISOString(),
 };
-const emptyDemographics: CreatorDemographics = {
-  hasData: false, ageGenderBreakdown: null, countryBreakdown: null,
-  cityBreakdown: null, localeBreakdown: null, fetchedAt: null,
+const mockDemographics: CreatorDemographics = {
+  hasData: true,
+  ageGenderBreakdown: { '18-24_female': 34, '18-24_male': 12, '25-34_female': 28, '25-34_male': 16, '35+_other': 10 },
+  countryBreakdown: { India: 82, 'United States': 8, UAE: 4, Other: 6 },
+  cityBreakdown: { Mumbai: 22, Delhi: 18, Bangalore: 14, Pune: 9, Other: 37 },
+  localeBreakdown: { 'en-IN': 61, 'hi-IN': 29, Other: 10 },
+  fetchedAt: new Date().toISOString(),
 };
 
 export const analytics = {
@@ -3745,19 +3779,19 @@ export const analytics = {
       ? http.request<CreatorMetrics>('GET', `/analytics/creators/${creatorId}/metrics`, {
           query: { startDate, endDate },
         })
-      : mockOr<CreatorMetrics>(emptyMetrics),
+      : mockOr<CreatorMetrics>(mockMetrics),
 
   /** GET /analytics/creators/:creatorId/scores (AnalyticsController.java:71) */
   getCreatorScores: (creatorId: string) =>
     isLive()
       ? http.request<CreatorScores>('GET', `/analytics/creators/${creatorId}/scores`)
-      : mockOr<CreatorScores>(emptyScores),
+      : mockOr<CreatorScores>(mockScores),
 
   /** GET /analytics/creators/:creatorId/demographics (AnalyticsController.java). */
   getCreatorDemographics: (creatorId: string): Promise<CreatorDemographics> =>
     isLive()
       ? http.request<CreatorDemographics>('GET', `/analytics/creators/${creatorId}/demographics`)
-      : mockOr<CreatorDemographics>(emptyDemographics),
+      : mockOr<CreatorDemographics>(mockDemographics),
 };
 
 // ---------------------------------------------------------------------------
@@ -3771,19 +3805,19 @@ export const creatorAnalytics = {
       ? http.request<CreatorMetrics>('GET', '/creator/analytics/me/metrics', {
           role: 'creator', query: { startDate, endDate },
         })
-      : mockOr<CreatorMetrics>(emptyMetrics),
+      : mockOr<CreatorMetrics>(mockMetrics),
 
   /** GET /creator/analytics/me/scores (CreatorAnalyticsController.java:46) */
   getMyScores: () =>
     isLive()
       ? http.request<CreatorScores>('GET', '/creator/analytics/me/scores', { role: 'creator' })
-      : mockOr<CreatorScores>(emptyScores),
+      : mockOr<CreatorScores>(mockScores),
 
   /** GET /creator/analytics/me/demographics (CreatorAnalyticsController.java:52) */
   getMyDemographics: () =>
     isLive()
       ? http.request<CreatorDemographics>('GET', '/creator/analytics/me/demographics', { role: 'creator' })
-      : mockOr<CreatorDemographics>(emptyDemographics),
+      : mockOr<CreatorDemographics>(mockDemographics),
 
   /**
    * GET /creator/analytics/me/media — the authenticated creator's own per-post content
@@ -4234,7 +4268,17 @@ export interface CreatorAffiliateEarningsResponse {
   hasMore: boolean;
 }
 
-export interface CreatorCampaignBrandSummary { workspaceId: string; name: string; logoUrl?: string | null }
+export interface CreatorCampaignBrandSummary {
+  workspaceId: string;
+  name: string;
+  logoUrl?: string | null;
+  /**
+   * VER-1 (BrandF.md §105/§115, PR-2): mirrors CreatorCampaignDtos.BrandSummary.verificationStatus
+   * (CreatorCampaignMapper#toBrand — real Workspace.verificationStatus, not a fabricated default).
+   * Was on the wire with no matching frontend field — this type had no way to read it.
+   */
+  verificationStatus?: VerificationStatus | null;
+}
 export interface CreatorCampaignBudget { min: number; max: number; currency: string }
 export interface CreatorCampaignListItem {
   id: string;
@@ -4361,11 +4405,82 @@ export const creatorApplications = {
   },
 };
 
+/**
+ * CR-57 — mock/demo mode previously returned an empty list from `browse` and `null` from `get`,
+ * so the entire browse → detail → apply discovery loop showed only empty/not-found states in a
+ * demo build — there was nothing to click through. Illustrative campaigns, same pattern as the
+ * other mock data in this file (e.g. `mockCreatorProfileSelf`) — clearly synthetic, live mode
+ * untouched.
+ */
+const mockCreatorCampaigns: CreatorCampaignListItem[] = [
+  {
+    id: 'camp_mock_1',
+    title: 'Monsoon Skincare Launch',
+    description: 'Looking for beauty creators to showcase our new hydrating serum line ahead of monsoon season.',
+    brand: { workspaceId: 'ws_mock_1', name: 'Glow Naturals' },
+    budget: { min: 15000, max: 35000, currency: 'INR' },
+    platforms: ['Instagram', 'YouTube'],
+    requirements: ['1 Reel', '2 Stories'],
+    applicationDeadline: new Date(Date.now() + 12 * 864e5).toISOString(),
+    startDate: new Date(Date.now() + 20 * 864e5).toISOString(),
+    endDate: new Date(Date.now() + 50 * 864e5).toISOString(),
+    maxCollaborators: 8,
+    applicationStatus: null,
+    createdAt: new Date(Date.now() - 3 * 864e5).toISOString(),
+  },
+  {
+    id: 'camp_mock_2',
+    title: 'Festive Fashion Edit',
+    description: 'Showcase our festive collection through styled looks and try-on hauls.',
+    brand: { workspaceId: 'ws_mock_2', name: 'Nykaa Fashion' },
+    budget: { min: 20000, max: 60000, currency: 'INR' },
+    platforms: ['Instagram'],
+    requirements: ['1 Reel', 'Carousel post'],
+    applicationDeadline: new Date(Date.now() + 6 * 864e5).toISOString(),
+    startDate: new Date(Date.now() + 14 * 864e5).toISOString(),
+    endDate: new Date(Date.now() + 40 * 864e5).toISOString(),
+    maxCollaborators: 12,
+    applicationStatus: null,
+    createdAt: new Date(Date.now() - 1 * 864e5).toISOString(),
+  },
+  {
+    id: 'camp_mock_3',
+    title: 'True Wireless Earbuds — Sound Test',
+    description: 'Put our new earbuds through a real-world sound and battery-life test for your audience.',
+    brand: { workspaceId: 'ws_mock_3', name: 'boAt' },
+    budget: { min: 10000, max: 25000, currency: 'INR' },
+    platforms: ['YouTube', 'Instagram'],
+    requirements: ['1 Long-form video', '1 Reel cutdown'],
+    applicationDeadline: new Date(Date.now() + 18 * 864e5).toISOString(),
+    startDate: new Date(Date.now() + 25 * 864e5).toISOString(),
+    endDate: new Date(Date.now() + 55 * 864e5).toISOString(),
+    maxCollaborators: 5,
+    applicationStatus: null,
+    createdAt: new Date(Date.now() - 5 * 864e5).toISOString(),
+  },
+];
+
+function mockCreatorCampaignDetail(id: string): CreatorCampaignDetail | null {
+  const listItem = mockCreatorCampaigns.find((c) => c.id === id);
+  if (!listItem) return null;
+  const { requirements, ...rest } = listItem;
+  return {
+    ...rest,
+    objectives: ['Drive awareness', 'Generate authentic content for paid amplification'],
+    contentTypes: requirements,
+    requirements,
+    hashtags: ['#ad', `#${rest.brand?.name.replace(/\s+/g, '')}`],
+    brandGuidelines: 'Keep tone authentic and conversational — avoid hard-sell language.',
+  };
+}
+
 export const creatorCampaigns = {
   /** GET /creator/campaigns (CreatorCampaignController.java:40) — data=items, envelope.meta=page info */
   browse: async (params: CreatorCampaignBrowseParams = {}) => {
     if (!isLive())
-      return mockOr<{ campaigns: CreatorCampaignListItem[]; meta: { hasMore: boolean } }>({ campaigns: [], meta: { hasMore: false } });
+      return mockOr<{ campaigns: CreatorCampaignListItem[]; meta: { hasMore: boolean } }>({
+        campaigns: mockCreatorCampaigns, meta: { hasMore: false },
+      });
     const { data, meta } = await http.requestWithMeta<CreatorCampaignListItem[]>('GET', '/creator/campaigns', {
       role: 'creator',
       query: {
@@ -4380,7 +4495,7 @@ export const creatorCampaigns = {
   get: (id: string) =>
     isLive()
       ? http.request<CreatorCampaignDetail>('GET', `/creator/campaigns/${id}`, { role: 'creator' })
-      : mockOr<CreatorCampaignDetail | null>(null),
+      : mockOr<CreatorCampaignDetail | null>(mockCreatorCampaignDetail(id)),
 
   /** POST /creator/campaigns/:id/apply (CreatorCampaignController.java:60) */
   apply: (id: string, body?: { message?: string }) =>

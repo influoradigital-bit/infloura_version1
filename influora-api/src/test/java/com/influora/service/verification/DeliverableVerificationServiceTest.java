@@ -3,6 +3,7 @@ package com.influora.service.verification;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -55,6 +56,9 @@ class DeliverableVerificationServiceTest {
     private static final String ACCESS_TOKEN = "decrypted-meta-token";
     private static final String IG_SHORTCODE = "ABC123xyz";
     private static final String POST_URL = "https://www.instagram.com/p/" + IG_SHORTCODE + "/";
+    // CR-99/F-0113 regression coverage: Meta's Graph API takes this numeric IG Business Account
+    // ID in the request path, never the internal ULID CREATOR_PROFILE_ID above.
+    private static final String IG_BUSINESS_ACCOUNT_ID = "17841400000000031";
 
     @Mock private DeliverableRepository deliverableRepository;
     @Mock private DeliverableMetricRepository deliverableMetricRepository;
@@ -96,10 +100,15 @@ class DeliverableVerificationServiceTest {
     }
 
     private static MetaOAuthToken activeTokenRow() {
+        return activeTokenRow(IG_BUSINESS_ACCOUNT_ID);
+    }
+
+    private static MetaOAuthToken activeTokenRow(String igBusinessAccountId) {
         return MetaOAuthToken.builder()
                 .id("01HTOKEN1234567890AB")
                 .workspaceId(WORKSPACE_ID)
                 .creatorProfileId(CREATOR_PROFILE_ID)
+                .igBusinessAccountId(igBusinessAccountId)
                 .encryptedAccessToken("ignored-ciphertext")
                 .expiresAt(Instant.now().plusSeconds(3600))
                 .build();
@@ -154,7 +163,7 @@ class DeliverableVerificationServiceTest {
     void verifiedHappyPath() {
         Deliverable deliverable = postedDeliverable(POST_URL);
         stubHappyPathTokenAndRateLimit();
-        when(instagramInsightsClient.getMedia(CREATOR_PROFILE_ID, ACCESS_TOKEN, 50))
+        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
                 .thenReturn(mediaListWithMatch());
         when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, CREATOR_PROFILE_ID))
                 .thenReturn(insightsWith(5000, 8000, 300));
@@ -184,7 +193,7 @@ class DeliverableVerificationServiceTest {
     void reVerificationOverwritesSameRowRatherThanAppending() {
         Deliverable deliverable = postedDeliverable(POST_URL);
         stubHappyPathTokenAndRateLimit();
-        when(instagramInsightsClient.getMedia(CREATOR_PROFILE_ID, ACCESS_TOKEN, 50))
+        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
                 .thenReturn(mediaListWithMatch());
         when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, CREATOR_PROFILE_ID))
                 .thenReturn(insightsWith(9000, 12000, 500));
@@ -221,7 +230,7 @@ class DeliverableVerificationServiceTest {
     void privatePostFallsBackWithoutCrashing() {
         Deliverable deliverable = postedDeliverable(POST_URL);
         stubHappyPathTokenAndRateLimit();
-        when(instagramInsightsClient.getMedia(CREATOR_PROFILE_ID, ACCESS_TOKEN, 50))
+        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
                 .thenReturn(new InstagramMediaResponse(List.of(), null));
 
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
@@ -248,6 +257,47 @@ class DeliverableVerificationServiceTest {
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
 
         assertEquals(DeliverableVerificationService.Outcome.FALLBACK_NO_TOKEN, outcome);
+        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt());
+        verify(deliverableMetricRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName(
+            "CR-99/F-0113 regression: verifyInstagram fetches media with igBusinessAccountId, never the"
+                    + " internal creatorProfileId ULID")
+    void usesIgBusinessAccountIdNotUlidForMediaFetch() {
+        Deliverable deliverable = postedDeliverable(POST_URL);
+        stubHappyPathTokenAndRateLimit();
+        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
+                .thenReturn(mediaListWithMatch());
+        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, CREATOR_PROFILE_ID))
+                .thenReturn(insightsWith(5000, 8000, 300));
+        when(deliverableMetricRepository.findByMilestoneId(MILESTONE_ID)).thenReturn(Optional.empty());
+        when(collaborationRepository.findById(COLLAB_ID))
+                .thenReturn(Optional.of(Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR")));
+
+        DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
+
+        assertEquals(DeliverableVerificationService.Outcome.VERIFIED, outcome);
+        verify(instagramInsightsClient, never()).getMedia(eq(CREATOR_PROFILE_ID), any(), anyInt());
+        verify(instagramInsightsClient).getMedia(eq(IG_BUSINESS_ACCOUNT_ID), eq(ACCESS_TOKEN), eq(50));
+    }
+
+    @Test
+    @DisplayName(
+            "CR-99/F-0113 regression: a token row with no igBusinessAccountId on file falls back to"
+                    + " FALLBACK_DATA_INTEGRITY rather than calling Meta with a null/ULID path segment")
+    void noIgBusinessAccountIdOnFileFallsBackToDataIntegrity() {
+        Deliverable deliverable = postedDeliverable(POST_URL);
+        when(metaOAuthTokenRepository.findFirstByCreatorProfileIdAndRevokedFalseOrderByCreatedAtAsc(
+                        CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(activeTokenRow(null)));
+        when(metaTokenStorage.getValidToken(WORKSPACE_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(ACCESS_TOKEN));
+
+        DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
+
+        assertEquals(DeliverableVerificationService.Outcome.FALLBACK_DATA_INTEGRITY, outcome);
         verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt());
         verify(deliverableMetricRepository, never()).save(any());
     }
@@ -293,7 +343,7 @@ class DeliverableVerificationServiceTest {
     void metaRateLimitExceptionDuringMediaFetchFallsBack() {
         Deliverable deliverable = postedDeliverable(POST_URL);
         stubHappyPathTokenAndRateLimit();
-        when(instagramInsightsClient.getMedia(CREATOR_PROFILE_ID, ACCESS_TOKEN, 50))
+        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
                 .thenThrow(new MetaRateLimitException("429 from Meta"));
 
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);

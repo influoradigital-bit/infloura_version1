@@ -10,7 +10,7 @@ attack -> expected block -> control, matching the doc's battery exactly:
   RT-SSRF-5  non-https schemes (file://, gopher://, ftp://) rejected
 
 All tests assert SsrfBlockedError is raised and that no real network I/O
-occurs (httpx.Client.get is monkeypatched to fail the test if it is ever
+occurs (httpx.Client.stream is monkeypatched to fail the test if it is ever
 reached with a non-pinned / disallowed target, and DNS is monkeypatched so
 no real resolution happens).
 """
@@ -19,12 +19,12 @@ from __future__ import annotations
 
 import socket
 
+import anyio
 import httpx
 import pytest
 
 from app.security.ssrf_guard import (
     METADATA_IP,
-    PinnedTarget,
     SsrfBlockedError,
     guarded_fetch,
     resolve_and_pin,
@@ -35,6 +35,40 @@ def _addrinfo(ip: str, port: int = 443):
     family = socket.AF_INET6 if ":" in ip else socket.AF_INET
     sockaddr = (ip, port, 0, 0) if family == socket.AF_INET6 else (ip, port)
     return [(family, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", sockaddr)]
+
+
+class _FakeStreamResponse:
+    """Minimal stand-in for the streaming response guarded_fetch now reads.
+
+    F-11: the guard streams the body and enforces the size cap DURING the read
+    (a non-streaming `.content` buffered the whole body first, so a 78MB
+    response was fully in memory before a 5MB cap was evaluated). The fakes
+    below therefore mock `httpx.Client.stream`, not `.get`.
+    """
+
+    def __init__(self, status_code=200, headers=None, chunks=(b"ok",)):
+        self.status_code = int(status_code)
+        self.headers = dict(headers or {})
+        self._chunks = list(chunks)
+
+    def iter_bytes(self, chunk_size=None):
+        yield from self._chunks
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _fake_stream(handler):
+    """Wrap a `(url, headers) -> _FakeStreamResponse` handler as Client.stream."""
+
+    def stream(self, method, url, headers=None, extensions=None, **kwargs):
+        return handler(url, headers or {})
+
+    return stream
+
 
 
 # ---------------------------------------------------------------------------
@@ -69,8 +103,9 @@ def test_rt_ssrf_1_guarded_fetch_never_opens_socket_for_metadata(monkeypatch):
     to make a request. Zero bytes of IAM creds returned."""
 
     def fail_if_called(*args, **kwargs):
-        pytest.fail("httpx.Client.get was called -- SSRF guard failed to block metadata IP")
+        pytest.fail("httpx.Client.stream was called -- SSRF guard failed to block metadata IP")
 
+    monkeypatch.setattr(httpx.Client, "stream", fail_if_called)
     monkeypatch.setattr(httpx.Client, "get", fail_if_called)
 
     with pytest.raises(SsrfBlockedError):
@@ -110,8 +145,9 @@ def test_rt_ssrf_2_private_range_via_dns_rejected(monkeypatch):
 
 def test_rt_ssrf_2_guarded_fetch_no_request_leaves_container_for_internal_path(monkeypatch):
     def fail_if_called(*args, **kwargs):
-        pytest.fail("httpx.Client.get was called -- SSRF guard failed to block private-range target")
+        pytest.fail("httpx.Client.stream was called -- SSRF guard failed to block private-range target")
 
+    monkeypatch.setattr(httpx.Client, "stream", fail_if_called)
     monkeypatch.setattr(httpx.Client, "get", fail_if_called)
 
     with pytest.raises(SsrfBlockedError):
@@ -177,18 +213,13 @@ def test_rt_ssrf_3_guarded_fetch_connects_to_pinned_ip_not_a_rebound_one(monkeyp
 
     connected_targets = []
 
-    class FakeResponse:
-        status_code = 200
-        headers = {}
-        content = b"ok"
-
-    def fake_get(self, url, headers=None, extensions=None, **kwargs):
+    def handler(url, headers):
         connected_targets.append(url)
-        return FakeResponse()
+        return _FakeStreamResponse(200, {}, [b"ok"])
 
-    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(httpx.Client, "stream", _fake_stream(handler))
 
-    body, final_url = guarded_fetch("https://rebind-attacker.example/page")
+    body, _final_url = guarded_fetch("https://rebind-attacker.example/page")
 
     assert body == b"ok"
     # Guard connected to the pinned public IP, never to the metadata IP.
@@ -232,18 +263,11 @@ def test_rt_ssrf_4_three_hop_redirect_chain_to_metadata_blocked(monkeypatch):
         "hop2.example": ("302", f"https://{METADATA_IP}/latest/meta-data/"),
     }
 
-    class FakeRedirectResponse:
-        def __init__(self, status_code, location):
-            self.status_code = int(status_code)
-            self.headers = {"location": location}
-            self.content = b""
+    def handler(url, headers):
+        status, location = redirect_chain[headers["Host"]]
+        return _FakeStreamResponse(status, {"location": location}, [])
 
-    def fake_get(self, url, headers=None, extensions=None, **kwargs):
-        host = headers["Host"]
-        status, location = redirect_chain[host]
-        return FakeRedirectResponse(status, location)
-
-    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(httpx.Client, "stream", _fake_stream(handler))
 
     with pytest.raises(SsrfBlockedError, match="too many redirects"):
         guarded_fetch("https://hop0.example/start")
@@ -264,15 +288,12 @@ def test_rt_ssrf_4_redirect_to_private_ip_blocked_even_within_cap(monkeypatch):
 
     monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
 
-    class FakeRedirectResponse:
-        status_code = 302
-        headers = {"location": "http://169.254.169.254/latest/meta-data/"}
-        content = b""
+    def handler(url, headers):
+        return _FakeStreamResponse(
+            302, {"location": "http://169.254.169.254/latest/meta-data/"}, []
+        )
 
-    def fake_get(self, url, headers=None, extensions=None, **kwargs):
-        return FakeRedirectResponse()
-
-    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(httpx.Client, "stream", _fake_stream(handler))
 
     with pytest.raises(SsrfBlockedError):
         guarded_fetch("https://hop0.example/start")
@@ -307,10 +328,153 @@ def test_rt_ssrf_5_disallowed_schemes_rejected(url):
 
 def test_rt_ssrf_5_guarded_fetch_never_touches_network_for_bad_scheme(monkeypatch):
     def fail_if_called(*args, **kwargs):
-        pytest.fail("httpx.Client.get was called -- scheme allow-list failed to block before network I/O")
+        pytest.fail("httpx.Client.stream was called -- scheme allow-list failed to block before network I/O")
 
+    monkeypatch.setattr(httpx.Client, "stream", fail_if_called)
     monkeypatch.setattr(httpx.Client, "get", fail_if_called)
 
     for url in ("file:///etc/passwd", "gopher://169.254.169.254/x", "ftp://host/x"):
         with pytest.raises(SsrfBlockedError):
             guarded_fetch(url)
+
+
+# ---------------------------------------------------------------------------
+# F-11 — three distinct defects in one control (deep audit 2026-08-08).
+# ---------------------------------------------------------------------------
+
+
+def test_f11_size_cap_is_enforced_during_the_read_not_after(monkeypatch):
+    """The cap must stop the read, not measure the corpse.
+
+    `client.get()` was non-streaming, so `response.content` buffered the ENTIRE
+    body before `len(body) > max_bytes` was evaluated — 78MB fully in memory
+    against a 5MB cap, and a chunked response with no Content-Length could OOM
+    the pod. Assert we stop reading once the cap is passed.
+    """
+    from app.config import get_settings
+
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, **kw: _addrinfo("93.184.216.34", port))
+
+    max_bytes = get_settings().ssrf_max_response_bytes
+    chunk = b"x" * 65536
+    read_bytes = {"n": 0}
+
+    def endless_chunks():
+        # No Content-Length — the header-based pre-check cannot help here.
+        #
+        # Bounded at 4x the cap (Priya round 6): an unbounded generator made the
+        # REVERTED case SIGKILL the runner (exit 137) instead of failing, so CI
+        # went red with no report and the whole suite died. A bound turns the
+        # revert into an assertion failure, which is what a pin is for.
+        limit = max_bytes * 4
+        while read_bytes["n"] < limit:
+            read_bytes["n"] += len(chunk)
+            yield chunk
+
+    class _Endless(_FakeStreamResponse):
+        def iter_bytes(self, chunk_size=None):
+            return endless_chunks()
+
+    monkeypatch.setattr(
+        httpx.Client, "stream", _fake_stream(lambda url, headers: _Endless(200, {}, []))
+    )
+
+    with pytest.raises(SsrfBlockedError, match="max size cap"):
+        guarded_fetch("https://huge.example/page")
+
+    # Read stopped just past the cap — not "the whole body, then a length check".
+    assert read_bytes["n"] <= max_bytes + len(chunk), (
+        f"read {read_bytes['n']} bytes against a {max_bytes}-byte cap — "
+        "the body is still being fully buffered before the cap is applied"
+    )
+
+
+def test_f11_declared_content_length_over_cap_is_rejected_before_reading(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, **kw: _addrinfo("93.184.216.34", port))
+    over = str(get_settings().ssrf_max_response_bytes + 1)
+
+    def handler(url, headers):
+        return _FakeStreamResponse(200, {"content-length": over}, [b"never read"])
+
+    monkeypatch.setattr(httpx.Client, "stream", _fake_stream(handler))
+    with pytest.raises(SsrfBlockedError, match="max size cap"):
+        guarded_fetch("https://big.example/page")
+
+
+def test_f11_ipv6_target_is_bracketed_and_never_escapes_as_invalid_url(monkeypatch):
+    """A host whose AAAA record is ordered first (the RFC 6724 default on a
+    dual-stack host) produced `https://2606:4700::1111:443/…`, which httpx
+    rejects with `httpx.InvalidURL` — NOT a subclass of `httpx.HTTPError`, so it
+    escaped the guard's `except` and surfaced as an unhandled 500."""
+    from app.security.ssrf_guard import _authority
+
+    assert _authority("2606:4700:4700::1111", 443) == "[2606:4700:4700::1111]:443"
+    assert _authority("93.184.216.34", 443) == "93.184.216.34:443"
+
+    monkeypatch.setattr(
+        socket, "getaddrinfo", lambda host, port, **kw: _addrinfo("2606:4700:4700::1111", port)
+    )
+    seen = []
+
+    def handler(url, headers):
+        seen.append(url)
+        # A real httpx would raise InvalidURL on an unbracketed v6 authority.
+        httpx.URL(url)
+        return _FakeStreamResponse(200, {}, [b"ok"])
+
+    monkeypatch.setattr(httpx.Client, "stream", _fake_stream(handler))
+
+    body, _final_url = guarded_fetch("https://v6-only.example/page")
+    assert body == b"ok"
+    assert seen and seen[0].startswith("https://[2606:4700:4700::1111]:443/")
+
+
+def test_f11_invalid_url_from_the_client_fails_closed_as_a_block(monkeypatch):
+    """Whatever the client raises, the guard rejects. It must never escape as a
+    500 on an SSRF path."""
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, **kw: _addrinfo("93.184.216.34", port))
+
+    def handler(url, headers):
+        raise httpx.InvalidURL("bad authority")
+
+    monkeypatch.setattr(httpx.Client, "stream", _fake_stream(handler))
+    with pytest.raises(SsrfBlockedError):
+        guarded_fetch("https://weird.example/page")
+
+
+@pytest.mark.asyncio
+async def test_f11_route_fetch_does_not_block_the_event_loop(monkeypatch):
+    """`socket.getaddrinfo` + a synchronous httpx client both block the thread.
+    Called inline from an async route, one slow-loris URL stalled every
+    concurrent SSE stream in the worker. The route must run the guarded fetch
+    off the loop."""
+    import asyncio
+    import time
+
+    import app.routes.analyze_site as analyze_site_route
+
+    def slow_blocking_fetch(url, **kwargs):
+        time.sleep(0.30)  # stands in for a slow DNS + slow socket
+        return b"<html></html>", url
+
+    monkeypatch.setattr(analyze_site_route, "guarded_fetch", slow_blocking_fetch)
+
+    ticks = {"n": 0}
+
+    async def heartbeat():
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            ticks["n"] += 1
+
+    async def fetch():
+        return await anyio.to_thread.run_sync(lambda: analyze_site_route.guarded_fetch("https://x.test/"))
+
+    beat = asyncio.create_task(heartbeat())
+    await fetch()
+    await beat
+
+    assert ticks["n"] >= 10, (
+        f"only {ticks['n']} heartbeats ran during a 300ms fetch — the event loop was blocked"
+    )

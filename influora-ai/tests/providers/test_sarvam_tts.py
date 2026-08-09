@@ -260,11 +260,11 @@ def test_concat_wavs_sums_frames_across_segments_into_one_valid_wav():
     combined = _concat_wavs([_make_wav(100), _make_wav(150, sample=2)])
     assert combined is not None
 
-    reader = wave.open(io.BytesIO(combined), "rb")
-    assert reader.getnframes() == 250, "frame counts must sum (100 + 150)"
-    assert reader.getframerate() == 44100
-    assert reader.getnchannels() == 1
-    assert reader.getsampwidth() == 2
+    with wave.open(io.BytesIO(combined), "rb") as reader:
+        assert reader.getnframes() == 250, "frame counts must sum (100 + 150)"
+        assert reader.getframerate() == 44100
+        assert reader.getnchannels() == 1
+        assert reader.getsampwidth() == 2
 
 
 def test_concat_wavs_returns_none_for_unparseable_or_empty_input():
@@ -312,8 +312,8 @@ async def test_speak_long_text_is_chunked_across_requests_and_stitched(monkeypat
     assert result.ok is True
     assert len(inputs_seen) > 1, "long text must be split across multiple requests"
     assert all(len(chunk) <= MAX_TTS_CHARS for chunk in inputs_seen)
-    reader = wave.open(io.BytesIO(result.audio_bytes), "rb")
-    assert reader.getnframes() == 100 * len(inputs_seen), "stitched frames must sum"
+    with wave.open(io.BytesIO(result.audio_bytes), "rb") as reader:
+        assert reader.getnframes() == 100 * len(inputs_seen), "stitched frames must sum"
     assert result.content_type == "audio/wav"
 
 

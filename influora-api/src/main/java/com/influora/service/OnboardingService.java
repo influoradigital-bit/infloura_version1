@@ -9,9 +9,11 @@ import com.influora.repository.UserRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.web.dto.onboarding.OnboardingDtos.BrandCompanyRequest;
+import com.influora.web.dto.onboarding.OnboardingDtos.KycPromptDismissedResponse;
 import com.influora.web.dto.onboarding.OnboardingDtos.KycRequest;
 import com.influora.web.dto.onboarding.OnboardingDtos.KycResponse;
 import com.influora.web.dto.onboarding.OnboardingDtos.OkResponse;
+import com.influora.web.dto.onboarding.OnboardingDtos.OnboardingStatusResponse;
 import com.influora.web.dto.onboarding.OnboardingDtos.WorkspaceIdResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -80,6 +82,45 @@ public class OnboardingService {
         user.setOnboardingCompleted(true);
         userRepository.save(user);
         return new OkResponse(true);
+    }
+
+    /**
+     * OB-2 (BrandF.md §102) — server-side read of onboarding status. Previously
+     * {@code user.isOnboardingCompleted()} was read in exactly two places
+     * ({@code AuthService}/{@code CreatorProfileService}), both only to copy the value into a
+     * login-time response DTO; nothing let a caller re-check it fresh, per request, without a new
+     * login. This is that read: it exists so a route guard (or any other caller) can ask the
+     * server for the current, authoritative value instead of trusting a stale client-side copy.
+     */
+    @Transactional(readOnly = true)
+    public OnboardingStatusResponse getBrandOnboardingStatus(AuthPrincipal principal) {
+        User user = requireBrandUser(principal);
+        return new OnboardingStatusResponse(user.isOnboardingCompleted(), user.isKycPromptDismissed());
+    }
+
+    /**
+     * OB-1 (BrandF.md §105/§91) — persists "brand skipped the KYC prompt" server-side so the
+     * dismissal survives across devices instead of living only in the client's localStorage flag.
+     * Idempotent: dismissing an already-dismissed prompt is a no-op write, not an error.
+     */
+    @Transactional
+    public KycPromptDismissedResponse dismissBrandKycPrompt(AuthPrincipal principal) {
+        User user = requireBrandUser(principal);
+        if (!user.isKycPromptDismissed()) {
+            user.dismissKycPrompt();
+            userRepository.save(user);
+        }
+        return new KycPromptDismissedResponse(true);
+    }
+
+    private User requireBrandUser(AuthPrincipal principal) {
+        brandContext.requireBrand(principal);
+        return userRepository
+                .findById(principal.getUserId())
+                .orElseThrow(
+                        () ->
+                                new ApiException(
+                                        "USER_NOT_FOUND", "User not found", HttpStatus.NOT_FOUND));
     }
 
     @Transactional

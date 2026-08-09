@@ -46,9 +46,11 @@ interface Collaboration {
   creatorId: string;
   creatorName: string;
   creatorAvatar: string;
+  /** No DTO source on GET /deals (`DealResponse` — see DealDtos.java) — deals API carries no follower count. Left '' in live mode; PL-4. */
   creatorFollowers: string;
   campaignTitle: string;
   budget: number;
+  /** No DTO source on GET /deals (`DealResponse` — see DealDtos.java) — deals API carries no platform list. Left [] in live mode; PL-4. */
   platforms: string[];
   /** CR-30 — the board's own column vocabulary. See lib/brand-pipeline-stage.ts. */
   status: BrandPipelineStage;
@@ -104,6 +106,19 @@ function daysUntil(iso?: string): number | undefined {
   return Math.ceil((deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
+// PL-1 (BrandF.md §69): `slaHoursRemaining` used to be set only in mock data — the live
+// mapper below never populated it at all, so `isAtRisk` (and the "N at risk" filter button
+// gated on it) was structurally always false/0 in live mode, no matter how overdue a deal
+// actually was. `deal.nextDeadline` now carries a real earliest-incomplete-deliverable
+// deadline (DealService#toDealResponse, PL-1 backend fix), so this can be a genuine hours
+// count instead of `undefined`.
+function hoursUntil(iso?: string): number | undefined {
+  if (!iso) return undefined;
+  const deadline = new Date(iso);
+  if (Number.isNaN(deadline.getTime())) return undefined;
+  return Math.round((deadline.getTime() - Date.now()) / (1000 * 60 * 60));
+}
+
 function mapDealToCollaboration(deal: Deal): Collaboration | null {
   const status = mapDealStatusToStage(deal.status);
   if (!status) return null;
@@ -112,11 +127,14 @@ function mapDealToCollaboration(deal: Deal): Collaboration | null {
     creatorId: deal.counterpartyId,
     creatorName: deal.counterpartyName,
     creatorAvatar: deal.counterpartyAvatar || '',
+    // PL-4: no DTO source on GET /deals — see the field comment on Collaboration above.
     creatorFollowers: '',
     campaignTitle: deal.campaignName,
     budget: deal.dealValue,
+    // PL-4: no DTO source on GET /deals — see the field comment on Collaboration above.
     platforms: [],
     status,
+    slaHoursRemaining: hoursUntil(deal.nextDeadline),
     daysRemaining: daysUntil(deal.nextDeadline),
     lastActivity: relativeLastActivity(deal.lastMessageAt),
     deliverableProgress:
@@ -282,7 +300,10 @@ const PlatformIcon = ({ platform }: { platform: string }) => {
 };
 
 // Check if collaboration is at SLA risk (< 12 hours)
-const isAtRisk = (collab: Collaboration) => collab.slaHoursRemaining && collab.slaHoursRemaining < 12;
+// PL-5: `&&` short-circuited on a falsy-but-valid `0` (SLA exactly at breach — the most urgent
+// case) and misclassified it as not at risk. Explicit null/undefined check instead of truthiness.
+const isAtRisk = (collab: Collaboration) =>
+  collab.slaHoursRemaining != null && collab.slaHoursRemaining < 12;
 
 // Module-scope so it keeps a stable component identity and never remounts on a
 // BrandPipelinePage re-render (F-0050). Reads module-level stages/isAtRisk/

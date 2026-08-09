@@ -1,0 +1,25 @@
+{
+ "verdict": "proved",
+ "oracle": "curl",
+ "isolation": "oracle",
+ "done_when": "a .md file lists all not-working and confusing features found by walking each brand and creator flow on http://200.141.1.6",
+ "evidence": {
+  "oracle": "curl",
+  "command": "GET http://200.141.1.6/api/v1/deals/01KZ1TXGC97APN7YT0MKK0N0P1 ; GET .../deals/01KZ1TXGC97APN7YT0MKK0N0P1/messages ; GET .../wallet ; GET .../analytics/creators/01KY4YGN9MHZBEB7MY5ETVYWTK/metrics ; as creator: GET /wallet ; /wallet/transactions ; /creator/analytics/me/{scores,metrics,media,demographics} ; /meta/oauth/authorize",
+  "result": "6 broken features proved across both surfaces (3 brand, 3 creator) plus 10 brand and 6 creator confusing-feature findings; 34/34 routes rendered with 2 failed API calls and 0 JS errors",
+  "where": "INFLUORA-LIVE-UX-AUDIT-2026-08-08.md"
+ },
+ "not_checked": [
+  "money/outbound actions deliberately not triggered: wallet top-up, creator withdraw, sending a contract for signature, KYC/tax-identity submission, opening a dispute",
+  "the entire post-escrow half of the lifecycle - deliverable upload, review, revision limits, escrow release, payout, invoicing - which is where the DealService hardcoding would matter most",
+  "response-body shape for the ~95 endpoints other than /wallet and the deal routes",
+  "visual layout and responsive behaviour - screenshots were unavailable, so all findings are DOM/network-based and a purely visual break would not appear",
+  "/creator/onboarding and /creator/settings/meta/callback - need a fresh account and a live Meta handshake"
+ ],
+ "skipped": [
+  {
+   "step": "section-6 fresh-context checker",
+   "reason": "the session directive forbids dispatching agents unless the user asks; findings rest on deterministic oracles (live HTTP responses, live DOM, source at file:line) rather than model judgment, so no model verdict needed isolating"
+  }
+ ]
+}

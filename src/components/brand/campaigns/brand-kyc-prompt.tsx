@@ -21,8 +21,13 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
  * CTO ruling 2026-07-11: KYC is OPTIONAL — this is a soft, dismissible prompt. It never
  * blocks campaign creation/publish. Collects GSTIN/PAN + documents and submits via
  * `api.onboarding.submitBrandKyc`. Dismissal is remembered in localStorage so it is
- * not nagging. (Follow-up: hide automatically once a brand-KYC status endpoint exists —
- * today there is no read endpoint, so we rely on the dismiss flag.)
+ * not nagging.
+ *
+ * OB-1 (BrandF.md §105/§91) — the read endpoint referenced by the old "Follow-up" note above
+ * now exists: `GET /onboarding/brand/status` returns `kycPromptDismissed`, and
+ * `POST /onboarding/brand/kyc-prompt-dismissed` persists it server-side. Both are wired below
+ * alongside (not instead of) the localStorage flag, so dismissal survives across devices while
+ * still hiding instantly in the current tab without waiting on a network round-trip.
  */
 
 const DISMISS_KEY = 'influora_brand_kyc_prompt_dismissed';
@@ -72,6 +77,25 @@ export function BrandKycPrompt() {
       return false;
     }
   });
+
+  // OB-1 — server-side mirror of the dismiss flag. Best-effort: a failed fetch just leaves the
+  // localStorage-only state as-is, since this prompt is optional either way.
+  React.useEffect(() => {
+    if (!isApiLive()) return;
+    let cancelled = false;
+    api.onboarding
+      .getBrandStatus()
+      .then(({ kycPromptDismissed }) => {
+        if (!cancelled && kycPromptDismissed) setDismissed(true);
+      })
+      .catch(() => {
+        /* ignore — localStorage flag (if set) already covers this device */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [expanded, setExpanded] = React.useState(false);
   const [gstin, setGstin] = React.useState('');
   const [pan, setPan] = React.useState('');
@@ -86,6 +110,13 @@ export function BrandKycPrompt() {
       window.localStorage.setItem(DISMISS_KEY, '1');
     } catch {
       /* ignore storage errors — the prompt is optional anyway */
+    }
+    // OB-1 — fire-and-forget server-side persistence alongside the localStorage flag, so the
+    // dismissal survives across devices/browsers instead of living only in this one.
+    if (isApiLive()) {
+      void api.onboarding.dismissBrandKycPrompt().catch(() => {
+        /* best-effort; the localStorage flag above already hides the prompt on this device */
+      });
     }
   }, []);
 

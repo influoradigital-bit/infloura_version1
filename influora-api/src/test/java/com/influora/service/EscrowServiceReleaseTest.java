@@ -38,6 +38,7 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.escrow.EscrowBackend;
 import com.influora.service.escrow.LedgerEscrowBackend;
 import com.influora.service.notification.event.PayoutReleasedEvent;
+import com.influora.web.dto.money.MoneyDtos.EscrowStatusResponse;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -548,6 +549,174 @@ class EscrowServiceReleaseTest {
 
     verify(platformFeeService, never())
         .deductAtRelease(any(), any(), any(), any(), any(), any());
+  }
+
+  // ----------------------------------------------------------------------------------------
+  // [P-1' fix, BrandF.md §47a] releaseByHoldId — the new release path for holds with NO
+  // PaymentMilestone (e.g. escrow Meera funds at the campaign level before any contract exists).
+  // ----------------------------------------------------------------------------------------
+
+  private EscrowHold milestonelessFundedHold(String collaborationId) {
+    EscrowHold hold =
+        EscrowHold.builder()
+            .id(ESCROW_HOLD_ID)
+            .workspaceId(WORKSPACE_ID)
+            .campaignId("01HCAMPAIGN1234567AB")
+            .amount(new BigDecimal("10000.00"))
+            .currency("INR")
+            .status(EscrowStatus.FUNDED)
+            .idempotencyKey("fund-idem")
+            .build();
+    if (collaborationId != null) {
+      hold.bindCollaboration(collaborationId);
+    }
+    return hold;
+  }
+
+  @Test
+  @DisplayName(
+      "releaseByHoldId: releases a milestone-less hold (Meera campaign-level escrow) once it is"
+          + " bound to a collaboration — the path that did not exist before this fix")
+  void testReleaseByHoldIdReleasesMilestonelessHold() {
+    when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+    EscrowHold hold = milestonelessFundedHold(COLLABORATION_ID);
+    Collaboration collaboration =
+        Collaboration.invite(COLLABORATION_ID, "01HCAMPAIGN1234567AB", CREATOR_USER_ID, null, "INR");
+
+    when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+    when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+    when(disputeRepository.existsByCollaborationIdAndStatusIn(any(), any())).thenReturn(false);
+
+    Wallet clearingWallet = Wallet.forWorkspace(CLEARING_WALLET_ID, "platform-clearing");
+    Wallet payeeWallet = Wallet.forUser(PAYEE_WALLET_ID, CREATOR_USER_ID);
+    when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
+    when(walletService.requireOrCreateUserWallet(CREATOR_USER_ID)).thenReturn(payeeWallet);
+    when(platformFeeService.deductAtRelease(
+            eq(clearingWallet),
+            eq(ESCROW_HOLD_ID), // referenceIdFor(hold) == hold.getId() when milestoneId is null
+            eq(CREATOR_USER_ID),
+            eq(new BigDecimal("10000.00")),
+            eq("INR"),
+            eq(ESCROW_HOLD_ID)))
+        .thenReturn(
+            new PlatformFeeService.FeeDeductionResult(
+                new BigDecimal("10000.00"), 1500, new BigDecimal("1500.00"), new BigDecimal("8500.00"), null));
+    when(ledgerService.post(
+            eq(CLEARING_WALLET_ID),
+            eq(PAYEE_WALLET_ID),
+            eq(new BigDecimal("8500.00")),
+            eq("INR"),
+            eq(WalletTransactionType.ESCROW_RELEASE),
+            eq(TxnReferenceType.ESCROW_HOLD),
+            eq(ESCROW_HOLD_ID),
+            any(),
+            eq("release:" + ESCROW_HOLD_ID),
+            eq(null)))
+        .thenReturn(
+            new WalletLedgerService.LedgerPostingResult(
+                ledgerTxn("release-debit"), ledgerTxn("release-credit")));
+
+    EscrowStatusResponse response = service.releaseByHoldId(principal, WORKSPACE_ID, ESCROW_HOLD_ID);
+
+    assertEquals(EscrowStatus.RELEASED, response.status());
+    assertEquals(EscrowStatus.RELEASED, hold.getStatus());
+    verify(brandContext).requireRole(member, com.influora.domain.enums.MemberRole.OWNER, com.influora.domain.enums.MemberRole.ADMIN);
+    verify(escrowHoldRepository).save(hold);
+    verify(eventPublisher).publishEvent(any(PayoutReleasedEvent.class));
+  }
+
+  @Test
+  @DisplayName("releaseByHoldId: idempotent no-op when the hold is already RELEASED")
+  void testReleaseByHoldIdIdempotentOnAlreadyReleased() {
+    when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+    EscrowHold hold = milestonelessFundedHold(COLLABORATION_ID);
+    hold.markReleased("prior-release-txn");
+    Collaboration collaboration =
+        Collaboration.invite(COLLABORATION_ID, "01HCAMPAIGN1234567AB", CREATOR_USER_ID, null, "INR");
+
+    when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+    when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+    when(disputeRepository.existsByCollaborationIdAndStatusIn(any(), any())).thenReturn(false);
+
+    EscrowStatusResponse response = service.releaseByHoldId(principal, WORKSPACE_ID, ESCROW_HOLD_ID);
+
+    assertEquals(EscrowStatus.RELEASED, response.status());
+    verify(escrowHoldRepository, never()).save(any());
+    verify(ledgerService, never())
+        .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  @DisplayName(
+      "releaseByHoldId: rejects a hold that HAS a milestone — must go through release(milestoneId)"
+          + " so the B5 release_condition gate can never be bypassed by addressing the hold directly")
+  void testReleaseByHoldIdRejectsMilestoneBackedHold() {
+    when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+    EscrowHold hold =
+        EscrowHold.builder()
+            .id(ESCROW_HOLD_ID)
+            .workspaceId(WORKSPACE_ID)
+            .campaignId("01HCAMPAIGN1234567AB")
+            .milestoneId(MILESTONE_ID)
+            .amount(new BigDecimal("10000.00"))
+            .currency("INR")
+            .status(EscrowStatus.FUNDED)
+            .idempotencyKey("fund-idem")
+            .build();
+    when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+
+    ApiException ex =
+        assertThrows(
+            ApiException.class,
+            () -> service.releaseByHoldId(principal, WORKSPACE_ID, ESCROW_HOLD_ID));
+
+    assertEquals("ESCROW_HOLD_HAS_MILESTONE", ex.getCode());
+    verify(ledgerService, never())
+        .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    verify(escrowHoldRepository, never()).save(any());
+  }
+
+  @Test
+  @DisplayName(
+      "releaseByHoldId: rejects a milestone-less hold that is not yet bound to any collaboration"
+          + " (no payee to resolve) instead of silently no-op'ing")
+  void testReleaseByHoldIdRejectsUnlinkedHold() {
+    when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+    EscrowHold hold = milestonelessFundedHold(null);
+    when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+
+    ApiException ex =
+        assertThrows(
+            ApiException.class,
+            () -> service.releaseByHoldId(principal, WORKSPACE_ID, ESCROW_HOLD_ID));
+
+    assertEquals("ESCROW_HOLD_NOT_LINKED", ex.getCode());
+    verify(ledgerService, never())
+        .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("releaseByHoldId: 404s (not a cross-tenant leak) when the hold belongs to another workspace")
+  void testReleaseByHoldIdRejectsCrossTenantHold() {
+    when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+    EscrowHold hold =
+        EscrowHold.builder()
+            .id(ESCROW_HOLD_ID)
+            .workspaceId("01HOTHERWORKSPACE1234")
+            .campaignId("01HCAMPAIGN1234567AB")
+            .amount(new BigDecimal("10000.00"))
+            .currency("INR")
+            .status(EscrowStatus.FUNDED)
+            .idempotencyKey("fund-idem")
+            .build();
+    when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+
+    ApiException ex =
+        assertThrows(
+            ApiException.class,
+            () -> service.releaseByHoldId(principal, WORKSPACE_ID, ESCROW_HOLD_ID));
+
+    assertEquals("ESCROW_NOT_FOUND", ex.getCode());
   }
 
   private static WalletTransaction ledgerTxn(String id) {

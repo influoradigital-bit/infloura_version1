@@ -15,6 +15,7 @@ import com.influora.web.dto.deliverable.CreatorDeliverableDtos.SubmitResponse;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.UploadResponse;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.VerificationStateResponse;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -51,6 +52,21 @@ public class CreatorDeliverableController {
         return ResponseEntity.ok(
                 ApiResponse.ok(
                         creatorDeliverableService.listForCollaboration(principal, collaborationId)));
+    }
+
+    /**
+     * CR-51 — batched counterpart to {@link #list}. Powers the creator dashboard's
+     * pending-deliverable rollup with one request instead of one {@code GET /creator/deliverables}
+     * call per active deal. See {@link CreatorDeliverableService#listForCollaborations} for the
+     * query-count reasoning.
+     */
+    @GetMapping("/bulk")
+    public ResponseEntity<ApiResponse<Map<String, List<DeliverableListItem>>>> listBulk(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam("collaboration_ids") List<String> collaborationIds) {
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        creatorDeliverableService.listForCollaborations(principal, collaborationIds)));
     }
 
     @PostMapping(value = "/{deliverableId}/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

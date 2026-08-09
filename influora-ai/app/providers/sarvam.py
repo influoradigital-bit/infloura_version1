@@ -16,6 +16,7 @@ import logging
 import re
 import wave
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 
@@ -33,6 +34,14 @@ class TranscribeResult:
     raw_transcript: str | None = None
     lang_detected: str | None = None
     error: str | None = None
+    # F-06: True when the provider actually completed a billed HTTP 200, even
+    # though this result is ok=False. Three paths returned ok=False AFTER a
+    # successful, billed call — STT `empty_transcript`, TTS
+    # `invalid_audio_response` / `empty_audio` — and every caller recorded spend
+    # only on success. POSTing 10s of silence to /voice/transcribe in a loop
+    # therefore bought free unlimited STT: Sarvam billed every call and the
+    # daily counter never moved. Callers MUST bill on `billed`, not on `ok`.
+    billed: bool = False
 
 
 @dataclass
@@ -41,6 +50,12 @@ class SpeakResult:
     audio_bytes: bytes | None = None
     content_type: str | None = None
     error: str | None = None
+    # F-06: see TranscribeResult.billed.
+    billed: bool = False
+    # Characters actually POSTed to Sarvam (F-07): `speak()` sends
+    # `speakable(chunk)`, which expands rupee amounts and initialisms, so the
+    # pre-normalization length the caller has is NOT what Sarvam bills for.
+    billed_chars: int = 0
 
 
 def _decode_tts_audio(data: object) -> bytes | None:
@@ -272,20 +287,23 @@ def _concat_wavs(segments: list[bytes]) -> bytes | None:
     if len(segments) == 1:
         return segments[0]
     try:
-        out_buf = io.BytesIO()
-        writer = None
+        # Read every segment first, then write once inside a context manager —
+        # the writer used to be opened bare and closed only on the success path,
+        # so an exception mid-loop leaked the wave writer (SIM115).
+        decoded: list[tuple[Any, bytes]] = []
         for seg in segments:
             with wave.open(io.BytesIO(seg), "rb") as reader:
-                params = reader.getparams()
-                frames = reader.readframes(reader.getnframes())
-            if writer is None:
-                writer = wave.open(out_buf, "wb")
-                writer.setnchannels(params.nchannels)
-                writer.setsampwidth(params.sampwidth)
-                writer.setframerate(params.framerate)
-            writer.writeframes(frames)
-        if writer is not None:
-            writer.close()
+                decoded.append((reader.getparams(), reader.readframes(reader.getnframes())))
+        if not decoded:
+            return None
+        params = decoded[0][0]
+        out_buf = io.BytesIO()
+        with wave.open(out_buf, "wb") as writer:
+            writer.setnchannels(params.nchannels)
+            writer.setsampwidth(params.sampwidth)
+            writer.setframerate(params.framerate)
+            for _params, frames in decoded:
+                writer.writeframes(frames)
         return out_buf.getvalue()
     except (wave.Error, EOFError, ValueError):
         return None
@@ -333,19 +351,21 @@ class SarvamProvider:
                 response.raise_for_status()
                 data = response.json()
             self._breaker_stt.on_success()
-        except Exception as exc:  # timeout, HTTP error, network error
+        except Exception as exc:  # noqa: BLE001 - timeout, HTTP error, network error -> degrade
             self._breaker_stt.on_failure()
             logger.warning("sarvam transcribe failed: %s", type(exc).__name__)
             return TranscribeResult(ok=False, error="provider_error")
 
         transcript = data.get("transcript")
         if not transcript:
-            return TranscribeResult(ok=False, error="empty_transcript")
+            # F-06: billed. The HTTP 200 above already cost money.
+            return TranscribeResult(ok=False, error="empty_transcript", billed=True)
 
         return TranscribeResult(
             ok=True,
             raw_transcript=transcript,
             lang_detected=data.get("language_code", "hi-IN"),
+            billed=True,
         )
 
     async def speak(self, text: str, *, lang: str = "en-IN") -> SpeakResult:
@@ -370,6 +390,7 @@ class SarvamProvider:
 
         settings = self._settings
         raw_datas: list[object] = []
+        billed_chars = 0
         try:
             async with httpx.AsyncClient(
                 base_url=SARVAM_BASE_URL,
@@ -386,6 +407,14 @@ class SarvamProvider:
                     # (future-proofs for V3's per-sentence streamed TTS, where
                     # each "chunk" really will be one sentence).
                     spoken_chunk = speakable(chunk)
+                    # F-07: Sarvam bills the text it RECEIVES. voice.py billed
+                    # `len(tts_text)` — the pre-normalization string — but
+                    # speakable() expands rupee amounts and initialisms before
+                    # the post, so "Budget Rs.15,000-Rs.75,000 per creator for
+                    # UGC" is 42 chars billed against 68 charged: a systematic
+                    # ~40% under-bill on exactly the budget-quoting replies
+                    # Meera produces most. Count what actually goes out.
+                    billed_chars += len(spoken_chunk)
                     response = await client.post(
                         "/text-to-speech",
                         headers={"api-subscription-key": settings.sarvam_api_key},
@@ -429,10 +458,17 @@ class SarvamProvider:
                     # `transcribe` above).
                     raw_datas.append(response.json())
             self._breaker_tts.on_success()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - timeout, HTTP error, network error -> degrade
             self._breaker_tts.on_failure()
             logger.warning("sarvam speak failed: %s", type(exc).__name__)
-            return SpeakResult(ok=False, error="provider_error")
+            # F-07/F-06: a multi-chunk reply can fail on a later chunk after
+            # earlier ones were already posted and billed. Report what went out.
+            return SpeakResult(
+                ok=False,
+                error="provider_error",
+                billed=billed_chars > 0,
+                billed_chars=billed_chars,
+            )
 
         # Decode AFTER the network turn succeeds so a malformed audio body
         # degrades to a text fallback WITHOUT tripping the breaker — the same
@@ -441,13 +477,25 @@ class SarvamProvider:
         for data in raw_datas:
             audio_bytes = _decode_tts_audio(data)
             if audio_bytes is None:
-                return SpeakResult(ok=False, error="invalid_audio_response")
+                return SpeakResult(
+                    ok=False, error="invalid_audio_response", billed=True, billed_chars=billed_chars
+                )
             if not audio_bytes:
-                return SpeakResult(ok=False, error="empty_audio")
+                return SpeakResult(
+                    ok=False, error="empty_audio", billed=True, billed_chars=billed_chars
+                )
             segments.append(audio_bytes)
 
         combined = _concat_wavs(segments)
         if combined is None:
-            return SpeakResult(ok=False, error="invalid_audio_response")
+            return SpeakResult(
+                    ok=False, error="invalid_audio_response", billed=True, billed_chars=billed_chars
+                )
 
-        return SpeakResult(ok=True, audio_bytes=combined, content_type="audio/wav")
+        return SpeakResult(
+            ok=True,
+            audio_bytes=combined,
+            content_type="audio/wav",
+            billed=True,
+            billed_chars=billed_chars,
+        )

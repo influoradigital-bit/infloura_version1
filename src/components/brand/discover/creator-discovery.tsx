@@ -19,7 +19,7 @@ import {
 
 import { cn } from '@/lib/utils';
 import type { Platform, CreatorProfile } from '@/lib/types';
-import { api, isApiLive, ApiError } from '@/lib/api';
+import { api, isApiLive, ApiError, type FeaturedCreatorSection } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -461,7 +461,10 @@ export function CreatorDiscovery() {
     setProposalStep('campaign');
     setProposalData({
       deliverables: [{ type: 'REEL', count: 1 }],
-      budget: creator.averageRate || 50000,
+      // Was `|| 50000` — a fabricated default budget. This form already treats budget === 0
+      // as "not priced" everywhere else (see `proposalData.budget > 0` / `priced` below), so
+      // ?? 0 keeps that same honest "not set" convention instead of inventing a fake ₹50,000.
+      budget: creator.averageRate ?? 0,
       deadline: '',
       usageRights: '3_MONTHS',
     });
@@ -489,6 +492,7 @@ export function CreatorDiscovery() {
     if (!inviteCreator?.id || !selectedCampaign) return;
 
     setIsSubmitting(true);
+    let dealParam = '';
     try {
       if (liveApi) {
         // One modal, two fidelities (CTO call 2026-07-26). Both endpoints are campaign-scoped and
@@ -501,7 +505,7 @@ export function CreatorDiscovery() {
         // Until now this branch always took the invite path and silently discarded every term the
         // two preceding steps collected.
         if (proposalData.budget > 0) {
-          await api.deals.create({
+          const deal = await api.deals.create({
             campaignId: selectedCampaign,
             // CreatorProfile id — what `creators.search` returns and what the server resolves.
             creatorId: inviteCreator.id,
@@ -514,12 +518,18 @@ export function CreatorDiscovery() {
             usageRights: proposalData.usageRights || undefined,
             message: inviteMessage || undefined,
           });
+          dealParam = `?deal=${deal.id}`;
           toast({
             title: 'Offer sent',
             description: `${inviteCreator.displayName} received your offer of ${formatINR(proposalData.budget)}.`,
           });
         } else {
-          await api.creators.invite(inviteCreator.id, selectedCampaign, inviteMessage || undefined);
+          const { collaborationId } = await api.creators.invite(
+            inviteCreator.id,
+            selectedCampaign,
+            inviteMessage || undefined,
+          );
+          dealParam = `?deal=${collaborationId}`;
           toast({
             title: 'Invitation sent',
             description: `${inviteCreator.displayName} has been invited to the campaign.`,
@@ -533,7 +543,9 @@ export function CreatorDiscovery() {
       setInviteMessage('');
       setInviteCreator(null);
       setProposalStep('campaign');
-      navigate('/brand/chat');
+      // brand-chat.tsx:~630 reads `?deal=` to select the conversation the offer/invite just
+      // opened; without it the brand lands on an arbitrary deal room (D-11).
+      navigate(`/brand/chat${dealParam}`);
     } catch (e) {
       const priced = proposalData.budget > 0;
       // Both paths share the (campaignId, creatorId) uniqueness constraint, so this is the most
@@ -657,12 +669,33 @@ export function CreatorDiscovery() {
     if (!liveApi) return;
     api.campaigns
       .list({ limit: 50 })
-      .then((rows) =>
+      .then(({ campaigns: rows }) =>
         setInviteCampaigns(
           rows.map((c) => ({ id: c.id, name: c.title, status: c.status })),
         ),
       )
       .catch(() => setInviteCampaigns([]));
+  }, [liveApi]);
+
+  // D-14 — GET /creators/featured (CreatorController.featured), a backend-complete endpoint with
+  // no prior FE consumer (wiki/errors/BRAND-BUG-TRACKER.md). Fetched once on mount; rendered below
+  // only while the brand hasn't started searching/filtering (see `activeFilterCount` further
+  // down) — the same "default landing state" convention featured rails use elsewhere.
+  const [featuredSections, setFeaturedSections] = React.useState<FeaturedCreatorSection[]>([]);
+  React.useEffect(() => {
+    if (!liveApi) return;
+    let cancelled = false;
+    api.creators
+      .featured({ limit: 8 })
+      .then(({ featured }) => {
+        if (!cancelled) setFeaturedSections(featured);
+      })
+      .catch(() => {
+        if (!cancelled) setFeaturedSections([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [liveApi]);
 
   const clearFilters = () => {
@@ -1120,6 +1153,41 @@ export function CreatorDiscovery() {
             </div>
           )}
         </div>
+
+        {/* Featured Creators — D-14. Hidden as soon as the brand starts searching/filtering, so
+            it never competes with an active query's results. */}
+        {featuredSections.length > 0 && !searchQuery && activeFilterCount === 0 && (
+          <div className="flex flex-col gap-6">
+            {featuredSections.map((section) => (
+              <div key={section.category}>
+                <h2 className="mb-3 text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  {section.title}
+                </h2>
+                <div className="flex gap-3 overflow-x-auto pb-2">
+                  {section.creators.map((sc) => (
+                    <button
+                      key={sc.id}
+                      type="button"
+                      onClick={() => navigate(`/brand/creators/${sc.id}`)}
+                      className="flex w-56 shrink-0 items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/50"
+                    >
+                      <Avatar className="h-10 w-10 shrink-0">
+                        <AvatarImage src={sc.avatarUrl || undefined} />
+                        <AvatarFallback>{sc.displayName.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{sc.displayName}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {formatFollowers(sc.totalFollowers)} followers
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Results Count */}
         <div className="flex items-center justify-between">

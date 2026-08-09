@@ -24,8 +24,8 @@ import {
   IndianRupee,
   type LucideIcon,
 } from 'lucide-react';
-import { api, isApiLive, ApiError } from '@/lib/api';
-import type { CreatorProfile, Platform } from '@/lib/types';
+import { api, isApiLive, ApiError, type CreatorPublicProfile, type SimilarCreator } from '@/lib/api';
+import type { Platform } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -84,8 +84,18 @@ interface CreatorDisplayModel {
     avgComments: number;
     avgViews: number;
     completedCampaigns: number;
-    rating: number;
-    reviewCount: number;
+    /**
+     * PR-1 (BrandF.md §87) — real avg of brand→creator star reviews from
+     * GET /creators/profile/:usernameOrId, or `null` when this creator has no reviews yet.
+     * Never coerced to a fabricated 0 (Priya, UI Honesty rule).
+     */
+    rating: number | null;
+    /**
+     * PR-1 — the DTO backing `rating` (`avgRating`) has no companion review-count field, so
+     * this stays `null` in live mode rather than a fabricated `0` sitting next to a real
+     * average (see buildLiveCreatorView and the Reviews-tab render below).
+     */
+    reviewCount: number | null;
   };
   platforms: CreatorPlatformView[];
   audience: {
@@ -110,9 +120,15 @@ interface CreatorDisplayModel {
   reviews: { brand: string; rating: number; comment: string; date: string }[];
   metrics: {
     responseTime: string;
-    completionRate: number;
-    onTimeDelivery: number;
-    repeatClients: number;
+    /**
+     * PR-1 — none of these three has a backend field yet (confirmed against
+     * DiscoveryDtos.CreatorPublicProfileResponse: no completionRate/onTimeDelivery/
+     * repeatClients). `null` in live mode renders an honest "—" instead of a fabricated
+     * "0%" presented as fact for every creator.
+     */
+    completionRate: number | null;
+    onTimeDelivery: number | null;
+    repeatClients: number | null;
   };
 }
 
@@ -244,18 +260,23 @@ const formatINR = (n: number): string => {
 };
 
 // ---------------------------------------------------------------------------
-// Live mode mapping — GET /creators/:id (CreatorController.get, verified at
-// influora-api/.../web/CreatorController.java:153) returns CreatorDtos.CreatorResponse.
-// That DTO only covers a subset of what this page renders (identity, platform
-// stats, categories/languages, aggregate follower/engagement/rate numbers).
-// Sections with no backend equivalent get an honest empty/zero fallback below
-// (each flagged // TODO(vikram)) rather than invented numbers.
+// Live mode mapping — GET /creators/profile/:usernameOrId (CreatorController.getPublicProfile,
+// verified at influora-api/.../web/CreatorController.java:159) returns
+// DiscoveryDtos.CreatorPublicProfileResponse.
+//
+// PR-1 fix (BrandF.md §87, wiki/errors/BRAND-BUG-TRACKER.md): this page previously called
+// GET /creators/:id (CreatorDtos.CreatorResponse), whose DTO has no completedCampaigns/
+// avgRating fields at all — both were hardcoded to 0 below, rendering as fabricated zeros
+// under "Based on verified brand collaborations". CreatorPublicProfileResponse actually
+// carries both (real completedCampaigns count, real avgRating — null, not 0, when unrated).
+//
+// The rest of what this page renders (reviews list, portfolio grid, past brands, per-platform
+// rate cards, work-quality metrics, audience demographics, website/availability/joinedDate)
+// still has no backend equivalent in either DTO — those keep their honest empty/zero fallback
+// below (each flagged // TODO(vikram)) rather than invented numbers.
 // ---------------------------------------------------------------------------
 
-// `api.creators.get` resolves to the shared `CreatorProfile` FE type (src/lib/types.ts),
-// which does not declare `username` even though CreatorResponse.username exists on the
-// wire — this widens the resolved row with that one extra optional field.
-type LiveCreatorRow = CreatorProfile & { username?: string };
+type LiveCreatorRow = CreatorPublicProfile;
 
 const PLATFORM_LABEL: Partial<Record<Platform, string>> = {
   INSTAGRAM: 'Instagram',
@@ -286,13 +307,13 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
     displayName: row.displayName,
     username: row.username ? `@${row.username}` : row.displayName,
     bio: row.bio ?? '',
-    avatarUrl: row.avatarUrl ?? null,
-    location: row.location ?? '',
+    avatarUrl: row.profilePhoto ?? null,
+    location: row.city ?? '',
     languages: row.languages ?? [],
-    website: null, // TODO(vikram): CreatorResponse DTO has no website field
+    website: null, // TODO(vikram): DTO has no website field
     isVerified: row.isVerified,
-    isAvailable: false, // TODO(vikram): CreatorResponse DTO has no availability field
-    joinedDate: '', // TODO(vikram): CreatorResponse DTO has no joinedDate/createdAt field
+    isAvailable: false, // TODO(vikram): DTO has no availability field
+    joinedDate: '', // TODO(vikram): DTO has no joinedDate/createdAt field
     categories: row.categories ?? [],
     stats: {
       totalFollowers: row.totalFollowers,
@@ -300,9 +321,16 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
       avgLikes: 0, // TODO(vikram): DTO has no per-post average likes
       avgComments: 0, // TODO(vikram): DTO has no per-post average comments
       avgViews: 0, // TODO(vikram): DTO has no per-post average views
-      completedCampaigns: 0, // TODO(vikram): DTO has no completed-campaign count
-      rating: 0, // TODO(vikram): DTO has no rating
-      reviewCount: 0, // TODO(vikram): DTO has no reviewCount
+      // PR-1 fix (BrandF.md §87) — real count from GET /creators/profile/:usernameOrId.
+      // The old GET /creators/:id (CreatorResponse) had no such field at all, so this was
+      // hardcoded to 0 and rendered as a fabricated "0 campaigns" for every creator.
+      completedCampaigns: row.completedCampaigns,
+      // PR-1 fix — real avg of brand→creator star reviews, or `null` (not a fabricated 0)
+      // when this creator has no reviews yet (CreatorDiscoveryService H-22 comment).
+      rating: row.avgRating,
+      // TODO(vikram): DTO still has no reviewCount field — `null`, not a fabricated 0, so the
+      // Reviews-tab render below never prints "0 reviews" next to a real average rating.
+      reviewCount: null,
     },
     platforms: (row.platforms ?? []).map((p) => ({
       name: PLATFORM_LABEL[p.platform] ?? p.platform,
@@ -314,7 +342,7 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
       color: PLATFORM_COLOR[p.platform] ?? '#6B7280',
     })),
     audience: {
-      // TODO(vikram): CreatorResponse DTO has no audience-demographics fields/endpoint
+      // TODO(vikram): DTO has no audience-demographics fields/endpoint
       ageGroups: [],
       gender: { female: 0, male: 0, other: 0 },
       topCities: [],
@@ -327,16 +355,18 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
     // TODO(vikram): PortfolioItemResponse (id/title/description/thumbnailUrl/mediaUrl/platform)
     // has no brand/type/views/likes fields, so it can't be mapped into this grid without inventing data
     portfolio: [],
-    // TODO(vikram): DTO only has a single averageRate/currency, no per-platform/per-type rate cards
+    // TODO(vikram): DTO only has rateMin/rateMax/currency, no per-platform/per-type rate cards
     rates: { instagram: [], youtube: [] },
     pastBrands: [], // TODO(vikram): DTO has no past-brands history
-    reviews: [], // TODO(vikram): DTO has no reviews
+    reviews: [], // TODO(vikram): DTO has no individual reviews, only the avgRating aggregate
     metrics: {
-      // TODO(vikram): DTO has no work-quality metrics (response time / completion / on-time / repeat)
+      // TODO(vikram): DTO has no work-quality metrics (response time / completion / on-time / repeat).
+      // `null` (not 0) for the three percentage metrics — PR-1: a "0%" here rendered as fact for
+      // every creator is the exact fabricated-zero bug this ticket exists to close.
       responseTime: '—',
-      completionRate: 0,
-      onTimeDelivery: 0,
-      repeatClients: 0,
+      completionRate: null,
+      onTimeDelivery: null,
+      repeatClients: null,
     },
   };
 }
@@ -346,9 +376,14 @@ export default function BrandCreatorProfilePage() {
   const navigate = useNavigate();
   const liveApi = isApiLive();
 
-  // Live mode: GET /creators/:id, mapped through buildLiveCreatorView above.
+  // Live mode: GET /creators/profile/:id, mapped through buildLiveCreatorView above.
   // Mock mode keeps rendering mockCreator exactly as before.
   const [liveCreator, setLiveCreator] = React.useState<CreatorDisplayModel | null>(null);
+  // Raw (unprefixed) username, kept alongside `liveCreator` — GET /creators/:username/similar
+  // (below) requires the real username, not the `@`-prefixed display value or the :id route param
+  // (which may itself be a creatorId, not a username; CreatorController.similar resolves by
+  // username only — CreatorDiscoveryService.getSimilar → requireDiscoverableByUsername).
+  const [liveUsername, setLiveUsername] = React.useState<string | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [notFound, setNotFound] = React.useState(false);
   const [reloadToken, setReloadToken] = React.useState(0);
@@ -360,12 +395,13 @@ export default function BrandCreatorProfilePage() {
     setNotFound(false);
     (async () => {
       try {
-        const row = await api.creators.get(id);
+        const row = await api.creators.getProfile(id);
         if (cancelled) return;
         if (!row) {
           setNotFound(true);
         } else {
           setLiveCreator(buildLiveCreatorView(row));
+          setLiveUsername(row.username || null);
         }
       } catch (e) {
         if (cancelled) return;
@@ -404,7 +440,7 @@ export default function BrandCreatorProfilePage() {
     let cancelled = false;
     (async () => {
       try {
-        const rows = await api.campaigns.list({});
+        const { campaigns: rows } = await api.campaigns.list({});
         if (!cancelled) setLiveCampaigns(rows.map((c) => ({ id: c.id, name: c.title })));
       } catch {
         if (!cancelled) setLiveCampaigns([]);
@@ -414,6 +450,29 @@ export default function BrandCreatorProfilePage() {
       cancelled = true;
     };
   }, [liveApi]);
+
+  // D-14 — GET /creators/:username/similar (CreatorController.similar), fired once the real
+  // username resolves above. A LOW-severity backend-complete endpoint with no prior FE consumer
+  // (wiki/errors/BRAND-BUG-TRACKER.md); this profile page — the natural place a brand asks "who
+  // else looks like this creator" — is the slot for it. Best-effort: an empty/failed fetch just
+  // hides the section rather than surfacing an error, since it's a secondary recommendation, not
+  // core profile content.
+  const [similarCreators, setSimilarCreators] = React.useState<SimilarCreator[]>([]);
+  React.useEffect(() => {
+    if (!liveApi || !liveUsername) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { similar } = await api.creators.similar(liveUsername, 6);
+        if (!cancelled) setSimilarCreators(similar);
+      } catch {
+        if (!cancelled) setSimilarCreators([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [liveApi, liveUsername]);
 
   const campaignOptions = liveApi
     ? [...(liveCampaigns ?? []), { id: 'new', name: '+ Create New Campaign' }]
@@ -593,7 +652,13 @@ export default function BrandCreatorProfilePage() {
             { label: 'Avg Likes', value: formatNumber(creator.stats.avgLikes), icon: Heart },
             { label: 'Avg Views', value: formatNumber(creator.stats.avgViews), icon: Eye },
             { label: 'Campaigns', value: creator.stats.completedCampaigns.toString(), icon: Briefcase },
-            { label: 'Rating', value: creator.stats.rating.toString(), icon: Star },
+            {
+              label: 'Rating',
+              // PR-1 — `null` means no reviews yet; render an explicit not-available state
+              // instead of a fabricated "0" (Priya, UI Honesty rule).
+              value: creator.stats.rating != null ? creator.stats.rating.toFixed(1) : 'Not yet rated',
+              icon: Star,
+            },
           ].map((stat) => (
             <div
               key={stat.label}
@@ -655,13 +720,24 @@ export default function BrandCreatorProfilePage() {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6">
-            {/* Work Metrics */}
+            {/* Work Metrics — PR-1: completion/on-time/repeat have no backend field yet
+                (DiscoveryDtos.CreatorPublicProfileResponse), so `null` renders an honest "—"
+                instead of a fabricated "0%" presented as fact for every creator. */}
             <div className="grid gap-4 sm:grid-cols-4">
               {[
                 { label: 'Response Time', value: creator.metrics.responseTime },
-                { label: 'Completion Rate', value: `${creator.metrics.completionRate}%` },
-                { label: 'On-Time Delivery', value: `${creator.metrics.onTimeDelivery}%` },
-                { label: 'Repeat Clients', value: `${creator.metrics.repeatClients}%` },
+                {
+                  label: 'Completion Rate',
+                  value: creator.metrics.completionRate != null ? `${creator.metrics.completionRate}%` : '—',
+                },
+                {
+                  label: 'On-Time Delivery',
+                  value: creator.metrics.onTimeDelivery != null ? `${creator.metrics.onTimeDelivery}%` : '—',
+                },
+                {
+                  label: 'Repeat Clients',
+                  value: creator.metrics.repeatClients != null ? `${creator.metrics.repeatClients}%` : '—',
+                },
               ].map((metric) => (
                 <div key={metric.label} className="rounded-lg border p-4">
                   <p className="text-2xl font-semibold">{metric.value}</p>
@@ -875,17 +951,21 @@ export default function BrandCreatorProfilePage() {
 
           {/* Reviews Tab */}
           <TabsContent value="reviews" className="space-y-4">
-            {/* Rating Summary */}
+            {/* Rating Summary — PR-1: `rating` is `null` when this creator has no reviews yet;
+                render an explicit not-available state instead of a fabricated "0" / 0 filled
+                stars (Priya, UI Honesty rule). */}
             <div className="flex items-center gap-6 rounded-lg border p-5">
               <div className="text-center">
-                <p className="text-4xl font-semibold">{creator.stats.rating}</p>
+                <p className="text-4xl font-semibold">
+                  {creator.stats.rating != null ? creator.stats.rating.toFixed(1) : '—'}
+                </p>
                 <div className="mt-1 flex gap-0.5">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <Star
                       key={i}
                       className={cn(
                         'h-4 w-4',
-                        i < Math.floor(creator.stats.rating)
+                        creator.stats.rating != null && i < Math.floor(creator.stats.rating)
                           ? 'fill-yellow-400 text-yellow-400'
                           : 'fill-muted text-muted'
                       )}
@@ -893,14 +973,31 @@ export default function BrandCreatorProfilePage() {
                   ))}
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {creator.stats.reviewCount} reviews
+                  {creator.stats.rating != null
+                    ? creator.stats.reviewCount != null
+                      ? `${creator.stats.reviewCount} reviews`
+                      : 'Average brand rating'
+                    : 'Not yet rated'}
                 </p>
               </div>
               <Separator orientation="vertical" className="h-16" />
-              <div className="text-sm text-muted-foreground">
-                <p>Based on verified brand collaborations</p>
-                <p className="mt-1">All reviews are from completed campaigns</p>
-              </div>
+              {/* PR-1 — this used to assert "Based on verified brand collaborations" next to a
+                  fabricated 0/0-stars for every unrated creator, i.e. a false attestation beside
+                  no data. Only shown once a real rating exists; otherwise mirrors the app's
+                  existing "No reviews yet" empty state (collaboration-reviews-panel.tsx). */}
+              {creator.stats.rating != null ? (
+                <div className="text-sm text-muted-foreground">
+                  <p>Based on verified brand collaborations</p>
+                  <p className="mt-1">All reviews are from completed campaigns</p>
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">No reviews yet</p>
+                  <p className="mt-1">
+                    Reviews appear here once brands rate a completed collaboration with this creator.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Review List */}
@@ -939,6 +1036,41 @@ export default function BrandCreatorProfilePage() {
             </div>
           </TabsContent>
         </Tabs>
+
+        {/* Similar Creators — D-14, GET /creators/:username/similar. Only rendered once real
+            results arrive; absent (not an empty-state placeholder) otherwise, since this is a
+            secondary recommendation rather than core profile content. */}
+        {similarCreators.length > 0 && (
+          <div className="mt-8">
+            <h2 className="mb-4 text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              Similar Creators
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {similarCreators.map((sc) => (
+                <button
+                  key={sc.id}
+                  type="button"
+                  onClick={() => navigate(`/brand/creators/${sc.id}`)}
+                  className="flex items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/50"
+                >
+                  <Avatar className="h-10 w-10 shrink-0">
+                    <AvatarImage src={sc.avatarUrl || undefined} />
+                    <AvatarFallback>{sc.displayName.charAt(0)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{sc.displayName}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {formatNumber(sc.totalFollowers)} followers · {sc.engagementRate}% ER
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="shrink-0 text-xs">
+                    {Math.round(sc.matchScore)}% match
+                  </Badge>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Invite Dialog */}

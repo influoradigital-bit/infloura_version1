@@ -44,6 +44,7 @@ import datetime as dt
 import logging
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
+from time import monotonic as _monotonic
 
 from app.config import get_settings
 
@@ -65,7 +66,7 @@ except ImportError:  # pragma: no cover
 _GLOBAL_KEY_PREFIX = "influora:ai:spend:global"
 _WORKSPACE_KEY_PREFIX = "influora:ai:spend:ws"
 _KEY_TTL_SECONDS = 3 * 24 * 60 * 60  # 3 days -- comfortably outlives one UTC day + clock skew
-_MICROS_PER_DOLLAR = Decimal("1000000")
+_MICROS_PER_DOLLAR = Decimal(1000000)
 
 
 def _today_utc() -> dt.date:
@@ -78,7 +79,7 @@ def _to_micros(amount: Decimal) -> int:
 
 def _from_micros(micros: int | str | None) -> Decimal:
     if not micros:
-        return Decimal("0")
+        return Decimal(0)
     return Decimal(int(micros)) / _MICROS_PER_DOLLAR
 
 
@@ -98,7 +99,7 @@ def _workspace_key(workspace_id: str, day: dt.date) -> str:
 @dataclass
 class _DailySpendState:
     day: dt.date = field(default_factory=_today_utc)
-    global_total: Decimal = Decimal("0")
+    global_total: Decimal = Decimal(0)
     per_workspace: dict[str, Decimal] = field(default_factory=dict)
 
 
@@ -124,7 +125,7 @@ async def _record_spend_memory(cost_usd: Decimal, workspace_id: str | None) -> D
         _state.global_total += cost_usd
         if workspace_id:
             _state.per_workspace[workspace_id] = (
-                _state.per_workspace.get(workspace_id, Decimal("0")) + cost_usd
+                _state.per_workspace.get(workspace_id, Decimal(0)) + cost_usd
             )
         return _state.global_total
 
@@ -138,14 +139,14 @@ async def _get_global_total_memory() -> Decimal:
 async def _get_workspace_total_memory(workspace_id: str) -> Decimal:
     async with _lock:
         _roll_if_new_day_locked()
-        return _state.per_workspace.get(workspace_id, Decimal("0"))
+        return _state.per_workspace.get(workspace_id, Decimal(0))
 
 
 # ---------------------------------------------------------------------------
 # Redis-backed store
 # ---------------------------------------------------------------------------
 
-_redis_client: "redis_asyncio.Redis | None" = None  # type: ignore[name-defined]
+_redis_client: redis_asyncio.Redis | None = None  # type: ignore[name-defined]
 _redis_client_lock = asyncio.Lock()
 
 
@@ -154,7 +155,7 @@ def _redis_configured() -> bool:
     return bool(settings.redis_url) and redis_asyncio is not None
 
 
-async def _get_redis_client() -> "redis_asyncio.Redis | None":  # type: ignore[name-defined]
+async def _get_redis_client() -> redis_asyncio.Redis | None:  # type: ignore[name-defined]
     """Lazily creates (and caches) the shared async Redis client. Returns
     None when Redis isn't configured/importable so every call site has a
     single, uniform "no Redis available" branch."""
@@ -181,7 +182,7 @@ async def close_redis_client() -> None:
     if _redis_client is not None:
         try:
             await _redis_client.aclose()
-        except Exception:  # noqa: BLE001 - best-effort shutdown, never raise
+        except Exception:
             logger.warning("spend_tracker: error closing Redis client", exc_info=True)
         finally:
             _redis_client = None
@@ -208,7 +209,7 @@ async def _record_spend_redis(cost_usd: Decimal, workspace_id: str | None) -> De
             results = await pipe.execute()
         new_global_micros = results[0]
         return _from_micros(new_global_micros)
-    except Exception:  # noqa: BLE001 - any Redis failure -> caller falls back
+    except Exception:
         logger.warning(
             "spend_tracker: Redis record_spend failed, falling back to in-memory counter",
             exc_info=True,
@@ -223,7 +224,7 @@ async def _get_global_total_redis() -> Decimal | None:
             return None
         value = await client.get(_global_key(_today_utc()))
         return _from_micros(value)
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning(
             "spend_tracker: Redis get_global_total failed, falling back to in-memory counter",
             exc_info=True,
@@ -238,7 +239,7 @@ async def _get_workspace_total_redis(workspace_id: str) -> Decimal | None:
             return None
         value = await client.get(_workspace_key(workspace_id, _today_utc()))
         return _from_micros(value)
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning(
             "spend_tracker: Redis get_workspace_total failed, falling back to in-memory counter",
             exc_info=True,
@@ -251,7 +252,11 @@ async def _get_workspace_total_redis(workspace_id: str) -> Decimal | None:
 # ---------------------------------------------------------------------------
 
 
-async def record_spend(cost_usd: Decimal, workspace_id: str | None) -> Decimal:
+async def record_spend(
+    cost_usd: Decimal,
+    workspace_id: str | None,
+    reservation: Reservation | None = None,
+) -> Decimal:
     """Adds `cost_usd` to today's global total (and, if `workspace_id` is
     given, that workspace's running total). Returns the new global total for
     today so the caller can include `spend_today_usd` in its structured log
@@ -262,28 +267,232 @@ async def record_spend(cost_usd: Decimal, workspace_id: str | None) -> Decimal:
     from drifting apart, and means a mid-request Redis outage on the *next*
     call still has a locally-consistent number to fall back to.
     """
+    # F-05: the reservation is replaced by the real number, not stacked on top
+    # of it. Released FIRST so a failure in the Redis write below can never
+    # leave the hold in place.
+    await release(reservation)
     memory_total = await _record_spend_memory(cost_usd, workspace_id)
     if _redis_configured():
         redis_total = await _record_spend_redis(cost_usd, workspace_id)
         if redis_total is not None:
-            return redis_total
+            # F-03: the in-memory counter can be AHEAD of Redis (it accumulated
+            # every spend, including those whose Redis write failed and was
+            # never replayed). Report the larger of the two.
+            return max(redis_total, memory_total)
     return memory_total
 
 
 async def get_global_total_today() -> Decimal:
+    """Today's global spend — the LARGER of the Redis and in-memory totals.
+
+    F-03: this used to return the Redis value whenever Redis was reachable,
+    ignoring a higher in-memory total. `record_spend` always increments memory,
+    writes Redis best-effort, swallows failures and never replays them — so
+    spend accrued during a Redis outage was permanently invisible to the gate.
+
+    Worked example from the audit: Redis down 10:00–10:30 while $12 accrues
+    (memory $12, Redis stuck at $3). Redis recovers; the gate reads $3 and keeps
+    authorizing until Redis ALONE reaches $15 — about $27 of real spend against
+    a $15 ceiling. The module docstring promises degradation to "per-process",
+    not to "unenforced", and `max()` is what makes that promise true: whichever
+    store saw more, saw more.
+    """
+    memory_total = await _get_global_total_memory()
     if _redis_configured():
         redis_total = await _get_global_total_redis()
         if redis_total is not None:
-            return redis_total
-    return await _get_global_total_memory()
+            return max(redis_total, memory_total)
+    return memory_total
 
 
 async def get_workspace_total_today(workspace_id: str) -> Decimal:
+    """Same F-03 reasoning as `get_global_total_today`, per workspace."""
+    memory_total = await _get_workspace_total_memory(workspace_id)
     if _redis_configured():
         redis_total = await _get_workspace_total_redis(workspace_id)
         if redis_total is not None:
-            return redis_total
-    return await _get_workspace_total_memory(workspace_id)
+            return max(redis_total, memory_total)
+    return memory_total
+
+
+# ---------------------------------------------------------------------------
+# F-05 — reservations. The gate was read-then-spend and held NOTHING.
+#
+# `check_spend_gate` read the total, returned, and reserved no budget;
+# `record_spend` ran only AFTER the provider call completed. With the total at
+# $14.90 against a $15 ceiling, 200 concurrent brand-safety requests all read
+# $14.90, all passed, and all executed at ~$0.07 — about $29 spent before a
+# single request was blocked. Overshoot was bounded only by concurrency. One
+# gate check at chat.py also covered a tool loop of up to 6 separate Claude
+# turns, so a single authorization could span six billable calls.
+#
+# A reservation is budget held between the gate check and the recorded spend.
+# The gate counts it, so concurrent callers see each other's in-flight cost
+# instead of all reading the same stale total. Reservations are per-process
+# (matching the in-memory counter's contract) and are ALWAYS released — on
+# success they are replaced by the real recorded spend, on failure they simply
+# expire, so a crashed request cannot leak budget forever.
+# ---------------------------------------------------------------------------
+
+# A reservation whose owner never settles must not hold budget forever. Kept
+# short: the cost of an over-long TTL is a false "ceiling reached" for other
+# callers; the cost of a too-short one is the F-05 race reopening for the tail
+# of a slow call. 60s comfortably covers a single provider call; chat.py's tool
+# loop passes a longer one because one gate check there covers up to
+# tool_loop_max_iterations turns.
+_RESERVATION_TTL_SECONDS = 60.0
+
+
+@dataclass
+class Reservation:
+    """Budget held for one in-flight provider call."""
+
+    reservation_id: int
+    amount: Decimal
+    workspace_id: str | None
+    created_at: float
+    ttl_seconds: float = _RESERVATION_TTL_SECONDS
+
+
+_reservations: dict[int, Reservation] = {}
+_reservation_seq = 0
+
+
+def _prune_expired_reservations_locked(now: float) -> None:
+    """Must hold `_lock`. A reservation whose owner died (crash, cancellation
+    before `release`) must not hold budget forever."""
+    stale = [
+        rid for rid, r in _reservations.items()
+        if now - r.created_at > r.ttl_seconds
+    ]
+    for rid in stale:
+        logger.warning(
+            "spend_tracker: releasing expired reservation %s ($%s) — its owner never settled",
+            rid, _reservations[rid].amount,
+        )
+        del _reservations[rid]
+
+
+async def reserve(
+    amount: Decimal,
+    workspace_id: str | None = None,
+    *,
+    ttl_seconds: float = _RESERVATION_TTL_SECONDS,
+) -> Reservation:
+    """Hold `amount` of budget for one in-flight call.
+
+    Settle it with `record_spend(..., reservation=...)` on success or
+    `release()` on failure. `ttl_seconds` is the backstop for the paths that do
+    neither (a crash, a cancelled task): the hold expires on its own so budget
+    can never be leaked permanently.
+    """
+    global _reservation_seq
+    async with _lock:
+        now = _monotonic()
+        _prune_expired_reservations_locked(now)
+        _reservation_seq += 1
+        reservation = Reservation(
+            reservation_id=_reservation_seq,
+            amount=max(amount, Decimal(0)),
+            workspace_id=workspace_id,
+            created_at=now,
+            ttl_seconds=ttl_seconds,
+        )
+        _reservations[reservation.reservation_id] = reservation
+        return reservation
+
+
+async def try_reserve(
+    amount: Decimal,
+    workspace_id: str | None,
+    *,
+    global_total: Decimal,
+    global_ceiling: Decimal,
+    workspace_total: Decimal | None = None,
+    workspace_cap: Decimal | None = None,
+    ttl_seconds: float = _RESERVATION_TTL_SECONDS,
+) -> tuple[Reservation | None, str | None]:
+    """Check the ceilings and take the reservation ATOMICALLY.
+
+    F-05 (round 2, Priya sign-off review). The first fix read the global total,
+    checked the ceiling, then read the WORKSPACE total, and only then reserved.
+    With Redis configured and `WORKSPACE_DAILY_HARD_CAP_USD` set — both
+    supported, both controls this codebase added deliberately — that workspace
+    read is real network I/O sitting between the ceiling check and the reserve.
+    Every concurrent caller therefore passed the ceiling check seeing
+    `reserved = 0`, and the measured result was the audit's original number
+    verbatim: **200 of 200 admitted, $14.00 of in-flight spend authorized
+    against $0.10 of headroom.**
+
+    The fix was protected by the absence of an `await`, not by design — its test
+    happened to run with no Redis and no workspace cap, so nothing yielded.
+
+    Everything that can block is passed IN, already read. This function does the
+    comparison and the insert under one lock with no await in between, so N
+    concurrent callers serialise: each one sees the reservations the callers
+    before it already took.
+
+    Returns `(reservation, None)` when admitted, or `(None, error_code)` when
+    the ceiling or the per-workspace cap would be breached.
+    """
+    global _reservation_seq
+    async with _lock:
+        now = _monotonic()
+        _prune_expired_reservations_locked(now)
+
+        held_global = sum((r.amount for r in _reservations.values()), Decimal(0))
+        if global_total + held_global >= global_ceiling:
+            return None, "AI_SPEND_CEILING_REACHED"
+
+        if workspace_id and workspace_cap is not None and workspace_total is not None:
+            held_workspace = sum(
+                (r.amount for r in _reservations.values() if r.workspace_id == workspace_id),
+                Decimal(0),
+            )
+            if workspace_total + held_workspace >= workspace_cap:
+                return None, "AI_WORKSPACE_SPEND_CAP_REACHED"
+
+        if amount <= 0:
+            return None, None  # gate passed; caller asked for no reservation
+
+        _reservation_seq += 1
+        reservation = Reservation(
+            reservation_id=_reservation_seq,
+            amount=amount,
+            workspace_id=workspace_id,
+            created_at=now,
+            ttl_seconds=ttl_seconds,
+        )
+        _reservations[reservation.reservation_id] = reservation
+        return reservation, None
+
+
+async def release(reservation: Reservation | None) -> None:
+    """Release a reservation. Idempotent — releasing twice is a no-op."""
+    if reservation is None:
+        return
+    async with _lock:
+        _reservations.pop(reservation.reservation_id, None)
+
+
+async def get_reserved_global() -> Decimal:
+    async with _lock:
+        _prune_expired_reservations_locked(_monotonic())
+        return sum((r.amount for r in _reservations.values()), Decimal(0))
+
+
+async def get_reserved_workspace(workspace_id: str) -> Decimal:
+    async with _lock:
+        _prune_expired_reservations_locked(_monotonic())
+        return sum(
+            (r.amount for r in _reservations.values() if r.workspace_id == workspace_id),
+            Decimal(0),
+        )
+
+
+async def reset_reservations_for_testing() -> None:
+    async with _lock:
+        _reservations.clear()
 
 
 async def reset_for_testing() -> None:
@@ -299,5 +508,5 @@ async def reset_for_testing() -> None:
             if client is not None:
                 today = _today_utc()
                 await client.delete(_global_key(today))
-        except Exception:  # noqa: BLE001 - best-effort, tests still pass on in-memory state
+        except Exception:
             logger.warning("spend_tracker: Redis reset_for_testing failed", exc_info=True)

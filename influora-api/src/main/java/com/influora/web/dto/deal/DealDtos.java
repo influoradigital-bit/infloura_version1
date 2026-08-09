@@ -29,6 +29,14 @@ public final class DealDtos {
             String counterpartyName,
             String counterpartyAvatar,
             String counterpartyHandle,
+            /**
+             * PR-2 (BrandF.md §83c / §105 VER-1) — {@code Workspace.verificationStatus} enum name
+             * when the counterparty is the brand (viewer is CREATOR), the same signal added to
+             * {@code CreatorCampaignDtos.BrandSummary}. Null when the counterparty is a creator
+             * (viewer is BRAND) — {@code CreatorProfile} verification is a separate, out-of-scope
+             * signal ({@code identityKycStatus}), not this field.
+             */
+            String counterpartyVerificationStatus,
             CollaborationStatus status,
             BigDecimal dealValue,
             String currency,
@@ -84,7 +92,10 @@ public final class DealDtos {
     public record CounterRequest(
             @NotNull @DecimalMin("0.01") BigDecimal amount,
             @Size(max = 2000) String message,
-            @NotEmpty(message = "At least one deliverable is required") @Valid List<DeliverableSlot> deliverables,
+            // Nullable — a counter that only revises price/deadline need not re-specify deliverables.
+            // DealService.doCounter() carries them forward from the superseded proposal card when
+            // omitted, so the contract generator always sees a full set of terms.
+            @Valid List<DeliverableSlot> deliverables,
             String deadline,
             String usageRights) {}
 

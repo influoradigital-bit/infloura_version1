@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { FileText, CheckCircle2, AlertCircle, ChevronRight } from 'lucide-react';
 import { TimelineEvent } from '@/lib/types';
+import { formatINR } from '@/lib/utils';
 
 interface CreatorContractCardProps {
   event: TimelineEvent;
@@ -93,7 +94,7 @@ export function CreatorContractCard({
         <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
           <span className="text-sm text-gray-600">Contract Value</span>
           <span className="font-bold text-lg text-emerald-600">
-            ₹{(meta?.amount || 50000).toLocaleString('en-IN')}
+            {formatINR(meta?.amount)}
           </span>
         </div>
 
@@ -162,7 +163,9 @@ export function CreatorContractCard({
                 Escrow Funded
               </p>
               <p className="text-xs text-stage-approved-fg">
-                ₹{(meta?.amount || 50000).toLocaleString('en-IN')} secured in escrow
+                {meta?.amount != null && Number.isFinite(meta.amount)
+                  ? `${formatINR(meta.amount)} secured in escrow`
+                  : 'Escrow amount not yet available'}
               </p>
             </div>
           </div>

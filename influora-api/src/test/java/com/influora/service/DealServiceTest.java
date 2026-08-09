@@ -26,7 +26,9 @@ import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.DealSenderType;
 import com.influora.domain.enums.DeliverableStatus;
+import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.UserType;
+import com.influora.domain.enums.VerificationStatus;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.ContractRepository;
@@ -49,6 +51,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -1370,5 +1373,85 @@ class DealServiceTest {
         List<DeliverableListItem> result = service.listDeliverables(creatorPrincipal, DEAL_ID);
 
         assertEquals(0, result.size());
+    }
+
+    // ------------------------------------------------------------------
+    // PR-2 (BrandF.md §83c / §105 VER-1) — DealResponse.counterpartyVerificationStatus.
+    // A creator deciding whether to accept/ship needs to know if the brand on the other side
+    // of the deal room has passed KYC. Previously DealResponse carried no verification signal
+    // at all; toDealResponse -> resolveCounterparty now sources it from Workspace.verificationStatus
+    // for a creator-viewing-brand counterparty, and leaves it null for a brand-viewing-creator
+    // counterparty (CreatorProfile verification is a separate, out-of-scope signal).
+    // ------------------------------------------------------------------
+
+    private void stubToDealResponseCommonReads(String collaborationId) {
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(collaborationId))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(collaborationId))
+                .thenReturn(List.of());
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(collaborationId))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(eq(collaborationId), any()))
+                .thenReturn(false);
+        when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(collaborationId))
+                .thenReturn(List.of());
+    }
+
+    @Test
+    @DisplayName(
+            "get(): creator viewer sees the brand's real Workspace.verificationStatus as counterpartyVerificationStatus")
+    void testGetSurfacesBrandVerificationStatusToCreator() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        Workspace workspace =
+                Workspace.newBrand(WORKSPACE_ID, "Test Brand", "test-brand", "Beauty", "10-50");
+        workspace.setVerificationStatus(VerificationStatus.VERIFIED);
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(workspace));
+        stubToDealResponseCommonReads(DEAL_ID);
+
+        DealResponse response = service.get(creatorPrincipal, DEAL_ID);
+
+        assertEquals("VERIFIED", response.counterpartyVerificationStatus());
+        assertEquals(WORKSPACE_ID, response.counterpartyId());
+    }
+
+    @Test
+    @DisplayName(
+            "get(): a PENDING (not yet KYC'd) brand surfaces PENDING, not a hardcoded/defaulted verified value")
+    void testGetSurfacesPendingBrandVerificationStatusToCreator() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        Workspace workspace =
+                Workspace.newBrand(WORKSPACE_ID, "Test Brand", "test-brand", "Beauty", "10-50");
+        workspace.setVerificationStatus(VerificationStatus.PENDING);
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(workspace));
+        stubToDealResponseCommonReads(DEAL_ID);
+
+        DealResponse response = service.get(creatorPrincipal, DEAL_ID);
+
+        assertEquals("PENDING", response.counterpartyVerificationStatus());
+    }
+
+    @Test
+    @DisplayName(
+            "get(): brand viewer's counterparty is the creator — counterpartyVerificationStatus stays null, not the brand's own status")
+    void testGetLeavesVerificationStatusNullForBrandViewer() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID)).thenReturn(Optional.empty());
+        stubToDealResponseCommonReads(DEAL_ID);
+
+        DealResponse response = service.get(brandPrincipal, DEAL_ID);
+
+        assertEquals(null, response.counterpartyVerificationStatus());
     }
 }

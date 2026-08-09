@@ -133,6 +133,24 @@ class PortfolioServiceTest {
 
     @Test
     @DisplayName(
+            "CR-71: profileClicksEstimated is always true, since profileClicks is a follower-count"
+                    + " proxy, not a real click measurement")
+    void analytics_profileClicksIsAlwaysMarkedEstimated() {
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Real Creator");
+
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        when(collaborationRepository.countByCreatorIdAndStatus(USER_ID, CollaborationStatus.COMPLETED))
+                .thenReturn(0L);
+        when(collaborationRepository.countByCreatorId(USER_ID)).thenReturn(0L);
+
+        PortfolioAnalyticsResponse response = service.analytics(principal);
+
+        assertEquals(true, response.profileClicksEstimated());
+    }
+
+    @Test
+    @DisplayName(
             "analytics: page views come from portfolio_events VIEW rows (last 30d) with a"
                     + " period-over-period deltaPercent, keyed by profileId")
     void analytics_pageViewsComputedFromViewEvents() {

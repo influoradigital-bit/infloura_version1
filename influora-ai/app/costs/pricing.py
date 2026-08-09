@@ -28,30 +28,102 @@ from app.config import (
 
 logger = logging.getLogger(__name__)
 
-_MTOK = Decimal("1000000")
+_MTOK = Decimal(1000000)
 
 
 class ModelRate(NamedTuple):
-    """Dollars per token, already divided down from the per-MTok list price."""
+    """Dollars per token, already divided down from the per-MTok list price.
+
+    F-01: `cache_read_per_token` and `cache_write_per_token` exist because the
+    Anthropic API reports `cache_read_input_tokens` and
+    `cache_creation_input_tokens` as fields DISJOINT from `input_tokens` — a
+    cached prefix is not counted twice. `estimate_cost_usd` read only
+    `input_tokens`/`output_tokens`, so every cached token was billed at $0 while
+    `providers/claude.py` was already collecting both cache fields and handing
+    them over. Prompt caching is the stated cost lever, so the error was largest
+    exactly where volume is highest.
+
+    Anthropic's published multipliers on the base input rate: a cache WRITE
+    (5-minute TTL) costs 1.25x, a cache READ costs 0.1x.
+    """
 
     input_per_token: Decimal
     output_per_token: Decimal
+    cache_read_per_token: Decimal
+    cache_write_per_token: Decimal
 
 
-def _per_mtok(input_usd: str, output_usd: str) -> ModelRate:
-    return ModelRate(Decimal(input_usd) / _MTOK, Decimal(output_usd) / _MTOK)
+# Anthropic prompt-caching multipliers on the base input rate.
+CACHE_WRITE_MULTIPLIER = Decimal("1.25")
+CACHE_READ_MULTIPLIER = Decimal("0.1")
+
+
+def _per_mtok(
+    input_usd: str,
+    output_usd: str,
+    *,
+    cache_read_usd: str | None = None,
+    cache_write_usd: str | None = None,
+) -> ModelRate:
+    """Build a ModelRate from per-MTok list prices.
+
+    Cache rates default to the published multipliers on the input rate; pass
+    them explicitly for a provider that prices caching differently (Gemini's
+    implicit caching is not billed on this path at all, so its cache rates are
+    set to the same input rate — never zero, which is what F-01 was).
+    """
+    input_rate = Decimal(input_usd) / _MTOK
+    output_rate = Decimal(output_usd) / _MTOK
+    read_rate = (
+        Decimal(cache_read_usd) / _MTOK if cache_read_usd is not None
+        else input_rate * CACHE_READ_MULTIPLIER
+    )
+    write_rate = (
+        Decimal(cache_write_usd) / _MTOK if cache_write_usd is not None
+        else input_rate * CACHE_WRITE_MULTIPLIER
+    )
+    return ModelRate(input_rate, output_rate, read_rate, write_rate)
 
 
 # model_id -> (input $/token, output $/token). Keyed by the exact model id
 # strings the providers are pinned to in app/config.py -- never a family/alias
 # name -- so a model bump that isn't also priced here fails loud (see
 # estimate_cost_usd's ValueError below) instead of silently under-billing.
+# F-04: this table used to be keyed by the CONSTANTS `CLAUDE_MODEL` /
+# `TRENDSPARK_MODEL`, which are themselves `os.getenv(...)`. The comment above
+# claimed "a model bump that isn't also priced here fails loud" — false for
+# precisely the three values that can change without a code edit, because the
+# key moved with the override and the lookup always hit. Setting
+# `CLAUDE_MODEL=claude-opus-4-1` priced every chat turn and brand-safety call at
+# Sonnet's $3/$15 instead of Opus's $15/$75: a silent 5x under-bill, so a $15
+# ceiling authorized roughly $75/day of real spend.
+#
+# The table is now keyed by LITERAL model ids. An env override to an unpriced id
+# misses the table and raises, which is what the comment always promised.
 PRICING_TABLE: dict[str, ModelRate] = {
-    CLAUDE_MODEL: _per_mtok("3.00", "15.00"),
-    GEMINI_MODEL: _per_mtok("0.30", "2.50"),  # gemini-2.5-flash rates (was flash-lite 0.10/0.40)
-    # Claude Haiku 4.5 — the cheap Trend-Spark nudge model (T8). $1/$5 per MTok.
-    TRENDSPARK_MODEL: _per_mtok("1.00", "5.00"),
+    # Anthropic (list prices per MTok, verified 2026-07-11/12).
+    "claude-sonnet-4-5-20250929": _per_mtok("3.00", "15.00"),
+    "claude-haiku-4-5-20251001": _per_mtok("1.00", "5.00"),
+    "claude-opus-4-1-20250805": _per_mtok("15.00", "75.00"),
+    "claude-3-5-haiku-20241022": _per_mtok("0.80", "4.00"),
+    # Google (no billed prompt-cache path on this integration — cache rates are
+    # set to the input rate rather than zero, so an unexpected cache field can
+    # never be billed at $0 the way F-01 billed Anthropic's).
+    "gemini-2.5-flash": _per_mtok(
+        "0.30", "2.50", cache_read_usd="0.30", cache_write_usd="0.30"
+    ),
 }
+
+# Sanity: the pinned defaults must all be priced. This runs at import time, so a
+# config.py default that is not in the table above fails at boot, not on the
+# first billed call.
+for _pinned in (CLAUDE_MODEL, GEMINI_MODEL, TRENDSPARK_MODEL):
+    if _pinned not in PRICING_TABLE:
+        logger.warning(
+            "pricing: pinned model %r has no PRICING_TABLE row -- every call to it will "
+            "raise ValueError at billing time until a rate is added",
+            _pinned,
+        )
 
 # Sarvam STT has no per-token/length usage payload (flat per-call estimate
 # per §1) -- not keyed by model id, used directly by routes/voice.py's STT
@@ -71,8 +143,8 @@ SARVAM_FLAT_COST_PER_CALL = Decimal("0.006")
 # Rohan's cost-review docs use elsewhere in this repo; no other FX constant
 # exists yet in this module to reuse):
 #   USD_PER_10K_CHARS = 30 / 83 = 0.36144... ~= 0.3614
-SARVAM_TTS_INR_PER_10K_CHARS = Decimal("30")
-SARVAM_USD_PER_INR = Decimal("1") / Decimal("83")
+SARVAM_TTS_INR_PER_10K_CHARS = Decimal(30)
+SARVAM_USD_PER_INR = Decimal(1) / Decimal(83)
 SARVAM_TTS_USD_PER_10K_CHARS = (SARVAM_TTS_INR_PER_10K_CHARS * SARVAM_USD_PER_INR).quantize(
     Decimal("0.0001")
 )
@@ -107,86 +179,64 @@ def estimate_sarvam_tts_cost_usd(char_count: int) -> Decimal:
     cost.
     """
     if char_count <= 0:
-        return Decimal("0")
-    return (Decimal(char_count) / Decimal("10000")) * SARVAM_TTS_USD_PER_10K_CHARS
+        return Decimal(0)
+    return (Decimal(char_count) / Decimal(10000)) * SARVAM_TTS_USD_PER_10K_CHARS
+
+
+def _most_expensive_rate() -> ModelRate:
+    """The costliest row in the table, per token of output (the dominant term)."""
+    return max(PRICING_TABLE.values(), key=lambda r: (r.output_per_token, r.input_per_token))
 
 
 def _resolve_rate(model: str) -> ModelRate:
-    """Looks up `model`'s `ModelRate`, with two deliberate fallbacks, each
-    scoped to one specific env-overridable model constant -- never a general
-    "unknown model -> guess" behavior:
+    """Look up `model`'s `ModelRate`.
 
-    1. `model` equals the CONFIGURED `TREND_TAG_MODEL` but isn't itself a
-       `PRICING_TABLE` key -> fall back to `TRENDSPARK_MODEL`'s (Haiku-class)
-       row and log a warning.
-    2. `model` equals the CONFIGURED `BRAND_SAFETY_MODEL` but isn't itself a
-       `PRICING_TABLE` key -> fall back to `CLAUDE_MODEL`'s (Sonnet) row and
-       log a warning.
+    F-04 (round 2, Priya sign-off review). The env-overridable constants
+    `TREND_TAG_MODEL`, `BRAND_SAFETY_MODEL` and `CREATOR_COPILOT_MODEL` each fell
+    back to a FIXED row when the configured id was not itself a PRICING_TABLE
+    key. Keying the table by literal ids closed the `CLAUDE_MODEL=claude-opus-4-1`
+    path, but those three fallbacks left the same 5x under-bill reachable:
+    `BRAND_SAFETY_MODEL=claude-opus-4-1` priced at Sonnet's $3/$15 instead of
+    Opus's $15/$75, warning-logged rather than raised.
 
-    Why fallback 1 exists: `app/config.py` defaults `TREND_TAG_MODEL` to the
-    exact `TRENDSPARK_MODEL` string, so ordinarily they share ONE row above
-    and this branch never triggers. But `TREND_TAG_MODEL` is independently
-    env-overridable (for "an independent bump" per its config.py comment) --
-    override it to a distinct model id and, before this fallback existed,
-    every trend_tag.py call raised `ValueError` here, which that route only
-    logs (`ai_spend_pricing_error`) and swallows, so spend went silently
-    UNRECORDED instead of merely mis-priced.
+    Two failure directions, and they are not symmetric:
 
-    Why fallback 2 exists: mirrors fallback 1 exactly, for `BRAND_SAFETY_MODEL`
-    (app/config.py defaults it to `CLAUDE_MODEL`'s exact string, so this also
-    never triggers in the default configuration -- it only matters if
-    `BRAND_SAFETY_MODEL` is overridden, e.g. to the future Haiku-class GARM
-    model, before that model id has its own `PRICING_TABLE` row).
-    brand_safety.py's spend recording (routes/brand_safety.py) has the same
-    bare `except ValueError`-swallows-and-only-logs shape as trend_tag.py, so
-    the same "same-cost-class estimate beats silently unrecorded spend"
-    reasoning applies.
+    - Under-billing inflates the effective ceiling. A $15/day cap that prices
+      Opus at Sonnet's rate authorizes ~$75/day of real spend. This is the
+      failure F-04 names and it must be impossible.
+    - Not recording at all is also bad: `routes/trend_tag.py` records spend
+      best-effort inside `except ValueError`, so a raise there means the spend
+      silently never lands in the counter.
 
-    3. `model` equals the CONFIGURED `CREATOR_COPILOT_MODEL` but isn't itself
-       a `PRICING_TABLE` key -> fall back to `TRENDSPARK_MODEL`'s (Haiku-class)
-       row and log a warning. Same reasoning as fallback 1:
-       `app/config.py` defaults `CREATOR_COPILOT_MODEL` to the exact
-       `TRENDSPARK_MODEL` string, so ordinarily they share ONE row above and
-       this branch never triggers -- it only matters if `CREATOR_COPILOT_MODEL`
-       is independently overridden (per its config.py comment, "overridable
-       via env for an independent bump") before the new id has its own
-       `PRICING_TABLE` row. `routes/creator_suggestion.py` mirrors
-       trendspark.py's/trend_tag.py's bare `except ValueError`-logs-and-
-       swallows spend-recording shape, so the same "same-cost-class estimate
-       beats silently unrecorded spend" reasoning applies here too.
-
-    Any other unpriced model still raises.
+    So an unpriced-but-CONFIGURED model falls back to the MOST EXPENSIVE row in
+    the table, never to a same-class or cheaper one. Spend is always recorded,
+    and the only possible error is an over-estimate, which makes the ceiling
+    stricter rather than looser. An unpriced model that is not one of the three
+    configured overrides still raises — that is a code change nobody priced, and
+    it should fail loud in CI.
     """
     rate = PRICING_TABLE.get(model)
     if rate is not None:
         return rate
 
-    if model == TREND_TAG_MODEL and TRENDSPARK_MODEL in PRICING_TABLE:
-        logger.warning(
-            "pricing: TREND_TAG_MODEL=%r has no PRICING_TABLE row -- falling back to "
-            "TRENDSPARK_MODEL=%r's rate so spend is still recorded; add %r to "
-            "PRICING_TABLE to price it correctly",
-            model, TRENDSPARK_MODEL, model,
-        )
-        return PRICING_TABLE[TRENDSPARK_MODEL]
-
-    if model == BRAND_SAFETY_MODEL and CLAUDE_MODEL in PRICING_TABLE:
-        logger.warning(
-            "pricing: BRAND_SAFETY_MODEL=%r has no PRICING_TABLE row -- falling back to "
-            "CLAUDE_MODEL=%r's rate so spend is still recorded; add %r to "
-            "PRICING_TABLE to price it correctly",
-            model, CLAUDE_MODEL, model,
-        )
-        return PRICING_TABLE[CLAUDE_MODEL]
-
-    if model == CREATOR_COPILOT_MODEL and TRENDSPARK_MODEL in PRICING_TABLE:
-        logger.warning(
-            "pricing: CREATOR_COPILOT_MODEL=%r has no PRICING_TABLE row -- falling back to "
-            "TRENDSPARK_MODEL=%r's rate so spend is still recorded; add %r to "
-            "PRICING_TABLE to price it correctly",
-            model, TRENDSPARK_MODEL, model,
-        )
-        return PRICING_TABLE[TRENDSPARK_MODEL]
+    for label, configured in (
+        ("TREND_TAG_MODEL", TREND_TAG_MODEL),
+        ("BRAND_SAFETY_MODEL", BRAND_SAFETY_MODEL),
+        ("CREATOR_COPILOT_MODEL", CREATOR_COPILOT_MODEL),
+    ):
+        if model == configured:
+            conservative = _most_expensive_rate()
+            logger.warning(
+                "pricing: %s=%r has no PRICING_TABLE row -- billing it at the most "
+                "EXPENSIVE known rate ($%s/$%s per MTok) so spend is recorded and can "
+                "only be over-estimated, never under-billed (F-04). Add %r to "
+                "PRICING_TABLE with its real rate.",
+                label, model,
+                conservative.input_per_token * _MTOK,
+                conservative.output_per_token * _MTOK,
+                model,
+            )
+            return conservative
 
     raise ValueError(f"no pricing entry for model {model!r} -- add it to PRICING_TABLE first")
 
@@ -203,24 +253,46 @@ def estimate_cost_usd(model: str, usage: dict[str, Any] | None) -> Decimal:
 
     Raises `ValueError` for a `model` not in `PRICING_TABLE` -- a model bump
     that isn't priced here must fail loud in tests/CI, not silently record
-    $0 spend for a model that may cost real money. The ONE exception is
-    `TREND_TAG_MODEL` (see `_resolve_rate` below): it defaults to sharing
-    `TRENDSPARK_MODEL`'s row, so an env override that points it at a distinct,
-    unpriced id falls back to that same Haiku-class rate (logged loudly)
-    instead of raising -- trend_tag.py's ai_spend recording is best-effort
-    (a bare `except ValueError` that only logs, per app/routes/trend_tag.py),
-    so a raise there means spend silently goes UNRECORDED, which is worse
-    than a same-cost-class estimate.
+    $0 spend for a model that may cost real money.
+
+    The exception is the three env-overridable constants `TREND_TAG_MODEL`,
+    `BRAND_SAFETY_MODEL` and `CREATOR_COPILOT_MODEL`: their `ai_spend` recording
+    is best-effort (a bare `except ValueError` that only logs), so a raise there
+    means the spend silently goes UNRECORDED. Those fall back to the MOST
+    EXPENSIVE row in the table -- never a same-class or cheaper one, which is
+    how F-04's 5x under-bill hid. See `_resolve_rate`.
     """
     rate = _resolve_rate(model)
 
     if not usage:
-        return Decimal("0")
+        return Decimal(0)
 
     input_tokens = usage.get("input_tokens") or 0
     output_tokens = usage.get("output_tokens") or 0
 
-    cost = (Decimal(int(input_tokens)) * rate.input_per_token) + (
-        Decimal(int(output_tokens)) * rate.output_per_token
+    # F-01: cache tokens are DISJOINT from input_tokens in the Anthropic usage
+    # payload — reading only input/output billed an 8k-token cached prefix at
+    # $0. Worked example from the audit: 8,000 cached + 200 fresh input + 300
+    # output on Sonnet is $0.0351 on a cache miss (write) and $0.0071 on a hit;
+    # the old formula recorded $0.0051 for both. Both spellings of each field
+    # are accepted because providers/claude.py normalizes some and passes
+    # others through verbatim.
+    cache_read_tokens = (
+        usage.get("cache_read_input_tokens")
+        or usage.get("cache_read_tokens")
+        or 0
+    )
+    cache_write_tokens = (
+        usage.get("cache_creation_input_tokens")
+        or usage.get("cache_write_tokens")
+        or usage.get("cache_creation_tokens")
+        or 0
+    )
+
+    cost = (
+        (Decimal(int(input_tokens)) * rate.input_per_token)
+        + (Decimal(int(output_tokens)) * rate.output_per_token)
+        + (Decimal(int(cache_read_tokens)) * rate.cache_read_per_token)
+        + (Decimal(int(cache_write_tokens)) * rate.cache_write_per_token)
     )
     return cost

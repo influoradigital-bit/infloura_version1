@@ -413,10 +413,13 @@ export default function CreatorWalletPage() {
   // (filtered to debit rows) since there is no dedicated GET /wallet/payouts endpoint.
   // Extracted to a callback for the same reason as loadWalletBalance above — reused by
   // handleWithdraw to refresh history/payouts after a successful withdrawal.
-  const loadTransactions = React.useCallback(async () => {
+  // CR-72 — takes `selectedPeriod` as a param (rather than closing over state) so a caller like
+  // handleWithdraw can be explicit about which window it's refreshing; the effect below re-runs
+  // it whenever the dropdown changes.
+  const loadTransactions = React.useCallback(async (period: string) => {
     if (!liveApi) return;
     try {
-      const remote = await api.wallet.transactions('creator');
+      const remote = await api.wallet.transactions('creator', 1, 20, period);
       // Array.isArray alone, deliberately no `.length > 0` -- a creator with genuinely zero
       // transactions gets back a real empty array; requiring non-empty treated that correct
       // empty response the same as "API call didn't return usable data," so it silently kept
@@ -436,9 +439,13 @@ export default function CreatorWalletPage() {
     }
   }, [liveApi, toast]);
 
+  // CR-72 — selectedPeriod (the History tab's this-month/last-month/3-months/all dropdown) was
+  // rendered but never consumed: not passed to the fetch, not in this effect's dependency array,
+  // so changing it never re-fetched and the creator always saw all-time transactions regardless
+  // of selection. Re-fetch whenever the dropdown value changes.
   React.useEffect(() => {
-    loadTransactions();
-  }, [loadTransactions]);
+    loadTransactions(selectedPeriod);
+  }, [loadTransactions, selectedPeriod]);
 
   // GET /wallet/payout-methods — Payout Settings dialog.
   const loadPayoutMethods = React.useCallback(async () => {
@@ -501,9 +508,11 @@ export default function CreatorWalletPage() {
       // CR-73 — a successful withdrawal debits the balance and adds a transaction row
       // server-side; without this the hero balance and History/Payouts tabs kept showing
       // pre-withdrawal figures until a manual reload. Reuse the same loaders the mount
-      // effects use rather than duplicating the fetch logic.
+      // effects use rather than duplicating the fetch logic. Refresh under the
+      // currently-selected period (CR-72) so History/Payouts stay consistent with what's
+      // on screen.
       loadWalletBalance();
-      loadTransactions();
+      loadTransactions(selectedPeriod);
     } catch (err) {
       // Keep the same idempotency key held so a user-initiated retry of this submission reuses it.
       setWithdrawError(err instanceof ApiError ? err.message : 'Withdrawal failed. Please try again.');

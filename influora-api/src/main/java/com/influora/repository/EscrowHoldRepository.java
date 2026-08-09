@@ -59,6 +59,31 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
     BigDecimal sumAmountByCampaignIdAndStatus(
             @Param("campaignId") String campaignId, @Param("status") EscrowStatus status);
 
+    /**
+     * One row per campaignId in {@code campaignIds} that has at least one hold in {@code status} —
+     * the batched, list()-page counterpart to {@link #sumAmountByCampaignIdAndStatus}, used by
+     * {@code CampaignService.list()} to populate {@code CampaignMapper.CampaignMetrics.totalSpend}
+     * for a whole page of campaigns without an N+1 query per row (D-5). Same RELEASED-only ground
+     * truth as {@code GetCampaignPerformanceExecutor}'s single-campaign spend figure (SR-1) — the
+     * caller MUST pass {@link EscrowStatus#RELEASED}, never the {@code FUNDED_STATUSES}
+     * campaign-status proxy used elsewhere for the unrelated Phase-1 dashboard figure. A campaignId
+     * with zero holds in {@code status} produces no row; callers MUST default a missing campaignId
+     * to zero, same as the {@code COALESCE(...,0)} convention this repository's single-row SUM
+     * queries apply directly in SQL (a GROUP BY has nothing to COALESCE for a campaignId that
+     * never appears in the joined rows at all).
+     */
+    interface CampaignSpend {
+        String getCampaignId();
+
+        BigDecimal getTotal();
+    }
+
+    @Query(
+            "SELECT e.campaignId AS campaignId, COALESCE(SUM(e.amount), 0) AS total FROM EscrowHold e "
+                    + "WHERE e.campaignId IN :campaignIds AND e.status = :status GROUP BY e.campaignId")
+    List<CampaignSpend> sumAmountByCampaignIdInAndStatusGroupByCampaignId(
+            @Param("campaignIds") List<String> campaignIds, @Param("status") EscrowStatus status);
+
     Optional<EscrowHold> findByIdempotencyKey(String idempotencyKey);
 
     Optional<EscrowHold> findByIdAndWorkspaceId(String id, String workspaceId);

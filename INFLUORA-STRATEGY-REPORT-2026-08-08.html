@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Influora — Business, Market &amp; Valuation Strategy Report</title>
+<style>
+:root{
+  --surface-1:#fcfcfb; --plane:#f9f9f7;
+  --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10);
+  --series-1:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a; --series-4:#eda100;
+  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --crit:#d03b3b;
+  --good-text:#006300;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+ :root:where(:not([data-theme="light"])){
+  --surface-1:#1a1a19; --plane:#0d0d0d;
+  --ink:#fff; --ink2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+  --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --series-4:#c98500;
+  --good-text:#0ca30c; color-scheme:dark;
+ }}
+:root[data-theme="dark"]{
+  --surface-1:#1a1a19; --plane:#0d0d0d;
+  --ink:#fff; --ink2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+  --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --series-4:#c98500;
+  --good-text:#0ca30c; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--plane);color:var(--ink);
+  font:16px/1.62 system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px 96px}
+header.hero{padding:64px 0 40px;border-bottom:1px solid var(--border)}
+.kick{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+h1{font-size:clamp(29px,4.1vw,46px);line-height:1.1;margin:14px 0 16px;letter-spacing:-.022em;font-weight:700;max-width:26ch}
+.sub{font-size:19px;color:var(--ink2);max-width:70ch;margin:0}
+.meta{margin-top:22px;font-size:13px;color:var(--muted)}
+h2{font-size:26px;margin:64px 0 6px;letter-spacing:-.014em;font-weight:700;scroll-margin-top:20px}
+h2 .num{color:var(--muted);font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px}
+h3{font-size:17px;margin:34px 0 8px;font-weight:700}
+h4{font-size:14px;margin:22px 0 6px;font-weight:700;color:var(--ink2);letter-spacing:.02em}
+p{margin:12px 0;max-width:78ch}
+.lede{font-size:17px;color:var(--ink2);max-width:74ch}
+a{color:var(--series-1);text-decoration:none;border-bottom:1px solid transparent}
+a:hover{border-bottom-color:currentColor}
+small{font-size:13px;color:var(--muted)}
+code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--plane);
+  border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+ul,ol{max-width:78ch;padding-left:22px}
+li{margin:7px 0}
+hr{border:0;border-top:1px solid var(--border);margin:56px 0}
+
+/* cards */
+.card{background:var(--surface-1);border:1px solid var(--border);border-radius:12px;padding:22px 24px;margin:20px 0}
+.card.tight{padding:16px 20px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media(max-width:820px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+
+/* stat tiles */
+.tile{background:var(--surface-1);border:1px solid var(--border);border-radius:12px;padding:18px 20px}
+.tile .lab{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.tile .val{font-size:31px;font-weight:700;letter-spacing:-.02em;margin:6px 0 2px;line-height:1.1}
+.tile .cap{font-size:13px;color:var(--ink2)}
+
+/* verdict banner */
+.verdict{background:var(--surface-1);border:1px solid var(--border);border-left:4px solid var(--series-1);
+  border-radius:12px;padding:24px 26px;margin:28px 0}
+.verdict.warn{border-left-color:var(--warn)}
+.verdict.crit{border-left-color:var(--crit)}
+.verdict.good{border-left-color:var(--good)}
+.verdict h3{margin:0 0 8px;font-size:18px}
+.verdict p:last-child{margin-bottom:0}
+
+/* tables */
+.bleed{width:100vw;margin-left:calc(50% - 50vw);padding:0 24px}
+.tw{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface-1);
+  -webkit-overflow-scrolling:touch}
+.tw::after{content:""}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:820px}
+table.wide{min-width:1180px}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}
+th{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;
+  background:var(--plane);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--plane)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.hl td{background:color-mix(in srgb,var(--series-2) 9%,transparent);font-weight:600}
+.src{font-size:11.5px;color:var(--muted)}
+
+/* pills */
+.pill{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  padding:2px 8px;border-radius:999px;border:1px solid var(--border);white-space:nowrap}
+.p-good{color:var(--good-text);border-color:color-mix(in srgb,var(--good) 45%,transparent)}
+.p-warn{color:var(--serious);border-color:color-mix(in srgb,var(--serious) 45%,transparent)}
+.p-crit{color:var(--crit);border-color:color-mix(in srgb,var(--crit) 45%,transparent)}
+.p-neut{color:var(--muted)}
+
+/* charts */
+.figure{background:var(--surface-1);border:1px solid var(--border);border-radius:12px;padding:20px 22px 16px;margin:22px 0}
+.figure .ft{font-size:15px;font-weight:700;margin:0 0 2px}
+.figure .fs{font-size:13px;color:var(--ink2);margin:0 0 14px}
+.figure .fn{font-size:12px;color:var(--muted);margin:12px 0 0;padding-top:12px;border-top:1px solid var(--border)}
+svg.ch{width:100%;height:auto;display:block;overflow:visible}
+.cl{font:12px system-ui,sans-serif;fill:var(--muted)}
+.clb{font:12px system-ui,sans-serif;fill:var(--ink2);font-weight:600}
+.cv{font:13px system-ui,sans-serif;fill:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+.cvb{font:12px system-ui,sans-serif;fill:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+.cvin{font:11px system-ui,sans-serif;fill:#fff;font-weight:700;font-variant-numeric:tabular-nums}
+.grid{stroke:var(--grid);stroke-width:1}
+.axis{stroke:var(--axis);stroke-width:1}
+.lg{display:flex;flex-wrap:wrap;gap:16px;margin:10px 0 0;font-size:12.5px;color:var(--ink2)}
+.lgi{display:inline-flex;align-items:center;gap:7px}
+.lgi i{width:11px;height:11px;border-radius:3px;display:inline-block;flex:none}
+
+/* toc */
+nav.toc{background:var(--surface-1);border:1px solid var(--border);border-radius:12px;padding:18px 22px;margin:34px 0}
+nav.toc ol{margin:0;padding-left:20px;columns:2;column-gap:32px;font-size:14px}
+@media(max-width:700px){nav.toc ol{columns:1}}
+nav.toc li{margin:5px 0;break-inside:avoid}
+
+/* toggle */
+.tog{position:fixed;top:14px;right:14px;z-index:9;background:var(--surface-1);color:var(--ink2);
+  border:1px solid var(--border);border-radius:999px;padding:7px 14px;font:600 12px system-ui;cursor:pointer}
+.tog:hover{color:var(--ink)}
+@media print{.tog{display:none}}
+.foot{margin-top:64px;padding-top:24px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)}
+.srclist{font-size:12.5px;line-height:1.9;color:var(--ink2)}
+</style></head><body>
+<button class="tog" id="tg">Dark / Light</button>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kick">Strategy report · code-truth + primary-source market research</div>
+  <h1>What Influora is, what the market pays, and what it would take to be worth $1&nbsp;billion.</h1>
+  <p class="sub">Influora is an India-first influencer-marketing marketplace with escrow-held payments, Meta-verified deliverable analytics that can gate money release, and an AI campaign agent. It is 83% feature-complete and has zero revenue. This document separates what is proved from what is believed, and says plainly which parts of the billion-dollar story survive contact with 2026 market prices.</p>
+  <p class="meta">8 August 2026 · Built from 895 Java files, 97 database migrations and 283 API routes read at source, plus 90 market sources fetched live. Market figures carry their source name, and §12 lists the primary URLs; a minority of secondary figures name a source without a link. Arithmetic conversions use ₹88/USD and are labelled as arithmetic, not a sourced rate.</p>
+</header>
+
+<nav class="toc"><ol>
+<li><a href="#s1">What the business actually does</a></li>
+<li><a href="#s2">The revenue model, as it exists in code</a></li>
+<li><a href="#s3">The global market and what it charges</a></li>
+<li><a href="#s4">The Indian market and what it charges</a></li>
+<li><a href="#s5">How big the market really is</a></li>
+<li><a href="#s6">The arithmetic wall</a></li>
+<li><a href="#s7">The three unlocks to $1 billion</a></li>
+<li><a href="#s8">What it will be worth</a></li>
+<li><a href="#s9">What kills it</a></li>
+<li><a href="#s10">Six decisions to make now</a></li>
+<li><a href="#s11">What is not proved</a></li>
+<li><a href="#s12">Sources</a></li>
+</ol></nav>
+
+<div class="verdict crit">
+<h3>The headline finding, stated first</h3>
+<p><b>You cannot build a $1&nbsp;billion company on the Indian influencer-marketing fee pool at any share you could realistically win.</b> Direct 2026 estimates of that whole market run ₹2,800–3,500&nbsp;Cr; the most generous credible source implies ~₹5,625&nbsp;Cr, about <b>$639M</b>. Take the generous number. At a <em>dominant</em> 25% market share and a 15% take, revenue is <b>$24M</b>. You would need <b>52% of the entire Indian market</b> at a 15% take just to reach the $50M that a $1B mark costs at elite multiples — and 15% is already above what the platforms currently winning share charge.</p>
+<p>The $1B path is real, but it runs through a different base: <b>creator-influenced commerce, not creator fees</b>. BCG measures Indian creators as influencing <b>$350–400&nbsp;billion</b> of consumer spending today, heading past $1 trillion by 2030. Influora already has UTM tracking, coupon redemption, Shopify and WooCommerce conversion webhooks and affiliate earnings in the codebase. That layer — not the campaign fee — is where the billion is.</p>
+</div>
+
+<div class="grid4">
+<div class="tile"><div class="lab">Feature completeness</div><div class="val">83.0%</div><div class="cap">161 of 194 features fully working, code-truth. 0 broken. Nothing runtime-proven.</div></div>
+<div class="tile"><div class="lab">Combined take rate</div><div class="val">25.0%</div><div class="cap">10% brand + 15% creator, both live in migrations. Joint-highest percentage-of-money take in the researched set, level with Collabstr's Free/Pro tier; its Premium tier is 20%.</div></div>
+<div class="tile"><div class="lab">India fee pool 2026</div><div class="val">$318–639M</div><div class="cap">₹2,800–5,625 Cr across credible sources. The ceiling on the campaign-fee business.</div></div>
+<div class="tile"><div class="lab">Commerce it could touch</div><div class="val">$350–400B</div><div class="cap">BCG: consumer spending Indian creators already influence. 550–1,250× the fee pool.</div></div>
+</div>
+
+<hr>
+
+<h2 id="s1"><span class="num">01</span>What the business actually does</h2>
+<p class="lede">Read from source, not from marketing. Three separately-authenticated personas across a React SPA, a Spring Boot API and a Python AI service.</p>
+
+<div class="grid3">
+<div class="card tight"><h4>For brands</h4>
+<p style="font-size:14px">Register, verify, connect a Shopify or WooCommerce store, create one of four campaign types (Standard, Direct, Review, HYPE), discover and invite creators, negotiate in a streaming deal chat, generate and sign a milestone contract, top up an INR wallet via Razorpay, fund escrow per milestone, review deliverables, run a brand-safety check, release escrow, receive a GST invoice, open a dispute.</p></div>
+<div class="card tight"><h4>For creators</h4>
+<p style="font-size:14px">Build a public portfolio with a rate card and badges, connect Instagram via Meta OAuth, browse and apply to campaigns, negotiate, sign, receive a product shipment with a real brand-supplied ETA, post, mark posted, submit proof, get metrics <em>verified by the platform against the Meta Graph API</em>, get paid out to a real bank account or UPI via RazorpayX, earn affiliate and coupon commissions, file tax identity (PAN, GSTIN, Aadhaar KYC).</p></div>
+<div class="card tight"><h4>For the operator</h4>
+<p style="font-size:14px">A separate admin console with its own token: CEO pulse dashboard, users, campaigns, a live-editable platform fee (no redeploy), a Finance/Escrow/Revenue console over 9 real endpoints, ledger-vs-Razorpay reconciliation, payout retry, support, moderation, disputes, billing, audit log, error log, email queue.</p></div>
+</div>
+
+<h3>The part that is genuinely hard to copy</h3>
+<p>Three things in this codebase are not commodity, and they compound:</p>
+<ol>
+<li><b>Verified metrics that can gate money.</b> <code>DeliverableVerificationService</code> pulls impressions, reach and engagement from the creator's own authorised Meta Graph token, matches the post shortcode against their recent media, and persists the result as <code>PLATFORM_VERIFIED</code> — and it is <em>fail-closed by construction</em>: no token, a private post, or a rate limit produces an explicit <code>FALLBACK_*</code> state and never a fabricated number. Then <code>ReleaseCondition.ON_VERIFIED_METRICS</code> lets that verified data be the condition on which escrow releases. That closed loop — verified performance → money movement — is the asset.</li>
+<li><b>The AI-money separation architecture.</b> Meera can propose but cannot pay. <code>request_payment</code>'s own tool description says the AI-supplied amount "is advisory display text only and is discarded by Spring". <code>create_campaign</code> is forbidden from passing a budget or dates. Every commit-tier call carries an idempotency key, and the ledger records <code>server_amount</code> — "the amount Spring RE-DERIVED (never from AI)". The AI service holds no Razorpay and no database credentials by design. That is months of adversarial hardening, and the code comments cite the specific red-team findings that produced each rail.</li>
+<li><b>Versioned longitudinal creator scores.</b> <code>creator_scores</code> is append-only, one row per creator per daily run, stamped with <code>algorithm_version</code> — fake-follower score with reasons, quality, engagement consistency, brand safety with GARM flags, estimated rate range in INR with a confidence. A competitor can copy the formula in a week and cannot copy eight months of daily Meta polling.</li>
+</ol>
+
+<div class="verdict warn">
+<h3>Honest limits on the moat</h3>
+<p>Verification is <b>Instagram-only</b> — YouTube is explicitly unimplemented. Brand-safety scoring sits behind a default-OFF flag, so three score columns are NULL on every row today. There are <b>no embeddings, no vector store and no trained model</b> anywhere in the repo: all "ML" is deterministic Java formulas plus prompted frontier-model calls. And the UI has <b>no i18n framework at all</b> — Indian-language support exists only in the voice layer via Sarvam.</p>
+</div>
+
+<h2 id="s2"><span class="num">02</span>The revenue model, as it exists in code</h2>
+<p class="lede">Not as described in any document — as written in the migrations that actually run.</p>
+<div class="bleed"><div class="tw"><table class=""><thead><tr><th class="">Line</th><th class="">Value in code</th><th class="">File:line</th><th class="">Note</th><th class="">Status</th></tr></thead><tbody><tr><td>Creator-side platform fee</td><td><b>1500 bps = 15.00%</b></td><td><code>V41__platform_fee_config.sql:22</code></td><td>Deducted inside <code>deductAtRelease()</code> at milestone release</td><td><span class='pill p-good'>live in code</span></td></tr><tr><td>Brand-side platform fee</td><td><b>1000 bps = 10.00%</b></td><td><code>V42__platform_fee_config_brand_fee_razorpay.sql:24</code></td><td>Approved by <code>'Swapnil Maruti (CEO)'</code> in the migration itself</td><td><span class='pill p-good'>live in code</span></td></tr><tr><td><b>Combined take rate</b></td><td><b>25.00%</b></td><td>derived from V41 + V42</td><td>Joint-highest <em>percentage-of-money</em> take in the researched set, level with Collabstr's Free/Pro tier (its Premium tier is 20%)</td><td><span class='pill p-crit'>decision needed</span></td></tr><tr><td>Max fee guardrail</td><td>3000 bps = 30%</td><td><code>V41:22</code></td><td>Hard ceiling; missing config throws <code>PLATFORM_FEE_CONFIG_MISSING</code></td><td><span class='pill p-good'>live</span></td></tr><tr><td>Affiliate commission (default)</td><td><b>10%</b></td><td><code>AffiliateEarningsService.java:102</code></td><td>Per-campaign override column <code>V50:5</code></td><td><span class='pill p-good'>live</span></td></tr><tr><td>Pro subscription</td><td><b>₹4,999 per month</b> (499900 paise)</td><td><code>V55__seed_billing_plans.sql:32</code></td><td>5 seats, 400 AI turns, unlimited tracked creators, exports on</td><td><span class='pill p-warn'>razorpay_plan_id NULL</span></td></tr><tr><td>Pro fee override</td><td>700 bps = 7% brand fee</td><td><code>V55:32</code></td><td><b>Not wired</b> — <code>V54:19</code> says no per-plan seam exists in <code>BrandCampaignFeeService</code></td><td><span class='pill p-crit'>schema only</span></td></tr><tr><td>Free tier</td><td>₹0 · 1 seat · 100 AI turns · 5 tracked creators</td><td><code>V55:22</code></td><td>10% brand fee, no exports, no templates</td><td><span class='pill p-good'>live</span></td></tr><tr><td>AI credits (Meera)</td><td>1 credit per chat turn; 100 per mo default</td><td><code>MeeraSessionService.java:79</code>, <code>V14:3</code></td><td><b>A throttle, not a SKU</b> — no purchase endpoint exists</td><td><span class='pill p-neut'>not revenue</span></td></tr><tr><td>Snapsby catalog videos</td><td>₹1,299–₹1,999 seeded</td><td><code>V51__trendspark.sql:31,61-76</code></td><td>Priced + <code>purchased_at</code> column exists, but <b>no checkout endpoint</b></td><td><span class='pill p-warn'>designed only</span></td></tr><tr><td>GST on commission invoices</td><td><b>18%</b>, CGST/SGST vs IGST split by state code</td><td><code>CommissionInvoiceService.java:50</code>, <code>GstSplitUtil.java:28-43</code></td><td>SAC 998397 creator / 998599 platform</td><td><span class='pill p-good'>live</span></td></tr><tr><td>TDS withholding</td><td><b>none</b></td><td>PAN/GSTIN captured 'for later TDS reconciliation' only</td><td>No rate, no section, no computation anywhere in the codebase</td><td><span class='pill p-crit'>absent</span></td></tr><tr><td>Wallet max top-up</td><td>₹10,00,000</td><td><code>application.yml:332</code></td><td>No minimum top-up, no minimum payout, no payout fee exist in code</td><td><span class='pill p-neut'>—</span></td></tr><tr><td>Razorpay processing cost</td><td>absorbed by platform</td><td><code>V42:25</code></td><td>Reduces net take by ~2% on the brand leg</td><td><span class='pill p-warn'>margin drag</span></td></tr></tbody></table></div></div>
+
+<div class="verdict crit">
+<h3>A contradiction worth resolving before anything else</h3>
+<p>The internal competitive analysis dated <b>24 July 2026</b> evaluates a "<b>15% platform fee</b> on deal value (<b>no brand-side fee</b>)" and concludes 15% is "defensible and competitively positioned." Migration <code>V42</code> adds a <b>10% brand-side fee</b>, with <code>'Swapnil Maruti (CEO)'</code> named as approver inside the migration itself.</p>
+<p>So the pricing memo describes a 15% business and the code runs a <b>25% business</b>. That matters because 25% is not mid-market — it is the joint-highest percentage-of-money take rate in the researched set, level with Collabstr's Free/Pro tier, while <b>Modash, GRIN and Upfluence all use "0% from creators" as their headline attack line</b>. Whichever number is intended, one of the two artefacts is wrong, and the market-positioning conclusion does not survive the correction.</p>
+</div>
+
+<div class="figure">
+<p class="ft">All-in platform capture on a single $10,000 campaign — every platform in §3 with a computable number</p>
+<p class="fs">Same column as the §3 table: every fee the platform captures, both sides, on one campaign where $10,000 reaches creators, on the cheapest plan that supports it, including that month's subscription. Ranges are shown at their low end. <b>Colour is the model, not the rank.</b></p>
+<svg viewBox="0 0 760 548" role="img" class="ch">
+<text x="238" y="24.72" class="cl" text-anchor="end" dominant-baseline="middle">Heepsy · Starter</text>
+<rect x="250" y="14" width="8.6" height="20" rx="4" fill="var(--series-1)"/>
+<text x="268.6470588235294" y="24.72" class="cv" dominant-baseline="middle">0.7%</text>
+<text x="238" y="62.72" class="cl" text-anchor="end" dominant-baseline="middle">GRIN · Starter</text>
+<rect x="250" y="52" width="24.7" height="20" rx="4" fill="var(--series-1)"/>
+<text x="284.70588235294116" y="62.72" class="cv" dominant-baseline="middle">2%</text>
+<text x="238" y="100.72" class="cl" text-anchor="end" dominant-baseline="middle">impact.com · Starter</text>
+<rect x="250" y="90" width="34.6" height="20" rx="4" fill="var(--series-2)"/>
+<text x="294.5882352941176" y="100.72" class="cv" dominant-baseline="middle">2.8%</text>
+<text x="238" y="138.72" class="cl" text-anchor="end" dominant-baseline="middle">Creator.co · Self-Serve</text>
+<rect x="250" y="128" width="37.1" height="20" rx="4" fill="var(--series-1)"/>
+<text x="297.05882352941177" y="138.72" class="cv" dominant-baseline="middle">3%</text>
+<text x="238" y="176.72" class="cl" text-anchor="end" dominant-baseline="middle">Influencity (est.)</text>
+<rect x="250" y="166" width="39.5" height="20" rx="4" fill="var(--series-1)"/>
+<text x="299.52941176470586" y="176.72" class="cv" dominant-baseline="middle">3.2%</text>
+<text x="238" y="214.72" class="cl" text-anchor="end" dominant-baseline="middle">Modash · Performance</text>
+<rect x="250" y="204" width="61.8" height="20" rx="4" fill="var(--series-2)"/>
+<text x="321.7647058823529" y="214.72" class="cv" dominant-baseline="middle">5%</text>
+<text x="238" y="252.72" class="cl" text-anchor="end" dominant-baseline="middle">Upfluence (est.)</text>
+<rect x="250" y="242" width="148.2" height="20" rx="4" fill="var(--series-1)"/>
+<text x="408.2352941176471" y="252.72" class="cv" dominant-baseline="middle">12%</text>
+<text x="238" y="290.72" class="cl" text-anchor="end" dominant-baseline="middle">Insense · Brand</text>
+<rect x="250" y="280" width="148.2" height="20" rx="4" fill="var(--series-2)"/>
+<text x="408.2352941176471" y="290.72" class="cv" dominant-baseline="middle">12%</text>
+<text x="238" y="328.72" class="cl" text-anchor="end" dominant-baseline="middle">Aspire (est.)</text>
+<rect x="250" y="318" width="185.3" height="20" rx="4" fill="var(--series-1)"/>
+<text x="445.2941176470588" y="328.72" class="cv" dominant-baseline="middle">15%</text>
+<text x="238" y="366.72" class="cl" text-anchor="end" dominant-baseline="middle">Captiv8 (est.)</text>
+<rect x="250" y="356" width="256.9" height="20" rx="4" fill="var(--series-1)"/>
+<text x="516.9411764705883" y="366.72" class="cv" dominant-baseline="middle">20.8%</text>
+<text x="238" y="404.72" class="cl" text-anchor="end" dominant-baseline="middle">Klear / Meltwater (est.)</text>
+<rect x="250" y="394" width="265.6" height="20" rx="4" fill="var(--series-1)"/>
+<text x="525.5882352941176" y="404.72" class="cv" dominant-baseline="middle">21.5%</text>
+<text x="238" y="442.72" class="cl" text-anchor="end" dominant-baseline="middle">Collabstr · Free/Pro</text>
+<rect x="250" y="432" width="308.8" height="20" rx="4" fill="var(--series-2)"/>
+<text x="568.8235294117648" y="442.72" class="cv" dominant-baseline="middle">25%</text>
+<text x="238" y="480.72" class="cl" text-anchor="end" dominant-baseline="middle">INFLUORA today</text>
+<rect x="250" y="470" width="308.8" height="20" rx="4" fill="var(--series-2)"/>
+<text x="568.8235294117648" y="480.72" class="cv" dominant-baseline="middle">25%</text>
+<text x="238" y="518.72" class="cl" text-anchor="end" dominant-baseline="middle">CreatorIQ (est.)</text>
+<rect x="250" y="508" width="403.9" height="20" rx="4" fill="var(--series-1)"/>
+<text x="663.9411764705883" y="518.72" class="cv" dominant-baseline="middle">32.7%</text>
+</svg>
+<div class="lg"><span class="lgi"><i style="background:var(--series-1)"></i>Subscription-led — the cost falls toward zero as volume rises</span><span class="lgi"><i style="background:var(--series-2)"></i>Percentage-of-money — the cost is the same at every volume</span></div>
+<p class="fn"><b>Read the colours, not the ordering.</b> CreatorIQ, Klear and Captiv8 look expensive here only because a $10,000 campaign is a rounding error against a $25k–$40k annual contract; at $2M of annual creator spend CreatorIQ is ~2%. A <b>percentage</b> model has no such relief — it costs 25% of the first rupee and 25% of the ten-millionth. So the honest claim is narrower than "highest in the market": <b>Influora's 25% is the joint-highest percentage-of-money take in the researched set, level with Collabstr's Free/Pro tier</b>, and percentage models are the ones competitors attack. GRIN, Modash and Upfluence all advertise <b>0% creator-side fee</b> as their explicit headline — precisely the number Influora is exposed on.</p>
+<p class="fn" style="border:0;padding-top:0"><b>Two reference points deliberately kept off the chart</b>, because they are measured on different bases and would make it dishonest. <b>ShopMy</b> charges <b>15% on campaign budgets</b> — nearly Influora's own creator rate on the same base — and separately only <b>2.9% direct / 3.9% subaffiliate</b> on commerce GMV; it was marked at $1.5B on the second business, not the first. <b>Fiverr</b>'s <b>28%</b> is a marketplace-wide blended TTM take, and it is the cautionary end: revenue <b>−10% YoY</b> in Q2-26, FY26 guidance cut to −17%/−14%, trading at 0.2× sales.</p>
+</div>
+
+<h2 id="s3"><span class="num">03</span>The global market and what it charges</h2>
+<p class="lede">Nineteen platforms plus Influora, at current 2026 prices, fetched from vendor pages where they exist. Where a vendor publishes nothing, this table says "not public" rather than guessing.</p>
+<p class="src" style="margin:6px 0 0">Scroll the table sideways to see all columns.</p>
+<div class="bleed"><div class="tw"><table class="wide"><thead><tr><th class="">Platform</th><th class="">Model</th><th class="">Brand-side price</th><th class="n">Brand fee</th><th class="n">Creator fee</th><th class="n">Take on $10k</th><th class="">Segment</th><th class="">Payments / escrow</th><th class="">India / INR</th><th class="">Price source</th></tr></thead><tbody><tr class="hl"><td><b>INFLUORA</b> <span class='pill p-crit'>pre-revenue</span></td><td>Marketplace take + SaaS</td><td>₹0 (Free) / ₹4,999 per mo (Pro)</td><td class="n"><b>10%</b></td><td class="n"><b>15%</b></td><td class="n"><b>25%</b></td><td>India SMB→mid</td><td>Yes — escrow + RazorpayX</td><td><b>INR-native</b></td><td><code>V41</code>/<code>V42</code> migrations</td></tr><tr><td>Collabstr</td><td>Marketplace take + SaaS</td><td>$0 / $249 / $333 per mo</td><td class="n">10% (5% Premium)</td><td class="n">15%</td><td class="n"><b>25%</b></td><td>SMB / solo</td><td>Yes — escrow</td><td>India listed, INR unconfirmed</td><td>collabstr.com/pricing</td></tr><tr><td>Insense</td><td>SaaS + marketplace fee</td><td>$500 / $800 per mo quarterly (lower annual)</td><td class="n">7–20%</td><td class="n">not disclosed</td><td class="n">12–25%</td><td>SMB DTC / UGC ads</td><td>Yes</td><td>Not stated</td><td>insense.pro/pricing</td></tr><tr><td>Creator.co</td><td>SaaS + managed</td><td>$199 / $1,499 per mo annual</td><td class="n">—</td><td class="n">not disclosed</td><td class="n">2–3% self-serve</td><td>SMB → mid</td><td>Payouts + wallet</td><td>No policy published</td><td>creator.co/pricing</td></tr><tr><td>Modash</td><td>SaaS, 0% to creators</td><td>$199 / $499 per mo annual; Ent. $14,700 per yr</td><td class="n">5% above $10k per yr</td><td class="n"><b>0%</b></td><td class="n">5–10%</td><td>SMB → mid</td><td>Yes — 36 currencies</td><td><b>INR not named</b></td><td>modash.io/pricing</td></tr><tr><td>GRIN</td><td>SaaS, AI-credit metered</td><td>$0 / $200 / $500 / $1,000 / $1,500 per mo</td><td class="n">—</td><td class="n"><b>0%</b></td><td class="n">0–5% (Free→Growth)</td><td>SMB → enterprise</td><td>Yes, no % cut</td><td>Not verified</td><td>grin.co/pricing</td></tr><tr><td>Upfluence</td><td>SaaS, quote-only</td><td>not public (~$1,200 per mo est.)</td><td class="n">—</td><td class="n"><b>0%</b></td><td class="n">~12%</td><td>Mid → enterprise</td><td>Yes, tax forms</td><td>Not stated</td><td>upfluence.com</td></tr><tr><td>Aspire</td><td>SaaS + 2% handling</td><td>not public (~$15.6k per yr median)</td><td class="n">2% handling</td><td class="n">0%</td><td class="n">~15%</td><td>Mid-market DTC</td><td>Yes — <b>USD only</b></td><td><b>No INR</b> — PayPal FX</td><td>aspire.io legal</td></tr><tr><td>impact.com</td><td>SaaS + transaction fee</td><td>$30 / $500 / $2,500 per mo</td><td class="n">2.5% of realised sales</td><td class="n">0%</td><td class="n">2.8–7.5%</td><td>SMB → enterprise</td><td>Yes, payer of record</td><td>Not verified</td><td>impact.com/plans-b2b</td></tr><tr><td>CreatorIQ</td><td>SaaS, quote-only annual</td><td>not public (~$39,250 per yr median)</td><td class="n">—</td><td class="n">0%</td><td class="n">~33% at $10k per mo</td><td>Enterprise</td><td>Yes</td><td>Not verified</td><td>Vendr contract data</td></tr><tr><td>Klear / Meltwater</td><td>SaaS bundle</td><td>not public (~$25,800 per yr median)</td><td class="n">—</td><td class="n">0%</td><td class="n">~22%</td><td>Mid → enterprise</td><td>No creator payout rail found</td><td>Not verified</td><td>Vendr · 126 purchases</td></tr><tr><td>Captiv8</td><td>SaaS, quote-only</td><td>not public (~$25,000 per yr est.)</td><td class="n">—</td><td class="n">0%</td><td class="n">~21%</td><td>Enterprise (Publicis-owned)</td><td>Not verified</td><td>Not verified</td><td>G2 / Reddit reports</td></tr><tr><td>Later Influence</td><td>SaaS + managed</td><td><b>not public — no number obtainable</b></td><td class="n">—</td><td class="n">not disclosed</td><td class="n">—</td><td>Enterprise + agency</td><td>Yes via Mavely</td><td>Not verified</td><td>G2 · all tiers 'Contact Us'</td></tr><tr><td>Traackr</td><td>SaaS, quote-only</td><td>not public — third-party range spans <b>5×</b></td><td class="n">—</td><td class="n">0%</td><td class="n">unusable</td><td>Enterprise beauty/CPG</td><td>Not verified</td><td>Not verified</td><td>estimates irreconcilable</td></tr><tr><td>Billo</td><td>Pay-per-asset</td><td>wallet packs $500–$30,000, 12-mo expiry</td><td class="n">bundled</td><td class="n">bundled</td><td class="n">not separable</td><td>SMB DTC</td><td>Yes — Billo pays creators</td><td>US-centric</td><td>G2 pricing</td></tr><tr><td>Trend.io</td><td>Prepaid credits</td><td>$550–$3,872 packs; $9.16 per credit</td><td class="n">bundled</td><td class="n">bundled</td><td class="n">not separable</td><td>SMB DTC</td><td>Yes</td><td>Not verified</td><td>trend.io/pricing</td></tr><tr><td>Stack Influence</td><td>Pay-per-post</td><td><b>$30</b> per post (own blog says $39)</td><td class="n">—</td><td class="n">paid in product</td><td class="n">n/a — 100% cash is fee</td><td>SMB Amazon/DTC</td><td>Product seeding</td><td>Not verified</td><td>vendor self-contradiction</td></tr><tr><td>Heepsy</td><td>SaaS discovery only</td><td>€69 / €149 / €229 per mo</td><td class="n">—</td><td class="n">n/a</td><td class="n">0.7–2.3%</td><td>SMB / solo</td><td><b>No payment layer</b></td><td>No</td><td>Capterra</td></tr><tr><td>Influencity</td><td>SaaS self-serve</td><td>not public (~$318–$398 per mo est.)</td><td class="n">—</td><td class="n">not disclosed</td><td class="n">3–4%</td><td>SMB → mid, EU</td><td>Not verified</td><td>Not verified</td><td>OMR data stale (2022)</td></tr><tr><td>Skeepers</td><td>SaaS, quote-only</td><td><b>vendor communicates no price at all</b></td><td class="n">—</td><td class="n">not disclosed</td><td class="n">—</td><td>Mid EU retail/CPG</td><td>Not verified</td><td>Not verified</td><td>OMR, last edited 2023</td></tr></tbody></table></div></div>
+<p><small><b>Reading the "take on $10k" column:</b> all fees a platform captures on a single one-month campaign where $10,000 reaches creators, on the cheapest plan that supports it. For fixed-fee enterprise SaaS this is deliberately punishing — those vendors are only economic at high volume. Prices marked "est." are third-party, not vendor-official.</small></p>
+
+<h3>Four things the pricing data shows</h3>
+<ul>
+<li><b>Opacity is the norm and it is measurable.</b> Favikon's 2026 survey found only <b>2 of the 10 most-used</b> platforms publish pricing; across the 19 here, <b>nine publish no number at all</b>. For Later Influence and Skeepers, none was obtainable from any source. Traackr's third-party estimates span <b>5×</b>. GRIN just proved transparency is now a weapon: it went quote-only → public tiers → <em>repriced downward again inside 2026</em>, cutting its entry point roughly in half in four months, while Vendr still records its median contract at $27,150.</li>
+<li><b>"We take 0% from creators" is the attack line of the moment.</b> Upfluence: "No percentage cuts from creator revenue." Modash: "Creators receive the full payout amount approved by the brand." GRIN: no revenue percentage, ever. This is aimed at exactly the model Influora runs.</li>
+<li><b>Metering moved from seats to AI work.</b> GRIN meters AI credits (200→30,000/mo). Modash meters profile views and email unlocks. Creator.co sells contact credits at $99 per 100. Trend sells creator credits at $9.16. Influora's AI-credit table already has the right shape — it just has no purchase endpoint.</li>
+<li><b>There is a hollow middle.</b> Enterprise clears at $15k–$40k median ACV with 12-month minimums. SMB has collapsed to $0–$500/mo month-to-month. Almost nothing credible sits between $500/mo and $15k/yr <em>with payments included</em>.</li>
+</ul>
+
+<div class="verdict good">
+<h3>The white space, and it is specifically Influora's</h3>
+<p><b>API-verified metrics are gated behind $15k–$40k/yr enterprise contracts.</b> Aspire, CreatorIQ and Captiv8 were the three launch partners for Instagram's Creator Marketplace API. Every platform under ~$500/mo either scrapes public data or accepts self-report — and Modash says so in writing on its own data page: "Influencers &amp; creators do not opt-in to our database"; growth rate, engagement rate and fake-follower count are ML-derived from public data, not reported by the platforms. Collabstr, Trend, Billo and Stack Influence show no evidence of performance verification at all — they verify <em>delivery</em>, not <em>performance</em>.</p>
+<p><b>There is no verified-metrics product at a mid-market price. Influora has one specified at ₹4,999/month</b> — with §11's caveat that the price is not yet chargeable, because the Razorpay plan ID is still NULL. And separately: not one platform researched <em>documents</em> INR-native payout combined with Indian statutory compliance — the strongest claim the evidence supports, since a missing currency list is not proof of absence. Aspire is explicitly USD-only and pushes FX onto the creator via PayPal. Modash advertises payouts to 180+ countries in local currency with balances only in USD/GBP/EUR, and names neither India nor INR in any document fetched — INR support is <em>unconfirmed, not disproved</em>. Collabstr lists India among 150+ supported countries and publishes no currency list at all.</p>
+</div>
+
+<h2 id="s4"><span class="num">04</span>The Indian market and what it charges</h2>
+<p class="lede">Every Indian player of consequence, with the financials that are actually filed rather than claimed.</p>
+<p class="src" style="margin:6px 0 0">Scroll the table sideways to see all columns.</p>
+<div class="bleed"><div class="tw"><table class="wide"><thead><tr><th class="">Company</th><th class="">What it is</th><th class="">Brand-side price</th><th class="">Creator commission</th><th class="">Revenue / P&L</th><th class="">Funding · valuation</th><th class="">Scale claimed</th><th class="">Payments / escrow</th><th class="">Tax handling</th></tr></thead><tbody><tr class="hl"><td><b>INFLUORA</b></td><td>Marketplace + escrow + AI agent + GST invoicing</td><td>₹4,999 per mo (Pro) — <b>Razorpay plan ID still NULL</b></td><td>10% brand + 15% creator</td><td><b>₹0 · pre-revenue</b></td><td>none raised</td><td>0 live users</td><td><b>Yes — escrow + RazorpayX, in code</b></td><td><b>GST 18% built; TDS not built</b></td></tr><tr><td>One Impression</td><td>Two-sided marketplace + SaaS</td><td>not disclosed</td><td>exists, scales with campaign size; % not disclosed</td><td>FY24 rev ₹18.05 Cr · <b>loss ₹21.28 Cr</b></td><td>$10M Series A (Krafton), <b>$70M post</b></td><td>97 staff · 14M+ creators claimed</td><td>Payments yes; escrow not disclosed</td><td>'compliant contracts'; mechanics not disclosed</td></tr><tr><td>Qoruz</td><td>SaaS discovery + analytics, credit-metered</td><td><b>₹10 lakh+ per yr</b> — only disclosed SaaS price in India</td><td>not disclosed</td><td>targets ~₹100 Cr by FY27 · 80–85% retention</td><td>raising $8–10M at <b>₹280–300 Cr</b> target</td><td>4M creators · 500+ brands</td><td><b>No evidence of payments/escrow</b></td><td>not disclosed</td></tr><tr><td>Kofluence</td><td>Marketplace with auction/negotiation + CPC/CPA</td><td>not disclosed</td><td>not disclosed</td><td><b>FY25 rev ₹52.5 Cr</b> (+27.9%)</td><td>$4.0M across 2 rounds</td><td>113 staff · 100K+ creators</td><td>not disclosed</td><td>not disclosed</td></tr><tr><td>Chtrbox <span class='pill p-neut'>BSE SME 544546</span></td><td>Platform + agency — <b>only listed pure-play</b></td><td>not disclosed</td><td>not disclosed</td><td><b>FY26 rev ₹84.22 Cr · PAT ₹9.20 Cr</b></td><td>IPO ₹42.86 Cr · <b>mcap ₹73 Cr · P/E 7.93</b></td><td>300,000+ influencers</td><td>not disclosed · <b>debtor days 95→114</b></td><td>not disclosed</td></tr><tr><td>OpraahFX</td><td>Talent mgmt + campaigns</td><td>not disclosed</td><td><b>20–30% talent · 15–20% campaigns</b> — clearest disclosure in India</td><td>~200% YoY · targeting ₹250 Cr in 2026</td><td><b>no external funding</b></td><td>~500 exclusive · 4–5k billed per yr</td><td>not disclosed</td><td>not disclosed</td></tr><tr><td>Pulpkey</td><td>Managed agency, human-curated</td><td><b>from ₹10 lakh</b> classic · ₹4 lakh LinkedIn · ₹5 lakh meme</td><td>not disclosed</td><td>not disclosed</td><td>not disclosed</td><td>300,000+ creators · 250+ brands</td><td>not disclosed</td><td>not disclosed</td></tr><tr><td>Hobo.Video</td><td>Managed service, barter-heavy</td><td>quote-only</td><td>not disclosed</td><td>not disclosed</td><td>not disclosed</td><td>2.25M influencers · 1,000+ brands</td><td>claims payments + contracts; escrow not disclosed</td><td>not disclosed</td></tr><tr><td>Wobb</td><td>Self-serve SaaS/marketplace</td><td>AppSumo lifetime tiers only</td><td>not disclosed</td><td>not disclosed</td><td>not disclosed</td><td>not disclosed</td><td>not disclosed</td><td>not disclosed</td></tr><tr><td>Collective Artists (BigBang.Social)</td><td>Talent + creator holding co</td><td>n/a — agency</td><td>n/a</td><td><b>FY24 rev $31.68M · PAT $1.96M</b></td><td>—</td><td>434 staff</td><td>n/a</td><td>n/a</td></tr><tr><td>Good Creator Co (Plixxo+Winkl+Vidooly)</td><td>Roll-up</td><td>—</td><td>—</td><td>—</td><td>launched with $26.8M</td><td>135,000+ collabs claimed</td><td>—</td><td>—</td></tr><tr><td><s>Good Glamm Group</s> <span class='pill p-crit'>unwound</span></td><td>Parent roll-up</td><td>—</td><td>—</td><td>Sirona ₹450 Cr→₹150 Cr (−67%) · ScoopWhoop ₹100 Cr→₹20 Cr (−80%)</td><td>$30M at flat $1.25bn (2024) · <b>rescue failed Jul 2025</b></td><td>—</td><td>—</td><td>—</td></tr><tr><td><s>Trell</s> <span class='pill p-crit'>dead</span></td><td>Social commerce / creator app</td><td>—</td><td>—</td><td>FY22 ₹80.6 Cr → <b>FY23 ₹4.77 Cr (−94%)</b></td><td>$60M+ raised · <b>Peak XV exited at ~80% loss</b></td><td>—</td><td>—</td><td>—</td></tr></tbody></table></div></div>
+
+<div class="grid2">
+<div class="card"><h4>The structural read</h4>
+<p style="font-size:14.5px"><b>Nobody in India has proven a brand-side SaaS subscription business except Qoruz</b> — ₹10 lakh+/yr, 80–85% retention. Everyone else is quote-only managed service or won't disclose.</p>
+<p style="font-size:14.5px"><b>The only companies with audited profits are agencies, not platforms.</b> Chtrbox printed ₹9.20 Cr PAT on ₹84.22 Cr revenue in FY26. Collective Artists printed $1.96M PAT. Meanwhile One Impression — the best-funded platform in the country, $70M post-money — lost ₹21.28 Cr on ₹18.05 Cr of revenue. A <b>−118% net margin</b>.</p>
+<p style="font-size:14.5px"><b>Creator-side commission is disclosed by exactly one company.</b> OpraahFX: 20–30% talent management, 15–20% campaigns. One Impression confirms commissions exist and scale with campaign size but publishes no rate. Everyone else: not disclosed. Influora publishing a number is itself a differentiator.</p>
+</div>
+<div class="card"><h4>The pain, documented</h4>
+<p style="font-size:14.5px">Official payment cycles in Indian influencer marketing are <b>90+ days and regularly exceeded</b>. Intermediary agencies allegedly hold funds <b>90–120 days</b>. Brand audit portals reopen every 15 days flagging "two to three issues", producing <b>6–8 month</b> delays. Some major brands have not cleared dues for over a year. Creators now demand <b>25–50% advance</b> before producing content, and some refuse outright: "Pay me for the previous campaign. Post that, I will proceed."</p>
+<p style="font-size:14.5px">Agency margins are <b>6–8% against a 10% sustainability threshold</b> — they cannot absorb the float, so they pass it to creators. This is visible in a filing, not just a quote: Chtrbox's debtor days went <b>95 → 114</b> while operating margin compressed from 21.5% to 14.5%, even as revenue grew 42%. It is financing brands for nearly four months.</p>
+<p style="font-size:14.5px"><b>Meanwhile the rails already exist.</b> RazorpayX does 50,000 payouts in a single file with built-in TDS, PF, PT and ESIC filing across 28 states. Razorpay Escrow has processed <b>40 million transactions and ₹740 billion TPV</b> — and the creator economy is <em>not even a named use case</em>. No Indian influencer platform in this study discloses using them for held-in-trust creator escrow. The infrastructure is not the bottleneck. The willingness to put brand money in trust is.</p>
+</div>
+</div>
+
+<h3>Regulation: the numbers that matter</h3>
+<div class="tw"><table class=""><thead><tr><th class="">Regime</th><th class="">What it covers</th><th class="">Rates and thresholds</th><th class="">Why it matters here</th></tr></thead><tbody><tr><td>§393, Income-tax Act 2025 <span class='pill p-crit'>live since 1 Apr 2026</span></td><td>Consolidates the 194-series for non-salary TDS under one parent section with per-code rates — 194C, 194J, 194R and 194S persist as codes under it, not as separate sections</td><td>Professional services <b>10%</b> @ ₹50,000 annual · technical 2% @ ₹50,000 · <b>no PAN = 20%, no relief</b> · non-filer = 2× or 5%</td><td>Form 16A→<b>131</b>, Form 26Q→<b>140</b>. Every brand in India re-mapped its codes four months ago.</td></tr><tr><td>194R / perquisites</td><td>TDS on benefits in kind — gifted product, hotel stays, <b>barter</b></td><td><b>10% of fair market value</b> above ₹20,000 per creator per FY</td><td>The sharp edge for India: a brand shipping ₹20,001 of product to a nano-creator owes TDS though no cash moved. Now under binding CBDT guidelines.</td></tr><tr><td>GST</td><td>18% on influencer services; unchanged by GST 2.0 (22 Sep 2025)</td><td>Registration threshold ₹20 lakh (₹10 lakh special states); barter valued at open market value</td><td>Influora builds this correctly — 18%, CGST/SGST vs IGST by state code, SAC 998397/998599.</td></tr><tr><td>ASCI disclosure</td><td>Mandatory for all promotional content, monetary <em>or</em> barter</td><td>Apr–Sep 2025: <b>1,173 influencer ads investigated, 98% required modification</b>, 59% promoted disallowed products, <b>76% of Forbes-listed Indian digital stars in violation</b></td><td>Compliance in India is nominal, not real. A platform that enforces disclosure at publication has a defensible product, not a checkbox.</td></tr><tr><td>§43B(h) 45-day mandate</td><td>Buyers must pay micro/small enterprises within 45 days (15 without a written agreement)</td><td>Breach: compound interest at <b>3× the RBI bank rate</b>, non-deductible</td><td><b>The loophole guts it:</b> applies only to <b>Udyam-registered</b> micro/small firms. Only <b>15.2%</b> of Indian creators are formally registered as a business or GST-registered — a broader register than Udyam, so the share with §43B(h) protection is <em>at most</em> 15.2% and likely well below it.</td></tr></tbody></table></div>
+
+<div class="verdict good">
+<h3>This is the wedge, not just a gap</h3>
+<p>Influora has escrow, RazorpayX payouts, GST invoicing with state-code splitting, PAN/Aadhaar KYC, SAC codes and statutory invoice numbering — <b>and zero TDS computation</b>. PAN and GSTIN are captured "for later TDS reconciliation" and nothing computes. The internal audit is right that generating a 26Q over today's data would be fabricated compliance output, and right to refuse.</p>
+<p>But look at what that means competitively. <b>The one thing every Indian brand had to solve four months ago is the one thing no Indian platform automates.</b> Build the deduction step into the payout path, then the return, and Influora is the only platform that can tell a brand: pay creators through us and your §393 obligation is discharged, your 194R barter liability is computed, your Form 140 generates itself. That is not a feature. That is the reason a CFO signs.</p>
+</div>
+
+<h2 id="s5"><span class="num">05</span>How big the market really is</h2>
+<p class="lede">Three different numbers are sold under the label "influencer marketing market" and they differ by up to 40×. Getting this right is the difference between a credible thesis and a deck that gets dismissed in the first meeting.</p>
+
+<div class="figure">
+<p class="ft">India influencer marketing — every credible published figure, and what it implies for 2026</p>
+<p class="fs">Annual fee pool, INR crore. Blue = direct 2026 estimates. Yellow = WPP × Kantar's 2024 base and what it implies for 2026 at the growth rate that source itself states. Green = a 2027 forecast. Orange = a practitioner claim, not a measurement.</p>
+<svg viewBox="0 0 760 282" role="img" class="ch">
+<text x="278" y="24.72" class="cl" text-anchor="end" dominant-baseline="middle">GroupM INCA · Statista — 2026 estimate</text>
+<rect x="290" y="14" width="98.0" height="20" rx="4" fill="var(--series-1)"/>
+<text x="398.0" y="24.72" class="cv" dominant-baseline="middle">₹2,800 Cr</text>
+<text x="278" y="62.72" class="cl" text-anchor="end" dominant-baseline="middle">EY × Big Bang Social — 2026 estimate</text>
+<rect x="290" y="52" width="118.1" height="20" rx="4" fill="var(--series-1)"/>
+<text x="418.125" y="62.72" class="cv" dominant-baseline="middle">₹3,375 Cr</text>
+<text x="278" y="100.72" class="cl" text-anchor="end" dominant-baseline="middle">Kofluence research — 2026 estimate</text>
+<rect x="290" y="90" width="122.5" height="20" rx="4" fill="var(--series-1)"/>
+<text x="422.5" y="100.72" class="cv" dominant-baseline="middle">₹3,500 Cr</text>
+<text x="278" y="138.72" class="cl" text-anchor="end" dominant-baseline="middle">WPP Media × Kantar — ₹3,600 Cr for 2024</text>
+<rect x="290" y="128" width="126.0" height="20" rx="4" fill="var(--series-4)"/>
+<text x="426.0" y="138.72" class="cv" dominant-baseline="middle">₹3,600 Cr</text>
+<text x="278" y="176.72" class="cl" text-anchor="end" dominant-baseline="middle">WPP × Kantar at its own 25% → 2026</text>
+<rect x="290" y="166" width="196.9" height="20" rx="4" fill="var(--series-4)"/>
+<text x="496.875" y="176.72" class="cv" dominant-baseline="middle">₹5,625 Cr</text>
+<text x="278" y="214.72" class="cl" text-anchor="end" dominant-baseline="middle">Kofluence — 2027 forecast</text>
+<rect x="290" y="204" width="175.0" height="20" rx="4" fill="var(--series-3)"/>
+<text x="475.0" y="214.72" class="cv" dominant-baseline="middle">₹5,000 Cr</text>
+<text x="278" y="252.72" class="cl" text-anchor="end" dominant-baseline="middle">Practitioner claim — total spend, incl. direct</text>
+<rect x="290" y="242" width="350.0" height="20" rx="4" fill="var(--series-2)"/>
+<text x="650.0" y="252.72" class="cv" dominant-baseline="middle">₹10,000 Cr</text>
+</svg>
+<div class="lg"><span class="lgi"><i style="background:var(--series-1)"></i>Direct 2026 estimate</span><span class="lgi"><i style="background:var(--series-4)"></i>WPP × Kantar base and its implication</span><span class="lgi"><i style="background:var(--series-3)"></i>2027 forecast</span><span class="lgi"><i style="background:var(--series-2)"></i>Practitioner claim, not a measurement</span></div>
+<p class="fn"><b>Direct 2026 estimates cluster at ₹2,800–3,500 Cr</b> — a 25% spread. GroupM INCA is deliberately conservative: talent and production cost only, excluding media deployment and celebrity endorsement. <b>The most generous credible reading is the WPP Media × Kantar line</b>, which put India at ₹3,600 Cr for <em>2024</em> — <b>54% above EY's ₹2,344 Cr for the same year</b> — and projected 25% growth; carried on that source's own rate, 2026 implies ~₹5,625 Cr (~$639M). This report therefore uses <b>$318–639M</b> as the honest range rather than picking a favourite, and §6's argument is built on <em>market share</em> so that it holds whichever estimate you accept. The EY × Big Bang Social report is also <em>internally inconsistent on its own growth rate</em>: EY's page states 18% CAGR while trade press ran the same report as 25%. The ₹10,000 Cr figure is a single practitioner claim that ~75% of spend flows outside organised channels in direct brand–creator relationships — unverifiable, and coloured separately because it is not a measurement. It is, however, the number that defines the opportunity if Influora becomes a rail rather than a marketplace.</p>
+</div>
+
+<div class="verdict warn">
+<h3>Kill the TAM number before someone else does</h3>
+<p>The "$28–45 billion influencer marketing platform market" that appears in most creator-economy decks is <b>spend flowing through platforms, mislabelled as a software market</b>. Grand View says $45.2B; Fortune says $27.5B; The Business Research Company says $37.3B. Grand View's current page shows a <b>+32%</b> step from $34.2B (2025) to $45.2B (2026) while quoting 14.4% CAGR for 2026–2033, and an earlier vintage of the same report gave $25.44B for 2024 at a 23.3% CAGR — the base years do not reconcile across vintages.</p>
+<p>The only number that survives a bottom-up check is <b>MarketsandMarkets' $1.15B</b> for actual influencer-marketing software revenue. Sanity check it: CreatorIQ is ~$68M ARR (a Latka <em>modelled estimate</em> — CreatorIQ discloses no revenue), ShopMy $80M (Sacra), and Sprout Social's <em>entire company across all products</em> guides to $493–496M. Summing every known vendor cannot reach $28B, let alone $45B.</p>
+<p><b>The consequence is the whole strategy.</b> A thesis built on software fees against a $1.15B global TAM cannot support $1B. A thesis built on GMV and take rate can — which is exactly why every $1B+ mark in this sector (ShopMy, LTK) is a take-rate business, not a pure SaaS one.</p>
+</div>
+
+<div class="grid3">
+<div class="tile"><div class="lab">India fee pool 2026</div><div class="val">₹2,800–5,625 Cr</div><div class="cap">$318–639M. ₹3,500 Cr is the largest <em>direct</em> 2026 estimate — ~3.7% of India's ₹94,700 Cr digital ad spend.</div></div>
+<div class="tile"><div class="lab">Global software revenue</div><div class="val">$1.15B</div><div class="cap">The real platform TAM, growing 12% to $2.03B by 2031 — not the $45B that gets quoted.</div></div>
+<div class="tile"><div class="lab">Creator-influenced spend, India</div><div class="val">$350–400B</div><div class="cap">BCG. Heading past $1 trillion by 2030. This is the base that can carry a billion-dollar company.</div></div>
+</div>
+
+<h3>Who the creators are</h3>
+<p>India has <b>4–4.4 million active creator professionals</b>, of whom <b>3.3–3.7M are on Instagram</b>. <b>2–2.5 million monetize</b> — a 45–63% conversion on the stated base. But only <b>15.2% are formally registered</b> as a business or GST-registered. <b>61.1% are nano</b> (1K–10K followers). Instagram is effectively the entire market: <b>93.1% of brands</b> name it their primary platform, 76.6% ran partnership ads. Yet only <b>13.3% tie influencer marketing to formal revenue targets</b> and 46.4% apply per-campaign performance accountability.</p>
+<p>That last pair of numbers is the product opportunity in one line: <b>the market spends thousands of crores a year and 86.7% of brands do not tie it to a formal revenue target</b> — while 53.6% apply no per-campaign performance accountability either. Verified metrics plus commerce attribution is not a nice-to-have — it is the missing measurement layer for an entire industry. And the 84.8% of creators registered as <em>neither</em> a business nor for GST are the reason a platform that handles their tax identity for them gets adopted from the supply side too — the GST-specific share is at least that high and is not separately measured.</p>
+
+<h2 id="s6"><span class="num">06</span>The arithmetic wall</h2>
+<p class="lede">Before any strategy, the constraint. This is the calculation that determines whether the question "how do we get to $1B" has an answer at all.</p>
+
+<div class="card">
+<h4>Step one — what revenue does $1B require?</h4>
+<p>It depends entirely on the multiple you can earn, and in 2026 that band is enormous. Multiples compressed <b>41% for the Cloud 100 cohort alone</b> between 2021 and 2025 (34× → 20× ARR), while median growth in that cohort fell only from 90% to 75% — you are paid far less for close to the same performance.</p>
+</div>
+
+<div class="figure">
+<p class="ft">Revenue required for a $1&nbsp;billion valuation, by the multiple you actually earn</p>
+<p class="fs">Each multiple is sourced from a real 2026 datapoint. Green = elite-grower multiples. Blue = realistic private/IPO India. Orange = the multiples the market is actually paying comparable companies today.</p>
+<svg viewBox="0 0 760 358" role="img" class="ch">
+<text x="328" y="24.72" class="cl" text-anchor="end" dominant-baseline="middle">ShopMy Oct-2025 · 18.8× (≈200% growth, profitable)</text>
+<rect x="340" y="14" width="14.3" height="20" rx="4" fill="var(--series-3)"/>
+<text x="364.2993907745866" y="24.72" class="cv" dominant-baseline="middle">$53M</text>
+<text x="328" y="62.72" class="cl" text-anchor="end" dominant-baseline="middle">Cloud 100 2025 median · 20× (@75% growth)</text>
+<rect x="340" y="52" width="13.5" height="20" rx="4" fill="var(--series-3)"/>
+<text x="363.4899912967798" y="62.72" class="cv" dominant-baseline="middle">$50M</text>
+<text x="328" y="100.72" class="cl" text-anchor="end" dominant-baseline="middle">India SaaS Series B high · 15×</text>
+<rect x="340" y="90" width="18.1" height="20" rx="4" fill="var(--series-1)"/>
+<text x="368.07658833768494" y="100.72" class="cv" dominant-baseline="middle">$67M</text>
+<text x="328" y="138.72" class="cl" text-anchor="end" dominant-baseline="middle">India SaaS Series B low · 8×</text>
+<rect x="340" y="128" width="33.7" height="20" rx="4" fill="var(--series-1)"/>
+<text x="383.72497824194954" y="138.72" class="cv" dominant-baseline="middle">$125M</text>
+<text x="328" y="176.72" class="cl" text-anchor="end" dominant-baseline="middle">Meesho post-IPO · 5.8×</text>
+<rect x="340" y="166" width="46.4" height="20" rx="4" fill="var(--series-1)"/>
+<text x="396.4055700609225" y="176.72" class="cv" dominant-baseline="middle">$172M</text>
+<text x="328" y="214.72" class="cl" text-anchor="end" dominant-baseline="middle">Amagi IPO · 5.5×</text>
+<rect x="340" y="204" width="49.1" height="20" rx="4" fill="var(--series-1)"/>
+<text x="399.1035683202785" y="214.72" class="cv" dominant-baseline="middle">$182M</text>
+<text x="328" y="252.72" class="cl" text-anchor="end" dominant-baseline="middle">Private SaaS M&A median Mar-26 · 3.1×</text>
+<rect x="340" y="242" width="87.1" height="20" rx="4" fill="var(--series-2)"/>
+<text x="437.1453437771976" y="252.72" class="cv" dominant-baseline="middle">$323M</text>
+<text x="328" y="290.72" class="cl" text-anchor="end" dominant-baseline="middle">Sprout Social live · 0.9×</text>
+<rect x="340" y="280" width="299.7" height="20" rx="4" fill="var(--series-2)"/>
+<text x="649.7476066144474" y="290.72" class="cv" dominant-baseline="middle">$1,111M</text>
+<text x="328" y="328.72" class="cl" text-anchor="end" dominant-baseline="middle">Chtrbox live · 0.87×</text>
+<rect x="340" y="318" width="310.0" height="20" rx="4" fill="var(--series-2)"/>
+<text x="660.0" y="328.72" class="cv" dominant-baseline="middle">$1,149M</text>
+</svg>
+<div class="lg"><span class="lgi"><i style="background:var(--series-3)"></i>Elite grower (needs ~75–200% growth + profitability)</span><span class="lgi"><i style="background:var(--series-1)"></i>Realistic private round / India IPO</span><span class="lgi"><i style="background:var(--series-2)"></i>What comparable companies actually trade at today</span></div>
+<p class="fn">Read the orange bars as the discipline. <b>Chtrbox</b> — the only Indian influencer-marketing company on public markets, profitable, growing 42%, nearly debt-free — trades at <b>0.87× sales and P/E 7.93, roughly 55% below its IPO price</b>. <b>Sprout Social</b>, which owns Tagger, trades at 0.9× revenue. Any $1B thesis has to explain why it earns 20× when the live incumbent earns 0.9×. The only sourced answer in the whole dataset is ShopMy's combination: ~200% growth, over $1B GMV, and already profitable.</p>
+</div>
+
+<div class="verdict crit">
+<h3>Step two — the wall, stated as market share so the pool estimate does not matter</h3>
+<p>The realistic target is <b>$50–67M of revenue</b> — what a $1B mark costs at the 15–20× band the two named elite comps occupy (ShopMy 18.8×, Cloud 100 median 20×). Now ask what share of the Indian fee pool that requires. Run it against <em>both</em> ends of the credible range, at a 15% take (already above what the platforms winning share charge):</p>
+<div class="tw" style="margin:14px 0"><table style="min-width:520px"><thead><tr><th>Market share of the India fee pool</th><th class="n">Revenue on the low pool<br><small>₹2,800 Cr · $318M</small></th><th class="n">Revenue on the generous pool<br><small>₹5,625 Cr · $639M</small></th></tr></thead><tbody>
+<tr><td>10% — a strong, real business</td><td class="n">$4.8M</td><td class="n">$9.6M</td></tr>
+<tr><td>25% — clear market leader</td><td class="n">$11.9M</td><td class="n">$24.0M</td></tr>
+<tr><td>50% — implausible dominance</td><td class="n">$23.9M</td><td class="n">$47.9M</td></tr>
+<tr class="hl"><td>100% — total monopoly</td><td class="n">$47.7M</td><td class="n">$95.9M</td></tr>
+</tbody></table></div>
+<p><b>Only the last row reaches the target, and only on the most generous pool estimate.</b> Every realistic share lands between $5M and $24M. And the 25% take rate currently in the code is precisely what guarantees you never approach the top rows, because Modash, GRIN and Upfluence will run "0% creator fee" against you the whole way down.</p>
+<p><b>The campaign-fee business in India is a ₹105–210 Cr revenue business even at a 25% market-leading share. That is a good company. It is not a billion-dollar company.</b> Every credible path to $1B changes the <em>base</em> the take rate applies to, not the rate.</p>
+</div>
+
+<h2 id="s7"><span class="num">07</span>The three unlocks to $1 billion</h2>
+<p class="lede">Each of these widens the base rather than the rate. Each is already partially built. The order matters.</p>
+
+<div class="card">
+<h3 style="margin-top:0">Unlock 1 — Move the take from ad fees to commerce GMV</h3>
+<p><b>The thesis.</b> Stop charging a percentage of what a brand pays a creator. Start charging a percentage of what a creator <em>sells</em>. The fee pool is $318–639M; the commerce Indian creators already influence is <b>$350–400 billion</b>. Same platform, same creators, a base <b>550–1,250× larger</b>.</p>
+<p><b>Why it is credible here specifically.</b> This is the ShopMy playbook and it is the only proven $1B route in the sector: ShopMy went $4M → $27M → $80M revenue in three years on a <b>2.9% / 3.9%</b> take over $1B of GMV, profitable since 2024, and was marked at <b>$1.5B in October 2025 — 18.8× revenue</b>. LTK was marked at $2B on $3B of GMV. Later runs a $2.4B annual GMV run-rate. In every case the multiple came from GMV growth, not software fees.</p>
+<p><b>What Influora already has.</b> UTM campaign tracking, coupon codes with a redemption table, Shopify and WooCommerce conversion webhooks, an affiliate earnings engine with a 10% default and a per-campaign override, batch settlement jobs, and reconciliation. This is <em>wiring</em>, not invention. It is also the one place where cutting the rate is not a sacrifice — not because low rates earn more, but because the base is ~100× larger. The bull case's ₹360 Cr (3% of ₹12,000 Cr of commerce) is <b>twenty-five times</b> the bear case's ₹14.4 Cr (12% of ₹120 Cr of campaign fees), at one-quarter the rate.</p>
+</div>
+
+<div class="card">
+<h3 style="margin-top:0">Unlock 2 — Be the rail, not just the marketplace</h3>
+<p><b>The thesis.</b> Sell escrow, verified metrics and §393 tax compliance as infrastructure to campaigns Influora did not originate — to the 20+ Indian agencies each billing over ₹20 Cr a year, and to the ~two-thirds of brands running influencer programs in-house. (That two-thirds figure sits awkwardly beside the 57.5% who report using a third-party platform — the surveys conflict, and neither measures dollars. Both point the same direction: most programs are not run on a platform.)</p>
+<p><b>Why it works.</b> Direct estimates put the <em>organised</em> market at ₹2,800–3,500 Cr; the practitioner claim is a <b>~₹10,000 Cr total</b> with the majority — on that claim's own arithmetic, roughly two-thirds — flowing outside organised channels in direct brand–creator relationships. A marketplace can never touch that money. A rail can. And the demand is acute, not theoretical: payment cycles run 90–120 days and worse, creators are demanding 25–50% advances, agency margins are 6–8% against a 10% survival threshold, and the sector's only listed company is financing its brand clients for 114 days.</p>
+<p><b>The unclaimed position.</b> Razorpay Escrow has done ₹740 billion of TPV and does not list the creator economy as a use case. RazorpayX already files TDS, PF, PT and ESIC across 28 states. <b>No Indian influencer platform in this study discloses held-in-trust creator escrow or automated creator tax handling.</b> The rails are built, unpointed. Influora is the only company researched that has already pointed them — and the only one that then failed to build the TDS step that would make it a compliance product rather than a payments feature.</p>
+<p><b>Pricing shape.</b> A rail earns basis points on TPV, not 25% of GMV — 30–50 bps on money you did not originate, plus a platform licence. Lower rate, vastly larger base, and it is a business agencies <em>buy</em> rather than one they fight.</p>
+</div>
+
+<div class="card">
+<h3 style="margin-top:0">Unlock 3 — Export the local-rails stack to the markets the incumbents ignore</h3>
+<p><b>The thesis.</b> The defensible combination is not AI and not discovery — those are commoditising fast. It is <b>verified first-party metrics + a local money rail + local tax compliance, at an SMB price</b>. That exact combination does not exist anywhere in the world today at under $500/month.</p>
+<p><b>The evidence it is unoccupied.</b> API-verified metrics are locked behind $15k–$40k/yr enterprise contracts. Aspire is explicitly USD-only and pushes FX onto creators via PayPal — that one is documented. Modash advertises local-currency payouts to 180+ countries but names neither India nor INR anywhere fetched, so its INR support is unconfirmed rather than absent. Collabstr lists India and publishes no currency list. Hypefy AI raised a $7.2M Series A in July 2026 on precisely this thesis — localised pricing plus cross-border settlement — and is Europe/US-focused. Nobody has built it for the global South.</p>
+<p><b>Why India first is the right sequencing, not a limitation.</b> India forces you to solve the hardest version: 85% unregistered suppliers, a tax regime that changed wholesale four months ago, barter treated as taxable income, 90–120 day payment norms, and a market that is 93% one platform. Solve that and Indonesia, Vietnam, the Philippines, Brazil, Nigeria, the UAE and Saudi are variations on a solved problem. Solve it in the US first and you have built nothing transferable.</p>
+</div>
+
+<div class="verdict">
+<h3>The sequence, and why this order</h3>
+<p><b>Now →</b> provision keys, run one real funded campaign end to end. Everything in this document is BELIEVED until money moves.<br>
+<b>Q1 →</b> re-price the take rate, and build the §393 TDS deduction step. Pricing before brands are live; tax before it becomes a liability.<br>
+<b>Q2–Q3 →</b> turn on the commerce layer. It exists in code and it is the only base large enough for the outcome.<br>
+<b>Year 2 →</b> package escrow + verification + tax as a rail and sell it to agencies and in-house teams.<br>
+<b>Year 3+ →</b> export the stack. YouTube verification becomes mandatory before this step, not after.</p>
+</div>
+
+<h2 id="s8"><span class="num">08</span>What it will be worth</h2>
+<p class="lede">Today, and under three scenarios. Stated as ranges with the multiple named, because a valuation without its multiple is a wish.</p>
+
+<div class="verdict warn">
+<h3>Today: pre-revenue</h3>
+<p>Influora has <b>zero revenue, zero live users, unprovisioned Razorpay keys, and an AI service that refuses to boot without six secrets</b>. Escrow funding returns 500 on live. 83% feature-complete is a real achievement and it is not traction.</p>
+<p>Comparables for what pre-revenue Indian creator-tech is worth: <b>Qoruz</b> is raising $8–10M at a target <b>₹280–300 Cr</b> with 4M creators, 500+ brands, 80–85% SaaS retention and a ₹100 Cr FY27 target. <b>One Impression</b> raised at <b>$70M post</b> with ₹18 Cr revenue. <b>Kofluence</b> raised $4M total against ₹52.5 Cr FY25 revenue.</p>
+<p>On that field, a pre-revenue platform with this codebase and no users is a <b>seed-stage asset: roughly ₹8–40 Cr ($1–4.5M)</b>, driven by team and by the escrow/verification architecture rather than by the feature count. The single highest-return action available is not a feature — it is <b>one funded campaign with real money and a real creator</b>, which converts the entire document from BELIEVED to PROVED and moves the number more than another 40 features would.</p>
+</div>
+
+<div class="figure">
+<p class="ft">Revenue composition under three scenarios — INR crore</p>
+<p class="fs">Modelled, not forecast. Assumptions are stated below so you can disagree with them precisely.</p>
+<svg viewBox="0 0 760 300" role="img" class="ch">
+<line x1="64" y1="236.0" x2="744" y2="236.0" class="grid"/>
+<text x="54" y="236.0" class="cl" text-anchor="end" dominant-baseline="middle">0</text>
+<line x1="64" y1="181.0" x2="744" y2="181.0" class="grid"/>
+<text x="54" y="181.0" class="cl" text-anchor="end" dominant-baseline="middle">220</text>
+<line x1="64" y1="126.0" x2="744" y2="126.0" class="grid"/>
+<text x="54" y="126.0" class="cl" text-anchor="end" dominant-baseline="middle">441</text>
+<line x1="64" y1="71.0" x2="744" y2="71.0" class="grid"/>
+<text x="54" y="71.0" class="cl" text-anchor="end" dominant-baseline="middle">661</text>
+<line x1="64" y1="16.0" x2="744" y2="16.0" class="grid"/>
+<text x="54" y="16.0" class="cl" text-anchor="end" dominant-baseline="middle">881</text>
+<rect x="129.3" y="232.5" width="96.0" height="3.5" fill="var(--series-1)"/>
+<rect x="129.3" y="231.8" width="96.0" height="1.0" fill="var(--series-4)"/>
+<text x="177.3" y="221.8" class="cvb" text-anchor="middle">17</text>
+<text x="177.3" y="258.0" class="clb" text-anchor="middle">BEAR · FY29</text>
+<rect x="356.0" y="216.0" width="96.0" height="18.0" fill="var(--series-1)"/>
+<rect x="356.0" y="201.1" width="96.0" height="13.0" fill="var(--series-3)"/>
+<rect x="356.0" y="192.6" width="96.0" height="6.5" fill="var(--series-4)"/>
+<text x="404.0" y="182.6" class="cvb" text-anchor="middle">174</text>
+<text x="404.0" y="258.0" class="clb" text-anchor="middle">BASE · FY31</text>
+<rect x="582.7" y="173.6" width="96.0" height="60.4" fill="var(--series-1)"/>
+<text x="630.7" y="204.8" class="cvin" text-anchor="middle" dominant-baseline="middle">250</text>
+<rect x="582.7" y="83.7" width="96.0" height="87.9" fill="var(--series-3)"/>
+<text x="630.7" y="128.7" class="cvin" text-anchor="middle" dominant-baseline="middle">360</text>
+<rect x="582.7" y="68.8" width="96.0" height="13.0" fill="var(--series-2)"/>
+<rect x="582.7" y="39.6" width="96.0" height="27.2" fill="var(--series-4)"/>
+<text x="630.7" y="54.2" class="cvin" text-anchor="middle" dominant-baseline="middle">117</text>
+<text x="630.7" y="29.6" class="cvb" text-anchor="middle">787</text>
+<text x="630.7" y="258.0" class="clb" text-anchor="middle">BULL · FY33</text>
+<line x1="64" y1="236" x2="744" y2="236" class="axis"/>
+</svg>
+<div class="lg"><span class="lgi"><i style="background:var(--series-1)"></i>Campaign take</span><span class="lgi"><i style="background:var(--series-3)"></i>Commerce take</span><span class="lgi"><i style="background:var(--series-2)"></i>Rail fees</span><span class="lgi"><i style="background:var(--series-4)"></i>Subscriptions</span></div>
+<p class="fn"><b>BEAR</b> ₹120 Cr campaign GMV @ 12%, 500 Pro subs → <b>₹17 Cr / $2.0M</b>. <b>BASE</b> ₹800 Cr campaign GMV @ 10% + ₹2,000 Cr commerce GMV @ 3% + 4,000 Pro @ ₹4,999/mo + <b>40 enterprise @ ₹25 lakh</b> → <b>₹174 Cr / $19.8M</b>. <b>BULL</b> ₹2,500 Cr campaign @ 10% + ₹12,000 Cr commerce @ 3% + ₹15,000 Cr rail TPV @ 40 bps + 12,000 Pro + <b>150 enterprise @ ₹30 lakh</b> → <b>₹787 Cr / $89.4M</b>. Every subscription line assumes 12 of 12 months paid and zero churn, which is optimistic. <b>BEAR's segments are sub-pixel at this scale</b> — its ₹17 Cr is 2% of the BULL total, so read its composition from these numbers, not from the bar. Notice the shape change: campaign fees are 82% of bear-case revenue and 32% of bull-case revenue. The company that reaches $1B is not the company that scaled its take rate — it is the company that changed what it takes a rate on.</p>
+</div>
+
+<div class="tw"><table class=""><thead><tr><th class="">Scenario</th><th class="">Revenue (INR)</th><th class="">Revenue (USD)</th><th class="">What has to be true</th><th class="">Earnable multiple</th><th class="">Valuation</th><th class="">Read</th></tr></thead><tbody><tr><td><b>BEAR</b> · FY29</td><td>₹17 Cr</td><td>$2.0M</td><td>India campaign fees only. Commerce layer never ships. Competes on take rate against 0%-fee incumbents.</td><td>1–6× — Chtrbox trades at 0.87×, Sprout at 0.9×</td><td><b>$2–12M</b> · ₹18–104 Cr</td><td>A small, possibly profitable services-adjacent business. Acquirable by an agency. Not a venture outcome.</td></tr><tr><td><b>BASE</b> · FY31</td><td>₹174 Cr</td><td>$19.8M</td><td>Commerce layer live, take rate re-priced to ~10% blended, Pro subscription actually billing, early enterprise.</td><td>8–15× (the India SaaS Series B band from §6)</td><td><b>$158–297M</b> · ₹1,392–2,610 Cr</td><td>A genuinely good company and the most likely good outcome. Roughly 4.6–9.3× Qoruz's current ₹280–300 Cr target valuation.</td></tr><tr class="hl"><td><b>BULL</b> · FY33</td><td>₹787 Cr</td><td>$89.4M</td><td>All three unlocks. Commerce GMV ₹12,000 Cr (~$1.36B — ShopMy did >$1B). Rail carrying money Influora didn't originate. Export live.</td><td>12–20× · <b>requires 75%+ growth AND profitability</b></td><td><b>$1.07–1.79B</b> · ₹9,400–15,700 Cr</td><td><b>The billion-dollar case.</b> Needs ~$1.4B of tracked commerce GMV and ShopMy-class growth and profit. Precedented — ShopMy, LTK, Later all did it — never in India.</td></tr></tbody></table></div>
+
+<div class="verdict">
+<h3>So: what will it be worth?</h3>
+<p><b>Today, pre-revenue: ₹8–40 Cr ($1–4.5M).</b> Team and architecture, not features.</p>
+<p><b>Realistically, if it executes well: $158–297M by FY31.</b> That is the base case and it is a strong outcome. It requires re-pricing, the commerce layer, and real billing — none of which are inventions.</p>
+<p><b>$1B is reachable and it is a specific, narrow shape:</b> approximately <b>$89M of revenue</b>, of which <b>only a third is campaign fees</b>, on roughly <b>$1.4 billion of tracked creator commerce</b>, growing 75%+, and <b>profitable</b>. Drop the profitability and you are valued at 5–6× (Indian IPO reality: Meesho 5.8×, Amagi 5.5×) and need <b>$167–200M</b> of revenue for the same $1B. Drop the growth as well and the market prices you at Chtrbox's 0.87× and the question stops being interesting.</p>
+<p><b>The honest caution:</b> there is <b>no $1B exit precedent anywhere in influencer marketing</b>. The highest <em>reported</em> price is $500M (Publicis/Influential) — and Publicis's own press release discloses no terms at all, so even that figure is press-reported, not disclosed. The two company-disclosed prices are $250M (Later/Mavely) and $140M (Sprout/Tagger); Publicis/Captiv8 is reported at ~$150M by one source and $175M by another. $1B+ exists only as a private primary mark — ShopMy at $1.5B. A billion-dollar outcome here is an IPO or a category redefinition, not a trade sale.</p>
+</div>
+
+<h2 id="s9"><span class="num">09</span>What kills it</h2>
+<p class="lede">Ranked by severity. Each row is evidence, not opinion.</p>
+<div class="bleed"><div class="tw"><table class=""><thead><tr><th class="">Risk</th><th class="">Severity</th><th class="">The evidence</th><th class="">What to do about it</th></tr></thead><tbody><tr><td>AI is compressing transactional marketplaces</td><td><span class='pill p-crit'>critical</span></td><td>Fiverr Q2-26: revenue −10% YoY, marketplace revenue −15.5%, FY26 guidance cut to −17%/−14%, active buyers −21.9%, stock −20% in a day. CEO cites 'accelerating AI adoption'. Trades at 0.2× revenue.</td><td>Move up-market from 'find me a creator' to verified performance + money movement. Discovery is the commoditised layer; escrow and verified metrics are not.</td></tr><tr><td>25% combined take rate against a 0% marketed field</td><td><span class='pill p-crit'>critical</span></td><td>Modash, GRIN and Upfluence all advertise <b>0% creator-side fee</b> as their headline attack line. Influora's 15% creator fee is the single most attackable number it owns.</td><td>Re-price. Note what ShopMy actually does: <b>15% on campaign budgets</b> — nearly Influora's own creator rate, on the same base — and <b>2.9%/3.9% on commerce GMV</b>. It was valued at $1.5B on the second line, not the first. The lesson is the base, not the rate: a 3–8% take on commerce beats 25% on fees.</td></tr><tr><td>Zero TDS logic in a market whose TDS regime changed 4 months ago</td><td><span class='pill p-crit'>critical</span></td><td>From 1 Apr 2026 §393 of the Income-tax Act 2025 consolidated the 194-series under one parent section; Form 26Q→140, Form 16A→131. The 194R treatment persists as a code under it — 10% on barter fair market value above ₹20,000 per creator per year. Influora captures PAN/GSTIN and computes nothing.</td><td>This is the wedge, not just the gap. No Indian platform automates it. Build the deduction step first, then the return — the internal audit is right that a 26Q over today's data would be fabricated compliance.</td></tr><tr><td>Indian creator-platform track record is bad</td><td><span class='pill p-warn'>serious</span></td><td>Trell: revenue −94%, Peak XV exited at ~80% loss. Good Glamm: Sirona −67%, ScoopWhoop −80%, rescue failed. Good Creator Co in shutdown. One Impression lost ₹21.28 Cr on ₹18.05 Cr revenue (−118% net margin).</td><td>The companies that print money in Indian influencer marketing are agencies (Chtrbox ₹9.20 Cr PAT, Collective Artists $1.96M PAT), not platforms. Take the working-capital pain away instead of taking a bigger cut.</td></tr><tr><td>The public comp is brutal</td><td><span class='pill p-warn'>serious</span></td><td>Chtrbox — profitable, +42% revenue, nearly debt-free — trades at <b>0.87× sales, P/E 7.93, 55% below its IPO price</b>. Sprout Social (which owns Tagger) trades at 0.9× revenue.</td><td>Any pitch above ~6× revenue has to explain this print. The only sourced answer in the dataset is ShopMy's combination: ~200% growth + >$1B GMV + already profitable.</td></tr><tr><td>Verification moat is Instagram-only</td><td><span class='pill p-warn'>serious</span></td><td><code>DeliverableVerificationService.java:40-46</code> — YouTube explicitly unimplemented (<code>FALLBACK_YOUTUBE_UNSUPPORTED</code>). Brand-safety scoring is behind a default-OFF flag, so 3 score columns are NULL on every row.</td><td>Instagram is 93.1% of Indian brand preference, so this is survivable near-term — but it is a single-platform dependency on Meta's Graph API.</td></tr><tr><td>Nothing is runtime-proven</td><td><span class='pill p-crit'>critical</span></td><td>Razorpay keys not provisioned. AI service refuses to boot without 6 secrets. Escrow fund returns 500 on live. Payout-retry cleared 3 red-team rounds at code level but needs a live MySQL/RazorpayX environment. 83% feature-complete ≠ 0% revenue-capable.</td><td>One funded campaign, end to end, with real money and a real creator, is worth more than the next 40 features.</td></tr><tr><td>No $1B exit precedent exists in this sector</td><td><span class='pill p-warn'>serious</span></td><td>Highest <em>reported</em> strategic price: $500M (Publicis/Influential) — and Publicis's own press release discloses no terms, so even that is press-reported. Company-disclosed: $250M (Later/Mavely), $140M (Sprout/Tagger). Publicis/Captiv8 is reported at ~$150M by one source and $175M by another. $1B+ exists only as a private primary mark (ShopMy $1.5B).</td><td>A $1B outcome here is an IPO or a category redefinition, not a trade sale to a holding company.</td></tr></tbody></table></div></div>
+
+<h2 id="s10"><span class="num">10</span>Six decisions to make now</h2>
+<p class="lede">Not a roadmap — the decisions that cannot be delegated and that gate everything downstream.</p>
+<div class="tw"><table class=""><thead><tr><th class="">#</th><th class="">Decision</th><th class="">Owner</th><th class="">When</th></tr></thead><tbody><tr><td>1</td><td><b>Re-price the take rate.</b> The July 2026 CMO analysis evaluated a 15% creator fee and stated 'no brand-side fee'. <code>V42</code> adds a 10% brand fee, CEO-approved. The company is running a 25% combined take while its own pricing memo describes 15%.</td><td>Tejas (CMO) + Rohan (CFO) + Swapnil</td><td>Before the first paid campaign — repricing after brands are live costs trust</td></tr><tr><td>2</td><td><b>Build the TDS deduction step</b> under §393 (professional 10% @ ₹50,000; the 194R barter code at 10% of FMV @ ₹20,000; 20% where no valid PAN). Then Form 140.</td><td>Vikram + Rohan + a CA</td><td>This quarter. It is a liability today and a moat in 6 months</td></tr><tr><td>3</td><td><b>Decide whether Influora is a marketplace or a rail.</b> The rail thesis addresses the spend that flows outside organised channels — a practitioner claim of roughly two-thirds of a ₹10,000 Cr total, unverified — and the ₹740bn Razorpay escrow rails nobody points at creators.</td><td>Swapnil + Priya</td><td>Now — it changes the roadmap, not just the pitch</td></tr><tr><td>4</td><td><b>Turn on the commerce layer.</b> UTM, coupons, Shopify/Woo webhooks and affiliate earnings already exist in code (<code>V23</code>, <code>V24</code>, <code>V28</code>). Commerce GMV is the only base large enough for a $1B outcome.</td><td>Vikram + Ananya</td><td>Next two quarters — it is wiring, not invention</td></tr><tr><td>5</td><td><b>Provision the keys and run one real campaign.</b> Razorpay live, Meta app, the 6 AI boot secrets. Everything in the audit is BELIEVED, not PROVED, until money moves.</td><td>Meera (DevOps) + Priya</td><td>Immediately — this blocks every other number in this document</td></tr><tr><td>6</td><td><b>Publish pricing.</b> Favikon found only 2 of the 10 most-used platforms publish price, and nine of the 19 here publish nothing. GRIN just proved transparency is a weapon. Later Influence and Skeepers are so opaque no number could be obtained for either.</td><td>Tejas</td><td>With the pricing decision in #1</td></tr></tbody></table></div>
+
+<h2 id="s11"><span class="num">11</span>What is not proved</h2>
+<p class="lede">Named explicitly, so nothing here gets quoted as more certain than it is.</p>
+<div class="card">
+<h4>About the business</h4>
+<ul style="font-size:14.5px">
+<li><b>Nothing was run.</b> The 83% completeness figure is static analysis. A route matching by method and path does not prove the handler returns correct data at runtime. Every code claim in this document is BELIEVED, not PROVED.</li>
+<li><b>No traffic, users, GMV, CAC, churn or unit economics exist</b> — there is no production data, warehouse or dashboard in the repository. Nothing quantitative about the <em>business</em> could be read from code.</li>
+<li><b>Real AI spend is unknown.</b> Only the ceilings are code-truth ($15/day global, $3/day per workspace soft). The pricing module's own comment implies a full month of logged spend has not yet elapsed.</li>
+<li><b>Whether the ₹4,999 Pro price is live is unverifiable</b> — <code>razorpay_plan_id</code> is NULL for both seeded plans, and the migration says the tier numbers are "still pending Swapnil's §6 sign-off".</li>
+<li><b>Whether Pro's 7% fee override applies is unverified</b> — the schema exists; the migration states no per-plan seam exists in the fee service yet.</li>
+</ul>
+<h4>About the market</h4>
+<ul style="font-size:14.5px">
+<li><b>The India market size has a 25% spread among <em>direct</em> 2026 estimates and a 101% spread across everything this report treats as credible</b> (₹2,800–5,625 Cr), and the most-cited report (EY × Big Bang Social) is internally inconsistent on its own CAGR. The ₹10,000 Cr total-spend figure is a single practitioner claim and is not independently verified.</li>
+<li><b>No credible 2028–2030 India-specific forecast exists.</b> The furthest credible horizon is ₹4,500–5,000 Cr by 2027. FICCI-EY 2026 does not break influencer marketing out as a line item at all.</li>
+<li><b>No dollar-share split of platform vs agency vs direct spend exists</b> in any published source, globally or in India. ~57.5% of brands <em>touch</em> a third-party platform; nobody measures the money.</li>
+<li><b>No 2024–2026 influencer-tech acquisition disclosed both price and revenue.</b> Anyone quoting a sector M&A multiple — including this document, in the Sprout/Tagger row — is extrapolating from one guidance stub.</li>
+<li><b>Prices move fast.</b> GRIN repriced at least twice inside 2026, halving its entry point in four months. Nine platforms in the global table publish no price at all; for Later Influence and Skeepers no number was obtainable from any source, and Traackr's estimates span 5×.</li>
+<li><b>All INR/USD conversions here are arithmetic at ₹88/USD</b>, not a sourced exchange rate.</li>
+<li><b>The ~₹5,625 Cr 2026 figure is my arithmetic, not WPP × Kantar's number.</b> That source published ₹3,600 Cr for 2024 and projected 25% growth; compounding it twice is a derivation and is labelled as one wherever it appears.</li>
+<li><b>The enterprise ACVs in the scenario model (₹25 lakh ≈ $28k, ₹30 lakh ≈ $34k) have no <em>Indian</em> comparable behind them</b> — Qoruz's ₹10 lakh+ is the only published Indian enterprise price. They do sit inside the $15k–$40k global enterprise band from §3, but that is a different market with different willingness to pay.</li>
+<li><b>The take-on-$10k column mixes plan structures.</b> A subscription-led platform looks cheap at $10,000 of campaign spend and expensive at $1,000. The column is a fair like-for-like at one campaign size, not a universal ranking.</li>
+<li><b>Two independent fresh-context checks of this document found 31 and then 19 defects.</b> Both rounds were corrected, including four that changed substantive conclusions: the market-size ceiling, ShopMy's actual campaign-fee rate, the fact that the fee-pool argument only holds when stated as market share, and the fact that enterprise SaaS contracts imply a higher capture than 25% at a $10,000 campaign size. Two rounds of checking that each found defects is strong evidence that a third would too.</li>
+<li><b>India-specific creator sentiment could not be retrieved</b> — the search tool is US-scoped. Payment-pain evidence rests on trade press plus one audited filing.</li>
+</ul>
+<h4>Not attempted
+</h4>
+<p style="font-size:14.5px">No competitor product was used or tested. No Influora user was interviewed. No brand or creator willingness-to-pay was measured. Every take-rate recommendation in §7 is reasoned from market comparables, not from a pricing experiment — and §2's recommendation to A/B test is the right next step, not this document.</p>
+</div>
+
+<h2 id="s12"><span class="num">12</span>Sources</h2>
+<p class="lede">90 sources fetched live on 8 August 2026. Internal claims cite file:line in the repository.</p>
+<div class="card"><div class="srclist">
+<b>Pricing — vendor official:</b> <a href="https://grin.co/pricing">grin.co/pricing</a> · <a href="https://www.modash.io/pricing">modash.io/pricing</a> · <a href="https://www.modash.io/data">modash.io/data</a> · <a href="https://collabstr.com/pricing">collabstr.com/pricing</a> · <a href="https://www.creator.co/pricing">creator.co/pricing</a> · <a href="https://insense.pro/pricing">insense.pro/pricing</a> · <a href="https://www.trend.io/pricing">trend.io/pricing</a> · <a href="https://impact.com/plans-b2b/">impact.com/plans-b2b</a> · <a href="https://stackinfluence.com/pricing/">stackinfluence.com/pricing</a> · <a href="https://www.aspire.io/legal/handling-and-processing-fees">aspire.io handling fees</a> · <a href="https://www.upfluence.com/influencer-payments">upfluence.com/influencer-payments</a> · <a href="https://sproutsocial.com/pricing/">sproutsocial.com/pricing</a> · <a href="https://qoruz.com/pricing">qoruz.com/pricing</a> · <a href="https://pulpkey.com/">pulpkey.com</a><br>
+<b>Pricing — third-party:</b> <a href="https://www.vendr.com/marketplace/creatoriq">Vendr CreatorIQ</a> · <a href="https://www.vendr.com/marketplace/aspire">Vendr Aspire</a> · <a href="https://www.vendr.com/marketplace/meltwater">Vendr Meltwater</a> · <a href="https://www.vendr.com/marketplace/grin">Vendr GRIN</a> · <a href="https://www.favikon.com/blog/influencer-marketing-platform-pricing">Favikon</a> · <a href="https://www.capterra.com/p/202552/Heepsy/pricing/">Capterra Heepsy</a> · <a href="https://omr.com/en/reviews/product/skeepers/pricing">OMR Skeepers</a><br>
+<b>Verification &amp; AI:</b> <a href="https://www.prnewswire.com/news-releases/aspire-deepens-partnership-with-meta-to-launch-ai-instagram-discovery-302573131.html">Aspire × Meta CMA API</a> · <a href="https://www.socialmediatoday.com/news/instagram-launches-new-api-access-to-streamline-creator-partnerships/647410/">Instagram CMA API launch partners</a> · <a href="https://grin.co/news/grin-launches-gia-the-first-agentic-ai-solution-designed-to-supercharge-creator-marketers/">GRIN Gia</a> · <a href="https://www.storika.ai/guides/agentic-ai-influencer-marketing-platforms-2026">Agentic AI platforms 2026</a> · <a href="https://influencermarketinghub.com/klear/">Klear vetted vs unvetted</a><br>
+<b>Market size:</b> <a href="https://www.marketsandmarkets.com/Market-Reports/influencer-marketing-platform-market-294138.html">MarketsandMarkets $1.15B software TAM</a> · <a href="https://www.fortunebusinessinsights.com/influencer-marketing-platform-market-108880">Fortune BI $27.5B</a> · <a href="https://www.thebusinessresearchcompany.com/report/influencer-marketing-platform-global-market-report">TBRC $37.3B</a> · <a href="https://www.statista.com/statistics/1294803/india-influencer-marketing-industry-value/">Statista — India</a> · <a href="https://www.ey.com/en_in/insights/media-entertainment/how-influencer-marketing-is-impacting-brands-in-india">EY — 18% CAGR (the inconsistency)</a> · <a href="https://www.ey.com/en_in/newsroom/2026/03/india-s-media-and-entertainment-sector-grew-9-percent-to-inr-2-point-78-trillion-in-2025-driven-by-digital-and-live-experiences-ficci-ey-report">FICCI-EY 2026 — ₹94,700 Cr digital ad spend</a> · <a href="https://www.exchange4media.com/media-others-news/indias-me-sector-grew-9-to-rs-278-trillion-in-2025-ficci-ey-report-153170.html">exchange4media — FICCI-EY 2026</a> · <a href="https://www.accessnewswire.com/newsroom/en/business-and-professional-services/influencer-marketing-statistics-2026-market-size-growth-and-120-1148470">Grand View earlier vintage ($25.44B / 23.3%)</a> · <a href="https://www.kofluence.com/influencer-marketing-research-report/">Kofluence report — 15.2% formally registered</a> · <a href="https://getlatka.com/companies/creatoriq">Latka — CreatorIQ ARR estimate (modelled)</a> · <a href="https://sacra.com/c/patreon/">Sacra — Patreon</a> · <a href="https://www.emarketer.com/press-releases/us-influencer-marketing-spending-will-surpass-10-billion-in-2025">eMarketer</a> · <a href="https://www.goldmansachs.com/insights/articles/the-creator-economy-could-approach-half-a-trillion-dollars-by-2027">Goldman Sachs $480B by 2027</a> · <a href="https://www.bcg.com/publications/2025/india-from-content-to-commerce-mapping-indias-creator-economy">BCG India creator economy</a> · <a href="https://www.buzzincontent.com/story/indian-influencer-marketing-industry-to-grow-at-25-cagr-to-reach-rs-2-800-crore-in-2026-groupm-inca/">GroupM INCA ₹2,800 Cr</a> · <a href="https://www.socialsamosa.com/report/india-influencer-marketing-industry-inr-3375-cr-2026-report-4445887">EY × Big Bang Social ₹3,375 Cr</a> · <a href="https://www.socialsamosa.com/report/indias-influencer-marketing-market-11835455">Kofluence 2026 report</a> · <a href="https://www.socialsamosa.com/report/influencer-marketing-india-valued-3600-crore-9354540">WPP Media × Kantar</a> · <a href="https://www.exchange4media.com/influence-zone-news/global-networks-scale-up-is-influencer-marketing-now-a-rs-10000-cr-market-149704.html">exchange4media ₹10,000 Cr claim</a> · <a href="https://www.grandviewresearch.com/industry-analysis/influencer-marketing-platform-market">Grand View (flagged unreliable)</a><br>
+<b>Valuation comparables:</b> <a href="https://sacra.com/c/shopmy/">Sacra ShopMy $80M rev / $1.5B</a> · <a href="https://www.prnewswire.com/news-releases/shopmy-raises-70m-at-1-5-billion-valuation-to-scale-the-curated-commerce-infrastructure-for-premium-brands-tastemakers-and-shoppers-302590802.html">ShopMy round</a> · <a href="https://impact.com/press-releases/impact-announces-150-million-funding-at-a-1-5-billion-valuation-to-accelerate-global-growth-and-power-productive-partnerships/">impact.com $1.5B</a> · <a href="https://www.businesswire.com/news/home/20211122006289/en/LTK-the-Creator-Commerce-Platform-Raises-at-a-$2-Billion-Valuation">LTK $2B</a> · <a href="https://www.prnewswire.com/news-releases/later-acquires-mavely-for-250-million-unlocking-new-opportunities-for-marketers-and-creators-to-maximize-their-return-on-social-302341591.html">Later/Mavely $250M</a> · <a href="https://www.prnewswire.com/news-releases/later-surpasses-2-4-billion-annual-gmv-run-rate-and-more-than-250-million-in-cumulative-creator-payouts-one-year-after-mavely-acquisition-302642973.html">Later $2.4B GMV run-rate</a> · <a href="https://www.finsmes.com/2026/07/hypefy-ai-raises-7-2m-in-series-a-funding.html">Hypefy AI $7.2M Series A</a> · <a href="https://www.tradingkey.com/news/earnings/262085505-tradingkey">Sprout Social FY26 guidance</a> · <a href="https://sqmagazine.co.uk/influencer-marketing-statistics/">IMH via SQ Magazine — in-house / platform-use shares</a> · <a href="https://investors.sproutsocial.com/news/news-details/2023/Sprout-Social-Acquires-Tagger-Media/default.aspx">Sprout/Tagger $140M</a> · <a href="https://www.publicisgroupe.com/en/news/press-releases/publicis-groupe-to-acquire-influential-creating-world-s-leading-influencer-marketing-solution">Publicis/Influential (release discloses no terms; $500M is press-reported)</a> · <a href="https://www.forbes.com/sites/ianshepherd/2024/10/09/influentials-500m-deal-heralds-new-chapter-for-influencer-marketing/">Forbes — the $500M figure</a> · <a href="https://wearerockwater.com/publicis-buys-captiv8/">Publicis/Captiv8</a> · <a href="https://www.bvp.com/atlas/the-cloud-100-benchmarks-report">BVP Cloud 100 benchmarks</a> · <a href="https://multiples.vc/insights/software-saas-valuation-multiples">Multiples.vc July 2026</a> · <a href="https://multiples.vc/public-comps/sprout-social-valuation-multiples">Sprout Social 0.9×</a> · <a href="https://multiples.vc/public-comps/fiverr-valuation-multiples">Fiverr 0.2×</a> · <a href="https://www.fiverr.com/news/fiverr-q2-2026-earnings">Fiverr Q2-26 earnings</a> · <a href="https://aventis-advisors.com/saas-valuation-multiples/">Aventis SaaS multiples</a> · <a href="https://ipogmplive.in/meesho-ipo-analysis/">Meesho IPO</a> · <a href="https://www.indmoney.com/blog/ipo/amagi-media-labs-ipo-review">Amagi IPO</a> · <a href="https://newmarketpitch.com/blogs/news/creator-economy-funding-trends">Creator-economy funding 2026</a><br>
+<b>India players &amp; exits:</b> <a href="https://www.screener.in/company/544546/">Screener — Chatterbox / Chtrbox</a> · <a href="https://www.investorgain.com/ipo/chatterbox-technologies-ipo/1462/">Chatterbox IPO detail</a> · <a href="https://techcrunch.com/2023/03/14/one-impression-krafton-india-funding/">One Impression / Krafton</a> · <a href="https://thekredible.com/company/one-impression/financials">One Impression financials</a> · <a href="https://entrackr.com/news/as-the-creator-economy-scales-qoruz-is-building-for-what-comes-next-11256042">Entrackr — Qoruz</a> · <a href="https://inc42.com/company/kofluence/">Inc42 — Kofluence</a> · <a href="https://www.storyboard18.com/brand-makers/from-viral-creator-to-rs-250-cr-vision-pranav-panpalias-opraahfx-growth-play-91148.htm">OpraahFX commission rates</a> · <a href="https://www.storyboard18.com/brand-makers/payment-delays-plague-influencer-marketing-agencies-as-major-brands-lag-behind-77033.htm">Storyboard18 — payment delays</a> · <a href="https://yourstory.com/2025/12/year-in-review-what-took-down-2025s-biggest-startups">Good Glamm unwind</a> · <a href="https://entrackr.com/2024/03/trell-revenue-plummeted-94-to-rs-5-cr-in-fy23-losses-stood-at-rs-59-cr/">Trell collapse</a> · <a href="https://www.thecompanycheck.com/company/b/collective-artists-network/dlzfh70lz1yfa7pit">Collective Artists financials</a><br>
+<b>Regulation &amp; rails:</b> <a href="https://cadialogue.in/tds-professional-fees-section-393-tax-year-2026/">§393 replaces §194J</a> · <a href="https://futurexsolutions.com/tds-tcs-changes-april-2026-india/">TDS/TCS changes April 2026</a> · <a href="https://www.rekko.in/tds-influencer-payments">TDS on influencer payments (194J/C/R)</a> · <a href="https://taxguru.in/income-tax/budget-2025-section-194j-tds-threshold-professional-fees-increased.html">§194J threshold change</a> · <a href="https://www.startup-movers.com/blog/gst-on-social-media-influencers">GST on influencers</a> · <a href="https://razorpay.com/learn/gst-2-0-reforms-in-india/">GST 2.0</a> · <a href="https://www.ascionline.in/social/">ASCI influencer guidelines</a> · <a href="https://www.ascionline.in/wp-content/uploads/2025/11/Press-Release-ASCI-Half-Yearly-Complaints-Report-2025-26.pdf">ASCI half-yearly report (PDF)</a> · <a href="https://www.cashfree.com/blog/msme-45-days-payment-rule-section-43bh-explained/">§43B(h) 45-day rule</a> · <a href="https://razorpay.com/x/payouts/">RazorpayX Payouts</a> · <a href="https://razorpay.com/x/escrow-accounts/">Razorpay Escrow ₹740bn TPV</a>
+</div></div>
+<p><small><b>Internal sources.</b> <code>V41__platform_fee_config.sql</code> · <code>V42__platform_fee_config_brand_fee_razorpay.sql</code> · <code>V54__subscription_billing.sql</code> · <code>V55__seed_billing_plans.sql</code> · <code>V51__trendspark.sql</code> · <code>V22__creator_scores.sql</code> · <code>PlatformFeeService.java</code> · <code>EscrowService.java</code> · <code>PayoutService.java</code> · <code>CommissionInvoiceService.java</code> · <code>DeliverableVerificationService.java</code> · <code>AffiliateEarningsService.java</code> · <code>influora-ai/app/tools/schemas.py</code> · <code>influora-ai/app/config.py</code> · <code>PROJECT-DEEP-AUDIT-2026-08-04.md</code> · <code>wiki/market/platform-fee-competitive-analysis-2026-07.md</code></small></p>
+
+<div class="foot">
+<p><b>Method and honesty statement.</b> Business definition read from primary source only — 895 Java files, 97 Flyway migrations, 283 route annotations, 78 entities, the Python AI service and the React SPA — with file:line for every internal claim. Market research: three independent fresh-context research passes, 90 sources fetched live on 8 August 2026, the primary URLs listed in §12, "not disclosed" written where no real number exists rather than an estimate substituted. Financial model: arithmetic run in a script and reproducible; assumptions stated inline so they can be disagreed with precisely.</p>
+<p><b>Ceiling: BELIEVED, not PROVED.</b> Nothing was executed. No competitor product was tested, no user interviewed, no willingness-to-pay measured. Market figures are as-published by their sources, including where those sources contradict each other — the contradictions are shown rather than resolved. Prices in this sector moved twice inside 2026; re-verify GRIN, Modash and Insense before any external use.</p>
+</div>
+</div>
+<script>
+document.getElementById('tg').onclick=function(){
+  var r=document.documentElement, cur=r.getAttribute('data-theme');
+  if(!cur){cur=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}
+  r.setAttribute('data-theme', cur==='dark'?'light':'dark');
+};
+</script>
+</body></html>

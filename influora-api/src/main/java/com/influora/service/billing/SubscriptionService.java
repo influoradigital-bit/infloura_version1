@@ -38,9 +38,44 @@ import org.springframework.transaction.annotation.Transactional;
  * <p><b>No local {@code Subscription} row is created at checkout-initiation time.</b> A newly
  * created Razorpay subscription is unpaid until the brand completes the hosted checkout — writing
  * an ACTIVE row before that would let a brand who abandons checkout (or a forged/duplicated
- * request) get Pro entitlements for free. The local row is created/updated only from a verified
- * webhook ({@link #applySubscriptionWebhookUpdate}), matching TECH-STACK.md rule #4 ("money/state
- * changes are server-derived from the payment processor's callback, never a client request").
+ * request) get Pro entitlements for free. A {@code PRO} row is created/updated only from a
+ * verified webhook ({@link #applySubscriptionWebhookUpdate}), matching TECH-STACK.md rule #4
+ * ("money/state changes are server-derived from the payment processor's callback, never a client
+ * request").
+ *
+ * <p><b>BL-5 correction (BrandF.md §101, re-corrected after Priya's review):</b> this class has
+ * FOUR other {@code Subscription} writers, none of which goes through the webhook, and the
+ * sentence above must not be read as "only ever written from a verified webhook" — that
+ * generalization is false and was the load-bearing (and incorrect) claim of an earlier audit
+ * pass. (The first correction pass here undercounted this list as "two" and omitted {@link
+ * #cancel(String)} entirely; the enumeration below was re-derived from every {@code
+ * subscriptionRepository.save(...)}/{@code saveAndFlush(...)} call site in this class, not
+ * patched in place, so it shouldn't need a third correction.)
+ *
+ * <ul>
+ *   <li>{@link #createFreeSubscription} — writes a {@code FREE}/{@code ACTIVE} row, reached from
+ *       {@code GET /billing/plan} via {@link #getOrCreateFreeSubscription}. No payment risk: Free
+ *       is the zero-cost baseline plan, the caller is scoped to their own workspace via {@code
+ *       BrandContextService.requireBrandWorkspace}, and this path can never write {@code PRO}.
+ *   <li>{@link #cancel(String)} — reached from {@code POST /billing/cancel}. Sets {@code
+ *       cancelAtPeriodEnd=true} on the caller's own workspace subscription; status is
+ *       intentionally left unchanged (still {@code ACTIVE} until the period actually elapses —
+ *       see that method's own comment). No plan/status escalation and no payment risk: this path
+ *       can only schedule a future cancellation, never grant or extend paid entitlement.
+ *   <li>{@link #applyRenewalSafetyNet} — advances the current period on an existing row. Not
+ *       reachable from any controller; called only by {@link
+ *       com.influora.job.SubscriptionRenewalResetJob}, an internal scheduled job with no HTTP
+ *       entry point.
+ *   <li>{@link #grantAdminPlan} — comp/override writes, any plan. SUPER_ADMIN + MFA-gated via
+ *       {@code AdminBillingService}; intentionally an administrator-triggered exception to the
+ *       "webhook-only" default, not a gap in it.
+ * </ul>
+ *
+ * <p>The actual invariant this class enforces is narrower than "webhook-only": <b>no path other
+ * than the verified webhook can ever write a paid ({@code PRO}) row funded by an unauthenticated
+ * or unverified caller.</b> Free-tier and job-driven writes are workspace-/admin-scoped by
+ * construction; only {@link #applySubscriptionWebhookUpdate} can move a workspace onto paid Pro
+ * entitlement.
  */
 @Service
 public class SubscriptionService {
@@ -163,8 +198,8 @@ public class SubscriptionService {
         // while webhookSecret is missing/wrong. In that state, RazorpayClient.createSubscription
         // below would take a genuine payment on Razorpay's hosted checkout, but
         // WebhookSignatureVerifier fails closed on every subsequent subscription.activated/charged
-        // webhook forever (the local Subscription row is only ever written from a verified
-        // webhook — see class javadoc), silently stranding a paying customer with no Pro access.
+        // webhook forever (a paid PRO row is only ever written from a verified webhook — see
+        // class javadoc's BL-5 correction), silently stranding a paying customer with no Pro access.
         // Checked per-request (not just at boot) so this still protects even if
         // SecretsStartupValidator's env-gated check was bypassed by a misconfigured influora.env.
         if (razorpayClient.isConfigured() && !razorpayClient.isFullyConfigured()) {

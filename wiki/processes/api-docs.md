@@ -2,6 +2,48 @@
 
 New/changed endpoints logged here, newest first.
 
+## 2026-08-09 — `POST /onboarding/brand/kyc-prompt-dismissed` (OB-1), `GET /onboarding/brand/status` extended
+
+**Task:** OB-1 (`BrandF.md` §105/§91) — the KYC prompt (`brand-kyc-prompt.tsx`) tracks "skip for
+now" in `localStorage` only, so a brand that dismisses it on one device is re-prompted on every
+other device/browser/private window. This needed a server-side home for the dismissal.
+
+| Method | Path | Auth | Request | Response |
+|---|---|---|---|---|
+| GET | `/onboarding/brand/status` | Brand (`brandContext.requireBrand`) | — | `ApiResponse<OnboardingStatusResponse>` — `{onboardingCompleted: boolean, kycPromptDismissed: boolean}` — **field added this pass** |
+| POST | `/onboarding/brand/kyc-prompt-dismissed` | Brand (`brandContext.requireBrand`) | — (no body; principal-scoped) | `ApiResponse<KycPromptDismissedResponse>` — `{kycPromptDismissed: true}`. Idempotent — calling it twice is a no-op write, still 200. |
+
+**Design decision — where dismissal lives:** on `users.kyc_prompt_dismissed` (new column), not on
+`workspaces`. This is deliberately a *different* signal from `workspaces.verification_status`
+(already readable via `GET /workspaces/me`, per BrandF.md §91's "that endpoint already exists"
+finding): `verificationStatus` means "KYC was actually submitted/approved"; `kycPromptDismissed`
+means "this person clicked skip and doesn't want to see the nag again," which can be true for a
+brand that never submits KYC at all. **Frontend should hide the prompt when EITHER is true** —
+`kycPromptDismissed === true` OR `verificationStatus !== 'UNVERIFIED'` — not just one.
+
+Scoped per-user (matches `onboarding_completed`'s existing precedent on the same `users` table),
+not per-workspace: this is a personal "don't nag me" UX preference, not a workspace verification
+fact. A teammate on a different account in the same workspace will still see the prompt until they
+dismiss it themselves — intentional, same as any other per-user notification-dismissal pattern.
+
+**Files:**
+- `influora-api/src/main/resources/db/migration/V20260809120000__brand_kyc_prompt_dismissed.sql` — new `users.kyc_prompt_dismissed BOOLEAN NOT NULL DEFAULT FALSE`.
+- `influora-api/src/main/java/com/influora/domain/entity/User.java` — `kycPromptDismissed` field + `isKycPromptDismissed()`/`dismissKycPrompt()`.
+- `influora-api/src/main/java/com/influora/web/dto/onboarding/OnboardingDtos.java` — `OnboardingStatusResponse` gained `kycPromptDismissed`; new `KycPromptDismissedResponse`.
+- `influora-api/src/main/java/com/influora/service/OnboardingService.java` — `dismissBrandKycPrompt`; `getBrandOnboardingStatus` now returns the new field; shared `requireBrandUser` helper.
+- `influora-api/src/main/java/com/influora/web/OnboardingController.java` — new `POST /onboarding/brand/kyc-prompt-dismissed`.
+- Tests: `influora-api/src/test/java/com/influora/service/OnboardingServiceKycPromptTest.java` (new — 3 cases: default-undismissed, dismiss-persists-and-reflects-in-status, dismiss-is-idempotent).
+
+**Not done (frontend):** `src/components/brand/campaigns/brand-kyc-prompt.tsx` is untouched —
+Ananya's follow-up. It should call `GET /onboarding/brand/status` on mount (or reuse a call
+already made for OB-2's dashboard guard) to read `kycPromptDismissed`, keep `localStorage` only as
+a same-session/optimistic cache, and call `POST /onboarding/brand/kyc-prompt-dismissed` from the
+existing `rememberDismiss()` callback (both the "Skip for now" paths and the post-submit path
+already call `rememberDismiss()` — add the POST call there, fire-and-forget is fine since the
+prompt already hides optimistically via local state).
+
+---
+
 ## 2026-07-18 — `GET /workspaces/me`, `PATCH /workspaces/me`
 
 **Task:** I7 — brand Settings > General > Workspace Information had no persistence endpoint

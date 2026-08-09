@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import Request
 
-from app.auth.service_token import AuthError, VerifiedToken
+from app.auth.service_token import VerifiedToken
 from app.routes import chat as chat_route
 
 

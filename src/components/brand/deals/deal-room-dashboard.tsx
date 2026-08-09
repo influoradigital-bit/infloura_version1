@@ -408,7 +408,10 @@ export function DealRoomDashboard() {
       setActionError(null);
       try {
         await dealsApi.accept(selectedDeal.id, 'brand');
-        await loadDeals();
+        // CR-98/F-0112: loadDeals() alone left the message timeline stale after the brand's
+        // OWN accept action on this page — worse than the counterparty-blackout bug on the
+        // chat pages, since even the actor saw a card that never settled.
+        await Promise.all([loadDeals(), loadMessages(selectedDeal.id)]);
         runContractAnimation();
       } catch {
         setActionError('Could not accept the proposal. Try again.');
@@ -433,7 +436,8 @@ export function DealRoomDashboard() {
           { amount: Number(counterAmount) || 0, message: counterMessage || undefined },
           'brand',
         );
-        await loadDeals();
+        // CR-98/F-0112: same stale-timeline gap as accept/reject on this page.
+        await Promise.all([loadDeals(), loadMessages(selectedDeal.id)]);
         setShowCounterDialog(false);
         setCounterAmount('');
         setCounterMessage('');
@@ -458,7 +462,8 @@ export function DealRoomDashboard() {
       setActionError(null);
       try {
         await dealsApi.reject(selectedDeal.id, rejectReason || undefined, 'brand');
-        await loadDeals();
+        // CR-98/F-0112: same stale-timeline gap as accept on this page.
+        await Promise.all([loadDeals(), loadMessages(selectedDeal.id)]);
         setShowRejectDialog(false);
         setRejectReason('');
       } catch {

@@ -12,6 +12,7 @@ import { TimelineEvent } from '@/lib/types';
 import { downloadContractPDF, signContract } from '@/lib/contract-generator';
 import { ApiError } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { formatINR } from '@/lib/utils';
 
 export function ContractPanel({
   open,
@@ -28,6 +29,11 @@ export function ContractPanel({
   const [signerName, setSignerName] = React.useState('');
   const { toast } = useToast();
   const contractId = meta?.contractId;
+  const amount = meta?.amount;
+  // Distinguishes "amount not loaded/set" from a real number so we never fabricate a figure
+  // (see BrandF.md P-3 — the old `meta?.amount || 50000` showed a fake ₹50,000 for deals
+  // whose real amount was 0/missing).
+  const hasAmount = amount != null && Number.isFinite(amount);
 
   const statusSteps = [
     { key: 'generated', label: 'Generated', done: true },
@@ -37,12 +43,20 @@ export function ContractPanel({
   ];
 
   const handleDownloadPDF = () => {
+    if (!hasAmount) {
+      toast({
+        title: 'Amount not available',
+        description: 'This contract has no confirmed amount yet — PDF download is unavailable.',
+        variant: 'destructive',
+      })
+      return
+    }
     const contractData = {
       contractId: meta?.contractId || 'CONT-001',
       brandName: 'Influora Brand',
       creatorName: 'Priya Sharma',
       campaignName: meta?.campaignName || 'Summer Fashion',
-      amount: meta?.amount || 50000,
+      amount,
       deliverables: [
         { title: 'Instagram Reel', description: 'High-quality reel', quantity: 2 },
         { title: 'Instagram Story', description: 'Story series', quantity: 1 },
@@ -140,7 +154,7 @@ export function ContractPanel({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground">Amount</p>
-                  <p className="text-lg font-bold">₹{(meta?.amount || 50000).toLocaleString('en-IN')}</p>
+                  <p className="text-lg font-bold">{formatINR(amount)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Status</p>
@@ -175,7 +189,9 @@ export function ContractPanel({
             </div>
             <Card className="border-yellow-200/50 bg-yellow-50/30">
               <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">₹{(meta?.amount || 50000).toLocaleString('en-IN')} is locked in escrow</p>
+                <p className="text-sm text-muted-foreground">
+                  {hasAmount ? `${formatINR(amount)} is locked in escrow` : 'Escrow amount not yet available'}
+                </p>
                 <p className="text-xs text-muted-foreground mt-2">
                   Funds will be released when all deliverables are approved
                 </p>

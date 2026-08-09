@@ -5,6 +5,7 @@ import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
 import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -102,6 +103,17 @@ public interface CollaborationRepository extends JpaRepository<Collaboration, St
     List<Collaboration> findByCreatorIdAndStatus(String creatorId, CollaborationStatus status);
 
     /**
+     * CR-80 — real WHERE NOT IN for the creator's dispute-eligible-deal dropdown. Previously the
+     * client called {@code GET /deals?status=all} (which loads via {@link #findByCreatorId}, i.e.
+     * the creator's entire deal history) and filtered out DISPUTED/COMPLETED/CANCELLED rows in
+     * JS. This pushes that exclusion to SQL so terminal-state deals never leave the database, let
+     * alone reach {@code DealService#toDealResponse}'s per-row enrichment (campaign/contract/
+     * escrow/deliverable lookups). See {@code DealService#listEligibleForDispute}.
+     */
+    List<Collaboration> findByCreatorIdAndStatusNotIn(
+            String creatorId, Collection<CollaborationStatus> statuses);
+
+    /**
      * "My Applications" page (my-applications-plan-2026-07-24.md) — source of truth is {@code
      * source = APPLICATION}, never the loose {@code applicationStatus} mapping used by the browse
      * path. {@code source} never mutates after creation, so this still returns a row after it
@@ -114,6 +126,15 @@ public interface CollaborationRepository extends JpaRepository<Collaboration, St
     List<Collaboration> findByCreatorIdAndCampaignIdIn(String creatorId, List<String> campaignIds);
 
     Optional<Collaboration> findByIdAndCreatorId(String id, String creatorId);
+
+    /**
+     * CR-51 — batched ownership check for {@code CreatorDeliverableService#listForCollaborations}.
+     * One IN-clause query replacing what was previously N sequential {@code
+     * findByIdAndCreatorId} calls (one per deal) from the creator dashboard's pending-deliverable
+     * rollup. Mirrors the existing {@code findByCreatorIdAndCampaignIdIn} batch-lookup pattern
+     * already used elsewhere in this repository.
+     */
+    List<Collaboration> findByCreatorIdAndIdIn(String creatorId, List<String> ids);
 
     @Query(
             "SELECT c FROM Collaboration c WHERE c.id = :id AND c.campaignId IN "
@@ -130,4 +151,31 @@ public interface CollaborationRepository extends JpaRepository<Collaboration, St
     long countByCreatorIdAndStatus(String creatorId, CollaborationStatus status);
 
     long countByCreatorId(String creatorId);
+
+    /**
+     * One row per (campaignId, status) pair actually present among {@code campaignIds} — the
+     * batched counterpart to {@link #findByCampaignId} used by {@code CampaignService.list()} to
+     * populate {@code CampaignMapper.CampaignMetrics} for a whole page of campaigns without an
+     * N+1 query per row (D-5, BrandF.md Section 19/20 — every campaign card previously showed
+     * "0/N creators" because {@code CampaignMetrics.empty()} was the only value ever produced).
+     * A campaign/status combination with zero collaborations produces no row; callers MUST treat
+     * a missing combination as zero, the same convention {@code EscrowHoldRepository}'s SUM
+     * queries use (there {@code COALESCE} does it in SQL; here there is nothing to coalesce since
+     * {@code COUNT} rows only exist for pairs that occurred, so the zero-default is the caller's
+     * responsibility instead).
+     */
+    interface CampaignStatusCount {
+        String getCampaignId();
+
+        CollaborationStatus getStatus();
+
+        long getTotal();
+    }
+
+    @Query(
+            "SELECT c.campaignId AS campaignId, c.status AS status, COUNT(c) AS total "
+                    + "FROM Collaboration c WHERE c.campaignId IN :campaignIds "
+                    + "GROUP BY c.campaignId, c.status")
+    List<CampaignStatusCount> countByCampaignIdInGroupByStatus(
+            @Param("campaignIds") List<String> campaignIds);
 }

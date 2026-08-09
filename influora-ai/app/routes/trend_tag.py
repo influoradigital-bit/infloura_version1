@@ -108,6 +108,22 @@ def _rate_limited(client_key: str, limit_per_minute: int, *, now: float) -> bool
     return False
 
 
+# F-05: synthetic workspace bucket for the n8n ingest route, which has no real
+# workspace_id. Named, not None, so WORKSPACE_DAILY_HARD_CAP_USD applies here too.
+TREND_TAG_SPEND_BUCKET = "__trend_tag_ingest__"
+
+
+def _secret_matches(presented: str, configured: str) -> bool:
+    """Constant-time comparison that cannot raise on non-ASCII input.
+
+    F-12: `hmac.compare_digest` on two `str` values raises TypeError the moment
+    either contains a non-ASCII character, so `Authorization: Bearer é` crashed
+    the route with a 500 instead of returning 401. Comparing the UTF-8 bytes
+    keeps the constant-time property and accepts any input.
+    """
+    return hmac.compare_digest(presented.encode("utf-8"), configured.encode("utf-8"))
+
+
 def _drop_response() -> dict[str, Any]:
     """Fail-closed 'drop the row' result — byte-identical shape to a successful
     recovery, with recovered=false so the n8n caller drops it exactly as it does
@@ -142,19 +158,18 @@ async def trendspark_tag(request: Request, authorization: str | None = Header(de
             detail={"code": "tagger_unconfigured", "message": "recovery tagger is not configured"},
         )
 
-    # Control #2: constant-time bearer comparison (no early-exit timing oracle).
-    presented = _bearer(authorization)
-    if not presented or not hmac.compare_digest(presented, configured_secret):
-        log_event(
-            logger, logging.WARNING, "trend_tag_auth_failed",
-            request_id=request_id,
-            fields={"presented_len": len(presented)},
-        )
-        raise HTTPException(
-            status_code=401, detail={"code": "unauthorized", "message": "invalid ingest secret"}
-        )
-
-    # Control #3: rate limit (blunts brute-force + runaway spend).
+    # Control #3 (F-12): rate limit runs BEFORE the secret check, not after.
+    #
+    # The module docstring lists this rate limit as one of three compensating
+    # controls that justify the static-secret exception. It could not do that
+    # job: a wrong secret raised 401 above and `_rate_limited` was never
+    # reached, so no hit was ever recorded for a failed attempt — the limiter
+    # only ever throttled callers who already held the secret. That left
+    # TREND_TAG_INGEST_SECRET brute-forceable at unlimited rate, which is the
+    # one thing the control existed to prevent.
+    #
+    # Order matters and only this order works: every request, authenticated or
+    # not, consumes budget before any credential is examined.
     client_host = request.client.host if request.client else "unknown"
     now = time.monotonic()
     if _rate_limited(client_host, settings.trend_tag_rate_limit_per_minute, now=now):
@@ -165,6 +180,23 @@ async def trendspark_tag(request: Request, authorization: str | None = Header(de
         )
         raise HTTPException(
             status_code=429, detail={"code": "rate_limited", "message": "too many tagging requests"}
+        )
+
+    # Control #2: constant-time bearer comparison (no early-exit timing oracle).
+    #
+    # F-12: `hmac.compare_digest` raises TypeError when either str argument is
+    # not ASCII-only, so `Authorization: Bearer é` produced an unhandled 500 on
+    # an auth path documented as "fails closed". Both sides are encoded to bytes
+    # first, which is both TypeError-proof and still constant-time.
+    presented = _bearer(authorization)
+    if not presented or not _secret_matches(presented, configured_secret):
+        log_event(
+            logger, logging.WARNING, "trend_tag_auth_failed",
+            request_id=request_id,
+            fields={"presented_len": len(presented)},
+        )
+        raise HTTPException(
+            status_code=401, detail={"code": "unauthorized", "message": "invalid ingest secret"}
         )
 
     try:
@@ -183,7 +215,15 @@ async def trendspark_tag(request: Request, authorization: str | None = Header(de
     category = str(body.get("category") or "")[:64]
 
     # Control #6: spend gate — on kill-switch / ceiling, drop without a model call.
-    gate = await check_spend_gate()
+    # F-05: this called check_spend_gate() with NO workspace_id, placing the
+    # route entirely outside the per-workspace cap — an ingest endpoint with a
+    # static secret was the one path with no per-tenant ceiling at all. It has
+    # no real workspace, so it gets its own dedicated bucket and is capped like
+    # everything else. Also reserves budget across the model call.
+    gate = await check_spend_gate(
+        workspace_id=TREND_TAG_SPEND_BUCKET,
+        reserve_usd=settings.ai_reservation_per_call_usd or None,
+    )
     if not gate.allowed:
         log_event(
             logger, logging.WARNING, "trend_tag_blocked_spend_gate",
@@ -212,7 +252,9 @@ async def trendspark_tag(request: Request, authorization: str | None = Header(de
     if result.usage:
         try:
             cost_usd = estimate_cost_usd(TREND_TAG_MODEL, result.usage)
-            spend_today = await record_spend(cost_usd, None)
+            spend_today = await record_spend(
+                cost_usd, TREND_TAG_SPEND_BUCKET, reservation=gate.reservation
+            )
             log_event(
                 logger, logging.INFO, "ai_spend",
                 request_id=request_id,

@@ -1193,6 +1193,23 @@ export default function BrandChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDeal?.id, refreshDeal, loadMessages]);
 
+  // CR-93/F-0110 — mirrors creator-chat.tsx: a backgrounded tab is the one dead-connection
+  // shape CR-31's reconnect logic does not reliably catch (browsers can suspend/throttle a
+  // hidden tab's in-flight fetch read with no error/close ever firing), so foregrounding the
+  // tab forces an unconditional resync rather than waiting on the transport to notice.
+  React.useEffect(() => {
+    if (!isApiLive() || !selectedDeal) return;
+    const dealId = selectedDeal.id;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void loadMessages(dealId);
+      void refreshDeal(dealId);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDeal?.id, refreshDeal, loadMessages]);
+
   const handleSendMessage = async () => {
     if (!message.trim()) return;
     const content = message.trim();

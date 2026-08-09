@@ -377,4 +377,35 @@ class CreatorCampaignServiceTest {
         assertEquals(0, nonMatching.items().size());
         assertEquals(0, nonMatching.meta().total());
     }
+
+    @Test
+    @DisplayName(
+            "browse: niche filter is case-insensitive (CR-62) — matches title/description/hashtags"
+                    + " regardless of frontend casing")
+    void testBrowseNicheFilterIsCaseInsensitive() {
+        Campaign fitnessCampaign = activeCampaign(); // title="Summer Fitness Challenge"
+        Page<Campaign> page = new PageImpl<>(List.of(fitnessCampaign), PageRequest.of(0, 20), 1);
+        when(campaignRepository.findAll(
+                        org.mockito.ArgumentMatchers.<Specification<Campaign>>any(),
+                        org.mockito.ArgumentMatchers.<Pageable>any()))
+                .thenReturn(page);
+        when(collaborationRepository.findByCreatorIdAndCampaignIdIn(anyString(), org.mockito.ArgumentMatchers.anyList()))
+                .thenReturn(List.of());
+        when(workspaceRepository.findAllById(org.mockito.ArgumentMatchers.<List<String>>any()))
+                .thenReturn(List.of());
+
+        // All three casing variants must match the title "Summer Fitness Challenge"
+        var lowercase = service.browse(principal, "fitness", null, null, null, 1, 20);
+        assertEquals(1, lowercase.items().size(), "lowercase 'fitness' should match title");
+
+        var titleCase = service.browse(principal, "Fitness", null, null, null, 1, 20);
+        assertEquals(1, titleCase.items().size(), "title-case 'Fitness' should match title");
+
+        var uppercase = service.browse(principal, "FITNESS", null, null, null, 1, 20);
+        assertEquals(1, uppercase.items().size(), "uppercase 'FITNESS' should match title");
+
+        // Non-matching niche should return 0
+        var noMatch = service.browse(principal, "beauty", null, null, null, 1, 20);
+        assertEquals(0, noMatch.items().size(), "'beauty' should not match fitness campaign");
+    }
 }

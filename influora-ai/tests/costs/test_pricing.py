@@ -35,12 +35,12 @@ def test_small_token_counts_are_not_rounded_to_zero():
     # 1000 input tokens of Claude @ $3/MTok = $0.003 -- must not truncate to 0.
     usage = {"input_tokens": 1000, "output_tokens": 0}
     cost = estimate_cost_usd(CLAUDE_MODEL, usage)
-    assert cost == Decimal("3") / Decimal("1000")
+    assert cost == Decimal(3) / Decimal(1000)
 
 
 def test_missing_usage_returns_zero():
-    assert estimate_cost_usd(CLAUDE_MODEL, None) == Decimal("0")
-    assert estimate_cost_usd(CLAUDE_MODEL, {}) == Decimal("0")
+    assert estimate_cost_usd(CLAUDE_MODEL, None) == Decimal(0)
+    assert estimate_cost_usd(CLAUDE_MODEL, {}) == Decimal(0)
 
 
 def test_unpriced_model_raises_value_error():
@@ -69,11 +69,15 @@ def test_trend_tag_model_override_falls_back_to_trendspark_rate(monkeypatch):
 
     cost = pricing.estimate_cost_usd("some-distinct-trend-tag-model-id", usage)
 
-    # TRENDSPARK_MODEL's rate ($1/$5 per MTok) applied to 1M/1M tokens = $6.00 --
-    # spend is recorded (at the Haiku-class rate) instead of raising and being
-    # silently swallowed by trend_tag.py's bare `except ValueError`.
-    assert cost == Decimal("6.00")
-    assert cost == estimate_cost_usd(TRENDSPARK_MODEL, usage)
+    # F-04 (round 2): the fallback used to be TRENDSPARK_MODEL's own Haiku-class
+    # rate ($1/$5 per MTok = $6.00 here). That is a SAME-OR-CHEAPER row, which is
+    # exactly how a 5x under-bill hides: point the override at Opus and it bills
+    # at Haiku. Spend must still be RECORDED (trend_tag.py swallows ValueError,
+    # so raising would silently lose it), so the fallback is now the most
+    # EXPENSIVE known rate — over-estimating makes the ceiling stricter, never
+    # looser.
+    assert cost == estimate_cost_usd("claude-opus-4-1-20250805", usage)
+    assert cost > estimate_cost_usd(TRENDSPARK_MODEL, usage)
 
 
 def test_trend_tag_model_override_fallback_logs_a_warning(monkeypatch, caplog):
@@ -127,11 +131,15 @@ def test_brand_safety_model_override_falls_back_to_claude_model_rate(monkeypatch
 
     cost = pricing.estimate_cost_usd("some-distinct-brand-safety-model-id", usage)
 
-    # CLAUDE_MODEL's rate ($3/$15 per MTok) applied to 1M/1M tokens = $18.00 --
-    # spend is recorded (at the Sonnet-class rate) instead of raising and
-    # being silently swallowed by brand_safety.py's bare `except ValueError`.
-    assert cost == Decimal("18.00")
-    assert cost == estimate_cost_usd(CLAUDE_MODEL, usage)
+    # F-04 (round 2): was CLAUDE_MODEL's Sonnet rate ($3/$15 = $18.00). Setting
+    # BRAND_SAFETY_MODEL=claude-opus-4-1 then billed $18 instead of $90 — the
+    # identical 5x under-bill F-04 describes, warning-logged instead of raised.
+    # The fallback is now the most EXPENSIVE known rate: spend is still recorded
+    # (brand_safety.py swallows ValueError), and the only possible error is an
+    # over-estimate, which makes the ceiling stricter rather than looser.
+    assert cost == estimate_cost_usd("claude-opus-4-1-20250805", usage)
+    assert cost > Decimal("18.00")
+    assert cost > estimate_cost_usd(CLAUDE_MODEL, usage)
 
 
 def test_brand_safety_model_override_fallback_logs_a_warning(monkeypatch, caplog):
@@ -179,8 +187,8 @@ def test_sarvam_tts_cost_at_200_chars_matches_voice_py_docstrings_estimate():
 
 
 def test_sarvam_tts_cost_zero_chars_is_zero():
-    assert estimate_sarvam_tts_cost_usd(0) == Decimal("0")
+    assert estimate_sarvam_tts_cost_usd(0) == Decimal(0)
 
 
 def test_sarvam_tts_cost_never_negative_for_bad_input():
-    assert estimate_sarvam_tts_cost_usd(-5) == Decimal("0")
+    assert estimate_sarvam_tts_cost_usd(-5) == Decimal(0)

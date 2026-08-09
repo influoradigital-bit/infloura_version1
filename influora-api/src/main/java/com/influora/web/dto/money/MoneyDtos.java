@@ -144,7 +144,15 @@ public final class MoneyDtos {
             Instant fundedAt,
             Instant releasedAt) {}
 
-    public record EscrowReleaseRequest(@NotBlank String milestoneId) {}
+    /**
+     * [P-1' fix, BrandF.md §47a] Exactly one of {@code milestoneId} / {@code escrowHoldId} must be
+     * supplied — the controller enforces this (bean validation can't express "exactly one of").
+     * {@code milestoneId} keeps routing to {@code EscrowService#release} (the B5
+     * release_condition-gated path); {@code escrowHoldId} is the new path for holds that have no
+     * milestone at all ({@code EscrowService#releaseByHoldId}), e.g. escrow Meera funds at the
+     * campaign level before any contract/milestone exists.
+     */
+    public record EscrowReleaseRequest(String milestoneId, String escrowHoldId) {}
 
     public record EscrowRefundRequest(@NotBlank String escrowHoldId, String reason) {}
 

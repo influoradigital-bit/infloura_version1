@@ -178,6 +178,7 @@ class DealControllerTest {
                         "Brand",
                         null,
                         null,
+                        null,
                         CollaborationStatus.INVITED,
                         BigDecimal.TEN,
                         "INR",
@@ -210,6 +211,7 @@ class DealControllerTest {
                         "Campaign",
                         "cp1",
                         "Brand",
+                        null,
                         null,
                         null,
                         CollaborationStatus.TERMS_AGREED,
@@ -283,6 +285,7 @@ class DealControllerTest {
                         "Brand",
                         null,
                         null,
+                        null,
                         CollaborationStatus.IN_NEGOTIATION,
                         new BigDecimal("30000"),
                         "INR",
@@ -337,12 +340,22 @@ class DealControllerTest {
     @Test
     @DisplayName("GET /deals/{dealId}/messages/stream authorizes THEN registers an emitter")
     void testStreamMessagesRegistersEmitterOnAuthorizedOpen() {
-        SseEmitter emitter = controller.streamMessages(principal, "deal1");
+        SseEmitter emitter = controller.streamMessages(principal, "deal1", null);
 
         assertNotNull(emitter);
         var inOrder = org.mockito.Mockito.inOrder(dealService, messageStreamRegistry);
         inOrder.verify(dealService).authorizeMessageStream(principal, "deal1");
-        inOrder.verify(messageStreamRegistry).register(eq("deal1"), any(SseEmitter.class));
+        inOrder.verify(messageStreamRegistry).register(eq("deal1"), any(SseEmitter.class), eq((String) null));
+    }
+
+    @Test
+    @DisplayName(
+            "GET /deals/{dealId}/messages/stream: a Last-Event-ID reconnect header is passed"
+                    + " through to the registry unchanged")
+    void testStreamMessagesPassesThroughLastEventId() {
+        controller.streamMessages(principal, "deal1", "42");
+
+        verify(messageStreamRegistry).register(eq("deal1"), any(SseEmitter.class), eq("42"));
     }
 
     @Test
@@ -352,7 +365,8 @@ class DealControllerTest {
                 .when(dealService)
                 .authorizeMessageStream(principal, "deal1");
 
-        assertThrows(ApiException.class, () -> controller.streamMessages(principal, "deal1"));
+        assertThrows(
+                ApiException.class, () -> controller.streamMessages(principal, "deal1", null));
 
         verifyNoInteractions(messageStreamRegistry);
     }

@@ -170,6 +170,17 @@ public class DeliverableVerificationService {
                     "Meta token for creator " + creatorProfileId + " is missing, revoked, or expired");
         }
 
+        // CR-99/F-0113 fix: Meta's Graph API requires the numeric IG Business Account ID in the
+        // request path, not our internal ULID creatorProfileId — a token row with none on file
+        // cannot be verified against Meta at all.
+        String igBusinessAccountId = tokenRow.get().getIgBusinessAccountId();
+        if (igBusinessAccountId == null || igBusinessAccountId.isBlank()) {
+            return fallback(
+                    deliverable,
+                    Outcome.FALLBACK_DATA_INTEGRITY,
+                    "no igBusinessAccountId on file for creator " + creatorProfileId);
+        }
+
         if (rateLimitTracker.getCurrentUsage(creatorProfileId) >= RATE_LIMIT_THRESHOLD_PERCENT) {
             return fallback(
                     deliverable,
@@ -180,7 +191,7 @@ public class DeliverableVerificationService {
         InstagramMediaResponse mediaResponse;
         try {
             mediaResponse =
-                    instagramInsightsClient.getMedia(creatorProfileId, accessToken.get(), RECENT_MEDIA_LIMIT);
+                    instagramInsightsClient.getMedia(igBusinessAccountId, accessToken.get(), RECENT_MEDIA_LIMIT);
         } catch (MetaRateLimitException e) {
             rateLimitTracker.markLimited(creatorProfileId);
             return fallback(deliverable, Outcome.FALLBACK_RATE_LIMITED, "rate limited fetching media list: " + e.getMessage());

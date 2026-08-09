@@ -17,7 +17,6 @@ import pytest
 
 from app.providers.gemini import GeminiProvider, _usage_from_response
 
-
 # ---------------------------------------------------------------------------
 # _usage_from_response -- thoughts_token_count accumulation
 # ---------------------------------------------------------------------------

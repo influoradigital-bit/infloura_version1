@@ -97,10 +97,10 @@ class WalletControllerTest {
             new BigDecimal("9500.00"));
     PagedWalletTransactions paged =
         new PagedWalletTransactions(List.of(row), new PageMeta(1, 20, 1, false));
-    when(walletService.getTransactionsForUser(CREATOR_USER_ID, 1, 20)).thenReturn(paged);
+    when(walletService.getTransactionsForUser(CREATOR_USER_ID, 1, 20, null)).thenReturn(paged);
 
     ResponseEntity<ApiResponse<List<WalletTransactionRowResponse>>> response =
-        controller.transactions(principal, 1, 20);
+        controller.transactions(principal, 1, 20, null);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
@@ -108,7 +108,24 @@ class WalletControllerTest {
     assertEquals("txn-1", response.getBody().data().get(0).id());
     assertEquals(1, response.getBody().meta().page());
     verify(creatorContext).requireCreator(principal);
-    verify(walletService).getTransactionsForUser(CREATOR_USER_ID, 1, 20);
+    verify(walletService).getTransactionsForUser(CREATOR_USER_ID, 1, 20, null);
+  }
+
+  @Test
+  @DisplayName("GET /wallet/transactions?period=this-month forwards the period filter to the service (CR-72)")
+  void testTransactionsForwardsPeriodFilter() {
+    when(principal.getUserType()).thenReturn(UserType.CREATOR);
+    when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+    PagedWalletTransactions paged =
+        new PagedWalletTransactions(List.of(), new PageMeta(1, 20, 0, false));
+    when(walletService.getTransactionsForUser(CREATOR_USER_ID, 1, 20, "this-month"))
+        .thenReturn(paged);
+
+    ResponseEntity<ApiResponse<List<WalletTransactionRowResponse>>> response =
+        controller.transactions(principal, 1, 20, "this-month");
+
+    assertEquals(HttpStatus.OK, response.getStatusCode());
+    verify(walletService).getTransactionsForUser(CREATOR_USER_ID, 1, 20, "this-month");
   }
 
   @Test

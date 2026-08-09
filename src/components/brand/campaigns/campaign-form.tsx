@@ -18,12 +18,16 @@ import {
 import { cn } from '@/lib/utils';
 import type { Platform, ContentType, CampaignStatus, TargetAudience } from '@/lib/types';
 import { useCampaignStore } from '@/lib/store';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, type CreatorSuggestionItem } from '@/lib/api';
+import { isWorkspaceNotVerified } from '@/lib/api-errors';
 import { validateCampaignTitle } from '@/lib/campaign-validation';
 import { useToast } from '@/hooks/use-toast';
+import { useWorkspaceVerification } from '@/hooks/brand/useWorkspaceVerification';
+import { VerificationRequiredBox } from '@/components/brand/VerificationRequiredBox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -114,6 +118,20 @@ const initialFormData: CampaignFormData = {
   targetAudience: { interests: [] },
 };
 
+/**
+ * D-14 — flattens the structured `TargetAudience` object into the free-text summary
+ * `POST /creators/suggestions` expects (`CreatorSuggestionRequest.targetAudience: String`,
+ * consumed by `CreatorDiscoveryService.inferCategories`). Empty when nothing is set.
+ */
+function describeTargetAudience(ta: TargetAudience): string {
+  const parts: string[] = [];
+  if (ta.ageRange) parts.push(`ages ${ta.ageRange.min}-${ta.ageRange.max}`);
+  if (ta.genders?.length) parts.push(ta.genders.join('/'));
+  if (ta.locations?.length) parts.push(ta.locations.join(', '));
+  if (ta.interests?.length) parts.push(`interested in ${ta.interests.join(', ')}`);
+  return parts.join('; ');
+}
+
 const objectiveOptions = [
   'Brand Awareness',
   'Drive Sales',
@@ -190,9 +208,47 @@ export function CampaignForm({
   const [budgetConfirmed, setBudgetConfirmed] = React.useState(!budgetHint);
   const confirmBudgetTouch = () => setBudgetConfirmed(true);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  // Set when a publish (ACTIVE) is refused because the workspace isn't verified — renders the
+  // persistent inline box instead of a disappearing toast. Cleared on the next submit attempt.
+  const [verificationBlocked, setVerificationBlocked] = React.useState(false);
+  const { canVerify } = useWorkspaceVerification();
   const [newRequirement, setNewRequirement] = React.useState('');
   const [newHashtag, setNewHashtag] = React.useState('');
   const [newInterest, setNewInterest] = React.useState('');
+
+  // D-14 — POST /creators/suggestions (CreatorController.suggestions), a backend-complete
+  // endpoint with no prior FE consumer (wiki/errors/BRAND-BUG-TRACKER.md). The review step is the
+  // natural slot: it's the first point every field the request body needs (objectives,
+  // targetAudience, budget, platforms) is fully collected. Fetches once the brand reaches Review;
+  // best-effort — a failed/empty fetch just hides the card, since this is a secondary aid, not
+  // part of campaign submission. `api.creators.suggestions` itself no-ops to `[]` in mock mode.
+  const [suggestedCreators, setSuggestedCreators] = React.useState<CreatorSuggestionItem[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = React.useState(false);
+  React.useEffect(() => {
+    if (currentStep !== 'review') return;
+    let cancelled = false;
+    setSuggestionsLoading(true);
+    api.creators
+      .suggestions({
+        campaignGoals: formData.objectives.join(', ') || undefined,
+        targetAudience: describeTargetAudience(formData.targetAudience) || undefined,
+        budget: formData.budgetMax || undefined,
+        platforms: formData.platforms.length ? formData.platforms : undefined,
+      })
+      .then(({ suggestions }) => {
+        if (!cancelled) setSuggestedCreators(suggestions);
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestedCreators([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSuggestionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep]);
   // Defensive hardening only: keeps the Start/End date Popovers mutually exclusive so their
   // portals can never overlap. Bindings below are unchanged (start→startDate, end→endDate).
   const [startDateOpen, setStartDateOpen] = React.useState(false);
@@ -393,6 +449,7 @@ export function CampaignForm({
 
     setIsSubmitting(true);
     setErrors({});
+    setVerificationBlocked(false);
 
     const payload = {
       title: formData.title.trim(),
@@ -426,6 +483,13 @@ export function CampaignForm({
       addCampaign(saved);
       navigate('/brand/campaigns');
     } catch (err) {
+      // Publishing from an unverified workspace is handled inline (persistent box), not as a
+      // toast — it's a workspace-state gate the user needs to keep reading, and their work is
+      // safe as a draft. Every other failure stays a toast.
+      if (isWorkspaceNotVerified(err)) {
+        setVerificationBlocked(true);
+        return;
+      }
       const message =
         err instanceof ApiError ? err.message : 'Failed to save campaign';
       toast({
@@ -1272,7 +1336,53 @@ export function CampaignForm({
                         </CardContent>
                       </Card>
                     )}
+
+                    {/* D-14 — AI-suggested creators for this campaign's goals/audience/budget/
+                        platforms. Purely informational (no selection wired into submission);
+                        hidden entirely while loading or empty rather than showing an empty
+                        state, since it's a secondary aid on the review step. */}
+                    {!suggestionsLoading && suggestedCreators.length > 0 && (
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base">Suggested Creators</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-2">
+                          {suggestedCreators.map((s) => (
+                            <div
+                              key={s.creator.id}
+                              className="flex items-center gap-3 rounded-lg border bg-card p-3"
+                            >
+                              <Avatar className="h-9 w-9 shrink-0">
+                                <AvatarImage src={s.creator.avatarUrl || undefined} />
+                                <AvatarFallback>{s.creator.displayName.charAt(0)}</AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium">{s.creator.displayName}</p>
+                                {s.reasons.length > 0 && (
+                                  <p className="truncate text-xs text-muted-foreground">
+                                    {s.reasons.join(' · ')}
+                                  </p>
+                                )}
+                              </div>
+                              <Badge variant="outline" className="shrink-0 text-xs">
+                                {Math.round(s.matchScore)}% match
+                              </Badge>
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    )}
                   </div>
+                </div>
+              )}
+
+              {currentStep === 'review' && verificationBlocked && (
+                <div className="mt-6">
+                  <VerificationRequiredBox
+                    canVerify={canVerify}
+                    savingDraft={isSubmitting}
+                    onSaveDraft={() => handleSubmit('DRAFT')}
+                  />
                 </div>
               )}
 

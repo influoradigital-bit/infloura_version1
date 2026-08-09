@@ -906,6 +906,18 @@ export default function BrandCampaignDetailPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                {/* D-7 (BrandF.md §13): /brand/campaigns/:id/tracking was registered
+                    in App.tsx with no inbound link anywhere in the UI — reachable only
+                    by typing the URL. This is the entry point. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="hidden sm:flex"
+                  onClick={() => navigate(`/brand/campaigns/${id}/tracking`)}
+                >
+                  <Activity className="h-4 w-4 mr-1.5" />
+                  Tracking
+                </Button>
                 {!isCompleted && (
                   <Button
                     variant="outline"

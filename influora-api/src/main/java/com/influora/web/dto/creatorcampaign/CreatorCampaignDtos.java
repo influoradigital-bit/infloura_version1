@@ -18,7 +18,14 @@ public final class CreatorCampaignDtos {
 
     private CreatorCampaignDtos() {}
 
-    public record BrandSummary(String workspaceId, String name, String logoUrl) {}
+    /**
+     * PR-2 (BrandF.md §83c / §105 VER-1) — {@code verificationStatus} is the {@code
+     * Workspace.verificationStatus} enum name (UNVERIFIED/PENDING/VERIFIED/REJECTED), same
+     * String-of-enum-name convention as {@code WorkspaceMemberDtos.WorkspaceReadResponse}. A
+     * creator deciding whether to apply/accept/ship needs to know if the brand they'd be dealing
+     * with has passed KYC; this was previously withheld from the creator-facing DTO entirely.
+     */
+    public record BrandSummary(String workspaceId, String name, String logoUrl, String verificationStatus) {}
 
     public record BudgetDto(BigDecimal min, BigDecimal max, String currency) {}
 

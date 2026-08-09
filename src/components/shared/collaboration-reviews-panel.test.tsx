@@ -8,16 +8,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { CollaborationReviewsPanel } from './collaboration-reviews-panel';
 
 function renderCreatorPanel() {
   return render(
-    <CollaborationReviewsPanel
-      role="creator"
-      counterpartyLabel="brands"
-      pageTitle="Reviews"
-      pageDescription="Rate brands after completed collaborations."
-    />,
+    <MemoryRouter initialEntries={['/creator/reviews']}>
+      <CollaborationReviewsPanel
+        role="creator"
+        counterpartyLabel="brands"
+        pageTitle="Reviews"
+        pageDescription="Rate brands after completed collaborations."
+      />
+    </MemoryRouter>,
   );
 }
 

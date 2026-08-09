@@ -27,6 +27,8 @@ import com.influora.web.dto.money.MoneyDtos.WalletTransactionRowResponse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import org.springframework.data.domain.Page;
@@ -328,19 +330,30 @@ public class WalletService {
     /**
      * Paginated ledger history for the creator's own wallet. Returns an empty page when no wallet
      * row exists yet (creators are not provisioned a wallet at signup).
+     *
+     * <p>{@code period} is the same value the creator-wallet History tab's dropdown sends
+     * ("this-month" / "last-month" / "3-months" / "all", CR-72) — resolved server-side (not
+     * client-supplied dates) so the window is always anchored to the server clock. {@code null}
+     * or any unrecognized value (including "all") is unfiltered, preserving prior behavior.
      */
     @Transactional(readOnly = true)
-    public PagedWalletTransactions getTransactionsForUser(String userId, int page, int limit) {
+    public PagedWalletTransactions getTransactionsForUser(
+            String userId, int page, int limit, String period) {
         int safePage = Math.max(page, 1);
         int safeLimit = Math.min(Math.max(limit, 1), 100);
+        Instant[] range = resolvePeriodRange(period);
+        Instant startDate = range[0];
+        Instant endDate = range[1];
 
         return walletRepository
                 .findByOwnerId(userId)
                 .map(
                         wallet -> {
                             Page<WalletTransaction> result =
-                                    walletTransactionRepository.findByWalletIdOrderByCreatedAtDesc(
+                                    walletTransactionRepository.findByWalletIdAndCreatedAtRange(
                                             wallet.getId(),
+                                            startDate,
+                                            endDate,
                                             PageRequest.of(
                                                     safePage - 1,
                                                     safeLimit,
@@ -360,6 +373,39 @@ public class WalletService {
                                 new PagedWalletTransactions(
                                         List.of(),
                                         new PageMeta(safePage, safeLimit, 0, false)));
+    }
+
+    /**
+     * Resolves the History tab's period filter to a {@code [start, end)} {@link Instant} window,
+     * anchored to the server clock in UTC. Index 0 is the (nullable) lower bound, index 1 the
+     * (nullable) upper bound — either or both {@code null} means unconstrained on that side.
+     */
+    private Instant[] resolvePeriodRange(String period) {
+        if (period == null) {
+            return new Instant[] {null, null};
+        }
+        Instant now = Instant.now();
+        switch (period) {
+            case "this-month":
+                {
+                    YearMonth currentMonth = YearMonth.now(ZoneOffset.UTC);
+                    Instant start = currentMonth.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+                    return new Instant[] {start, null};
+                }
+            case "last-month":
+                {
+                    YearMonth currentMonth = YearMonth.now(ZoneOffset.UTC);
+                    YearMonth lastMonth = currentMonth.minusMonths(1);
+                    Instant start = lastMonth.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+                    Instant end = currentMonth.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+                    return new Instant[] {start, end};
+                }
+            case "3-months":
+                return new Instant[] {now.minus(90, ChronoUnit.DAYS), null};
+            default:
+                // "all" or any unrecognized value — unfiltered (preserves prior behavior).
+                return new Instant[] {null, null};
+        }
     }
 
     private void validateCreatorWithdrawalAmount(BigDecimal amount) {

@@ -24,10 +24,11 @@ import logging
 import re
 import uuid
 
+import anyio
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.auth.service_token import AuthError, auth_error_to_http, verify_token
-from app.config import GEMINI_MODEL
+from app.config import GEMINI_MODEL, get_settings
 from app.costs.gate import check_spend_gate
 from app.costs.pricing import estimate_cost_usd
 from app.costs.spend_tracker import record_spend
@@ -156,7 +157,14 @@ async def perform_site_analysis(
 
     # P2-17: kill-switch / daily ceiling gate -- checked before any provider
     # (Gemini) call, zero provider calls made if blocked.
-    gate = await check_spend_gate(workspace_id=workspace_id)
+    gate = await check_spend_gate(
+        workspace_id=workspace_id,
+        # F-05: hold budget between this check and the recorded spend, so
+        # concurrent callers see each other's in-flight cost instead of all
+        # reading the same stale total. Settled by record_spend below; expires
+        # on its own if this request dies before it gets there.
+        reserve_usd=get_settings().ai_reservation_per_call_usd or None,
+    )
     if not gate.allowed:
         log_event(
             logger, logging.WARNING, "analyze_site_blocked_spend_gate",
@@ -175,7 +183,11 @@ async def perform_site_analysis(
     )
 
     try:
-        raw_bytes, final_url = guarded_fetch(url)
+        # F-11: off the event loop. The guarded fetch does blocking DNS + a
+        # synchronous httpx round-trip (up to ssrf_fetch_timeout_seconds per hop
+        # across ssrf_max_redirects hops); awaiting it inline stalled every
+        # concurrent SSE stream in this worker.
+        raw_bytes, final_url = await anyio.to_thread.run_sync(lambda: guarded_fetch(url))
     except SsrfBlockedError as exc:
         log_event(
             logger, logging.WARNING, "analyze_site_ssrf_blocked",
@@ -189,7 +201,15 @@ async def perform_site_analysis(
 
     try:
         html_text = raw_bytes.decode("utf-8", errors="ignore")
-    except Exception:
+    except Exception:  # noqa: BLE001 - a decode failure degrades, never 500s
+        # Was a SILENT swallow: an undecodable body became an empty page with
+        # nothing logged, so "this brand's site analyzed as empty" and "we could
+        # not read the bytes at all" were indistinguishable in production.
+        log_event(
+            logger, logging.WARNING, "analyze_site_decode_failed",
+            workspace_id=workspace_id, request_id=request_id,
+            fields={"bytes": len(raw_bytes)},
+        )
         html_text = ""
 
     # P1-B: parse structured product FACTS (JSON-LD/OpenGraph/microdata) from
@@ -202,7 +222,12 @@ async def perform_site_analysis(
     # untrusted data same as the rest of the page text).
     try:
         known_products = extract_structured_facts(html_text)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - extraction is additive, never fatal
+        log_event(
+            logger, logging.WARNING, "analyze_site_structured_extract_failed",
+            workspace_id=workspace_id, request_id=request_id,
+            fields={"error_type": type(exc).__name__},
+        )
         known_products = []
 
     sanitized_text = strip_active_content(html_text)
@@ -245,7 +270,7 @@ async def perform_site_analysis(
     if result.usage:
         try:
             cost_usd = estimate_cost_usd(GEMINI_MODEL, result.usage)
-            spend_today = await record_spend(cost_usd, workspace_id)
+            spend_today = await record_spend(cost_usd, workspace_id, reservation=gate.reservation)
             log_event(
                 logger, logging.INFO, "ai_spend",
                 workspace_id=workspace_id, request_id=request_id,
@@ -301,7 +326,12 @@ async def analyze_site(request: Request, authorization: str | None = Header(defa
 
     token = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
     try:
-        verify_token(token, endpoint="analyze_site", body_workspace_id=workspace_id)
+        # F-09: off the event loop. verify_token can perform a blocking JWKS
+        # fetch, and an unauthenticated request with an unknown `kid` is enough
+        # to trigger one — awaiting it inline stalled every coroutine here.
+        await anyio.to_thread.run_sync(
+            lambda: verify_token(token, endpoint="analyze_site", body_workspace_id=workspace_id)
+        )
     except AuthError as exc:
         raise auth_error_to_http(exc) from exc
 

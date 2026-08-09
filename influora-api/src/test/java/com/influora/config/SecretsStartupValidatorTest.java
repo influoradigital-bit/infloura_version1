@@ -140,6 +140,9 @@ class SecretsStartupValidatorTest {
         // (application.yml's default). Set here so the existing "boots clean in prod" cases stay
         // about what they are about; the misconfiguration is asserted by its own test below.
         setField(validator, "forwardHeadersStrategy", "native");
+        // [CR-81] Real, non-loopback value for the "everything is fine" baseline — the localhost
+        // default is asserted by its own tests below, same convention as forwardHeadersStrategy.
+        setField(validator, "apiPublicUrl", "https://api.influora.example");
         return validator;
     }
 
@@ -583,6 +586,61 @@ class SecretsStartupValidatorTest {
     void testDefaultLocalhostPublicChatUrlOnlyWarnsInDev() throws Exception {
         meeraStreamProperties.setPublicChatUrl("http://localhost:8000/chat");
         SecretsStartupValidator validator = buildValidator("dev");
+        assertDoesNotThrow(validator::validate);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // CR-81: influora.api.public-url (CreatorCouponService creator-facing tracking links) boot
+    // validation. The Java/application.yml default is http://localhost:8080, so a non-dev boot
+    // that never overrode it would ship every coupon share/click-tracking link dead. Same
+    // fail-closed-outside-dev, warn-only-in-dev treatment as the AI service URLs above.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("validate: default localhost api public-url fails closed in prod")
+    void testDefaultLocalhostApiPublicUrlFailsClosedInProd() throws Exception {
+        SecretsStartupValidator validator = buildValidator("prod");
+        setField(validator, "apiPublicUrl", "http://localhost:8080");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.api.public-url"));
+        assertTrue(ex.getMessage().contains("localhost"));
+    }
+
+    @Test
+    @DisplayName("validate: 127.0.0.1 api public-url fails closed in prod")
+    void testLoopbackIpApiPublicUrlFailsClosedInProd() throws Exception {
+        SecretsStartupValidator validator = buildValidator("staging");
+        setField(validator, "apiPublicUrl", "http://127.0.0.1:8080");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.api.public-url"));
+        assertTrue(ex.getMessage().contains("localhost"));
+    }
+
+    @Test
+    @DisplayName("validate: missing api public-url fails closed in prod")
+    void testMissingApiPublicUrlFailsClosedInProd() throws Exception {
+        SecretsStartupValidator validator = buildValidator("prod");
+        setField(validator, "apiPublicUrl", "");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.api.public-url"));
+        assertTrue(ex.getMessage().contains("missing"));
+    }
+
+    @Test
+    @DisplayName("validate: real api public-url boots clean in prod")
+    void testRealApiPublicUrlBootsCleanInProd() throws Exception {
+        SecretsStartupValidator validator = buildValidator("prod");
+        assertDoesNotThrow(validator::validate);
+    }
+
+    @Test
+    @DisplayName("validate: default localhost api public-url only WARNS (does not throw) in env=dev")
+    void testDefaultLocalhostApiPublicUrlOnlyWarnsInDev() throws Exception {
+        SecretsStartupValidator validator = buildValidator("dev");
+        setField(validator, "apiPublicUrl", "http://localhost:8080");
         assertDoesNotThrow(validator::validate);
     }
 }

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Link } from 'react-router-dom';
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, Loader2 } from 'lucide-react';
 
 import { CreatorLayout } from '@/components/creator/creator-layout';
 import { CreatorApplicationCard } from '@/components/creator/CreatorApplicationCard';
@@ -13,7 +13,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { APPLICATION_BUCKETS, bucketOf, type ApplicationBucket } from '@/lib/application-status';
 import type { CreatorApplicationRow } from '@/lib/api';
 import { api, ApiError } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+
+const PAGE_SIZE = 50;
 
 type FilterTab = 'all' | ApplicationBucket;
 
@@ -23,27 +26,47 @@ const TABS: Array<{ id: FilterTab; label: string }> = [
 ];
 
 export default function CreatorApplicationsPage() {
+  const { toast } = useToast();
   const [applications, setApplications] = React.useState<CreatorApplicationRow[]>([]);
   const [activeFilter, setActiveFilter] = React.useState<FilterTab>('all');
+  const [page, setPage] = React.useState(1);
+  const [hasMore, setHasMore] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const fetchApplications = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const rows = await api.creatorApplications.list();
-      setApplications(rows);
-    } catch (e) {
-      setApplications([]);
-      setError(e instanceof ApiError ? e.message : 'Could not load your applications. Try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const fetchApplications = React.useCallback(
+    async (pageNum: number, append: boolean) => {
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+        setError(null);
+      }
+      try {
+        const result = await api.creatorApplications.list(pageNum, PAGE_SIZE);
+        setApplications((prev) => (append ? [...prev, ...result.applications] : result.applications));
+        setHasMore(result.meta.hasMore);
+        setPage(pageNum);
+      } catch (e) {
+        const message = e instanceof ApiError ? e.message : 'Could not load your applications. Try again.';
+        if (!append) {
+          setApplications([]);
+          setError(message);
+        } else {
+          // Load-more failure shouldn't wipe the already-loaded page — keep it, surface a toast.
+          toast({ title: 'Couldn’t load more applications', description: message, variant: 'destructive' });
+        }
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [toast],
+  );
 
   React.useEffect(() => {
-    void fetchApplications();
+    void fetchApplications(1, false);
   }, [fetchApplications]);
 
   const counts = React.useMemo(() => {
@@ -72,6 +95,20 @@ export default function CreatorApplicationsPage() {
           <h1 className="text-2xl font-bold tracking-tight">My applications</h1>
           <p className="text-muted-foreground">
             Every campaign you&rsquo;ve applied to, and where it stands.
+          </p>
+          {/* CR-59 — this page's source (Collaboration.source = APPLICATION) deliberately
+              excludes brand-initiated invites by design, so there is no way to reach one from
+              here even though `applicationStatus: 'INVITED'` is a real, labeled status
+              elsewhere (CreatorBrowseCampaignCard). A dedicated /creator/invites surface is
+              real backend work (a new query scoped to invite-sourced rows), out of proportion
+              here — this cross-link at least tells a creator where to actually find one instead
+              of leaving them with no path at all. */}
+          <p className="mt-1 text-xs text-muted-foreground">
+            Brand invites don&rsquo;t show up here — check{' '}
+            <Link to="/creator/campaigns" className="font-medium underline underline-offset-2 hover:text-foreground">
+              Discover Campaigns
+            </Link>
+            {' '}for any pending invites.
           </p>
         </FadeUp>
 
@@ -119,7 +156,7 @@ export default function CreatorApplicationsPage() {
             <AlertDescription>
               {error}
               <div className="mt-2">
-                <Button size="sm" variant="outline" onClick={() => void fetchApplications()}>
+                <Button size="sm" variant="outline" onClick={() => void fetchApplications(1, false)}>
                   Try again
                 </Button>
               </div>
@@ -139,13 +176,34 @@ export default function CreatorApplicationsPage() {
           ) : !error && filtered.length === 0 ? (
             <FilteredEmptyState filterLabel={TABS.find((t) => t.id === activeFilter)?.label ?? ''} />
           ) : !error ? (
-            <StaggerContainer className="space-y-4">
-              {filtered.map((application) => (
-                <StaggerItem key={application.dealId}>
-                  <CreatorApplicationCard application={application} />
-                </StaggerItem>
-              ))}
-            </StaggerContainer>
+            <>
+              <StaggerContainer className="space-y-4">
+                {filtered.map((application) => (
+                  <StaggerItem key={application.dealId}>
+                    <CreatorApplicationCard application={application} />
+                  </StaggerItem>
+                ))}
+              </StaggerContainer>
+
+              {hasMore && (
+                <div className="mt-6 flex justify-center">
+                  <Button
+                    variant="outline"
+                    disabled={loadingMore}
+                    onClick={() => void fetchApplications(page + 1, true)}
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      'Load more'
+                    )}
+                  </Button>
+                </div>
+              )}
+            </>
           ) : null}
         </div>
       </div>
