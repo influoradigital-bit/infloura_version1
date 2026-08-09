@@ -165,7 +165,7 @@ Correcting the record before work starts — the generic company stack template 
 | CR-76 | 🟢 Low | Tax Docs tab is a static placeholder with no backend endpoint | Vikram | ASSIGNED |
 | CR-77 | 🟢 Low | No dedicated GET /wallet/payouts endpoint; Payouts tab derives from transaction DEBIT rows | Vikram | ASSIGNED |
 | CR-78 | 🟡 Medium | Creator cannot flag an inappropriate review; the wired handler also targets the wrong backend endpoint. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — flag button now renders for creators, submit branches by role to the correct endpoint; see §5.** | Ananya | IN VERIFY |
-| CR-79 | 🟡 Medium | Duplicate 'reviews about you' surfaces with mismatched capabilities | Ananya | ASSIGNED |
+| CR-79 | 🟡 Medium | Duplicate 'reviews about you' surfaces with mismatched capabilities. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — ticket's page mapping had drifted, capability gap already closed by CR-78; real fix was cross-links between the two surfaces; see §5.** | Ananya | IN VERIFY |
 | CR-80 | 🟡 Medium | Eligible-deal dropdown for opening a dispute fetches the creator's entire deal history for a client-side filter. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — new `GET /creator/disputes/eligible-deals`, real WHERE-NOT-IN query, same eligibility semantics; see §5.** | Vikram | IN VERIFY |
 | CR-81 | 🟡 Medium | Coupon share/tracking links silently degrade to a localhost URL if INFLUORA_API_PUBLIC_URL is unset. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — `SecretsStartupValidator` now fails prod/staging boot on a localhost/missing public URL, dev unaffected; see §5.** | Meera | IN VERIFY |
 | CR-82 | 🟢 Low | Redundant no-op client-side filter on already-server-filtered completed deals | Ananya | ASSIGNED |
@@ -181,7 +181,7 @@ Correcting the record before work starts — the generic company stack template 
 | CR-92 | 🟢 Low | Edit Profile dialog can only update 5 of 13 patchable profile fields | Ananya | ASSIGNED |
 | CR-93 | 🟠 High | Counterparty has no polling fallback when their SSE connection is dead — misses accept/reject/messages until reload | Vikram | IN QA |
 | CR-94 | 🟠 High | In-memory SSE registry silently drops events across backend replicas | Vikram | ASSIGNED |
-| CR-95 | 🟡 Medium | 30-minute SSE emitter timeout creates recurring blind windows for missed events | Vikram | ASSIGNED |
+| CR-95 | 🟡 Medium | 30-minute SSE emitter timeout creates recurring blind windows for missed events. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — per-deal sequence id + bounded replay buffer + Last-Event-ID reconnect; a real double-delivery race was CAUGHT by independent review and fixed before this closed (F-0156); see §5.** | Vikram | IN VERIFY |
 | CR-96 | 🟡 Medium | Deal deliverable progress counts are hardcoded to zero, hiding the entire Deliverables panel for every live deal. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — real data + batched query for list callers; the cited brand-chat.tsx gate turned out to be mock-only, live panel unaffected; see §5.** | Vikram | IN VERIFY |
 | CR-97 | 🔴 Critical | Brand's primary Deals dashboard page has zero SSE, polling, or reconnect handling at all | Vikram | IN VERIFY |
 | CR-98 | 🟠 High | Brand's own accept/reject action on the Deals dashboard never refreshes the message timeline, even for the actor | Vikram | ASSIGNED |
@@ -207,7 +207,7 @@ Correcting the record before work starts — the generic company stack template 
 | CR-118 | 🟡 Medium | Unguarded OAuth callback route reflects attacker-controlled error text with no allowlist | Kabir | ASSIGNED |
 | CR-119 | 🟡 Medium | YouTube, TikTok, and Twitter/X have no OAuth or live data fetching at all — follower counts are entirely self-reported | Priya | ASSIGNED |
 | CR-120 | 🔴 Critical | Creator onboarding Step 1 hardcodes a mock OAuth code that is sent to the real backend in live mode — no creator can complete onboarding in production | Vikram | IN VERIFY |
-| CR-121 | 🟡 Medium | "Remember me" checkbox on login has no state or effect | Ananya | ASSIGNED |
+| CR-121 | 🟡 Medium | "Remember me" checkbox on login has no state or effect. **✅ FIXED by a concurrent session (`e30e9bc`) + INDEPENDENT QA PASS (2026-08-10, this session) — real checked/onChange state, localStorage vs sessionStorage token persistence, silent-refresh path confirmed not upgraded; see §5.** | Ananya | IN VERIFY |
 | CR-122 | 🟡 Medium | Desktop header search bar is a non-interactive div styled to look like a real search input | Ananya | ASSIGNED |
 | CR-123 | 🟡 Medium | Notification bell button has no click handler — unread badge is correct but clicking does nothing | Ananya | ASSIGNED |
 | CR-124 | 🟢 Low | Mobile header search icon button has no click handler | Ananya | ASSIGNED |
@@ -1681,13 +1681,15 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-62 · 🟡 Medium · Niche filter sends lowercased value; server-side case sensitivity unverified
-**Owner:** Kavya · **Status:** ASSIGNED
+**Owner:** Kavya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/pages/creator-campaigns.tsx:83 (toLowerCase) / CreatorCampaignService.browse`
 
 **What:** The niche chip label is title-case but the FE lowercases it before sending; whether the backend match is case-insensitive was never verified — if not, every niche filter could silently return zero results.
+
+> ✅ **2026-08-10 — VERIFIED SAFE, then optimized, independently QA-passed.** `matchesNiche()` already lowercased both sides before comparison (`Locale.ROOT`) — genuinely case-insensitive, confirmed by reading the real query, not assumed. Removed the now-redundant frontend `.toLowerCase()` and documented the backend behavior in a javadoc so this doesn't get re-flagged. New test `testBrowseNicheFilterIsCaseInsensitive` proves "fitness"/"Fitness"/"FITNESS" all match, "beauty" correctly doesn't. 14/14 tests green.
 
 ---
 
@@ -1716,7 +1718,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-65 · 🟡 Medium · OAuth callback always navigates to Settings instead of back to Co-pilot
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -1724,16 +1726,20 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 
 **What:** On both success and error, the callback page navigates to /creator/settings, dropping a creator who connected from Co-pilot into Settings instead.
 
+> ✅ **2026-08-10 — FIXED by a concurrent session (`e30e9bc`, §12), independently QA-passed by this session.** `metaOAuth.setConnectReturnTo()`/`consumeConnectReturnTo()` (read-and-clear sessionStorage marker) is set by Co-pilot's `IGConnectPrompt.tsx`/`BusinessAccountRequired.tsx` and the Deal Room's `deliverable-lifecycle-panel.tsx` before redirecting; the callback resolves navigation from that captured origin, falling back to Settings only when nothing was recorded (confirmed Settings-initiated connects correctly still land on Settings). 6/6 tests green, `tsc --noEmit` clean.
+
 ---
 
 ### CR-66 · 🟡 Medium · "Try Again" button on OAuth failure screen does not retry — it just navigates to Settings
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/pages/creator-meta-callback.tsx:98-103`
 
 **What:** On error, 'Try Again' navigates to /creator/settings instead of re-running the OAuth authorize flow, dead-ending the recovery path.
+
+> ✅ **2026-08-10 — FIXED by a concurrent session (`e30e9bc`, §12), independently QA-passed by this session.** `handleRetry()` now calls `api.metaOAuth.authorize()` and redirects to the returned authorization URL, instead of navigating away; a secondary "Back" link stays available as a plain exit. Onboarding's own error state is untouched (has its own Connect button). Confirmed via fresh read, not the fix's own claim.
 
 ---
 
@@ -1884,13 +1890,15 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-79 · 🟡 Medium · Duplicate 'reviews about you' surfaces with mismatched capabilities
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/components/shared/collaboration-reviews-panel.tsx vs src/components/creator/creator-received-reviews.tsx`
 
 **What:** Both the Reviews page and the Analytics page independently call GET /creator/reviews/received; only the Analytics-page version has the flag action, and there is no navigation link between the two.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed. Ticket's page mapping had drifted from current code** (`/creator/reviews` actually renders `collaboration-reviews-panel.tsx`; `/creator/analytics` renders `creator-received-reviews.tsx` — backwards from the ticket's framing) **and the capability gap was already closed** — `creator-received-reviews.tsx` already had flag from an earlier ticket, `collaboration-reviews-panel.tsx` got it via CR-78 this session. The real remaining gap was discoverability: added a cross-link from each surface to the other (creator-role-gated on the shared panel, since it also serves brands). `collaboration-reviews-panel.test.tsx` needed a `MemoryRouter` wrapper once `<Link>` was added — done, matching the convention already used elsewhere. 2/2 tests green.
 
 ---
 
@@ -2072,13 +2080,15 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-95 · 🟡 Medium · 30-minute SSE emitter timeout creates recurring blind windows for missed events
-**Owner:** Vikram · **Status:** ASSIGNED
+**Owner:** Vikram · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `influora-api DealMessageStreamRegistry.java:39 (EMITTER_TIMEOUT_MS)`
 
 **What:** Every 30 minutes every SSE emitter times out; any event published during the reconnect backoff window is silently dropped with no Last-Event-ID replay.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed — after independent review caught a real race in the first version.** Each deal now assigns published events a monotonic per-deal id and keeps a replay buffer bounded by both count (200) and age (5 min); a reconnecting client's `Last-Event-ID` header (now threaded through `DealController`) triggers a replay of everything newer before rejoining the live fan-out. **First implementation had a genuine double-delivery race**, caught by an independent fresh-context reviewer, not by the test suite: `publish()` released the stream's lock before iterating live emitters, so a `register()` landing in that window could replay-then-add an emitter before `publish()`'s unsynchronized loop reached it — same event delivered twice. Fixed by snapshotting the live-emitter list inside the same synchronized block that assigns the event id and buffers it, so the ordering is now race-free either way (logged as `F-0156`). Re-reviewed independently after the fix: PASS. `DealMessageStreamRegistryTest` 9/9 green; one unrelated `DealControllerTest` failure confirmed to be concurrent-session WIP on `DealDtos.java`/`CounterRequest` validation, not this change.
 
 ---
 
@@ -2368,13 +2378,15 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-121 · 🟡 Medium · "Remember me" checkbox on login has no state or effect
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/pages/creator-login.tsx:131-136`
 
 **What:** The checkbox has no checked prop, no onChange, no backing state variable. Checking it has zero effect on session length.
+
+> ✅ **2026-08-10 — FIXED by a concurrent session (`e30e9bc`, §12), independently QA-passed by this session.** Real `checked`/`onChange` state wired to `HttpClient.setToken`'s new optional `remember` param, which picks `localStorage` (survives browser close) vs `sessionStorage` (cleared on close). Every pre-existing call site that omits the third arg (notably the silent token-refresh path) preserves whichever storage the original login chose instead of upgrading it to persistent — confirmed by reading the mechanism directly, not taken on the commit's word. 5/5 tests green, `tsc --noEmit` clean.
 
 ---
 
