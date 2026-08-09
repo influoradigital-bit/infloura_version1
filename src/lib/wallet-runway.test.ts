@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runwayTone } from './wallet-runway';
+import { runwayTone, walletRunwayHealth } from './wallet-runway';
 
 /**
  * F-0099 regression gate (false-critical-runway-fallback, money-path).
@@ -32,5 +32,32 @@ describe('runwayTone (F-0099)', () => {
 
   it('the null case is distinct from 0 — the exact distinction the bug collapsed', () => {
     expect(runwayTone(null)).not.toBe(runwayTone(0));
+  });
+});
+
+/**
+ * F-0103 regression gate (fabricated-critical-state, money-path) — the dashboard's wallet-health
+ * badge. Same load-bearing invariant: an unknown/pre-load/404'd/dormant (null) wallet is 'healthy',
+ * never 'critical'. The bug defaulted the unknown case to 0, which maps to 'critical', so a wallet
+ * whose balance is merely unknown showed a red Critical badge + Recharge CTA on error.
+ */
+describe('walletRunwayHealth (F-0103)', () => {
+  it('treats a null (unknown / dormant) runway as healthy — never critical', () => {
+    expect(walletRunwayHealth(null)).toBe('healthy');
+  });
+
+  it('a real 0-day runway (with spend) is genuinely critical — the alarm is not suppressed', () => {
+    expect(walletRunwayHealth(0)).toBe('critical');
+    expect(walletRunwayHealth(14)).toBe('critical');
+  });
+
+  it('preserves the dashboard band (>14 warning, >30 healthy) unchanged', () => {
+    expect(walletRunwayHealth(15)).toBe('warning');
+    expect(walletRunwayHealth(30)).toBe('warning');
+    expect(walletRunwayHealth(31)).toBe('healthy');
+  });
+
+  it('null and 0 are distinct — the collapse the bug made', () => {
+    expect(walletRunwayHealth(null)).not.toBe(walletRunwayHealth(0));
   });
 });

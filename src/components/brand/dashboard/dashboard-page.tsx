@@ -16,6 +16,7 @@ import {
 
 import { useAuthStore } from '@/lib/store';
 import { api, ApiError } from '@/lib/api';
+import { walletRunwayHealth } from '@/lib/wallet-runway';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -42,12 +43,28 @@ interface ActionItem {
   link: string;
 }
 
+/** Wallet summary shape held in local component state. `runwayDays` mirrors
+ * `WalletSummaryResponse` (src/lib/api.ts) — it is `number | null`, never a fabricated
+ * number: the backend (`WalletService#computeRunwayDays`) returns `null` when there has
+ * been no spend in the trailing window, since runway is undefined/effectively-infinite
+ * for a dormant-but-funded wallet. Treat `null` as "healthy", never as 0/critical. */
+interface WalletSummaryState {
+  availableBalance: number;
+  escrowLocked: number;
+  runwayDays: number | null;
+}
+
 /** Real zero-state — used until the dashboard loads, and again for any endpoint that
- * fails to load (never left showing fabricated rows/figures on an error). */
-const EMPTY_WALLET = {
+ * fails to load (never left showing fabricated rows/figures on an error).
+ *
+ * F-0099: `runwayDays` is `null` here, NOT `0`. Per the contract above, `null` = "healthy"
+ * (unknown / no spend), while `0` falls through the health computation to `'critical'` — so a
+ * `0` default flashed a false red CRITICAL runway alarm on every load and left it stuck red on a
+ * brand-new workspace whose `GET /wallet` 404s. Balance/escrow legitimately default to `0`. */
+export const EMPTY_WALLET: WalletSummaryState = {
   availableBalance: 0,
   escrowLocked: 0,
-  runwayDays: 0,
+  runwayDays: null,
 };
 
 const formatINR = (amount: number) => {
@@ -88,7 +105,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const [actionItems, setActionItems] = React.useState<ActionItem[]>([]);
-  const [wallet, setWallet] = React.useState(EMPTY_WALLET);
+  const [wallet, setWallet] = React.useState<WalletSummaryState>(EMPTY_WALLET);
   const [pipeline, setPipeline] = React.useState<Array<{ stage: string; count: number }>>([]);
 
   // Load each of the three data sources independently — `Promise.allSettled` (not
@@ -122,7 +139,10 @@ export function DashboardPage() {
         setWallet({
           availableBalance: walletResult.value.availableBalance ?? 0,
           escrowLocked: walletResult.value.escrowLocked ?? 0,
-          runwayDays: walletResult.value.runwayDays ?? 0,
+          // `null` means "no spend in window" (dormant wallet, undefined/infinite runway)
+          // per WalletService#computeRunwayDays javadoc — never coerce to 0, which the
+          // health computation below would treat as a "critical, out of runway" wallet.
+          runwayDays: walletResult.value.runwayDays ?? null,
         });
       } else if (walletResult.status === 'rejected') {
         setWallet(EMPTY_WALLET);
@@ -162,8 +182,10 @@ export function DashboardPage() {
   }, []);
 
   const urgentCount = actionItems.filter((a) => a.priority === 'urgent').length;
-  const walletHealth =
-    wallet.runwayDays > 30 ? 'healthy' : wallet.runwayDays > 14 ? 'warning' : 'critical';
+  // F-0103: `runwayDays === null` (dormant/unknown/pre-load/404'd wallet) must resolve to
+  // 'healthy', not fall through to 'critical' the way `0` would. The rule lives in the shared,
+  // regression-pinned helper (src/lib/wallet-runway.ts) so it can't silently regress.
+  const walletHealth = walletRunwayHealth(wallet.runwayDays);
   const walletHealthBadge =
     walletHealth === 'healthy' ? 'Healthy' : walletHealth === 'warning' ? 'Low' : 'Critical';
   const pipelineTotal = pipeline.reduce((s, p) => s + p.count, 0);
@@ -296,6 +318,10 @@ interface PipelineCardProps {
   onViewAll: () => void;
 }
 
+// PL-2/PL-3 (BrandF.md §69): since PL-2, `DashboardService#bucketFor` emits exactly these
+// six labels (matching src/lib/brand-pipeline-stage.ts's board vocabulary) — `Completed` is
+// now the dead key (bucketFor emits `Settled` for a completed collaboration), kept only as a
+// harmless fallback in case another caller ever passes the older label.
 const STAGE_COLOR: Record<string, string> = {
   Outreach: 'bg-stage-outreach',
   Negotiating: 'bg-stage-negotiating',
@@ -355,7 +381,8 @@ function PipelineCard({ pipeline, total, onClickStage, onViewAll }: PipelineCard
 interface WalletCardProps {
   balance: number;
   escrow: number;
-  runwayDays: number;
+  /** `null` = dormant wallet, no spend in window → undefined/infinite runway, never "0d". */
+  runwayDays: number | null;
   health: 'healthy' | 'warning' | 'critical';
   healthLabel: string;
   onManage: () => void;
@@ -398,7 +425,7 @@ function WalletCard({ balance, escrow, runwayDays, health, healthLabel, onManage
                 health === 'critical' && 'text-destructive-foreground',
               )}
             >
-              {runwayDays}d runway
+              {runwayDays === null ? '—' : `${runwayDays}d runway`}
             </p>
             {health !== 'healthy' && (
               <p className="text-[10px] text-muted-foreground flex items-center gap-0.5 justify-end">
@@ -408,7 +435,7 @@ function WalletCard({ balance, escrow, runwayDays, health, healthLabel, onManage
           </div>
         </div>
         <Progress
-          value={Math.min((runwayDays / 60) * 100, 100)}
+          value={runwayDays === null ? 100 : Math.min((runwayDays / 60) * 100, 100)}
           className={cn(
             'h-1.5',
             health === 'critical' && '[&>div]:bg-destructive',
