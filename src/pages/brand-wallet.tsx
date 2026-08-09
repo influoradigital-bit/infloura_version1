@@ -68,6 +68,7 @@ import {
   type EscrowHoldRow,
 } from '@/lib/api';
 import { openRazorpayCheckout } from '@/lib/razorpay';
+import { runwayTone as computeRunwayTone } from '@/lib/wallet-runway';
 
 // Types
 interface Transaction {
@@ -529,7 +530,10 @@ export default function BrandWalletPage() {
         currency: mockWalletData.currency,
         escrowLocked: walletSummary.escrowLocked,
         pendingSettlement: walletSummary.pendingPayouts,
-        runwayDays: walletSummary.runwayDays ?? 0,
+        // F-0099: keep the backend's `null` (dormant/funded wallet, no spend in the trailing
+        // window → undefined/infinite runway). Coercing to `0` flashed a false red CRITICAL
+        // alarm because `null < 14`/`0 < 14` both read as "critical" in the card below.
+        runwayDays: walletSummary.runwayDays ?? null,
         lastRecharge: liveLastRecharge?.date ?? null,
         lastRechargeAmount: liveLastRecharge?.amount ?? null,
         projectedBurn30Days: null as number | null,
@@ -550,6 +554,13 @@ export default function BrandWalletPage() {
         totalTDSDeducted: mockWalletData.totalTDSDeducted as number | null,
         totalGSTPaid: mockWalletData.totalGSTPaid as number | null,
       };
+
+  // F-0099: resolve the runway health tone ONCE, null-safely, via the shared pinned helper
+  // (src/lib/wallet-runway.ts + its regression test). `runwayDays === null` means a dormant/funded
+  // wallet (undefined/effectively-infinite runway) that must read 'healthy', never 'critical' — in
+  // JS `null < 14` coerces to `0 < 14` (true), so raw comparisons would flash red on a healthy wallet.
+  const runwayDays = wallet.runwayDays;
+  const runwayTone = computeRunwayTone(runwayDays);
 
   // Live mode renders real GET /wallet/escrow rows (escrowRows); mock mode keeps the polished
   // mockEscrowItems demo dataset. escrowActiveCount feeds the summary card above the tabs.
@@ -730,7 +741,7 @@ export default function BrandWalletPage() {
                         source for a burn projection yet (B42), so this nudge
                         only renders in mock/demo mode, never with a fabricated
                         number in live mode. */}
-                    {!isApiLive() && wallet.suggestedRecharge != null && wallet.runwayDays < 45 && (
+                    {!isApiLive() && wallet.suggestedRecharge != null && runwayDays != null && runwayDays < 45 && (
                       <div className="rounded-lg border border-stage-negotiating-border bg-amber-50 p-3">
                         <div className="flex items-start gap-3">
                           <AlertCircle className="h-5 w-5 text-stage-negotiating-fg flex-shrink-0 mt-0.5" />
@@ -745,7 +756,7 @@ export default function BrandWalletPage() {
                               {formatCurrency(wallet.suggestedRecharge)}
                             </button>
                             <p className="text-xs text-stage-negotiating-fg">
-                              Current runway: {wallet.runwayDays} days | Projected burn: {formatCurrency(wallet.projectedBurn30Days)}/month
+                              Current runway: {runwayDays != null ? `${runwayDays} days` : '—'} | Projected burn: {formatCurrency(wallet.projectedBurn30Days)}/month
                             </p>
                           </div>
                         </div>
@@ -930,11 +941,11 @@ export default function BrandWalletPage() {
             </CardContent>
           </Card>
 
-          {/* 30-Day Runway Projection */}
+          {/* 30-Day Runway Projection — F-0099: null runway (dormant/funded) reads healthy, not red */}
           <Card className={cn(
             'border-2',
-            wallet.runwayDays < 14 ? 'border-red-300 bg-red-50/30' :
-            wallet.runwayDays < 30 ? 'border-amber-300 bg-amber-50/30' :
+            runwayTone === 'critical' ? 'border-red-300 bg-red-50/30' :
+            runwayTone === 'warning' ? 'border-amber-300 bg-amber-50/30' :
             'border-green-300 bg-green-50/30'
           )}>
             <CardHeader className="pb-2">
@@ -944,21 +955,21 @@ export default function BrandWalletPage() {
               </CardDescription>
               <CardTitle className={cn(
                 'text-2xl',
-                wallet.runwayDays < 14 ? 'text-stage-disputed-fg' :
-                wallet.runwayDays < 30 ? 'text-stage-negotiating-fg' :
+                runwayTone === 'critical' ? 'text-stage-disputed-fg' :
+                runwayTone === 'warning' ? 'text-stage-negotiating-fg' :
                 'text-stage-approved-fg'
               )}>
-                {wallet.runwayDays} days
+                {runwayDays != null ? `${runwayDays} days` : 'Healthy'}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Progress 
-                value={Math.min((wallet.runwayDays / 60) * 100, 100)} 
+              <Progress
+                value={runwayDays != null ? Math.min((runwayDays / 60) * 100, 100) : 100}
                 className={cn(
                   'h-2 mb-2',
-                  wallet.runwayDays < 14 && '[&>div]:bg-red-500',
-                  wallet.runwayDays >= 14 && wallet.runwayDays < 30 && '[&>div]:bg-amber-500',
-                  wallet.runwayDays >= 30 && '[&>div]:bg-green-500'
+                  runwayTone === 'critical' && '[&>div]:bg-red-500',
+                  runwayTone === 'warning' && '[&>div]:bg-amber-500',
+                  runwayTone === 'healthy' && '[&>div]:bg-green-500'
                 )}
               />
               <p className="text-xs text-muted-foreground">
