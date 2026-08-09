@@ -45,6 +45,13 @@ const STEPS = [
   { id: 3, title: "You're in", icon: Sparkles },
 ];
 
+/**
+ * Set immediately before we hand the browser to Meta's OAuth dialog. The shared
+ * callback page (`creator-meta-callback.tsx`) reads it to route the creator back
+ * *here* instead of to Settings, then clears it. See CR-120.
+ */
+const META_ONBOARDING_RESUME_KEY = 'creator_onboarding_meta_resume';
+
 const CONTENT_VERTICALS = [
   'Fashion & Lifestyle',
   'Beauty & Skincare',
@@ -90,26 +97,50 @@ export default function CreatorOnboardingPage() {
 
   const progress = (currentStep / STEPS.length) * 100;
 
-  const handleConnectSocial = async (platform: Social) => {
-    setConnectingPlatform(platform);
-    try {
-      // Real flow opens an OAuth popup; we fake the code here for the mock
-      await api.onboarding.connectCreatorSocial(
-        platform === 'instagram' ? 'INSTAGRAM' : 'YOUTUBE',
-        'mock_oauth_code',
-      );
+  // Returning from the real Meta OAuth redirect: the callback page persisted the
+  // connection state before routing us back here. Reflect it so Step 1 shows the
+  // account as connected and `canProceed()` passes. (CR-120)
+  React.useEffect(() => {
+    if (api.metaOAuth.getLocalConnectionState().connected) {
       setConnectedSocials((prev) =>
-        prev.includes(platform) ? prev : [...prev, platform],
+        prev.includes('instagram') ? prev : [...prev, 'instagram'],
       );
+    }
+  }, []);
+
+  // Instagram uses the *real* Meta OAuth flow — a full-page redirect to Meta that
+  // returns to /creator/settings/meta/callback. We drop a resume marker first so
+  // that callback routes back into onboarding. (CR-120: the old path posted a
+  // literal 'mock_oauth_code' that the live backend rejected, hard-blocking every
+  // creator at Step 1.)
+  const handleConnectInstagram = async () => {
+    setConnectingPlatform('instagram');
+    try {
+      localStorage.setItem(META_ONBOARDING_RESUME_KEY, '1');
+      const { authorizationUrl } = await api.metaOAuth.authorize();
+      window.location.assign(authorizationUrl);
     } catch (err) {
+      localStorage.removeItem(META_ONBOARDING_RESUME_KEY);
+      setConnectingPlatform(null);
       toast({
-        title: `Couldn’t connect ${platform === 'instagram' ? 'Instagram' : 'YouTube'}`,
+        title: 'Couldn’t start Instagram connection',
         description: err instanceof ApiError ? err.message : 'Please try again.',
         variant: 'destructive',
       });
-    } finally {
-      setConnectingPlatform(null);
     }
+  };
+
+  const handleConnectSocial = (platform: Social) => {
+    if (platform === 'instagram') {
+      void handleConnectInstagram();
+      return;
+    }
+    // YouTube has no OAuth backend yet. Never send a fabricated code to the live
+    // API (that was the CR-120 defect) — tell the truth and let the creator move on.
+    toast({
+      title: 'YouTube connection is coming soon',
+      description: 'You can connect YouTube later from Settings once it’s available.',
+    });
   };
 
   const handleVerticalToggle = (vertical: string) => {
@@ -284,31 +315,49 @@ export default function CreatorOnboardingPage() {
 
         {/* Footer */}
         {currentStep < 3 && (
-          <div className="flex items-center gap-3 mt-8">
-            {currentStep > 1 && (
-              <Button variant="outline" onClick={handlePrev} className="gap-1.5">
-                <ArrowLeft className="h-4 w-4" />
-                Back
-              </Button>
-            )}
-            <div className="flex-1" />
-            <Button
-              onClick={handleNext}
-              disabled={!canProceed() || isLoading}
-              className="gap-1.5"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Saving…
-                </>
-              ) : (
-                <>
-                  Continue
-                  <ArrowRight className="h-4 w-4" />
-                </>
+          <div className="mt-8 space-y-3">
+            <div className="flex items-center gap-3">
+              {currentStep > 1 && (
+                <Button variant="outline" onClick={handlePrev} className="gap-1.5">
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Button>
               )}
-            </Button>
+              <div className="flex-1" />
+              <Button
+                onClick={handleNext}
+                disabled={!canProceed() || isLoading}
+                className="gap-1.5"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    Continue
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {/* CR-120: Step 1 must never be a hard wall. A creator who can't connect
+                a Business Instagram (personal account, OAuth down, etc.) can still
+                finish onboarding and connect later from Settings. */}
+            {currentStep === 1 && connectedSocials.length === 0 && (
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  disabled={isLoading}
+                  className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline disabled:opacity-40"
+                >
+                  Skip for now — connect from Settings later
+                </button>
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -331,9 +380,9 @@ function ConnectSocialsStep({
   connectingPlatform,
   onConnect,
 }: ConnectSocialsStepProps) {
-  const socials: Array<{ id: Social; label: string; icon: React.ComponentType<{ className?: string }>; handleMock: string; bg: string }> = [
-    { id: 'instagram', label: 'Instagram', icon: Instagram, handleMock: '@priya_creates', bg: 'bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400' },
-    { id: 'youtube', label: 'YouTube', icon: Youtube, handleMock: 'Priya Creates', bg: 'bg-red-500' },
+  const socials: Array<{ id: Social; label: string; icon: React.ComponentType<{ className?: string }>; handleMock: string; bg: string; comingSoon?: boolean }> = [
+    { id: 'instagram', label: 'Instagram', icon: Instagram, handleMock: 'Connected', bg: 'bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400' },
+    { id: 'youtube', label: 'YouTube', icon: Youtube, handleMock: 'Connected', bg: 'bg-red-500', comingSoon: true },
   ];
 
   return (
@@ -373,6 +422,8 @@ function ConnectSocialsStep({
                   </div>
                   {isConnected ? (
                     <CheckCircle2 className="h-6 w-6 text-stage-approved-fg" />
+                  ) : social.comingSoon ? (
+                    <span className="text-xs font-medium text-muted-foreground">Coming soon</span>
                   ) : (
                     <Button size="sm" onClick={() => onConnect(social.id)} disabled={isConnecting}>
                       {isConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Connect'}

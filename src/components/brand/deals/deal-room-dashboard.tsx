@@ -297,6 +297,52 @@ export function DealRoomDashboard() {
     }
   }, [selectedDeal, loadMessages]);
 
+  // CR-97 — this dashboard (the 'Deals' page off the brand sidebar) previously had NO live
+  // transport at all: the timeline only changed on manual load or the brand's own action, so a
+  // counterparty accept/reject/message never appeared until reload. Open the deal-message SSE
+  // stream for the selected deal (live mode only), mirroring brand-chat.tsx. Keyed on
+  // `selectedDeal?.id` (not the object) so a deal-list refresh returning a new object for the
+  // same deal doesn't tear down and reopen the connection; the cleanup closes the stream on both
+  // id-change and unmount so a previous deal's stream never writes into the newly selected one.
+  React.useEffect(() => {
+    if (!isApiLive() || !selectedDeal) return;
+    const dealId = selectedDeal.id;
+
+    const handle = messagesApi.stream('brand', dealId, {
+      onMessage: (incoming) => {
+        // Upsert BY ID, not append: sendMessage echoes the sender's own frame (handleSendMessage
+        // already appended what send() returned), and settled proposal cards republish under
+        // their ORIGINAL id with mutated metadata — a plain append would double own-messages or
+        // leave a stale card with a live Accept button beneath an "accepted" line (a CR-02 regression).
+        setLiveMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === incoming.id);
+          if (idx === -1) return [...prev, incoming];
+          const next = prev.slice();
+          next[idx] = incoming;
+          return next;
+        });
+        // No frame carries the collaboration's own status, so re-read the deal list whenever one
+        // arrives that could imply a transition (proposal/system) — that refreshes each row's
+        // status and the accept/reject affordances. Mirrors brand-chat's mayIndicateDealStatusChange.
+        if (incoming.kind === 'proposal' || incoming.kind === 'system') {
+          void loadDeals();
+        }
+      },
+      onReconnect: () => {
+        // This transport has no Last-Event-ID replay: frames published during the gap are gone.
+        // Re-read both the thread and the deal list so a dropped-then-restored stream doesn't
+        // leave a permanent hole.
+        void loadMessages(dealId);
+        void loadDeals();
+      },
+    });
+
+    return () => {
+      handle.close();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDeal?.id, loadDeals, loadMessages]);
+
   const runContractAnimation = React.useCallback(() => {
     setShowContractGeneratingDialog(true);
     setContractGenerationStep(0);

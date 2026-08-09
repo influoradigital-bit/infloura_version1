@@ -822,10 +822,20 @@ export const auth = {
     return { changed: true };
   },
 
-  /** POST /auth/logout */
+  /** POST /auth/logout
+   *
+   * CR-91: the request MUST carry the access token so the server can resolve the
+   * principal and run `refreshTokenRepository.revokeAllForUser` — otherwise the
+   * refresh tokens stay live in the DB after every logout. Send first (token still
+   * present), then clear locally in `finally` so the client session always ends,
+   * even if the server call fails. */
   logout: (role: Role) => {
+    if (isLive()) {
+      return http
+        .request<{ message: string }>('POST', '/auth/logout', { role })
+        .finally(() => http.clearToken(role));
+    }
     http.clearToken(role);
-    if (isLive()) return http.request<{ message: string }>('POST', '/auth/logout', { role });
     return mockOr({ message: 'ok' });
   },
 
