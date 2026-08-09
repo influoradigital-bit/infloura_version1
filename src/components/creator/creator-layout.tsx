@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
 import { clearCreatorSession } from '@/lib/auth-session';
+import { api, isApiLive } from '@/lib/api';
 import { useCreatorIdentity } from '@/hooks/use-creator-identity';
 import { useCreatorUnreadCount } from '@/hooks/use-creator-unread-count';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -162,7 +163,23 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
     return pathname.startsWith(href);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // CR-90: this sidebar/mobile-dropdown path is the primary, easiest-to-reach way a
+    // creator logs out, and it used to only clear client-side state — the server never
+    // saw the logout, so the HttpOnly refresh cookie / refresh token stayed live and a
+    // new access token could be silently re-issued via /auth/refresh. Mirrors the
+    // Settings-page logout's already-reviewed pattern (see api.ts's `auth.logout` doc,
+    // CR-91): call the server first so it can still resolve the principal from the
+    // still-present token, then always clear locally in the finally-equivalent below
+    // even if the server call fails — a failed request must never strand the creator
+    // in a logged-in-looking UI.
+    try {
+      if (isApiLive()) {
+        await api.auth.logout('creator');
+      }
+    } catch (err) {
+      console.error('Logout request failed', err);
+    }
     logout();
     // CR-06 — clears the identity keys login now writes, not just the token.
     // Leaving creator_email / creator_display_name behind would let the next
@@ -245,7 +262,10 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
           <div className="border-t border-sidebar-border p-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 hover:bg-sidebar-accent transition-colors">
+                <button
+                  data-testid="creator-sidebar-account-trigger"
+                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 hover:bg-sidebar-accent transition-colors"
+                >
                   <Avatar className="h-7 w-7">
                     <AvatarImage src={identity.avatarUrl ?? undefined} />
                     {/* CR-06 — no 'IN' fallback. An unknown creator gets a blank
@@ -293,7 +313,11 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
                   <Settings className="mr-2 h-4 w-4" />
                   Settings
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => window.open('https://help.influora.com', '_blank')}>
+                {/* CR-88/89 red-team fix (Priya) — 'https://help.influora.com' does not
+                    resolve to anything real; the brand side already migrated off this exact
+                    dead external host (see wiki/build/ananya-nav-alignment-2026-07-23.md).
+                    Routed to the real in-app /support page instead. */}
+                <DropdownMenuItem onClick={() => handleNavigate('/support')}>
                   <HelpCircle className="mr-2 h-4 w-4" />
                   Help & Support
                 </DropdownMenuItem>
@@ -341,7 +365,17 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
 
             {/* Right: notifications */}
             <div className="flex items-center gap-2">
-              <button className="lg:hidden p-1.5 hover:bg-accent rounded-lg transition-colors">
+              {/* CR-124 — was a dead click (no onClick at all). The desktop placeholder next to
+                  it is non-interactive too (CR-122, tracked separately as its own ticket since
+                  fixing it means building a real search UI, not just wiring a handler) — but this
+                  button had nowhere near it to route to, so the honest minimal fix is sending the
+                  tap to the one page that already has a working "Search brand or campaign…" box
+                  (creator-deals.tsx), matching this icon's own "Search collaborations" label. */}
+              <button
+                className="lg:hidden p-1.5 hover:bg-accent rounded-lg transition-colors"
+                onClick={() => handleNavigate('/creator/deals')}
+                aria-label="Search collaborations"
+              >
                 <Search className="h-5 w-5 text-muted-foreground" />
               </button>
               <button className="relative p-1.5 hover:bg-accent rounded-lg transition-colors">
@@ -381,6 +415,13 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleNavigate('/creator/settings')}>
                     <Settings className="mr-2 h-4 w-4" /> Settings
+                  </DropdownMenuItem>
+                  {/* CR-89 — the desktop sidebar has this entry (above); the mobile dropdown
+                      omitted it entirely, so mobile creators had no in-app path to help at all.
+                      Routed to /support, not the dead 'help.influora.com' host — see the
+                      CR-88/89 red-team note on the desktop item above. */}
+                  <DropdownMenuItem onClick={() => handleNavigate('/support')}>
+                    <HelpCircle className="mr-2 h-4 w-4" /> Help & Support
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setShowLogoutDialog(true)} className="text-destructive-foreground focus:text-destructive-foreground">
                     <LogOut className="mr-2 h-4 w-4" /> Log out

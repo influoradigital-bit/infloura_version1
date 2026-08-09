@@ -17,10 +17,26 @@ type CallbackState = 'loading' | 'success' | 'error';
  * `code`/`state` off its own query string and calls the callback endpoint
  * itself as a normal API request, then routes the user back to settings.
  */
+/** Set by creator-onboarding.tsx right before the OAuth redirect (CR-120). When
+ *  present, this connect was started from onboarding, so route back there. */
+const META_ONBOARDING_RESUME_KEY = 'creator_onboarding_meta_resume';
+
 export default function CreatorMetaCallbackPage() {
   const navigate = useNavigate();
   const [state, setState] = React.useState<CallbackState>('loading');
   const [errorMessage, setErrorMessage] = React.useState('');
+  // Read once, on mount, before anything clears it.
+  const [resumingOnboarding] = React.useState(
+    () => localStorage.getItem(META_ONBOARDING_RESUME_KEY) === '1',
+  );
+  const returnPath = resumingOnboarding ? '/creator/onboarding' : '/creator/settings';
+
+  // Consume the marker immediately — routing decisions use the captured `resumingOnboarding`
+  // state, not the live flag. This guarantees a stale marker can never misroute a *later*
+  // Settings-initiated connect, even if the creator abandons an error page without clicking.
+  React.useEffect(() => {
+    localStorage.removeItem(META_ONBOARDING_RESUME_KEY);
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -30,6 +46,16 @@ export default function CreatorMetaCallbackPage() {
       const code = params.get('code');
       const state = params.get('state');
       const oauthError = params.get('error') || params.get('error_description');
+
+      // CR-117 — strip code/state/error off the URL immediately after reading them, before
+      // the async callback request even starts. The backend already treats `state` as
+      // single-use (so a stale copy left in history/bfcache can't be replayed), but leaving
+      // the authorization code sitting in the visible URL and browser history is still a
+      // hygiene gap worth closing independent of that. `replaceState` (not `pushState`) so
+      // this doesn't add a back-button entry.
+      if (window.location.search) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
 
       // Meta itself can redirect here with an error instead of a code, e.g.
       // when the user cancels the dialog — surface that rather than crashing
@@ -55,6 +81,12 @@ export default function CreatorMetaCallbackPage() {
         if (cancelled) return;
         api.metaOAuth.setLocalConnectionState(result.connected, result.grantedScopes);
         setState('success');
+        // Started from onboarding? Send the creator straight back into the wizard,
+        // which reads the persisted connection state and advances Step 1. (CR-120)
+        if (resumingOnboarding) {
+          localStorage.removeItem(META_ONBOARDING_RESUME_KEY);
+          navigate('/creator/onboarding', { replace: true });
+        }
       } catch (err) {
         if (cancelled) return;
         setErrorMessage(
@@ -97,8 +129,19 @@ export default function CreatorMetaCallbackPage() {
           </CardHeader>
           {state !== 'loading' && (
             <CardContent className="flex justify-center">
-              <Button onClick={() => navigate('/creator/settings')}>
-                {state === 'success' ? 'Back to Settings' : 'Try Again'}
+              <Button
+                onClick={() => {
+                  localStorage.removeItem(META_ONBOARDING_RESUME_KEY);
+                  navigate(returnPath);
+                }}
+              >
+                {state === 'success'
+                  ? resumingOnboarding
+                    ? 'Back to onboarding'
+                    : 'Back to Settings'
+                  : resumingOnboarding
+                    ? 'Back to onboarding'
+                    : 'Try Again'}
               </Button>
             </CardContent>
           )}

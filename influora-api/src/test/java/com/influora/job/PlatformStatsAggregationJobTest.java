@@ -202,6 +202,86 @@ class PlatformStatsAggregationJobTest {
     }
 
     @Test
+    @DisplayName(
+            "aggregate CR-116: an existing handle survives a poll whose snapshot carries no username (never clobbered with null)")
+    void aggregate_preservesExistingHandleWhenSnapshotHasNoUsername() {
+        CreatorProfile creator = testProfile(CREATOR_ID);
+        when(creatorProfileRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(creator)));
+
+        // This poll's snapshot has no username (Meta omitted it) — username(null), same as if
+        // .username(...) were never called.
+        CreatorMetric metricWithNoUsername =
+                CreatorMetric.builder()
+                        .id("01HMETRIC1234567890AB")
+                        .creatorProfileId(CREATOR_ID)
+                        .platform("INSTAGRAM")
+                        .followers(20000L)
+                        .build();
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
+                        CREATOR_ID, "INSTAGRAM"))
+                .thenReturn(Optional.of(metricWithNoUsername));
+
+        PlatformStat existingWithHandle =
+                PlatformStat.builder()
+                        .id("01HEXISTINGSTAT1234567")
+                        .creatorProfileId(CREATOR_ID)
+                        .platform("INSTAGRAM")
+                        .handle("priya_creates")
+                        .followers(9000L)
+                        .build();
+        when(platformStatRepository.findByCreatorProfileIdAndPlatform(CREATOR_ID, "INSTAGRAM"))
+                .thenReturn(Optional.of(existingWithHandle));
+
+        job.aggregate();
+
+        ArgumentCaptor<PlatformStat> statCaptor = ArgumentCaptor.forClass(PlatformStat.class);
+        verify(platformStatRepository).save(statCaptor.capture());
+        assertEquals(
+                "priya_creates",
+                statCaptor.getValue().getHandle(),
+                "a snapshot with no username must not blank out a previously-recorded handle");
+        assertEquals(20000L, statCaptor.getValue().getFollowers(), "followers must still update normally");
+    }
+
+    @Test
+    @DisplayName("aggregate CR-116: a fresh username on an existing row overwrites the stale one")
+    void aggregate_updatesHandleWhenSnapshotCarriesANewUsername() {
+        CreatorProfile creator = testProfile(CREATOR_ID);
+        when(creatorProfileRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(creator)));
+
+        CreatorMetric metricWithNewUsername =
+                CreatorMetric.builder()
+                        .id("01HMETRIC1234567890AB")
+                        .creatorProfileId(CREATOR_ID)
+                        .platform("INSTAGRAM")
+                        .username("priya_rebranded")
+                        .followers(20000L)
+                        .build();
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
+                        CREATOR_ID, "INSTAGRAM"))
+                .thenReturn(Optional.of(metricWithNewUsername));
+
+        PlatformStat existingWithStaleHandle =
+                PlatformStat.builder()
+                        .id("01HEXISTINGSTAT1234567")
+                        .creatorProfileId(CREATOR_ID)
+                        .platform("INSTAGRAM")
+                        .handle("priya_creates")
+                        .followers(9000L)
+                        .build();
+        when(platformStatRepository.findByCreatorProfileIdAndPlatform(CREATOR_ID, "INSTAGRAM"))
+                .thenReturn(Optional.of(existingWithStaleHandle));
+
+        job.aggregate();
+
+        ArgumentCaptor<PlatformStat> statCaptor = ArgumentCaptor.forClass(PlatformStat.class);
+        verify(platformStatRepository).save(statCaptor.capture());
+        assertEquals("priya_rebranded", statCaptor.getValue().getHandle());
+    }
+
+    @Test
     @DisplayName("aggregate: empty discoverable-creator list completes cleanly with no saves")
     void aggregate_noCreators() {
         when(creatorProfileRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));

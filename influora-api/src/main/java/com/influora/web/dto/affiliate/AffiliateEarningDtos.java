@@ -34,7 +34,20 @@ public final class AffiliateEarningDtos {
             BigDecimal unsettledCommission,
             String currency) {}
 
-    /** Combined list + SETTLED-vs-pending summary for {@code GET /creator/affiliate-earnings}. */
+    /**
+     * Combined list + SETTLED-vs-pending summary for {@code GET /creator/affiliate-earnings}.
+     *
+     * <p>CR-83 — {@code earnings} is now one page of the creator's full history rather than
+     * every row ever recorded; {@code page}/{@code limit}/{@code totalElements}/{@code hasMore}
+     * let the client page through the rest. {@code summary} still reflects the creator's FULL
+     * history (all-time unsettled commission, this-month totals) regardless of which page of
+     * {@code earnings} is being viewed — pagination narrows the row list, not the summary.
+     */
     public record CreatorAffiliateEarningsResponse(
-            List<AffiliateEarningRow> earnings, AffiliateEarningsSummary summary) {}
+            List<AffiliateEarningRow> earnings,
+            AffiliateEarningsSummary summary,
+            int page,
+            int limit,
+            long totalElements,
+            boolean hasMore) {}
 }

@@ -35,6 +35,10 @@ public class CreatorMetric {
     @Column(name = "platform", nullable = false, length = 20)
     private String platform;
 
+    /** CR-116 — InstagramUserResponse.username() at fetch time; null if Meta didn't return one. */
+    @Column(name = "username", length = 200)
+    private String username;
+
     @Column(name = "followers", nullable = false)
     private long followers;
 
@@ -84,6 +88,10 @@ public class CreatorMetric {
 
     public String getPlatform() {
         return platform;
+    }
+
+    public String getUsername() {
+        return username;
     }
 
     public long getFollowers() {
@@ -154,6 +162,11 @@ public class CreatorMetric {
 
         public Builder platform(String platform) {
             m.platform = platform;
+            return this;
+        }
+
+        public Builder username(String username) {
+            m.username = username;
             return this;
         }
 

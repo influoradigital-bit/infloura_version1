@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -25,9 +26,12 @@ public class CreatorAffiliateEarningController {
         this.affiliateEarningsService = affiliateEarningsService;
     }
 
+    /** CR-83 — page/limit added; no page/limit param defaults to page 0, the service's own default size. */
     @GetMapping
     public ResponseEntity<ApiResponse<CreatorAffiliateEarningsResponse>> list(
-            @AuthenticationPrincipal AuthPrincipal principal) {
-        return ResponseEntity.ok(ApiResponse.ok(affiliateEarningsService.listForCreator(principal)));
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer limit) {
+        return ResponseEntity.ok(ApiResponse.ok(affiliateEarningsService.listForCreator(principal, page, limit)));
     }
 }

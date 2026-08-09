@@ -10,12 +10,15 @@ interface MetaScopeInfo {
   label: string;
 }
 
-/** Human labels for the scopes MetaOAuthService.REQUIRED_SCOPES requests server-side. */
+/**
+ * Human labels for the scopes MetaOAuthService.REQUIRED_SCOPES requests server-side.
+ * CR-115 — pages_read_engagement removed from REQUIRED_SCOPES (unused; see that service's
+ * javadoc), so it's dropped here too rather than advertising a permission no longer requested.
+ */
 const SCOPE_LABELS: MetaScopeInfo[] = [
   { scope: 'instagram_basic', label: 'Instagram profile & media' },
   { scope: 'instagram_manage_insights', label: 'Instagram insights & demographics' },
   { scope: 'pages_show_list', label: 'Facebook Pages list' },
-  { scope: 'pages_read_engagement', label: 'Facebook Page engagement' },
 ];
 
 /**
@@ -111,7 +114,9 @@ export function ConnectedAccounts() {
             <div>
               <p className="text-sm font-medium">Facebook Page</p>
               <p className="text-xs text-muted-foreground">
-                {isConnected ? 'Page list & engagement connected' : 'Not connected'}
+                {/* CR-115 follow-up (Priya) — was "Page list & engagement connected", advertising
+                    pages_read_engagement after that scope was removed from REQUIRED_SCOPES. */}
+                {isConnected ? 'Page list connected' : 'Not connected'}
               </p>
             </div>
           </div>

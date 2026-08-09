@@ -112,9 +112,10 @@ public class MetricsPollingJob {
         for (MetaOAuthToken tokenRow : connectedTokens) {
             String workspaceId = tokenRow.getWorkspaceId();
             String creatorProfileId = tokenRow.getCreatorProfileId();
+            String igBusinessAccountId = tokenRow.getIgBusinessAccountId();
 
             try {
-                if (pollOne(workspaceId, creatorProfileId)) {
+                if (pollOne(workspaceId, creatorProfileId, igBusinessAccountId)) {
                     polled++;
                 } else {
                     failed++;
@@ -141,7 +142,17 @@ public class MetricsPollingJob {
     }
 
     /** @return true if a metric row was successfully written for this creator. */
-    private boolean pollOne(String workspaceId, String creatorProfileId) {
+    private boolean pollOne(String workspaceId, String creatorProfileId, String igBusinessAccountId) {
+        // CR-99/F-0113 fix: Meta's Graph API requires the numeric IG Business Account ID in the
+        // request path, not our internal ULID creatorProfileId — a token row with none on file
+        // (pre-dating the field, or an incomplete OAuth exchange) cannot be polled at all.
+        if (igBusinessAccountId == null || igBusinessAccountId.isBlank()) {
+            log.warn(
+                    "MetricsPollingJob: no igBusinessAccountId on file for creator {}, skipping",
+                    creatorProfileId);
+            return false;
+        }
+
         Optional<String> token = tokenStorage.getValidToken(workspaceId, creatorProfileId);
         if (token.isEmpty()) {
             log.warn("MetricsPollingJob: no valid token for creator {}, skipping", creatorProfileId);
@@ -161,7 +172,7 @@ public class MetricsPollingJob {
         }
 
         try {
-            InstagramUserResponse profile = instagramClient.getProfile(creatorProfileId, token.get());
+            InstagramUserResponse profile = instagramClient.getProfile(igBusinessAccountId, token.get());
 
             CreatorMetric metric =
                     CreatorMetric.builder()
@@ -169,6 +180,9 @@ public class MetricsPollingJob {
                             .time(Instant.now())
                             .creatorProfileId(creatorProfileId)
                             .platform(PLATFORM_INSTAGRAM)
+                            // CR-116 — was fetched into `profile` and then discarded; now flows
+                            // through to platform_stats.handle via PlatformStatsAggregationJob.
+                            .username(profile.username())
                             .followers(profile.followersCount() == null ? 0L : profile.followersCount())
                             .following(profile.followsCount())
                             .mediaCount(

@@ -53,14 +53,15 @@ async function loadRateableDeals(role: Role): Promise<RateableDeal[]> {
     ];
   }
 
+  // CR-82 — GET /deals?status=completed already filters server-side; a client-side
+  // re-filter on the same field can never remove a row (the server already guarantees
+  // it) and was stale code left over from before the server-side filter existed.
   const rows = await api.deals.list(role, 'completed');
-  return rows
-    .filter((deal) => deal.status === 'COMPLETED')
-    .map((deal: Deal) => ({
-      id: deal.id,
-      counterpartyName: deal.counterpartyName,
-      campaignName: deal.campaignName,
-    }));
+  return rows.map((deal: Deal) => ({
+    id: deal.id,
+    counterpartyName: deal.counterpartyName,
+    campaignName: deal.campaignName,
+  }));
 }
 
 export function CollaborationReviewsPanel({
@@ -87,7 +88,7 @@ export function CollaborationReviewsPanel({
 
   const reviewsClient = role === 'creator' ? api.creatorReviews : api.brandReviews;
 
-  // Brand review-flag (F: POST /brand/reviews/:id/flag). Creators have no flag route.
+  // Review-flag (POST /creator/reviews/:id/flag or /brand/reviews/:id/flag, per role).
   const [flagTarget, setFlagTarget] = React.useState<ReviewDisplayRecord | null>(null);
   const [flagReason, setFlagReason] = React.useState('');
   const [flagBusy, setFlagBusy] = React.useState(false);
@@ -97,7 +98,7 @@ export function CollaborationReviewsPanel({
     if (!flagTarget || !flagReason.trim()) return;
     setFlagBusy(true);
     try {
-      await api.brandReviews.flag(flagTarget.id, flagReason.trim());
+      await reviewsClient.flag(flagTarget.id, flagReason.trim());
       setFlaggedIds((prev) => new Set(prev).add(flagTarget.id));
       toast({ title: 'Review flagged', description: 'Our moderators will take a look.' });
       setFlagTarget(null);
@@ -111,7 +112,7 @@ export function CollaborationReviewsPanel({
     } finally {
       setFlagBusy(false);
     }
-  }, [flagTarget, flagReason]);
+  }, [flagTarget, flagReason, reviewsClient]);
 
   const refreshDeals = React.useCallback(async () => {
     setLoadingDeals(true);
@@ -359,7 +360,7 @@ export function CollaborationReviewsPanel({
                 <ReviewCard
                   key={review.id}
                   review={review}
-                  onFlag={role === 'brand' ? () => setFlagTarget(review) : undefined}
+                  onFlag={() => setFlagTarget(review)}
                   flagged={flaggedIds.has(review.id)}
                 />
               ))}

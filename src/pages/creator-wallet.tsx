@@ -51,6 +51,19 @@ import {
 import { useServiceInvoices } from '@/hooks/creator/useServiceInvoices';
 import { useToast } from '@/hooks/use-toast';
 
+/**
+ * `crypto.randomUUID` only exists in secure contexts (https / localhost) — an http:// staging
+ * host would throw. Idempotency keys just need per-submission uniqueness, not crypto strength,
+ * so fall back to a timestamp+random id (mirrors the guarded pattern in brand-wallet.tsx /
+ * src/lib/meera-api.ts).
+ */
+function safeRandomUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `withdraw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 // ---------------------------------------------------------------------------
 // Live-wiring notes (ported from claude/api-connection-workflow-b62285):
 //   GET  /wallet              → api.wallet.get('creator')        (availableBalance, escrowLocked, pendingPayouts)
@@ -100,6 +113,14 @@ function statusBadgeClass(status: string): string {
 interface WalletTransaction {
   id: string;
   type: 'EARNING' | 'PAYOUT';
+  /**
+   * CR-75 — the real backend transaction type (WalletTransactionRow.type), kept alongside
+   * the collapsed EARNING/PAYOUT direction above. `type` is still fine for the History
+   * tab's credit/debit icon and color — that binary grouping is exactly what it's for.
+   * `rawType` is what anything needing to distinguish an actual bank withdrawal from a
+   * platform-fee or escrow-hold debit must use instead.
+   */
+  rawType: WalletTransactionRow['type'];
   description: string;
   amount: number;
   date: string;
@@ -118,6 +139,7 @@ function mapWalletTransactionRow(row: WalletTransactionRow): WalletTransaction {
   return {
     id: row.id,
     type: isCredit ? 'EARNING' : 'PAYOUT',
+    rawType: row.type,
     description: row.description,
     amount: isCredit ? Math.abs(row.amount) : -Math.abs(row.amount),
     date: row.createdAt,
@@ -308,6 +330,12 @@ export default function CreatorWalletPage() {
   const [withdrawAmount, setWithdrawAmount] = React.useState('');
   const [isWithdrawing, setIsWithdrawing] = React.useState(false);
   const [withdrawError, setWithdrawError] = React.useState<string | null>(null);
+  // Minted once per logical withdrawal submission, reused across retries of that SAME
+  // submission (network failure) so the server's idempotency dedupe isn't bypassed by a fresh
+  // key each click. Reset to null on success, on dialog close, and whenever the amount changes
+  // (a changed amount is a new submission, not a retry) — mirrors topUpIdempotencyKey in
+  // brand-wallet.tsx.
+  const [withdrawIdempotencyKey, setWithdrawIdempotencyKey] = React.useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = React.useState('this-month');
 
   // GET /wallet/payout-methods (creator) — UPI/bank instruments for the Payout Settings dialog.
@@ -352,69 +380,65 @@ export default function CreatorWalletPage() {
 
   // GET /wallet — availableBalance, escrowLocked, pendingPayouts are all real fields on
   // WalletSummaryResponse; rendered as-is in the hero card below. No client-side derivation.
-  React.useEffect(() => {
+  // Extracted to a callback (not just an effect) so a successful withdraw (see handleWithdraw)
+  // can re-trigger the same fetch instead of leaving the hero balance stale until reload.
+  const loadWalletBalance = React.useCallback(async () => {
     if (!liveApi) return;
-    let cancelled = false;
-    (async () => {
-      setWalletLoading(true);
-      setWalletError(null);
-      try {
-        const remote = await api.wallet.get('creator');
-        if (!cancelled && remote) {
-          setEarnings({
-            availableBalance: remote.availableBalance ?? 0,
-            escrowLocked: remote.escrowLocked ?? 0,
-            pendingPayouts: remote.pendingPayouts ?? 0,
-          });
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error('Failed to load wallet balance', err);
-          setWalletError('Could not refresh wallet balance. Showing last known data.');
-          // Never leave a fabricated balance on screen on error — zero it out.
-          setEarnings(EMPTY_EARNINGS);
-        }
-      } finally {
-        if (!cancelled) setWalletLoading(false);
+    setWalletLoading(true);
+    setWalletError(null);
+    try {
+      const remote = await api.wallet.get('creator');
+      if (remote) {
+        setEarnings({
+          availableBalance: remote.availableBalance ?? 0,
+          escrowLocked: remote.escrowLocked ?? 0,
+          pendingPayouts: remote.pendingPayouts ?? 0,
+        });
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    } catch (err) {
+      console.error('Failed to load wallet balance', err);
+      setWalletError('Could not refresh wallet balance. Showing last known data.');
+      // Never leave a fabricated balance on screen on error — zero it out.
+      setEarnings(EMPTY_EARNINGS);
+    } finally {
+      setWalletLoading(false);
+    }
   }, [liveApi]);
+
+  React.useEffect(() => {
+    loadWalletBalance();
+  }, [loadWalletBalance]);
 
   // GET /wallet/transactions — History tab, and the source for the Payouts tab below
   // (filtered to debit rows) since there is no dedicated GET /wallet/payouts endpoint.
-  React.useEffect(() => {
+  // Extracted to a callback for the same reason as loadWalletBalance above — reused by
+  // handleWithdraw to refresh history/payouts after a successful withdrawal.
+  const loadTransactions = React.useCallback(async () => {
     if (!liveApi) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const remote = await api.wallet.transactions('creator');
-        // Array.isArray alone, deliberately no `.length > 0` -- a creator with genuinely zero
-        // transactions gets back a real empty array; requiring non-empty treated that correct
-        // empty response the same as "API call didn't return usable data," so it silently kept
-        // the mock transactions forever instead (same bug fixed in dashboard-page.tsx and
-        // creator-deals.tsx).
-        if (!cancelled && Array.isArray(remote)) {
-          setTransactions(remote.map(mapWalletTransactionRow));
-        }
-      } catch (err) {
-        if (!cancelled) {
-          toast({
-            title: 'Couldn’t refresh transaction history',
-            description: err instanceof ApiError ? err.message : 'Showing your last known activity.',
-            variant: 'destructive',
-          });
-          // Never leave fabricated/stale rows on screen on error.
-          setTransactions([]);
-        }
+    try {
+      const remote = await api.wallet.transactions('creator');
+      // Array.isArray alone, deliberately no `.length > 0` -- a creator with genuinely zero
+      // transactions gets back a real empty array; requiring non-empty treated that correct
+      // empty response the same as "API call didn't return usable data," so it silently kept
+      // the mock transactions forever instead (same bug fixed in dashboard-page.tsx and
+      // creator-deals.tsx).
+      if (Array.isArray(remote)) {
+        setTransactions(remote.map(mapWalletTransactionRow));
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [liveApi]);
+    } catch (err) {
+      toast({
+        title: 'Couldn’t refresh transaction history',
+        description: err instanceof ApiError ? err.message : 'Showing your last known activity.',
+        variant: 'destructive',
+      });
+      // Never leave fabricated/stale rows on screen on error.
+      setTransactions([]);
+    }
+  }, [liveApi, toast]);
+
+  React.useEffect(() => {
+    loadTransactions();
+  }, [loadTransactions]);
 
   // GET /wallet/payout-methods — Payout Settings dialog.
   const loadPayoutMethods = React.useCallback(async () => {
@@ -434,6 +458,22 @@ export default function CreatorWalletPage() {
     loadPayoutMethods();
   }, [loadPayoutMethods]);
 
+  // Changing the amount starts a new logical submission, not a retry of the last one — drop
+  // any held idempotency key so the next confirm mints a fresh one.
+  const changeWithdrawAmount = (value: string) => {
+    setWithdrawAmount(value);
+    setWithdrawIdempotencyKey(null);
+  };
+
+  const handleWithdrawDialogChange = (open: boolean) => {
+    setShowWithdrawDialog(open);
+    if (!open) {
+      setWithdrawAmount('');
+      setWithdrawError(null);
+      setWithdrawIdempotencyKey(null);
+    }
+  };
+
   const handleWithdraw = async () => {
     const amount = parseFloat(withdrawAmount);
     if (!amount || amount < MIN_WITHDRAWAL_INR) return;
@@ -446,14 +486,26 @@ export default function CreatorWalletPage() {
       setWithdrawAmount('');
       return;
     }
+    // Client-generated Idempotency-Key (B10 — WalletService rejects a withdrawal with no key).
+    // Minted once per logical submission (kept in withdrawIdempotencyKey) and reused across
+    // retries of that same submission after a network failure — a fresh key per retry would let
+    // a client retry double-spend past the server's idempotency dedupe.
+    const idempotencyKey = withdrawIdempotencyKey ?? safeRandomUUID();
+    if (!withdrawIdempotencyKey) setWithdrawIdempotencyKey(idempotencyKey);
     try {
-      // Client-generated Idempotency-Key (B10 — WalletService rejects a withdrawal with
-      // no key); matches the `${id}-${Date.now()}` convention used elsewhere in api.ts callers.
-      const idempotencyKey = `withdraw-${Date.now()}`;
       await api.wallet.withdraw(amount, idempotencyKey);
+      // Success closes out this submission — the key must not be reused for a future one.
+      setWithdrawIdempotencyKey(null);
       setShowWithdrawDialog(false);
       setWithdrawAmount('');
+      // CR-73 — a successful withdrawal debits the balance and adds a transaction row
+      // server-side; without this the hero balance and History/Payouts tabs kept showing
+      // pre-withdrawal figures until a manual reload. Reuse the same loaders the mount
+      // effects use rather than duplicating the fetch logic.
+      loadWalletBalance();
+      loadTransactions();
     } catch (err) {
+      // Keep the same idempotency key held so a user-initiated retry of this submission reuses it.
       setWithdrawError(err instanceof ApiError ? err.message : 'Withdrawal failed. Please try again.');
     } finally {
       setIsWithdrawing(false);
@@ -581,7 +633,10 @@ export default function CreatorWalletPage() {
               from the same /wallet/transactions data the History tab uses (debit rows only). */}
           <TabsContent value="payouts" className="space-y-4">
             {(() => {
-              const payoutTransactions = transactions.filter((tx) => tx.type === 'PAYOUT');
+              // CR-75 — `type === 'PAYOUT'` grouped every debit (withdrawal, platform fee,
+              // escrow hold) together, so a platform-fee deduction displayed here as if it
+              // were a payout to the creator's bank. Only a real WITHDRAWAL is a payout.
+              const payoutTransactions = transactions.filter((tx) => tx.rawType === 'WITHDRAWAL');
               if (payoutTransactions.length === 0) {
                 return (
                   <Card>
@@ -940,7 +995,7 @@ export default function CreatorWalletPage() {
       </Dialog>
 
       {/* Withdraw Dialog */}
-      <Dialog open={showWithdrawDialog} onOpenChange={setShowWithdrawDialog}>
+      <Dialog open={showWithdrawDialog} onOpenChange={handleWithdrawDialogChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Withdraw Funds</DialogTitle>
@@ -976,17 +1031,17 @@ export default function CreatorWalletPage() {
                   type="number"
                   placeholder="Enter amount"
                   value={withdrawAmount}
-                  onChange={(e) => setWithdrawAmount(e.target.value)}
+                  onChange={(e) => changeWithdrawAmount(e.target.value)}
                   className="pl-9"
                   max={earnings.availableBalance}
                 />
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Min: {formatINR(MIN_WITHDRAWAL_INR)}</span>
-                <Button 
-                  variant="link" 
+                <Button
+                  variant="link"
                   className="h-auto p-0 text-xs"
-                  onClick={() => setWithdrawAmount(earnings.availableBalance.toString())}
+                  onClick={() => changeWithdrawAmount(earnings.availableBalance.toString())}
                 >
                   Withdraw All
                 </Button>
@@ -997,7 +1052,13 @@ export default function CreatorWalletPage() {
             <div className="space-y-2">
               <Label>Payout Method</Label>
               {primaryPayoutMethod ? (
-                <Card className="border-violet-200 bg-violet-50">
+                <Card
+                  className={
+                    primaryPayoutMethod.usable
+                      ? 'border-violet-200 bg-violet-50'
+                      : 'border-amber-200 bg-amber-50'
+                  }
+                >
                   <CardContent className="p-3">
                     <div className="flex items-center gap-3">
                       <div className="h-8 w-8 rounded-full bg-stage-approved flex items-center justify-center">
@@ -1014,6 +1075,17 @@ export default function CreatorWalletPage() {
                         <p className="text-xs text-muted-foreground">{primaryPayoutMethod.displayMask}</p>
                       </div>
                     </div>
+                    {/* CR-74 — mirrors the server's 24h new-bank-account cool-down
+                        (RazorpayFundAccountService#resolveFundAccountId / CreatorBankAccount#isUsableAt)
+                        so the Withdraw button reflects it before the POST ever reaches the server. */}
+                    {!primaryPayoutMethod.usable && (
+                      <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-800">
+                        <Clock className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                        This payout method was added recently and is in its 24-hour security
+                        verification window. You&apos;ll be able to withdraw to it once that
+                        window has passed.
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
               ) : (
@@ -1053,12 +1125,12 @@ export default function CreatorWalletPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowWithdrawDialog(false)}>
+            <Button variant="outline" onClick={() => handleWithdrawDialogChange(false)}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleWithdraw}
-              disabled={isWithdrawing || !withdrawAmount || parseFloat(withdrawAmount) < MIN_WITHDRAWAL_INR || parseFloat(withdrawAmount) > earnings.availableBalance || (liveApi && !primaryPayoutMethod)}
+              disabled={isWithdrawing || !withdrawAmount || parseFloat(withdrawAmount) < MIN_WITHDRAWAL_INR || parseFloat(withdrawAmount) > earnings.availableBalance || (liveApi && (!primaryPayoutMethod || !primaryPayoutMethod.usable))}
               className="bg-primary hover:bg-primary/90"
             >
               {isWithdrawing ? (

@@ -7,8 +7,13 @@ import org.springframework.stereotype.Component;
 
 /**
  * Facebook Page Graph API calls (spec §1.7).
- * Required permissions: {@code pages_show_list} to list connected pages,
- * {@code pages_read_engagement} for the engagement fields below.
+ * Required permission: {@code pages_show_list} to list connected pages.
+ *
+ * <p>CR-115 — {@code pages_read_engagement} is NO LONGER in {@link
+ * com.influora.integration.meta.oauth.MetaOAuthService#REQUIRED_SCOPES} (removed: {@link
+ * #getPage} had zero production callers). {@link #getPage} below still requests engagement
+ * fields and WILL fail with a Meta permission error if wired up without first re-adding that
+ * scope to REQUIRED_SCOPES and re-consenting existing connections.
  */
 @Component
 public class FacebookPageClient {
@@ -25,7 +30,8 @@ public class FacebookPageClient {
 
     /**
      * Fetches profile + engagement counters for a connected Facebook Page.
-     * Required permission: {@code pages_read_engagement}.
+     * Requires {@code pages_read_engagement} — see the CR-115 class-level note: that scope is
+     * NOT currently requested, so this call will fail against a live token until it is.
      *
      * <p>Note (spec §1.8): {@code page_views_total} format migration lands June 15, 2026 — this
      * client does not yet request that metric; add it here once the new format is finalized.

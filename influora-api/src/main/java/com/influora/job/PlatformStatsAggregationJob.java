@@ -190,7 +190,12 @@ public class PlatformStatsAggregationJob {
                 platformStatRepository.findByCreatorProfileIdAndPlatform(creatorProfileId, platform);
 
         if (existing.isPresent()) {
-            existing.get().applySnapshot(metric.getFollowers(), metric.getAvgEngagementRate(), existing.get().isVerified());
+            // CR-116 — only overwrite an existing handle when this snapshot actually carries one;
+            // a poll that legitimately returned no username (Meta omits it) must not clobber a
+            // previously-recorded one with null.
+            String handle = metric.getUsername() != null ? metric.getUsername() : existing.get().getHandle();
+            existing.get()
+                    .applySnapshot(metric.getFollowers(), metric.getAvgEngagementRate(), existing.get().isVerified(), handle);
             platformStatRepository.save(existing.get());
         } else {
             PlatformStat created =
@@ -198,6 +203,7 @@ public class PlatformStatsAggregationJob {
                             .id(Ulids.newUlid())
                             .creatorProfileId(creatorProfileId)
                             .platform(platform)
+                            .handle(metric.getUsername())
                             .followers(metric.getFollowers())
                             .engagementRate(metric.getAvgEngagementRate())
                             .verified(false)

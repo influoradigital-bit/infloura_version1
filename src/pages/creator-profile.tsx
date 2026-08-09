@@ -30,10 +30,22 @@ import {
   Loader2,
   RefreshCw,
   Users,
+  X,
 } from 'lucide-react';
 import { cn, publicProfileLabel } from '@/lib/utils';
 import { api, ApiError, type CreatorProfileSelfResponse, type CreatorProfilePatchPayload } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
+import { Switch } from '@/components/ui/switch';
+
+/**
+ * CR-92 — same list `creator-onboarding.tsx` uses for its language step. No shared
+ * taxonomy module exists to import instead (duplicated here rather than extracting
+ * one, which would be a larger refactor than this ticket's scope).
+ */
+const LANGUAGES = [
+  'Hindi', 'English', 'Tamil', 'Telugu', 'Kannada',
+  'Malayalam', 'Bengali', 'Marathi', 'Gujarati', 'Punjabi',
+];
 
 function formatINR(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -77,7 +89,13 @@ export default function CreatorProfilePage() {
     city: '',
     rateMin: '',
     rateMax: '',
+    // CR-92 — the 4 fields the dialog previously had no control for at all.
+    username: '',
+    categories: [] as string[],
+    languages: [] as string[],
+    discoverable: true,
   });
+  const [categoryDraft, setCategoryDraft] = React.useState('');
   const [isSaving, setIsSaving] = React.useState(false);
   const [syncingPlatform, setSyncingPlatform] = React.useState<string | null>(null);
   const [lastSynced, setLastSynced] = React.useState<Record<string, Date>>({});
@@ -94,6 +112,10 @@ export default function CreatorProfilePage() {
         city: data.city ?? '',
         rateMin: data.rateMin != null ? String(data.rateMin) : '',
         rateMax: data.rateMax != null ? String(data.rateMax) : '',
+        username: data.username ?? '',
+        categories: data.categories ?? [],
+        languages: data.languages ?? [],
+        discoverable: data.discoverable,
       });
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Could not load your profile.');
@@ -111,6 +133,58 @@ export default function CreatorProfilePage() {
     await new Promise((resolve) => setTimeout(resolve, 1800));
     setLastSynced((prev) => ({ ...prev, [platform]: new Date() }));
     setSyncingPlatform(null);
+  };
+
+  /**
+   * CR-86 — "Connect More Accounts" had no onClick at all. Mirrors
+   * `ConnectedAccounts.handleConnect` (connected-accounts.tsx) exactly rather than
+   * mounting that whole settings card here (that's CR-101, a separate High-severity
+   * ticket about the card never being mounted anywhere) — this just makes the one
+   * button on this page do the real thing instead of nothing.
+   */
+  /**
+   * CR-85 — the camera button had no onClick and no upload endpoint wired to it, despite
+   * `avatarUrl` being a plain patchable URL field and `POST /uploads` (generic multipart,
+   * see UploadController.java) plus `api.uploads.upload()` already existing and being used
+   * elsewhere (creator deliverables). Reuses both rather than building anything new.
+   */
+  const avatarFileInputRef = React.useRef<HTMLInputElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = React.useState(false);
+  const handleAvatarFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file next time
+    if (!file) return;
+    setIsUploadingAvatar(true);
+    try {
+      const { url } = await api.uploads.upload(file, 'creator');
+      const updated = await api.creatorProfile.patchMe({ avatarUrl: url });
+      setProfile(updated);
+      toast({ title: 'Profile photo updated' });
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not update your photo',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+      });
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const [isConnectingMeta, setIsConnectingMeta] = React.useState(false);
+  const handleConnectMoreAccounts = async () => {
+    setIsConnectingMeta(true);
+    try {
+      const { authorizationUrl } = await api.metaOAuth.authorize();
+      window.location.href = authorizationUrl;
+    } catch (err) {
+      setIsConnectingMeta(false);
+      toast({
+        variant: 'destructive',
+        title: 'Could not start Instagram/Facebook connect',
+        description: err instanceof ApiError ? err.message : 'Please try again in a moment.',
+      });
+    }
   };
 
   const formatSyncTime = (date?: Date) => {
@@ -132,6 +206,10 @@ export default function CreatorProfilePage() {
         city: editData.city,
         rateMin: editData.rateMin ? Number(editData.rateMin) : undefined,
         rateMax: editData.rateMax ? Number(editData.rateMax) : undefined,
+        username: editData.username || undefined,
+        categories: editData.categories,
+        languages: editData.languages,
+        discoverable: editData.discoverable,
       };
       const updated = await api.creatorProfile.patchMe(payload);
       setProfile(updated);
@@ -213,8 +291,24 @@ export default function CreatorProfilePage() {
                     {(profile.displayName || profile.username || 'C').charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
-                <button className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg">
-                  <Camera className="h-4 w-4" />
+                <input
+                  ref={avatarFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarFileSelected}
+                />
+                <button
+                  className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg disabled:opacity-60"
+                  onClick={() => avatarFileInputRef.current?.click()}
+                  disabled={isUploadingAvatar}
+                  aria-label="Change profile photo"
+                >
+                  {isUploadingAvatar ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Camera className="h-4 w-4" />
+                  )}
                 </button>
                 {profile.verified && (
                   <div className="absolute -top-1 -right-1 h-7 w-7 rounded-full bg-blue-500 text-white flex items-center justify-center">
@@ -321,8 +415,17 @@ export default function CreatorProfilePage() {
               );
             })}
 
-            <Button variant="outline" className="w-full">
-              <LinkIcon className="h-4 w-4 mr-2" />
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleConnectMoreAccounts}
+              disabled={isConnectingMeta}
+            >
+              {isConnectingMeta ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <LinkIcon className="h-4 w-4 mr-2" />
+              )}
               Connect More Accounts
             </Button>
           </CardContent>
@@ -450,6 +553,101 @@ export default function CreatorProfilePage() {
                 id="city"
                 value={editData.city}
                 onChange={(e) => setEditData({ ...editData, city: e.target.value })}
+              />
+            </div>
+
+            {/* CR-92 — username, categories, languages, discoverable were all patchable
+                (CreatorProfilePatchPayload) but had no control anywhere in this dialog. */}
+            <div className="space-y-2">
+              <Label htmlFor="username">Public page username</Label>
+              <Input
+                id="username"
+                value={editData.username}
+                onChange={(e) =>
+                  setEditData({ ...editData, username: e.target.value.trim().toLowerCase() })
+                }
+                placeholder="e.g. priya_creates"
+              />
+              <p className="text-xs text-muted-foreground">
+                Your public page is influora.com/@{editData.username || 'username'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="categories">Categories</Label>
+              <div className="flex flex-wrap gap-2">
+                {editData.categories.map((category) => (
+                  <Badge key={category} variant="secondary" className="gap-1">
+                    {category}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditData({
+                          ...editData,
+                          categories: editData.categories.filter((c) => c !== category),
+                        })
+                      }
+                      aria-label={`Remove ${category}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+              <Input
+                id="categories"
+                value={categoryDraft}
+                onChange={(e) => setCategoryDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' && e.key !== ',') return;
+                  e.preventDefault();
+                  const value = categoryDraft.trim();
+                  if (value && !editData.categories.includes(value)) {
+                    setEditData({ ...editData, categories: [...editData.categories, value] });
+                  }
+                  setCategoryDraft('');
+                }}
+                placeholder="Type a category and press Enter"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Languages</Label>
+              <div className="flex flex-wrap gap-2">
+                {LANGUAGES.map((language) => {
+                  const selected = editData.languages.includes(language);
+                  return (
+                    <Badge
+                      key={language}
+                      variant={selected ? 'default' : 'outline'}
+                      className="cursor-pointer select-none"
+                      onClick={() =>
+                        setEditData({
+                          ...editData,
+                          languages: selected
+                            ? editData.languages.filter((l) => l !== language)
+                            : [...editData.languages, language],
+                        })
+                      }
+                    >
+                      {language}
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <Label htmlFor="discoverable">Discoverable by brands</Label>
+                <p className="text-xs text-muted-foreground">
+                  Off hides your profile from brand search and discovery.
+                </p>
+              </div>
+              <Switch
+                id="discoverable"
+                checked={editData.discoverable}
+                onCheckedChange={(checked) => setEditData({ ...editData, discoverable: checked })}
               />
             </div>
 
