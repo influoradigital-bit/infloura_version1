@@ -34,6 +34,9 @@ export function BusinessAccountRequired({ onSkip, className }: BusinessAccountRe
   const handleReconnect = async () => {
     setIsConnecting(true);
     try {
+      // CR-65 — same reasoning as IGConnectPrompt.tsx: without this, the callback page sends
+      // the creator to Settings instead of back to Co-pilot.
+      api.metaOAuth.setConnectReturnTo('/creator/copilot');
       const { authorizationUrl } = await api.metaOAuth.authorize();
       window.location.href = authorizationUrl;
     } catch (err) {

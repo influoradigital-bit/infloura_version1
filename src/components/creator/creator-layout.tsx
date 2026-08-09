@@ -355,22 +355,27 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
               </button>
             </div>
 
-            {/* Desktop: search placeholder */}
-            <div className="hidden lg:block">
-              <div className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground bg-muted/60 rounded-lg min-w-[240px]">
-                <Search className="h-4 w-4" />
-                <span className="flex-1 text-left">Search collaborations...</span>
-              </div>
-            </div>
+            {/* Desktop: search — CR-122. Was a plain non-interactive <div> styled to look like a
+                real input (no onClick, no onKeyDown, no routing, no backend search endpoint) —
+                a real search UI is CR-70/71-scale work this ticket didn't ask for, so the same
+                minimal fix as CR-124's mobile icon: route to the one page with a genuinely
+                working "Search brand or campaign…" box (creator-deals.tsx). A real button, not
+                a div, so it's keyboard-reachable. */}
+            <button
+              type="button"
+              onClick={() => handleNavigate('/creator/deals')}
+              className="hidden lg:flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground bg-muted/60 hover:bg-muted rounded-lg min-w-[240px] transition-colors"
+            >
+              <Search className="h-4 w-4" />
+              <span className="flex-1 text-left">Search collaborations...</span>
+            </button>
 
             {/* Right: notifications */}
             <div className="flex items-center gap-2">
-              {/* CR-124 — was a dead click (no onClick at all). The desktop placeholder next to
-                  it is non-interactive too (CR-122, tracked separately as its own ticket since
-                  fixing it means building a real search UI, not just wiring a handler) — but this
-                  button had nowhere near it to route to, so the honest minimal fix is sending the
-                  tap to the one page that already has a working "Search brand or campaign…" box
-                  (creator-deals.tsx), matching this icon's own "Search collaborations" label. */}
+              {/* CR-124 — was a dead click (no onClick at all). The honest minimal fix is
+                  sending the tap to the one page that already has a working "Search brand or
+                  campaign…" box (creator-deals.tsx), matching this icon's own "Search
+                  collaborations" label. */}
               <button
                 className="lg:hidden p-1.5 hover:bg-accent rounded-lg transition-colors"
                 onClick={() => handleNavigate('/creator/deals')}
@@ -378,7 +383,15 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
               >
                 <Search className="h-5 w-5 text-muted-foreground" />
               </button>
-              <button className="relative p-1.5 hover:bg-accent rounded-lg transition-colors">
+              {/* CR-123 — the unread badge was already real (useCreatorUnreadCount); the button
+                  itself had no onClick. Routes to /creator/notifications, a real page backed by
+                  the same GET/POST /notifications endpoints the badge's sibling deals-unread
+                  count already proves work — mirrors brand-notifications.tsx, no new backend. */}
+              <button
+                className="relative p-1.5 hover:bg-accent rounded-lg transition-colors"
+                onClick={() => handleNavigate('/creator/notifications')}
+                aria-label="Notifications"
+              >
                 <Bell className="h-5 w-5 text-muted-foreground" />
                 {unreadCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">

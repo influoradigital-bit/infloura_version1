@@ -95,6 +95,10 @@ export function DeliverableLifecyclePanel({
   const handleConnect = async () => {
     setConnecting(true);
     try {
+      // CR-54 — without this, completing (or cancelling) the OAuth dialog performs a hard
+      // navigation to Settings/root and drops the creator out of this deal room. Capturing the
+      // live location (not a prop) works regardless of which route mounts this panel.
+      api.metaOAuth.setConnectReturnTo(window.location.pathname + window.location.search);
       const { authorizationUrl } = await api.metaOAuth.authorize();
       window.location.href = authorizationUrl;
     } catch (err) {

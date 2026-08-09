@@ -73,6 +73,7 @@ import CreatorCopilotPage from '@/pages/creator-copilot';
 import CreatorCampaignDetailPage from '@/pages/creator-campaign-detail';
 import CreatorDisputesPage from '@/pages/creator-disputes';
 import CreatorReviewsPage from '@/pages/creator-reviews';
+import CreatorNotificationsPage from '@/pages/creator-notifications';
 import CreatorCouponsPage from '@/pages/creator-coupons';
 import CreatorAffiliateEarningsPage from '@/pages/creator-affiliate-earnings';
 import CreatorMetaCallbackPage from '@/pages/creator-meta-callback';
@@ -564,6 +565,14 @@ export default function App() {
           element={
             <CreatorProtectedRoute>
               <CreatorReviewsPage />
+            </CreatorProtectedRoute>
+          }
+        />
+        <Route
+          path="/creator/notifications"
+          element={
+            <CreatorProtectedRoute>
+              <CreatorNotificationsPage />
             </CreatorProtectedRoute>
           }
         />

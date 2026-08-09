@@ -28,8 +28,10 @@ import type {
   CreatorDemographics,
   CreatorMetrics,
   CreatorScores,
+  CreatorScoresSummary,
   DeliverableStatus,
   Platform,
+  PlatformStats,
   TargetAudience,
   VerificationStatus,
 } from './types';
@@ -99,6 +101,19 @@ export function assertMockAuthAllowed(): void {
 const TOKEN_KEYS = {
   brand: 'brand_token',
   creator: 'creator_token',
+} as const;
+
+/**
+ * CR-121 — "Remember me" was a checkbox with no `checked`/`onChange` at all; checking it did
+ * nothing. Backed here rather than faked: the flag records where the ACCESS token lives —
+ * `localStorage` (survives closing the browser) when remembered, `sessionStorage` (cleared on
+ * tab/window close) when not. The refresh token is out of scope for this control by design —
+ * it is never in JS-readable storage at all (Kabir A1), delivered only as an HttpOnly cookie —
+ * so unchecking this narrows exposure of the access token, not the full session length.
+ */
+const REMEMBER_ME_KEYS = {
+  brand: 'brand_remember_me',
+  creator: 'creator_remember_me',
 } as const;
 
 export type Role = 'brand' | 'creator';
@@ -219,16 +234,36 @@ class HttpClient {
   /** Dedupes concurrent 401s for the same role into a single `/auth/refresh` call (H-19). */
   private refreshPromises: Partial<Record<Role, Promise<string | null>>> = {};
 
-  private getToken(role: Role = 'brand'): string | null {
-    return localStorage.getItem(TOKEN_KEYS[role]);
+  /** CR-121 — which storage currently holds (or should hold) this role's token, per its
+   *  remembered preference. Absent flag defaults to `localStorage` — every pre-existing call
+   *  site that never passed `remember` keeps its exact prior behavior. */
+  private tokenStorage(role: Role): Storage {
+    return localStorage.getItem(REMEMBER_ME_KEYS[role]) === 'false' ? sessionStorage : localStorage;
   }
 
-  setToken(role: Role, token: string): void {
-    localStorage.setItem(TOKEN_KEYS[role], token);
+  private getToken(role: Role = 'brand'): string | null {
+    // Reads whichever storage actually holds it — covers the moment right after `clearToken`
+    // flipped a role's preference but a caller still passes a stale role/session combination.
+    return localStorage.getItem(TOKEN_KEYS[role]) ?? sessionStorage.getItem(TOKEN_KEYS[role]);
+  }
+
+  /**
+   * `remember` is optional and, when omitted, does NOT change the stored preference — this
+   * matters because the token-refresh path (`fetchWithAuthRetry`) calls `setToken(role, newToken)`
+   * with no third argument on every silent renewal, and that call must keep writing to whichever
+   * storage the original login chose, not silently upgrade a session-only login to persistent.
+   */
+  setToken(role: Role, token: string, remember?: boolean): void {
+    if (remember !== undefined) {
+      localStorage.setItem(REMEMBER_ME_KEYS[role], String(remember));
+    }
+    this.tokenStorage(role).setItem(TOKEN_KEYS[role], token);
   }
 
   clearToken(role: Role): void {
     localStorage.removeItem(TOKEN_KEYS[role]);
+    sessionStorage.removeItem(TOKEN_KEYS[role]);
+    localStorage.removeItem(REMEMBER_ME_KEYS[role]);
   }
 
   /**
@@ -813,12 +848,18 @@ export const auth = {
   /**
    * POST /me/password — BR-05. In-session password change (current + new, re-auth on current).
    * Distinct from `resetPassword` (unauthenticated, token-from-email flow) — this one requires
-   * the caller's current password and an active session. Landing in parallel on the backend
-   * (Vikram); a 404 here means it hasn't shipped yet, not that the client is wrong.
+   * the caller's current password and an active session. Backed by `AccountController:105`
+   * (`AuthService#changePassword`), rate-limited by `AuthRateLimitFilter`.
+   *
+   * CR-87/Priya review: `role` is REQUIRED, not defaulted. `http.request` defaults to the
+   * `'brand'` token when no role is given (see its own `role = 'brand'` default), so the sole
+   * caller before this fix (`brand-settings.tsx`) worked only by accident — a creator caller
+   * would either 401 (no brand_token present) or, worse, silently authenticate as and rotate
+   * the password of whichever brand session happened to share the browser.
    */
-  changePassword: async (payload: { currentPassword: string; newPassword: string }) => {
+  changePassword: async (role: Role, payload: { currentPassword: string; newPassword: string }) => {
     if (!isLive()) return mockOr({ changed: true });
-    await http.request<{ message: string }>('POST', '/me/password', { body: payload });
+    await http.request<{ message: string }>('POST', '/me/password', { role, body: payload });
     return { changed: true };
   },
 
@@ -839,7 +880,7 @@ export const auth = {
     return mockOr({ message: 'ok' });
   },
 
-  setToken: (role: Role, token: string) => http.setToken(role, token),
+  setToken: (role: Role, token: string, remember?: boolean) => http.setToken(role, token, remember),
 };
 
 /**
@@ -1007,6 +1048,32 @@ export const onboarding = {
       ? http.request<{ kycStatus: 'PENDING' | 'VERIFIED' }>('POST', '/onboarding/brand/kyc', { body: payload })
       : mockOr({ kycStatus: 'PENDING' as const }),
 
+  /**
+   * GET /onboarding/brand/status — OB-2/OB-1 (BrandF.md §102/§105/§91), OnboardingController.status
+   * (verified at influora-api/.../web/OnboardingController.java:57). Server-authoritative read of
+   * onboarding completion + whether the brand already dismissed the KYC prompt (survives across
+   * devices, unlike the localStorage-only flag `brand-kyc-prompt.tsx` used to rely on alone).
+   */
+  getBrandStatus: () =>
+    isLive()
+      ? http.request<{ onboardingCompleted: boolean; kycPromptDismissed: boolean }>(
+          'GET',
+          '/onboarding/brand/status',
+        )
+      : mockOr({ onboardingCompleted: true, kycPromptDismissed: false }),
+
+  /**
+   * POST /onboarding/brand/kyc-prompt-dismissed — OB-1 (BrandF.md §105/§91),
+   * OnboardingController.dismissKycPrompt (verified at .../OnboardingController.java:69). No
+   * request body; principal-scoped. Idempotent. Call alongside (not instead of) the existing
+   * localStorage dismiss flag in `brand-kyc-prompt.tsx` — fire-and-forget is fine, the localStorage
+   * write is what keeps the prompt hidden instantly in the current tab.
+   */
+  dismissBrandKycPrompt: () =>
+    isLive()
+      ? http.request<{ kycPromptDismissed: boolean }>('POST', '/onboarding/brand/kyc-prompt-dismissed')
+      : mockOr({ kycPromptDismissed: true }),
+
   /** POST /onboarding/creator/socials */
   connectCreatorSocial: (platform: Platform, oauthCode: string) =>
     isLive()
@@ -1067,6 +1134,15 @@ export interface CampaignListParams {
   page?: number;
   limit?: number;
   search?: string;
+  /**
+   * D-6 (BrandF.md §12): CampaignController accepts `sortBy`/`sortOrder` (CampaignService's
+   * `buildSort` — 'createdAt' | 'updatedAt' | 'title', unrecognized values fall back to
+   * 'createdAt') but the frontend never sent them; the "Sort by" control only ever re-sorted
+   * the single already-fetched page client-side. `'budget'`/`'progress'` have no backend Sort
+   * field yet (progress isn't even a stored column — see D-3), so those two stay client-side.
+   */
+  sortBy?: 'createdAt' | 'updatedAt' | 'title';
+  sortOrder?: 'asc' | 'desc';
 }
 
 type CampaignApiRow = Campaign & {
@@ -1190,21 +1266,47 @@ function campaignToPayload(payload: Partial<Campaign>) {
   };
 }
 
+export interface CampaignListResult {
+  campaigns: Campaign[];
+  meta: { page: number; limit: number; total?: number; hasMore: boolean };
+}
+
 export const campaigns = {
-  /** GET /campaigns?status=&page=&limit=&search= */
-  list: async (params: CampaignListParams = {}) => {
-    if (!isLive()) return mockOr<Campaign[]>([]);
+  /**
+   * GET /campaigns?status=&page=&limit=&search= — verified against CampaignService.list, which
+   * hard-caps `limit` at 100 server-side and returns pagination meta via `result.meta()` (same
+   * `ApiResponse.ok(items, meta)` envelope shape as GET /creators). Uses `requestWithMeta` (not
+   * `request`) so callers can paginate instead of silently truncating past the server's page-size
+   * ceiling — mirrors `creators.search`'s pattern (D-2 fix; campaigns never got its own).
+   */
+  list: async (params: CampaignListParams = {}): Promise<CampaignListResult> => {
+    if (!isLive()) {
+      return mockOr<CampaignListResult>({
+        campaigns: [],
+        meta: { page: params.page ?? 1, limit: params.limit ?? 20, hasMore: false },
+      });
+    }
     const status =
       params.status && params.status !== 'ALL' ? String(params.status) : undefined;
-    const rows = await http.request<CampaignApiRow[]>('GET', '/campaigns', {
+    const { data, meta } = await http.requestWithMeta<CampaignApiRow[]>('GET', '/campaigns', {
       query: {
         page: params.page,
         limit: params.limit,
         search: params.search,
         status,
+        sortBy: params.sortBy,
+        sortOrder: params.sortOrder,
       },
     });
-    return rows.map(mapCampaignFromApi);
+    return {
+      campaigns: data.map(mapCampaignFromApi),
+      meta: {
+        page: meta?.page ?? params.page ?? 1,
+        limit: meta?.limit ?? params.limit ?? 20,
+        total: meta?.total,
+        hasMore: Boolean(meta?.hasMore),
+      },
+    };
   },
 
   /** GET /campaigns/:id */
@@ -1331,6 +1433,64 @@ export interface CreatorSearchResult {
   meta: { page: number; limit: number; total?: number; hasMore: boolean };
 }
 
+// D-14 — response shapes for the 4 backend-complete endpoints below (BrandF.md §87,
+// wiki/errors/BRAND-BUG-TRACKER.md). Mirror DiscoveryDtos.java field-for-field.
+
+export interface FeaturedCreatorSection {
+  category: string;
+  title: string;
+  creators: CreatorProfile[];
+}
+
+export interface CreatorSuggestionItem {
+  creator: CreatorProfile;
+  matchScore: number;
+  reasons: string[];
+  estimatedReach: number;
+  estimatedCost: number;
+}
+
+export interface SimilarCreator {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  totalFollowers: number;
+  engagementRate: number;
+  matchScore: number;
+  matchReasons: string[];
+}
+
+/**
+ * GET /creators/profile/:usernameOrId response (DiscoveryDtos.CreatorPublicProfileResponse) — the
+ * DTO PR-1's fix reads from. Unlike GET /creators/:id (CreatorResponse), this has real
+ * `completedCampaigns`/`avgRating`. `avgRating` is `null` (not `0`) when the creator has no
+ * reviews yet — CreatorDiscoveryService.getPublicProfile's H-22 comment; never coerce to 0.
+ */
+export interface CreatorPublicProfile {
+  id: string;
+  username: string;
+  displayName: string;
+  bio: string | null;
+  profilePhoto: string | null;
+  coverPhoto: string | null;
+  categories: string[];
+  languages: string[];
+  city: string | null;
+  platforms: PlatformStats[];
+  totalFollowers: number;
+  engagementRate: number;
+  scores: CreatorScoresSummary | null;
+  rateMin: number | null;
+  rateMax: number | null;
+  currency: string | null;
+  isVerified: boolean;
+  discoverable: boolean;
+  completedCampaigns: number;
+  avgRating: number | null;
+  saved: boolean | null;
+}
+
 export const creators = {
   /**
    * GET /creators?... — verified against CreatorController.search, which accepts
@@ -1380,6 +1540,73 @@ export const creators = {
           body: { campaignId, message },
         })
       : mockOr({ collaborationId: 'col_new' }),
+
+  /**
+   * GET /creators/featured — CreatorController.featured (verified at
+   * influora-api/.../web/CreatorController.java:127), returns DiscoveryDtos.FeaturedResponse. D-14.
+   */
+  featured: async (
+    params: { category?: string; limit?: number } = {},
+  ): Promise<{ featured: FeaturedCreatorSection[] }> => {
+    if (!isLive()) return mockOr<{ featured: FeaturedCreatorSection[] }>({ featured: [] });
+    const row = await http.request<{
+      featured: { category: string; title: string; creators: (CreatorProfile & { location?: string })[] }[];
+    }>('GET', '/creators/featured', { query: { category: params.category, limit: params.limit } });
+    return {
+      featured: row.featured.map((section) => ({
+        ...section,
+        creators: section.creators.map(mapCreatorFromApi),
+      })),
+    };
+  },
+
+  /**
+   * POST /creators/suggestions — CreatorController.suggestions (verified at
+   * .../CreatorController.java:136), body DiscoveryDtos.CreatorSuggestionRequest, returns
+   * CreatorSuggestionsResponse. D-14.
+   */
+  suggestions: async (payload: {
+    campaignGoals?: string;
+    targetAudience?: string;
+    budget?: number;
+    platforms?: string[];
+  }): Promise<{ suggestions: CreatorSuggestionItem[] }> => {
+    if (!isLive()) return mockOr<{ suggestions: CreatorSuggestionItem[] }>({ suggestions: [] });
+    const row = await http.request<{
+      suggestions: {
+        creator: CreatorProfile & { location?: string };
+        matchScore: number;
+        reasons: string[];
+        estimatedReach: number;
+        estimatedCost: number;
+      }[];
+    }>('POST', '/creators/suggestions', { body: payload });
+    return {
+      suggestions: row.suggestions.map((s) => ({ ...s, creator: mapCreatorFromApi(s.creator) })),
+    };
+  },
+
+  /**
+   * GET /creators/:username/similar — CreatorController.similar (verified at
+   * .../CreatorController.java:144), returns DiscoveryDtos.SimilarCreatorsResponse. D-14.
+   */
+  similar: (username: string, limit?: number): Promise<{ similar: SimilarCreator[] }> =>
+    isLive()
+      ? http.request<{ similar: SimilarCreator[] }>('GET', `/creators/${encodeURIComponent(username)}/similar`, {
+          query: { limit },
+        })
+      : mockOr<{ similar: SimilarCreator[] }>({ similar: [] }),
+
+  /**
+   * GET /creators/profile/:usernameOrId — CreatorController.getPublicProfile (verified at
+   * .../CreatorController.java:159), returns DiscoveryDtos.CreatorPublicProfileResponse with real
+   * `completedCampaigns`/`avgRating` (PR-1, BrandF.md §87 — GET /creators/:id's CreatorResponse
+   * has neither field, which is why brand-creator-profile.tsx used to hardcode both to 0). D-14.
+   */
+  getProfile: (usernameOrId: string): Promise<CreatorPublicProfile | null> =>
+    isLive()
+      ? http.request<CreatorPublicProfile>('GET', `/creators/profile/${encodeURIComponent(usernameOrId)}`)
+      : mockOr<CreatorPublicProfile | null>(null),
 };
 
 // ---------------------------------------------------------------------------
@@ -1474,6 +1701,14 @@ export interface Deal {
   counterpartyName: string;
   counterpartyAvatar?: string;
   counterpartyHandle?: string;
+  /**
+   * PR-2 (BrandF.md §83c/§105 VER-1) — {@code DealDtos.DealResponse.counterpartyVerificationStatus}
+   * (DealDtos.java:39). The counterparty BRAND's real `Workspace.verificationStatus` when the
+   * viewer is a CREATOR; always null when the viewer is a BRAND (the counterparty is a creator,
+   * a separate signal — `identityKycStatus` — not this field). Fixes the M-1 defect where
+   * creators were shown an unconditional "Verified Brand" badge regardless of actual status.
+   */
+  counterpartyVerificationStatus?: VerificationStatus | null;
   status: CollaborationStatus;
   dealValue: number;
   currency: 'INR' | 'USD';
@@ -2221,6 +2456,8 @@ export interface DeliverableDetail {
   submittedAt: string;
   canApprove: boolean;
   canRequestRevision: boolean;
+  /** D-9 (BrandF.md §25): same canReview gate as canApprove/canRequestRevision. */
+  canReject: boolean;
 }
 
 /**
@@ -2290,6 +2527,7 @@ export const deliverables = {
           submittedAt: new Date().toISOString(),
           canApprove: true,
           canRequestRevision: true,
+          canReject: true,
         }),
 
   /**
@@ -2320,6 +2558,18 @@ export const deliverables = {
           body: { feedback },
         })
       : mockOr({ status: 'REVISION_REQUESTED' as DeliverableStatus }),
+
+  /**
+   * POST /deliverables/:id/reject  (brand) — D-9 (BrandF.md §25). The backend route
+   * (BrandDeliverableController#reject → BrandDeliverableService#reject) existed with no
+   * client method calling it; this was the missing half.
+   */
+  reject: (id: string, feedback: string) =>
+    isLive()
+      ? http.request<{ status: DeliverableStatus }>('POST', `/deliverables/${id}/reject`, {
+          body: { feedback },
+        })
+      : mockOr({ status: 'REJECTED' as DeliverableStatus }),
 
   /**
    * GET /deliverables/:id/safety-review — Brand Surface Audit fix #3
@@ -2541,10 +2791,18 @@ export const wallet = {
         })
       : mockOr({ payoutId: 'po_new' }),
 
-  /** GET /wallet/transactions — WalletController.java:122 (creator-scoped ledger, paginated). */
-  transactions: (role: Role, page = 1, limit = 20) =>
+  /**
+   * GET /wallet/transactions — WalletController.java:135 (creator-scoped ledger, paginated).
+   * `period` (CR-72) mirrors the History tab dropdown verbatim ("this-month" / "last-month" /
+   * "3-months" / "all") and is resolved to a date range server-side (WalletService); omitted or
+   * "all" is unfiltered, matching prior behavior.
+   */
+  transactions: (role: Role, page = 1, limit = 20, period?: string) =>
     isLive()
-      ? http.request<WalletTransactionRow[]>('GET', '/wallet/transactions', { role, query: { page, limit } })
+      ? http.request<WalletTransactionRow[]>('GET', '/wallet/transactions', {
+          role,
+          query: period && period !== 'all' ? { page, limit, period } : { page, limit },
+        })
       : mockOr<WalletTransactionRow[]>([]),
 
   /** GET /wallet/payout-methods */
@@ -2783,18 +3041,75 @@ export interface NotificationPreference {
   unsubscribed: boolean;
 }
 
+/**
+ * Raw wire shape of NotificationController's GET /notifications
+ * (NotificationDtos.NotificationListResponse / NotificationResponse) — `eventType`/`isRead`,
+ * not the FE-classified `type`/`read` that NotificationItem exposes.
+ */
+interface NotificationListWire {
+  notifications: Array<{
+    id: string;
+    eventType: string;
+    title: string;
+    body: string | null;
+    link: string | null;
+    isRead: boolean;
+    createdAt: string;
+  }>;
+  unreadCount: number;
+  page: number;
+  size: number;
+}
+
+function classifyNotificationEventType(eventType: string): NotificationItem['type'] {
+  if (eventType.startsWith('ai.')) return 'meera_nudge';
+  if (/failed|rejected|halted|low_balance|exhausted|disputed/i.test(eventType)) return 'warning';
+  if (/funded|signed|accepted|released|approved|received|reset|completed/i.test(eventType)) return 'success';
+  return 'info';
+}
+
+function fromNotificationWire(n: NotificationListWire['notifications'][number]): NotificationItem {
+  return {
+    id: n.id,
+    type: classifyNotificationEventType(n.eventType),
+    title: n.title,
+    body: n.body ?? undefined,
+    read: n.isRead,
+    createdAt: n.createdAt,
+    link: n.link ?? undefined,
+  };
+}
+
 export const notifications = {
-  /** GET /notifications */
-  list: (role: Role) =>
-    isLive()
-      ? http.request<NotificationItem[]>('GET', '/notifications', { role })
-      : mockOr<NotificationItem[]>([]),
+  /**
+   * GET /notifications. N-1 fix (BrandF.md §74): this — not a raw `fetch` in
+   * `useNotifications.ts` — is now the only place that calls the endpoint, so a 401 gets
+   * `fetchWithAuthRetry`'s refresh-and-retry instead of failing outright. Was previously
+   * mistyped as returning `NotificationItem[]` directly; the endpoint actually returns the
+   * `{notifications, unreadCount, page, size}` envelope payload — fixed here and mapped
+   * through fromNotificationWire.
+   */
+  list: async (role: Role): Promise<{ items: NotificationItem[]; unreadCount: number }> => {
+    if (!isLive()) return mockOr({ items: [] as NotificationItem[], unreadCount: 0 });
+    const wire = await http.request<NotificationListWire>('GET', '/notifications', { role });
+    return { items: (wire.notifications ?? []).map(fromNotificationWire), unreadCount: wire.unreadCount ?? 0 };
+  },
 
   /** POST /notifications/read — body: { notificationId } (NotificationController.java). */
   markRead: (role: Role, id: string) =>
     isLive()
-      ? http.request<{ ok: true }>('POST', '/notifications/read', { role, body: { notificationId: id } })
-      : mockOr({ ok: true as const }),
+      ? http.request<{ success: boolean; newUnreadCount: number }>('POST', '/notifications/read', { role, body: { notificationId: id } })
+      : mockOr({ success: true as const, newUnreadCount: 0 }),
+
+  /**
+   * POST /notifications/read-all — bulk mark-all-read (NotificationController#markAllRead).
+   * N-1/N-2: previously had no client method at all; useNotifications.ts called the raw
+   * endpoint with `fetch` directly.
+   */
+  markAllRead: (role: Role) =>
+    isLive()
+      ? http.request<{ success: boolean; newUnreadCount: number }>('POST', '/notifications/read-all', { role })
+      : mockOr({ success: true as const, newUnreadCount: 0 }),
 
   /**
    * GET /notifications/preferences — per-event-type email unsubscribe state for the
@@ -3578,14 +3893,14 @@ export interface CreateCouponPayload {
 }
 
 export const campaignTracking = {
-  /** GET /campaigns/:campaignId/tracking-links (CampaignTrackingController.java:74) */
+  /** GET /campaigns/:campaignId/tracking-links (CampaignTrackingController.java:85) */
   listTrackingLinks: async (campaignId: string): Promise<TrackingLinkResponse[]> => {
     if (!isLive()) return mockOr<TrackingLinkResponse[]>([]);
     const res = await http.request<{ trackingLinks: TrackingLinkResponse[] }>('GET', `/campaigns/${campaignId}/tracking-links`);
     return res.trackingLinks ?? [];
   },
 
-  /** POST /campaigns/:campaignId/tracking-links (CampaignTrackingController.java:56) */
+  /** POST /campaigns/:campaignId/tracking-links (CampaignTrackingController.java:67) */
   createTrackingLink: (campaignId: string, payload: CreateTrackingLinkPayload) =>
     isLive()
       ? http.request<TrackingLinkResponse>('POST', `/campaigns/${campaignId}/tracking-links`, { body: payload })
@@ -3598,14 +3913,14 @@ export const campaignTracking = {
           createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
         }),
 
-  /** GET /campaigns/:campaignId/coupons (CampaignTrackingController.java:102) */
+  /** GET /campaigns/:campaignId/coupons (CampaignTrackingController.java:113) */
   listCoupons: async (campaignId: string): Promise<CouponResponse[]> => {
     if (!isLive()) return mockOr<CouponResponse[]>([]);
     const res = await http.request<{ coupons: CouponResponse[] }>('GET', `/campaigns/${campaignId}/coupons`);
     return res.coupons ?? [];
   },
 
-  /** POST /campaigns/:campaignId/coupons (CampaignTrackingController.java:83) */
+  /** POST /campaigns/:campaignId/coupons (CampaignTrackingController.java:94) */
   createCoupon: (campaignId: string, payload: CreateCouponPayload) =>
     isLive()
       ? http.request<CouponResponse>('POST', `/campaigns/${campaignId}/coupons`, { body: payload })
@@ -3796,8 +4111,12 @@ export interface MetaConnectionState {
 }
 
 const META_CONNECTION_KEY = 'meta_connection';
-/** Mirrors MetaOAuthService.REQUIRED_SCOPES (MetaOAuthService.java:28-33). */
-const META_REQUIRED_SCOPES = ['instagram_basic', 'instagram_manage_insights', 'pages_show_list', 'pages_read_engagement'];
+/**
+ * Mirrors MetaOAuthService.REQUIRED_SCOPES (MetaOAuthService.java:28-38).
+ * CR-115 — pages_read_engagement dropped; FacebookPageClient.getPage(), the only method that
+ * scope backed, had zero production callers.
+ */
+const META_REQUIRED_SCOPES = ['instagram_basic', 'instagram_manage_insights', 'pages_show_list'];
 
 export const metaOAuth = {
   /** GET /meta/oauth/authorize (MetaOAuthController.java:54) */
@@ -3830,6 +4149,25 @@ export const metaOAuth = {
    *  keep compiling untouched; pass it explicitly once a caller has a callback's `accountType`. */
   setLocalConnectionState: (connected: boolean, scopes: string[], accountType: 'personal' | 'business' | null = null): void => {
     localStorage.setItem(META_CONNECTION_KEY, JSON.stringify({ connected, scopes, accountType }));
+  },
+
+  /**
+   * CR-54/CR-65 — single shared "where to return after the OAuth round-trip" marker, one key
+   * instead of a proliferating set of single-purpose ones (the same duplication class CR-34
+   * already paid for once in this codebase). The onboarding wizard keeps its own dedicated
+   * `creator_onboarding_meta_resume` flag (api.ts callers of it are unchanged) because it also
+   * drives wizard-step-specific logic on return, not just navigation — this key is for every
+   * other initiator (Co-pilot prompts, the Deal Room's Connect Instagram button, Settings) that
+   * just wants "send the creator back to where they started."
+   */
+  setConnectReturnTo: (path: string): void => {
+    sessionStorage.setItem('creator_meta_connect_return_to', path);
+  },
+  /** Read-and-clear — a stale marker must never misroute a later, unrelated connect attempt. */
+  consumeConnectReturnTo: (): string | null => {
+    const path = sessionStorage.getItem('creator_meta_connect_return_to');
+    sessionStorage.removeItem('creator_meta_connect_return_to');
+    return path;
   },
 };
 
@@ -3889,6 +4227,11 @@ export interface AffiliateEarningsSummary {
 export interface CreatorAffiliateEarningsResponse {
   earnings: AffiliateEarningRow[];
   summary: AffiliateEarningsSummary;
+  /** CR-83 — pagination metadata; summary always reflects the full history, not just this page. */
+  page: number;
+  limit: number;
+  totalElements: number;
+  hasMore: boolean;
 }
 
 export interface CreatorCampaignBrandSummary { workspaceId: string; name: string; logoUrl?: string | null }
@@ -3947,13 +4290,23 @@ export const creatorCoupons = {
 };
 
 export const affiliateEarnings = {
-  /** GET /creator/affiliate-earnings (CreatorAffiliateEarningController.java:28) */
-  get: () =>
+  /**
+   * GET /creator/affiliate-earnings (CreatorAffiliateEarningController.java:28)
+   * CR-83 — page/limit added; omit both for the server's own defaults (page 0, size 20).
+   */
+  get: (page?: number, limit?: number) =>
     isLive()
-      ? http.request<CreatorAffiliateEarningsResponse>('GET', '/creator/affiliate-earnings', { role: 'creator' })
+      ? http.request<CreatorAffiliateEarningsResponse>('GET', '/creator/affiliate-earnings', {
+          role: 'creator',
+          query: { page, limit },
+        })
       : mockOr<CreatorAffiliateEarningsResponse>({
           earnings: [],
           summary: { thisMonthSales: 0, thisMonthRevenue: 0, thisMonthCommission: 0, unsettledCommission: 0, currency: 'INR' },
+          page: 0,
+          limit: limit ?? 20,
+          totalElements: 0,
+          hasMore: false,
         }),
 };
 
@@ -3978,12 +4331,34 @@ export interface CreatorApplicationRow {
   dealId: string;
 }
 
+export interface CreatorApplicationsPage {
+  applications: CreatorApplicationRow[];
+  meta: { page: number; limit: number; total: number; hasMore: boolean };
+}
+
 export const creatorApplications = {
-  /** GET /creator/applications (CreatorApplicationController.java, new) — data=CreatorApplicationListItem[]. */
-  list: (): Promise<CreatorApplicationRow[]> =>
-    isLive()
-      ? http.request<CreatorApplicationRow[]>('GET', '/creator/applications', { role: 'creator' })
-      : mockOr<CreatorApplicationRow[]>([]),
+  /**
+   * GET /creator/applications (CreatorApplicationController.java:31) — data=CreatorApplicationListItem[],
+   * envelope.meta=page info. CR-58 — server paginates (defaultValue limit=50); uses `requestWithMeta`
+   * (not `request`) so callers can page through creators with 50+ applications instead of the
+   * list silently truncating with no notice — mirrors `creatorCampaigns.browse`.
+   */
+  list: async (page = 1, limit = 50): Promise<CreatorApplicationsPage> => {
+    if (!isLive()) return { applications: [], meta: { page, limit, total: 0, hasMore: false } };
+    const { data, meta } = await http.requestWithMeta<CreatorApplicationRow[]>('GET', '/creator/applications', {
+      role: 'creator',
+      query: { page, limit },
+    });
+    return {
+      applications: data,
+      meta: {
+        page: meta?.page ?? page,
+        limit: meta?.limit ?? limit,
+        total: meta?.total ?? data.length,
+        hasMore: Boolean(meta?.hasMore),
+      },
+    };
+  },
 };
 
 export const creatorCampaigns = {
@@ -4153,6 +4528,22 @@ export const creatorDeliverables = {
           role: 'creator', query: { collaboration_id: collaborationId },
         })
       : mockOr<CreatorDeliverableListItem[]>([]),
+
+  /**
+   * GET /creator/deliverables/bulk?collaboration_ids= (CreatorDeliverableController.java, CR-51).
+   * Batched counterpart to `listForDeal` — one request for many deal ids instead of one request
+   * per deal (the N+1 the creator dashboard's pending-deliverable rollup used to trigger on load).
+   * Returns a map keyed by collaboration id; ids the caller isn't allowed to see are simply absent
+   * from the map, so a missing key means "treat as no deliverables" (same as the mock fallback).
+   */
+  listForDeals: (collaborationIds: string[]) =>
+    isLive() && collaborationIds.length > 0
+      ? http.request<Record<string, CreatorDeliverableListItem[]>>(
+          'GET',
+          '/creator/deliverables/bulk',
+          { role: 'creator', query: { collaboration_ids: collaborationIds.join(',') } },
+        )
+      : mockOr<Record<string, CreatorDeliverableListItem[]>>({}),
 
   /**
    * POST /creator/deliverables/:id/upload — multipart (CreatorDeliverableController.java:55).
@@ -4372,14 +4763,17 @@ export const creatorDisputes = {
       ? http.request<CreatorDisputeRow[]>('GET', '/creator/disputes', { role: 'creator' })
       : mockOr(mockDisputeRows('creator')),
 
-  /** Eligible = funded escrow, not already disputed/completed/cancelled. */
-  listEligibleDeals: async (): Promise<Deal[]> => {
-    if (!isLive()) return mockOr(mockEligibleDeals);
-    const rows = await deals.list('creator', 'all');
-    return rows.filter(
-      (d) => d.escrowFunded && !['DISPUTED', 'COMPLETED', 'CANCELLED'].includes(d.status),
-    );
-  },
+  /**
+   * GET /creator/disputes/eligible-deals (CreatorDisputeController → DealService
+   * .listEligibleForDispute, CR-80) — eligible = funded escrow, not already disputed/completed/
+   * cancelled, computed server-side. Previously fetched the creator's ENTIRE deal history via
+   * `deals.list('creator', 'all')` and applied this same filter client-side, which scaled poorly
+   * for creators with a long deal history.
+   */
+  listEligibleDeals: (): Promise<Deal[]> =>
+    isLive()
+      ? http.request<Deal[]>('GET', '/creator/disputes/eligible-deals', { role: 'creator' })
+      : mockOr(mockEligibleDeals),
 
   /** POST /deals/:dealId/disputes (DealController.java:130) — either party may open. */
   open: (dealId: string, reason: string) =>

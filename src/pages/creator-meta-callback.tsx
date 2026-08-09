@@ -21,15 +21,38 @@ type CallbackState = 'loading' | 'success' | 'error';
  *  present, this connect was started from onboarding, so route back there. */
 const META_ONBOARDING_RESUME_KEY = 'creator_onboarding_meta_resume';
 
+/**
+ * CR-118 — Meta's `error`/`error_description` query params are attacker-controlled: this route
+ * carries no auth guard (`App.tsx:391`), so anyone can navigate here directly with an arbitrary
+ * `?error=` value and have it rendered back on an authenticated-looking page. Only a known Meta
+ * OAuth error code gets its own message; anything else — including the raw `error_description`
+ * text, which was reflected verbatim before this fix — falls through to one generic message.
+ * Codes per Meta's documented OAuth dialog errors + the ones this app has actually observed.
+ */
+const KNOWN_OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  access_denied: 'You declined the connection request.',
+  user_denied: 'You declined the connection request.',
+  server_error: 'Instagram/Facebook had a temporary issue on their end. Please try again.',
+  temporarily_unavailable: 'Instagram/Facebook is temporarily unavailable. Please try again shortly.',
+};
+const GENERIC_OAUTH_ERROR_MESSAGE = 'Could not connect your account. Please try again.';
+
 export default function CreatorMetaCallbackPage() {
   const navigate = useNavigate();
   const [state, setState] = React.useState<CallbackState>('loading');
   const [errorMessage, setErrorMessage] = React.useState('');
+  const [isRetrying, setIsRetrying] = React.useState(false);
   // Read once, on mount, before anything clears it.
   const [resumingOnboarding] = React.useState(
     () => localStorage.getItem(META_ONBOARDING_RESUME_KEY) === '1',
   );
-  const returnPath = resumingOnboarding ? '/creator/onboarding' : '/creator/settings';
+  // CR-65 — general "return to where this connect started" marker (Co-pilot, Deal Room, ...),
+  // read once up front for the same reason as the onboarding flag: a routing decision must be
+  // pinned to what was true when this page mounted, not to whatever the storage holds later.
+  const [generalReturnPath] = React.useState(() => api.metaOAuth.consumeConnectReturnTo());
+  const returnPath = resumingOnboarding
+    ? '/creator/onboarding'
+    : (generalReturnPath ?? '/creator/settings');
 
   // Consume the marker immediately — routing decisions use the captured `resumingOnboarding`
   // state, not the live flag. This guarantees a stale marker can never misroute a *later*
@@ -37,6 +60,21 @@ export default function CreatorMetaCallbackPage() {
   React.useEffect(() => {
     localStorage.removeItem(META_ONBOARDING_RESUME_KEY);
   }, []);
+
+  const handleRetry = async () => {
+    setIsRetrying(true);
+    try {
+      // CR-66 — re-run the OAuth authorize flow itself rather than just navigating back to
+      // Settings and stranding the creator to find the Connect button again by hand.
+      const { authorizationUrl } = await api.metaOAuth.authorize();
+      window.location.href = authorizationUrl;
+    } catch (err) {
+      setIsRetrying(false);
+      setErrorMessage(
+        err instanceof ApiError ? err.message : 'Could not restart the connection. Please try again.',
+      );
+    }
+  };
 
   React.useEffect(() => {
     let cancelled = false;
@@ -62,7 +100,15 @@ export default function CreatorMetaCallbackPage() {
       // on a missing `code` param.
       if (oauthError) {
         if (!cancelled) {
-          setErrorMessage(oauthError);
+          // CR-118 — never echo the raw param; only a recognized code gets its own message.
+          const errorCode = params.get('error');
+          setErrorMessage(
+            (errorCode && KNOWN_OAUTH_ERROR_MESSAGES[errorCode]) || GENERIC_OAUTH_ERROR_MESSAGE,
+          );
+          // CR-109 — a failed (re)connect attempt must not leave a stale connected:true mirror
+          // from a previous successful connection; the app would keep gating features as if
+          // still connected when this attempt just failed.
+          api.metaOAuth.setLocalConnectionState(false, [], null);
           setState('error');
         }
         return;
@@ -79,7 +125,11 @@ export default function CreatorMetaCallbackPage() {
       try {
         const result = await api.metaOAuth.callback(code, state);
         if (cancelled) return;
-        api.metaOAuth.setLocalConnectionState(result.connected, result.grantedScopes);
+        // CR-105 — accountType was previously dropped here (called with only 2 args), which is
+        // why `requiresBusinessAccount` (useDailySuggestion.ts) could never observe 'personal'
+        // and the explanatory screen for a personal-IG creator never rendered — they looped on
+        // the connect prompt forever. Same root cause CR-63 names on the High-severity row.
+        api.metaOAuth.setLocalConnectionState(result.connected, result.grantedScopes, result.accountType ?? null);
         setState('success');
         // Started from onboarding? Send the creator straight back into the wizard,
         // which reads the persisted connection state and advances Step 1. (CR-120)
@@ -92,6 +142,8 @@ export default function CreatorMetaCallbackPage() {
         setErrorMessage(
           err instanceof ApiError ? err.message : 'Could not complete the connection. Please try again.',
         );
+        // CR-109 — see the identical fix/reasoning in the oauthError branch above.
+        api.metaOAuth.setLocalConnectionState(false, [], null);
         setState('error');
       }
     }
@@ -128,21 +180,36 @@ export default function CreatorMetaCallbackPage() {
             </CardDescription>
           </CardHeader>
           {state !== 'loading' && (
-            <CardContent className="flex justify-center">
+            <CardContent className="flex flex-col items-center gap-2">
               <Button
                 onClick={() => {
+                  if (state === 'error' && !resumingOnboarding) {
+                    // CR-66 — retry the connection itself, not just navigate away from the
+                    // failure. `resumingOnboarding` keeps its own behavior: the wizard has its
+                    // own Connect button, so returning there already offers a real retry.
+                    void handleRetry();
+                    return;
+                  }
                   localStorage.removeItem(META_ONBOARDING_RESUME_KEY);
                   navigate(returnPath);
                 }}
+                disabled={isRetrying}
               >
-                {state === 'success'
-                  ? resumingOnboarding
-                    ? 'Back to onboarding'
-                    : 'Back to Settings'
-                  : resumingOnboarding
-                    ? 'Back to onboarding'
-                    : 'Try Again'}
+                {isRetrying ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : state === 'success' ? (
+                  resumingOnboarding ? 'Back to onboarding' : returnPath === '/creator/settings' ? 'Back to Settings' : 'Back'
+                ) : resumingOnboarding ? (
+                  'Back to onboarding'
+                ) : (
+                  'Try Again'
+                )}
               </Button>
+              {state === 'error' && !resumingOnboarding && (
+                <Button variant="ghost" size="sm" onClick={() => navigate(returnPath)}>
+                  {returnPath === '/creator/settings' ? 'Back to Settings' : 'Back'}
+                </Button>
+              )}
             </CardContent>
           )}
         </Card>
