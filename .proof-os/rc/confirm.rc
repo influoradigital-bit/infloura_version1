@@ -1,1 +1,1 @@
-exit=1 pid=4276 ended=2026-08-09T20:33:29Z observed=sys.exit
+exit=0 pid=1680 ended=2026-08-10T06:12:07Z observed=sys.exit
