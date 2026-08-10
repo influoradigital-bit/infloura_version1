@@ -341,9 +341,16 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
           <header className="sticky top-0 z-40 flex h-[var(--app-header-h)] items-center justify-between border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 sm:px-6">
             {/* Mobile: hamburger + logo */}
             <div className="flex items-center gap-3 lg:hidden">
+              {/* F-0167 — this button had no accessible name (no aria-label, no text child,
+                  icon rendered aria-hidden) so a screen reader announced it as an unnamed
+                  "button" — WCAG 2.1 AA 4.1.2. aria-label + aria-expanded now reflect the
+                  actual open/closed state, matching the icon that's already state-driven. */}
               <button
+                type="button"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 className="p-1.5 hover:bg-accent rounded-lg transition-colors"
+                aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+                aria-expanded={mobileMenuOpen}
               >
                 {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </button>
