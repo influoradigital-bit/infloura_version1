@@ -281,7 +281,13 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
                   className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 hover:bg-sidebar-accent transition-colors"
                 >
                   <span className="sr-only">Open account menu</span>
-                  <Avatar className="h-7 w-7">
+                  {/* F-0179 — the initials text ('PS') and avatar image previously leaked into
+                      the composed accessible name alongside the sr-only label and the real
+                      display name (e.g. "Open account menu PS Priya Sharma"), announcing
+                      redundant letters. Purely decorative once the sr-only label + visible
+                      name already convey who/what this is — aria-hidden removes it from the
+                      accessible-name computation without touching the visible avatar. */}
+                  <Avatar className="h-7 w-7" aria-hidden="true">
                     <AvatarImage src={identity.avatarUrl ?? undefined} />
                     {/* CR-06 — no 'IN' fallback. An unknown creator gets a blank
                         tinted circle, not another user's initials. */}

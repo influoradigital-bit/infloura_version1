@@ -93,4 +93,29 @@ describe('CreatorLayout — desktop sidebar account trigger accessible name (F-0
     const trigger = screen.getByTestId('creator-sidebar-account-trigger');
     expect(trigger).toHaveAccessibleName(/Priya Sharma/);
   });
+
+  it('F-0179: composed accessible name excludes the decorative avatar initials', async () => {
+    vi.resetModules();
+    localStorage.setItem('creator_token', 'test-token');
+    // 'Priya Sharma' -> initials 'PS' would leak in as redundant letters if the Avatar weren't
+    // marked aria-hidden — assert the exact composed name, not just a substring match, so a
+    // regression that reintroduces the initials ("Open account menu PS Priya Sharma") is caught.
+    renderShell(() =>
+      Promise.resolve({ displayName: 'Priya Sharma', username: 'priya_creates', avatarUrl: null }),
+    );
+    const { CreatorLayout: FreshLayout } = await import('./creator-layout');
+
+    render(
+      <MemoryRouter initialEntries={['/creator/dashboard']}>
+        <FreshLayout>
+          <div>page content</div>
+        </FreshLayout>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByText('Priya Sharma')).toBeInTheDocument());
+
+    const trigger = screen.getByTestId('creator-sidebar-account-trigger');
+    expect(trigger).toHaveAccessibleName('Open account menu Priya Sharma');
+  });
 });
