@@ -262,10 +262,25 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
           <div className="border-t border-sidebar-border p-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
+                {/* F-0170 — this button's accessible name was empty while identity.displayName
+                    was still null (the visible content was a bare skeleton span, no text) —
+                    WCAG 2.1 AA 4.1.2. Unlike F-0169's mobile avatar trigger, this one already has
+                    real visible label text once resolved (the displayName paragraph below), so a
+                    plain aria-label would override it and violate WCAG 2.1 AA 2.5.3 Label in Name
+                    (a voice-control user saying the name they see wouldn't match the accessible
+                    name). An unconditional sr-only span composes into the accessible name instead
+                    of replacing it — always non-empty, and the visible name stays included once
+                    resolved. Wording deliberately differs from the mobile avatar trigger's
+                    "Account menu" (F-0169) — jsdom renders both hidden lg:flex / lg:hidden
+                    siblings at once with no CSS breakpoint evaluation, so identical accessible
+                    names would collide in test tooling even though a real browser only ever
+                    shows one at a time. */}
                 <button
+                  type="button"
                   data-testid="creator-sidebar-account-trigger"
                   className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 hover:bg-sidebar-accent transition-colors"
                 >
+                  <span className="sr-only">Open account menu</span>
                   <Avatar className="h-7 w-7">
                     <AvatarImage src={identity.avatarUrl ?? undefined} />
                     {/* CR-06 — no 'IN' fallback. An unknown creator gets a blank
@@ -409,7 +424,17 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
               {/* Mobile user menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="lg:hidden p-0.5 rounded-full hover:ring-2 hover:ring-ring transition-all">
+                  {/* F-0169 — icon/avatar-only, no text child; without an explicit label the
+                      accessible name was empty (or, worse, a bare initials string like "PS"
+                      that reads as a name, not a control) — WCAG 2.1 AA 4.1.2. aria-label is a
+                      fixed string, not derived from identity, so it's present immediately, not
+                      only once the avatar/initials resolve (contrast F-0170, which is exactly
+                      that dependency on the desktop trigger). */}
+                  <button
+                    type="button"
+                    className="lg:hidden p-0.5 rounded-full hover:ring-2 hover:ring-ring transition-all"
+                    aria-label="Account menu"
+                  >
                     <Avatar className="h-7 w-7">
                       <AvatarImage src={identity.avatarUrl ?? undefined} />
                       {/* CR-06 — see the desktop trigger above; no 'IN' fallback. */}
