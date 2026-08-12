@@ -34,16 +34,7 @@ import type { CreatorCampaignDetail } from '@/lib/api';
 import { api, ApiError } from '@/lib/api';
 import { formatINR } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-
-const APPLICATION_STATUS_LABELS: Record<string, string> = {
-  APPLIED: 'Applied',
-  SHORTLISTED: 'Shortlisted',
-  IN_NEGOTIATION: 'In negotiation',
-  TERMS_AGREED: 'Terms agreed',
-  CONTRACT_PENDING: 'Contract pending',
-  CONTRACTED: 'Contracted',
-  INVITED: 'Invited',
-};
+import { getApplicationStatusLabel } from '@/lib/application-status';
 
 function formatDate(value: string | null): string {
   if (!value) return 'TBD';
@@ -349,8 +340,13 @@ export default function CreatorCampaignDetailPage() {
                     <div className="rounded-lg border border-border bg-muted/50 p-4 text-center">
                       <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-success-foreground" />
                       <p className="font-medium">
-                        {APPLICATION_STATUS_LABELS[campaign.applicationStatus!] ??
-                          campaign.applicationStatus}
+                        {/* CR-55/F-0105: this used to keep its own drifted copy of the status
+                            label map and fall back to the raw backend enum string when a
+                            status wasn't in it — so a cancelled application literally
+                            rendered "CANCELLED", the exact thing the platform-wide
+                            never-show-Rejected/Cancelled rule (src/lib/application-status.ts)
+                            exists to prevent. Uses the canonical, always-labeled map now. */}
+                        {getApplicationStatusLabel(campaign.applicationStatus!)}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         You&apos;ve already applied to this campaign.

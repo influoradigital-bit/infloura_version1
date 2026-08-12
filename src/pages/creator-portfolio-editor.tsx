@@ -162,15 +162,34 @@ export default function CreatorPortfolioEditorPage() {
     }
   };
 
+  /**
+   * CR-84 — `syncPlatforms` now does a real Meta Graph API fetch + platform_stats upsert
+   * server-side (PortfolioService.java), so this call can genuinely fail for reasons beyond a
+   * rate limit — no connected account, an expired token, or a live Meta API error. Map each real
+   * error code to an honest message instead of the old one-size-fits-all "Sync limit reached",
+   * and re-fetch the page/analytics after a real success so the editor reflects what the sync
+   * actually wrote rather than stale client-side numbers.
+   */
   const handleSync = async () => {
     setSyncing(true);
     try {
       await api.portfolio.syncPlatforms();
+      const [p, a] = await Promise.all([api.portfolio.getMine(), api.portfolio.analytics()]);
+      setPage(p as PortfolioPage);
+      setAnalytics(a as PortfolioAnalytics);
       toast({ title: 'Synced', description: 'Platform stats refreshed.' });
-    } catch {
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : undefined;
+      const messages: Record<string, string> = {
+        NOT_CONNECTED: 'Connect your Instagram account first, then sync.',
+        TOKEN_EXPIRED: 'Your Instagram connection expired — reconnect to sync.',
+        META_RATE_LIMITED: 'Instagram sync is temporarily rate-limited. Try again shortly.',
+      };
       toast({
-        title: 'Sync limit reached',
-        description: 'You can manually sync once per hour.',
+        title: "Couldn't sync",
+        description:
+          (code && messages[code]) ||
+          (err instanceof ApiError ? err.message : 'Please try again in a moment.'),
         variant: 'destructive',
       });
     } finally {

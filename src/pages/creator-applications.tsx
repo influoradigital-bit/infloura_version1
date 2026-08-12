@@ -97,18 +97,33 @@ export default function CreatorApplicationsPage() {
             Every campaign you&rsquo;ve applied to, and where it stands.
           </p>
           {/* CR-59 — this page's source (Collaboration.source = APPLICATION) deliberately
-              excludes brand-initiated invites by design, so there is no way to reach one from
-              here even though `applicationStatus: 'INVITED'` is a real, labeled status
-              elsewhere (CreatorBrowseCampaignCard). A dedicated /creator/invites surface is
-              real backend work (a new query scoped to invite-sourced rows), out of proportion
-              here — this cross-link at least tells a creator where to actually find one instead
-              of leaving them with no path at all. */}
+              excludes brand-initiated invites by design (my-applications-plan-2026-07-24.md).
+              That's not a dead end, though: an invite is a `Collaboration` with
+              status=INVITED/source=INVITATION, which already has its own dedicated,
+              fully-actionable surface — the "New" tab on /creator/deals (DealService's
+              "new" filter resolves to exactly `[INVITED]` for CREATOR role, and
+              `DealRow` there renders real Accept/Decline buttons wired to
+              POST /deals/:id/accept and /reject — gated on `deal.status === 'new'`, i.e.
+              deal-stage.ts's mapCollaborationStatusToDealStage (re-exported, not
+              redefined, by creator-deal-mappers.ts), NOT that same file's
+              ACCEPTABLE_COLLABORATION_STATUSES, which this page never imports;
+              harmless for INVITED since both agree, but don't extend this cross-link's
+              reasoning to other statuses without checking the DealStage mapping first —
+              APPLIED/SHORTLISTED/IN_NEGOTIATION are server-acceptable but map to
+              'negotiating', which renders no Accept button here at all).
+              The previous version of this cross-link pointed at Discover Campaigns, which
+              only ever renders a static "Invited" badge (CreatorBrowseCampaignCard.tsx)
+              with no action at all — a real dead end. Point at the surface that actually
+              lets a creator act on the invite instead of reinventing that flow here. */}
           <p className="mt-1 text-xs text-muted-foreground">
-            Brand invites don&rsquo;t show up here — check{' '}
-            <Link to="/creator/campaigns" className="font-medium underline underline-offset-2 hover:text-foreground">
-              Discover Campaigns
+            Brand invites don&rsquo;t show up here — check the{' '}
+            <Link
+              to="/creator/deals?status=new"
+              className="font-medium underline underline-offset-2 hover:text-foreground"
+            >
+              New tab in Deals
             </Link>
-            {' '}for any pending invites.
+            {' '}to view and respond to any pending invites.
           </p>
         </FadeUp>
 

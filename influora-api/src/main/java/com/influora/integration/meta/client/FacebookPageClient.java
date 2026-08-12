@@ -2,6 +2,7 @@ package com.influora.integration.meta.client;
 
 import com.influora.integration.meta.dto.FacebookAccountsListResponse;
 import com.influora.integration.meta.dto.FacebookPageResponse;
+import com.influora.integration.meta.dto.MetaPermissionsResponse;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
@@ -62,5 +63,16 @@ public class FacebookPageClient {
             }
         }
         return null;
+    }
+
+    /**
+     * Fetches the scopes actually granted/declined for this token ({@code GET /me/permissions},
+     * CR-104) — the only way to know what a creator really approved in the OAuth dialog, as
+     * opposed to what {@code MetaOAuthService.REQUIRED_SCOPES} merely requested. Callers filter
+     * on {@link MetaPermissionsResponse.Permission#isGranted()} themselves; this method returns
+     * the raw list (both granted and declined entries) unfiltered.
+     */
+    public MetaPermissionsResponse fetchPermissions(String accessToken) {
+        return apiClient.get("/me/permissions", accessToken, MetaPermissionsResponse.class, "me");
     }
 }

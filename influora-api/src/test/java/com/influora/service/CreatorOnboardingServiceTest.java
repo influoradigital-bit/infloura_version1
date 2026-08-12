@@ -11,7 +11,6 @@ import com.influora.common.ApiException;
 import com.influora.domain.entity.CreatorBankAccount;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.repository.CreatorProfileRepository;
-import com.influora.repository.PlatformStatRepository;
 import com.influora.repository.UserRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.payout.CreatorBankAccountService;
@@ -19,6 +18,7 @@ import com.influora.web.dto.onboarding.OnboardingDtos.CreatorKycRequest;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorPayoutRequest;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorPayoutResponse;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorProfileRequest;
+import com.influora.web.dto.onboarding.OnboardingDtos.CreatorSocialRequest;
 import com.influora.web.dto.onboarding.OnboardingDtos.KycResponse;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 
 /**
  * N1 (Wave 6) — covers the parts of CreatorOnboardingService with actual branching logic: the
@@ -43,7 +44,6 @@ class CreatorOnboardingServiceTest {
 
     @Mock private CreatorContextService creatorContext;
     @Mock private CreatorProfileRepository creatorProfileRepository;
-    @Mock private PlatformStatRepository platformStatRepository;
     @Mock private UserRepository userRepository;
     @Mock private CreatorBankAccountService creatorBankAccountService;
     @Mock private AuthPrincipal principal;
@@ -57,13 +57,37 @@ class CreatorOnboardingServiceTest {
                 new CreatorOnboardingService(
                         creatorContext,
                         creatorProfileRepository,
-                        platformStatRepository,
                         userRepository,
                         creatorBankAccountService);
         profile = CreatorProfile.newForUser("prof_1", CREATOR_USER_ID, "Priya Creates");
         // lenient: the payout-method tests below don't touch creatorContext at all (savePayout
         // goes straight to CreatorBankAccountService, which does its own principal resolution).
         org.mockito.Mockito.lenient().when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+    }
+
+    @Test
+    @DisplayName(
+            "connectSocial (CR-108) refuses every platform with a typed NOT_IMPLEMENTED instead of"
+                    + " fabricating a followers(0)/verified(false) row")
+    void testConnectSocialRefusesFabricatedConnectionForUnimplementedPlatform() {
+        CreatorSocialRequest req = new CreatorSocialRequest("YOUTUBE", "mock_oauth_code");
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.connectSocial(principal, req));
+
+        assertEquals("SOCIAL_OAUTH_NOT_IMPLEMENTED", ex.getCode());
+        assertEquals(HttpStatus.NOT_IMPLEMENTED, ex.getStatus());
+        verify(creatorContext).requireCreatorProfile(principal);
+    }
+
+    @Test
+    @DisplayName("connectSocial (CR-108) refuses INSTAGRAM here too — that platform's real OAuth is"
+            + " a separate dedicated endpoint (MetaOAuthController), not this one")
+    void testConnectSocialRefusesInstagramToo() {
+        CreatorSocialRequest req = new CreatorSocialRequest("INSTAGRAM", "mock_oauth_code");
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.connectSocial(principal, req));
+
+        assertEquals("SOCIAL_OAUTH_NOT_IMPLEMENTED", ex.getCode());
     }
 
     @Test

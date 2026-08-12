@@ -10,14 +10,22 @@ import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
 import com.influora.config.R2Properties;
+import com.influora.domain.entity.CreatorMetric;
 import com.influora.domain.entity.CreatorProfile;
+import com.influora.domain.entity.MetaOAuthToken;
+import com.influora.domain.entity.PlatformStat;
 import com.influora.domain.enums.CollaborationStatus;
+import com.influora.integration.meta.client.InstagramInsightsClient;
+import com.influora.integration.meta.dto.InstagramUserResponse;
+import com.influora.integration.meta.oauth.MetaTokenStorage;
 import com.influora.integration.storage.R2StorageService;
 import com.influora.repository.AudienceDemographicsRepository;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
+import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.DeliverableRepository;
+import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.domain.entity.PortfolioEvent;
 import com.influora.domain.enums.PortfolioEventType;
 import com.influora.repository.PlatformStatRepository;
@@ -30,7 +38,10 @@ import com.influora.service.CreatorContextService;
 import com.influora.service.CreatorProfileService;
 import com.influora.service.security.NoOpMalwareScanService;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioAnalyticsResponse;
+import com.influora.web.dto.portfolio.PortfolioDtos.SyncPlatformsResponse;
 import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -61,6 +72,10 @@ class PortfolioServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private DeliverableRepository deliverableRepository;
     @Mock private PortfolioEventRepository portfolioEventRepository;
+    @Mock private MetaOAuthTokenRepository metaOAuthTokenRepository;
+    @Mock private MetaTokenStorage metaTokenStorage;
+    @Mock private InstagramInsightsClient instagramInsightsClient;
+    @Mock private CreatorMetricsRepository creatorMetricsRepository;
 
     private PortfolioService service;
 
@@ -83,7 +98,11 @@ class PortfolioServiceTest {
                         eventPublisher,
                         userRepository,
                         deliverableRepository,
-                        portfolioEventRepository);
+                        portfolioEventRepository,
+                        metaOAuthTokenRepository,
+                        metaTokenStorage,
+                        instagramInsightsClient,
+                        creatorMetricsRepository);
     }
 
     @Test
@@ -237,5 +256,98 @@ class PortfolioServiceTest {
         service.recordPublicView("hidden_creator");
 
         verify(portfolioEventRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName(
+            "CR-84: syncPlatforms throws NOT_CONNECTED instead of a fake success when the creator"
+                    + " has no connected Instagram account")
+    void syncPlatforms_noConnectedAccount_throwsNotConnected() {
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Real Creator");
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        when(metaOAuthTokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(PROFILE_ID))
+                .thenReturn(Optional.empty());
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.syncPlatforms(principal));
+
+        assertEquals("NOT_CONNECTED", ex.getCode());
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        verify(instagramInsightsClient, never()).getProfile(any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "CR-84: syncPlatforms throws TOKEN_EXPIRED instead of a fake success when the stored"
+                    + " token has expired/been revoked")
+    void syncPlatforms_expiredToken_throwsTokenExpired() {
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Real Creator");
+        MetaOAuthToken tokenRow =
+                MetaOAuthToken.builder()
+                        .id("01HTOKEN1234567890ABCDE")
+                        .creatorProfileId(PROFILE_ID)
+                        .igBusinessAccountId("17841400000000000")
+                        .encryptedAccessToken("cipher")
+                        .expiresAt(Instant.now().plusSeconds(3600))
+                        .build();
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        when(metaOAuthTokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(PROFILE_ID))
+                .thenReturn(Optional.of(tokenRow));
+        when(metaTokenStorage.getValidCreatorToken(PROFILE_ID)).thenReturn(Optional.empty());
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.syncPlatforms(principal));
+
+        assertEquals("TOKEN_EXPIRED", ex.getCode());
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        verify(instagramInsightsClient, never()).getProfile(any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "CR-84: syncPlatforms performs a real Meta Graph API fetch and upserts platform_stats"
+                    + " instead of returning a fabricated success with no data change")
+    void syncPlatforms_connected_fetchesLiveDataAndUpsertsStats() {
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Real Creator");
+        MetaOAuthToken tokenRow =
+                MetaOAuthToken.builder()
+                        .id("01HTOKEN1234567890ABCDE")
+                        .creatorProfileId(PROFILE_ID)
+                        .igBusinessAccountId("17841400000000000")
+                        .encryptedAccessToken("cipher")
+                        .expiresAt(Instant.now().plusSeconds(3600))
+                        .build();
+        InstagramUserResponse igProfile =
+                new InstagramUserResponse(
+                        "17841400000000000", "real_creator", "Real Creator", "bio", 5000L, 200L, 42L, null, null);
+
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        when(metaOAuthTokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(PROFILE_ID))
+                .thenReturn(Optional.of(tokenRow));
+        when(metaTokenStorage.getValidCreatorToken(PROFILE_ID)).thenReturn(Optional.of("plaintext-token"));
+        when(instagramInsightsClient.getProfile("17841400000000000", "plaintext-token")).thenReturn(igProfile);
+        when(platformStatRepository.findByCreatorProfileIdAndPlatform(PROFILE_ID, "INSTAGRAM"))
+                .thenReturn(Optional.empty());
+        when(platformStatRepository.findByCreatorProfileId(PROFILE_ID))
+                .thenReturn(List.of(PlatformStat.builder().followers(5000L).build()));
+
+        SyncPlatformsResponse response = service.syncPlatforms(principal);
+
+        assertEquals(5000L, profile.getTotalFollowers());
+
+        ArgumentCaptor<CreatorMetric> metricCaptor = ArgumentCaptor.forClass(CreatorMetric.class);
+        verify(creatorMetricsRepository).save(metricCaptor.capture());
+        assertEquals(5000L, metricCaptor.getValue().getFollowers());
+        assertEquals("real_creator", metricCaptor.getValue().getUsername());
+        assertEquals("INSTAGRAM", metricCaptor.getValue().getPlatform());
+
+        ArgumentCaptor<PlatformStat> statCaptor = ArgumentCaptor.forClass(PlatformStat.class);
+        verify(platformStatRepository).save(statCaptor.capture());
+        assertEquals(5000L, statCaptor.getValue().getFollowers());
+        assertEquals("real_creator", statCaptor.getValue().getHandle());
+
+        verify(creatorProfileRepository).save(profile);
+        org.junit.jupiter.api.Assertions.assertNotNull(response.syncedAt());
     }
 }

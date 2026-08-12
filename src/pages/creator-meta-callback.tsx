@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 import { CreatorLayout } from '@/components/creator/creator-layout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,15 @@ export default function CreatorMetaCallbackPage() {
   const navigate = useNavigate();
   const [state, setState] = React.useState<CallbackState>('loading');
   const [errorMessage, setErrorMessage] = React.useState('');
+  // CR-103/F-0116: the callback previously moved to the 'success' state (and the "Brands can
+  // now see your verified Instagram and Facebook metrics" copy) unconditionally after ANY 200
+  // response — including the NO_BUSINESS_ACCOUNT case, where the server correctly reports
+  // `connected: false` for a personal Instagram account. Tracked separately from `state` so the
+  // success ICON/heading/routing stay unchanged and only the claim being made changes.
+  const [connectedAccountType, setConnectedAccountType] = React.useState<
+    'personal' | 'business' | null
+  >(null);
+  const [serverReportedConnected, setServerReportedConnected] = React.useState(true);
   const [isRetrying, setIsRetrying] = React.useState(false);
   // Read once, on mount, before anything clears it.
   const [resumingOnboarding] = React.useState(
@@ -64,6 +73,18 @@ export default function CreatorMetaCallbackPage() {
   const handleRetry = async () => {
     setIsRetrying(true);
     try {
+      // F-0168 — the general-return-path marker was already read-and-cleared at mount
+      // (generalReturnPath above), so a plain re-authorize() here would redirect through a
+      // SECOND callback mount with nothing left to consume, silently falling back to Settings
+      // even though this retry started from the same deal-room/Co-pilot context as the
+      // original attempt. Re-persist it (and the onboarding flag, which was cleared the same
+      // way) before redirecting, so the retried round-trip returns to the same place the first
+      // one would have.
+      if (resumingOnboarding) {
+        localStorage.setItem(META_ONBOARDING_RESUME_KEY, '1');
+      } else if (generalReturnPath) {
+        api.metaOAuth.setConnectReturnTo(generalReturnPath);
+      }
       // CR-66 — re-run the OAuth authorize flow itself rather than just navigating back to
       // Settings and stranding the creator to find the Connect button again by hand.
       const { authorizationUrl } = await api.metaOAuth.authorize();
@@ -100,11 +121,23 @@ export default function CreatorMetaCallbackPage() {
       // on a missing `code` param.
       if (oauthError) {
         if (!cancelled) {
-          // CR-118 — never echo the raw param; only a recognized code gets its own message.
+          // CR-118 / F-0181 — never echo the raw param; only a recognized code gets its own
+          // message. A bare `KNOWN_OAUTH_ERROR_MESSAGES[errorCode]` bracket lookup is NOT
+          // enough: this route carries no auth guard, so `errorCode` is fully
+          // attacker-controlled, and a value matching an Object.prototype member
+          // (`__proto__`, `constructor`, `toString`, `valueOf`, `hasOwnProperty`, ...) returns
+          // a truthy non-string that short-circuits the `||` fallback below — measured to
+          // crash the render (`?error=__proto__`), render the literal string
+          // "[object Undefined]" (`?error=toString`), or silently render nothing
+          // (`?error=constructor`). `hasOwnProperty.call` + a runtime `typeof` guard is what
+          // actually makes "every other value falls through to the generic message" hold —
+          // TypeScript's static `string` typing does not catch this at compile time.
           const errorCode = params.get('error');
-          setErrorMessage(
-            (errorCode && KNOWN_OAUTH_ERROR_MESSAGES[errorCode]) || GENERIC_OAUTH_ERROR_MESSAGE,
-          );
+          const knownMessage =
+            errorCode && Object.prototype.hasOwnProperty.call(KNOWN_OAUTH_ERROR_MESSAGES, errorCode)
+              ? KNOWN_OAUTH_ERROR_MESSAGES[errorCode]
+              : undefined;
+          setErrorMessage(typeof knownMessage === 'string' ? knownMessage : GENERIC_OAUTH_ERROR_MESSAGE);
           // CR-109 — a failed (re)connect attempt must not leave a stale connected:true mirror
           // from a previous successful connection; the app would keep gating features as if
           // still connected when this attempt just failed.
@@ -130,10 +163,18 @@ export default function CreatorMetaCallbackPage() {
         // and the explanatory screen for a personal-IG creator never rendered — they looped on
         // the connect prompt forever. Same root cause CR-63 names on the High-severity row.
         api.metaOAuth.setLocalConnectionState(result.connected, result.grantedScopes, result.accountType ?? null);
+        setServerReportedConnected(result.connected);
+        setConnectedAccountType(result.accountType ?? null);
         setState('success');
         // Started from onboarding? Send the creator straight back into the wizard,
         // which reads the persisted connection state and advances Step 1. (CR-120)
-        if (resumingOnboarding) {
+        // F-0164: this fired regardless of result.connected — a personal-account creator who
+        // started the connect from onboarding was redirected straight back into the wizard
+        // before ever seeing the "Business account needed" explanation above (F-0116), silently
+        // skipping the one screen that would tell them why. Only auto-advance on an actual
+        // connection; a `connected: false` response leaves this screen up so the creator sees
+        // it, and the "Back to onboarding" button below still gets them back manually.
+        if (resumingOnboarding && result.connected) {
           localStorage.removeItem(META_ONBOARDING_RESUME_KEY);
           navigate('/creator/onboarding', { replace: true });
         }
@@ -162,20 +203,33 @@ export default function CreatorMetaCallbackPage() {
             {state === 'loading' && (
               <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" aria-hidden="true" />
             )}
-            {state === 'success' && (
+            {state === 'success' && serverReportedConnected && (
               <CheckCircle2 className="h-10 w-10 text-success-foreground" aria-hidden="true" />
+            )}
+            {state === 'success' && !serverReportedConnected && (
+              <AlertTriangle className="h-10 w-10 text-warning-foreground" aria-hidden="true" />
             )}
             {state === 'error' && (
               <XCircle className="h-10 w-10 text-destructive-foreground" aria-hidden="true" />
             )}
             <CardTitle className="text-lg">
               {state === 'loading' && 'Connecting your account…'}
-              {state === 'success' && 'Account connected'}
+              {state === 'success' &&
+                (serverReportedConnected
+                  ? 'Account connected'
+                  : connectedAccountType === 'personal'
+                    ? 'Business account needed'
+                    : 'Connection incomplete')}
               {state === 'error' && 'Connection failed'}
             </CardTitle>
             <CardDescription role="status" aria-live="polite">
               {state === 'loading' && 'Hang tight while we finish linking Instagram and Facebook.'}
-              {state === 'success' && 'Brands can now see your verified Instagram and Facebook metrics.'}
+              {state === 'success' &&
+                (serverReportedConnected
+                  ? 'Brands can now see your verified Instagram and Facebook metrics.'
+                  : connectedAccountType === 'personal'
+                    ? 'Instagram is connected, but brands need a Business or Creator account linked to a Facebook Page before they can see your metrics. Switch account types in the Instagram app, then reconnect.'
+                    : "We couldn't verify full access to your Instagram metrics. Please try reconnecting.")}
               {state === 'error' && errorMessage}
             </CardDescription>
           </CardHeader>

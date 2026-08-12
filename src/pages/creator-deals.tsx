@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Building2,
   CheckCircle2,
@@ -204,6 +204,7 @@ export const mockDeals: DealRoom[] = [
 export default function CreatorDealsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   const [deals, setDeals] = React.useState<DealRoom[]>([]);
   /**
    * CR-12 — the unfiltered deal set, used ONLY for the chip badges and the
@@ -217,7 +218,18 @@ export default function CreatorDealsPage() {
    * own unfiltered read.
    */
   const [allDeals, setAllDeals] = React.useState<DealRoom[]>([]);
-  const [activeFilter, setActiveFilter] = React.useState<DealStatusFilter>('all');
+  // F-0168-followup — App.tsx's /creator/inbox → ?status=new and /creator/active →
+  // ?status=in_progress redirects (and CR-59's My-Applications "check the New tab" cross-link)
+  // all asserted a `?status=` query param would land the creator on that tab. It never did:
+  // this state used to ignore the URL entirely and always start on 'all'. Seed from it once, on
+  // mount, validated against the real chip ids so a garbage/stale value can't set an invalid
+  // filter — falls back to 'all' exactly like before if the param is absent or unrecognized.
+  const [activeFilter, setActiveFilter] = React.useState<DealStatusFilter>(() => {
+    const requested = searchParams.get('status');
+    return STATUS_CHIPS.some((chip) => chip.id === requested)
+      ? (requested as DealStatusFilter)
+      : 'all';
+  });
   const [search, setSearch] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [actionLoading, setActionLoading] = React.useState<string | null>(null);

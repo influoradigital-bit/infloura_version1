@@ -2,6 +2,74 @@
 
 New/changed endpoints logged here, newest first.
 
+## 2026-08-10 — `POST /me/portfolio/sync` behavior change (CR-84), `GET /me/portfolio/analytics` labeling (CR-71)
+
+**Task:** CR-84 (Medium) — `PortfolioService.syncPlatforms()` was a documented no-op (validated the
+profile existed, returned a fabricated `syncedAt` timestamp, touched no data). It now does a real
+on-demand refresh reusing the existing creator-owned Meta OAuth pipeline (`MetaOAuthTokenRepository`
+creator key-space, `MetaTokenStorage#getValidCreatorToken`, `InstagramInsightsClient#getProfile`):
+fetches a live Instagram profile snapshot, writes a `creator_metrics` row, and upserts the
+corresponding `platform_stats` row + `creator_profiles` denormalized totals — the same upsert shape
+`PlatformStatsAggregationJob` performs on its nightly schedule, just synchronous here. No schema
+change (no migration) — only new writers, via existing repositories, to existing tables.
+
+CR-71 (Medium) — confirmed already fixed on this branch prior to this pass:
+`PortfolioAnalyticsResponse.profileClicksEstimated` (always `true`, since `profileClicks` is a
+`totalFollowers / 100` proxy with no real click-tracking event behind it) was already wired end to
+end — server sets the flag, `creator-portfolio-editor.tsx`'s `Stat` component already renders an
+"Estimated from follower count" note from it. No further backend change needed; verified only.
+
+**Endpoint contract is unchanged** — same `SyncPlatformsResponse { syncedAt }` shape — but the
+endpoint can now genuinely fail where it previously always returned 200:
+
+| Code | Status | When |
+|---|---|---|
+| `NOT_CONNECTED` | 409 | No creator-owned Meta OAuth token row, or one with no `igBusinessAccountId` on file |
+| `TOKEN_EXPIRED` | 409 | Token row exists but is expired/revoked |
+| `META_RATE_LIMITED` | 429 | Pre-flight or live Meta rate-limit trip (`MetaRateLimitException`, existing global handler) |
+| `META_TOKEN_EXPIRED` | 401 | Meta itself rejected the token (`MetaTokenExpiredException`, existing global handler) |
+| `META_API_ERROR` | 502 | Any other Graph API failure (`MetaApiException`, existing global handler) |
+
+**Files:**
+- `influora-api/src/main/java/com/influora/service/portfolio/PortfolioService.java` — `syncPlatforms()` rewritten; new `upsertPlatformStat` helper; 4 new constructor deps (`MetaOAuthTokenRepository`, `MetaTokenStorage`, `InstagramInsightsClient`, `CreatorMetricsRepository`).
+- `influora-api/src/test/java/com/influora/service/portfolio/PortfolioServiceTest.java` — 3 new tests (`NOT_CONNECTED`, `TOKEN_EXPIRED`, real-fetch success path); constructor call site updated for the new deps.
+- `src/pages/creator-portfolio-editor.tsx` — `handleSync` now maps the new error codes to honest messages instead of a one-size-fits-all "Sync limit reached", and re-fetches `page`/`analytics` after a real success.
+- `src/pages/creator-profile.tsx` — stale CR-84 comment updated (no longer describes the endpoint as a no-op).
+- No controller change needed — `PortfolioController#syncPlatforms` already just delegates, and `GlobalExceptionHandler` already maps `ApiException`/`MetaApiException` subclasses to their HTTP statuses.
+
+**Test run:** `mvn -o -Dtest=PortfolioServiceTest,PlatformStatsAggregationJobTest test` → 19 run, 0 failures, 0 errors. `mvn -o compile` clean. `npx tsc --noEmit` clean (exit 0).
+
+## 2026-08-10 — `GET /meta/oauth/status`, `POST /meta/oauth/disconnect` (CR-106)
+
+**Task:** CR-106 (Medium) — `MetaConnectionService.getStatus()`/`disconnect()` existed but had no
+HTTP route (dormant), and `disconnect()` called the workspace-scoped `MetaTokenStorage#revoke`
+instead of the creator-scoped `revokeCreatorToken` — a silent no-op for every real creator row
+(creator Meta connections always have `workspace_id IS NULL`, per the Creator AI Co-pilot Tier-1
+OAuth flip; `MetaOAuthController#callback`'s own javadoc: "a CREATOR-type principal has no
+workspaceId").
+
+| Method | Path | Auth | Request | Response |
+|---|---|---|---|---|
+| GET | `/meta/oauth/status` | Creator (`requireCreator`, profile resolved from principal) | — | `ApiResponse<MetaConnectionStatusResponse>` — `{connected, handle, followers, connectedAt, grantedScopes}` |
+| POST | `/meta/oauth/disconnect` | Creator (`requireCreator`, profile resolved from principal) | — (no body; principal-scoped) | `ApiResponse<MetaDisconnectResponse>` — `{disconnected: true}` |
+
+**Fix:** `MetaConnectionService.getStatus`/`disconnect` were rewritten to drop the `workspaceId`
+parameter entirely and operate purely on the creator-owned key-space (`workspace_id IS NULL`) —
+`MetaOAuthTokenRepository#findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse`,
+`MetaTokenStorage#getValidCreatorToken`, `MetaTokenStorage#revokeCreatorToken` — matching exactly
+what `CreatorMetaOAuthService#connect` writes. This was broader than the ticket's one-line "wrong
+revoke query" framing, but leaving `getStatus()`'s read on the workspace-scoped query while wiring
+a real route would have shipped a status endpoint that always reports "disconnected" for every
+actual creator (the two key-spaces are disjoint by construction per `MetaOAuthTokenRepository`'s
+own doc comment).
+
+**Files:**
+- `influora-api/src/main/java/com/influora/service/MetaConnectionService.java` — `getStatus(CreatorProfile)` and `disconnect(String creatorProfileId)` signatures dropped `workspaceId`; both now creator-scoped.
+- `influora-api/src/main/java/com/influora/web/MetaOAuthController.java` — new `status()`/`disconnect()` routes, both resolving `CreatorProfile` from `@AuthenticationPrincipal` via `creatorProfileRepository.findByUserId` (never a client-supplied id) — added `requireCreatorProfile` helper shared by both.
+- Tests: `influora-api/src/test/java/com/influora/service/MetaConnectionServiceTest.java` (rewritten for the new signatures; explicit `verify(tokenStorage, never()).revoke(...)` guard), `influora-api/src/test/java/com/influora/web/MetaOAuthControllerTest.java` (5 new cases: status happy-path, status non-creator 403, disconnect happy-path, disconnect non-creator 403, status 404 no-profile).
+
+**Verified:** `mvn -o clean test -Dtest=MetaConnectionServiceTest,MetaOAuthControllerTest` → 15/15 passed. `mvn -o compile test-compile` (whole module) → no other caller of the old signatures existed.
+
 ## 2026-08-09 — `POST /onboarding/brand/kyc-prompt-dismissed` (OB-1), `GET /onboarding/brand/status` extended
 
 **Task:** OB-1 (`BrandF.md` §105/§91) — the KYC prompt (`brand-kyc-prompt.tsx`) tracks "skip for

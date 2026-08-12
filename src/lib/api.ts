@@ -4130,7 +4130,14 @@ export const brandReviews = {
 export interface MetaAuthorizeResponse { authorizationUrl: string; state: string }
 export interface MetaCallbackResponse {
   connected: boolean;
-  grantedScopes: string[];
+  /**
+   * CR-104 — the REAL scopes Meta's `/me/permissions` reported as granted for this token, never
+   * just the requested set (a creator can decline individual permissions in the consent dialog).
+   * `null` means influora-api's permissions check itself failed (network/Meta API issue) — the
+   * true grant state is unknown; render that distinctly, never as "connected with zero scopes"
+   * and never by assuming the full requested set was granted.
+   */
+  grantedScopes: string[] | null;
   /** 'personal' means OAuth succeeded but the linked IG is not a Business/Creator account —
    *  creator co-pilot cannot use it (`connected` is `false` in this case). Absent/undefined on
    *  the ordinary success path. Creator-copilot-API-CONTRACT.md §4.2. */
@@ -4138,10 +4145,22 @@ export interface MetaCallbackResponse {
 }
 export interface MetaConnectionState {
   connected: boolean;
-  scopes: string[];
+  /** CR-104 — `null` = permissions could not be verified (see `MetaCallbackResponse.grantedScopes`);
+   *  UI must render this as "unknown", not silently coerce it to an empty or full list. */
+  scopes: string[] | null;
   /** null = unknown (never resolved a callback yet). Persisted alongside `connected`/`scopes` in
    *  the same localStorage mirror (`META_CONNECTION_KEY`). Creator-copilot-API-CONTRACT.md §4.2. */
   accountType: 'personal' | 'business' | null;
+}
+/** Response for GET /meta/oauth/status (MetaOAuthController.java:116, CR-106) — the real
+ *  backend truth, as opposed to the localStorage mirror in `MetaConnectionState`. No
+ *  `accountType` here (that's only resolved during the OAuth callback). */
+export interface MetaConnectionStatusResponse {
+  connected: boolean;
+  handle?: string;
+  followers?: number;
+  connectedAt?: string;
+  grantedScopes: string[];
 }
 
 const META_CONNECTION_KEY = 'meta_connection';
@@ -4168,20 +4187,68 @@ export const metaOAuth = {
       ? http.request<MetaCallbackResponse>('GET', '/meta/oauth/callback', { role: 'creator', query: { code, state } })
       : mockOr<MetaCallbackResponse>({ connected: true, grantedScopes: META_REQUIRED_SCOPES }),
 
+  /**
+   * GET /meta/oauth/status (MetaOAuthController.java:116, CR-106) — CR-107 fix: the real
+   * backend re-verification `connected-accounts.tsx` was missing. Callers should reconcile
+   * the result into the localStorage mirror via `setLocalConnectionState` rather than trusting
+   * `getLocalConnectionState` alone, which never expires or notices a revoke/disconnect.
+   */
+  status: (): Promise<MetaConnectionStatusResponse> => {
+    if (isLive()) {
+      return http.request<MetaConnectionStatusResponse>('GET', '/meta/oauth/status', { role: 'creator' });
+    }
+    // Demo/mock mode has no backend to verify against — mirror whatever the localStorage
+    // mock-connect flow already recorded so a completed mock OAuth still shows connected.
+    // `MetaConnectionStatusResponse.grantedScopes` is never null (the real backend's getStatus
+    // always resolves a concrete, possibly-empty list) — CR-104's null/"unknown" state only
+    // exists transiently between an OAuth callback and the next status re-verification, so
+    // coerce it here rather than widening this response type to match.
+    const local = metaOAuth.getLocalConnectionState();
+    return mockOr<MetaConnectionStatusResponse>({ connected: local.connected, grantedScopes: local.scopes ?? [] });
+  },
+
+  /**
+   * POST /meta/oauth/disconnect (MetaOAuthController.java:129, CR-102/F-0115). The route and
+   * the correctly-creator-scoped revoke were already built server-side; nothing in the frontend
+   * ever called it — there was no way for a creator to disconnect their Meta/Instagram account
+   * anywhere in the product. Clears the local mirror too so the UI reflects the disconnect
+   * immediately rather than waiting on the next `status()` re-verification.
+   */
+  disconnect: (): Promise<{ disconnected: boolean }> => {
+    if (isLive()) {
+      return http
+        .request<{ disconnected: boolean }>('POST', '/meta/oauth/disconnect', { role: 'creator' })
+        .then((res) => {
+          metaOAuth.setLocalConnectionState(false, [], null);
+          return res;
+        });
+    }
+    metaOAuth.setLocalConnectionState(false, [], null);
+    return mockOr<{ disconnected: boolean }>({ disconnected: true });
+  },
+
   getLocalConnectionState: (): MetaConnectionState => {
     try {
       const raw = localStorage.getItem(META_CONNECTION_KEY);
       if (!raw) return { connected: false, scopes: [], accountType: null };
       const p = JSON.parse(raw) as Partial<MetaConnectionState>;
-      return { connected: !!p.connected, scopes: p.scopes ?? [], accountType: p.accountType ?? null };
+      // CR-104 — `scopes` must stay `null` when that's what was stored (permissions
+      // unverifiable). `??` would collapse a real `null` back to `[]`, indistinguishable from
+      // "verified, zero scopes granted"; only an absent/undefined key defaults to `[]`.
+      return {
+        connected: !!p.connected,
+        scopes: p.scopes === undefined ? [] : p.scopes,
+        accountType: p.accountType ?? null,
+      };
     } catch {
       return { connected: false, scopes: [], accountType: null };
     }
   },
 
   /** `accountType` optional + defaults to `null` so existing call sites (pre-dating this field)
-   *  keep compiling untouched; pass it explicitly once a caller has a callback's `accountType`. */
-  setLocalConnectionState: (connected: boolean, scopes: string[], accountType: 'personal' | 'business' | null = null): void => {
+   *  keep compiling untouched; pass it explicitly once a caller has a callback's `accountType`.
+   *  `scopes: null` (CR-104) persists the "permissions could not be verified" state as-is. */
+  setLocalConnectionState: (connected: boolean, scopes: string[] | null, accountType: 'personal' | 'business' | null = null): void => {
     localStorage.setItem(META_CONNECTION_KEY, JSON.stringify({ connected, scopes, accountType }));
   },
 
@@ -4202,6 +4269,18 @@ export const metaOAuth = {
     const path = sessionStorage.getItem('creator_meta_connect_return_to');
     sessionStorage.removeItem('creator_meta_connect_return_to');
     return path;
+  },
+  /**
+   * F-0168 — the read-and-clear in `consumeConnectReturnTo` only protects against a stale
+   * marker being seen by a *later mount* of the callback page; it does nothing for a marker
+   * left behind by an attempt that never reaches that page at all (the panel's `authorize()`
+   * call throws before redirect, or the creator abandons the Meta dialog via browser Back).
+   * Every initiator that does NOT itself call `setConnectReturnTo` — i.e. every plain "just
+   * send me back to Settings" entry point — must call this first, so a leftover marker from an
+   * abandoned deal-room/Co-pilot attempt can never misroute this unrelated connect.
+   */
+  clearConnectReturnTo: (): void => {
+    sessionStorage.removeItem('creator_meta_connect_return_to');
   },
 };
 

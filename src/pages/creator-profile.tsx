@@ -131,9 +131,10 @@ export default function CreatorProfilePage() {
   /**
    * CR-84 — was a bare `setTimeout` with no API call at all, showing a fabricated "synced"
    * confirmation. Now calls the same real `POST /portfolio/sync` the portfolio editor's own
-   * sync button already uses — that endpoint is itself a documented server-side no-op today
-   * (a separate, already-flagged backend gap this fix doesn't claim to close), but a real
-   * network round trip that can genuinely fail is honest in a way a client-only timer never was.
+   * sync button uses — PortfolioService.syncPlatforms() does a genuine Meta Graph API fetch and
+   * platform_stats upsert (no longer the documented no-op it used to be), so a success here
+   * really did refresh this creator's platform stats, and a failure (e.g. no connected account,
+   * an expired token) surfaces as a real error below instead of a silent client-only timer.
    */
   const handleSyncStats = async (platform: string) => {
     setSyncingPlatform(platform);
@@ -191,6 +192,9 @@ export default function CreatorProfilePage() {
   const handleConnectMoreAccounts = async () => {
     setIsConnectingMeta(true);
     try {
+      // F-0168 — plain initiator, no return-path of its own; clear any leftover marker from an
+      // abandoned Deal Room/Co-pilot connect first, so it can't misroute this one.
+      api.metaOAuth.clearConnectReturnTo();
       const { authorizationUrl } = await api.metaOAuth.authorize();
       window.location.href = authorizationUrl;
     } catch (err) {

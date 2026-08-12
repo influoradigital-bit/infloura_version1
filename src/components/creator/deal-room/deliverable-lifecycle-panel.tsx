@@ -102,6 +102,11 @@ export function DeliverableLifecyclePanel({
       const { authorizationUrl } = await api.metaOAuth.authorize();
       window.location.href = authorizationUrl;
     } catch (err) {
+      // F-0168 — authorize() threw AFTER the marker was written, so the redirect to Meta never
+      // happened and the callback page will never run to consume/clear it. Left as-is, it would
+      // survive to misroute a later, unrelated connect attempt (e.g. from Settings) into this
+      // deal room instead.
+      api.metaOAuth.clearConnectReturnTo();
       setConnecting(false);
       toast({
         variant: 'destructive',

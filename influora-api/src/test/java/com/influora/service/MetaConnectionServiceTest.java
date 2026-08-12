@@ -30,10 +30,16 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+/**
+ * Unit tests for {@link MetaConnectionService}. CR-106: getStatus/disconnect must operate on the
+ * creator-owned key-space ({@code workspace_id IS NULL}) — the same key-space {@link
+ * com.influora.service.creatorcopilot.CreatorMetaOAuthService#connect} writes to — not the
+ * brand/workspace-scoped one, which is a disjoint key-space by construction and would silently
+ * match nothing for a real creator row.
+ */
 @ExtendWith(MockitoExtension.class)
 class MetaConnectionServiceTest {
 
-    private static final String WORKSPACE_ID = "01HWORKSPACE123456789A";
     private static final String CREATOR_PROFILE_ID = "01HCREATOR123456789AB";
     private static final String USER_ID = "user-1";
 
@@ -60,7 +66,6 @@ class MetaConnectionServiceTest {
     private MetaOAuthToken activeToken() {
         return MetaOAuthToken.builder()
                 .id("token-1")
-                .workspaceId(WORKSPACE_ID)
                 .creatorProfileId(CREATOR_PROFILE_ID)
                 .encryptedAccessToken("cipher")
                 .expiresAt(Instant.now().plusSeconds(86_400))
@@ -71,11 +76,10 @@ class MetaConnectionServiceTest {
     @Test
     @DisplayName("getStatus: returns disconnected when no active token exists")
     void getStatus_noToken_returnsDisconnected() {
-        when(tokenRepository.findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse(
-                        WORKSPACE_ID, CREATOR_PROFILE_ID))
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.empty());
 
-        MetaConnectionStatusResponse status = service.getStatus(testProfile(), WORKSPACE_ID);
+        MetaConnectionStatusResponse status = service.getStatus(testProfile());
 
         assertFalse(status.connected());
         assertNull(status.handle());
@@ -90,17 +94,15 @@ class MetaConnectionServiceTest {
         MetaOAuthToken expired =
                 MetaOAuthToken.builder()
                         .id("token-expired")
-                        .workspaceId(WORKSPACE_ID)
                         .creatorProfileId(CREATOR_PROFILE_ID)
                         .encryptedAccessToken("cipher")
                         .expiresAt(Instant.now().minusSeconds(60))
                         .grantedScopesJson("[\"instagram_basic\"]")
                         .build();
-        when(tokenRepository.findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse(
-                        WORKSPACE_ID, CREATOR_PROFILE_ID))
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(expired));
 
-        MetaConnectionStatusResponse status = service.getStatus(testProfile(), WORKSPACE_ID);
+        MetaConnectionStatusResponse status = service.getStatus(testProfile());
 
         assertFalse(status.connected());
     }
@@ -108,16 +110,14 @@ class MetaConnectionServiceTest {
     @Test
     @DisplayName("getStatus: live Meta fetch populates handle and followers when connected")
     void getStatus_connected_usesLiveMetaProfile() {
-        when(tokenRepository.findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse(
-                        WORKSPACE_ID, CREATOR_PROFILE_ID))
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(activeToken()));
         when(platformStatRepository.findByCreatorProfileId(CREATOR_PROFILE_ID)).thenReturn(List.of());
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_PROFILE_ID))
-                .thenReturn(Optional.of("access-token"));
+        when(tokenStorage.getValidCreatorToken(CREATOR_PROFILE_ID)).thenReturn(Optional.of("access-token"));
         when(facebookPageClient.resolveConnectedInstagram("access-token"))
                 .thenReturn(new FacebookAccountsListResponse.InstagramBusinessAccount("ig-1", "live_handle", 99_000L));
 
-        MetaConnectionStatusResponse status = service.getStatus(testProfile(), WORKSPACE_ID);
+        MetaConnectionStatusResponse status = service.getStatus(testProfile());
 
         assertTrue(status.connected());
         assertEquals("@live_handle", status.handle());
@@ -134,16 +134,14 @@ class MetaConnectionServiceTest {
         when(igStat.getHandle()).thenReturn("cached_handle");
         when(igStat.getFollowers()).thenReturn(42_000L);
 
-        when(tokenRepository.findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse(
-                        WORKSPACE_ID, CREATOR_PROFILE_ID))
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(activeToken()));
         when(platformStatRepository.findByCreatorProfileId(CREATOR_PROFILE_ID)).thenReturn(List.of(igStat));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_PROFILE_ID))
-                .thenReturn(Optional.of("access-token"));
+        when(tokenStorage.getValidCreatorToken(CREATOR_PROFILE_ID)).thenReturn(Optional.of("access-token"));
         when(facebookPageClient.resolveConnectedInstagram("access-token"))
                 .thenThrow(new MetaApiException("rate limited"));
 
-        MetaConnectionStatusResponse status = service.getStatus(testProfile(), WORKSPACE_ID);
+        MetaConnectionStatusResponse status = service.getStatus(testProfile());
 
         assertTrue(status.connected());
         assertEquals("@cached_handle", status.handle());
@@ -151,12 +149,13 @@ class MetaConnectionServiceTest {
     }
 
     @Test
-    @DisplayName("disconnect: delegates revoke to MetaTokenStorage")
-    void disconnect_revokesToken() {
-        MetaDisconnectResponse response = service.disconnect(WORKSPACE_ID, CREATOR_PROFILE_ID);
+    @DisplayName("disconnect: delegates to the creator-scoped revoke, not the workspace-scoped one (CR-106)")
+    void disconnect_revokesCreatorScopedToken() {
+        MetaDisconnectResponse response = service.disconnect(CREATOR_PROFILE_ID);
 
         assertTrue(response.disconnected());
-        verify(tokenStorage).revoke(WORKSPACE_ID, CREATOR_PROFILE_ID);
+        verify(tokenStorage).revokeCreatorToken(CREATOR_PROFILE_ID);
+        verify(tokenStorage, never()).revoke(anyString(), anyString());
         verify(facebookPageClient, never()).resolveConnectedInstagram(anyString());
     }
 }
