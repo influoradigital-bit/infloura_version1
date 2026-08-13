@@ -141,7 +141,7 @@ Correcting the record before work starts — the generic company stack template 
 | CR-52 | 🟢 Low | FE sends unused ?role= query param on GET /deals | Vikram | ASSIGNED |
 | CR-53 | 🟡 Medium | Deliverable submit has no recovery path if upload succeeds but submit fails. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — retained upload reference across a submit-only failure, retry no longer re-uploads; see §5.** | Ananya | IN VERIFY |
 | CR-54 | 🟡 Medium | Meta OAuth connect from Deal Room loses deal context on redirect. **✅ FIXED by a concurrent session (`e30e9bc`) — but Priya's fresh-context review FAILED it first: retry silently dropped the return path, and 3 of 6 initiators leaked a stale marker into unrelated connects. Both fixed this session (`F-0168`), re-reviewed, PASS. See §5.** | Ananya | IN VERIFY |
-| CR-55 | 🟠 High | Duplicate local status-label map renders raw enum strings, violating the never-show-Rejected/Cancelled rule | Ananya | IN QA |
+| CR-55 | 🟠 High | Duplicate local status-label map renders raw enum strings, violating the never-show-Rejected/Cancelled rule. **Status synced 2026-08-13 — detail entry already records Priya APPROVE, gate exists, row was simply never moved off `IN QA`.** | Ananya | IN VERIFY |
 | CR-56 | 🟡 Medium | Applying to a campaign creates a row visible in two different trackers with no cross-link. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — success dialog now links to both surfaces; see §5.** | Ananya | IN VERIFY |
 | CR-57 | 🟡 Medium | Campaign discovery loop cannot be demonstrated in mock/demo mode. **✅ ALREADY FIXED (earlier concurrent pass, `e3e59d0`) + INDEPENDENT QA PASS (2026-08-10) — 3 realistic mock campaigns, browse→detail→apply chain confirmed working; see §5.** | Vikram | IN VERIFY |
 | CR-58 | 🟡 Medium | Creator applications list silently truncates at 50 with no pagination or truncation notice. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — client now consumes pagination meta + Load More; see §5.** | Vikram | IN VERIFY |
@@ -149,8 +149,8 @@ Correcting the record before work starts — the generic company stack template 
 | CR-60 | 🟡 Medium | Deadline badge and Apply button disagree on the final day. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — both now read the same `deadlinePassed` variable; see §5.** | Ananya | IN VERIFY |
 | CR-61 | 🟡 Medium | Client-side campaign search hides Load More and only searches already-fetched rows. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — Load More no longer hidden during search; messaging now honest about loaded-vs-all; see §5.** | Ananya | IN VERIFY |
 | CR-62 | 🟡 Medium | Niche filter sends lowercased value; server-side case sensitivity unverified. **✅ VERIFIED + FIXED + INDEPENDENT QA PASS (2026-08-10) — backend was already case-insensitive; removed the now-redundant frontend lowercasing, documented + test-proven; see §5.** | Kavya | IN VERIFY |
-| CR-63 | 🟠 High | accountType dropped on OAuth callback makes BusinessAccountRequired unreachable, traps personal-account creators in a loop | Ananya | IN QA |
-| CR-64 | 🟠 High | no_suggestion_today status renders a completely blank Co-pilot page | Ananya | IN QA |
+| CR-63 | 🟠 High | accountType dropped on OAuth callback makes BusinessAccountRequired unreachable, traps personal-account creators in a loop. **Status synced 2026-08-13 — detail entry already records Priya APPROVE, gate exists.** | Ananya | IN VERIFY |
+| CR-64 | 🟠 High | no_suggestion_today status renders a completely blank Co-pilot page. **Status synced 2026-08-13 — detail entry already records 2 review rounds, Priya APPROVE on the second, gate exists.** | Ananya | IN VERIFY |
 | CR-65 | 🟡 Medium | OAuth callback always navigates to Settings instead of back to Co-pilot. **✅ FIXED by a concurrent session (`e30e9bc`) + INDEPENDENT QA PASS (2026-08-10, this session) — setConnectReturnTo/consumeConnectReturnTo marker wired at Co-pilot + Deal Room entry points, confirmed correct; see §5.** | Ananya | IN VERIFY |
 | CR-66 | 🟡 Medium | "Try Again" button on OAuth failure screen does not retry — it just navigates to Settings. **✅ FIXED by a concurrent session (`e30e9bc`) + INDEPENDENT QA PASS (2026-08-10, this session) — Try Again now re-invokes the OAuth authorize flow; confirmed correct; see §5.** | Ananya | IN VERIFY |
 | CR-67 | 🟡 Medium | Content-performance load error is visible but has no retry affordance. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — reload wired into a Retry button; see §5.** | Ananya | IN VERIFY |
@@ -173,23 +173,23 @@ Correcting the record before work starts — the generic company stack template 
 | CR-84 | 🟡 Medium | "Sync" button on the profile page (and the portfolio editor) is a fake sync with no real data refresh. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — `syncPlatforms()` now does a real Meta Graph API fetch + persists stats, honest NOT_CONNECTED/TOKEN_EXPIRED errors instead of fake success; see §5.** | Ananya | IN VERIFY |
 | CR-85 | 🟢 Low | Avatar/camera upload button has no onClick handler and no upload endpoint | Ananya | ASSIGNED |
 | CR-86 | 🟢 Low | "Connect More Accounts" button on profile page is a dead control | Ananya | ASSIGNED |
-| CR-87 | 🟠 High | "Update Password" button in Settings has no onClick and the form fields are uncontrolled, despite a fully built and rate-limited backend | Ananya | IN QA |
+| CR-87 | 🟠 High | "Update Password" button in Settings has no onClick and the form fields are uncontrolled, despite a fully built and rate-limited backend. **Status synced 2026-08-13 — detail entry records Priya's first pass REJECTED it for a real security bug (wrong-role token default), fixed and re-reviewed PASS, gate exists.** | Ananya | IN VERIFY |
 | CR-88 | 🟢 Low | Help Center / Contact Support / Terms & Privacy rows in Settings do nothing | Ananya | ASSIGNED |
 | CR-89 | 🟢 Low | Help & Support entry is missing from the mobile header dropdown | Ananya | ASSIGNED |
-| CR-90 | 🟠 High | Sidebar logout (the primary, easiest-to-reach path) never calls the server logout endpoint | Ananya | IN QA |
+| CR-90 | 🟠 High | Sidebar logout (the primary, easiest-to-reach path) never calls the server logout endpoint. **Status synced 2026-08-13 — detail entry records Priya's independent revert-and-check (her own git hash comparison, not trusting the report), gate exists.** | Ananya | IN VERIFY |
 | CR-91 | 🔴 Critical | Server-side logout invalidation never actually runs on either logout path — refresh tokens stay live in the database after every logout | Kabir | IN VERIFY |
 | CR-92 | 🟢 Low | Edit Profile dialog can only update 5 of 13 patchable profile fields | Ananya | ASSIGNED |
-| CR-93 | 🟠 High | Counterparty has no polling fallback when their SSE connection is dead — misses accept/reject/messages until reload | Vikram | IN QA |
+| CR-93 | 🟠 High | Counterparty has no polling fallback when their SSE connection is dead — misses accept/reject/messages until reload. **Status synced 2026-08-13 — original finding was stale (CR-31's reconnect already covered most of it), real remaining gap (backgrounded-tab resync) fixed + Priya APPROVE, gate exists.** | Vikram | IN VERIFY |
 | CR-94 | 🟠 High | In-memory SSE registry silently drops events across backend replicas | Vikram | BLOCKED |
 | CR-95 | 🟡 Medium | 30-minute SSE emitter timeout creates recurring blind windows for missed events. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — per-deal sequence id + bounded replay buffer + Last-Event-ID reconnect; a real double-delivery race was CAUGHT by independent review and fixed before this closed (F-0156); see §5.** | Vikram | IN VERIFY |
 | CR-96 | 🟡 Medium | Deal deliverable progress counts are hardcoded to zero, hiding the entire Deliverables panel for every live deal. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — real data + batched query for list callers; the cited brand-chat.tsx gate turned out to be mock-only, live panel unaffected; see §5.** | Vikram | IN VERIFY |
 | CR-97 | 🔴 Critical | Brand's primary Deals dashboard page has zero SSE, polling, or reconnect handling at all | Vikram | IN VERIFY |
-| CR-98 | 🟠 High | Brand's own accept/reject action on the Deals dashboard never refreshes the message timeline, even for the actor | Vikram | IN QA |
+| CR-98 | 🟠 High | Brand's own accept/reject action on the Deals dashboard never refreshes the message timeline, even for the actor. **Status synced 2026-08-13 — detail entry records Priya APPROVE, gate exists.** | Vikram | IN VERIFY |
 | CR-99 | 🔴 Critical | Wrong ID type sent to Meta Graph API breaks the entire Instagram analytics, demographics, and deliverable-verification pipeline | Vikram | IN VERIFY |
-| CR-100 | 🟠 High | Dead Instagram deliverable verification blocks escrow release for ON_VERIFIED_METRICS milestones | Vikram | IN QA |
-| CR-101 | 🟠 High | Built ConnectedAccounts component is never mounted anywhere — Settings page has no social-integration UI | Ananya | IN QA |
-| CR-102 | 🟠 High | No way for a creator to disconnect their Meta/Instagram account anywhere in the product | Vikram | IN QA |
-| CR-103 | 🟠 High | OAuth callback page shows "Account connected" even when the server reports connected=false | Ananya | IN QA |
+| CR-100 | 🟠 High | Dead Instagram deliverable verification blocks escrow release for ON_VERIFIED_METRICS milestones. **Status synced 2026-08-13 — detail entry records Priya APPROVE (verified the pinning tests by reverting, not just reading), plus a same-day token-scope correction (F-0166), also Priya-approved.** | Vikram | IN VERIFY |
+| CR-101 | 🟠 High | Built ConnectedAccounts component is never mounted anywhere — Settings page has no social-integration UI. **Status synced 2026-08-13 — detail entry records Priya APPROVE, gate exists.** | Ananya | IN VERIFY |
+| CR-102 | 🟠 High | No way for a creator to disconnect their Meta/Instagram account anywhere in the product. **Status synced 2026-08-13 — detail entry records Priya REJECTED it twice for false claims in a destructive-action confirmation dialog before APPROVE on round 3, gate exists.** | Vikram | IN VERIFY |
+| CR-103 | 🟠 High | OAuth callback page shows "Account connected" even when the server reports connected=false. **Status synced 2026-08-13 — detail entry records Priya APPROVE, gate exists.** | Ananya | IN VERIFY |
 | CR-104 | 🟡 Medium | "Granted permissions" UI always shows the requested scope set, never what Meta actually granted. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — real `/me/permissions` call, honest null/unknown on API failure instead of a full-grant fallback; see §5.** | Vikram | IN VERIFY |
 | CR-105 | 🟡 Medium | Dropped accountType traps personal-Instagram creators in an unbreakable connect-prompt loop. **✅ FIXED by a concurrent session — but Priya's fresh-context review PASSED the callback artifact and then found a HIGH residual one hop downstream: `useMetaConnection.ts`'s status reconciliation silently flipped a correctly-disconnected personal account back to connected on the Settings path, undoing the fix. Fixed with a client-side guard, mutation-proven, re-reviewed PASS. See §5.** | Ananya | IN VERIFY |
 | CR-106 | 🟡 Medium | Connection status/disconnect service methods are dormant with no route, and disconnect uses the wrong revoke query. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — new `GET/POST /meta/oauth/status`/`disconnect` routes, principal-scoped, disconnect now calls the creator-scoped revoke; see §5.** | Vikram | IN VERIFY |
@@ -1598,7 +1598,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-55 · 🟠 High · Duplicate local status-label map renders raw enum strings, violating the never-show-Rejected/Cancelled rule
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -1708,7 +1708,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-63 · 🟠 High · accountType dropped on OAuth callback makes BusinessAccountRequired unreachable, traps personal-account creators in a loop
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -1721,7 +1721,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-64 · 🟠 High · no_suggestion_today status renders a completely blank Co-pilot page
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -2006,7 +2006,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-87 · 🟠 High · "Update Password" button in Settings has no onClick and the form fields are uncontrolled, despite a fully built and rate-limited backend
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -2041,7 +2041,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-90 · 🟠 High · Sidebar logout (the primary, easiest-to-reach path) never calls the server logout endpoint
-**Owner:** Ananya (routed from Kabir — security-flavored finding, frontend fix) · **Status:** IN QA
+**Owner:** Ananya (routed from Kabir — security-flavored finding, frontend fix) · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -2078,7 +2078,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-93 · 🟠 High · Counterparty has no polling fallback when their SSE connection is dead — misses accept/reject/messages until reload
-**Owner:** Vikram · **Status:** IN QA
+**Owner:** Vikram · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -2143,7 +2143,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-98 · 🟠 High · Brand's own accept/reject action on the Deals dashboard never refreshes the message timeline, even for the actor
-**Owner:** Vikram · **Status:** IN QA
+**Owner:** Vikram · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -2173,7 +2173,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-100 · 🟠 High · Dead Instagram deliverable verification blocks escrow release for ON_VERIFIED_METRICS milestones
-**Owner:** Vikram · **Status:** IN QA
+**Owner:** Vikram · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -2188,7 +2188,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-101 · 🟠 High · Built ConnectedAccounts component is never mounted anywhere — Settings page has no social-integration UI
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -2201,7 +2201,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-102 · 🟠 High · No way for a creator to disconnect their Meta/Instagram account anywhere in the product
-**Owner:** Vikram · **Status:** IN QA
+**Owner:** Vikram · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -2216,7 +2216,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-103 · 🟠 High · OAuth callback page shows "Account connected" even when the server reports connected=false
-**Owner:** Ananya · **Status:** IN QA
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
