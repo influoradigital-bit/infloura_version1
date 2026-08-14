@@ -138,7 +138,7 @@ Correcting the record before work starts — the generic company stack template 
 | CR-49 | 🟡 Medium | **Kabir's CR-35 red-team MEDIUM-3, finally routed — "one lookup, not two that can drift" was only applied inside `EscrowService`.** The same collaboration-scoped escrow-existence rule lives in **four** places; Fix 1 unified two, CR-39 fixed a third, and **two remain on the drift-prone direct-column query**: `ContractService.java:677` and `DealService.java:1092` (both `existsByCollaborationIdAndStatus`). Any hold legitimately left `NULL` — campaign-level pool funding, the case Fix 2 deliberately preserves — is invisible to both. Kabir's ask is a shared `hasEscrowForCollaboration(id, statuses)` that all callers use; the repository currently exposes **three** overlapping exists-methods, which is the drift surface itself. **Neither remaining site is destructive or money-moving** (a false "please fund escrow" notification, and a read-only response flag). **⚠️ PARTIALLY FIXED `887b3ea` — both call sites repointed, but the DRIFT SURFACE REMAINS OPEN: three overlapping exists-methods still sit on `EscrowHoldRepository`, and consolidating to one shared `hasEscrowForCollaboration(id, statuses)` — Kabir's actual ask — was deliberately NOT done.** See §5 for the justification and the follow-up this needs. | **Vikram** | IN QA |
 | CR-50 | 🟢 Low | **The CR-49 residual, split out: consolidate to ONE `hasEscrowForCollaboration(id, statuses)` without losing the `DeliverableCleanupJobTest` tripwire.** `887b3ea` repointed the two live callers, but three overlapping exists-methods still sit on `EscrowHoldRepository` — `existsByCollaborationIdAndStatus` and `existsByCollaborationIdAndStatusIn` now have **zero production callers** and carry unsafe-javadoc, so the drift surface is **documented, not removed**. **No reachable defect today** — this is Kabir's doctrine half (*"two copies of one rule drift, and the drift is invisible until it costs something"*), and this codebase has already paid for that drift twice (CR-35, CR-39). **The constraint that makes it a ticket and not a tidy-up:** deleting `existsByCollaborationIdAndStatusIn` forces deleting a live `verify(..., never())` regression tripwire in `DeliverableCleanupJobTest` that carries CR-35's history. **✅ DONE `07586d6`** — consolidated to one `hasEscrowForCollaboration`, both dead methods **deleted outright**, and the tripwire **reshaped into a compile-time guarantee** rather than dropped. | **Vikram** | IN QA |
 | CR-51 | 🟡 Medium | N+1 deliverable requests on creator dashboard load. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — batched `/creator/deliverables/bulk` endpoint (2 queries regardless of N, was N HTTP calls / 2N queries); regression test proves batching. See §5.** | Vikram | IN VERIFY |
-| CR-52 | 🟢 Low | FE sends unused ?role= query param on GET /deals | Vikram | ASSIGNED |
+| CR-52 | 🟢 Low | FE sends unused ?role= query param on GET /deals. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — `deals.list` no longer serializes `role` into the query string; see §5.** | Vikram | IN VERIFY |
 | CR-53 | 🟡 Medium | Deliverable submit has no recovery path if upload succeeds but submit fails. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — retained upload reference across a submit-only failure, retry no longer re-uploads; see §5.** | Ananya | IN VERIFY |
 | CR-54 | 🟡 Medium | Meta OAuth connect from Deal Room loses deal context on redirect. **✅ FIXED by a concurrent session (`e30e9bc`) — but Priya's fresh-context review FAILED it first: retry silently dropped the return path, and 3 of 6 initiators leaked a stale marker into unrelated connects. Both fixed this session (`F-0168`), re-reviewed, PASS. See §5.** | Ananya | IN VERIFY |
 | CR-55 | 🟠 High | Duplicate local status-label map renders raw enum strings, violating the never-show-Rejected/Cancelled rule. **Status synced 2026-08-13 — detail entry already records Priya APPROVE, gate exists, row was simply never moved off `IN QA`.** | Ananya | IN VERIFY |
@@ -161,24 +161,24 @@ Correcting the record before work starts — the generic company stack template 
 | CR-72 | 🟡 Medium | Transaction history period filter is completely unconsumed by client or server. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — real server-side date-bounded query, wired end to end; see §5.** | Vikram | IN VERIFY |
 | CR-73 | 🟡 Medium | No balance or transaction-history refresh after a successful withdrawal. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — handleWithdraw now re-fetches both on success; see §5.** | Ananya | IN VERIFY |
 | CR-74 | 🟡 Medium | 24h new-bank-account cooldown not checked before enabling Withdraw. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — Withdraw disabled condition now checks the already-exposed `usable` field, visibly captioned; see §5.** | Ananya | IN VERIFY |
-| CR-75 | 🟢 Low | Transaction type collapses PLATFORM_FEE and ESCROW_HOLD into generic PAYOUT/EARNING labels | Ananya | ASSIGNED |
+| CR-75 | 🟢 Low | Transaction type collapses PLATFORM_FEE and ESCROW_HOLD into generic PAYOUT/EARNING labels. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — real backend `type` kept alongside the collapsed direction; Payouts tab now only counts real WITHDRAWAL rows; see §5.** | Ananya | IN VERIFY |
 | CR-76 | 🟢 Low | Tax Docs tab is a static placeholder with no backend endpoint | Vikram | ASSIGNED |
 | CR-77 | 🟢 Low | No dedicated GET /wallet/payouts endpoint; Payouts tab derives from transaction DEBIT rows | Vikram | ASSIGNED |
 | CR-78 | 🟡 Medium | Creator cannot flag an inappropriate review; the wired handler also targets the wrong backend endpoint. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — flag button now renders for creators, submit branches by role to the correct endpoint; see §5.** | Ananya | IN VERIFY |
 | CR-79 | 🟡 Medium | Duplicate 'reviews about you' surfaces with mismatched capabilities. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — ticket's page mapping had drifted, capability gap already closed by CR-78; real fix was cross-links between the two surfaces; see §5.** | Ananya | IN VERIFY |
 | CR-80 | 🟡 Medium | Eligible-deal dropdown for opening a dispute fetches the creator's entire deal history for a client-side filter. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — new `GET /creator/disputes/eligible-deals`, real WHERE-NOT-IN query, same eligibility semantics; see §5.** | Vikram | IN VERIFY |
 | CR-81 | 🟡 Medium | Coupon share/tracking links silently degrade to a localhost URL if INFLUORA_API_PUBLIC_URL is unset. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — `SecretsStartupValidator` now fails prod/staging boot on a localhost/missing public URL, dev unaffected; see §5.** | Meera | IN VERIFY |
-| CR-82 | 🟢 Low | Redundant no-op client-side filter on already-server-filtered completed deals | Ananya | ASSIGNED |
-| CR-83 | 🟢 Low | Affiliate earnings endpoint has no pagination; response grows unboundedly | Vikram | ASSIGNED |
+| CR-82 | 🟢 Low | Redundant no-op client-side filter on already-server-filtered completed deals. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — dead filter removed; see §5.** | Ananya | IN VERIFY |
+| CR-83 | 🟢 Low | Affiliate earnings endpoint has no pagination; response grows unboundedly. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — real page/limit pagination end to end; review caught and fixed a `pageNumber * pageSize` int-overflow risk before closing; see §5.** | Vikram | IN VERIFY |
 | CR-84 | 🟡 Medium | "Sync" button on the profile page (and the portfolio editor) is a fake sync with no real data refresh. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — `syncPlatforms()` now does a real Meta Graph API fetch + persists stats, honest NOT_CONNECTED/TOKEN_EXPIRED errors instead of fake success; see §5.** | Ananya | IN VERIFY |
-| CR-85 | 🟢 Low | Avatar/camera upload button has no onClick handler and no upload endpoint | Ananya | ASSIGNED |
-| CR-86 | 🟢 Low | "Connect More Accounts" button on profile page is a dead control | Ananya | ASSIGNED |
+| CR-85 | 🟢 Low | Avatar/camera upload button has no onClick handler and no upload endpoint. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — wired to the existing generic `POST /uploads` + `api.uploads.upload()`, no new backend; see §5.** | Ananya | IN VERIFY |
+| CR-86 | 🟢 Low | "Connect More Accounts" button on profile page is a dead control. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — mirrors `ConnectedAccounts.handleConnect`; see §5.** | Ananya | IN VERIFY |
 | CR-87 | 🟠 High | "Update Password" button in Settings has no onClick and the form fields are uncontrolled, despite a fully built and rate-limited backend. **Status synced 2026-08-13 — detail entry records Priya's first pass REJECTED it for a real security bug (wrong-role token default), fixed and re-reviewed PASS, gate exists.** | Ananya | IN VERIFY |
-| CR-88 | 🟢 Low | Help Center / Contact Support / Terms & Privacy rows in Settings do nothing | Ananya | ASSIGNED |
-| CR-89 | 🟢 Low | Help & Support entry is missing from the mobile header dropdown | Ananya | ASSIGNED |
+| CR-88 | 🟢 Low | Help Center / Contact Support / Terms & Privacy rows in Settings do nothing. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — first pass routed to an unverified external host, caught by fresh-context review and corrected to real `/support` + `mailto:`; F-0134. See §5.** | Ananya | IN VERIFY |
+| CR-89 | 🟢 Low | Help & Support entry is missing from the mobile header dropdown. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — added, routes to `/support`; see §5.** | Ananya | IN VERIFY |
 | CR-90 | 🟠 High | Sidebar logout (the primary, easiest-to-reach path) never calls the server logout endpoint. **Status synced 2026-08-13 — detail entry records Priya's independent revert-and-check (her own git hash comparison, not trusting the report), gate exists.** | Ananya | IN VERIFY |
 | CR-91 | 🔴 Critical | Server-side logout invalidation never actually runs on either logout path — refresh tokens stay live in the database after every logout | Kabir | IN VERIFY |
-| CR-92 | 🟢 Low | Edit Profile dialog can only update 5 of 13 patchable profile fields | Ananya | ASSIGNED |
+| CR-92 | 🟢 Low | Edit Profile dialog can only update 5 of 13 patchable profile fields. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — dialog now exposes all 13 fields; see §5.** | Ananya | IN VERIFY |
 | CR-93 | 🟠 High | Counterparty has no polling fallback when their SSE connection is dead — misses accept/reject/messages until reload. **Status synced 2026-08-13 — original finding was stale (CR-31's reconnect already covered most of it), real remaining gap (backgrounded-tab resync) fixed + Priya APPROVE, gate exists.** | Vikram | IN VERIFY |
 | CR-94 | 🟠 High | In-memory SSE registry silently drops events across backend replicas | Vikram | BLOCKED |
 | CR-95 | 🟡 Medium | 30-minute SSE emitter timeout creates recurring blind windows for missed events. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — per-deal sequence id + bounded replay buffer + Last-Event-ID reconnect; a real double-delivery race was CAUGHT by independent review and fixed before this closed (F-0156); see §5.** | Vikram | IN VERIFY |
@@ -201,16 +201,16 @@ Correcting the record before work starts — the generic company stack template 
 | CR-112 | 🟡 Medium | Brand-side Meta connect flow was never implemented — Trend-Spark's real own-content signal has never fired in production | Priya | ASSIGNED |
 | CR-113 | 🟡 Medium | Meta integration test coverage locks in the production bug and leaves the working path unprotected. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — most of this was already fixed by earlier passes (CR-99/100); the real remaining gap, storeCreatorToken's zero coverage, is now closed; see §5.** | Kavya | IN VERIFY |
 | CR-114 | 🟡 Medium | A null token-expiry value from Meta would store an already-expired token, silently disabling all downstream jobs. **✅ ALREADY FIXED (uncommitted concurrent-session work) + INDEPENDENT QA PASS (2026-08-10) — falls back to a documented ~60-day default with a loud warning instead of Instant.now(); see §5.** | Vikram | IN VERIFY |
-| CR-115 | 🟢 Low | Facebook Page engagement scope is requested and granted but the data is never fetched | Vikram | ASSIGNED |
-| CR-116 | 🟢 Low | IG username is fetched from Meta but never stored anywhere | Vikram | ASSIGNED |
-| CR-117 | 🟢 Low | OAuth authorization code/state left visible in browser URL/history after callback | Ananya | ASSIGNED |
+| CR-115 | 🟢 Low | Facebook Page engagement scope is requested and granted but the data is never fetched. **✅ FIXED + INDEPENDENT QA PASS — `pages_read_engagement` removed from `REQUIRED_SCOPES`, no longer advertised in the connected-accounts UI; see §5.** | Vikram | IN VERIFY |
+| CR-116 | 🟢 Low | IG username is fetched from Meta but never stored anywhere. **✅ FIXED + INDEPENDENT QA PASS — `profile.username()` now flows to `platform_stats.handle` via `PlatformStatsAggregationJob`; 2 dedicated regression tests cover both the null-safe-skip and overwrite cases; see §5.** | Vikram | IN VERIFY |
+| CR-117 | 🟢 Low | OAuth authorization code/state left visible in browser URL/history after callback. **✅ FIXED + INDEPENDENT QA PASS — `creator-meta-callback.tsx` now calls `history.replaceState` after reading `code`/`state`; see §5.** | Ananya | IN VERIFY |
 | CR-118 | 🟡 Medium | Unguarded OAuth callback route reflects attacker-controlled error text with no allowlist. **✅ FIXED by a concurrent session (`e30e9bc`) — but Priya's adversarial fresh-context review FAILED it: the allowlist's own bracket lookup walked Object.prototype for an attacker-controlled key, letting `?error=__proto__`/`toString`/`constructor`/`valueOf`/etc. crash or corrupt the page on this auth-guard-free route (real blast radius 12 keys, empirically measured). Fixed with an own-property gate + runtime type guard; re-reviewed, PASS, proven to close the whole class (0/48 escapes vs 12/48 original), not just the found payloads. See §5.** | Kabir | IN VERIFY |
 | CR-119 | 🟡 Medium | YouTube, TikTok, and Twitter/X have no OAuth or live data fetching at all — follower counts are entirely self-reported | Priya | ASSIGNED |
 | CR-120 | 🔴 Critical | Creator onboarding Step 1 hardcodes a mock OAuth code that is sent to the real backend in live mode — no creator can complete onboarding in production | Vikram | IN VERIFY |
 | CR-121 | 🟡 Medium | "Remember me" checkbox on login has no state or effect. **✅ FIXED by a concurrent session (`e30e9bc`) + INDEPENDENT QA PASS (2026-08-10, this session) — real checked/onChange state, localStorage vs sessionStorage token persistence, silent-refresh path confirmed not upgraded; see §5.** | Ananya | IN VERIFY |
 | CR-122 | 🟡 Medium | Desktop header search bar is a non-interactive div styled to look like a real search input. **✅ FIXED by a concurrent session + INDEPENDENT QA PASS (2026-08-12) — real button routing to creator-deals.tsx's genuinely working search box, consistent on mobile, regression-tested; see §5.** | Ananya | IN VERIFY |
 | CR-123 | 🟡 Medium | Notification bell button has no click handler — unread badge is correct but clicking does nothing. **✅ FIXED by a concurrent session + INDEPENDENT QA PASS (2026-08-12) — routes to a real, fully-functional /creator/notifications page, not a stub; a genuine badge-count mismatch (deal-messages vs. notifications) found and logged separately, not this ticket's stated scope; see §5.** | Ananya | IN VERIFY |
-| CR-124 | 🟢 Low | Mobile header search icon button has no click handler | Ananya | ASSIGNED |
+| CR-124 | 🟢 Low | Mobile header search icon button has no click handler. **✅ FIXED + ADVERSARIAL INDEPENDENT QA PASS (2026-08-10, this session) — routes to `/creator/deals`'s real search box, alongside CR-122's matching desktop fix; regression test mutation-tested (fresh-context Priya independently removed each `onClick` and confirmed each matching test fails). Review also caught 3 unrelated a11y defects in the same file in passing — see F-0167/F-0169/F-0170/F-0179 (all fixed, mutation-tested) and F-0180 (triaged NOT A DEFECT). See §5.** | Ananya | IN VERIFY |
 
 > ⚠️ **Protocol exception, recorded (creatorF.md intake pass) — entered by Claude at the repo owner's direct instruction, NOT by Tara.** §6 reserves §3 and the §5 `Status:` lines for her; that rule is knowingly overridden for this batch, same as the CR-40–CR-46 precedent above. **CR-51–CR-124 (74 new rows) come from a separate audit document, `creatorF.md`, covering surface area this tracker had not yet logged** (dashboard, campaign discovery, Co-pilot/Meta OAuth, analytics, wallet, reviews, disputes, coupons, affiliate earnings, profile, settings, logout, chat/SSE reliability, the brand Deals dashboard, the full Meta/Instagram integration pipeline, onboarding, login, and header controls) — grepped against the existing CR-01–CR-50 rows first and confirmed **non-overlapping**. **Every row is filed `ASSIGNED`, not `IN QA`/`IN VERIFY`/`DONE`: these are logged findings from `creatorF.md`, not independently reproduced or code-reviewed in this pass.** Two are flagged **🔴 Critical and worth reading now, not later:** **CR-91** — logout never actually revokes refresh tokens server-side on either logout path (tokens stay valid in the DB after every logout), and **CR-120** — creator onboarding Step 1 hardcodes a mock OAuth code sent to the real backend, so no creator can complete onboarding in production today. **Tara should re-derive the totals and the severity table below** rather than accept this pass's arithmetic.
 
@@ -1561,13 +1561,15 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-52 · 🟢 Low · FE sends unused ?role= query param on GET /deals
-**Owner:** Vikram · **Status:** ASSIGNED
+**Owner:** Vikram · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/lib/api.ts / DealController.java:65`
 
 **What:** FE sends ?role=creator on GET /deals but the backend ignores it and derives role from JWT. Harmless today but creates a false impression the server enforces the param.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** `deals.list` (`src/lib/api.ts:1731`) passes `role` only for client-side auth/token selection; the serialized query object carries `status` only. No more phantom `?role=` on the wire.
 
 ---
 
@@ -1864,13 +1866,15 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-75 · 🟢 Low · Transaction type collapses PLATFORM_FEE and ESCROW_HOLD into generic PAYOUT/EARNING labels
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/pages/creator-wallet.tsx mapWalletTransactionRow (L116-129), Payouts tab filter (L584)`
 
 **What:** The 8-value WalletTransactionRow.type union is collapsed to 'EARNING'/'PAYOUT' by credit/debit direction; the Payouts tab then displays platform-fee debits as if they were payouts.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** The real backend `type` is kept alongside the collapsed direction field (still used for the History tab's credit/debit icon/color, which is what that binary grouping is for); the Payouts tab now filters specifically on `type === 'WITHDRAWAL'`, not the whole PAYOUT bucket, so a platform-fee deduction no longer displays as if it were a payout to the creator's bank.
 
 ---
 
@@ -1949,7 +1953,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-82 · 🟢 Low · Redundant no-op client-side filter on already-server-filtered completed deals
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -1957,16 +1961,20 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 
 **What:** After GET /deals?status=completed (server-filtered), the code re-filters deal.status==='COMPLETED' client-side, which can never remove a row — stale code that should be cleaned up.
 
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** The dead client-side re-filter is removed; the server-filtered result is used directly.
+
 ---
 
 ### CR-83 · 🟢 Low · Affiliate earnings endpoint has no pagination; response grows unboundedly
-**Owner:** Vikram · **Status:** ASSIGNED
+**Owner:** Vikram · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `influora-api CreatorAffiliateEarningController.java:29`
 
 **What:** GET /creator/affiliate-earnings returns all rows in one response with no page/limit params and no load-more UI, which will not scale for high-volume affiliate creators.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** Real `page`/`limit` pagination end to end (`AffiliateEarningsService` → controller → `useAffiliateEarnings` → `AffiliateEarningsView`). Independent review caught a `pageNumber * pageSize` plain-`int` multiply that could overflow for large page values before this closed — fixed with `long` arithmetic before the multiply, regression test added.
 
 ---
 
@@ -1984,7 +1992,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-85 · 🟢 Low · Avatar/camera upload button has no onClick handler and no upload endpoint
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -1992,16 +2000,20 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 
 **What:** Clicking the camera icon produces no feedback and no upload. There is no dedicated avatar-upload multipart route, though avatarUrl is patchable as a URL field.
 
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** Wired to the existing generic `POST /uploads` + `api.uploads.upload()` (`UploadController.java`), matching how uploads already work elsewhere in the product — no new backend route needed.
+
 ---
 
 ### CR-86 · 🟢 Low · "Connect More Accounts" button on profile page is a dead control
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/pages/creator-profile.tsx:324-327`
 
 **What:** The button has no onClick handler; clicking it does nothing.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** Mirrors `ConnectedAccounts.handleConnect` (`connected-accounts.tsx`) exactly rather than mounting the whole settings card here (that's CR-101, a separate ticket).
 
 ---
 
@@ -2019,7 +2031,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-88 · 🟢 Low · Help Center / Contact Support / Terms & Privacy rows in Settings do nothing
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -2027,16 +2039,20 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 
 **What:** All three support-related items have onClick: () => {}. The one working help path is the sidebar avatar dropdown; the dedicated Settings rows are dead.
 
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed (F-0134).** First pass routed to `https://help.influora.com`, an unverified external host the brand side had already abandoned — caught by an independently-dispatched fresh-context Priya review before this closed. Corrected to real in-product `/support` route + `mailto:` for Contact Support, matching the CR-89/desktop pattern below.
+
 ---
 
 ### CR-89 · 🟢 Low · Help & Support entry is missing from the mobile header dropdown
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/components/creator/creator-layout.tsx:368-388`
 
 **What:** Desktop sidebar has a working Help & Support link; the mobile header dropdown omits it entirely.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** Added to the mobile header dropdown, routing to `/support` — same destination as CR-88's corrected desktop entry, no divergent surface.
 
 ---
 
@@ -2067,13 +2083,15 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-92 · 🟢 Low · Edit Profile dialog can only update 5 of 13 patchable profile fields
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/pages/creator-profile.tsx handleSave (L129-135) / CreatorProfilePatchPayload`
 
 **What:** categories and languages are displayed with empty-state copy but there is no control to add either; discoverable (search visibility) and username (public-page handle) are likewise unreachable from any UI.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** Edit Profile dialog now exposes controls for all 13 patchable fields, including categories/languages editors and the discoverable/username fields that had no UI path at all.
 
 ---
 
@@ -2370,7 +2388,7 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-115 · 🟢 Low · Facebook Page engagement scope is requested and granted but the data is never fetched
-**Owner:** Vikram · **Status:** ASSIGNED
+**Owner:** Vikram · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -2378,10 +2396,12 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 
 **What:** pages_read_engagement is included in the OAuth scope request, but no job or controller ever calls the client method that would use it — permission requested for no benefit.
 
+> ✅ **FIXED, independently QA-passed.** `pages_read_engagement` removed from `REQUIRED_SCOPES`; the connected-accounts UI's granted-permissions list no longer advertises a scope Meta was never asked to (and now isn't) grant.
+
 ---
 
 ### CR-116 · 🟢 Low · IG username is fetched from Meta but never stored anywhere
-**Owner:** Vikram · **Status:** ASSIGNED
+**Owner:** Vikram · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
@@ -2389,16 +2409,20 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 
 **What:** InstagramUserResponse.username() is returned by Meta but discarded; the PlatformStat builder never sets a handle, so PlatformStat.handle is null from every automated path.
 
+> ✅ **FIXED, independently QA-passed.** `MetricsPollingJob` now sets `.username(profile.username())` on the `CreatorMetric` it saves; `PlatformStatsAggregationJob` rolls that into `platform_stats.handle`, only overwriting an existing handle when the snapshot actually carries one (never clobbered with null). Two dedicated tests in `PlatformStatsAggregationJobTest` cover both the null-safe-skip and the overwrite case.
+
 ---
 
 ### CR-117 · 🟢 Low · OAuth authorization code/state left visible in browser URL/history after callback
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/pages/creator-meta-callback.tsx:29-31`
 
 **What:** The callback page never calls history.replaceState after reading code/state from the URL, so the code persists in browser history/bfcache. Mitigated by server-side single-use state consumption, but still a hygiene gap.
+
+> ✅ **FIXED, independently QA-passed.** `creator-meta-callback.tsx` now calls `window.history.replaceState(null, '', window.location.pathname)` after reading `code`/`state`, so the one-time code no longer lingers in browser history/bfcache on top of the pre-existing server-side single-use protection.
 
 ---
 
@@ -2479,13 +2503,17 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 ---
 
 ### CR-124 · 🟢 Low · Mobile header search icon button has no click handler
-**Owner:** Ananya · **Status:** ASSIGNED
+**Owner:** Ananya · **Status:** IN VERIFY
 
 **Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
 
 **Where:** `src/components/creator/creator-layout.tsx:344-346`
 
 **What:** Visible only on mobile; tapping it does nothing, consistent with the desktop search placeholder issue.
+
+> ✅ **2026-08-10 — FIXED, ADVERSARIALLY QA-passed (fresh-context Priya, mutation-tested).** Routes to `/creator/deals`'s real "Search brand or campaign…" box, mirroring CR-122's matching desktop fix — same destination, both real `<button>`s now (not a non-interactive `<div>`). New `creator-layout-search.test.tsx` covers both; Priya independently mutation-tested the gate itself (removed the mobile `onClick` → only the CR-124 test fails; swapped the desktop `<button>` for a `<div>` → only the CR-122 test fails), and traced the CI include-glob to confirm the file actually runs.
+>
+> Reviewing this fix surfaced 3 more accessible-name defects in the same file, all fixed and mutation-tested through the same fresh-context loop before closing: **F-0167** (mobile hamburger menu button had no accessible name at all), **F-0169** (mobile avatar dropdown trigger, same defect), **F-0170** (desktop sidebar account trigger — needed a different fix, since it has real visible label text a plain `aria-label` would have overridden, violating WCAG 2.1 AA 2.5.3), and **F-0179** (desktop trigger's avatar initials leaking into the composed accessible name). **F-0180** (both header logo buttons sharing the accessible name "Influora") was independently triaged and closed as **NOT A DEFECT** — they're a strict CSS `display:none` partition, never simultaneously reachable in any real browser, and WCAG SC 3.2.4 actually requires the shared name for same-function controls; diverging it would have been a real regression (failure technique F31) traded for an imaginary one.
 
 ---
 
