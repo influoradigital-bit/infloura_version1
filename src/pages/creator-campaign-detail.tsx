@@ -68,12 +68,28 @@ export default function CreatorCampaignDetailPage() {
   const [applying, setApplying] = React.useState(false);
   const [applySuccess, setApplySuccess] = React.useState(false);
 
+  // CR-11 static-sweep hardening — this route (/creator/campaigns/:id) does NOT unmount/remount
+  // when the id param changes (same route element, React Router reuses the instance), and this
+  // fetch had no staleness guard at all: navigating from campaign A's detail page to campaign B's
+  // before A's slower response lands could silently overwrite `campaign` with A's data while the
+  // URL, and every derived affordance (Apply button, breadcrumbs), still say B. Monotonic token
+  // matches the `messagesRequestRef` pattern already established in creator-chat.tsx (CR-20) —
+  // "latest request wins," not just "ignore responses after unmount."
+  // NOTE: this hardening does NOT reproduce or confirm CR-11's actual white-screen crash — see
+  // that ticket's tracker entry for why (CreatorCampaignMapper.toDetail always resolves
+  // objectives/hashtags/requirements/platforms through JsonLists.stringListFromJson, which
+  // returns emptyList() rather than null, so the render's unguarded .length/.map() calls were
+  // not the throw site). This is a real, separate stale-response race, fixed on its own merits.
+  const campaignRequestRef = React.useRef(0);
+
   const loadCampaign = React.useCallback(async () => {
     if (!id) return;
+    const requestId = ++campaignRequestRef.current;
     setLoading(true);
     setError(null);
     try {
       const data = await api.creatorCampaigns.get(id);
+      if (requestId !== campaignRequestRef.current) return; // a newer request has since started
       if (!data) {
         setError('Campaign not found.');
         setCampaign(null);
@@ -81,12 +97,13 @@ export default function CreatorCampaignDetailPage() {
         setCampaign(data);
       }
     } catch (e) {
+      if (requestId !== campaignRequestRef.current) return;
       const message =
         e instanceof ApiError ? e.message : 'Could not load campaign details.';
       setError(message);
       setCampaign(null);
     } finally {
-      setLoading(false);
+      if (requestId === campaignRequestRef.current) setLoading(false);
     }
   }, [id]);
 
