@@ -136,22 +136,32 @@ public class DevSeedCreatorsRunner implements ApplicationRunner {
                         + " ?, ?, ?, ?, ?, NULL, NOW(), NOW())";
         jdbcTemplate.update(
                 sql, "01SEEDPL00000000000000001", "01SEEDCR00000000000000001", "INSTAGRAM",
-                "@priya.fashion", 150000, 5.20, true);
+                "@priya.fashion", 150000, 5.20, false);
         jdbcTemplate.update(
                 sql, "01SEEDPL00000000000000002", "01SEEDCR00000000000000001", "YOUTUBE",
                 "PriyaStyleDiaries", 35000, 3.80, false);
         jdbcTemplate.update(
                 sql, "01SEEDPL00000000000000003", "01SEEDCR00000000000000002", "INSTAGRAM",
-                "@arjun.fit", 180000, 5.50, true);
+                "@arjun.fit", 180000, 5.50, false);
+        // CR-119 — every is_verified above/below is now `false`, was a mix of true/false.
+        // `is_verified` means "this follower count came back from the platform's own API". These
+        // are hand-written demo numbers: no Meta fetch ever produced them, and for the YOUTUBE
+        // rows no such integration even exists. Nothing corrects them either — the aggregation
+        // job only handles INSTAGRAM, and only for creators with a real Meta token. Now that both
+        // brand-visible surfaces spell provenance out in words, any `true` here would print a
+        // literal "Followers verified" on a demo box (influora.dev.seed-creators=true) — the
+        // same lie removed from BOTH frontend mock fixtures in this pass (mockCreator in
+        // brand-creator-profile.tsx and mockPortfolio() in src/lib/api.ts). Seed data is
+        // self-reported by construction; to demo the verified state, connect a real account.
         jdbcTemplate.update(
                 sql, "01SEEDPL00000000000000004", "01SEEDCR00000000000000002", "YOUTUBE",
-                "ArjunFitness", 40000, 4.90, true);
+                "ArjunFitness", 40000, 4.90, false);
         jdbcTemplate.update(
                 sql, "01SEEDPL00000000000000005", "01SEEDCR00000000000000003", "INSTAGRAM",
                 "@maya.glow", 120000, 4.30, false);
         jdbcTemplate.update(
                 sql, "01SEEDPL00000000000000006", "01SEEDCR00000000000000004", "INSTAGRAM",
-                "@rohit.tech", 75000, 4.00, true);
+                "@rohit.tech", 75000, 4.00, false);
         jdbcTemplate.update(
                 sql, "01SEEDPL00000000000000007", "01SEEDCR00000000000000004", "YOUTUBE",
                 "RohitReviews", 23000, 3.50, false);

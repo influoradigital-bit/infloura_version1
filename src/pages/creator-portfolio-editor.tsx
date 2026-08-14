@@ -388,9 +388,14 @@ export default function CreatorPortfolioEditorPage() {
                 value={page.visibility.badges}
                 onChange={(v) => updateVisibility({ badges: v })}
               />
+              {/* CR-119 — hint was "Instagram, YouTube — verified via OAuth", false for YouTube:
+                  no YouTube OAuth or data-fetch integration exists anywhere in this codebase, so a
+                  YouTube figure here is always creator-reported. Telling a creator their YouTube
+                  number is OAuth-verified also mis-sets their expectation of what a brand sees,
+                  which now reads "Self-reported" on the public page. */}
               <VisibilityRow
                 label="Platform stats"
-                hint={`Instagram, YouTube — verified via OAuth`}
+                hint={`Instagram verified via OAuth · others self-reported`}
                 value={page.visibility.platformStats}
                 onChange={(v) => updateVisibility({ platformStats: v })}
               />

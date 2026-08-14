@@ -301,7 +301,7 @@ public class PortfolioService {
                         .following(igProfile.followsCount())
                         .mediaCount(
                                 igProfile.mediaCount() == null ? null : igProfile.mediaCount().intValue())
-                        .dataSource("META_API")
+                        .dataSource(CreatorMetric.DATA_SOURCE_META_API)
                         .fetchedAt(Instant.now())
                         .build();
         creatorMetricsRepository.save(metric);
@@ -325,10 +325,16 @@ public class PortfolioService {
                 platformStatRepository.findByCreatorProfileIdAndPlatform(profile.getId(), platform);
         if (existing.isPresent()) {
             String handle = metric.getUsername() != null ? metric.getUsername() : existing.get().getHandle();
+            // CR-119 — mirrors PlatformStatsAggregationJob#upsertPlatformStat: the verified flag
+            // tracks THIS snapshot's provenance instead of being pinned to the row's prior value
+            // (which nothing ever set true, leaving the brand-facing badge permanently dark).
             existing
                     .get()
                     .applySnapshot(
-                            metric.getFollowers(), metric.getAvgEngagementRate(), existing.get().isVerified(), handle);
+                            metric.getFollowers(),
+                            metric.getAvgEngagementRate(),
+                            metric.isPlatformVerified(),
+                            handle);
             platformStatRepository.save(existing.get());
         } else {
             platformStatRepository.save(
@@ -339,7 +345,8 @@ public class PortfolioService {
                             .handle(metric.getUsername())
                             .followers(metric.getFollowers())
                             .engagementRate(metric.getAvgEngagementRate())
-                            .verified(false)
+                            // CR-119 — was a hardcoded `false`; see the update branch above.
+                            .verified(metric.isPlatformVerified())
                             .build());
         }
 

@@ -194,8 +194,24 @@ public class PlatformStatsAggregationJob {
             // a poll that legitimately returned no username (Meta omits it) must not clobber a
             // previously-recorded one with null.
             String handle = metric.getUsername() != null ? metric.getUsername() : existing.get().getHandle();
+            // CR-119 — was `existing.get().isVerified()`, which pinned the flag to whatever the row
+            // already had. No *Java* code ever wrote `true`, so for every row this job or
+            // PortfolioService created the column was permanently false, leaving the brand-facing
+            // per-platform verified badge (brand-creator-profile.tsx) dead in live mode — real
+            // Meta-fetched Instagram was indistinguishable from a creator-typed YouTube/TikTok
+            // number. (The one exception is seeded data: V7__seed_discoverable_creators.sql
+            // inserts is_verified=TRUE directly, including a YOUTUBE row — those ids are deleted
+            // by V20260723120000__remove_seed_creators.sql and only re-created by the dev-only
+            // DevSeedCreatorsRunner, so they never reach prod, but a dev box with
+            // influora.dev.seed-creators=true will show a verified YouTube row that no
+            // integration backs.) The flag now tracks THIS snapshot's provenance, so it can also
+            // correctly go false again if a later snapshot for the same platform is self-reported.
             existing.get()
-                    .applySnapshot(metric.getFollowers(), metric.getAvgEngagementRate(), existing.get().isVerified(), handle);
+                    .applySnapshot(
+                            metric.getFollowers(),
+                            metric.getAvgEngagementRate(),
+                            metric.isPlatformVerified(),
+                            handle);
             platformStatRepository.save(existing.get());
         } else {
             PlatformStat created =
@@ -206,7 +222,8 @@ public class PlatformStatsAggregationJob {
                             .handle(metric.getUsername())
                             .followers(metric.getFollowers())
                             .engagementRate(metric.getAvgEngagementRate())
-                            .verified(false)
+                            // CR-119 — was a hardcoded `false`; see the update branch above.
+                            .verified(metric.isPlatformVerified())
                             .build();
             platformStatRepository.save(created);
         }

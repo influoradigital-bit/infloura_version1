@@ -1698,6 +1698,13 @@ export interface Deal {
   campaignId: string;
   campaignName: string;
   counterpartyId: string;     // creatorId for brand, brandId for creator
+  /**
+   * The counterparty's CreatorProfile id — distinct from `counterpartyId`, which is the
+   * creator's User id. Frontend profile pages (e.g. brand-creator-profile.tsx) navigate/match
+   * on CreatorProfile id, not User id — see DealDtos.DealResponse.counterpartyProfileId
+   * (influora-api DealDtos.java:38). Null when the counterparty is a brand (viewer is CREATOR).
+   */
+  counterpartyProfileId?: string | null;
   counterpartyName: string;
   counterpartyAvatar?: string;
   counterpartyHandle?: string;
@@ -3668,7 +3675,14 @@ function mockPortfolio(username: string): PortfolioPage {
         platform: 'YOUTUBE',
         handle: 'Priya Creates',
         url: 'https://youtube.com/@priyacreates',
-        verified: true,
+        // CR-119 — was `true`. `verified` means "this follower count came back from the
+        // platform's own API"; there is no YouTube OAuth or data-fetch integration anywhere in
+        // this codebase, so no YouTube figure can carry that claim. This is the SECOND mock
+        // fixture with the bug (the first was mockCreator in brand-creator-profile.tsx) and it
+        // feeds creator-portfolio-public.tsx — a publicly linkable, brand-viewable page — in
+        // every non-live build, where it printed a literal "Followers verified" next to a
+        // YouTube count once the provenance wording landed.
+        verified: false,
         followers: 50000,
         engagementRate: 3.8,
         avgReach: 25000,

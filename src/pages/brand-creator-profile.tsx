@@ -174,7 +174,12 @@ const mockCreator: CreatorDisplayModel = {
       handle: 'Priya Creates',
       followers: 312000,
       engagement: 4.2,
-      verified: true,
+      // CR-119 — was `true`, which was already wrong (there is no YouTube OAuth or data-fetch
+      // integration anywhere in this codebase, so no YouTube figure can be platform-verified)
+      // but rendered only as a small unlabelled check icon. Now that both provenance states are
+      // spelled out in words below, leaving this true would print a literal "Verified" under a
+      // YouTube follower count in every non-live build — a louder lie than the one it replaced.
+      verified: false,
       color: '#FF0000',
     },
     {
@@ -691,15 +696,37 @@ export default function BrandCreatorProfilePage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <p className="font-medium truncate">{platform.name}</p>
-                    {platform.verified && (
-                      <CheckCircle2 className="h-3.5 w-3.5 fill-primary text-primary-foreground flex-shrink-0" />
-                    )}
+                    {/* CR-119 — the ✓ was the ONLY provenance signal here, and it never rendered:
+                        the backend wrote PlatformStat.verified=false unconditionally, so genuinely
+                        Meta-verified Instagram looked exactly like a creator-typed YouTube/TikTok
+                        number. The flag is real now, but "no badge" is far too quiet a way to say
+                        "this figure is self-reported" to a brand about to spend money on it —
+                        absence of a mark reads as an oversight, not as a claim. Both states are
+                        stated explicitly instead. */}
+                    {platform.verified ? (
+                      <span
+                        className="flex items-center gap-1 text-primary flex-shrink-0"
+                        title="Followers confirmed directly with the platform's API"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5 fill-primary text-primary-foreground" />
+                        <span className="sr-only">Platform-verified</span>
+                      </span>
+                    ) : null}
                   </div>
                   <p className="text-sm text-muted-foreground">{platform.handle}</p>
                 </div>
                 <div className="text-right">
                   <p className="font-semibold">{formatNumber(platform.followers)}</p>
                   <p className="text-xs text-muted-foreground">{platform.engagement}% eng</p>
+                  <p
+                    className={
+                      platform.verified
+                        ? 'text-[11px] text-primary'
+                        : 'text-[11px] text-muted-foreground'
+                    }
+                  >
+                    {platform.verified ? 'Followers verified' : 'Self-reported'}
+                  </p>
                 </div>
               </div>
             ))}

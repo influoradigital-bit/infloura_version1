@@ -350,4 +350,182 @@ class PortfolioServiceTest {
         verify(creatorProfileRepository).save(profile);
         org.junit.jupiter.api.Assertions.assertNotNull(response.syncedAt());
     }
+
+    // ---------------------------------------------------------------------------------------
+    // CR-119 — `syncPlatforms` is the SECOND writer of PlatformStat.verified (the first being
+    // PlatformStatsAggregationJob#upsertPlatformStat). It is the more user-visible of the two:
+    // it fires on a creator's on-demand "Sync" rather than the 3:45 AM batch. Reverting its
+    // CR-119 change wholesale used to leave this entire suite green, so the flag that tells a
+    // paying brand "these followers were confirmed with the platform" was, on this path,
+    // guarded by nothing. These pin it.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "CR-119: syncPlatforms marks a NEW platform stat verified — the fetch is a real Meta"
+                    + " Graph API call, so the row may legitimately claim verified provenance")
+    void syncPlatforms_marksNewStatVerifiedForRealMetaFetch() {
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Real Creator");
+        MetaOAuthToken tokenRow =
+                MetaOAuthToken.builder()
+                        .id("01HTOKEN1234567890ABCDE")
+                        .creatorProfileId(PROFILE_ID)
+                        .igBusinessAccountId("17841400000000000")
+                        .encryptedAccessToken("cipher")
+                        .expiresAt(Instant.now().plusSeconds(3600))
+                        .build();
+        InstagramUserResponse igProfile =
+                new InstagramUserResponse(
+                        "17841400000000000", "real_creator", "Real Creator", "bio", 5000L, 200L, 42L, null, null);
+
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        when(metaOAuthTokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(PROFILE_ID))
+                .thenReturn(Optional.of(tokenRow));
+        when(metaTokenStorage.getValidCreatorToken(PROFILE_ID)).thenReturn(Optional.of("plaintext-token"));
+        when(instagramInsightsClient.getProfile("17841400000000000", "plaintext-token")).thenReturn(igProfile);
+        when(platformStatRepository.findByCreatorProfileIdAndPlatform(PROFILE_ID, "INSTAGRAM"))
+                .thenReturn(Optional.empty());
+        when(platformStatRepository.findByCreatorProfileId(PROFILE_ID))
+                .thenReturn(List.of(PlatformStat.builder().followers(5000L).build()));
+
+        service.syncPlatforms(principal);
+
+        ArgumentCaptor<CreatorMetric> metricCaptor = ArgumentCaptor.forClass(CreatorMetric.class);
+        verify(creatorMetricsRepository).save(metricCaptor.capture());
+        assertEquals(
+                CreatorMetric.DATA_SOURCE_META_API,
+                metricCaptor.getValue().getDataSource(),
+                "the on-demand sync must declare its provenance explicitly, not lean on a default");
+
+        ArgumentCaptor<PlatformStat> statCaptor = ArgumentCaptor.forClass(PlatformStat.class);
+        verify(platformStatRepository).save(statCaptor.capture());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                statCaptor.getValue().isVerified(),
+                "a stat written from a real Meta Graph API fetch must claim verified provenance —"
+                        + " this was hardcoded false, leaving the brand-facing badge dead");
+    }
+
+    @Test
+    @DisplayName(
+            "CR-119: syncPlatforms promotes an EXISTING legacy unverified row rather than pinning"
+                    + " it to its stale false")
+    void syncPlatforms_promotesExistingUnverifiedRowOnRealFetch() {
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Real Creator");
+        MetaOAuthToken tokenRow =
+                MetaOAuthToken.builder()
+                        .id("01HTOKEN1234567890ABCDE")
+                        .creatorProfileId(PROFILE_ID)
+                        .igBusinessAccountId("17841400000000000")
+                        .encryptedAccessToken("cipher")
+                        .expiresAt(Instant.now().plusSeconds(3600))
+                        .build();
+        InstagramUserResponse igProfile =
+                new InstagramUserResponse(
+                        "17841400000000000", "real_creator", "Real Creator", "bio", 5000L, 200L, 42L, null, null);
+
+        // Every row created before CR-119 is verified=false, because no Java writer ever set true.
+        PlatformStat legacyUnverified =
+                PlatformStat.builder()
+                        .id("01HEXISTINGSTAT1234567")
+                        .creatorProfileId(PROFILE_ID)
+                        .platform("INSTAGRAM")
+                        .handle("real_creator")
+                        .followers(1000L)
+                        .verified(false)
+                        .build();
+
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        when(metaOAuthTokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(PROFILE_ID))
+                .thenReturn(Optional.of(tokenRow));
+        when(metaTokenStorage.getValidCreatorToken(PROFILE_ID)).thenReturn(Optional.of("plaintext-token"));
+        when(instagramInsightsClient.getProfile("17841400000000000", "plaintext-token")).thenReturn(igProfile);
+        when(platformStatRepository.findByCreatorProfileIdAndPlatform(PROFILE_ID, "INSTAGRAM"))
+                .thenReturn(Optional.of(legacyUnverified));
+        when(platformStatRepository.findByCreatorProfileId(PROFILE_ID))
+                .thenReturn(List.of(legacyUnverified));
+
+        service.syncPlatforms(principal);
+
+        ArgumentCaptor<PlatformStat> statCaptor = ArgumentCaptor.forClass(PlatformStat.class);
+        verify(platformStatRepository).save(statCaptor.capture());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                statCaptor.getValue().isVerified(),
+                "an on-demand real Meta sync must be able to lift a legacy unverified row to verified");
+    }
+
+    @Test
+    @DisplayName(
+            "CR-119: syncPlatforms declares META_API provenance explicitly — it is the ONLY reason"
+                    + " this path may write verified=true")
+    void syncPlatforms_verifiedComesFromExplicitlyDeclaredProvenance() {
+        // WHY THIS IS NOT A DEMOTION TEST — read before adding one.
+        //
+        // The aggregation job has a demotion test (a self-reported snapshot must clear a
+        // previously-verified row). The equivalent CANNOT be written against this path as
+        // black-box behaviour: syncPlatforms constructs its own CreatorMetric with
+        // `.dataSource(DATA_SOURCE_META_API)` hardcoded (see PortfolioService#syncPlatforms), so
+        // `metric.isPlatformVerified()` is unconditionally true here and no caller input can make
+        // it false. A never-demote latch (`existing.isVerified() || metric.isPlatformVerified()`)
+        // is therefore behaviourally IDENTICAL to the correct expression on this path — it is
+        // unreachable by construction, not merely untested. A test that "caught" it would have to
+        // assert on the source expression rather than on behaviour, which pins the implementation
+        // and not the contract.
+        //
+        // What genuinely protects the shared semantic is that BOTH upserts derive the flag from
+        // the same single predicate, CreatorMetric#isPlatformVerified() — which is directly
+        // covered (PlatformStatsAggregationJobTest's demote/fail-closed/self-reported cases). What
+        // this test pins is the one thing that IS reachable and would break silently here: that
+        // this path keeps declaring its provenance explicitly instead of drifting onto the
+        // builder's fail-closed default, which would silently stop every synced row from being
+        // verified at all.
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Real Creator");
+        MetaOAuthToken tokenRow =
+                MetaOAuthToken.builder()
+                        .id("01HTOKEN1234567890ABCDE")
+                        .creatorProfileId(PROFILE_ID)
+                        .igBusinessAccountId("17841400000000000")
+                        .encryptedAccessToken("cipher")
+                        .expiresAt(Instant.now().plusSeconds(3600))
+                        .build();
+        InstagramUserResponse igProfile =
+                new InstagramUserResponse(
+                        "17841400000000000", "real_creator", "Real Creator", "bio", 5000L, 200L, 42L, null, null);
+        PlatformStat previouslyVerified =
+                PlatformStat.builder()
+                        .id("01HEXISTINGSTAT1234567")
+                        .creatorProfileId(PROFILE_ID)
+                        .platform("INSTAGRAM")
+                        .handle("real_creator")
+                        .followers(1000L)
+                        .verified(true)
+                        .build();
+
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        when(metaOAuthTokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(PROFILE_ID))
+                .thenReturn(Optional.of(tokenRow));
+        when(metaTokenStorage.getValidCreatorToken(PROFILE_ID)).thenReturn(Optional.of("plaintext-token"));
+        when(instagramInsightsClient.getProfile("17841400000000000", "plaintext-token")).thenReturn(igProfile);
+        when(platformStatRepository.findByCreatorProfileIdAndPlatform(PROFILE_ID, "INSTAGRAM"))
+                .thenReturn(Optional.of(previouslyVerified));
+        when(platformStatRepository.findByCreatorProfileId(PROFILE_ID))
+                .thenReturn(List.of(previouslyVerified));
+
+        service.syncPlatforms(principal);
+
+        ArgumentCaptor<CreatorMetric> metricCaptor = ArgumentCaptor.forClass(CreatorMetric.class);
+        verify(creatorMetricsRepository).save(metricCaptor.capture());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                metricCaptor.getValue().isPlatformVerified(),
+                "syncPlatforms must declare META_API provenance explicitly — drifting onto the"
+                        + " builder's fail-closed default would silently unverify every synced row");
+
+        ArgumentCaptor<PlatformStat> statCaptor = ArgumentCaptor.forClass(PlatformStat.class);
+        verify(platformStatRepository).save(statCaptor.capture());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                statCaptor.getValue().isVerified(),
+                "and the written row must carry that provenance through");
+    }
 }
