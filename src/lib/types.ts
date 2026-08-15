@@ -548,6 +548,12 @@ export interface Attachment {
   uploadedAt: Date;
 }
 
+/** One line of a proposal's deliverable list — mirrors `DealDtos.DeliverableSlot` (`qty`, not `quantity`). */
+export interface DeliverableSlot {
+  type: string;
+  qty: number;
+}
+
 export interface TimelineEventMetadata {
   brandName?: string;
   campaignName?: string;
@@ -556,7 +562,21 @@ export interface TimelineEventMetadata {
   // For 'proposal' tag:
   proposalId?: string;
   amount?: number;
-  deliverables?: number;
+  /**
+   * The proposal's deliverable slots — NOT a count, and NOT renderable as a React child.
+   *
+   * `DealService.persistProposalMessage` (DealService.java:1132) has stored the
+   * `DealDtos.DeliverableSlot` list here since 2026-07-26; before that it stored the slot count as
+   * a plain number, and those older messages are still in the table. This type said `number` until
+   * a live proposal reached the deal-room timeline and React threw error #31 ("Objects are not
+   * valid as a React child") on `{meta?.deliverables || 0} pieces`, taking the whole route down.
+   *
+   * Read it through `deliverableCountOf` / `deliverableSlotsLabel` (src/lib/deliverable-slots.ts),
+   * never directly.
+   */
+  deliverables?: DeliverableSlot[] | number;
+  /** Slot count the backend writes alongside `deliverables` (DealService.java:1133). */
+  deliverableCount?: number;
   deadline?: string;
   status?: 'pending' | 'accepted' | 'rejected' | 'countered';
   

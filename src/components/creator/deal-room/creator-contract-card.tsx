@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { FileText, CheckCircle2, AlertCircle, ChevronRight } from 'lucide-react';
 import { TimelineEvent } from '@/lib/types';
 import { formatINR } from '@/lib/utils';
+import { deliverableCountLabel } from '@/lib/deliverable-slots';
 
 interface CreatorContractCardProps {
   event: TimelineEvent;
@@ -137,7 +138,11 @@ export function CreatorContractCard({
           <div className="grid grid-cols-2 gap-3">
             <div className="text-sm">
               <p className="text-gray-500 text-xs">Deliverables</p>
-              <p className="font-medium text-gray-900">{meta?.deliverables ?? 2} items</p>
+              {/* Same React #31 trap as the brand-side proposal card — `meta.deliverables` is a
+                  DeliverableSlot[]. The old `?? 2` also invented a term (TECH-STACK.md rule 7). */}
+              <p className="font-medium text-gray-900">
+                {deliverableCountLabel(meta, 'item') ?? 'Not specified'}
+              </p>
             </div>
             <div className="text-sm">
               <p className="text-gray-500 text-xs">Deadline</p>

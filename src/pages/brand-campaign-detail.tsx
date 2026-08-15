@@ -35,7 +35,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { CampaignStateMachine } from '@/components/brand/campaigns/campaign-state-machine';
 import { CollaborationTimeline } from '@/components/brand/timeline/collaboration-timeline';
 import { api, isApiLive, ApiError, type Deal, type CampaignAnalytics } from '@/lib/api';
@@ -2040,6 +2040,12 @@ export default function BrandCampaignDetailPage() {
                 <MessageSquare className="h-4 w-4" />
                 {selectedCollaboration?.creator.name} - Collaboration Timeline
               </SheetTitle>
+              {/* Radix warns ("Missing `Description` or `aria-describedby`") and leaves the panel
+                  without an accessible description when this is absent — the dialogs on this page
+                  all have one, this sheet never did. */}
+              <SheetDescription>
+                Messages, proposals, contract and deliverable activity for this collaboration.
+              </SheetDescription>
             </SheetHeader>
             
             {selectedCollaboration && (

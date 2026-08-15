@@ -13,6 +13,7 @@ import { downloadContractPDF, signContract } from '@/lib/contract-generator';
 import { ApiError } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatINR } from '@/lib/utils';
+import { deliverableCountLabel } from '@/lib/deliverable-slots';
 
 export function ContractPanel({
   open,
@@ -167,7 +168,13 @@ export function ContractPanel({
                 <div className="bg-muted/50 p-3 rounded text-xs space-y-2 max-h-40 overflow-y-auto">
                   <p className="font-semibold">Terms & Conditions</p>
                   <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                    <li>Creator shall deliver {meta?.deliverables || 3} pieces of content as agreed</li>
+                    {/* Same trap as proposal-card: `meta.deliverables` is a DeliverableSlot[], so
+                        rendering it directly threw React #31. The old `|| 3` also invented a term
+                        the parties never agreed to (TECH-STACK.md rule 7). */}
+                    <li>
+                      Creator shall deliver {deliverableCountLabel(meta) ?? 'the agreed pieces'} of
+                      content as agreed
+                    </li>
                     <li>Content must be delivered by {meta?.deadline || '2024-02-15'}</li>
                     <li>Brand retains usage rights for 6 months from delivery</li>
                     <li>Payment will be released upon approval of final deliverables</li>
