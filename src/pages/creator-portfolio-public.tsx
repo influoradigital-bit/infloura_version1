@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/dialog';
 
 import { cn, formatINR, publicProfileLabel } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 import {
   api,
   ApiError,
@@ -300,14 +301,11 @@ export default function CreatorPortfolioPublicPage() {
           {/* Hero cover — soft branded gradient with decorative glow (pure CSS, no WebGL) */}
           <div
             className={cn(
-              'relative h-36 sm:h-52 w-full overflow-hidden',
+              'relative h-36 sm:h-52 w-full overflow-hidden bg-cover bg-center',
+              page.coverUrl && 'bg-[image:var(--cover-url)]',
               !page.coverUrl && 'bg-gradient-to-br from-primary/25 via-accent/40 to-primary/10',
             )}
-            style={
-              page.coverUrl
-                ? { backgroundImage: `url(${page.coverUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-                : undefined
-            }
+            ref={page.coverUrl ? cssVars({ '--cover-url': `url(${page.coverUrl})` }) : undefined}
           >
             {!page.coverUrl && (
               <div aria-hidden className="pointer-events-none absolute inset-0">

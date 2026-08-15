@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 
 interface SlotProgressBarProps {
   filled: number;
@@ -38,8 +39,8 @@ export function SlotProgressBar({ filled, total, className, showLabel = true, to
         aria-label={`${filled} of ${total} slots filled`}
       >
         <div
-          className={cn('h-full rounded-full transition-[width] duration-500', toneClasses.fill)}
-          style={{ width: `${pct}%` }}
+          className={cn('h-full rounded-full transition-[width] duration-500 w-[var(--slot-progress-w)]', toneClasses.fill)}
+          ref={cssVars({ '--slot-progress-w': `${pct}%` })}
         />
       </div>
       {showLabel && (

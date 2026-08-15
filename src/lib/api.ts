@@ -2059,7 +2059,8 @@ export const messages = {
               handlers.onMessage(dto);
             } catch {
               // Malformed event payload — skip this frame only, non-fatal.
-              console.debug('[messages.stream] malformed deal-message payload:', frame.data);
+              // Dev-only: payload contents must not reach end-user consoles (F-0211).
+              if (import.meta.env.DEV) console.warn('[messages.stream] malformed deal-message payload:', frame.data);
             }
           }
         }
@@ -2629,6 +2630,33 @@ export interface WalletSummaryResponse {
 }
 
 /** GET /wallet/transactions row — MoneyDtos.WalletTransactionRowResponse. */
+/**
+ * CR-77 — one row of the creator's real payout history (`GET /wallet/payouts`), mirroring
+ * `MoneyDtos.CreatorPayoutRowResponse` exactly.
+ *
+ * NOTE ON ABSENT FIELDS: CR-77 also asked for a TDS/GST/platform-fee split, brand + campaign name,
+ * and a bank UTR. None of those exist on the backend `payouts` row — TDS/GST are unimplemented
+ * platform-wide, the platform fee is a separate ledger entry rather than a payout attribute,
+ * `milestoneId` is null for lump-sum wallet withdrawals so there is no campaign to name, and a UTR
+ * would have to be scraped out of an unpinned raw webhook blob. They are deliberately NOT declared
+ * here as optional-null: a field on the wire that can only ever render as an em-dash turns "not
+ * implemented" into "looks broken". The UI states the gap in words instead.
+ */
+export interface CreatorPayoutRow {
+  id: string;
+  /** RazorpayX payout id — the reference a creator can quote to support. */
+  reference: string;
+  amount: number;
+  currency: string;
+  /** Raw gateway status, passed through unmapped (queued/processing/processed/reversed/…). */
+  status: string;
+  /** Terminal failure — money never reached the bank. The signal the old derived tab could not express. */
+  failed: boolean;
+  requestedAt: string;
+  /** When it actually landed. Null while in flight, and null forever for a failed payout. */
+  settledAt: string | null;
+}
+
 export interface WalletTransactionRow {
   id: string;
   type: 'DEPOSIT' | 'WITHDRAWAL' | 'ESCROW_HOLD' | 'ESCROW_RELEASE' | 'ESCROW_REFUND' | 'PLATFORM_FEE' | 'PAYOUT' | 'ADJUSTMENT';
@@ -2811,6 +2839,27 @@ export const wallet = {
           query: period && period !== 'all' ? { page, limit, period } : { page, limit },
         })
       : mockOr<WalletTransactionRow[]>([]),
+
+  /**
+   * CR-77 — GET /wallet/payouts. The creator's real payout history from the `payouts` table.
+   *
+   * Creator-only by design: a payout is a disbursement to a creator's own bank account and has no
+   * brand/workspace analogue, so the endpoint 403s a brand principal rather than returning an
+   * empty list that would read as "you have no payouts".
+   *
+   * Replaces deriving the Payouts tab from `/wallet/transactions` WITHDRAWAL debits. A ledger
+   * debit says money left the Influora wallet; it does NOT say it reached the bank. On a
+   * reversed/rejected/cancelled payout the backend posts a separate compensating credit and leaves
+   * the debit standing, so the derived view showed bounced payouts as money paid out. `failed`
+   * here is the gateway's own terminal state.
+   */
+  payouts: (page = 1, limit = 20) =>
+    isLive()
+      ? http.request<CreatorPayoutRow[]>('GET', '/wallet/payouts', {
+          role: 'creator',
+          query: { page, limit },
+        })
+      : mockOr<CreatorPayoutRow[]>([]),
 
   /** GET /wallet/payout-methods */
   getPayoutMethods: (role: Role) =>

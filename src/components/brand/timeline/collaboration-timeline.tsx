@@ -232,7 +232,7 @@ export function CollaborationTimeline({
       onError: (err) => {
         // Non-fatal — the initial `loadMessages()` fetch already rendered the thread;
         // the stream only adds realtime updates on top of it.
-        console.debug('[collaboration-timeline] message stream error for deal', dealId, err);
+        if (import.meta.env.DEV) console.warn('[collaboration-timeline] message stream error for deal', dealId, err);
       },
       onReconnect: () => {
         // Nothing published during the gap is recoverable from the transport — re-fetch

@@ -68,6 +68,15 @@ interface Message {
 
 interface Conversation {
   id: string;
+  /**
+   * The creator's CreatorProfile id (Deal.counterpartyProfileId), used ONLY to match the
+   * `?creator=` URL param set by brand-creator-profile.tsx's Message button (which navigates
+   * with the CreatorProfile id, not the User id). `creator.id` below stays the User id
+   * everywhere else it's read (e.g. matching DealMessage.readBy) — deliberately not repurposed,
+   * to avoid breaking that existing meaning. Mock conversations set this equal to `creator.id`
+   * (arbitrary mock ids, so no live/mock behavior difference for URL-matching pre-fix).
+   */
+  creatorProfileId?: string | null;
   creator: {
     id: string;
     name: string;
@@ -95,6 +104,7 @@ interface Conversation {
 const mockConversations: Conversation[] = [
   {
     id: 'conv-1',
+    creatorProfileId: 'c1',
     creator: {
       id: 'c1',
       name: 'Sarah Johnson',
@@ -115,6 +125,7 @@ const mockConversations: Conversation[] = [
   },
   {
     id: 'conv-2',
+    creatorProfileId: 'c2',
     creator: {
       id: 'c2',
       name: 'Alex Chen',
@@ -136,6 +147,7 @@ const mockConversations: Conversation[] = [
   },
   {
     id: 'conv-3',
+    creatorProfileId: 'c3',
     creator: {
       id: 'c3',
       name: 'Maya Patel',
@@ -155,6 +167,7 @@ const mockConversations: Conversation[] = [
   },
   {
     id: 'conv-4',
+    creatorProfileId: 'c4',
     creator: {
       id: 'c4',
       name: 'James Wilson',
@@ -270,6 +283,7 @@ const mockMessagesByConversation: Record<string, Message[]> = {
 function mapDealToConversation(deal: Deal): Conversation {
   return {
     id: deal.id,
+    creatorProfileId: deal.counterpartyProfileId ?? null,
     creator: {
       id: deal.counterpartyId,
       name: deal.counterpartyName,
@@ -330,7 +344,7 @@ export default function BrandMessagesPage() {
   // so we show a "no conversation yet" state instead of silently opening the wrong
   // creator's thread (audit #10).
   const initialConversation = creatorIdFromUrl
-    ? mockConversations.find(c => c.creator.id === creatorIdFromUrl) ?? null
+    ? mockConversations.find(c => c.creatorProfileId === creatorIdFromUrl) ?? null
     : mockConversations[0];
 
   // Live mode (isApiLive()) state — mock rendering above stays untouched.
@@ -351,7 +365,7 @@ export default function BrandMessagesPage() {
   const requestedCreatorMissing =
     !!creatorIdFromUrl &&
     !conversationsLoading &&
-    !conversations.some((c) => c.creator.id === creatorIdFromUrl);
+    !conversations.some((c) => c.creatorProfileId === creatorIdFromUrl);
 
   const [selectedConversation, setSelectedConversation] = React.useState<Conversation | null>(
     isApiLive() ? null : initialConversation
@@ -397,7 +411,7 @@ export default function BrandMessagesPage() {
     // leave unselected (→ "no conversation yet" state). Never fall back to a
     // different creator's thread (audit #10).
     if (creatorIdFromUrl) {
-      const match = liveConversations.find((c) => c.creator.id === creatorIdFromUrl);
+      const match = liveConversations.find((c) => c.creatorProfileId === creatorIdFromUrl);
       if (match) {
         setSelectedConversation(match);
         setIsMobileConversationOpen(true);
@@ -449,7 +463,7 @@ export default function BrandMessagesPage() {
         });
       },
       onError: (err) => {
-        console.debug('[brand-messages] message stream error for deal', dealId, err);
+        if (import.meta.env.DEV) console.warn('[brand-messages] message stream error for deal', dealId, err);
       },
       onReconnect: () => {
         void loadMessages(dealId);

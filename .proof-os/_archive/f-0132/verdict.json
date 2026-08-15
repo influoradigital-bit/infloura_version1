@@ -1,0 +1,5 @@
+{"verdict": "proved", "oracle": "vitest", "isolation": "oracle",
+ "done_when": "F-0132 fixed: brand billing Upgrade + Cancel controls gated to OWNER/ADMIN (mirroring BillingController.requireRole on /checkout and /cancel); MANAGER/MEMBER/VIEWER see disabled controls with a visible 'owners and admins only' reason (disabled AlertDialogTrigger prevents the cancel dialog opening); null role + mock mode fail open. Role via workspaceMembers.list()+brand_user_id. Pinned by useBrandBillingAccess.test.ts; tsc + vitest pass.",
+ "evidence": {"oracle": "vitest", "command": "npx vitest run src/hooks/brand/useBrandBillingAccess.test.ts", "result": "4 passed", "where": "src/hooks/brand/useBrandBillingAccess.test.ts:1"},
+ "not_checked": ["live browser click-through as a MANAGER confirming the disabled state + that the server still 403s a forged request (Neha's gate) — role logic is unit-pinned + priya-reviewed, runtime not exercised"],
+ "skipped": []}

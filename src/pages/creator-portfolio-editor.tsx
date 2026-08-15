@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
 import { cn, publicProfileUrl } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 import {
   api,
   ApiError,
@@ -293,10 +294,11 @@ export default function CreatorPortfolioEditorPage() {
             <div className="mt-3 flex items-stretch gap-3">
               <div
                 className={cn(
-                  'h-20 sm:h-24 flex-1 rounded-lg overflow-hidden border border-border',
+                  'h-20 sm:h-24 flex-1 rounded-lg overflow-hidden border border-border bg-cover bg-center',
+                  page.coverUrl && 'bg-[image:var(--cover-url)]',
                   !page.coverUrl && 'bg-gradient-to-br from-primary/30 via-purple-300/40 to-pink-300/30',
                 )}
-                style={page.coverUrl ? { backgroundImage: `url(${page.coverUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+                ref={page.coverUrl ? cssVars({ '--cover-url': `url(${page.coverUrl})` }) : undefined}
               />
               <div className="flex flex-col gap-1.5">
                 <label

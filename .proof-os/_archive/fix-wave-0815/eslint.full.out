@@ -1,0 +1,199 @@
+NOT CHECKED (eslint.sage.mjs): eslint-plugin-jsx-a11y — alt-text and anchor-is-valid NOT CHECKED | eslint.sage.json could not be read, so the eslintrc fallback was not compared with this config
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\services\websocket.ts
+  155:14  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\utils\auditLogger.ts
+  137:5  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  175:5  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\app\layout.tsx
+  6:7  error  '_geist' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  7:7  error  '_geistMono' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\3d\DiscoverCanvas.tsx
+   94:11  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  165:9   error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\3d\HeroGlobe.tsx
+  138:9  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\3d\LockFallback.tsx
+  35:11  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  55:11  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\3d\PortfolioCanvas.tsx
+  146:9  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ErrorBoundary.tsx
+  63:5  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\analytics\MetricsTrendChart.tsx
+  71:40  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  85:43  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  94:67  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\brand-layout.tsx
+  162:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\campaigns\campaign-form.tsx
+  196:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  206:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  250:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\campaigns\campaign-state-machine.tsx
+  257:9  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\contracts\contracts-and-deliverables.tsx
+  597:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\dashboard\dashboard-page.tsx
+  371:15  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\deals\deal-room-dashboard.tsx
+  353:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\discover\creator-discovery.tsx
+  126:52  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\timeline\collaboration-timeline.tsx
+  235:9  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\CreditMeter.tsx
+  110:15  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\FundEscrowButton.tsx
+  190:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  206:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  258:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\MeeraChatPanel.tsx
+  349:5   error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  670:41  error  '_lang' is defined but never used                                @typescript-eslint/no-unused-vars
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\MeeraOrb.tsx
+   57:9   error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+   75:7   error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+   85:13  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+   96:9   error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  113:13  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  131:11  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\StageSnapshot.tsx
+   89:5   error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  126:13  error  kavya: no inline styles — Tailwind only                          no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\VoiceMode.tsx
+  119:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\motion\EscrowFlowAnimation.tsx
+  62:22  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  96:19  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\motion\EscrowLockSequence.tsx
+  52:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\motion\PulseAura.tsx
+  37:9  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\motion\TiltCard.tsx
+  62:7  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  74:9  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\shared\login-scene-3d.tsx
+  80:9  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\brand-avatar.tsx
+  29:9  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\chart.tsx
+  214:25  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  292:17  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\progress.tsx
+  25:9  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\sidebar.tsx
+  134:11  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  191:11  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  630:9   error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\slot-progress-bar.tsx
+  42:11  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\sonner.tsx
+  8:7  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\voice-waveform.tsx
+  36:9   error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  44:13  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  54:7   error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useCreatorMetrics.ts
+  84:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useMeeraStream.ts
+  218:11  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useNotifications.ts
+  165:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  190:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  221:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\lib\api.ts
+  2062:15  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\lib\contract-generator.ts
+  178:57  error  '_filename' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-campaign-detail.tsx
+  1098:105  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  1767:41   error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  1775:41   error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-chat.tsx
+   869:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found                    react-hooks/exhaustive-deps
+  1162:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found                    react-hooks/exhaustive-deps
+  1230:9  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  1249:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found                    react-hooks/exhaustive-deps
+  1266:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found                    react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-creator-profile.tsx
+  692:19  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  694:54  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  816:21  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  820:21  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  824:21  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-messages.tsx
+  466:9  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-pipeline.tsx
+  642:19  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-wallet.tsx
+  552:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat-bare-invite.test.tsx
+  47:5  error  'streamHandlers' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx
+   937:9   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  1465:38  error  '_revisionNotes' is defined but never used                                         @typescript-eslint/no-unused-vars
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-deals.tsx
+  631:54  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-portfolio-editor.tsx
+  299:17  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-portfolio-public.tsx
+  306:13  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-wallet.tsx
+    7:10  error  'Separator' is defined but never used         @typescript-eslint/no-unused-vars
+  110:10  error  'statusBadgeClass' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 90 problems (89 errors, 1 warning)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+

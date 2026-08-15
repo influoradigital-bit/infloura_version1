@@ -33,6 +33,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 import { deals as dealsApi, isApiLive, type Deal } from '@/lib/api';
 // CR-30 — this board derives its columns from the one shared switch over CollaborationStatus
 // instead of keeping a fourth private copy. See lib/brand-pipeline-stage.ts.
@@ -634,12 +635,12 @@ export default function BrandPipelinePage() {
             {/* Timeline Progress Bar */}
             <div className="relative">
               <div className="h-2 bg-muted rounded-full overflow-hidden">
-                <div 
+                <div
                   className={cn(
-                    'h-full rounded-full transition-all',
+                    'h-full rounded-full transition-all w-[var(--pipeline-progress-w)]',
                     atRiskStatus ? 'bg-red-500' : 'bg-primary'
                   )}
-                  style={{ width: `${progress}%` }}
+                  ref={cssVars({ '--pipeline-progress-w': `${progress}%` })}
                 />
               </div>
               {/* Stage markers */}

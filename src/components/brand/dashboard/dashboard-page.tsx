@@ -19,6 +19,7 @@ import { api, ApiError } from '@/lib/api';
 import { walletRunwayHealth } from '@/lib/wallet-runway';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -364,11 +365,11 @@ function PipelineCard({ pipeline, total, onClickStage, onViewAll }: PipelineCard
               key={stage.stage}
               type="button"
               className={cn(
-                'flex items-center justify-center text-[10px] font-medium hover:opacity-90 transition-opacity',
+                'flex items-center justify-center text-[10px] font-medium hover:opacity-90 transition-opacity w-[var(--stage-w)]',
                 STAGE_COLOR[stage.stage] || 'bg-muted',
                 STAGE_TEXT[stage.stage] || 'text-foreground',
               )}
-              style={{ width: total ? `${(stage.count / total) * 100}%` : '0%' }}
+              ref={cssVars({ '--stage-w': total ? `${(stage.count / total) * 100}%` : '0%' })}
               title={`${stage.stage}: ${stage.count}`}
               onClick={() => onClickStage(stage.stage)}
             >

@@ -135,7 +135,7 @@ export function HeroGlobe() {
         camera={{ position: [0, 0, 5.4], fov: 45, near: 0.1, far: 100 }}
         dpr={[1, 1.5]}
         gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
-        style={{ background: 'transparent' }}
+        className="bg-transparent"
       >
         <PerformanceMonitor onDecline={() => setDegraded(true)} onIncline={() => setDegraded(false)} />
         <Suspense fallback={null}>

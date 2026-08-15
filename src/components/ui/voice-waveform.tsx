@@ -15,6 +15,18 @@ const SIZE_HEIGHT: Record<NonNullable<VoiceWaveformProps['size']>, number> = {
   md: 16,
 }
 
+/** Container height per size — mirrors SIZE_HEIGHT (12px = h-3, 16px = h-4). */
+const SIZE_HEIGHT_CLASS: Record<NonNullable<VoiceWaveformProps['size']>, string> = {
+  sm: 'h-3',
+  md: 'h-4',
+}
+
+/** Static bar heights per (size, active) — mirrors `height * 0.5`/`height * 0.2` for each size. */
+const BAR_HEIGHT_CLASS: Record<NonNullable<VoiceWaveformProps['size']>, { active: string; idle: string }> = {
+  sm: { active: 'h-[6px]', idle: 'h-[2.4px]' },
+  md: { active: 'h-[8px]', idle: 'h-[3.2px]' },
+}
+
 /**
  * Shared audio-style waveform for MeeraPresence-talking and MicButton-listening
  * (Priya's voice handoff §5). Time-based, NOT audio-reactive/FFT — running an
@@ -32,16 +44,17 @@ export function VoiceWaveform({ active, size = 'md', className }: VoiceWaveformP
   if (reduceMotion) {
     return (
       <span
-        className={cn('inline-flex items-center gap-0.5', className)}
-        style={{ height }}
+        className={cn('inline-flex items-center gap-0.5', SIZE_HEIGHT_CLASS[size], className)}
         role="img"
         aria-label={active ? 'Meera is speaking' : 'Voice waveform, idle'}
       >
         {Array.from({ length: MEERA_WAVEFORM_BAR_COUNT }).map((_, i) => (
           <span
             key={i}
-            className="w-[3px] rounded-full bg-meera-accent"
-            style={{ height: active ? height * 0.5 : height * 0.2 }}
+            className={cn(
+              'w-[3px] rounded-full bg-meera-accent',
+              active ? BAR_HEIGHT_CLASS[size].active : BAR_HEIGHT_CLASS[size].idle,
+            )}
           />
         ))}
       </span>
@@ -50,8 +63,7 @@ export function VoiceWaveform({ active, size = 'md', className }: VoiceWaveformP
 
   return (
     <span
-      className={cn('inline-flex items-center gap-0.5', className)}
-      style={{ height }}
+      className={cn('inline-flex items-center gap-0.5', SIZE_HEIGHT_CLASS[size], className)}
       role="img"
       aria-label={active ? 'Meera is speaking' : 'Voice waveform, idle'}
     >

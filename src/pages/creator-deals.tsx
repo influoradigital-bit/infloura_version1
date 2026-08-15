@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { cn, formatINR } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 import { api, ApiError, type DealStatusFilter, type DealStatusQuery } from '@/lib/api';
 import {
   mapDealToDealsPageRow,
@@ -628,7 +629,7 @@ function DealRow({ deal, actionLoading, onOpen, onAccept, onCounter, onReject }:
             {(deal.status === 'in_progress' || deal.status === 'review') && (
               <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                 <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full bg-primary" style={{ width: `${progress}%` }} />
+                  <div className="h-full bg-primary w-[var(--deal-progress-w)]" ref={cssVars({ '--deal-progress-w': `${progress}%` })} />
                 </div>
                 <span>{deal.deliverablesDone}/{deal.deliverablesTotal} done</span>
               </div>

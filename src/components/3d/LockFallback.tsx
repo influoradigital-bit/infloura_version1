@@ -1,6 +1,7 @@
 import { useReducedMotion } from 'framer-motion'
 
 import { cn } from '@/lib/utils'
+import { cssVars } from '@/lib/css-vars'
 
 interface LockFallbackProps {
   /** true once the lock has fully snapped shut (drives the shackle-down pose) */
@@ -32,15 +33,19 @@ export function LockFallback({ locked, className }: LockFallbackProps) {
           strokeWidth={7}
           strokeLinecap="round"
           fill="none"
-          style={
+          ref={
             reduceMotion
               ? undefined
-              : {
-                  transformOrigin: '60px 52px',
-                  transform: showLocked ? 'translateY(0px)' : 'translateY(-6px)',
-                  transition: 'transform 420ms cubic-bezier(0.23,1,0.32,1), stroke 300ms ease-out',
-                }
+              : cssVars({
+                  '--lock-shackle-transform': showLocked ? 'translateY(0px)' : 'translateY(-6px)',
+                  '--lock-shackle-transition':
+                    'transform 420ms cubic-bezier(0.23,1,0.32,1), stroke 300ms ease-out',
+                })
           }
+          className={cn(
+            !reduceMotion &&
+              '[transform-origin:60px_52px] [transform:var(--lock-shackle-transform)] [transition:var(--lock-shackle-transition)]',
+          )}
         />
         {/* Body */}
         <rect
@@ -52,7 +57,7 @@ export function LockFallback({ locked, className }: LockFallbackProps) {
           fill={showLocked ? 'var(--meera-escrow-soft)' : 'var(--meera-surface-2)'}
           stroke={showLocked ? 'var(--meera-escrow)' : 'var(--meera-border-strong)'}
           strokeWidth={3}
-          style={reduceMotion ? undefined : { transition: 'fill 300ms ease-out, stroke 300ms ease-out' }}
+          className={cn(!reduceMotion && '[transition:fill_300ms_ease-out,stroke_300ms_ease-out]')}
         />
         {/* Keyhole */}
         <circle cx="60" cy="72" r="6" fill={showLocked ? 'var(--meera-escrow)' : 'var(--meera-border-strong)'} />

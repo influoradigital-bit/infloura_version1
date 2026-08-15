@@ -1,0 +1,14 @@
+{"verdict": "believed",
+ "oracle": "regex",
+ "isolation": "oracle",
+ "done_when": "each available oracle ran over the scope and its raw output is recorded",
+ "not_checked": [
+   "Java backend dead code — no oracle exists in this toolchain (PMD absent, javac has no unused-code lint) and Spring DI wires beans reflectively, so import-graph orphan analysis is unsound there",
+   "dead EXPORTS inside live files — no ts-prune/knip installed; only whole-file orphans and unused locals were measured",
+   "string-based or reflective references the import-graph and grep both miss (route registries, CMS-driven component names)",
+   "whether the 13 unreferenced ui/ components are deliberate library inventory or abandoned — that is a product decision, not an oracle's"
+ ],
+ "skipped": [
+   {"step": "knip/ts-prune unused-export scan", "reason": "not installed and npx would fetch from the network; recommend adding to devDependencies"},
+   {"step": "PMD unused-code rules on influora-api", "reason": "PMD not on PATH — backend dead-code has no oracle here"}
+ ]}

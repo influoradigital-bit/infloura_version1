@@ -4,6 +4,7 @@ import * as React from 'react'
 import * as RechartsPrimitive from 'recharts'
 
 import { cn } from '@/lib/utils'
+import { cssVars } from '@/lib/css-vars'
 
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: '', dark: '.dark' } as const
@@ -211,11 +212,13 @@ function ChartTooltipContent({
                             'my-0.5': nestLabel && indicator === 'dashed',
                           },
                         )}
-                        style={
-                          {
-                            '--color-bg': indicatorColor,
-                            '--color-border': indicatorColor,
-                          } as React.CSSProperties
+                        ref={
+                          indicatorColor
+                            ? cssVars({
+                                '--color-bg': indicatorColor,
+                                '--color-border': indicatorColor,
+                              })
+                            : undefined
                         }
                       />
                     )
@@ -288,10 +291,8 @@ function ChartLegendContent({
               <itemConfig.icon />
             ) : (
               <div
-                className="h-2 w-2 shrink-0 rounded-[2px]"
-                style={{
-                  backgroundColor: item.color,
-                }}
+                className="h-2 w-2 shrink-0 rounded-[2px] bg-[var(--legend-color)]"
+                ref={item.color ? cssVars({ '--legend-color': item.color }) : undefined}
               />
             )}
             {itemConfig?.label}

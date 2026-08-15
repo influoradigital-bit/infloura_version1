@@ -4,7 +4,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Separator } from '@/components/ui/separator';
 import {
   Dialog,
   DialogContent,
@@ -46,6 +45,7 @@ import {
   type CampaignServiceInvoice,
   type PlatformCommissionInvoice,
   type WalletTransactionRow,
+  type CreatorPayoutRow,
   type PayoutMethod,
 } from '@/lib/api';
 import { useServiceInvoices } from '@/hooks/creator/useServiceInvoices';
@@ -67,7 +67,8 @@ function safeRandomUUID(): string {
 // ---------------------------------------------------------------------------
 // Live-wiring notes (ported from claude/api-connection-workflow-b62285):
 //   GET  /wallet              → api.wallet.get('creator')        (availableBalance, escrowLocked, pendingPayouts)
-//   GET  /wallet/transactions → api.wallet.transactions('creator') (History tab + Payouts tab)
+//   GET  /wallet/transactions → api.wallet.transactions('creator') (History tab)
+//   GET  /wallet/payouts      → api.wallet.payouts()               (Payouts tab — CR-77)
 //
 // Withdraw (POST /wallet/withdraw) and payout methods (GET/POST /wallet/payout-methods,
 // PUT /wallet/payout-methods/:id/primary) are wired to the live facade — see
@@ -76,9 +77,13 @@ function safeRandomUUID(): string {
 // withdrawal with no key).
 //
 // No facade coverage yet (render a proper empty state, never fabricated figures):
-//   - detailed payout breakdown (TDS/platform-fee/GST split, brand/campaign name, UTR) —
-//     there is no GET /wallet/payouts endpoint; the Payouts tab below instead lists the
-//     real debit rows from /wallet/transactions (description/amount/status only)
+//   - detailed payout breakdown (TDS/platform-fee/GST split, brand/campaign name, UTR).
+//     CR-77 built the real GET /wallet/payouts, so the Payouts tab now reads the `payouts`
+//     table and shows amount, gateway status, settlement time and the payout reference. The
+//     BREAKDOWN specifically is still absent because the data genuinely isn't there: TDS/GST
+//     are unimplemented platform-wide, the platform fee is a separate ledger row rather than a
+//     payout attribute, and a lump-sum wallet withdrawal has no linked milestone, so there is no
+//     campaign to name. The tab states that gap in words rather than shipping em-dash columns.
 //   - tax documents (Form-16A etc.) — no backend endpoint
 // ---------------------------------------------------------------------------
 
@@ -95,20 +100,6 @@ const EMPTY_EARNINGS = {
  * the UI only to be rejected server-side with `MINIMUM_WITHDRAWAL`.
  */
 const MIN_WITHDRAWAL_INR = 500;
-
-/**
- * Generic status-badge tone by substring match against whatever status string the
- * backend sends on a `WalletTransactionRow` (e.g. "COMPLETED", "PROCESSING", "FAILED").
- * Not tied to a fixed enum — real backend statuses vary by transaction type.
- */
-function statusBadgeClass(status: string): string {
-  const s = status.toUpperCase();
-  if (s.includes('FAIL')) return 'bg-stage-disputed text-stage-disputed-fg';
-  if (s.includes('PROCESS') || s.includes('PEND') || s.includes('QUEUE') || s.includes('INITIAT')) {
-    return 'bg-stage-negotiating text-stage-negotiating-fg';
-  }
-  return 'bg-stage-approved text-stage-approved-fg';
-}
 
 interface WalletTransaction {
   id: string;
@@ -324,7 +315,6 @@ export default function CreatorWalletPage() {
   const liveApi = isApiLive();
   const { toast } = useToast();
 
-  const [selectedPayout, setSelectedPayout] = React.useState<WalletTransaction | null>(null);
   const [showPayoutSettings, setShowPayoutSettings] = React.useState(false);
   const [showWithdrawDialog, setShowWithdrawDialog] = React.useState(false);
   const [withdrawAmount, setWithdrawAmount] = React.useState('');
@@ -355,6 +345,10 @@ export default function CreatorWalletPage() {
   const [walletLoading, setWalletLoading] = React.useState(false);
   const [walletError, setWalletError] = React.useState<string | null>(null);
   const [transactions, setTransactions] = React.useState<WalletTransaction[]>([]);
+  // CR-77 — the Payouts tab's own data, from the real GET /wallet/payouts (the `payouts` table),
+  // no longer derived by filtering ledger WITHDRAWAL debits.
+  const [payouts, setPayouts] = React.useState<CreatorPayoutRow[]>([]);
+  const [payoutsError, setPayoutsError] = React.useState(false);
 
   // GET /creator/platform-fee — global fee shown for transparency (wallet.platformFee).
   // Unlike the balance/transaction effects, this runs in BOTH mock and live mode: the
@@ -409,10 +403,11 @@ export default function CreatorWalletPage() {
     loadWalletBalance();
   }, [loadWalletBalance]);
 
-  // GET /wallet/transactions — History tab, and the source for the Payouts tab below
-  // (filtered to debit rows) since there is no dedicated GET /wallet/payouts endpoint.
+  // GET /wallet/transactions — History tab only. CR-77 — the Payouts tab no longer derives
+  // itself from these debit rows; it reads the real GET /wallet/payouts (see loadPayouts).
   // Extracted to a callback for the same reason as loadWalletBalance above — reused by
-  // handleWithdraw to refresh history/payouts after a successful withdrawal.
+  // handleWithdraw to refresh history after a successful withdrawal (CR-77 — the Payouts tab
+  // has its own loadPayouts() now; this one no longer feeds it).
   // CR-72 — takes `selectedPeriod` as a param (rather than closing over state) so a caller like
   // handleWithdraw can be explicit about which window it's refreshing; the effect below re-runs
   // it whenever the dropdown changes.
@@ -446,6 +441,36 @@ export default function CreatorWalletPage() {
   React.useEffect(() => {
     loadTransactions(selectedPeriod);
   }, [loadTransactions, selectedPeriod]);
+
+  /**
+   * CR-77 — real payout history. Deliberately a separate fetch from the ledger: a WITHDRAWAL debit
+   * says money left the Influora wallet, not that it reached the bank. A reversed/rejected payout
+   * is re-credited by a SEPARATE compensating entry while the debit stays, so the old derived tab
+   * showed bounced payouts as money paid out. This reads the gateway's terminal state instead.
+   */
+  const loadPayouts = React.useCallback(async () => {
+    if (!liveApi) return;
+    try {
+      const remote = await api.wallet.payouts(1, 20);
+      if (Array.isArray(remote)) {
+        setPayouts(remote);
+        setPayoutsError(false);
+      }
+    } catch (err) {
+      // Never leave stale rows on a money surface — show the honest error state instead.
+      setPayouts([]);
+      setPayoutsError(true);
+      toast({
+        title: 'Couldn’t load your payouts',
+        description: err instanceof ApiError ? err.message : 'Please try again in a moment.',
+        variant: 'destructive',
+      });
+    }
+  }, [liveApi, toast]);
+
+  React.useEffect(() => {
+    void loadPayouts();
+  }, [loadPayouts]);
 
   // GET /wallet/payout-methods — Payout Settings dialog.
   const loadPayoutMethods = React.useCallback(async () => {
@@ -513,6 +538,11 @@ export default function CreatorWalletPage() {
       // on screen.
       loadWalletBalance();
       loadTransactions(selectedPeriod);
+      // CR-77 — the Payouts tab used to refresh for free because it was derived from
+      // `transactions`. It has its own source now, so it needs its own refresh: without this the
+      // payout the creator just queued is invisible until a remount, at exactly the moment
+      // they're most likely to open that tab to check on it.
+      void loadPayouts();
     } catch (err) {
       // Keep the same idempotency key held so a user-initiated retry of this submission reuses it.
       setWithdrawError(err instanceof ApiError ? err.message : 'Withdrawal failed. Please try again.');
@@ -637,62 +667,127 @@ export default function CreatorWalletPage() {
             <TabsTrigger value="tax">Tax Docs</TabsTrigger>
           </TabsList>
 
-          {/* Payouts Tab — there is no dedicated GET /wallet/payouts endpoint (no per-payout
-              brand/campaign/TDS/GST breakdown server-side), so this derives real payout rows
-              from the same /wallet/transactions data the History tab uses (debit rows only). */}
+          {/* Payouts Tab — reads the real GET /wallet/payouts (CR-77). */}
           <TabsContent value="payouts" className="space-y-4">
-            {(() => {
-              // CR-75 — `type === 'PAYOUT'` grouped every debit (withdrawal, platform fee,
-              // escrow hold) together, so a platform-fee deduction displayed here as if it
-              // were a payout to the creator's bank. Only a real WITHDRAWAL is a payout.
-              const payoutTransactions = transactions.filter((tx) => tx.rawType === 'WITHDRAWAL');
-              if (payoutTransactions.length === 0) {
-                return (
-                  <Card>
-                    <CardContent className="flex flex-col items-center justify-center gap-2 p-8 text-center">
-                      <Banknote className="h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">No payouts yet</p>
-                      <p className="text-sm text-muted-foreground">
-                        Your payouts will appear here once a withdrawal is processed.
-                      </p>
-                    </CardContent>
-                  </Card>
-                );
-              }
-              return (
-                <div className="space-y-3">
-                  {payoutTransactions.map((payout) => (
-                    <Card
-                      key={payout.id}
-                      className="cursor-pointer transition-shadow hover:shadow-md"
-                      onClick={() => setSelectedPayout(payout)}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-3 min-w-0">
-                            <div className="h-10 w-10 rounded-full bg-stage-outreach flex items-center justify-center flex-shrink-0">
-                              <Banknote className="h-5 w-5 text-stage-outreach-fg" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="font-semibold truncate">{payout.description}</p>
-                              <p className="text-sm text-muted-foreground truncate">
-                                {new Date(payout.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                              </p>
-                            </div>
+            {/* CR-77 — was `transactions.filter(tx => tx.rawType === 'WITHDRAWAL')`, i.e. the
+                Payouts tab derived itself from ledger debits. A debit records that money left the
+                creator's Influora wallet; it does NOT record that it arrived at their bank. When
+                RazorpayX reverses/rejects/cancels a payout the backend posts a SEPARATE
+                compensating credit and correctly leaves the original debit standing — so a
+                bounced payout kept showing here as money paid out, and the offsetting credit was
+                invisible to this tab because a credit is not a WITHDRAWAL. Now reads the real
+                `payouts` table via GET /wallet/payouts, which carries the gateway's own terminal
+                status. */}
+            {payoutsError ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center gap-2 p-8 text-center">
+                  <Banknote className="h-8 w-8 text-muted-foreground" />
+                  <p className="font-medium">Couldn’t load your payouts</p>
+                  <p className="text-sm text-muted-foreground">
+                    We’d rather show nothing than a stale list on a money screen.
+                  </p>
+                  <Button variant="outline" size="sm" className="mt-2" onClick={() => void loadPayouts()}>
+                    Try again
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : payouts.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center gap-2 p-8 text-center">
+                  <Banknote className="h-8 w-8 text-muted-foreground" />
+                  <p className="font-medium">No payouts yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    Your payouts will appear here once a withdrawal is processed.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {payouts.map((payout) => (
+                  <Card key={payout.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div
+                            className={cn(
+                              'h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0',
+                              payout.failed ? 'bg-muted' : 'bg-stage-outreach',
+                            )}
+                          >
+                            <Banknote
+                              className={cn(
+                                'h-5 w-5',
+                                payout.failed ? 'text-muted-foreground' : 'text-stage-outreach-fg',
+                              )}
+                            />
                           </div>
-                          <div className="text-right flex-shrink-0">
-                            <p className="font-semibold">{formatINR(Math.abs(payout.amount))}</p>
-                            <Badge className={cn(statusBadgeClass(payout.status), 'mt-1')}>
-                              {payout.status}
-                            </Badge>
+                          <div className="min-w-0">
+                            <p className="font-semibold truncate">
+                              {payout.failed ? 'Payout failed — amount returned to your balance' : 'Bank payout'}
+                            </p>
+                            <p className="text-sm text-muted-foreground truncate">
+                              Requested{' '}
+                              {new Date(payout.requestedAt).toLocaleDateString('en-IN', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
+                              {!payout.failed && payout.settledAt
+                                ? ` · Settled ${new Date(payout.settledAt).toLocaleDateString('en-IN', {
+                                    day: 'numeric',
+                                    month: 'short',
+                                    year: 'numeric',
+                                  })}`
+                                : ''}
+                            </p>
+                            {/* The reference a creator can quote to support when chasing a payment.
+                                Suppressed for a row still in the pre-gateway PENDING state:
+                                Payout.createPending seeds razorpayPayoutId with an internal
+                                "pending:<ulid>" placeholder until markGatewayConfirmed replaces it,
+                                and showing that to a creator as a quotable reference would send
+                                them to support with a string support cannot look up. */}
+                            {!payout.reference.startsWith('pending:') && (
+                              <p className="text-xs text-muted-foreground truncate">Ref: {payout.reference}</p>
+                            )}
                           </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              );
-            })()}
+                        <div className="text-right flex-shrink-0">
+                          <p className={cn('font-semibold', payout.failed && 'text-muted-foreground line-through')}>
+                            {formatINR(Math.abs(payout.amount))}
+                          </p>
+                          {/* CR-77 — deliberately NOT statusBadgeClass(payout.status). That helper
+                              substring-matches, and RazorpayX's vocabulary inverts under it:
+                              'reversed'/'rejected'/'cancelled' match none of its FAIL/PROCESS/PEND
+                              patterns and fall through to the GREEN success style, while
+                              'processed' — the terminal success — matches 'PROCESS' and renders
+                              amber in-progress. The failure flag is already computed server-side
+                              from the shared FAILURE_STATUSES set; drive the badge off that. */}
+                          <Badge
+                            className={cn(
+                              'mt-1',
+                              payout.failed
+                                ? 'bg-destructive/10 text-destructive-foreground'
+                                : payout.settledAt
+                                  ? 'bg-stage-approved text-stage-approved-fg'
+                                  : 'bg-stage-negotiating text-stage-negotiating-fg',
+                            )}
+                          >
+                            {payout.failed ? 'Failed' : payout.settledAt ? 'Paid' : 'In progress'}
+                          </Badge>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                {/* CR-77 — states the gap rather than shipping em-dash placeholder fields. TDS/GST
+                    are unimplemented platform-wide, the platform fee is a separate ledger entry,
+                    and a wallet withdrawal has no linked milestone so there is no campaign to name. */}
+                <p className="px-1 text-xs text-muted-foreground">
+                  A detailed breakdown (TDS, platform fee, GST, and the linked campaign) isn’t available yet.
+                  Each payout above shows the amount actually sent to your bank and its current status.
+                </p>
+              </div>
+            )}
           </TabsContent>
 
           {/* History Tab */}
@@ -787,50 +882,6 @@ export default function CreatorWalletPage() {
         </Tabs>
       </div>
 
-      {/* Payout Detail Dialog */}
-      <Dialog open={!!selectedPayout} onOpenChange={() => setSelectedPayout(null)}>
-        <DialogContent className="max-w-sm">
-          {selectedPayout && (
-            <>
-              <DialogHeader>
-                <DialogTitle>Payout Details</DialogTitle>
-                <DialogDescription>{selectedPayout.description}</DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-4">
-                {/* Status */}
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Status</span>
-                  <Badge className={statusBadgeClass(selectedPayout.status)}>
-                    {selectedPayout.status}
-                  </Badge>
-                </div>
-
-                <Separator />
-
-                {/* Real fields only — no TDS/platform-fee/GST split, no brand/campaign name,
-                    no UTR: WalletTransactionRow doesn't carry that breakdown. */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Amount</span>
-                    <span className="font-semibold text-stage-approved-fg">
-                      {formatINR(Math.abs(selectedPayout.amount))}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Date</span>
-                    <span>{new Date(selectedPayout.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Balance After</span>
-                    <span>{formatINR(selectedPayout.balanceAfter)}</span>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* Payout Settings Dialog */}
       <Dialog open={showPayoutSettings} onOpenChange={setShowPayoutSettings}>

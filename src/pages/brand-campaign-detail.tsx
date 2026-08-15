@@ -10,6 +10,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -919,15 +920,28 @@ export default function BrandCampaignDetailPage() {
                   Tracking
                 </Button>
                 {!isCompleted && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="hidden sm:flex"
-                    onClick={() => navigate(`/brand/campaigns/${id}/edit`)}
-                  >
-                    <Edit className="h-4 w-4 mr-1.5" />
-                    Edit
-                  </Button>
+                  campaign.status === 'ACTIVE' ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="hidden sm:flex"
+                      disabled
+                      title="Pause the campaign before editing its details"
+                    >
+                      <Edit className="h-4 w-4 mr-1.5" />
+                      Edit
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="hidden sm:flex"
+                      onClick={() => navigate(`/brand/campaigns/${id}/edit`)}
+                    >
+                      <Edit className="h-4 w-4 mr-1.5" />
+                      Edit
+                    </Button>
+                  )
                 )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -1082,7 +1096,7 @@ export default function BrandCampaignDetailPage() {
                       <p className="text-xs text-muted-foreground mt-1">{stat.sub}</p>
                       {stat.progress != null && (
                         <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div className={cn('h-full rounded-full transition-all', stat.progressColor)} style={{ width: `${Math.min(100, stat.progress)}%` }} />
+                          <div className={cn('h-full rounded-full transition-all w-[var(--stat-progress-w)]', stat.progressColor)} ref={cssVars({ '--stat-progress-w': `${Math.min(100, stat.progress)}%` })} />
                         </div>
                       )}
                     </CardContent>
@@ -1750,16 +1764,16 @@ export default function BrandCampaignDetailPage() {
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs w-16 text-right font-medium">{b.campaign}{b.suffix}</span>
                                     <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                                      <div className={cn('h-full rounded-full', isGood ? 'bg-primary' : 'bg-muted-foreground')}
-                                        style={{ width: `${Math.min(100, (b.campaign / Math.max(b.campaign, b.peer)) * 100)}%` }} />
+                                      <div className={cn('h-full rounded-full w-[var(--peer-bar-w)]', isGood ? 'bg-primary' : 'bg-muted-foreground')}
+                                        ref={cssVars({ '--peer-bar-w': `${Math.min(100, (b.campaign / Math.max(b.campaign, b.peer)) * 100)}%` })} />
                                     </div>
                                     <span className="text-xs text-primary font-medium w-12">You</span>
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs w-16 text-right text-muted-foreground">{b.peer}{b.suffix}</span>
                                     <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                                      <div className="h-full rounded-full bg-muted-foreground/50"
-                                        style={{ width: `${(b.peer / Math.max(b.campaign, b.peer)) * 100}%` }} />
+                                      <div className="h-full rounded-full bg-muted-foreground/50 w-[var(--peer-bar-w2)]"
+                                        ref={cssVars({ '--peer-bar-w2': `${(b.peer / Math.max(b.campaign, b.peer)) * 100}%` })} />
                                     </div>
                                     <span className="text-xs text-muted-foreground w-12">Peers</span>
                                   </div>

@@ -1,0 +1,12 @@
+· npm audit --audit-level=high (budget 300s)
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+· gitleaks detect --no-banner -s . (budget 300s)
+[90m10:30PM[0m [32mINF[0m [1m225 commits scanned.[0m
+[90m10:30PM[0m [32mINF[0m [1mscanned ~159668835 bytes (159.67 MB) in 1m0.3s[0m
+[90m10:30PM[0m [33mWRN[0m [1mleaks found: 89[0m
+VERDICT: broken (real findings above)
+NOT CHECKED: response headers (no live URL was given); SAST / taint analysis (no semgrep, codeql or equivalent runs here); licence compliance; authentication and authorisation logic; secrets in git HISTORY; container, IaC and CI-workflow configuration; runtime behaviour

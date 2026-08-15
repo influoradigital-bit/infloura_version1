@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 import type { Platform, CreatorProfile } from '@/lib/types';
 import { api, isApiLive, ApiError, type FeaturedCreatorSection } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
@@ -123,7 +124,7 @@ function DiscoverHero() {
           }
         >
           <span className="flex items-center gap-1.5 rounded-full bg-card/90 px-3 py-1 text-xs font-medium text-foreground shadow-sm backdrop-blur-sm">
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pill.color }} />
+            <span className="h-2 w-2 rounded-full bg-[var(--pill-color)]" ref={cssVars({ '--pill-color': pill.color })} />
             {pill.label}
           </span>
         </motion.div>

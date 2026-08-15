@@ -1,0 +1,12 @@
+· unbounded-heap mode: no -Xmx pinned — an OOM here is a fact about the host, not the build
+· tests ENABLED (PROOF_MVN_TESTS=1) — goal: test
+· 4 JVM crash dump(s) already present in this directory:
+    hs_err_pid11648.log — Out of Memory Error (os_windows.cpp:3713), pid=11648, tid=6196
+    hs_err_pid23604.log — Out of Memory Error (os_windows.cpp:3713), pid=23604, tid=32344
+    hs_err_pid31460.log — Out of Memory Error (os_windows.cpp:3713), pid=31460, tid=27932
+    hs_err_pid8600.log — Out of Memory Error (arena.cpp:168), pid=8600, tid=25444
+  These are host-capacity facts, not code findings (F-0038).
+· mvn -q -o test  (offline; budget 560s)
+  Maven could not resolve plugins/dependencies offline (cold ~/.m2 or blocked network)
+  — environment, not a finding.
+NOT CHECKED: compilation, and every dependency-dependent check — nothing was resolvable

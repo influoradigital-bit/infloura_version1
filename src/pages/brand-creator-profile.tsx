@@ -27,6 +27,7 @@ import {
 import { api, isApiLive, ApiError, type CreatorPublicProfile, type SimilarCreator } from '@/lib/api';
 import type { Platform } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -688,10 +689,10 @@ export default function BrandCreatorProfilePage() {
                 className="flex items-center gap-4 rounded-lg border bg-card p-4"
               >
                 <div
-                  className="flex h-10 w-10 items-center justify-center rounded-full"
-                  style={{ backgroundColor: `${platform.color}15` }}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--platform-bg)]"
+                  ref={cssVars({ '--platform-bg': `${platform.color}15` })}
                 >
-                  <platform.icon className="h-5 w-5" style={{ color: platform.color }} />
+                  <platform.icon className="h-5 w-5 text-[var(--platform-fg)]" ref={cssVars({ '--platform-fg': platform.color })} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
@@ -812,16 +813,16 @@ export default function BrandCreatorProfilePage() {
                 <h3 className="mb-4 font-medium">Gender Split</h3>
                 <div className="flex h-4 overflow-hidden rounded-full">
                   <div
-                    className="bg-pink-500"
-                    style={{ width: `${creator.audience.gender.female}%` }}
+                    className="bg-pink-500 w-[var(--gender-female-w)]"
+                    ref={cssVars({ '--gender-female-w': `${creator.audience.gender.female}%` })}
                   />
                   <div
-                    className="bg-blue-500"
-                    style={{ width: `${creator.audience.gender.male}%` }}
+                    className="bg-blue-500 w-[var(--gender-male-w)]"
+                    ref={cssVars({ '--gender-male-w': `${creator.audience.gender.male}%` })}
                   />
                   <div
-                    className="bg-purple-500"
-                    style={{ width: `${creator.audience.gender.other}%` }}
+                    className="bg-purple-500 w-[var(--gender-other-w)]"
+                    ref={cssVars({ '--gender-other-w': `${creator.audience.gender.other}%` })}
                   />
                 </div>
                 <div className="mt-3 flex gap-4 text-sm">

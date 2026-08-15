@@ -700,6 +700,31 @@ export default function BrandChatPage() {
   const [messagesLoading, setMessagesLoading] = React.useState(false);
   const [messagesError, setMessagesError] = React.useState<string | null>(null);
   /**
+   * F-0152 — mirrors creator-chat.tsx's identical pair. `loadMessages` has several concurrent
+   * callers (deal-switch effect, SSE onReconnect, the foreground visibility resync, manual
+   * Retry) with no request-token or mount guard, so two overlapping calls could resolve out of
+   * order, or a slow failure could wipe a thread a newer success had already populated.
+   * `messagesRequestRef` orders "latest request wins"; `isMountedRef` stops a stale response
+   * from touching state after unmount.
+   */
+  const messagesRequestRef = React.useRef(0);
+  const isMountedRef = React.useRef(true);
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  /**
+   * F-0195 follow-up — loadDeliverables had the same unguarded-concurrent-fetch shape F-0152
+   * fixed for loadMessages: a slow, stale response for a previously-selected deal (e.g. deal A's
+   * in-flight fetch finishing AFTER the user has already switched to deal B and B's own fetch
+   * has resolved) had no staleness guard, so it could overwrite deal B's freshly-loaded rows
+   * with deal A's stale ones. `deliverablesRequestRef` mirrors `messagesRequestRef`; reuses the
+   * same `isMountedRef`.
+   */
+  const deliverablesRequestRef = React.useRef(0);
+  /**
    * CR-31 — realtime transport state for the selected room's stream. Seeded optimistically
    * to 'open' for the same reasons as the creator room: the banner renders only when this is
    * NOT 'open', so a truthful 'connecting' seed would flash on every healthy deal switch, and
@@ -1012,22 +1037,31 @@ export default function BrandChatPage() {
   }, [selectedDeal]);
 
   const loadMessages = React.useCallback(async (dealId: string) => {
+    // F-0152 — same "latest request wins" + mount guard as creator-chat.tsx's loadMessages.
+    const token = ++messagesRequestRef.current;
+    const isCurrent = () => isMountedRef.current && messagesRequestRef.current === token;
     setMessagesLoading(true);
     setMessagesError(null);
     try {
       const list = await messagesApi.list('brand', dealId);
-      setLiveMessages(list);
+      if (isCurrent()) setLiveMessages(list);
       // fire-and-forget read receipt; failure here must not surface as a load error
       void messagesApi.markRead('brand', dealId).catch(() => {});
     } catch {
-      setLiveMessages([]); // clear stale rows from a previously-selected deal
-      setMessagesError('Could not load messages. Check your connection and retry.');
+      // F-0152 — this used to unconditionally `setLiveMessages([])`, wiping a correct,
+      // already-rendered thread on ANY failure — including a background resync failure racing
+      // a newer success. A failed load surfaces via messagesError (Retry button) and leaves
+      // whatever thread is already on screen alone, same as creator-chat's convention.
+      if (isCurrent()) setMessagesError('Could not load messages. Check your connection and retry.');
     } finally {
-      setMessagesLoading(false);
+      if (isCurrent()) setMessagesLoading(false);
     }
   }, []);
 
   const loadDeliverables = React.useCallback(async (dealId: string) => {
+    // F-0195 follow-up — same "latest request wins" + mount guard as loadMessages (F-0152).
+    const token = ++deliverablesRequestRef.current;
+    const isCurrent = () => isMountedRef.current && deliverablesRequestRef.current === token;
     setDeliverablesLoading(true);
     setDeliverablesError(null);
     try {
@@ -1057,12 +1091,14 @@ export default function BrandChatPage() {
           status,
         };
       });
-      setLiveDeliverables(mapped);
+      if (isCurrent()) setLiveDeliverables(mapped);
     } catch {
-      setLiveDeliverables([]); // clear stale rows from a previously-selected deal
-      setDeliverablesError('Could not load deliverables. Check your connection and retry.');
+      // F-0195 follow-up — no longer unconditionally clears: a stale FAILURE for a
+      // previously-selected deal must not wipe rows a newer success already populated, same
+      // reasoning as F-0152's fix to loadMessages' catch block.
+      if (isCurrent()) setDeliverablesError('Could not load deliverables. Check your connection and retry.');
     } finally {
-      setDeliverablesLoading(false);
+      if (isCurrent()) setDeliverablesLoading(false);
     }
   }, []);
 
@@ -1100,6 +1136,26 @@ export default function BrandChatPage() {
   // every incoming frame.
   React.useEffect(() => {
     if (isApiLive() && selectedDeal) {
+      // F-0192 — F-0151 made the thread render unconditional (no more !messagesLoading gate),
+      // which was incidentally the only thing hiding the PREVIOUS deal's messages during a
+      // deal-switch round-trip. Without this, switching deals rendered deal A's thread under
+      // deal B's header (with a spinner on top) until the new deal's fetch resolved. Clearing
+      // synchronously here — not inside loadMessages, which every same-deal resync caller also
+      // shares and must NOT clear (that's exactly what F-0152 fixed) — scopes the reset to a
+      // genuine deal switch only.
+      setLiveMessages([]);
+      // F-0195 — Priya review correction: unlike liveMessages above (F-0192, a real render bug
+      // — F-0151 had removed the messages thread's loading gate), the deliverables panel was
+      // NEVER unconditionally rendered. It's gated by a real `deliverablesLoading ? spinner :
+      // deliverablesError ? error : <DealDeliverablesTab items={liveDeliverables} .../>`
+      // ternary (see the render below), and selectDeal() already force-closes the panel
+      // (setOpenPanel(null)) on every switch — so deal A's rows were never actually paintable
+      // under deal B's header. This clear is data-layer hygiene only (defense-in-depth against
+      // either of those two guards ever being weakened later, the exact way F-0151 quietly
+      // removed the messages thread's), not a fix for an observed bleed. Placed here rather
+      // than inside loadDeliverables for the same structural reason as liveMessages — same-deal
+      // resync callers (Approve/Reject/Revision's own reload) must not have it cleared.
+      setLiveDeliverables([]);
       void loadMessages(selectedDeal.id);
       void loadDeliverables(selectedDeal.id);
     }
@@ -1171,7 +1227,7 @@ export default function BrandChatPage() {
         // Still non-fatal and still not a toast — send/render never depend on the stream.
         // CR-31: this now fires per failed ATTEMPT and the transport retries, so it is a
         // diagnostic line rather than the room's state. `streamStatus` is the state.
-        console.debug('[brand-chat] deal message stream error for deal', dealId, err);
+        if (import.meta.env.DEV) console.warn('[brand-chat] deal message stream error for deal', dealId, err);
       },
       onStatusChange: setStreamStatus,
       onReconnect: () => {
@@ -1954,9 +2010,17 @@ export default function BrandChatPage() {
                       No messages yet. Start the conversation below.
                     </div>
                   )}
-                  {!messagesLoading &&
-                    !messagesError &&
-                    liveMessages.map((m) => {
+                  {/* F-0151/F-0152 — this used to also gate on `!messagesLoading` (and briefly,
+                      mid-fix, on `!messagesError`), so loadMessages unconditionally setting
+                      messagesLoading=true — or a background resync failing — on ANY of its
+                      several callers (deal-switch, SSE onReconnect, the foreground visibility
+                      resync, manual Retry) replaced a correct, already-rendered thread with a
+                      full spinner, or blanked it entirely on a transient error. Matches
+                      creator-chat.tsx's equivalent, which renders its message list completely
+                      unconditionally — only the spinner/empty-state above are gated, never the
+                      thread itself; a failed background resync surfaces via the error banner
+                      above while leaving whatever is already on screen alone. */}
+                  {liveMessages.map((m) => {
                       const isOwn = m.senderType === 'brand';
                       // CR-07: a proposal/counter arrives as a real `kind: 'proposal'` message
                       // carrying its terms in `metadata`. Rendering it as a plain bubble threw

@@ -1479,3 +1479,114 @@
 {"ts": "2026-08-14T21:36:52", "who": "priya", "what": "approve", "file": "influora-api/src/main/java/com/influora/domain/entity/CreatorMetric.java", "task": "creator-cr119-social-oauth", "stage": "judgment", "gate_result": "proved", "isolation": "fresh-context"}
 {"ts": "2026-08-14T21:36:52", "who": "arjun", "what": "read", "file": "tasks/creator-cr119-social-oauth/*", "task": "creator-cr119-social-oauth", "stage": "cleanup", "gate_result": "scanned 0 file(s) for failure markers before archive"}
 {"ts": "2026-08-14T21:36:52", "who": "arjun", "what": "delete", "file": "tasks/creator-cr119-social-oauth/*", "task": "creator-cr119-social-oauth", "stage": "cleanup", "gate_result": "archived \u2192 _archive/creator-cr119-social-oauth, purge 2026-09-13"}
+{"ts": "2026-08-14T21:50:01", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/domain/entity/Payout.java", "task": "creator-cr77-payouts-endpoint", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-14T21:50:02", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/service/WalletService.java", "task": "creator-cr77-payouts-endpoint", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-14T21:50:03", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/service/PayoutReconciliationService.java", "task": "creator-cr77-payouts-endpoint", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-14T21:50:06", "who": "arjun", "what": "read", "file": "src/pages/creator-wallet.tsx", "task": "creator-cr77-payouts-endpoint", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-14T21:50:07", "who": "arjun", "what": "claim", "file": "src/pages/creator-wallet.tsx", "task": "creator-cr77-payouts-endpoint", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-14T22:04:08", "who": "vikram", "what": "create", "file": "influora-api/src/main/java/com/influora/repository/PayoutRepository.java", "task": "creator-cr77-payouts-endpoint", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-14T22:04:09", "who": "vikram", "what": "create", "file": "influora-api/src/main/java/com/influora/web/dto/money/MoneyDtos.java", "task": "creator-cr77-payouts-endpoint", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-14T22:04:09", "who": "vikram", "what": "create", "file": "influora-api/src/main/java/com/influora/service/WalletService.java", "task": "creator-cr77-payouts-endpoint", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-14T22:04:09", "who": "vikram", "what": "create", "file": "influora-api/src/main/java/com/influora/web/WalletController.java", "task": "creator-cr77-payouts-endpoint", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-14T22:04:09", "who": "vikram", "what": "create", "file": "influora-api/src/test/java/com/influora/service/WalletServiceTest.java", "task": "creator-cr77-payouts-endpoint", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-14T22:04:09", "who": "vikram", "what": "create", "file": "src/lib/api.ts", "task": "creator-cr77-payouts-endpoint", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-14T22:04:09", "who": "vikram", "what": "create", "file": "src/pages/creator-wallet.tsx", "task": "creator-cr77-payouts-endpoint", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-14T22:04:09", "who": "vikram", "what": "verdict", "file": "influora-api/src/test/java/com/influora/service/WalletServiceTest.java", "task": "creator-cr77-payouts-endpoint", "stage": "gate", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-14T22:34:16", "who": "swapnil", "what": "read", "file": "influora-api/src/main/resources/application-dev.yml", "task": "deep-audit-0814", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-14T22:34:16", "who": "kavya", "what": "verdict", "file": "src", "task": "deep-audit-0814", "stage": "judgment", "gate_result": "broken", "isolation": "oracle"}
+{"ts": "2026-08-14T22:34:16", "who": "meera", "what": "verdict", "file": "package.json", "task": "deep-audit-0814", "stage": "judgment", "gate_result": "broken", "isolation": "oracle"}
+{"ts": "2026-08-14T22:34:17", "who": "kabir", "what": "verdict", "file": ".", "task": "deep-audit-0814", "stage": "judgment", "gate_result": "broken", "isolation": "oracle"}
+{"ts": "2026-08-14T22:34:17", "who": "meera", "what": "verdict", "file": "influora-api", "task": "deep-audit-0814", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-14T22:35:26", "who": "priya", "what": "reject", "file": "src/pages/creator-wallet.tsx", "task": "creator-cr77-payouts-endpoint", "stage": "judgment", "gate_result": "broken", "isolation": "fresh-context"}
+{"ts": "2026-08-14T22:35:26", "who": "vikram", "what": "fix", "file": "influora-api/src/main/java/com/influora/service/WalletService.java", "task": "creator-cr77-payouts-endpoint", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-14T22:35:26", "who": "vikram", "what": "fix", "file": "influora-api/src/test/java/com/influora/service/WalletServiceTest.java", "task": "creator-cr77-payouts-endpoint", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-14T22:35:26", "who": "vikram", "what": "fix", "file": "influora-api/src/test/java/com/influora/web/WalletControllerPayoutMethodsTest.java", "task": "creator-cr77-payouts-endpoint", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-14T22:35:27", "who": "vikram", "what": "fix", "file": "src/pages/creator-wallet.tsx", "task": "creator-cr77-payouts-endpoint", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-14T22:35:27", "who": "vikram", "what": "fix", "file": "src/pages/creator-wallet-payouts.test.tsx", "task": "creator-cr77-payouts-endpoint", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-14T22:35:27", "who": "vikram", "what": "verdict", "file": "src/pages/creator-wallet-payouts.test.tsx", "task": "creator-cr77-payouts-endpoint", "stage": "gate", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-14T22:36:24", "who": "swapnil", "what": "ledger-add", "file": "package.json", "task": "", "stage": "intake", "gate_result": "F-0203"}
+{"ts": "2026-08-14T22:36:24", "who": "swapnil", "what": "ledger-add", "file": "src/pages", "task": "", "stage": "intake", "gate_result": "F-0204"}
+{"ts": "2026-08-14T22:36:24", "who": "swapnil", "what": "ledger-add", "file": "gates/frontend.sh", "task": "", "stage": "intake", "gate_result": "F-0205"}
+{"ts": "2026-08-14T22:36:25", "who": "swapnil", "what": "ledger-add", "file": ".gitleaks.toml", "task": "", "stage": "intake", "gate_result": "F-0206"}
+{"ts": "2026-08-14T22:38:54", "who": "meera", "what": "verdict", "file": "influora-api/src/test/java", "task": "deep-audit-0814", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-14T22:39:55", "who": "swapnil", "what": "audit", "file": ".", "task": "deep-audit-0814", "stage": "judgment", "gate_result": "believed", "isolation": "oracle"}
+{"ts": "2026-08-14T22:39:55", "who": "human:swapnil", "what": "read", "file": "tasks/deep-audit-0814/*", "task": "deep-audit-0814", "stage": "cleanup", "gate_result": "scanned 3 file(s) for failure markers before archive"}
+{"ts": "2026-08-14T22:39:55", "who": "human:swapnil", "what": "delete", "file": "tasks/deep-audit-0814/*", "task": "deep-audit-0814", "stage": "cleanup", "gate_result": "archived \u2192 _archive/deep-audit-0814, purge 2026-09-13"}
+{"ts": "2026-08-14T22:47:31", "who": "swapnil", "what": "ledger-add", "file": "src/app/layout.tsx", "task": "", "stage": "intake", "gate_result": "F-0207"}
+{"ts": "2026-08-14T22:47:31", "who": "kavya", "what": "verdict", "file": "src", "task": "dead-code-0814", "stage": "judgment", "gate_result": "broken", "isolation": "oracle"}
+{"ts": "2026-08-14T22:47:31", "who": "human:swapnil", "what": "read", "file": "tasks/dead-code-0814/*", "task": "dead-code-0814", "stage": "cleanup", "gate_result": "scanned 2 file(s) for failure markers before archive"}
+{"ts": "2026-08-14T22:47:31", "who": "human:swapnil", "what": "delete", "file": "tasks/dead-code-0814/*", "task": "dead-code-0814", "stage": "cleanup", "gate_result": "archived \u2192 _archive/dead-code-0814, purge 2026-09-13"}
+{"ts": "2026-08-15T11:24:55", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0100"}
+{"ts": "2026-08-15T11:24:55", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0100 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0100-collision-check.sh"}
+{"ts": "2026-08-15T11:24:55", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0123"}
+{"ts": "2026-08-15T11:24:55", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0123 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0100-collision-check.sh"}
+{"ts": "2026-08-15T11:24:56", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0155"}
+{"ts": "2026-08-15T11:24:56", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0155 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0100-collision-check.sh"}
+{"ts": "2026-08-15T11:30:15", "who": "swapnil", "what": "ledger-add", "file": "plugin gates/eslint.sage.mjs", "task": "", "stage": "intake", "gate_result": "F-0208"}
+{"ts": "2026-08-15T11:30:38", "who": "dev", "what": "create", "file": ".gitleaks.toml", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:30:39", "who": "kabir", "what": "verdict", "file": ".gitleaks.toml", "task": "fix-wave-0815", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-15T11:39:05", "who": "meera", "what": "update", "file": "package.json", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:39:05", "who": "meera", "what": "update", "file": "package-lock.json", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:39:05", "who": "meera", "what": "verdict", "file": "package.json", "task": "fix-wave-0815", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-15T11:53:22", "who": "ananya", "what": "edit", "file": "src/lib/css-vars.ts", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:53:22", "who": "ananya", "what": "edit", "file": "src/components/ui/sidebar.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:53:23", "who": "ananya", "what": "edit", "file": "src/pages/brand-campaign-detail.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:53:23", "who": "ananya", "what": "edit", "file": "src/pages/brand-creator-profile.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:53:23", "who": "ananya", "what": "edit", "file": "src/components/feature/meera/MeeraOrb.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:53:24", "who": "ananya", "what": "edit", "file": "src/lib/api.ts", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:53:24", "who": "ananya", "what": "edit", "file": "src/pages/brand-chat.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:53:25", "who": "ananya", "what": "edit", "file": "src/pages/creator-chat.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:53:25", "who": "ananya", "what": "edit", "file": "src/components/ui/chart.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:53:25", "who": "ananya", "what": "edit", "file": "src/components/ui/progress.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:53:26", "who": "ananya", "what": "delete", "file": "src/app/layout.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:53:26", "who": "ananya", "what": "create", "file": "src/lib/css-vars.ts", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T11:58:25", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0203"}
+{"ts": "2026-08-15T11:58:25", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0203 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0203-npm-audit-high.sh"}
+{"ts": "2026-08-15T11:58:25", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0204"}
+{"ts": "2026-08-15T11:58:25", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0204 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0204-eslint-sage-baseline.py"}
+{"ts": "2026-08-15T11:58:25", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0206"}
+{"ts": "2026-08-15T11:58:25", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0206 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0206-gitleaks-baseline.sh"}
+{"ts": "2026-08-15T11:58:25", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0207"}
+{"ts": "2026-08-15T11:58:25", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0207 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0207-no-dead-scaffold.sh"}
+{"ts": "2026-08-15T11:58:26", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0050"}
+{"ts": "2026-08-15T11:58:26", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0050 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0050-static-view-components.sh"}
+{"ts": "2026-08-15T11:58:52", "who": "swapnil", "what": "ledger-add", "file": "src/components/motion/EscrowFlowAnimation.tsx, src/components/motion/TiltCard.tsx, src/components/ui/sonner.tsx, src/components/feature/meera/MeeraChatPanel.tsx:670, src/lib/contract-generator.ts:178, src/pages/creator-chat.tsx:1465", "task": "", "stage": "intake", "gate_result": "F-0209"}
+{"ts": "2026-08-15T11:59:22", "who": "priya", "what": "review", "file": "src", "task": "fix-wave-0815", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-15T12:13:22", "who": "priya", "what": "reject", "file": "src", "task": "fix-wave-0815", "stage": "judgment", "gate_result": "broken", "isolation": "fresh-context"}
+{"ts": "2026-08-15T12:13:22", "who": "priya", "what": "ledger-add", "file": "src/components/feature/meera/MeeraOrb.tsx:78", "task": "", "stage": "intake", "gate_result": "F-0210"}
+{"ts": "2026-08-15T12:13:22", "who": "priya", "what": "ledger-add", "file": "src/hooks/useMeeraStream.ts:218 +5 more", "task": "", "stage": "intake", "gate_result": "F-0211"}
+{"ts": "2026-08-15T12:13:22", "who": "priya", "what": "ledger-add", "file": "app/layout.tsx", "task": "", "stage": "intake", "gate_result": "F-0212"}
+{"ts": "2026-08-15T12:13:23", "who": "priya", "what": "ledger-add", "file": "src/lib/contract-generator.ts:178", "task": "", "stage": "intake", "gate_result": "F-0213"}
+{"ts": "2026-08-15T12:17:31", "who": "swapnil", "what": "fix", "file": "src/components/feature/meera/MeeraOrb.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T12:17:31", "who": "swapnil", "what": "fix", "file": "src/hooks/useMeeraStream.ts", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T12:17:31", "who": "swapnil", "what": "fix", "file": "src/lib/api.ts", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T12:17:32", "who": "swapnil", "what": "fix", "file": "src/components/brand/timeline/collaboration-timeline.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T12:17:32", "who": "swapnil", "what": "fix", "file": "src/pages/brand-chat.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T12:17:32", "who": "swapnil", "what": "fix", "file": "src/pages/brand-messages.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T12:17:32", "who": "swapnil", "what": "fix", "file": "src/pages/creator-chat.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T12:17:33", "who": "swapnil", "what": "fix", "file": "src/components/ui/sidebar.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T12:17:33", "who": "swapnil", "what": "fix", "file": "src/lib/css-vars.ts", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T12:25:54", "who": "human:swapnil", "what": "read", "file": "tasks/fix-wave-0815/*", "task": "fix-wave-0815", "stage": "cleanup", "gate_result": "scanned 3 file(s) for failure markers before archive"}
+{"ts": "2026-08-15T12:25:54", "who": "human:swapnil", "what": "delete", "file": "tasks/fix-wave-0815/*", "task": "fix-wave-0815", "stage": "cleanup", "gate_result": "archived \u2192 _archive/fix-wave-0815, purge 2026-09-14"}
+{"ts": "2026-08-15T12:44:14", "who": "neha", "what": "verdict", "file": "src/components/feature/meera/MeeraOrb.tsx", "task": "fix-wave-0815", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-15T12:44:30", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0210"}
+{"ts": "2026-08-15T12:44:30", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0210 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0210-reduced-motion-css.sh"}
+{"ts": "2026-08-15T13:20:18", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0208"}
+{"ts": "2026-08-15T13:20:18", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0208 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0208-rules-resolvable.sh"}
+{"ts": "2026-08-15T13:20:19", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0212"}
+{"ts": "2026-08-15T13:20:19", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0212 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0207-no-dead-scaffold.sh"}
+{"ts": "2026-08-15T13:20:19", "who": "human:swapnil", "what": "delete", "file": "app/layout.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T13:20:19", "who": "human:swapnil", "what": "delete", "file": "app/globals.css", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T13:20:19", "who": "human:swapnil", "what": "delete", "file": "src/components/ui/sonner.tsx", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T13:20:19", "who": "human:swapnil", "what": "edit", "file": "plugin gates/eslint.sage.mjs", "task": "fix-wave-0815", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T13:20:19", "who": "kavya", "what": "verdict", "file": "src", "task": "fix-wave-0815", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-15T14:27:56", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0209"}
+{"ts": "2026-08-15T14:27:56", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0209 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0204-eslint-sage-baseline.py"}
+{"ts": "2026-08-15T14:27:56", "who": "human:swapnil", "what": "edit", "file": "plugin gates/eslint.sage.mjs", "task": "ruling-f0209", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T14:27:56", "who": "kavya", "what": "approve", "file": "src", "task": "ruling-f0209", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-15T14:34:40", "who": "swapnil", "what": "read", "file": "src/lib/contract-generator.ts", "task": "fix-f0213", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-15T14:34:40", "who": "swapnil", "what": "fix", "file": "src/lib/contract-generator.ts", "task": "fix-f0213", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T14:34:40", "who": "swapnil", "what": "create", "file": "src/lib/__tests__/contract-generator-filename.test.ts", "task": "fix-f0213", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-15T14:34:40", "who": "meera", "what": "verdict", "file": "src/lib/contract-generator.ts", "task": "fix-f0213", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-15T14:34:40", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0213"}
+{"ts": "2026-08-15T14:34:40", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0213 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0213-contract-filename.sh"}
