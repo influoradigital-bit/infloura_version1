@@ -24,7 +24,15 @@ public final class BrandDeliverableDtos {
             String thumbnailUrl,
             Long fileSize) {}
 
-    /** {@code GET /deliverables/{id}} — full deliverable detail for brand review (DPF-1). */
+    /**
+     * {@code GET /deliverables/{id}} — full deliverable detail for brand review (DPF-1).
+     *
+     * <p>D-9 (BrandF.md §25): {@code canReject} added alongside {@code canApprove}/{@code
+     * canRequestRevision} — same {@code canReview} gate (status is SUBMITTED/RESUBMITTED), since
+     * the brand-safety-relevant "final decision" action was implemented server-side ({@code
+     * BrandDeliverableService#reject}, routed at {@code BrandDeliverableController#reject}) but had
+     * no DTO flag for the frontend to gate a Reject button on, so it never got a button.
+     */
     public record DeliverableDetailResponse(
             String id,
             String title,
@@ -37,5 +45,6 @@ public final class BrandDeliverableDtos {
             String reviewNotes,
             Instant submittedAt,
             boolean canApprove,
-            boolean canRequestRevision) {}
+            boolean canRequestRevision,
+            boolean canReject) {}
 }

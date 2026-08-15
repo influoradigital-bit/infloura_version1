@@ -2,7 +2,18 @@ import * as React from 'react';
 import { Instagram, Facebook, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
+import { useMetaConnection } from '@/hooks/creator/useMetaConnection';
 import { api } from '@/lib/api';
 
 interface MetaScopeInfo {
@@ -10,12 +21,15 @@ interface MetaScopeInfo {
   label: string;
 }
 
-/** Human labels for the scopes MetaOAuthService.REQUIRED_SCOPES requests server-side. */
+/**
+ * Human labels for the scopes MetaOAuthService.REQUIRED_SCOPES requests server-side.
+ * CR-115 — pages_read_engagement removed from REQUIRED_SCOPES (unused; see that service's
+ * javadoc), so it's dropped here too rather than advertising a permission no longer requested.
+ */
 const SCOPE_LABELS: MetaScopeInfo[] = [
   { scope: 'instagram_basic', label: 'Instagram profile & media' },
   { scope: 'instagram_manage_insights', label: 'Instagram insights & demographics' },
   { scope: 'pages_show_list', label: 'Facebook Pages list' },
-  { scope: 'pages_read_engagement', label: 'Facebook Page engagement' },
 ];
 
 /**
@@ -32,12 +46,41 @@ const SCOPE_LABELS: MetaScopeInfo[] = [
  */
 export function ConnectedAccounts() {
   const { toast } = useToast();
-  const [connectionState] = React.useState(() => api.metaOAuth.getLocalConnectionState());
+  // CR-107 — re-verified against GET /meta/oauth/status on mount and on tab
+  // visibility-regain, not just read once from the localStorage mirror.
+  const { data: connectionState, loading: verifying, error: verifyError, refresh } = useMetaConnection();
   const [isConnecting, setIsConnecting] = React.useState(false);
+  // CR-102/F-0115 — there was no way for a creator to disconnect their Meta/Instagram
+  // account anywhere in the product, even though the backend route and the correctly
+  // creator-scoped revoke already existed (MetaOAuthController.java:129).
+  const [isDisconnecting, setIsDisconnecting] = React.useState(false);
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = React.useState(false);
+
+  const handleDisconnect = async () => {
+    setIsDisconnecting(true);
+    try {
+      await api.metaOAuth.disconnect();
+      toast({ title: 'Instagram and Facebook disconnected' });
+      setShowDisconnectConfirm(false);
+      await refresh();
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not disconnect',
+        description: err instanceof Error ? err.message : 'Please try again in a moment.',
+      });
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
 
   const handleConnect = async () => {
     setIsConnecting(true);
     try {
+      // F-0168 — this is a plain "just send me back here" initiator with no return-path of its
+      // own; clear any leftover marker from an abandoned Deal Room/Co-pilot connect first, or
+      // it would misroute this Settings-initiated connect into wherever that other attempt was.
+      api.metaOAuth.clearConnectReturnTo();
       const { authorizationUrl } = await api.metaOAuth.authorize();
       // Full-page navigation, not a fetch — Meta's OAuth dialog itself must load
       // in the top-level browsing context so the user can log in and approve.
@@ -53,6 +96,10 @@ export function ConnectedAccounts() {
   };
 
   const isConnected = connectionState.connected;
+  // Don't flash "Not connected" off a stale-but-connected localStorage seed while the real
+  // status check is still in flight — show a neutral verifying state instead and only render
+  // the confident Connected/Not-connected UI once the backend call resolves.
+  const isVerifyingConnected = verifying && isConnected;
 
   return (
     <Card className="mb-6">
@@ -66,6 +113,12 @@ export function ConnectedAccounts() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {verifyError && !verifying && (
+          <p className="flex items-center gap-1.5 text-xs text-destructive-foreground">
+            <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
+            Couldn't verify connection status — showing last known state.
+          </p>
+        )}
         <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
           <div className="flex items-center gap-3">
             <div
@@ -77,11 +130,20 @@ export function ConnectedAccounts() {
             <div>
               <p className="text-sm font-medium">Instagram</p>
               <p className="text-xs text-muted-foreground">
-                {isConnected ? 'Profile, media & insights connected' : 'Not connected'}
+                {isVerifyingConnected
+                  ? 'Verifying connection…'
+                  : isConnected
+                    ? 'Profile, media & insights connected'
+                    : 'Not connected'}
               </p>
             </div>
           </div>
-          {isConnected ? (
+          {isVerifyingConnected ? (
+            <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Verifying…
+            </span>
+          ) : isConnected ? (
             <span className="flex items-center gap-1.5 text-sm font-medium text-success-foreground">
               <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
               Connected
@@ -111,11 +173,22 @@ export function ConnectedAccounts() {
             <div>
               <p className="text-sm font-medium">Facebook Page</p>
               <p className="text-xs text-muted-foreground">
-                {isConnected ? 'Page list & engagement connected' : 'Not connected'}
+                {/* CR-115 follow-up (Priya) — was "Page list & engagement connected", advertising
+                    pages_read_engagement after that scope was removed from REQUIRED_SCOPES. */}
+                {isVerifyingConnected
+                  ? 'Verifying connection…'
+                  : isConnected
+                    ? 'Page list connected'
+                    : 'Not connected'}
               </p>
             </div>
           </div>
-          {isConnected ? (
+          {isVerifyingConnected ? (
+            <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Verifying…
+            </span>
+          ) : isConnected ? (
             <span className="flex items-center gap-1.5 text-sm font-medium text-success-foreground">
               <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
               Connected
@@ -134,7 +207,23 @@ export function ConnectedAccounts() {
           )}
         </div>
 
-        {isConnected && connectionState.scopes.length > 0 && (
+        {/*
+          CR-104 — this list now renders the REAL scopes Meta's /me/permissions reported as
+          granted (CreatorMetaOAuthService.connect), never the requested-scope constant. A
+          creator who declined a permission no longer sees it listed here.
+          `connectionState.scopes === null` is a distinct "could not verify" state (the backend's
+          permissions check itself failed) — it must render its own honest message, not silently
+          fall through to the empty-list branch (which would read as "verified, zero granted").
+        */}
+        {isConnected && !isVerifyingConnected && connectionState.scopes === null && (
+          <div className="rounded-lg bg-muted/50 p-3">
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
+              Couldn't verify which permissions were granted. Reconnect to refresh this.
+            </p>
+          </div>
+        )}
+        {isConnected && !isVerifyingConnected && connectionState.scopes !== null && connectionState.scopes.length > 0 && (
           <div className="rounded-lg bg-muted/50 p-3">
             <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
@@ -152,7 +241,67 @@ export function ConnectedAccounts() {
             </ul>
           </div>
         )}
+
+        {isConnected && !isVerifyingConnected && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive-foreground hover:text-destructive-foreground"
+            onClick={() => setShowDisconnectConfirm(true)}
+          >
+            Disconnect Instagram &amp; Facebook
+          </Button>
+        )}
       </CardContent>
+
+      <AlertDialog
+        open={showDisconnectConfirm}
+        onOpenChange={(open) => {
+          // Matches the disabled Cancel button below — an in-flight request must not be
+          // dismissable via Escape/overlay-click while it's still running.
+          if (!isDisconnecting) setShowDisconnectConfirm(open);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect Instagram &amp; Facebook?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {/* Priya review (2 rounds) — both prior wordings claimed a user-visible
+                  consequence no code path actually produces:
+                  (1) "deliverable verification stops" — that path can't reach a creator's
+                      token today anyway (separate, pre-existing bug, not this ticket's fix).
+                  (2) "brands will no longer see your reach/engagement" — disconnect only
+                      revokes the token (MetaConnectionService.java:114-118,
+                      MetaTokenStorage.revokeCreatorToken); it never touches the persisted
+                      CreatorProfile/PlatformStat rows CreatorDiscoveryService reads for the
+                      brand-facing card, so brands keep seeing the same numbers, frozen.
+                  What genuinely stops, verified end-to-end: PortfolioService.syncPlatforms
+                  (throws NOT_CONNECTED), CreatorCaptionSyncJob (skips the creator), and
+                  MetaConnectionService.getStatus (reports disconnected) — all three go
+                  through getValidCreatorToken, which the revoke genuinely empties. */}
+              Your Instagram metrics will stop syncing, so the reach and engagement brands see
+              will stay frozen at today's numbers until you reconnect.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDisconnecting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDisconnect();
+              }}
+              disabled={isDisconnecting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDisconnecting ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                'Disconnect'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

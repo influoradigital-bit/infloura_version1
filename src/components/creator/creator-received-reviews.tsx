@@ -10,6 +10,7 @@
  */
 
 import * as React from 'react';
+import { Link } from 'react-router-dom';
 import { AlertTriangle, Flag, Loader2, Star } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -96,7 +97,16 @@ export function CreatorReceivedReviews() {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">Reviews about you</CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-base">Reviews about you</CardTitle>
+          {/* CR-79: cross-link to the other "reviews about you" surface (Reviews page) */}
+          <Link
+            to="/creator/reviews"
+            className="shrink-0 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            View &amp; manage all reviews
+          </Link>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {loading && <Skeleton className="h-20 w-full" />}
@@ -105,7 +115,14 @@ export function CreatorReceivedReviews() {
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" aria-hidden="true" />
             <AlertTitle>Couldn&apos;t load reviews</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>
+              {error}
+              <div className="mt-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => void load()}>
+                  Try again
+                </Button>
+              </div>
+            </AlertDescription>
           </Alert>
         )}
 

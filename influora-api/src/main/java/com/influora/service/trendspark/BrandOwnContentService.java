@@ -87,21 +87,29 @@ public class BrandOwnContentService {
         // MetaOAuthTokenRepository's own primary-connection lookups for creators).
         MetaOAuthToken token =
                 tokens.stream().max(Comparator.comparing(MetaOAuthToken::getCreatedAt)).orElse(tokens.get(0));
-        String igUserId = token.getCreatorProfileId();
+        // The token row is keyed on our internal ULID creatorProfileId (token lookup below), but
+        // Meta's Graph API needs the numeric IG Business Account ID in the request path — the two
+        // are NOT the same value. Passing the ULID here is CR-99: Meta 400s and the T6 fail-closed
+        // net below quietly reports "no own content" for every brand.
+        String creatorProfileId = token.getCreatorProfileId();
+        String igBusinessAccountId = token.getIgBusinessAccountId();
 
         Optional<String> accessToken;
         try {
-            accessToken = metaTokenStorage.getValidToken(workspaceId, igUserId);
+            accessToken = metaTokenStorage.getValidToken(workspaceId, creatorProfileId);
         } catch (Exception e) {
             return unavailable(brandProfile, "TOKEN_DECRYPT_ERROR: " + e.getClass().getSimpleName());
         }
         if (accessToken.isEmpty()) {
             return unavailable(brandProfile, "TOKEN_EXPIRED_OR_REVOKED");
         }
+        if (igBusinessAccountId == null || igBusinessAccountId.isBlank()) {
+            return unavailable(brandProfile, "NO_IG_BUSINESS_ACCOUNT");
+        }
 
         InstagramMediaResponse media;
         try {
-            media = instagramInsightsClient.getMedia(igUserId, accessToken.get(), RECENT_MEDIA_LIMIT);
+            media = instagramInsightsClient.getMedia(igBusinessAccountId, accessToken.get(), RECENT_MEDIA_LIMIT);
         } catch (Exception e) {
             // Catches MetaApiException and its subtypes (rate-limit/token-expired/permission-
             // denied — all unchecked) AND transport-level failures (timeouts, connection resets)

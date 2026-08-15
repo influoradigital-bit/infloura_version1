@@ -185,6 +185,11 @@ public class BrandDeliverableService {
             throw new ApiException(
                     "INVALID_REQUEST", "feedback is required", HttpStatus.BAD_REQUEST);
         }
+        // D-9 (Priya review): approve() has this same defense-in-depth guard (see its comment —
+        // structurally unreachable today, but reject() is newly reachable from the UI as of this
+        // change and shouldn't be the one path missing it) — matches CollaborationLifecycleService's
+        // (indirectly, via onDeliverableReviewed below) treatment of a terminal decision.
+        requireNotCancelled(deliverable.getCollaborationId());
         deliverable.applyReject(TextSanitizer.sanitizePlainText(feedback.trim()));
         deliverableRepository.save(deliverable);
         // W2-1 — a rejected deliverable still counts as "resolved" for collaboration completion
@@ -251,6 +256,7 @@ public class BrandDeliverableService {
                 deliverable.getCreatorNotes(),
                 deliverable.getReviewNotes(),
                 deliverable.getSubmittedAt(),
+                canReview,
                 canReview,
                 canReview);
     }

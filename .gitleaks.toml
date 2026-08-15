@@ -1,0 +1,27 @@
+# .gitleaks.toml — repo allowlist so ONLY NEW leaks go red (F-0206).
+# Every path here was individually looked up during the 2026-08-14 deep audit
+# (proof-os task deep-audit-0814): all 89 historical findings are documented
+# dev-only throwaway keys, test fixtures, .env.example placeholders, or sibling
+# worktree duplicates of the same. A finding outside these paths is REAL.
+# Rotation note: nothing allowlisted here was ever a live credential.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Audited benign paths — dev-only keys with in-file rationale, test fixtures, examples, worktree duplicates"
+paths = [
+  # sibling Claude worktrees duplicate the same audited fixtures
+  '''\.claude[/\\]worktrees[/\\].*''',
+  # committed example env files — placeholders by definition
+  '''(^|[/\\])\.?env\.example$''',
+  # dev-profile config: documented, deliberately-committed local AES keys
+  # (in-file V0-1 rationale, lines 11-16; MUST NOT be copied to prod)
+  '''influora-api[/\\]src[/\\]main[/\\]resources[/\\]application-dev\.yml''',
+  # PEM-header string literal inside the startup validator itself
+  '''influora-api[/\\]src[/\\]main[/\\]java[/\\]com[/\\]influora[/\\]config[/\\]SecretsStartupValidator\.java''',
+  # backend test fixtures (throwaway EC keys, fake gateway ids)
+  '''influora-api[/\\]src[/\\]test[/\\]java[/\\].*''',
+  # python service test fixtures
+  '''influora-ai[/\\]tests[/\\].*''',
+]

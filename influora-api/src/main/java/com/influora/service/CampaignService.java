@@ -5,12 +5,19 @@ import com.influora.common.JsonLists;
 import com.influora.common.PageMeta;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.Campaign;
+import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CampaignIntentType;
 import com.influora.domain.enums.CampaignStatus;
+import com.influora.domain.enums.CollaborationStatus;
+import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MemberRole;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CampaignSpecs;
+import com.influora.repository.CollaborationRepository;
+import com.influora.repository.CollaborationRepository.CampaignStatusCount;
+import com.influora.repository.EscrowHoldRepository;
+import com.influora.repository.EscrowHoldRepository.CampaignSpend;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CampaignMapper.CampaignMetrics;
 import com.influora.web.dto.campaign.CampaignDtos.BudgetDto;
@@ -23,8 +30,11 @@ import com.influora.web.dto.campaign.CampaignDtos.HypeConfigDto;
 import com.influora.web.dto.campaign.CampaignDtos.TimelineDto;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -36,7 +46,27 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CampaignService {
 
+    /**
+     * D-5 (BrandF.md Section 19/20) — statuses that count as "the creator is actively engaged past
+     * negotiation." {@code CONTRACT_PENDING} is the cut line, reusing the exact same ruling
+     * {@link Collaboration#canReject()}'s javadoc documents (CR-22a, Priya): it is the first status
+     * with a durable artifact (a {@code Contract} row), so everything from here through {@code
+     * REVISION_REQUESTED} represents real, contracted-or-working engagement. Pre-contract
+     * negotiation states (INVITED/APPLIED/SHORTLISTED/IN_NEGOTIATION/TERMS_AGREED) are not yet a
+     * committed collaboration; {@code COMPLETED}/{@code CANCELLED}/{@code DISPUTED} are terminal and
+     * excluded (COMPLETED is counted separately, the other two are dead ends).
+     */
+    private static final Set<CollaborationStatus> ACTIVE_COLLABORATION_STATUSES =
+            Set.of(
+                    CollaborationStatus.CONTRACT_PENDING,
+                    CollaborationStatus.CONTRACTED,
+                    CollaborationStatus.IN_PROGRESS,
+                    CollaborationStatus.REVIEW_PENDING,
+                    CollaborationStatus.REVISION_REQUESTED);
+
     private final CampaignRepository campaignRepository;
+    private final CollaborationRepository collaborationRepository;
+    private final EscrowHoldRepository escrowHoldRepository;
     private final BrandContextService brandContext;
     private final CampaignValidator validator;
     private final IntegrationHealthService integrationHealthService;
@@ -44,11 +74,15 @@ public class CampaignService {
 
     public CampaignService(
             CampaignRepository campaignRepository,
+            CollaborationRepository collaborationRepository,
+            EscrowHoldRepository escrowHoldRepository,
             BrandContextService brandContext,
             CampaignValidator validator,
             IntegrationHealthService integrationHealthService,
             BrandCampaignFeeService brandCampaignFeeService) {
         this.campaignRepository = campaignRepository;
+        this.collaborationRepository = collaborationRepository;
+        this.escrowHoldRepository = escrowHoldRepository;
         this.brandContext = brandContext;
         this.validator = validator;
         this.integrationHealthService = integrationHealthService;
@@ -79,9 +113,17 @@ public class CampaignService {
         Page<Campaign> result =
                 campaignRepository.findAll(spec, PageRequest.of(safePage - 1, safeLimit, sort));
 
+        List<String> pageCampaignIds = result.getContent().stream().map(Campaign::getId).toList();
+        Map<String, CampaignMetrics> metricsByCampaignId = batchComputeMetrics(pageCampaignIds);
+
         List<CampaignResponse> items =
                 result.getContent().stream()
-                        .map(c -> CampaignMapper.toResponse(c, CampaignMetrics.empty()))
+                        .map(
+                                c ->
+                                        CampaignMapper.toResponse(
+                                                c,
+                                                metricsByCampaignId.getOrDefault(
+                                                        c.getId(), CampaignMetrics.empty())))
                         .toList();
 
         PageMeta meta =
@@ -96,7 +138,7 @@ public class CampaignService {
 
     public CampaignResponse get(AuthPrincipal principal, String campaignId) {
         Campaign campaign = requireCampaign(principal, campaignId);
-        return CampaignMapper.toResponse(campaign, CampaignMetrics.empty());
+        return CampaignMapper.toResponse(campaign, computeMetrics(campaign.getId()));
     }
 
     @Transactional
@@ -166,7 +208,10 @@ public class CampaignService {
                         .build();
 
         campaignRepository.save(campaign);
-        return CampaignMapper.toResponse(campaign, CampaignMetrics.empty());
+        // A campaign is brand new at this point (id just minted above) so this will always resolve
+        // to CampaignMetrics.empty() in practice — computed anyway rather than special-cased so
+        // there is exactly one metrics code path for the whole service (D-5).
+        return CampaignMapper.toResponse(campaign, computeMetrics(campaign.getId()));
     }
 
     @Transactional
@@ -179,7 +224,7 @@ public class CampaignService {
         // below must be serialized by a real row lock, not merely by the fee ledger's idempotency
         // key (which stops protecting concurrent activation once brandFeeBps resolves to 0).
         Campaign campaign = loadOwnedForUpdate(campaignId, workspace.getId());
-        validator.ensureEditable(campaign.getStatus());
+        validator.ensureEditable(campaign.getStatus(), isStatusOnlyPatch(req));
 
         if (req.budget() != null) {
             validator.validateBudget(req.budget());
@@ -286,7 +331,7 @@ public class CampaignService {
         }
 
         campaignRepository.save(campaign);
-        return CampaignMapper.toResponse(campaign, CampaignMetrics.empty());
+        return CampaignMapper.toResponse(campaign, computeMetrics(campaign.getId()));
     }
 
     @Transactional
@@ -444,6 +489,81 @@ public class CampaignService {
                 patch.liveUntil() != null ? patch.liveUntil() : existing.liveUntil());
     }
 
+    /**
+     * D-5 (BrandF.md Section 19/20) — real {@link CampaignMetrics} for ONE campaign, used by
+     * {@code get}/{@code create}/{@code update}. A single {@code findByCampaignId} plus a single
+     * scoped SUM query is fine here (unlike {@link #list}) because this path only ever handles one
+     * campaign per call, never a page of up to 100.
+     */
+    private CampaignMetrics computeMetrics(String campaignId) {
+        List<Collaboration> collaborations = collaborationRepository.findByCampaignId(campaignId);
+        int active = 0;
+        int completed = 0;
+        for (Collaboration c : collaborations) {
+            if (c.getStatus() == CollaborationStatus.COMPLETED) {
+                completed++;
+            } else if (ACTIVE_COLLABORATION_STATUSES.contains(c.getStatus())) {
+                active++;
+            }
+        }
+        BigDecimal totalSpend =
+                escrowHoldRepository.sumAmountByCampaignIdAndStatus(campaignId, EscrowStatus.RELEASED);
+        if (totalSpend == null) {
+            totalSpend = BigDecimal.ZERO;
+        }
+        return new CampaignMetrics(collaborations.size(), active, completed, totalSpend);
+    }
+
+    /**
+     * D-5 (BrandF.md Section 19/20) — batched {@link CampaignMetrics} for a whole page of
+     * campaigns (up to 100 rows, {@link #list}'s page-size cap). Exactly two queries total — one
+     * GROUP BY over {@code collaborations} for the counts, one GROUP BY over {@code escrow_holds}
+     * for RELEASED spend — never one query per campaign row (the N+1 this fix exists to avoid).
+     * A campaignId absent from either aggregate legitimately has zero of that figure (no
+     * collaborations, or no RELEASED escrow yet) and is defaulted to {@link CampaignMetrics#empty}
+     * by the caller via {@code Map.getOrDefault}.
+     */
+    private Map<String, CampaignMetrics> batchComputeMetrics(List<String> campaignIds) {
+        if (campaignIds.isEmpty()) {
+            return Map.of();
+        }
+
+        record Counts(int total, int active, int completed) {
+            Counts {}
+        }
+        Map<String, Counts> countsByCampaignId = new HashMap<>();
+        for (CampaignStatusCount row :
+                collaborationRepository.countByCampaignIdInGroupByStatus(campaignIds)) {
+            Counts prev = countsByCampaignId.getOrDefault(row.getCampaignId(), new Counts(0, 0, 0));
+            int total = prev.total() + (int) row.getTotal();
+            int active =
+                    prev.active()
+                            + (ACTIVE_COLLABORATION_STATUSES.contains(row.getStatus())
+                                    ? (int) row.getTotal()
+                                    : 0);
+            int completed =
+                    prev.completed()
+                            + (row.getStatus() == CollaborationStatus.COMPLETED ? (int) row.getTotal() : 0);
+            countsByCampaignId.put(row.getCampaignId(), new Counts(total, active, completed));
+        }
+
+        Map<String, BigDecimal> spendByCampaignId = new HashMap<>();
+        for (CampaignSpend row :
+                escrowHoldRepository.sumAmountByCampaignIdInAndStatusGroupByCampaignId(
+                        campaignIds, EscrowStatus.RELEASED)) {
+            spendByCampaignId.put(
+                    row.getCampaignId(), row.getTotal() != null ? row.getTotal() : BigDecimal.ZERO);
+        }
+
+        Map<String, CampaignMetrics> result = new HashMap<>();
+        for (String campaignId : campaignIds) {
+            Counts c = countsByCampaignId.getOrDefault(campaignId, new Counts(0, 0, 0));
+            BigDecimal spend = spendByCampaignId.getOrDefault(campaignId, BigDecimal.ZERO);
+            result.put(campaignId, new CampaignMetrics(c.total(), c.active(), c.completed(), spend));
+        }
+        return result;
+    }
+
     private static List<CampaignStatus> parseStatuses(String statusParam) {
         if (statusParam == null || statusParam.isBlank() || "ALL".equalsIgnoreCase(statusParam)) {
             return List.of();
@@ -471,6 +591,31 @@ public class CampaignService {
         Sort.Direction dir =
                 "asc".equalsIgnoreCase(sortOrder) ? Sort.Direction.ASC : Sort.Direction.DESC;
         return Sort.by(dir, field);
+    }
+
+    /**
+     * True when the patch carries a {@code status} change (or nothing at all) and no other field —
+     * the shape {@code campaignsApi.update(id, { status })} always sends for pause/resume/cancel/
+     * complete (src/lib/api.ts, called from brand-campaign-detail.tsx and campaigns-list.tsx). Used
+     * by {@link CampaignValidator#ensureEditable(CampaignStatus, boolean)} to let an ACTIVE
+     * campaign's status still be changed while blocking any patch that also edits real content.
+     */
+    private static boolean isStatusOnlyPatch(CampaignPatchRequest req) {
+        return req.title() == null
+                && req.description() == null
+                && req.objectives() == null
+                && req.hype() == null
+                && req.budget() == null
+                && req.timeline() == null
+                && req.applicationDeadline() == null
+                && req.platforms() == null
+                && req.contentTypes() == null
+                && req.requirements() == null
+                && req.hashtags() == null
+                && req.brandGuidelines() == null
+                && req.isPrivate() == null
+                && req.maxCollaborators() == null
+                && req.targetAudience() == null;
     }
 
     private static TimelineDto mergedTimeline(Campaign campaign, CampaignPatchRequest req) {

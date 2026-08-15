@@ -210,6 +210,7 @@ const mockDealRooms: DealRoom[] = [
     brandName: 'StyleCo Fashion',
     brandLogo: '',
     brandInitials: 'SC',
+    brandVerified: true,
     campaignName: 'Summer Fashion 2024',
     status: 'in_progress',
     collaborationStatus: 'IN_PROGRESS',
@@ -226,6 +227,7 @@ const mockDealRooms: DealRoom[] = [
     brandName: 'TechGadgets Pro',
     brandLogo: '',
     brandInitials: 'TG',
+    brandVerified: true,
     campaignName: 'Product Launch Q1',
     status: 'new',
     collaborationStatus: 'INVITED',
@@ -242,6 +244,7 @@ const mockDealRooms: DealRoom[] = [
     brandName: 'FitLife Nutrition',
     brandLogo: '',
     brandInitials: 'FL',
+    brandVerified: true,
     campaignName: 'Wellness Campaign',
     status: 'negotiating',
     collaborationStatus: 'IN_NEGOTIATION',
@@ -258,6 +261,7 @@ const mockDealRooms: DealRoom[] = [
     brandName: 'BeautyGlow',
     brandLogo: '',
     brandInitials: 'BG',
+    brandVerified: true,
     campaignName: 'Skincare Series',
     status: 'contracted',
     collaborationStatus: 'CONTRACTED',
@@ -274,6 +278,7 @@ const mockDealRooms: DealRoom[] = [
     brandName: 'HomeDecor Plus',
     brandLogo: '',
     brandInitials: 'HD',
+    brandVerified: true,
     campaignName: 'Interior Design Tips',
     status: 'review',
     collaborationStatus: 'REVIEW_PENDING',
@@ -848,6 +853,13 @@ export default function CreatorChatPage() {
 
   React.useEffect(() => {
     if (!liveApi || !selectedDeal) return;
+    // F-0192 — the thread render has never been gated on messagesLoading here (events.map is
+    // unconditional), so nothing else hides the PREVIOUS deal's messages during a deal-switch
+    // round-trip: without this, switching deals renders deal A's thread under deal B's header
+    // until the new deal's fetch resolves. Clearing synchronously here — not inside
+    // loadMessages, which every same-deal resync caller (SSE onReconnect, mutation refresh)
+    // also shares and must NOT clear — scopes the reset to a genuine deal switch only.
+    setLiveMessages([]);
     void loadMessages(selectedDeal.id);
   }, [liveApi, selectedDeal?.id, loadMessages]);
 
@@ -922,7 +934,7 @@ export default function CreatorChatPage() {
         // Still non-fatal and still not a toast — rendering and sending never depend on the
         // stream. But CR-31: this now fires per failed ATTEMPT and the transport retries, so
         // it is a diagnostic line, not the room's state. `streamStatus` is the state.
-        console.debug('[creator-chat] deal message stream error for deal', dealId, err);
+        if (import.meta.env.DEV) console.warn('[creator-chat] deal message stream error for deal', dealId, err);
       },
       onStatusChange: setStreamStatus,
       onReconnect: () => {
@@ -940,6 +952,26 @@ export default function CreatorChatPage() {
     return () => {
       handle.close();
     };
+  }, [liveApi, selectedDeal?.id, refreshDeal, loadMessages]);
+
+  // CR-93/F-0110 — a backgrounded tab is the one dead-connection shape CR-31's reconnect
+  // logic does not reliably catch: browsers throttle/suspend timers (and can stall an
+  // in-flight `fetch` read) for a hidden tab, but the underlying TCP connection can look
+  // perfectly fine to the transport, so no error/close ever fires to trigger `onReconnect`.
+  // The counterparty's accept/reject/message then simply never appears until something else
+  // (a manual reload, a deal switch) forces a refetch. Foregrounding the tab is an
+  // unconditional resync, independent of what `streamStatus` currently believes — cheap
+  // (two GETs) and correct even if the stream was secretly fine the whole time.
+  React.useEffect(() => {
+    if (!liveApi || !selectedDeal) return;
+    const dealId = selectedDeal.id;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void loadMessages(dealId);
+      void refreshDeal(dealId);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, [liveApi, selectedDeal?.id, refreshDeal, loadMessages]);
 
   const [message, setMessage] = React.useState('');
@@ -1053,6 +1085,11 @@ export default function CreatorChatPage() {
   const [showRevisionHandler, setShowRevisionHandler] = React.useState(false);
   const [selectedDeliverableForRevision] = React.useState<string | null>(null);
   const [isSubmittingDeliverable, setIsSubmittingDeliverable] = React.useState(false);
+  // CR-53 — if upload succeeds but the submit step fails, remember the exact
+  // (deliverableId, file) pair that already made it to the server so a retry can
+  // skip re-uploading and go straight to submit. Ref, not state: it must survive
+  // across retries without triggering a re-render of its own.
+  const uploadedDeliverableRef = React.useRef<{ deliverableId: string; file: File } | null>(null);
   const [isAcceptingProposal, setIsAcceptingProposal] = React.useState(false);
   const [isDecliningProposal, setIsDecliningProposal] = React.useState(false);
   // CR-03 — persistent per-card outcome of the last accept/decline. See
@@ -1387,8 +1424,33 @@ export default function CreatorChatPage() {
       if (liveApi) {
         // Two steps: upload the file to the deliverable-specific multipart route (part name
         // `files`), THEN submit. Submitting with no uploaded version returns 400 NO_CONTENT.
-        await api.creatorDeliverables.upload(data.deliverableId, [data.file], { caption: data.caption });
-        await api.deliverables.submit(data.deliverableId, { finalCaption: data.caption });
+        //
+        // CR-53: if a prior attempt for this exact (deliverableId, file) already uploaded
+        // successfully and only submit failed, skip the upload again on retry — re-upload
+        // would waste the round trip and can create a duplicate version server-side. The
+        // dialog keeps the same File object in state across a failed attempt (it does not
+        // reset on error), so a reference-equal match here reliably means "already uploaded".
+        const alreadyUploaded =
+          uploadedDeliverableRef.current?.deliverableId === data.deliverableId &&
+          uploadedDeliverableRef.current?.file === data.file;
+
+        if (!alreadyUploaded) {
+          await api.creatorDeliverables.upload(data.deliverableId, [data.file], { caption: data.caption });
+          uploadedDeliverableRef.current = { deliverableId: data.deliverableId, file: data.file };
+        }
+
+        try {
+          await api.deliverables.submit(data.deliverableId, { finalCaption: data.caption });
+        } catch (submitErr) {
+          // Tag the error so DeliverableSubmission can tell "upload also failed" apart from
+          // "upload is done, only submit needs a retry" and show the right recovery message.
+          if (submitErr && typeof submitErr === 'object') {
+            (submitErr as { uploaded?: boolean }).uploaded = true;
+          }
+          throw submitErr;
+        }
+
+        uploadedDeliverableRef.current = null;
         await loadDeliverables();
       } else {
         await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -1665,6 +1727,47 @@ export default function CreatorChatPage() {
   const feedbackForThisRoom =
     proposalFeedback?.dealId === selectedDeal.id ? proposalFeedback : null;
 
+  /**
+   * Bare-invite dead-end fix (Vikram root-cause, routed via Arjun).
+   *
+   * A deal invited straight into INVITED status (`Collaboration.invite()`) has no
+   * priced offer, so `persistProposalMessage` never runs — only `deals.create`/
+   * `doCounter` create one — and `events` is genuinely empty even though
+   * `canRespondToProposal` correctly says the deal IS still acceptable. The
+   * `type === 'proposal'` card a few hundred lines below never gets an event to
+   * render, so the creator saw the plain "No messages yet" empty state with no
+   * way to act. Gated on `events.length === 0` specifically (not "no proposal
+   * event exists") so a deal that has ANY message — chat, a counter-offer, a
+   * settled/stale proposal card — keeps its normal timeline untouched; this is
+   * strictly the zero-messages fallback.
+   *
+   * CR-02 fresh-context reject (Priya): `canRespondToProposal` is also true for
+   * APPLIED — the creator's OWN pending application to a campaign, not a brand
+   * invite — and an APPLIED collaboration has zero messages for the identical
+   * reason a bare invite does (`persistProposalMessage` never ran). Gating on
+   * `canRespondToProposal` alone rendered this card, with its brand-invited-you
+   * copy, on the creator's own application, and its Accept button became a
+   * self-accept: `DealService.doAccept`'s `CANNOT_ACCEPT_OWN_OFFER` guard only
+   * fires when a `proposal` DealMessage exists to read `senderType` off of, and
+   * an APPLIED collaboration has none — so nothing on the server stopped a
+   * creator from accepting their own application straight into TERMS_AGREED.
+   * This card is BRAND-invite-only, so it is additionally scoped to the one
+   * status a bare invite actually produces: `INVITED`.
+   */
+  const showBareInviteResponse =
+    events.length === 0 &&
+    canRespondToProposal &&
+    selectedDeal.collaborationStatus === 'INVITED';
+  /**
+   * There is no real message id for a bare invite to key off — the deal has no
+   * messages at all — so this is a stable per-deal pseudo-id used ONLY to pin
+   * the CR-03 accept/decline feedback banner to this card. It is never sent to
+   * the API: `handleAcceptProposal`/`handleDeclineProposal` below call
+   * `api.deals.accept`/`api.deals.reject(selectedDeal.id, ...)`, which are
+   * deal-scoped and never touch the id argument they're passed here.
+   */
+  const bareInviteFeedbackId = `bare-invite-${selectedDeal.id}`;
+
   const deliverableItems =
     selectedDeal.deliverablesTotal > 0
       ? Array.from({ length: selectedDeal.deliverablesTotal }, (_, i) => ({
@@ -1771,10 +1874,19 @@ export default function CreatorChatPage() {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-semibold">{selectedDeal.brandName}</h3>
-                <Badge variant="outline" className="text-[10px]">
-                  <Building2 className="h-3 w-3 mr-1" />
-                  Verified Brand
-                </Badge>
+                {/* M-1 (BrandF.md §83c/§87) — was unconditional JSX, so every deal showed
+                    "Verified Brand" regardless of the brand's real verification state.
+                    Now gated on the real `counterpartyVerificationStatus` field; renders
+                    nothing for PENDING/UNVERIFIED/REJECTED, matching the honest
+                    conditional-badge pattern already used for verification elsewhere
+                    (e.g. `invite.brandVerified && <VerifiedBadge />` in
+                    `hype-inbox-card.tsx`) rather than inventing new copy for those states. */}
+                {selectedDeal.brandVerified && (
+                  <Badge variant="outline" className="text-[10px]">
+                    <Building2 className="h-3 w-3 mr-1" />
+                    Verified Brand
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-muted-foreground">{selectedDeal.campaignName}</p>
             </div>
@@ -1907,7 +2019,107 @@ export default function CreatorChatPage() {
             {liveApi && messagesError && !messagesLoading && (
               <div className="text-center py-8 text-sm text-destructive-foreground">{messagesError}</div>
             )}
-            {liveApi && !messagesLoading && !messagesError && events.length === 0 && (
+            {liveApi && !messagesLoading && !messagesError && showBareInviteResponse && (
+              <div className="flex justify-start gap-2">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                    {selectedDeal.brandInitials}
+                  </AvatarFallback>
+                </Avatar>
+                <Card className="max-w-md border-stage-outreach-border bg-blue-50/50">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <FileText className="h-4 w-4 text-stage-outreach-fg" />
+                      <span className="font-medium text-sm">Campaign Invite</span>
+                    </div>
+                    {/* No amount, no deliverables, no earnings breakdown here — a bare
+                        invite has no offer terms to show. Fabricating a ₹0/breakdown off
+                        an absent amount is exactly the UI-honesty defect this fix avoids;
+                        see the priced `type === 'proposal'` card below for that surface.
+                        Counter is intentionally absent too: there is no price to counter. */}
+                    <p className="text-sm text-muted-foreground mb-4">
+                      <span className="font-medium text-foreground">{selectedDeal.brandName}</span>{' '}
+                      invited you to collaborate
+                      {selectedDeal.campaignName ? (
+                        <>
+                          {' '}
+                          on{' '}
+                          <span className="font-medium text-foreground">
+                            {selectedDeal.campaignName}
+                          </span>
+                        </>
+                      ) : null}
+                      . No offer amount has been set yet — accept to start discussing terms,
+                      or decline if it's not a fit.
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => handleAcceptProposal(bareInviteFeedbackId)}
+                        disabled={isAcceptingProposal || isDecliningProposal}
+                      >
+                        {isAcceptingProposal ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                            Accepting...
+                          </>
+                        ) : (
+                          'Accept'
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDeclineProposal(bareInviteFeedbackId)}
+                        disabled={isAcceptingProposal || isDecliningProposal}
+                      >
+                        {isDecliningProposal ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                            Declining...
+                          </>
+                        ) : (
+                          'Decline'
+                        )}
+                      </Button>
+                    </div>
+                    {feedbackForThisRoom?.proposalId === bareInviteFeedbackId && (
+                      <div
+                        className={cn(
+                          'mt-3 flex items-start gap-2 rounded-md border p-2.5 text-xs',
+                          feedbackForThisRoom.tone === 'error'
+                            ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                            : 'border-stage-approved-border bg-stage-approved text-stage-approved-fg',
+                        )}
+                      >
+                        {feedbackForThisRoom.tone === 'error' ? (
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" />
+                        ) : (
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-px" />
+                        )}
+                        <div className="space-y-1.5">
+                          <p>{feedbackForThisRoom.message}</p>
+                          {feedbackForThisRoom.stale && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[11px]"
+                              onClick={() => {
+                                void afterDealMutation(selectedDeal.id);
+                              }}
+                            >
+                              Refresh deal
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+            {liveApi && !messagesLoading && !messagesError && events.length === 0 && !showBareInviteResponse && (
               <div className="text-center py-12 text-sm text-muted-foreground">
                 No messages yet. Say hello to get the conversation started.
               </div>

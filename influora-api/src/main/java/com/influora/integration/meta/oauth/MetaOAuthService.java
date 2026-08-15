@@ -24,13 +24,21 @@ public class MetaOAuthService {
 
     private static final Logger log = LoggerFactory.getLogger(MetaOAuthService.class);
 
-    /** Required OAuth scopes for full functionality (spec §1.7). */
+    /**
+     * Required OAuth scopes for full functionality (spec §1.7).
+     *
+     * <p>CR-115 — {@code pages_read_engagement} removed. It was requested and granted but
+     * {@link com.influora.integration.meta.client.FacebookPageClient#getPage} — the only client
+     * method that scope backs — had zero production callers anywhere in the codebase; no job or
+     * controller ever surfaces Facebook Page engagement data. Least-privilege: don't ask a creator
+     * to grant a permission the product doesn't use yet. {@code pages_show_list} stays — it backs
+     * {@code resolveConnectedInstagram}'s {@code GET /me/accounts} call, which is live.
+     */
     public static final List<String> REQUIRED_SCOPES =
             List.of(
                     "instagram_basic", // Basic profile and media access
                     "instagram_manage_insights", // Insights and demographics
-                    "pages_show_list", // List connected Facebook Pages
-                    "pages_read_engagement" // Page engagement metrics
+                    "pages_show_list" // List connected Facebook Pages
                     );
 
     private final MetaApiProperties props;

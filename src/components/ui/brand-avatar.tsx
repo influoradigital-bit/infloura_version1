@@ -23,12 +23,9 @@ export function BrandAvatar({ initials, online = true, size = 'md', className }:
     <span className={cn('relative inline-flex shrink-0', className)}>
       <span
         className={cn(
-          'flex items-center justify-center rounded-full font-semibold text-white',
+          'flex items-center justify-center rounded-full font-semibold text-white bg-[linear-gradient(135deg,var(--meera-accent),var(--meera-accent-hover))]',
           SIZE_CLASS[size],
         )}
-        style={{
-          background: 'linear-gradient(135deg, var(--meera-accent), var(--meera-accent-hover))',
-        }}
         aria-hidden="true"
       >
         {initials}

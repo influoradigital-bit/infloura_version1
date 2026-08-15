@@ -1,0 +1,27 @@
+{
+ "verdict": "believed",
+ "oracle": "eslint",
+ "isolation": "fresh-context",
+ "done_when": "bounded conversion (law 1) of the original ask: queue items F-0203, F-0204, F-0206, F-0207, F-0050 each close via a promoted gate exiting 0; npm audit --audit-level=high exits 0; tsc --noEmit exits 0; npm run build exits 0; gates/F-0204-eslint-sage-baseline.py exits 0; and Priya's fresh-context review is recorded with every finding ledgered",
+ "not_checked": [
+  "Priya's RE-approval after the surgical fixes \u2014 her first fresh-context review REJECTED; every in-scope must-fix she named is since fixed and oracle-verified, but the remaining blockers (8 pending-ruling lint sites, 3 undeletable dead files) need a human ruling she cannot give, so 'Priya approve' is strictly UNMET",
+  "a rendered reduced-motion check of the MeeraOrb fix \u2014 CSS semantics are now valid by construction and the compiled utilities are emitted, but no browser rendered the branch after the fix",
+  "the other ~20 inline-style->Tailwind conversions under prefers-reduced-motion \u2014 no test or build step exercises those branches (Priya's stated blind spot stands)",
+  "backend Java surface \u2014 untouched by this wave; its last full proof is the 2026-08-14 audit (1763 tests, 0 failures)",
+  "whether the concurrent out-of-session editor changed files after this wave's last oracle run (collision gate covered spot-checked markers only)"
+ ],
+ "skipped": [
+  {
+   "step": "Priya second-round fresh-context review",
+   "reason": "her remaining must-fix items are human-blocked (rule-vs-framer-motion ruling F-0209, gate-config F-0208, deletions denied by session permissions) \u2014 a re-review would re-discover known blockers at token cost without changing the verdict"
+  },
+  {
+   "step": "deletion of app/layout.tsx, app/globals.css, src/components/ui/sonner.tsx",
+   "reason": "denied twice by the session permission classifier; F-0212 stays open with the extended F-0207 gate as its exit test"
+  },
+  {
+   "step": "fixing the 4 framer-motion style-prop sites + 3 signature-locked _-params + gate config",
+   "reason": "needs a kavya/priya/Swapnil ruling (F-0208/F-0209) \u2014 the style prop is framer-motion's only MotionValue binding API; unilaterally exempting or rewriting would be deciding the ruling myself"
+  }
+ ]
+}

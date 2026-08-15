@@ -12,6 +12,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from '@/components/ui/empty';
 import type { MetricDataPoint } from '@/lib/types';
+import { cssVars } from '@/lib/css-vars';
 
 interface TrendMetric {
   key: keyof Pick<MetricDataPoint, 'followers' | 'impressions' | 'reach' | 'engagementRate'>;
@@ -68,7 +69,9 @@ export function MetricsTrendChart({
           <Skeleton className="mt-1 h-4 w-48" />
         </CardHeader>
         <CardContent>
-          <Skeleton className="w-full" style={{ height }} />
+          <div ref={cssVars({ '--chart-h': `${height}px` })}>
+            <Skeleton className="w-full h-[var(--chart-h)]" />
+          </div>
         </CardContent>
       </Card>
     );
@@ -81,8 +84,9 @@ export function MetricsTrendChart({
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
       <CardContent>
+        <div ref={cssVars({ '--chart-h': `${height}px` })}>
         {data.length === 0 ? (
-          <Empty className="border-0 p-0" style={{ minHeight: height }}>
+          <Empty className="border-0 p-0 min-h-[var(--chart-h)]">
             <EmptyHeader>
               <EmptyTitle>No trend data yet</EmptyTitle>
               <EmptyDescription>
@@ -91,7 +95,7 @@ export function MetricsTrendChart({
             </EmptyHeader>
           </Empty>
         ) : (
-          <ChartContainer config={chartConfig} className="w-full" style={{ height }}>
+          <ChartContainer config={chartConfig} className="w-full h-[var(--chart-h)]">
             <LineChart
               data={data}
               margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
@@ -131,6 +135,7 @@ export function MetricsTrendChart({
             </LineChart>
           </ChartContainer>
         )}
+        </div>
       </CardContent>
     </Card>
   );

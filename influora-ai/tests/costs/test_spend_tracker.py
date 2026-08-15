@@ -43,7 +43,7 @@ async def test_no_workspace_id_only_updates_global_total():
     await spend_tracker.record_spend(Decimal("5.00"), workspace_id=None)
 
     assert await spend_tracker.get_global_total_today() == Decimal("5.00")
-    assert await spend_tracker.get_workspace_total_today("anything") == Decimal("0")
+    assert await spend_tracker.get_workspace_total_today("anything") == Decimal(0)
 
 
 @pytest.mark.asyncio
@@ -56,8 +56,8 @@ async def test_state_resets_on_utc_day_rollover(monkeypatch):
     monkeypatch.setattr(spend_tracker, "_today_utc", lambda: tomorrow)
 
     # The next read/write must see a fresh, empty state for the new day.
-    assert await spend_tracker.get_global_total_today() == Decimal("0")
-    assert await spend_tracker.get_workspace_total_today("ws-a") == Decimal("0")
+    assert await spend_tracker.get_global_total_today() == Decimal(0)
+    assert await spend_tracker.get_workspace_total_today("ws-a") == Decimal(0)
 
     total_after_rollover = await spend_tracker.record_spend(Decimal("1.00"), workspace_id="ws-a")
     assert total_after_rollover == Decimal("1.00")

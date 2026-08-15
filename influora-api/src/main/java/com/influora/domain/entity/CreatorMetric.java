@@ -22,6 +22,46 @@ import java.time.Instant;
 @Table(name = "creator_metrics")
 public class CreatorMetric {
 
+    /**
+     * CR-119 — the canonical spelling of "this snapshot came from a real platform API call,"
+     * previously a bare {@code "META_API"} literal. The sites that decide or consume THIS
+     * entity's provenance now all point here: the builder default, {@code MetricsPollingJob},
+     * {@code PortfolioService} and {@code RateEstimationService}. ({@code AudienceDemographicsJob}
+     * keeps its own private copy — it writes a different entity with no verified-flag consumer,
+     * so it is deliberately out of scope rather than silently included.) It is now load-bearing rather
+     * than cosmetic: {@link #isPlatformVerified()} reads it to decide whether a {@code
+     * PlatformStat} may claim verified provenance to brands, so a drifted literal would silently
+     * mislabel real data as self-reported (or worse, the reverse).
+     */
+    public static final String DATA_SOURCE_META_API = "META_API";
+
+    /**
+     * CR-119 — the fail-closed default for {@link Builder#build()}. Matches the vocabulary
+     * {@code DeliverableMetric.SOURCE_CREATOR_REPORTED} already uses for the same distinction.
+     *
+     * <p>The builder used to default a missing {@code dataSource} to {@link #DATA_SOURCE_META_API},
+     * which was harmless while it only labelled rows — but {@link #isPlatformVerified()} now gates
+     * a claim shown to brands who are about to spend money, and "the caller forgot to say where
+     * this came from" must never resolve to "a platform confirmed it". Defaulting to
+     * creator-reported makes the unsafe direction the one you have to ask for explicitly.
+     */
+    public static final String DATA_SOURCE_CREATOR_REPORTED = "CREATOR_REPORTED";
+
+    /**
+     * CR-119 — whether this snapshot's numbers came from a real platform API fetch rather than
+     * creator self-report. This is the ONLY thing that may set {@code PlatformStat.verified}.
+     *
+     * <p>Today exactly one source qualifies: the Meta Graph API (Instagram/Facebook), via
+     * {@code MetricsPollingJob} and {@code PortfolioService#syncPlatforms}. YouTube, TikTok and
+     * Twitter/X have no OAuth or data-fetch integration at all — the remaining, still-open half
+     * of CR-119 — so any row for those platforms is creator-reported and must never read as
+     * verified. When a real integration lands for one of them, it adds its own data-source
+     * constant here and this predicate widens; nothing downstream needs to change.
+     */
+    public boolean isPlatformVerified() {
+        return DATA_SOURCE_META_API.equals(dataSource);
+    }
+
     @Id
     @Column(length = 26)
     private String id;
@@ -34,6 +74,10 @@ public class CreatorMetric {
 
     @Column(name = "platform", nullable = false, length = 20)
     private String platform;
+
+    /** CR-116 — InstagramUserResponse.username() at fetch time; null if Meta didn't return one. */
+    @Column(name = "username", length = 200)
+    private String username;
 
     @Column(name = "followers", nullable = false)
     private long followers;
@@ -84,6 +128,10 @@ public class CreatorMetric {
 
     public String getPlatform() {
         return platform;
+    }
+
+    public String getUsername() {
+        return username;
     }
 
     public long getFollowers() {
@@ -157,6 +205,11 @@ public class CreatorMetric {
             return this;
         }
 
+        public Builder username(String username) {
+            m.username = username;
+            return this;
+        }
+
         public Builder followers(long followers) {
             m.followers = followers;
             return this;
@@ -215,7 +268,11 @@ public class CreatorMetric {
                 m.fetchedAt = Instant.now();
             }
             if (m.dataSource == null) {
-                m.dataSource = "META_API";
+                // CR-119 — fail CLOSED. Both production writers (MetricsPollingJob,
+                // PortfolioService#syncPlatforms) set this explicitly, so nothing real depends on
+                // the default; what it must not do is let an omission silently mint a
+                // platform-verified claim. See DATA_SOURCE_CREATOR_REPORTED's javadoc.
+                m.dataSource = DATA_SOURCE_CREATOR_REPORTED;
             }
             m.createdAt = Instant.now();
             return m;

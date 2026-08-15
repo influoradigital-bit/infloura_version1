@@ -215,7 +215,9 @@ export function useMeeraStream(): UseMeeraStreamResult {
           return true;
         }
         default:
-          console.debug('[useMeeraStream] Generic message:', frame.data);
+          // Routine frame, not an anomaly — dev-only so prod consoles stay clean for
+          // E2E triage and frame payloads never reach end-user consoles (F-0211).
+          if (import.meta.env.DEV) console.warn('[useMeeraStream] Generic message:', frame.data);
           return false;
       }
     },

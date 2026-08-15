@@ -68,6 +68,15 @@ interface Message {
 
 interface Conversation {
   id: string;
+  /**
+   * The creator's CreatorProfile id (Deal.counterpartyProfileId), used ONLY to match the
+   * `?creator=` URL param set by brand-creator-profile.tsx's Message button (which navigates
+   * with the CreatorProfile id, not the User id). `creator.id` below stays the User id
+   * everywhere else it's read (e.g. matching DealMessage.readBy) — deliberately not repurposed,
+   * to avoid breaking that existing meaning. Mock conversations set this equal to `creator.id`
+   * (arbitrary mock ids, so no live/mock behavior difference for URL-matching pre-fix).
+   */
+  creatorProfileId?: string | null;
   creator: {
     id: string;
     name: string;
@@ -95,6 +104,7 @@ interface Conversation {
 const mockConversations: Conversation[] = [
   {
     id: 'conv-1',
+    creatorProfileId: 'c1',
     creator: {
       id: 'c1',
       name: 'Sarah Johnson',
@@ -115,6 +125,7 @@ const mockConversations: Conversation[] = [
   },
   {
     id: 'conv-2',
+    creatorProfileId: 'c2',
     creator: {
       id: 'c2',
       name: 'Alex Chen',
@@ -136,6 +147,7 @@ const mockConversations: Conversation[] = [
   },
   {
     id: 'conv-3',
+    creatorProfileId: 'c3',
     creator: {
       id: 'c3',
       name: 'Maya Patel',
@@ -155,6 +167,7 @@ const mockConversations: Conversation[] = [
   },
   {
     id: 'conv-4',
+    creatorProfileId: 'c4',
     creator: {
       id: 'c4',
       name: 'James Wilson',
@@ -270,6 +283,7 @@ const mockMessagesByConversation: Record<string, Message[]> = {
 function mapDealToConversation(deal: Deal): Conversation {
   return {
     id: deal.id,
+    creatorProfileId: deal.counterpartyProfileId ?? null,
     creator: {
       id: deal.counterpartyId,
       name: deal.counterpartyName,
@@ -330,7 +344,7 @@ export default function BrandMessagesPage() {
   // so we show a "no conversation yet" state instead of silently opening the wrong
   // creator's thread (audit #10).
   const initialConversation = creatorIdFromUrl
-    ? mockConversations.find(c => c.creator.id === creatorIdFromUrl) ?? null
+    ? mockConversations.find(c => c.creatorProfileId === creatorIdFromUrl) ?? null
     : mockConversations[0];
 
   // Live mode (isApiLive()) state — mock rendering above stays untouched.
@@ -351,7 +365,7 @@ export default function BrandMessagesPage() {
   const requestedCreatorMissing =
     !!creatorIdFromUrl &&
     !conversationsLoading &&
-    !conversations.some((c) => c.creator.id === creatorIdFromUrl);
+    !conversations.some((c) => c.creatorProfileId === creatorIdFromUrl);
 
   const [selectedConversation, setSelectedConversation] = React.useState<Conversation | null>(
     isApiLive() ? null : initialConversation
@@ -397,7 +411,7 @@ export default function BrandMessagesPage() {
     // leave unselected (→ "no conversation yet" state). Never fall back to a
     // different creator's thread (audit #10).
     if (creatorIdFromUrl) {
-      const match = liveConversations.find((c) => c.creator.id === creatorIdFromUrl);
+      const match = liveConversations.find((c) => c.creatorProfileId === creatorIdFromUrl);
       if (match) {
         setSelectedConversation(match);
         setIsMobileConversationOpen(true);
@@ -429,6 +443,37 @@ export default function BrandMessagesPage() {
       void loadMessages(selectedConversation.id);
     }
   }, [selectedConversation, loadMessages]);
+
+  // D-13 (BrandF.md §40): this page never opened the SSE stream — a creator's reply
+  // only appeared after switching conversations or reloading. Mirrors brand-chat.tsx's
+  // stream effect, keyed on the selected conversation's id so switching threads tears
+  // down the old connection before opening the new one.
+  React.useEffect(() => {
+    if (!isApiLive() || !selectedConversation) return;
+    const dealId = selectedConversation.id;
+
+    const handle = messagesApi.stream('brand', dealId, {
+      onMessage: (incoming) => {
+        setLiveMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === incoming.id);
+          if (idx === -1) return [...prev, incoming];
+          const next = prev.slice();
+          next[idx] = incoming;
+          return next;
+        });
+      },
+      onError: (err) => {
+        if (import.meta.env.DEV) console.warn('[brand-messages] message stream error for deal', dealId, err);
+      },
+      onReconnect: () => {
+        void loadMessages(dealId);
+      },
+    });
+
+    return () => {
+      handle.close();
+    };
+  }, [selectedConversation?.id, loadMessages]);
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedConversation) return;
@@ -625,21 +670,46 @@ export default function BrandMessagesPage() {
                 </div>
 
                 <div className="flex items-center gap-1">
+                  {/* D-12 (BrandF.md §39): these 7 header controls rendered fully enabled with
+                      no onClick at all — worst was "Delete conversation," styled destructive
+                      while doing nothing. None of these has a backend endpoint yet (no
+                      calling, pin/mute/archive/report/delete-conversation API exists) — until
+                      one does, an honest tooltip beats a silent no-op.
+                      Priya review: `disabled` on the trigger sets `pointer-events-none`
+                      (button.tsx's `disabled:pointer-events-none`), which stops Radix's
+                      Tooltip from ever opening — the explanation became unreachable by the
+                      exact input (hover/focus) it needed to work for. `aria-disabled` alone
+                      (no `disabled`) keeps the button hoverable/focusable so the tooltip still
+                      fires, and the empty onClick keeps it a real no-op. */}
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-disabled="true"
+                        aria-label="Voice call — not available yet"
+                        className="opacity-50"
+                        onClick={(e) => e.preventDefault()}
+                      >
                         <Phone className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Voice Call</TooltipContent>
+                    <TooltipContent>Voice calling isn't available yet</TooltipContent>
                   </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-disabled="true"
+                        aria-label="Video call — not available yet"
+                        className="opacity-50"
+                        onClick={(e) => e.preventDefault()}
+                      >
                         <Video className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Video Call</TooltipContent>
+                    <TooltipContent>Video calling isn't available yet</TooltipContent>
                   </Tooltip>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -648,21 +718,26 @@ export default function BrandMessagesPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem>
+                      <DropdownMenuItem disabled>
                         <Star className="mr-2 h-4 w-4" /> Pin conversation
+                        <span className="ml-auto text-xs text-muted-foreground">Soon</span>
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem disabled>
                         <BellOff className="mr-2 h-4 w-4" /> Mute notifications
+                        <span className="ml-auto text-xs text-muted-foreground">Soon</span>
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem disabled>
                         <Archive className="mr-2 h-4 w-4" /> Archive
+                        <span className="ml-auto text-xs text-muted-foreground">Soon</span>
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem>
+                      <DropdownMenuItem disabled>
                         <Flag className="mr-2 h-4 w-4" /> Report
+                        <span className="ml-auto text-xs text-muted-foreground">Soon</span>
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive-foreground">
+                      <DropdownMenuItem disabled className="text-destructive-foreground">
                         <Trash2 className="mr-2 h-4 w-4" /> Delete conversation
+                        <span className="ml-auto text-xs text-muted-foreground">Soon</span>
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -895,22 +970,38 @@ export default function BrandMessagesPage() {
                   <p className="text-xs text-destructive-foreground mb-2">{messagesError}</p>
                 )}
                 <div className="flex items-end gap-2">
+                  {/* D-12: attach/image also have no upload support in the messages API yet
+                      (no multipart endpoint, no client method) — disabled + honest tooltip. */}
                   <div className="flex gap-1">
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-9 w-9">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 opacity-50"
+                          aria-disabled="true"
+                          aria-label="Attach file — not available yet"
+                          onClick={(e) => e.preventDefault()}
+                        >
                           <Paperclip className="h-4 w-4" />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>Attach file</TooltipContent>
+                      <TooltipContent>File attachments aren't available yet</TooltipContent>
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-9 w-9">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 opacity-50"
+                          aria-disabled="true"
+                          aria-label="Attach image — not available yet"
+                          onClick={(e) => e.preventDefault()}
+                        >
                           <ImageIcon className="h-4 w-4" />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>Send image</TooltipContent>
+                      <TooltipContent>Image attachments aren't available yet</TooltipContent>
                     </Tooltip>
                   </div>
 
@@ -930,9 +1021,22 @@ export default function BrandMessagesPage() {
                       disabled={sendingMessage}
                     />
                     <div className="absolute bottom-2 right-2 flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7">
-                        <Smile className="h-4 w-4" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          {/* D-12: no emoji picker exists yet to open. */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 opacity-50"
+                            aria-disabled="true"
+                            aria-label="Emoji picker — not available yet"
+                            onClick={(e) => e.preventDefault()}
+                          >
+                            <Smile className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Emoji picker isn't available yet</TooltipContent>
+                      </Tooltip>
                     </div>
                   </div>
 

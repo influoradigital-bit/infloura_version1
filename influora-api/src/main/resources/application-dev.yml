@@ -35,6 +35,40 @@ influora:
   conversion-webhook:
     token-encryption-key: "7Jw7JsuzTxyAFRblivLMKGoFjIrlhcvXI6T+0CV+Z8M="
 
+  # ---------------------------------------------------------------------------
+  # THIRD-PARTY API KEYS (local dev) — paste real values, then UNCOMMENT the
+  # block you need. Left commented so nothing activates by accident; in
+  # particular an uncommented Meta app-id + app-secret flips
+  # MetaApiProperties.isConfigured() to true and starts firing real Graph API
+  # calls. See API-KEYS-SETUP.md at the repo root for the full map.
+  # For production, do NOT put these here — set them as env vars on the server.
+  # ---------------------------------------------------------------------------
+  # razorpay:
+  #   key-id: "rzp_test_PASTE_HERE"
+  #   key-secret: "PASTE_HERE"
+  #   webhook-secret: "PASTE_HERE"
+  #   payout-account-number: "PASTE_RAZORPAYX_ACCOUNT"
+  # msg91:
+  #   auth-key: "PASTE_HERE"
+  #   token-auth: "PASTE_HERE"
+  #   widget-id: "PASTE_HERE"
+  #   template:
+  #     otp: "PASTE_OTP_TEMPLATE_ID"
+  #     welcome: "PASTE_WELCOME_TEMPLATE_ID"
+  #   email:
+  #     transactional-template-id: "PASTE_TEMPLATE_ID"
+  # r2:
+  #   account-id: "PASTE_HERE"
+  #   access-key-id: "PASTE_HERE"
+  #   secret-access-key: "PASTE_HERE"
+  #   bucket-name: "influora-dev"
+  #   endpoint: "https://PASTE_ACCOUNT_ID.r2.cloudflarestorage.com"
+  #   public-url: "https://r2.influora.com"
+  # meta:            # Optional — leave commented unless connecting Instagram/Facebook.
+  #   app-id: "PASTE_HERE"
+  #   app-secret: "PASTE_HERE"
+  #   redirect-uri: "http://localhost:8080/api/v1/meta/oauth/callback"
+
 logging:
   level:
     com.influora: DEBUG

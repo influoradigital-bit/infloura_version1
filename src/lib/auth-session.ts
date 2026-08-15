@@ -126,6 +126,14 @@ export function clearCreatorSession(): void {
   localStorage.removeItem('creator_email');
   localStorage.removeItem('creator_display_name');
   localStorage.removeItem(CREATOR_ONBOARDING_KEY);
+  // F-0165 — this five-key clear left the `meta_connection` mirror (api.ts's
+  // META_CONNECTION_KEY, same literal 'meta_connection') behind. On a shared browser, the next
+  // creator to log in was seeded with the PREVIOUS creator's Meta connection state (accountType,
+  // granted scopes) until the live GET /meta/oauth/status re-verification on mount succeeded —
+  // and useMetaConnection deliberately keeps last-known state if that call fails, so a failure
+  // showed creator B creator A's "Connected" status under a generic "showing last known state"
+  // caption. Same family as CR-32, which already reads this same stale mirror elsewhere.
+  localStorage.removeItem('meta_connection');
 }
 
 export function getBrandOnboardingComplete(): boolean {

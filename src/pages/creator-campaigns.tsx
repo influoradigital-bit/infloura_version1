@@ -80,7 +80,7 @@ export default function CreatorCampaignsPage() {
 
       try {
         const result = await api.creatorCampaigns.browse({
-          niche: selectedNiche?.toLowerCase(),
+          niche: selectedNiche ?? undefined,
           platform: selectedPlatform ?? undefined,
           budgetMin: budgetFilterActive ? budgetRange[0] : undefined,
           budgetMax: budgetFilterActive ? budgetRange[1] : undefined,
@@ -119,8 +119,15 @@ export default function CreatorCampaignsPage() {
     return () => window.clearTimeout(t);
   }, [fetchCampaigns]);
 
+  const isSearching = searchQuery.trim().length > 0;
+
+  // The backend (CreatorCampaignController#browse) has no text-search param — only
+  // niche/platform/budget/page/limit — so this filters the campaigns already fetched
+  // into `campaigns`, not the full catalog. Load More stays visible during a search
+  // (see below) so the user can pull in more rows to search within, and the UI is
+  // labeled to make clear this isn't a complete search of every campaign.
   const filteredCampaigns = React.useMemo(() => {
-    if (!searchQuery.trim()) return campaigns;
+    if (!isSearching) return campaigns;
     const q = searchQuery.toLowerCase();
     return campaigns.filter(
       (c) =>
@@ -128,7 +135,7 @@ export default function CreatorCampaignsPage() {
         c.description.toLowerCase().includes(q) ||
         (c.brand?.name.toLowerCase().includes(q) ?? false),
     );
-  }, [campaigns, searchQuery]);
+  }, [campaigns, searchQuery, isSearching]);
 
   const toggleNiche = (niche: string) => {
     setSelectedNiche((prev) => (prev === niche ? null : niche));
@@ -302,19 +309,32 @@ export default function CreatorCampaignsPage() {
               <Skeleton key={i} className="h-44 w-full rounded-xl" />
             ))}
           </div>
-        ) : filteredCampaigns.length === 0 && !error ? (
-          <EmptyState hasFilters={Boolean(selectedNiche || selectedPlatform || budgetFilterActive || searchQuery)} />
         ) : (
           <>
-            <StaggerContainer className="space-y-4">
-              {filteredCampaigns.map((campaign) => (
-                <StaggerItem key={campaign.id}>
-                  <CreatorBrowseCampaignCard campaign={campaign} />
-                </StaggerItem>
-              ))}
-            </StaggerContainer>
+            {isSearching && filteredCampaigns.length > 0 && (
+              <p className="mb-3 text-xs text-muted-foreground">
+                Searching {campaigns.length} loaded campaign{campaigns.length === 1 ? '' : 's'}
+                {hasMore ? ' — load more below to search additional campaigns.' : '.'}
+              </p>
+            )}
 
-            {hasMore && !searchQuery && (
+            {filteredCampaigns.length === 0 && !error ? (
+              <EmptyState
+                hasFilters={Boolean(selectedNiche || selectedPlatform || budgetFilterActive || searchQuery)}
+                isSearching={isSearching}
+                hasMore={hasMore}
+              />
+            ) : (
+              <StaggerContainer className="space-y-4">
+                {filteredCampaigns.map((campaign) => (
+                  <StaggerItem key={campaign.id}>
+                    <CreatorBrowseCampaignCard campaign={campaign} />
+                  </StaggerItem>
+                ))}
+              </StaggerContainer>
+            )}
+
+            {hasMore && !error && (
               <div className="mt-6 flex justify-center">
                 <Button
                   variant="outline"
@@ -339,18 +359,36 @@ export default function CreatorCampaignsPage() {
   );
 }
 
-function EmptyState({ hasFilters }: { hasFilters: boolean }) {
+function EmptyState({
+  hasFilters,
+  isSearching,
+  hasMore,
+}: {
+  hasFilters: boolean;
+  isSearching: boolean;
+  hasMore: boolean;
+}) {
+  const title = isSearching
+    ? 'No loaded campaigns match your search'
+    : hasFilters
+      ? 'No campaigns match your filters'
+      : 'No campaigns yet';
+
+  const description = isSearching
+    ? hasMore
+      ? 'None of the campaigns fetched so far match. Load more campaigns to keep searching, or try a different term.'
+      : 'None of the loaded campaigns match. Try a different search term.'
+    : hasFilters
+      ? 'Try adjusting your niche, platform, or budget filters to see more opportunities.'
+      : 'New brand campaigns will appear here when they go live. Check back soon.';
+
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-muted">
         <Megaphone className="h-7 w-7 text-muted-foreground" />
       </div>
-      <p className="font-medium">{hasFilters ? 'No campaigns match your filters' : 'No campaigns yet'}</p>
-      <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-        {hasFilters
-          ? 'Try adjusting your niche, platform, or budget filters to see more opportunities.'
-          : 'New brand campaigns will appear here when they go live. Check back soon.'}
-      </p>
+      <p className="font-medium">{title}</p>
+      <p className="mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>
     </div>
   );
 }

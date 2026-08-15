@@ -2,13 +2,19 @@ package com.influora.integration.meta.client;
 
 import com.influora.integration.meta.dto.FacebookAccountsListResponse;
 import com.influora.integration.meta.dto.FacebookPageResponse;
+import com.influora.integration.meta.dto.MetaPermissionsResponse;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
 /**
  * Facebook Page Graph API calls (spec §1.7).
- * Required permissions: {@code pages_show_list} to list connected pages,
- * {@code pages_read_engagement} for the engagement fields below.
+ * Required permission: {@code pages_show_list} to list connected pages.
+ *
+ * <p>CR-115 — {@code pages_read_engagement} is NO LONGER in {@link
+ * com.influora.integration.meta.oauth.MetaOAuthService#REQUIRED_SCOPES} (removed: {@link
+ * #getPage} had zero production callers). {@link #getPage} below still requests engagement
+ * fields and WILL fail with a Meta permission error if wired up without first re-adding that
+ * scope to REQUIRED_SCOPES and re-consenting existing connections.
  */
 @Component
 public class FacebookPageClient {
@@ -25,7 +31,8 @@ public class FacebookPageClient {
 
     /**
      * Fetches profile + engagement counters for a connected Facebook Page.
-     * Required permission: {@code pages_read_engagement}.
+     * Requires {@code pages_read_engagement} — see the CR-115 class-level note: that scope is
+     * NOT currently requested, so this call will fail against a live token until it is.
      *
      * <p>Note (spec §1.8): {@code page_views_total} format migration lands June 15, 2026 — this
      * client does not yet request that metric; add it here once the new format is finalized.
@@ -56,5 +63,16 @@ public class FacebookPageClient {
             }
         }
         return null;
+    }
+
+    /**
+     * Fetches the scopes actually granted/declined for this token ({@code GET /me/permissions},
+     * CR-104) — the only way to know what a creator really approved in the OAuth dialog, as
+     * opposed to what {@code MetaOAuthService.REQUIRED_SCOPES} merely requested. Callers filter
+     * on {@link MetaPermissionsResponse.Permission#isGranted()} themselves; this method returns
+     * the raw list (both granted and declined entries) unfiltered.
+     */
+    public MetaPermissionsResponse fetchPermissions(String accessToken) {
+        return apiClient.get("/me/permissions", accessToken, MetaPermissionsResponse.class, "me");
     }
 }

@@ -12,6 +12,7 @@ import { downloadContractPDF, signContract } from '@/lib/contract-generator';
 import { ApiError } from '@/lib/api';
 import { statusAfterCreatorSign } from '@/lib/creator-contract-store';
 import { useToast } from '@/hooks/use-toast';
+import { formatINR } from '@/lib/utils';
 
 export function CreatorContractPanel({
   open,
@@ -31,6 +32,11 @@ export function CreatorContractPanel({
   const [signerName, setSignerName] = React.useState('');
   const { toast } = useToast();
   const contractId = meta?.contractId;
+  const amount = meta?.amount;
+  // Distinguishes "amount not loaded/set" from a real number so we never fabricate a figure
+  // (see BrandF.md P-3 — the old `meta?.amount || 50000` showed a fake ₹50,000 for deals
+  // whose real amount was 0/missing).
+  const hasAmount = amount != null && Number.isFinite(amount);
 
   const statusSteps = [
     { key: 'generated', label: 'Generated', done: true },
@@ -50,12 +56,20 @@ export function CreatorContractPanel({
   const shouldShowSignButton = status === 'brand_signed';
 
   const handleDownloadPDF = () => {
+    if (!hasAmount) {
+      toast({
+        title: 'Amount not available',
+        description: 'This contract has no confirmed amount yet — PDF download is unavailable.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const contractData = {
       contractId: meta?.contractId || 'CONT-001',
       brandName: meta?.brandName || 'Influora Brand',
       creatorName: 'You (Creator)',
       campaignName: meta?.campaignName || 'Summer Fashion',
-      amount: meta?.amount || 50000,
+      amount,
       deliverables: [
         { title: 'Instagram Reel', description: 'High-quality reel', quantity: 2 },
         { title: 'Instagram Story', description: 'Story series', quantity: 1 },
@@ -185,7 +199,7 @@ export function CreatorContractPanel({
               </div>
               <div className="flex justify-between pt-2 border-t">
                 <span className="text-sm font-medium">Contract Value</span>
-                <span className="text-sm font-bold text-stage-approved-fg">₹{(meta?.amount || 50000).toLocaleString('en-IN')}</span>
+                <span className="text-sm font-bold text-stage-approved-fg">{formatINR(amount)}</span>
               </div>
             </div>
           </div>
@@ -198,17 +212,19 @@ export function CreatorContractPanel({
             <div className="space-y-2 bg-gray-50 p-4 rounded-lg">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-700">Contract Value</span>
-                <span className="font-medium">₹{(meta?.amount || 50000).toLocaleString('en-IN')}</span>
+                <span className="font-medium">{formatINR(amount)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-700">Platform Fee (15%)</span>
-                <span className="font-medium text-stage-disputed-fg">-₹{Math.round((meta?.amount || 50000) * 0.15).toLocaleString('en-IN')}</span>
+                <span className="font-medium text-stage-disputed-fg">
+                  {hasAmount ? `-${formatINR(Math.round(amount * 0.15))}` : '—'}
+                </span>
               </div>
               <Separator className="my-2" />
               <div className="flex justify-between">
                 <span className="font-semibold text-gray-900">You Receive</span>
                 <span className="font-bold text-lg text-stage-approved-fg">
-                  ₹{Math.round((meta?.amount || 50000) * 0.85).toLocaleString('en-IN')}
+                  {hasAmount ? formatINR(Math.round(amount * 0.85)) : '—'}
                 </span>
               </div>
               <p className="text-xs text-gray-500 mt-2">

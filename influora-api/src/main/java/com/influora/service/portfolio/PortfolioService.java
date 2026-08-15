@@ -13,6 +13,8 @@ import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.Deliverable;
+import com.influora.domain.entity.CreatorMetric;
+import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.domain.entity.PlatformStat;
 import com.influora.domain.entity.PortfolioEvent;
 import com.influora.domain.entity.Review;
@@ -21,14 +23,19 @@ import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.PortfolioEventType;
 import com.influora.domain.enums.ReviewerType;
+import com.influora.integration.meta.client.InstagramInsightsClient;
+import com.influora.integration.meta.dto.InstagramUserResponse;
+import com.influora.integration.meta.oauth.MetaTokenStorage;
 import com.influora.integration.storage.R2StorageService;
 import com.influora.service.security.MalwareScanService;
 import com.influora.service.notification.event.PortfolioContactEvent;
 import com.influora.repository.AudienceDemographicsRepository;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
+import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.DeliverableRepository;
+import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.repository.PlatformStatRepository;
 import com.influora.repository.PortfolioEventRepository;
 import com.influora.repository.ReviewRepository;
@@ -59,6 +66,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -93,6 +101,10 @@ public class PortfolioService {
     private final UserRepository userRepository;
     private final DeliverableRepository deliverableRepository;
     private final PortfolioEventRepository portfolioEventRepository;
+    private final MetaOAuthTokenRepository metaOAuthTokenRepository;
+    private final MetaTokenStorage metaTokenStorage;
+    private final InstagramInsightsClient instagramInsightsClient;
+    private final CreatorMetricsRepository creatorMetricsRepository;
 
     /** Trailing window for the "Page views (30d)" analytics number and its period-over-period delta. */
     private static final Duration ANALYTICS_WINDOW = Duration.ofDays(30);
@@ -113,7 +125,11 @@ public class PortfolioService {
             ApplicationEventPublisher eventPublisher,
             UserRepository userRepository,
             DeliverableRepository deliverableRepository,
-            PortfolioEventRepository portfolioEventRepository) {
+            PortfolioEventRepository portfolioEventRepository,
+            MetaOAuthTokenRepository metaOAuthTokenRepository,
+            MetaTokenStorage metaTokenStorage,
+            InstagramInsightsClient instagramInsightsClient,
+            CreatorMetricsRepository creatorMetricsRepository) {
         this.creatorContext = creatorContext;
         this.creatorProfileService = creatorProfileService;
         this.creatorProfileRepository = creatorProfileRepository;
@@ -130,6 +146,10 @@ public class PortfolioService {
         this.userRepository = userRepository;
         this.deliverableRepository = deliverableRepository;
         this.portfolioEventRepository = portfolioEventRepository;
+        this.metaOAuthTokenRepository = metaOAuthTokenRepository;
+        this.metaTokenStorage = metaTokenStorage;
+        this.instagramInsightsClient = instagramInsightsClient;
+        this.creatorMetricsRepository = creatorMetricsRepository;
     }
 
     @Transactional(readOnly = true)
@@ -218,17 +238,124 @@ public class PortfolioService {
         return assemble(profile, false);
     }
 
+    /**
+     * CR-84 — was a no-op that only validated the profile existed and returned a fabricated
+     * "synced" timestamp; the client showed a real-looking success confirmation for a call that
+     * touched no data at all. Now does a genuine on-demand refresh using the same creator-owned
+     * Meta OAuth pipeline {@code CreatorMetaOAuthService}/{@code MetricsPollingJob} already use:
+     * looks up the creator's connected Instagram Business Account, calls the Graph API for a fresh
+     * profile snapshot, records it as a real {@code creator_metrics} row, and immediately rolls it
+     * into {@code platform_stats} (the same upsert {@link PlatformStatsAggregationJob} performs on
+     * its daily schedule, just synchronously here instead of waiting for that batch run).
+     *
+     * <p>Throws (as an {@link ApiException}, surfaced to the client with a real reason) rather than
+     * returning a fake success when there is nothing to sync from: no connected account
+     * ({@code NOT_CONNECTED}), or an expired/revoked token ({@code TOKEN_EXPIRED}) that needs the
+     * creator to reconnect via {@code CreatorMetaOAuthService}. A Meta API/rate-limit failure during
+     * the fetch itself propagates as the {@link com.influora.integration.meta.exception.MetaApiException}
+     * subclass {@link InstagramInsightsClient} already throws (each maps to its own honest HTTP
+     * status) rather than being swallowed into a false "synced" response.
+     */
     @Transactional
     public SyncPlatformsResponse syncPlatforms(AuthPrincipal principal) {
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
 
-        // For now, sync is limited to refreshing existing platform_stats entries
-        // Full OAuth flow for fetching fresh data is deferred — this validates the profile exists
-        // and confirms the creator can call the endpoint. Future: integrate with MetaOAuthToken
-        // to fetch live data from Instagram/Facebook via InstagramInsightsClient.
+        MetaOAuthToken tokenRow =
+                metaOAuthTokenRepository
+                        .findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(profile.getId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "NOT_CONNECTED",
+                                                "Connect your Instagram account before syncing",
+                                                HttpStatus.CONFLICT));
+        String igBusinessAccountId = tokenRow.getIgBusinessAccountId();
+        if (igBusinessAccountId == null || igBusinessAccountId.isBlank()) {
+            throw new ApiException(
+                    "NOT_CONNECTED",
+                    "Your Instagram connection is incomplete — reconnect to sync",
+                    HttpStatus.CONFLICT);
+        }
 
-        log.info("Portfolio platform sync requested for creator={}", profile.getId());
+        String accessToken =
+                metaTokenStorage
+                        .getValidCreatorToken(profile.getId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "TOKEN_EXPIRED",
+                                                "Your Instagram connection expired — reconnect to sync",
+                                                HttpStatus.CONFLICT));
+
+        InstagramUserResponse igProfile =
+                instagramInsightsClient.getProfile(igBusinessAccountId, accessToken);
+
+        CreatorMetric metric =
+                CreatorMetric.builder()
+                        .id(Ulids.newUlid())
+                        .time(Instant.now())
+                        .creatorProfileId(profile.getId())
+                        .platform("INSTAGRAM")
+                        .username(igProfile.username())
+                        .followers(igProfile.followersCount() == null ? 0L : igProfile.followersCount())
+                        .following(igProfile.followsCount())
+                        .mediaCount(
+                                igProfile.mediaCount() == null ? null : igProfile.mediaCount().intValue())
+                        .dataSource(CreatorMetric.DATA_SOURCE_META_API)
+                        .fetchedAt(Instant.now())
+                        .build();
+        creatorMetricsRepository.save(metric);
+
+        upsertPlatformStat(profile, "INSTAGRAM", metric);
+
+        log.info("Portfolio platform sync completed for creator={}", profile.getId());
         return new SyncPlatformsResponse(Instant.now().toString());
+    }
+
+    /**
+     * Same upsert shape as {@code PlatformStatsAggregationJob#upsertPlatformStat} (not shared code
+     * — that job's method is package-private to {@code com.influora.job} and carries its own
+     * batch-run javadoc; duplicating the small upsert here keeps this on-demand sync independent of
+     * that job's lifecycle) plus the {@code creator_profiles} denormalized-totals update that job
+     * also performs, so a manual sync and the nightly aggregation leave the portfolio in the same
+     * state.
+     */
+    private void upsertPlatformStat(CreatorProfile profile, String platform, CreatorMetric metric) {
+        Optional<PlatformStat> existing =
+                platformStatRepository.findByCreatorProfileIdAndPlatform(profile.getId(), platform);
+        if (existing.isPresent()) {
+            String handle = metric.getUsername() != null ? metric.getUsername() : existing.get().getHandle();
+            // CR-119 — mirrors PlatformStatsAggregationJob#upsertPlatformStat: the verified flag
+            // tracks THIS snapshot's provenance instead of being pinned to the row's prior value
+            // (which nothing ever set true, leaving the brand-facing badge permanently dark).
+            existing
+                    .get()
+                    .applySnapshot(
+                            metric.getFollowers(),
+                            metric.getAvgEngagementRate(),
+                            metric.isPlatformVerified(),
+                            handle);
+            platformStatRepository.save(existing.get());
+        } else {
+            platformStatRepository.save(
+                    PlatformStat.builder()
+                            .id(Ulids.newUlid())
+                            .creatorProfileId(profile.getId())
+                            .platform(platform)
+                            .handle(metric.getUsername())
+                            .followers(metric.getFollowers())
+                            .engagementRate(metric.getAvgEngagementRate())
+                            // CR-119 — was a hardcoded `false`; see the update branch above.
+                            .verified(metric.isPlatformVerified())
+                            .build());
+        }
+
+        long totalFollowers =
+                platformStatRepository.findByCreatorProfileId(profile.getId()).stream()
+                        .mapToLong(PlatformStat::getFollowers)
+                        .sum();
+        profile.applyAggregatedStats(totalFollowers, metric.getAvgEngagementRate());
+        creatorProfileRepository.save(profile);
     }
 
     @Transactional(readOnly = true)
@@ -254,7 +381,11 @@ public class PortfolioService {
                 portfolioEventRepository.countByCreatorProfileIdAndEventType(
                         profile.getId(), PortfolioEventType.MEDIA_KIT_DOWNLOAD);
 
-        // Profile clicks from platform stats (total followers as proxy metric)
+        // CR-71 — profile clicks from platform stats (total followers as proxy metric). No
+        // real click-tracking event exists for this metric (unlike pageViews/mediaKitDownloads
+        // below, which are real portfolio_events counts) — this is, and stays, an estimate.
+        // profileClicksEstimated=true on the response so the client labels it honestly rather
+        // than presenting a proxy number as a measurement.
         long profileClicks = profile.getTotalFollowers() > 0 ?
                 profile.getTotalFollowers() / 100 : 0; // Rough estimate
 
@@ -265,6 +396,7 @@ public class PortfolioService {
         return new PortfolioAnalyticsResponse(
                 pageViews,
                 profileClicks,
+                true, // profileClicksEstimated — see CR-71 note above
                 List.of(), // Link clicks require custom link tracking (not implemented)
                 totalInquiries,
                 mediaKitDownloads
@@ -589,6 +721,19 @@ public class PortfolioService {
             return profile.getUsername();
         }
         return UsernameUtils.normalize(profile.getDisplayName());
+    }
+
+    /**
+     * M-2 (BrandF.md §87): public accessor for {@link CreatorMapper} (via
+     * CreatorDiscoveryService) so the brand-facing creator profile can show real pinned posts
+     * instead of the {@code Collections.emptyList()} stub {@code CreatorMapper.java:47} used to
+     * hardcode. Respects the same {@code contentPortfolio} visibility flag {@link #assemble} gates
+     * the public portfolio page on — a creator who's turned that section off shouldn't have it
+     * leak into the brand discovery card just because a different caller reads it.
+     */
+    public List<PortfolioPinnedPost> getVisiblePinnedPosts(CreatorProfile profile) {
+        PortfolioSettings settings = loadSettings(profile);
+        return settings.getVisibility().contentPortfolio() ? settings.getPinnedPosts() : List.of();
     }
 
     private PortfolioSettings loadSettings(CreatorProfile profile) {

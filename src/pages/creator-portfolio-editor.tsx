@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
 import { cn, publicProfileUrl } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 import {
   api,
   ApiError,
@@ -162,15 +163,34 @@ export default function CreatorPortfolioEditorPage() {
     }
   };
 
+  /**
+   * CR-84 — `syncPlatforms` now does a real Meta Graph API fetch + platform_stats upsert
+   * server-side (PortfolioService.java), so this call can genuinely fail for reasons beyond a
+   * rate limit — no connected account, an expired token, or a live Meta API error. Map each real
+   * error code to an honest message instead of the old one-size-fits-all "Sync limit reached",
+   * and re-fetch the page/analytics after a real success so the editor reflects what the sync
+   * actually wrote rather than stale client-side numbers.
+   */
   const handleSync = async () => {
     setSyncing(true);
     try {
       await api.portfolio.syncPlatforms();
+      const [p, a] = await Promise.all([api.portfolio.getMine(), api.portfolio.analytics()]);
+      setPage(p as PortfolioPage);
+      setAnalytics(a as PortfolioAnalytics);
       toast({ title: 'Synced', description: 'Platform stats refreshed.' });
-    } catch {
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : undefined;
+      const messages: Record<string, string> = {
+        NOT_CONNECTED: 'Connect your Instagram account first, then sync.',
+        TOKEN_EXPIRED: 'Your Instagram connection expired — reconnect to sync.',
+        META_RATE_LIMITED: 'Instagram sync is temporarily rate-limited. Try again shortly.',
+      };
       toast({
-        title: 'Sync limit reached',
-        description: 'You can manually sync once per hour.',
+        title: "Couldn't sync",
+        description:
+          (code && messages[code]) ||
+          (err instanceof ApiError ? err.message : 'Please try again in a moment.'),
         variant: 'destructive',
       });
     } finally {
@@ -248,7 +268,16 @@ export default function CreatorPortfolioEditorPage() {
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <Stat label="Page views" value={analytics.pageViews.last30Days} delta={analytics.pageViews.deltaPercent} />
-                <Stat label="Profile clicks" value={analytics.profileClicks} />
+                {/* CR-71 — profileClicks (PortfolioService.java) is totalFollowers / 100, a rough
+                    proxy — no real click-tracking event exists for it, unlike pageViews above.
+                    Labeled from the server's own profileClicksEstimated flag rather than a
+                    hardcoded note, so this stops claiming "estimated" the moment real tracking
+                    ships without needing a matching frontend change. */}
+                <Stat
+                  label="Profile clicks"
+                  value={analytics.profileClicks}
+                  note={analytics.profileClicksEstimated ? 'Estimated from follower count' : undefined}
+                />
                 <Stat label="Brand inquiries" value={analytics.brandInquiries} />
               </div>
             </CardContent>
@@ -265,10 +294,11 @@ export default function CreatorPortfolioEditorPage() {
             <div className="mt-3 flex items-stretch gap-3">
               <div
                 className={cn(
-                  'h-20 sm:h-24 flex-1 rounded-lg overflow-hidden border border-border',
+                  'h-20 sm:h-24 flex-1 rounded-lg overflow-hidden border border-border bg-cover bg-center',
+                  page.coverUrl && 'bg-[image:var(--cover-url)]',
                   !page.coverUrl && 'bg-gradient-to-br from-primary/30 via-purple-300/40 to-pink-300/30',
                 )}
-                style={page.coverUrl ? { backgroundImage: `url(${page.coverUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+                ref={page.coverUrl ? cssVars({ '--cover-url': `url(${page.coverUrl})` }) : undefined}
               />
               <div className="flex flex-col gap-1.5">
                 <label
@@ -360,9 +390,14 @@ export default function CreatorPortfolioEditorPage() {
                 value={page.visibility.badges}
                 onChange={(v) => updateVisibility({ badges: v })}
               />
+              {/* CR-119 — hint was "Instagram, YouTube — verified via OAuth", false for YouTube:
+                  no YouTube OAuth or data-fetch integration exists anywhere in this codebase, so a
+                  YouTube figure here is always creator-reported. Telling a creator their YouTube
+                  number is OAuth-verified also mis-sets their expectation of what a brand sees,
+                  which now reads "Self-reported" on the public page. */}
               <VisibilityRow
                 label="Platform stats"
-                hint={`Instagram, YouTube — verified via OAuth`}
+                hint={`Instagram verified via OAuth · others self-reported`}
                 value={page.visibility.platformStats}
                 onChange={(v) => updateVisibility({ platformStats: v })}
               />
@@ -554,7 +589,7 @@ function VisibilityRow({
   );
 }
 
-function Stat({ label, value, delta }: { label: string; value: number; delta?: number }) {
+function Stat({ label, value, delta, note }: { label: string; value: number; delta?: number; note?: string }) {
   return (
     <div>
       <p className="text-xl font-bold leading-none">{formatN(value)}</p>
@@ -569,6 +604,10 @@ function Stat({ label, value, delta }: { label: string; value: number; delta?: n
           </span>
         )}
       </p>
+      {/* CR-71 — profileClicks is a follower-count proxy, not a real click measurement. Labeled
+          rather than presented as a real number, same discipline as this file's other real
+          fields (pageViews/mediaKitDownloads are genuine portfolio_events counts). */}
+      {note && <p className="text-[10px] text-muted-foreground/70 italic">{note}</p>}
     </div>
   );
 }

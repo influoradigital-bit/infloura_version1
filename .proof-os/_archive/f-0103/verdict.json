@@ -1,0 +1,5 @@
+{"verdict": "proved", "oracle": "vitest", "isolation": "oracle",
+ "done_when": "F-0103 fixed: dashboard EMPTY_WALLET.runwayDays is null (not 0), walletHealth routes through the shared regression-pinned walletRunwayHealth helper (null->healthy, real 0-14 numeric runway->critical), a behavior-preserving extraction of the dashboard's prior band. Pinned by wallet-runway.test.ts + dashboard-empty-wallet.test.ts (imports the real EMPTY_WALLET). tsc + vitest pass.",
+ "evidence": {"oracle": "vitest", "command": "npx vitest run src/lib/wallet-runway.test.ts src/components/brand/dashboard/dashboard-empty-wallet.test.ts", "result": "11 passed", "where": "src/components/brand/dashboard/dashboard-empty-wallet.test.ts:1"},
+ "not_checked": ["live browser render of a 404'd new-workspace dashboard badge (Neha's gate)"],
+ "skipped": []}

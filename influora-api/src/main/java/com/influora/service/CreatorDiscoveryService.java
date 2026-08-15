@@ -5,7 +5,6 @@ import com.influora.common.CreatorScoreMath;
 import com.influora.common.JsonLists;
 import com.influora.common.PageMeta;
 import com.influora.common.Ulids;
-import com.influora.common.UsernameUtils;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
@@ -26,6 +25,7 @@ import com.influora.repository.PlatformStatRepository;
 import com.influora.repository.ReviewRepository;
 import com.influora.repository.SavedCreatorRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.portfolio.PortfolioService;
 import com.influora.web.dto.creator.CreatorDtos.CreatorResponse;
 import com.influora.web.dto.creator.CreatorDtos.InviteResponse;
 import com.influora.web.dto.creator.CreatorDtos.SaveResponse;
@@ -96,6 +96,7 @@ public class CreatorDiscoveryService {
     private final FeaturedCreatorRepository featuredCreatorRepository;
     private final CreatorScoreRepository creatorScoreRepository;
     private final ReviewRepository reviewRepository;
+    private final PortfolioService portfolioService;
 
     public CreatorDiscoveryService(
             BrandContextService brandContext,
@@ -106,7 +107,8 @@ public class CreatorDiscoveryService {
             CollaborationRepository collaborationRepository,
             FeaturedCreatorRepository featuredCreatorRepository,
             CreatorScoreRepository creatorScoreRepository,
-            ReviewRepository reviewRepository) {
+            ReviewRepository reviewRepository,
+            PortfolioService portfolioService) {
         this.brandContext = brandContext;
         this.creatorProfileRepository = creatorProfileRepository;
         this.platformStatRepository = platformStatRepository;
@@ -116,6 +118,7 @@ public class CreatorDiscoveryService {
         this.featuredCreatorRepository = featuredCreatorRepository;
         this.creatorScoreRepository = creatorScoreRepository;
         this.reviewRepository = reviewRepository;
+        this.portfolioService = portfolioService;
     }
 
     public record PagedCreators(List<CreatorResponse> items, PageMeta meta) {}
@@ -478,7 +481,11 @@ public class CreatorDiscoveryService {
                         .map(SavedCreator::isSaved)
                         .orElse(false);
         CreatorScores scores = loadScoresByCreator(List.of(profile.getId())).get(profile.getId());
-        return CreatorMapper.toResponse(profile, platforms, saved, scores);
+        // M-2 (BrandF.md §87): this is the single-profile read (GET /creators/{id}, the brand
+        // profile detail view) — the one surface where hydrating the real portfolio is worth the
+        // extra read, unlike the batch/list paths elsewhere in this file.
+        return CreatorMapper.toResponse(
+                profile, platforms, saved, scores, portfolioService.getVisiblePinnedPosts(profile));
     }
 
     private List<CreatorResponse> mapResponses(AuthPrincipal principal, List<CreatorProfile> profiles) {
@@ -767,11 +774,42 @@ public class CreatorDiscoveryService {
         return matches;
     }
 
+    // Backs GET /creators/profile/{usernameOrId} (CreatorController.getPublicProfile), the single
+    // API call behind the one /brand/creators/:id page every "view creator" link in the app routes
+    // through. Every CreatorProfile#id AND every User#id are 26-char ULIDs from the same generator
+    // (Ulids#newUlid) -- disjoint id spaces in principle, but not shape-distinguishable -- and
+    // UsernameUtils#isValid's regex (^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$) matches any lowercased
+    // alphanumeric string of length 3-30, so a real ULID (profile id OR user id) always passes
+    // isValid() too. Sniffing "is this a username, a profile id, or a user id" from shape alone is
+    // therefore not possible -- try each id-typed repository lookup in turn before falling back to
+    // username. The real live callers of this page pass two different id shapes:
+    //   - creator-discovery.tsx's search grid and this page's own Similar Creators grid both pass a
+    //     CreatorProfile id (CreatorResponse#id / SimilarCreator#id are CreatorProfile.getId()).
+    //   - brand-campaign-detail.tsx's bids tab passes a User id: DealService's Counterparty.id (->
+    //     Deal#counterpartyId -> dealToBidView -> creator.id) is collaboration.getCreatorId(), a
+    //     Collaboration.creatorId / users.id, never a CreatorProfile id.
+    // (command-bar.tsx's "Recent" creator shortcuts are demo-only fixtures explicitly gated out of
+    // live mode -- see that file's own comment -- so they never reach this endpoint live.)
+    // The userId branch mirrors the identical id/userId ambiguity fix already applied to
+    // requireDiscoverableProfile below. All three branches keep the exact discoverable +
+    // not-suspended filtering requireDiscoverableProfile/requireDiscoverableByUsername already
+    // enforce.
     private CreatorProfile resolveDiscoverableProfile(String usernameOrId) {
-        if (UsernameUtils.isValid(usernameOrId)) {
-            return requireDiscoverableByUsername(usernameOrId);
-        }
-        return requireDiscoverableProfile(usernameOrId);
+        return creatorProfileRepository
+                .findByIdAndDiscoverableTrue(usernameOrId)
+                .or(() ->
+                        creatorProfileRepository
+                                .findByUserId(usernameOrId)
+                                .filter(CreatorProfile::isDiscoverable))
+                .or(() ->
+                        creatorProfileRepository
+                                .findByUsernameIgnoreCase(usernameOrId)
+                                .filter(CreatorProfile::isDiscoverable))
+                .filter(p -> !p.isSuspended())
+                .orElseThrow(
+                        () ->
+                                new ApiException(
+                                        "CREATOR_NOT_FOUND", "Creator not found", HttpStatus.NOT_FOUND));
     }
 
     // [SEC: Wave-1 S4-discovery] Both lookups below now also reject a suspended profile, not just

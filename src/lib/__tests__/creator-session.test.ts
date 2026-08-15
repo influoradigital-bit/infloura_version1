@@ -70,6 +70,25 @@ describe('creator session lifecycle', () => {
     expect(localStorage.getItem('creator_display_name')).toBeNull();
   });
 
+  it('F-0165: clears the meta_connection mirror on logout, so the next creator on a shared browser is not seeded with the previous creator\'s Meta connection state', () => {
+    // Same shape api.ts's metaOAuth.setLocalConnectionState writes (META_CONNECTION_KEY,
+    // literal 'meta_connection') — this test intentionally writes the literal key rather than
+    // importing api.ts, the same way clearCreatorSession itself removes it by literal, so the
+    // two stay in lockstep without a circular import between auth-session.ts and api.ts.
+    localStorage.setItem(
+      'meta_connection',
+      JSON.stringify({ connected: true, scopes: ['instagram_basic'], accountType: 'business' }),
+    );
+
+    clearCreatorSession();
+
+    // The regression this guards against: creator A logs out, creator B logs in on the same
+    // browser, and useMetaConnection's live re-verification call fails — it deliberately keeps
+    // last-known state on failure, so creator B would see creator A's "Connected" status and
+    // granted scopes under a generic "showing last known state" caption.
+    expect(localStorage.getItem('meta_connection')).toBeNull();
+  });
+
   it('clears the onboarding flag when the server says onboarding is incomplete', () => {
     persistCreatorSession(tokenPair());
     expect(localStorage.getItem('creator_onboarding_completed')).toBe('true');

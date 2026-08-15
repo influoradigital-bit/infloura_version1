@@ -47,8 +47,10 @@ import { useAuthStore } from '@/lib/store';
 import { clearCreatorSession } from '@/lib/auth-session';
 import { TaxIdentityForm } from '@/components/creator/TaxIdentityForm';
 import { KycIdentityForm } from '@/components/creator/KycIdentityForm';
+import { ConnectedAccounts } from '@/components/creator/connected-accounts';
 import { api, isApiLive } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
+import { COMPANY } from '@/lib/company';
 
 export default function CreatorSettingsPage() {
   const navigate = useNavigate();
@@ -84,6 +86,14 @@ export default function CreatorSettingsPage() {
   const [showTaxIdentityDialog, setShowTaxIdentityDialog] = React.useState(false);
   const [showKycDialog, setShowKycDialog] = React.useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = React.useState(false);
+  // CR-87 — the dialog's inputs were uncontrolled and "Update Password" had no
+  // handler at all, despite api.auth.changePassword (POST /me/password) already
+  // being a real, working, rate-limited endpoint.
+  const [currentPassword, setCurrentPassword] = React.useState('');
+  const [newPassword, setNewPassword] = React.useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = React.useState('');
+  const [passwordChangeError, setPasswordChangeError] = React.useState<string | null>(null);
+  const [isChangingPassword, setIsChangingPassword] = React.useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [showLogoutDialog, setShowLogoutDialog] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -173,6 +183,60 @@ export default function CreatorSettingsPage() {
     navigate('/creator/login');
   };
 
+  // POST /me/password — CR-87. The dialog's inputs were uncontrolled and this button had
+  // no handler at all, even though api.auth.changePassword is a real, working,
+  // rate-limited endpoint (AccountController/AuthService#changePassword).
+  const handleChangePassword = async () => {
+    setPasswordChangeError(null);
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+      setPasswordChangeError('All fields are required.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordChangeError('New password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordChangeError('New password and confirmation do not match.');
+      return;
+    }
+    setIsChangingPassword(true);
+    try {
+      if (liveApi) {
+        await api.auth.changePassword('creator', { currentPassword, newPassword });
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+      toast({
+        title: 'Password updated',
+        description: 'Your password has been changed successfully.',
+      });
+      setShowPasswordDialog(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+    } catch (err) {
+      console.error('Failed to change password', err);
+      // Unlike account deletion, the underlying error (e.g. "current password is
+      // incorrect") is actionable — show it rather than a generic message.
+      setPasswordChangeError(
+        err instanceof Error ? err.message : 'Could not change your password. Please try again.',
+      );
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  const closePasswordDialog = (open: boolean) => {
+    setShowPasswordDialog(open);
+    if (!open) {
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setPasswordChangeError(null);
+    }
+  };
+
   // DELETE /me/account — real, verified soft-delete endpoint (api.me.deleteAccount,
   // AccountController.java). Server anonymizes PII, revokes refresh tokens, and
   // scopes deletedAt-checks into every creator-gated route so it takes effect on
@@ -242,22 +306,37 @@ export default function CreatorSettingsPage() {
       title: 'Support',
       items: [
         {
+          // CR-88 — was onClick: () => {} (a fully dead row).
+          // CORRECTED after Priya's red-team pass: the first version of this fix pointed both
+          // rows at 'https://help.influora.com', a host that does not resolve to anything real
+          // — the brand side already migrated OFF this exact URL (see
+          // wiki/build/ananya-nav-alignment-2026-07-23.md) after discovering the same thing.
+          // Help Center now routes to the real in-app /support page instead of an unproven
+          // external host or a byte-identical duplicate of the row below.
           icon: HelpCircle,
           label: 'Help Center',
           description: 'FAQs and guides',
-          onClick: () => {},
+          onClick: () => navigate('/support'),
         },
         {
+          // Contact Support is a real, CEO-confirmed channel (src/lib/company.ts,
+          // "Confirmed by CEO from official docs... 2026-07-13") — not a fabricated address,
+          // and genuinely distinct from the Help Center row above (a mailto vs. an in-app page).
           icon: Mail,
           label: 'Contact Support',
           description: 'Get help from our team',
-          onClick: () => {},
+          onClick: () => window.open(`mailto:${COMPANY.email}`, '_blank'),
         },
         {
+          // Terms & Privacy — was already routing to a real page, but /terms rendered a
+          // "coming soon" placeholder while the actual v0 legal drafts sat unwired
+          // (src/content/legal/*.md via LegalPage, imported nowhere in App.tsx). Fixed at the
+          // route level (App.tsx: /terms and /privacy now render LegalPage), not here — this
+          // row's destination is unchanged and now correct as a side effect.
           icon: FileText,
           label: 'Terms & Privacy',
           description: 'Legal documents',
-          onClick: () => {},
+          onClick: () => navigate('/terms'),
         },
       ],
     },
@@ -270,6 +349,11 @@ export default function CreatorSettingsPage() {
           <h1 className="text-2xl font-bold">Settings</h1>
           <p className="text-muted-foreground">Manage your account preferences</p>
         </div>
+
+        {/* CR-101/F-0114 — this component existed, fully built, with zero imports anywhere in
+            src/. A creator visiting Settings had no Connected Accounts card, no connection
+            status, and no way to see what's linked at all. */}
+        <ConnectedAccounts />
 
         {/* Notifications */}
         <Card className="mb-6">
@@ -474,7 +558,7 @@ export default function CreatorSettingsPage() {
       </Dialog>
 
       {/* Change Password Dialog */}
-      <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
+      <Dialog open={showPasswordDialog} onOpenChange={closePasswordDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Change Password</DialogTitle>
@@ -483,24 +567,52 @@ export default function CreatorSettingsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {passwordChangeError && (
+              <p role="alert" className="text-sm text-destructive-foreground">
+                {passwordChangeError}
+              </p>
+            )}
             <div className="space-y-2">
               <Label htmlFor="currentPassword">Current Password</Label>
-              <Input id="currentPassword" type="password" />
+              <Input
+                id="currentPassword"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                disabled={isChangingPassword}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="newPassword">New Password</Label>
-              <Input id="newPassword" type="password" />
+              <Input
+                id="newPassword"
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                disabled={isChangingPassword}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm New Password</Label>
-              <Input id="confirmPassword" type="password" />
+              <Input
+                id="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
+                disabled={isChangingPassword}
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPasswordDialog(false)}>
+            <Button variant="outline" onClick={() => closePasswordDialog(false)} disabled={isChangingPassword}>
               Cancel
             </Button>
-            <Button>Update Password</Button>
+            <Button onClick={handleChangePassword} disabled={isChangingPassword}>
+              {isChangingPassword ? 'Updating…' : 'Update Password'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

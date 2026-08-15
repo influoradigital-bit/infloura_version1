@@ -166,7 +166,9 @@ def test_transcribe_success_records_stt_and_cleanup_spend(monkeypatch):
 
     mock_sarvam = AsyncMock()
     mock_sarvam.transcribe = AsyncMock(
-        return_value=TranscribeResult(ok=True, raw_transcript="hello brand", lang_detected="hi-IN")
+        return_value=TranscribeResult(
+            ok=True, raw_transcript="hello brand", lang_detected="hi-IN", billed=True
+        )
     )
     cleanup_usage = {"input_tokens": 100, "output_tokens": 20}
     mock_gemini = AsyncMock()
@@ -197,7 +199,7 @@ def test_transcribe_success_records_stt_and_cleanup_spend(monkeypatch):
 
 def test_transcribe_stt_failure_records_no_spend():
     mock_sarvam = AsyncMock()
-    mock_sarvam.transcribe = AsyncMock(return_value=TranscribeResult(ok=False, error="provider_error"))
+    mock_sarvam.transcribe = AsyncMock(return_value=TranscribeResult(ok=False, error="provider_error", billed=False))
 
     with patch("app.routes.voice._get_sarvam", return_value=mock_sarvam), patch(
         "app.routes.voice._get_gemini"
@@ -212,7 +214,7 @@ def test_transcribe_stt_failure_records_no_spend():
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["fallback"] is True
-    assert asyncio_run_get_global_total() == Decimal("0")
+    assert asyncio_run_get_global_total() == Decimal(0)
 
 
 # ── /voice/speak -- spend gate ──────────────────────────────────────────────
@@ -244,7 +246,14 @@ def test_speak_success_records_tts_spend():
     text = "hello there"
     mock_sarvam = AsyncMock()
     mock_sarvam.speak = AsyncMock(
-        return_value=SpeakResult(ok=True, audio_bytes=b"RIFF....WAVEfmt ", content_type="audio/wav")
+        return_value=SpeakResult(
+            ok=True,
+            audio_bytes=b"RIFF....WAVEfmt ",
+            content_type="audio/wav",
+            billed=True,
+            # F-07: what Sarvam actually received (speakable() output length).
+            billed_chars=len(text),
+        )
     )
 
     with patch("app.routes.voice._get_sarvam", return_value=mock_sarvam):
@@ -275,7 +284,14 @@ def test_speak_success_bills_the_truncated_text_length_not_the_original():
 
     mock_sarvam = AsyncMock()
     mock_sarvam.speak = AsyncMock(
-        return_value=SpeakResult(ok=True, audio_bytes=b"RIFF....WAVEfmt ", content_type="audio/wav")
+        return_value=SpeakResult(
+            ok=True,
+            audio_bytes=b"RIFF....WAVEfmt ",
+            content_type="audio/wav",
+            billed=True,
+            # F-07: what Sarvam actually received (speakable() output length).
+            billed_chars=len(_truncate_for_tts(long_text)),
+        )
     )
 
     with patch("app.routes.voice._get_sarvam", return_value=mock_sarvam):
@@ -294,7 +310,7 @@ def test_speak_success_bills_the_truncated_text_length_not_the_original():
 
 def test_speak_tts_failure_records_no_spend():
     mock_sarvam = AsyncMock()
-    mock_sarvam.speak = AsyncMock(return_value=SpeakResult(ok=False, error="provider_error"))
+    mock_sarvam.speak = AsyncMock(return_value=SpeakResult(ok=False, error="provider_error", billed=False))
 
     with patch("app.routes.voice._get_sarvam", return_value=mock_sarvam):
         resp = _client().post(
@@ -305,7 +321,7 @@ def test_speak_tts_failure_records_no_spend():
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["fallback"] is True
-    assert asyncio_run_get_global_total() == Decimal("0")
+    assert asyncio_run_get_global_total() == Decimal(0)
 
 
 def asyncio_run_get_global_total() -> Decimal:
@@ -316,3 +332,119 @@ def asyncio_run_get_global_total() -> Decimal:
     import asyncio
 
     return asyncio.run(spend_tracker.get_global_total_today())
+
+
+# ---------------------------------------------------------------------------
+# F-06 / F-07 route-level regressions (2026-08-08 deep audit).
+#
+# Priya's sign-off review mutation-tested both: the fixes were correct and the
+# tests that existed did not guard them. The F-06 test constructed a
+# `TranscribeResult(billed=True)` by hand and asserted the literal it had just
+# written; the F-07 test compared two `estimate_sarvam_tts_cost_usd()` outputs,
+# which is a property of the pricing function. Neither entered the route, so
+# reverting `voice.py` to `if stt_result.ok:` / `len(tts_text)` left the suite
+# green. These drive the real route.
+# ---------------------------------------------------------------------------
+
+
+def test_f06_route_bills_a_billed_empty_transcript():
+    """`empty_transcript` is returned AFTER a successful, billed HTTP 200.
+    POSTing 10s of silence in a loop used to buy free unlimited STT: Sarvam
+    billed every call and the daily counter never moved.
+
+    Reverting `voice.py` to `if stt_result.ok:` must fail this test.
+    """
+    mock_sarvam = AsyncMock()
+    mock_sarvam.transcribe = AsyncMock(
+        return_value=TranscribeResult(ok=False, error="empty_transcript", billed=True)
+    )
+
+    with patch("app.routes.voice._get_sarvam", return_value=mock_sarvam):
+        resp = _client().post(
+            TRANSCRIBE_PATH,
+            files={"audio": ("a.wav", b"RIFF....WAVEfmt ", "audio/wav")},
+            data={"workspace_id": WORKSPACE_ID},
+            headers=_auth(),
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["fallback"] is True  # the caller still degrades honestly
+    assert asyncio_run_get_global_total() == estimate_sarvam_flat_cost_usd(), (
+        "a billed STT call that returned no transcript recorded $0 — silence is "
+        "still free unlimited STT"
+    )
+
+
+def test_f06_route_does_not_bill_a_transport_failure():
+    """The other direction: a call that never reached Sarvam must record $0."""
+    mock_sarvam = AsyncMock()
+    mock_sarvam.transcribe = AsyncMock(
+        return_value=TranscribeResult(ok=False, error="provider_error", billed=False)
+    )
+
+    with patch("app.routes.voice._get_sarvam", return_value=mock_sarvam):
+        resp = _client().post(
+            TRANSCRIBE_PATH,
+            files={"audio": ("a.wav", b"RIFF....WAVEfmt ", "audio/wav")},
+            data={"workspace_id": WORKSPACE_ID},
+            headers=_auth(),
+        )
+
+    assert resp.status_code == 200
+    assert asyncio_run_get_global_total() == Decimal(0)
+
+
+def test_f07_route_bills_the_normalized_length_sarvam_received():
+    """voice.py billed `len(tts_text)`, but speak() posts `speakable(chunk)`,
+    which expands rupee amounts and initialisms first — a systematic ~40%
+    under-bill on exactly the budget-quoting replies Meera produces most.
+
+    `billed_chars` here is deliberately different from `len(text)`, so
+    reverting `voice.py` to `len(tts_text)` must fail this test.
+    """
+    text = "Budget Rs.15,000-Rs.75,000 per creator for UGC"
+    normalized_len = len(text) + 40  # what speakable() expands it to
+
+    mock_sarvam = AsyncMock()
+    mock_sarvam.speak = AsyncMock(
+        return_value=SpeakResult(
+            ok=True, audio_bytes=b"RIFF....WAVEfmt ", content_type="audio/wav",
+            billed=True, billed_chars=normalized_len,
+        )
+    )
+
+    with patch("app.routes.voice._get_sarvam", return_value=mock_sarvam):
+        resp = _client().post(
+            SPEAK_PATH, json={"workspace_id": WORKSPACE_ID, "text": text}, headers=_auth()
+        )
+
+    assert resp.status_code == 200
+    recorded = asyncio_run_get_global_total()
+    assert recorded == estimate_sarvam_tts_cost_usd(normalized_len), (
+        "the route is still billing the pre-normalization length"
+    )
+    assert recorded > estimate_sarvam_tts_cost_usd(len(text))
+
+
+def test_f07_route_bills_a_billed_but_failed_tts_call():
+    """F-06's TTS half: `invalid_audio_response` / `empty_audio` are returned
+    after a billed HTTP 200, and a multi-chunk reply can fail on a later chunk
+    with earlier chunks already billed."""
+    mock_sarvam = AsyncMock()
+    mock_sarvam.speak = AsyncMock(
+        return_value=SpeakResult(
+            ok=False, error="invalid_audio_response", billed=True, billed_chars=120
+        )
+    )
+
+    with patch("app.routes.voice._get_sarvam", return_value=mock_sarvam):
+        resp = _client().post(
+            SPEAK_PATH, json={"workspace_id": WORKSPACE_ID, "text": "hello there"},
+            headers=_auth(),
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["fallback"] is True
+    assert asyncio_run_get_global_total() == estimate_sarvam_tts_cost_usd(120), (
+        "a billed TTS call that returned bad audio recorded $0"
+    )

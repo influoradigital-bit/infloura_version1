@@ -53,6 +53,12 @@ import {
 
 interface DealRoom {
   id: string;
+  /**
+   * The counterparty's real id (Deal.counterpartyId — a User id, not this room's own `id`,
+   * which is the Deal's id). Needed to link to `/brand/creators/:id`; was previously missing
+   * from this shape entirely, which is why that link used to be hardcoded to a fixture id.
+   */
+  creatorId: string;
   campaignName: string;
   creatorName: string;
   creatorAvatar: string;
@@ -118,6 +124,7 @@ function formatTimeline(nextDeadline?: string): string {
 function mapDealToRoom(deal: Deal): DealRoom {
   return {
     id: deal.id,
+    creatorId: deal.counterpartyId,
     campaignName: deal.campaignName,
     creatorName: deal.counterpartyName,
     creatorAvatar: deal.counterpartyAvatar || '',
@@ -134,6 +141,7 @@ function mapDealToRoom(deal: Deal): DealRoom {
 const mockDealRooms: DealRoom[] = [
   {
     id: '1',
+    creatorId: 'creator-1',
     campaignName: 'Summer Collection Launch',
     creatorName: 'Priya Sharma',
     creatorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya',
@@ -149,6 +157,7 @@ const mockDealRooms: DealRoom[] = [
   },
   {
     id: '2',
+    creatorId: 'creator-2',
     campaignName: 'Seasonal Campaign Q3',
     creatorName: 'Arjun Patel',
     creatorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun',
@@ -164,6 +173,7 @@ const mockDealRooms: DealRoom[] = [
   },
   {
     id: '3',
+    creatorId: 'creator-3',
     campaignName: 'Holiday Promo 2024',
     creatorName: 'Maya Gupta',
     creatorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Maya',
@@ -297,6 +307,52 @@ export function DealRoomDashboard() {
     }
   }, [selectedDeal, loadMessages]);
 
+  // CR-97 — this dashboard (the 'Deals' page off the brand sidebar) previously had NO live
+  // transport at all: the timeline only changed on manual load or the brand's own action, so a
+  // counterparty accept/reject/message never appeared until reload. Open the deal-message SSE
+  // stream for the selected deal (live mode only), mirroring brand-chat.tsx. Keyed on
+  // `selectedDeal?.id` (not the object) so a deal-list refresh returning a new object for the
+  // same deal doesn't tear down and reopen the connection; the cleanup closes the stream on both
+  // id-change and unmount so a previous deal's stream never writes into the newly selected one.
+  React.useEffect(() => {
+    if (!isApiLive() || !selectedDeal) return;
+    const dealId = selectedDeal.id;
+
+    const handle = messagesApi.stream('brand', dealId, {
+      onMessage: (incoming) => {
+        // Upsert BY ID, not append: sendMessage echoes the sender's own frame (handleSendMessage
+        // already appended what send() returned), and settled proposal cards republish under
+        // their ORIGINAL id with mutated metadata — a plain append would double own-messages or
+        // leave a stale card with a live Accept button beneath an "accepted" line (a CR-02 regression).
+        setLiveMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === incoming.id);
+          if (idx === -1) return [...prev, incoming];
+          const next = prev.slice();
+          next[idx] = incoming;
+          return next;
+        });
+        // No frame carries the collaboration's own status, so re-read the deal list whenever one
+        // arrives that could imply a transition (proposal/system) — that refreshes each row's
+        // status and the accept/reject affordances. Mirrors brand-chat's mayIndicateDealStatusChange.
+        if (incoming.kind === 'proposal' || incoming.kind === 'system') {
+          void loadDeals();
+        }
+      },
+      onReconnect: () => {
+        // This transport has no Last-Event-ID replay: frames published during the gap are gone.
+        // Re-read both the thread and the deal list so a dropped-then-restored stream doesn't
+        // leave a permanent hole.
+        void loadMessages(dealId);
+        void loadDeals();
+      },
+    });
+
+    return () => {
+      handle.close();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDeal?.id, loadDeals, loadMessages]);
+
   const runContractAnimation = React.useCallback(() => {
     setShowContractGeneratingDialog(true);
     setContractGenerationStep(0);
@@ -362,7 +418,10 @@ export function DealRoomDashboard() {
       setActionError(null);
       try {
         await dealsApi.accept(selectedDeal.id, 'brand');
-        await loadDeals();
+        // CR-98/F-0112: loadDeals() alone left the message timeline stale after the brand's
+        // OWN accept action on this page — worse than the counterparty-blackout bug on the
+        // chat pages, since even the actor saw a card that never settled.
+        await Promise.all([loadDeals(), loadMessages(selectedDeal.id)]);
         runContractAnimation();
       } catch {
         setActionError('Could not accept the proposal. Try again.');
@@ -387,7 +446,8 @@ export function DealRoomDashboard() {
           { amount: Number(counterAmount) || 0, message: counterMessage || undefined },
           'brand',
         );
-        await loadDeals();
+        // CR-98/F-0112: same stale-timeline gap as accept/reject on this page.
+        await Promise.all([loadDeals(), loadMessages(selectedDeal.id)]);
         setShowCounterDialog(false);
         setCounterAmount('');
         setCounterMessage('');
@@ -412,7 +472,8 @@ export function DealRoomDashboard() {
       setActionError(null);
       try {
         await dealsApi.reject(selectedDeal.id, rejectReason || undefined, 'brand');
-        await loadDeals();
+        // CR-98/F-0112: same stale-timeline gap as accept on this page.
+        await Promise.all([loadDeals(), loadMessages(selectedDeal.id)]);
         setShowRejectDialog(false);
         setRejectReason('');
       } catch {
@@ -571,7 +632,11 @@ export function DealRoomDashboard() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => navigate(`/brand/creators/creator-1`)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate(`/brand/creators/${selectedDeal.creatorId}`)}
+                  >
                     View Profile
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => setShowProposalDialog(true)}>

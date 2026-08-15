@@ -21,9 +21,13 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
-from app.clients.spring import SpringCallError, SpringInternalClient, idempotency_key_for
+from app.clients.spring import (
+    SpringCallError,
+    SpringInternalClient,
+    idempotency_key_for,
+)
 from app.config import PROMPT_VERSION
-from app.providers.claude import ClaudeProvider, ClaudeStreamEvent
+from app.providers.claude import ClaudeProvider
 from app.routes.analyze_site import perform_site_analysis
 from app.tools.schemas import (
     IDEMPOTENT_REQUIRED_TOOLS,
@@ -32,6 +36,7 @@ from app.tools.schemas import (
     get_tool_schemas,
     is_known_tool,
     is_local_tool,
+    is_money_tool,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +50,21 @@ DEFAULT_MAX_ITERATIONS = 6
 # so it deliberately carries no punctuation tricks, emoji, or symbols. Lives
 # in code, not persona.py -- PROMPT_VERSION does not need bumping for this.
 EMPTY_TURN_FALLBACK = "Sorry, I lost my train of thought there. Say that again?"
+
+# ME-2 (BrandF.md §115): schemas.py's get_tool_schemas() no longer offers
+# request_payment/confirm_launch, so this should be unreachable in the ordinary
+# case -- but if one is ever forwarded anyway (a future scope widening or
+# schema edit that reintroduces one without updating schemas.py's exclusion —
+# NOT replayed conversation history, which never carries a live tool_use back
+# in, see schemas.py's get_tool_schemas docstring) and Spring rejects it on the
+# on-behalf gate, this is the second layer: a fixed, persona-consistent,
+# TTS-safe decline, same treatment as EMPTY_TURN_FALLBACK, instead of feeding
+# the raw Spring error back into `messages` and letting Claude free-improvise a
+# response around a 403 it has no way to act on productively.
+MONEY_TOOL_SCOPE_DECLINE = (
+    "I can't move money on my own here — that step needs your direct approval "
+    "from the wallet or deal room."
+)
 
 
 @dataclass
@@ -172,8 +192,18 @@ async def run_tool_loop(
             max_tokens=effective_max_tokens,
             is_cancelled=is_cancelled,
         ):
+            # F-02: accumulate usage BEFORE the cancellation check. The
+            # provider flushes a partial-usage event on cancel, and returning
+            # first threw it away — which is exactly how a disconnect burned
+            # real tokens and recorded $0.
+            if event.type == "usage":
+                final_usage = _accumulate_usage(final_usage, event.usage)
+                turn_stop_reason = event.stop_reason or turn_stop_reason
+
             if is_cancelled and is_cancelled():
-                yield LoopEvent(type="error", error_code="client_disconnected")
+                yield LoopEvent(
+                    type="error", error_code="client_disconnected", usage=final_usage
+                )
                 return
 
             if event.type == "text":
@@ -191,12 +221,51 @@ async def run_tool_loop(
                 turn_truncated = True
                 turn_stop_reason = event.stop_reason
             elif event.type == "usage":
-                final_usage = _accumulate_usage(final_usage, event.usage)
-                turn_stop_reason = event.stop_reason or turn_stop_reason
+                pass  # already accumulated above (F-02)
 
         assistant_text = "".join(assistant_text_parts)
 
         if not pending_tool_calls:
+            # ── F-16 ────────────────────────────────────────────────────────
+            # `turn_truncated` used to be consulted ONLY on the zero-text
+            # branch below. But the persona mandates narrating before every
+            # tool call, so the common shape is text("Scanning creators in
+            # Mumbai...") followed by a truncation mid `create_campaign`. That
+            # landed here with assistant_text non-empty and was reported as
+            # finish_reason="stop": zero retries, no error, the narration
+            # persisted as the assistant's answer, and the charge kept. The
+            # brand is told a campaign is being built; nothing was built and
+            # nothing is logged as a failure. Same 28% blank-turn class the
+            # fix was written for, now wearing narration.
+            #
+            # A truncated turn is a truncated turn whether or not it narrated
+            # first, so the recovery is checked BEFORE the happy path.
+            if turn_truncated and not retried_empty:
+                retried_empty = True
+                logger.warning(
+                    "meera turn truncated mid tool_use stop_reason=%s narrated_chars=%d -- "
+                    "retrying once at max_tokens=%d",
+                    turn_stop_reason,
+                    len(assistant_text),
+                    ctx.max_tokens_retry,
+                )
+                effective_max_tokens = ctx.max_tokens_retry
+                continue  # `messages` unchanged; provably pre-tool-forward
+            if turn_truncated:
+                # Retry already spent and it truncated again. Never report this
+                # as a clean stop — the narration is not an answer.
+                logger.warning(
+                    "meera turn truncated mid tool_use after retry stop_reason=%s", turn_stop_reason
+                )
+                yield LoopEvent(type="token", text=EMPTY_TURN_FALLBACK)
+                yield LoopEvent(
+                    type="done",
+                    finish_reason="truncated_tool_use",
+                    usage=final_usage,
+                    stop_reason=turn_stop_reason,
+                )
+                return
+
             # No tool calls this round -> final assistant text, we're done.
             if assistant_text:
                 messages.append({"role": "assistant", "content": assistant_text})
@@ -211,26 +280,9 @@ async def run_tool_loop(
             # silent, indistinguishable-from-success blank turn (traced
             # 2026-07-24, ~28% of Meera turns on large tool payloads like
             # create_campaign). Two-stage recovery:
-            if turn_truncated and not retried_empty:
-                # The turn was cut mid tool_use and produced nothing usable.
-                # Retry ONCE with a wider ceiling. SAFE by construction: this
-                # point is provably pre-tool-forward -- no tool_start was
-                # emitted (that only happens once pending_tool_calls is
-                # non-empty, below), nothing was sent to Spring, no
-                # Idempotency-Key was consumed, nothing was persisted. There
-                # is nothing to double-execute or double-spend.
-                retried_empty = True
-                logger.warning(
-                    "meera empty turn after truncation stop_reason=%s -- "
-                    "retrying once at max_tokens=%d",
-                    turn_stop_reason,
-                    ctx.max_tokens_retry,
-                )
-                effective_max_tokens = ctx.max_tokens_retry
-                continue  # re-enters the while loop; `messages` is unchanged
-
-            # Retry already used (or the turn was empty for some other
-            # reason, not a known truncation) -- stream an honest, in-persona
+            # Zero text AND zero tool calls, and NOT a known truncation (that
+            # case is handled above, F-16, whether or not the turn narrated
+            # first) -- stream an honest, in-persona
             # fallback instead of silence. finish_reason="empty_response" is
             # a NEW, deliberately-distinct value (never "stop") so chat.py can
             # refund the send-time charge instead of persisting/billing a
@@ -267,7 +319,9 @@ async def run_tool_loop(
 
             if not is_known_tool(tool_name):
                 logger.warning("rejected unknown tool call: %s", tool_name)
-                result_payload = {"error": "unknown_tool", "message": f"tool {tool_name!r} is not defined"}
+                result_payload: dict[str, Any] = {
+                    "error": "unknown_tool", "message": f"tool {tool_name!r} is not defined"
+                }
                 tool_result_blocks.append(
                     {
                         "type": "tool_result",
@@ -315,7 +369,7 @@ async def run_tool_loop(
                             prompt_version=PROMPT_VERSION,
                             onbehalf_jwt=ctx.onbehalf_jwt,
                         )
-                    except Exception as exc:  # flywheel logging is best-effort, never breaks the turn
+                    except Exception as exc:  # noqa: BLE001 - flywheel logging is best-effort
                         logger.warning(
                             "interaction-log write-back failed for workspace_id=%s"
                             " event=OPTIONS_PRESENTED: %s: %s",
@@ -344,7 +398,7 @@ async def run_tool_loop(
                     continue
                 try:
                     result_payload = await perform_site_analysis(url=url, workspace_id=ctx.workspace_id)
-                except Exception as exc:  # never let a fetch/classify error break the turn
+                except Exception as exc:  # noqa: BLE001 - a fetch/classify error must not break the turn
                     logger.warning("local tool %s failed: %s", tool_name, type(exc).__name__)
                     result_payload = {
                         "success": False,
@@ -367,7 +421,7 @@ async def run_tool_loop(
                             error=result_payload.get("error"),
                             onbehalf_jwt=ctx.onbehalf_jwt,
                         )
-                    except Exception as exc:  # write-back is best-effort, never breaks the turn
+                    except Exception as exc:  # noqa: BLE001 - write-back is best-effort
                         logger.warning(
                             "analyze_site_result write-back failed for workspace_id=%s url=%s: %s: %s",
                             ctx.workspace_id,
@@ -411,6 +465,42 @@ async def run_tool_loop(
                     allow_retry=tool_name not in IDEMPOTENT_REQUIRED_TOOLS,
                 )
             except SpringCallError as exc:
+                # ME-2 (BrandF.md §115): a money tool rejected on the on-behalf
+                # gate is not a "try something else" error the way a validation
+                # 400 is — Claude has no productive next move, and feeding the
+                # raw error back into `messages` (the general path below) only
+                # invited an improvised apology around a 403 it can't act on.
+                # This should be rare now that get_tool_schemas() no longer
+                # offers these tools at all (see schemas.py), but if one is ever
+                # forwarded anyway, decline deterministically and end the turn
+                # here — same treatment as EMPTY_TURN_FALLBACK, not routed
+                # through Claude.
+                #
+                # Priya review: OnBehalfAuthResolver's role check runs BEFORE
+                # its scope check (requireRole then requireScope), so which of
+                # these three codes actually comes back depends on the caller's
+                # role, not just SCOPE_DEFAULT excluding the tool — matching
+                # only ON_BEHALF_SCOPE_INSUFFICIENT let the other two silently
+                # fall through to the freestyle path. All three mean the same
+                # thing to the brand: this needs their direct approval, not a
+                # narrated retry.
+                if is_money_tool(tool_name) and exc.code in (
+                    "ON_BEHALF_SCOPE_INSUFFICIENT",
+                    "ON_BEHALF_INSUFFICIENT_ROLE",
+                    "ON_BEHALF_NOT_A_MEMBER",
+                ):
+                    logger.warning(
+                        "money tool %s scope-rejected for workspace_id=%s — declining deterministically",
+                        tool_name,
+                        ctx.workspace_id,
+                    )
+                    yield LoopEvent(type="tool_result", tool_name=tool_name, tool_status="error", tool_result_data={"error": exc.code, "message": exc.message})
+                    yield LoopEvent(type="token", text=MONEY_TOOL_SCOPE_DECLINE)
+                    yield LoopEvent(
+                        type="done", finish_reason="money_tool_scope_declined", usage=final_usage
+                    )
+                    return
+
                 result_payload = {"error": exc.code, "message": exc.message}
                 tool_result_blocks.append(
                     {

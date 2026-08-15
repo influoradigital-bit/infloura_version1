@@ -78,6 +78,36 @@ public class CampaignValidator {
         }
     }
 
+    /**
+     * ACTIVE-aware overload used by {@code CampaignService#update}. An ACTIVE campaign is live in
+     * front of creators/escrow, so its content (title, budget, timeline, targeting, hype config,
+     * ...) must not be editable mid-flight. It must, however, still be possible for a brand to
+     * pause/complete/cancel a live campaign — and today that status transition is expressed as a
+     * PATCH through this exact same {@code update()}/{@code ensureEditable} path (there is no
+     * separate status-change endpoint; see {@code campaignsApi.update} in {@code src/lib/api.ts},
+     * which both {@code brand-campaign-detail.tsx} and {@code campaigns-list.tsx} call with a
+     * status-only body for pause/resume/cancel/complete). So the ACTIVE guard only fires when the
+     * incoming patch touches a field other than {@code status} — {@code statusOnlyPatch} is exactly
+     * "every non-status field in the request is null."
+     *
+     * <p>COMPLETED/CANCELLED stay unconditionally blocked (delegates to {@link #ensureEditable}
+     * first) — a status-only patch cannot resurrect a terminal campaign either.
+     *
+     * <p>Uses a distinct code ({@code CAMPAIGN_ACTIVE_NOT_EDITABLE}, not the terminal-state
+     * {@code CAMPAIGN_NOT_EDITABLE}) so the frontend can tell "this campaign is done" apart from
+     * "pause it before editing" and message each correctly.
+     */
+    public void ensureEditable(CampaignStatus current, boolean statusOnlyPatch) {
+        ensureEditable(current);
+        if (current == CampaignStatus.ACTIVE && !statusOnlyPatch) {
+            throw new ApiException(
+                    "CAMPAIGN_ACTIVE_NOT_EDITABLE",
+                    "Cannot edit an active campaign — pause it first, or send a status-only update"
+                            + " to pause/complete/cancel it",
+                    HttpStatus.CONFLICT);
+        }
+    }
+
     public void ensureDeletable(CampaignStatus current) {
         if (current != CampaignStatus.DRAFT) {
             throw new ApiException(

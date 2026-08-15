@@ -23,7 +23,8 @@ import type { AffiliateEarningRow, AffiliateEarningsSummary } from '@/lib/api';
  * `useAffiliateEarnings` already wired and waiting.)
  */
 export function AffiliateEarningsView() {
-  const { data, summary, loading, error, notImplemented, refresh } = useAffiliateEarnings();
+  const { data, summary, loading, loadingMore, hasMore, error, notImplemented, refresh, loadMore } =
+    useAffiliateEarnings();
 
   return (
     <div className="space-y-6">
@@ -73,6 +74,22 @@ export function AffiliateEarningsView() {
               {data.map((earning) => (
                 <EarningCard key={earning.id} earning={earning} />
               ))}
+              {/* CR-83 — this response now pages instead of returning every row ever
+                  recorded in one shot; this is the load-more affordance for the rest. */}
+              {hasMore && (
+                <div className="flex justify-center pt-2">
+                  <Button variant="outline" onClick={() => loadMore()} disabled={loadingMore}>
+                    {loadingMore ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      'Load more'
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </>

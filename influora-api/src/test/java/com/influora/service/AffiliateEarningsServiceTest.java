@@ -1,8 +1,10 @@
 package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -375,12 +377,103 @@ class AffiliateEarningsServiceTest {
         when(workspaceRepository.findAllById(any())).thenReturn(List.of());
         when(couponRedemptionRepository.findAllById(any())).thenReturn(List.of());
 
-        var response = service.listForCreator(principal);
+        var response = service.listForCreator(principal, null, null);
 
         assertEquals(0, response.earnings().size());
         assertEquals(0, response.summary().thisMonthSales());
+        assertEquals(0, response.totalElements());
+        assertFalse(response.hasMore());
         verify(affiliateEarningRepository).findByCreatorIdOrderByCreatedAtDesc(CREATOR_ID);
         verify(affiliateEarningRepository, never())
                 .findByCreatorIdOrderByCreatedAtDesc("01HOTHERCREATORPROF01");
+    }
+
+    /**
+     * CR-83 — the earlier version of this endpoint returned every row ever recorded in one
+     * response. Pins that a `limit` smaller than the creator's full history now returns exactly
+     * that many rows, reports the true total, and flags `hasMore` — while the summary still
+     * reflects every one of the 5 underlying earnings, not just the 2 on this page.
+     */
+    @Test
+    @DisplayName("listForCreator CR-83: pages the row list without narrowing the summary")
+    void testListForCreatorPaginatesRowsButNotSummary() {
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        CreatorProfile profile = CreatorProfile.newForUser(CREATOR_ID, "01HCREATORUSER1234567", "Priya");
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+
+        java.util.List<com.influora.domain.entity.AffiliateEarning> fiveEarnings =
+                java.util.stream.IntStream.range(0, 5)
+                        .mapToObj(
+                                i ->
+                                        com.influora.domain.entity.AffiliateEarning.builder()
+                                                .id("earn_" + i)
+                                                .workspaceId("ws_1")
+                                                .campaignId("camp_1")
+                                                .creatorId(CREATOR_ID)
+                                                .redemptionId("redemption_" + i)
+                                                .commissionAmount(new java.math.BigDecimal("10.00"))
+                                                .currency("INR")
+                                                .idempotencyKey("affearn:redemption_" + i)
+                                                .build())
+                        .toList();
+        when(affiliateEarningRepository.findByCreatorIdOrderByCreatedAtDesc(CREATOR_ID))
+                .thenReturn(fiveEarnings);
+        when(campaignRepository.findAllById(any())).thenReturn(List.of());
+        when(workspaceRepository.findAllById(any())).thenReturn(List.of());
+        when(couponRedemptionRepository.findAllById(any())).thenReturn(List.of());
+
+        var page0 = service.listForCreator(principal, 0, 2);
+
+        assertEquals(2, page0.earnings().size());
+        assertEquals(0, page0.page());
+        assertEquals(2, page0.limit());
+        assertEquals(5, page0.totalElements());
+        assertTrue(page0.hasMore());
+        // The summary must count all 5 earnings' commission, not just the 2 rows returned.
+        assertEquals(
+                new java.math.BigDecimal("50.00"), page0.summary().unsettledCommission());
+
+        var page2 = service.listForCreator(principal, 2, 2);
+        assertEquals(1, page2.earnings().size());
+        assertFalse(page2.hasMore());
+    }
+
+    /**
+     * CR-83 follow-up (Priya red-team) — {@code pageNumber * pageSize} as a plain {@code int}
+     * multiply overflows for a large caller-supplied {@code page} (e.g. 100_000_000 × 100),
+     * wrapping negative and throwing {@link IndexOutOfBoundsException} out of {@code subList} —
+     * an authenticated, self-scoped 500 from ordinary user input. Pins that an absurd page
+     * number degrades to an empty page instead.
+     */
+    @Test
+    @DisplayName("listForCreator CR-83: an absurd page number returns an empty page instead of throwing")
+    void testListForCreatorAbsurdPageNumberDoesNotOverflow() {
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        CreatorProfile profile = CreatorProfile.newForUser(CREATOR_ID, "01HCREATORUSER1234567", "Priya");
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+
+        var single =
+                java.util.List.of(
+                        com.influora.domain.entity.AffiliateEarning.builder()
+                                .id("earn_only")
+                                .workspaceId("ws_1")
+                                .campaignId("camp_1")
+                                .creatorId(CREATOR_ID)
+                                .redemptionId("redemption_only")
+                                .commissionAmount(new java.math.BigDecimal("10.00"))
+                                .currency("INR")
+                                .idempotencyKey("affearn:redemption_only")
+                                .build());
+        when(affiliateEarningRepository.findByCreatorIdOrderByCreatedAtDesc(CREATOR_ID)).thenReturn(single);
+        when(campaignRepository.findAllById(any())).thenReturn(List.of());
+        when(workspaceRepository.findAllById(any())).thenReturn(List.of());
+        when(couponRedemptionRepository.findAllById(any())).thenReturn(List.of());
+
+        // Would overflow int (100_000_000 * 100 > Integer.MAX_VALUE) if multiplied as a plain int.
+        var response = service.listForCreator(principal, 100_000_000, 100);
+
+        assertEquals(0, response.earnings().size());
+        assertEquals(1, response.totalElements());
+        assertFalse(response.hasMore());
     }
 }

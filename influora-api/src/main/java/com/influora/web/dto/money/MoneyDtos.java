@@ -113,6 +113,51 @@ public final class MoneyDtos {
             Instant createdAt,
             BigDecimal balanceAfter) {}
 
+    /**
+     * CR-77 — one row of the creator's real payout history, from the {@code payouts} table.
+     *
+     * <p>WHY THIS EXISTS RATHER THAN REUSING {@link WalletTransactionRowResponse}. The Payouts tab
+     * used to derive itself by filtering wallet transactions to {@code WITHDRAWAL} debits. Those
+     * debits are ledger entries and the ledger is append-only and correct — but they record that
+     * money left the creator's Influora wallet, NOT that it arrived in their bank. When RazorpayX
+     * reports {@code reversed}/{@code rejected}/{@code cancelled}, {@code
+     * PayoutReconciliationService#reCreditReversedPayout} posts a SEPARATE compensating credit and
+     * deliberately leaves the original debit standing. The derived tab therefore kept showing a
+     * bounced payout as money paid out, with the offsetting credit invisible to it (a credit is
+     * not a WITHDRAWAL). This row carries the gateway's own terminal state instead, so a failed
+     * payout can render as failed.
+     *
+     * <p>FIELDS DELIBERATELY ABSENT — do not add them without the data existing first. CR-77 also
+     * asks for a TDS / GST / platform-fee split, the brand and campaign name, and a bank UTR.
+     * None of those are on {@code Payout}: TDS and GST are unimplemented platform-wide, the
+     * platform fee is a separate ledger row rather than a payout attribute, {@code milestoneId} is
+     * {@code null} for lump-sum wallet withdrawals (see {@code WalletService#doProcessWithdrawal})
+     * so there is no campaign to name on this path, and a UTR would have to be parsed out of the
+     * raw {@code webhookPayload} blob whose shape is not pinned by anything. Shipping any of them
+     * as a nullable placeholder would put a field on the wire that the UI must then render as an
+     * em-dash forever, which is how "not implemented" quietly becomes "looks broken". They are
+     * omitted, and the UI says plainly that a detailed breakdown is not available yet.
+     *
+     * @param reference the RazorpayX payout id — the identifier a creator can quote to support
+     *     when chasing a payment. Their own row only; never another creator's.
+     * @param status the raw gateway status, passed through unmapped so the UI is never lying about
+     *     a state the platform did not observe.
+     * @param failed terminal-failure flag derived from {@code
+     *     PayoutReconciliationService#FAILURE_STATUSES} — the single signal the old derived tab
+     *     could not express at all.
+     * @param settledAt when the money actually reached the bank; {@code null} while in flight, and
+     *     {@code null} forever for a failed payout. Distinct from {@code requestedAt}.
+     */
+    public record CreatorPayoutRowResponse(
+            String id,
+            String reference,
+            BigDecimal amount,
+            String currency,
+            String status,
+            boolean failed,
+            Instant requestedAt,
+            Instant settledAt) {}
+
     // ---------------------------------------------------------------------
     // Escrow
     // ---------------------------------------------------------------------
@@ -144,7 +189,15 @@ public final class MoneyDtos {
             Instant fundedAt,
             Instant releasedAt) {}
 
-    public record EscrowReleaseRequest(@NotBlank String milestoneId) {}
+    /**
+     * [P-1' fix, BrandF.md §47a] Exactly one of {@code milestoneId} / {@code escrowHoldId} must be
+     * supplied — the controller enforces this (bean validation can't express "exactly one of").
+     * {@code milestoneId} keeps routing to {@code EscrowService#release} (the B5
+     * release_condition-gated path); {@code escrowHoldId} is the new path for holds that have no
+     * milestone at all ({@code EscrowService#releaseByHoldId}), e.g. escrow Meera funds at the
+     * campaign level before any contract/milestone exists.
+     */
+    public record EscrowReleaseRequest(String milestoneId, String escrowHoldId) {}
 
     public record EscrowRefundRequest(@NotBlank String escrowHoldId, String reason) {}
 

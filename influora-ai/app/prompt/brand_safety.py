@@ -158,9 +158,11 @@ def build_user_message(items: list[dict[str, Any]]) -> dict[str, Any]:
     the route handler before this is called.
     """
     lines: list[str] = [
-        f"Classify these {len(items)} creator content item(s). "
-        "Return exactly one result per item, same order, via the "
-        "analyze_creator_content tool only.",
+        (
+            f"Classify these {len(items)} creator content item(s). "
+            "Return exactly one result per item, same order, via the "
+            "analyze_creator_content tool only."
+        ),
         "",
     ]
     for idx, item in enumerate(items, start=1):

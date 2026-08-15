@@ -140,7 +140,7 @@ async def test_kill_switch_blocks_with_zero_gemini_calls(monkeypatch):
             mock_get_gemini.assert_not_called()
         mock_fetch.assert_not_called()
 
-    assert await spend_tracker.get_global_total_today() == Decimal("0")
+    assert await spend_tracker.get_global_total_today() == Decimal(0)
 
 
 @pytest.mark.asyncio
@@ -184,20 +184,21 @@ async def test_normal_request_under_ceiling_proceeds_and_records_spend(monkeypat
     )
 
     with patch.object(
-        analyze_site_route, "guarded_fetch", return_value=(b"<html><body>hello brand</body></html>", "https://brand-example.test/")
-    ):
-        with patch.object(analyze_site_route, "_get_gemini") as mock_get_gemini:
-            mock_gemini = AsyncMock()
-            mock_gemini.classify_site = AsyncMock(return_value=mock_result)
-            mock_get_gemini.return_value = mock_gemini
+        analyze_site_route,
+        "guarded_fetch",
+        return_value=(b"<html><body>hello brand</body></html>", "https://brand-example.test/"),
+    ), patch.object(analyze_site_route, "_get_gemini") as mock_get_gemini:
+        mock_gemini = AsyncMock()
+        mock_gemini.classify_site = AsyncMock(return_value=mock_result)
+        mock_get_gemini.return_value = mock_gemini
 
-            response = await analyze_site_route.analyze_site(request, authorization=f"Bearer {token}")
+        response = await analyze_site_route.analyze_site(request, authorization=f"Bearer {token}")
 
     assert response["success"] is True
     mock_gemini.classify_site.assert_awaited_once()
 
     expected_cost = estimate_cost_usd(GEMINI_MODEL, usage)
-    assert expected_cost > Decimal("0")
+    assert expected_cost > Decimal(0)
     assert await spend_tracker.get_global_total_today() == expected_cost
 
 
@@ -217,14 +218,15 @@ async def test_classify_failure_still_records_spend_when_usage_present(monkeypat
     mock_result = ClassifyResult(ok=False, error="unparseable_response", usage=usage)
 
     with patch.object(
-        analyze_site_route, "guarded_fetch", return_value=(b"<html><body>hello brand</body></html>", "https://brand-example.test/")
-    ):
-        with patch.object(analyze_site_route, "_get_gemini") as mock_get_gemini:
-            mock_gemini = AsyncMock()
-            mock_gemini.classify_site = AsyncMock(return_value=mock_result)
-            mock_get_gemini.return_value = mock_gemini
+        analyze_site_route,
+        "guarded_fetch",
+        return_value=(b"<html><body>hello brand</body></html>", "https://brand-example.test/"),
+    ), patch.object(analyze_site_route, "_get_gemini") as mock_get_gemini:
+        mock_gemini = AsyncMock()
+        mock_gemini.classify_site = AsyncMock(return_value=mock_result)
+        mock_get_gemini.return_value = mock_gemini
 
-            response = await analyze_site_route.analyze_site(request, authorization=f"Bearer {token}")
+        response = await analyze_site_route.analyze_site(request, authorization=f"Bearer {token}")
 
     assert response["success"] is False
     expected_cost = estimate_cost_usd(GEMINI_MODEL, usage)

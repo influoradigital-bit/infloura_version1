@@ -26,9 +26,27 @@ public final class DealDtos {
             String campaignId,
             String campaignName,
             String counterpartyId,
+            /**
+             * The counterparty's CreatorProfile id — distinct from {@code counterpartyId}, which
+             * is the creator's User id ({@code Collaboration.creatorId} / {@code
+             * DealService.resolveCounterparty}). Frontend profile pages (e.g. {@code
+             * brand-creator-profile.tsx}) navigate/match on CreatorProfile id, not User id, so
+             * without this field the brand-side "does a conversation already exist" lookup in
+             * {@code brand-messages.tsx} could never match a real deal. Null when the counterparty
+             * is a brand (viewer is CREATOR) — a brand counterparty has no CreatorProfile row.
+             */
+            String counterpartyProfileId,
             String counterpartyName,
             String counterpartyAvatar,
             String counterpartyHandle,
+            /**
+             * PR-2 (BrandF.md §83c / §105 VER-1) — {@code Workspace.verificationStatus} enum name
+             * when the counterparty is the brand (viewer is CREATOR), the same signal added to
+             * {@code CreatorCampaignDtos.BrandSummary}. Null when the counterparty is a creator
+             * (viewer is BRAND) — {@code CreatorProfile} verification is a separate, out-of-scope
+             * signal ({@code identityKycStatus}), not this field.
+             */
+            String counterpartyVerificationStatus,
             CollaborationStatus status,
             BigDecimal dealValue,
             String currency,
@@ -84,7 +102,10 @@ public final class DealDtos {
     public record CounterRequest(
             @NotNull @DecimalMin("0.01") BigDecimal amount,
             @Size(max = 2000) String message,
-            @NotEmpty(message = "At least one deliverable is required") @Valid List<DeliverableSlot> deliverables,
+            // Nullable — a counter that only revises price/deadline need not re-specify deliverables.
+            // DealService.doCounter() carries them forward from the superseded proposal card when
+            // omitted, so the contract generator always sees a full set of terms.
+            @Valid List<DeliverableSlot> deliverables,
             String deadline,
             String usageRights) {}
 

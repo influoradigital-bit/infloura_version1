@@ -33,8 +33,11 @@ regression.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 _JSON_LD_RE = re.compile(
     r'<script[^>]*type\s*=\s*["\']application/ld\+json["\'][^>]*>(.*?)</script>',
@@ -90,7 +93,37 @@ def _sane_price(price: float | None) -> float | None:
     return price
 
 
+# F-19: one well-formed decimal number, with optional thousands grouping
+# (Western `1,499.00` or Indian `1,49,900`). Anchored token-by-token so a
+# currency prefix, a trailing unit, or a second number in the string cannot be
+# folded into the value.
+_PRICE_TOKEN_RE = re.compile(r"\d{1,3}(?:[,\u00A0\u202F]\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?")
+# A separator that means "this string holds a RANGE, not a price" — the value is
+# ambiguous and must never be stamped as a scraped fact.
+_RANGE_HINT_RE = re.compile(r"(?:\d\s*(?:-|–|—|to|through)\s*\d)", re.IGNORECASE)
+
+
 def _coerce_price(value: object) -> float | None:
+    r"""Parse a price out of JSON-LD / OpenGraph / microdata.
+
+    F-19 — this used to be `re.sub(r"[^\d.]", "", value)`, which strips every
+    character that is not a digit or a dot and then floats the remainder. That
+    keeps the dot from a currency PREFIX, so:
+
+        "Rs. 499"      -> ".499"    -> 0.499   (stamped price_source "scraped",
+                                                giving a ₹0.50 "fact" the same
+                                                authority in calculate_budget as
+                                                a human-set price)
+        "499-999"      -> "499999"  -> 499999.0
+        "Rs. 1,499.00" -> "1499.00" -> ... but "Rs. 1.499,00" and similar
+                                       European forms produced nonsense too
+
+    A price is now read as ONE well-formed numeric token. A string that holds a
+    range, or more than one distinct number, returns None rather than a
+    confidently wrong figure — a missing fact falls back to the model's inferred
+    price, which is labelled as inferred; a wrong "scraped" price is the
+    money-path hallucination P1-B exists to close.
+    """
     if value is None:
         return None
     if isinstance(value, bool):  # bool is an int subclass -- reject explicitly
@@ -98,9 +131,28 @@ def _coerce_price(value: object) -> float | None:
     if isinstance(value, (int, float)):
         return _sane_price(float(value))
     if isinstance(value, str):
-        cleaned = re.sub(r"[^\d.]", "", value)
-        if not cleaned:
+        text = value.strip()
+        if not text:
             return None
+        if _RANGE_HINT_RE.search(text):
+            # "499-999", "₹1,000 to ₹5,000" — ambiguous, never a scraped fact.
+            #
+            # Round 7, Priya advisory 4: this guard is DELIBERATE
+            # defense-in-depth and currently has no independent behavioural
+            # signature — every range form we can construct also yields != 1
+            # price token, so the check below already returns None. It is kept
+            # because the two guards fail differently: the token count is a
+            # property of the TOKENIZER (widen `_PRICE_TOKEN_RE`, or meet a
+            # locale that groups "1.000–2.000", and a range can collapse to one
+            # token), while this is a property of the TEXT. Deleting it is safe
+            # today and unsafe the moment the tokenizer changes. Tests pin the
+            # BEHAVIOUR (ranges never yield a price), not this line.
+            return None
+        tokens = _PRICE_TOKEN_RE.findall(text)
+        if len(tokens) != 1:
+            # Zero numbers, or several ("2 x 499", "499 / 999") — ambiguous.
+            return None
+        cleaned = re.sub(r"[,\u00A0\u202F]", "", tokens[0])
         try:
             return _sane_price(float(cleaned))
         except ValueError:
@@ -116,6 +168,18 @@ def _extract_offer(offer: dict) -> tuple[float | None, str | None]:
         if isinstance(spec, dict):
             price = _coerce_price(spec.get("price"))
             currency = currency or spec.get("priceCurrency")
+    if price is None:
+        # F-19: `AggregateOffer` was accepted as an offer TYPE but its
+        # `lowPrice`/`highPrice` were never read — and that is the standard
+        # Shopify variant-range emission, so the commonest storefront shape
+        # yielded no price at all. The scraper then dropped the model's correct
+        # price as a duplicate name, losing the fact entirely.
+        #
+        # `lowPrice` is the "from ₹X" figure a storefront displays, so it is the
+        # honest single number for a variant range.
+        price = _coerce_price(offer.get("lowPrice"))
+        if price is None:
+            price = _coerce_price(offer.get("highPrice"))
     currency_str = str(currency).strip()[:8] if currency else None
     return price, (currency_str or None)
 
@@ -195,7 +259,11 @@ def extract_json_ld_products(raw_html: str) -> list[ScrapedProduct]:
         try:
             _walk_json_ld_node(data, products)
         except Exception:
-            continue  # unanticipated shape -- skip, defense-in-depth
+            # perform_site_analysis: an unanticipated JSON-LD shape skips this
+            # block only. Logged at debug rather than raised, deliberately —
+            # brand pages emit arbitrary third-party markup.
+            logger.debug("structured_extract: skipping malformed JSON-LD block", exc_info=True)
+            continue
     return products[:_MAX_PRODUCTS]
 
 
@@ -269,6 +337,10 @@ def extract_structured_facts(raw_html: str) -> list[ScrapedProduct]:
     try:
         json_ld_products = extract_json_ld_products(raw_html)
     except Exception:
+        # Was a SILENT swallow: a real parser bug looked identical to "this page
+        # has no structured data", so P1-B extraction could regress to zero
+        # recovery with nothing in the logs.
+        logger.warning("structured_extract: JSON-LD extraction failed", exc_info=True)
         json_ld_products = []
     if json_ld_products:
         return json_ld_products
@@ -276,6 +348,7 @@ def extract_structured_facts(raw_html: str) -> list[ScrapedProduct]:
     try:
         og_product = extract_opengraph_product(raw_html)
     except Exception:
+        logger.warning("structured_extract: OpenGraph extraction failed", exc_info=True)
         og_product = None
     if og_product:
         return [og_product]
@@ -283,6 +356,7 @@ def extract_structured_facts(raw_html: str) -> list[ScrapedProduct]:
     try:
         micro_product = extract_microdata_product(raw_html)
     except Exception:
+        logger.warning("structured_extract: microdata extraction failed", exc_info=True)
         micro_product = None
     if micro_product:
         return [micro_product]

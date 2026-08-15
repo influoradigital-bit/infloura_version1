@@ -53,9 +53,12 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -673,6 +676,54 @@ public class CreatorDeliverableService {
         return deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(collaborationId).stream()
                 .map(CreatorDeliverableService::toListItem)
                 .toList();
+    }
+
+    /**
+     * CR-51 — batched counterpart to {@link #listForCollaboration}. The creator dashboard's
+     * pending-deliverable rollup ({@code loadDeliverablePendingCount} in {@code
+     * creator-dashboard.tsx}) used to call {@code GET /creator/deliverables?collaboration_id=}
+     * once per active deal — an N+1 waterfall of HTTP round trips (each itself running an
+     * ownership-check query plus a deliverables query). This collapses that to exactly two
+     * queries total regardless of how many deals are passed in: one IN-clause ownership check
+     * ({@link CollaborationRepository#findByCreatorIdAndIdIn}) and one IN-clause deliverables
+     * fetch ({@link DeliverableRepository#findByCollaborationIdIn}, the same batch method H-22
+     * already added for {@code AdminCampaignService}'s equivalent per-campaign N+1).
+     *
+     * <p>Unowned / foreign collaboration ids are silently dropped from the result (no entry in
+     * the returned map) rather than throwing, mirroring how the per-deal endpoint's ownership
+     * check behaves when called from a caller that already scoped the ids to this creator's own
+     * deals — this is an aggregate rollup, not a single-resource fetch, so a partial result for a
+     * mixed-ownership id list is the correct behavior rather than failing the whole batch.
+     *
+     * <p>Output shape/content is identical to N calls of {@link #listForCollaboration}: each
+     * owned collaboration id maps to the same slot-ordered {@link DeliverableListItem} list that
+     * endpoint would have returned for it.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, List<DeliverableListItem>> listForCollaborations(
+            AuthPrincipal principal, List<String> collaborationIds) {
+        creatorContext.requireCreatorProfile(principal);
+        if (collaborationIds == null || collaborationIds.isEmpty()) {
+            return Map.of();
+        }
+        List<String> distinctIds = collaborationIds.stream().distinct().toList();
+
+        List<String> ownedIds =
+                collaborationRepository.findByCreatorIdAndIdIn(principal.getUserId(), distinctIds).stream()
+                        .map(Collaboration::getId)
+                        .toList();
+        Map<String, List<DeliverableListItem>> result = new LinkedHashMap<>();
+        for (String id : ownedIds) {
+            result.put(id, new ArrayList<>());
+        }
+        if (ownedIds.isEmpty()) {
+            return result;
+        }
+
+        deliverableRepository.findByCollaborationIdIn(ownedIds).stream()
+                .sorted(Comparator.comparingInt(Deliverable::getSlotIndex))
+                .forEach(d -> result.get(d.getCollaborationId()).add(toListItem(d)));
+        return result;
     }
 
     private void requireOwnedCollaboration(AuthPrincipal principal, String collaborationId) {

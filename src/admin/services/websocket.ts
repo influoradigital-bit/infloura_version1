@@ -152,7 +152,7 @@ const CLOSE = {
 const isDev = import.meta.env?.DEV === true;
 
 function log(...args: unknown[]): void {
-  if (isDev) console.info('[admin-ws]', ...args);
+  if (isDev) console.warn('[admin-ws]', ...args);
 }
 
 /**

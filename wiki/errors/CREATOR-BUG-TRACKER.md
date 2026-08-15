@@ -123,22 +123,98 @@ Correcting the record before work starts — the generic company stack template 
 | CR-34 | 🟡 Medium | `ACCEPTABLE_COLLABORATION_STATUSES` duplicated in both deal rooms | Ananya | IN VERIFY |
 | CR-35 | 🔴 Critical | Dispute settlement moves **no money** on normally-funded holds, and records it as settled | Vikram | IN VERIFY |
 | CR-36 | 🔴 Critical | Nothing downstream enforces `CANCELLED` — a cancelled deal's contract still signs to ACTIVE and its escrow can be funded **for the first time** | **Unassigned** *(never routed; being worked anyway)* | IN VERIFY |
-| CR-37 | 🟡 Medium | Privilege inversion: a workspace `VIEWER` can cancel a contracted, funded deal, while funding/release/refund require `OWNER`/`ADMIN`. ~~**⛔ Kavya HOLD 2026-07-29** — `7991342` left `createProposal` ungated~~ **→ HOLD LIFTED in `19d4085`; Kavya PASS 2026-07-29 (independent — see §5 for what that pass did and did not verify).** | Vikram | IN VERIFY |
+| CR-37 | 🟡 Medium | Privilege inversion: a workspace `VIEWER` can cancel a contracted, funded deal, while funding/release/refund require `OWNER`/`ADMIN`. ~~**⛔ Kavya HOLD 2026-07-29** — `7991342` left `createProposal` ungated~~ ~~**→ HOLD LIFTED: the fourth door is closed in `19d4085`. Awaiting an INDEPENDENT QA pass (fix written by the same agent that found it). See §5.**~~ **✅ INDEPENDENT QA PASS (fresh-context Kavya, 2026-08-10) — see §5.** | Vikram | IN VERIFY |
 | CR-38 | 🔴 Critical | Spoofable `X-Forwarded-For`: `clientIp()` failed **open**, defeating every IP-keyed rate limit (login brute-force included) and forging the IP on every admin audit-log record | Unrouted → **Kabir** (re-review, **not signed off**) | IN VERIFY |
 | CR-39 | 🔴 Critical | `DeliverableCleanupJob` **deleted creator deliverable media against FUNDED/FROZEN/PENDING escrow** — nightly, for real, on any prod deploy | Unrouted → Kavya | IN VERIFY |
 | CR-40 | 🟠 High | Unauthenticated slow-body request holds a Tomcat thread indefinitely — 200 of them stop the entire API | Unrouted → Kavya | IN VERIFY |
 | CR-41 | 🟠 High | Log forging: values are unquoted in a logfmt line, so `pathname` forges every later field — and logback's own `correlationId=`/`logger=` | Unrouted → Kavya | IN VERIFY |
-| CR-42 | 🟡 Medium | No Docker log rotation on **any** service — unbounded disk on the box that also holds `mysql_data` and `caddy_data` | Unrouted → Meera | IN VERIFY |
-| CR-43 | 🟡 Medium | No redaction of token-shaped strings before an internet-writable log | Unrouted → Kavya | IN VERIFY |
-| CR-44 | 🟡 Medium | `ClientErrorController`'s "always 202, never a 4xx" was false — `AuthRateLimitFilter` returns 429 in front of it | Unrouted → Kavya | IN VERIFY |
+| CR-42 | 🟡 Medium | No Docker log rotation on **any** service — unbounded disk on the box that also holds `mysql_data` and `caddy_data`. **✅ INDEPENDENT QA PASS (fresh-context Kavya, 2026-08-10) — all 7 services in both compose files bounded (50m×5). Remaining gate: Neha live re-test on box (config-only, unreachable from this session).** | Unrouted → Meera | IN VERIFY |
+| CR-43 | 🟡 Medium | No redaction of token-shaped strings before an internet-writable log. **✅ INDEPENDENT QA PASS (fresh-context Kavya, 2026-08-10) — `redactSecrets()` confirmed wired into the live logging path, `ClientErrorControllerTest` 11/11 green.** | Unrouted → Kavya | IN VERIFY |
+| CR-44 | 🟡 Medium | `ClientErrorController`'s "always 202, never a 4xx" was false — `AuthRateLimitFilter` returns 429 in front of it. **✅ INDEPENDENT QA PASS (fresh-context Kavya, 2026-08-10) — javadoc correctly scoped, filter behavior confirmed to match.** | Unrouted → Kavya | IN VERIFY |
 | CR-45 | 🟢 Low | Matrix parameter (`;x=1`) dodges **every** literal-path rate-limit bucket entirely — no bucket assigned at all | Unrouted → Kavya | IN VERIFY |
 | CR-46 | 🟠 High | The box's full env — DB password, R2 secret key, Anthropic/Gemini/Sarvam/MSG91/SMTP keys, Meta app secret, internal signing keys — is returned in **plaintext** by the Hostinger project-read API and was pulled into an AI session this pass. **Rotate the exposed credentials.** | Unrouted → Swapnil / Meera | ASSIGNED (DEFERRED — see §5) |
 | CR-47 | 🟢 Low | Cross-tenant status-enumeration oracle in `EscrowService.releaseInternal`: the `CANCELLED` guard (`:555`) and `DISPUTED` guard (`:556`) run BEFORE the tenant-ownership check (`:559`), and the milestone/collaboration are read global-by-id (`:544`) — a brand `OWNER`/`ADMIN` of workspace A passing workspace B's `milestoneId` can distinguish B's deal state (409 `COLLABORATION_CANCELLED` vs 409 `ESCROW_BLOCKED_BY_DISPUTE` vs 404 `ESCROW_NOT_FOUND`). Needs an unguessable ULID; no money moves, no PII. `c328b42` widened a pre-existing DISPUTED-arm oracle by one code. | Unrouted → **Vikram** (backend) | IN VERIFY |
 | CR-48 | 🟢 Low | **Residual sibling oracle left standing by CR-47's fix, same method.** `MILESTONE_NOT_FOUND` (`:537`) and `MILESTONE_NOT_FUNDED` (`:540`) still run **ahead of** CR-47's new tenant gate (`:548-550`), so workspace A can still distinguish B's `milestoneId` as *absent* (404 `MILESTONE_NOT_FOUND`) vs *present-but-unfunded* (409 `MILESTONE_NOT_FUNDED`) vs *present-and-funded* (404 `ESCROW_NOT_FOUND`). Leaks **milestone existence + escrow-funding state**, not deal lifecycle state. Same preconditions as CR-47 (unguessable ULID, no money, no PII). **✅ FIXED `32b7da9`** — `releaseInternal` now resolves the milestone via the tenant-scoped `findByIdAndWorkspaceId`, collapsing "absent" and "foreign workspace" into one `MILESTONE_NOT_FOUND` **before** the funded-state branch is reachable. **Kavya PASS 2026-07-29.** | **Vikram** | IN VERIFY |
 | CR-49 | 🟡 Medium | **Kabir's CR-35 red-team MEDIUM-3, finally routed — "one lookup, not two that can drift" was only applied inside `EscrowService`.** The same collaboration-scoped escrow-existence rule lives in **four** places; Fix 1 unified two, CR-39 fixed a third, and **two remain on the drift-prone direct-column query**: `ContractService.java:677` and `DealService.java:1092` (both `existsByCollaborationIdAndStatus`). Any hold legitimately left `NULL` — campaign-level pool funding, the case Fix 2 deliberately preserves — is invisible to both. Kabir's ask is a shared `hasEscrowForCollaboration(id, statuses)` that all callers use; the repository currently exposes **three** overlapping exists-methods, which is the drift surface itself. **Neither remaining site is destructive or money-moving** (a false "please fund escrow" notification, and a read-only response flag). **⚠️ PARTIALLY FIXED `887b3ea` — both call sites repointed, but the DRIFT SURFACE REMAINS OPEN: three overlapping exists-methods still sit on `EscrowHoldRepository`, and consolidating to one shared `hasEscrowForCollaboration(id, statuses)` — Kabir's actual ask — was deliberately NOT done.** See §5 for the justification; the consolidation half became **CR-50**, now landed. **Kavya PASS 2026-07-29 — judged on what it claims, not on CR-50's scope.** | **Vikram** | IN VERIFY |
 | CR-50 | 🟢 Low | **The CR-49 residual, split out: consolidate to ONE `hasEscrowForCollaboration(id, statuses)` without losing the `DeliverableCleanupJobTest` tripwire.** `887b3ea` repointed the two live callers, but three overlapping exists-methods still sit on `EscrowHoldRepository` — `existsByCollaborationIdAndStatus` and `existsByCollaborationIdAndStatusIn` now have **zero production callers** and carry unsafe-javadoc, so the drift surface is **documented, not removed**. **No reachable defect today** — this is Kabir's doctrine half (*"two copies of one rule drift, and the drift is invisible until it costs something"*), and this codebase has already paid for that drift twice (CR-35, CR-39). **The constraint that makes it a ticket and not a tidy-up:** deleting `existsByCollaborationIdAndStatusIn` forces deleting a live `verify(..., never())` regression tripwire in `DeliverableCleanupJobTest` that carries CR-35's history. **✅ DONE `07586d6`** — consolidated to one `hasEscrowForCollaboration`, both dead methods **deleted outright**, and the tripwire **reshaped into a compile-time guarantee** rather than dropped. **Kavya PASS 2026-07-29 — she independently formed the view that protection was NOT lost.** | **Vikram** | IN VERIFY |
+| CR-51 | 🟡 Medium | N+1 deliverable requests on creator dashboard load. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — batched `/creator/deliverables/bulk` endpoint (2 queries regardless of N, was N HTTP calls / 2N queries); regression test proves batching. See §5.** | Vikram | IN VERIFY |
+| CR-52 | 🟢 Low | FE sends unused ?role= query param on GET /deals. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — `deals.list` no longer serializes `role` into the query string; see §5.** | Vikram | IN VERIFY |
+| CR-53 | 🟡 Medium | Deliverable submit has no recovery path if upload succeeds but submit fails. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — retained upload reference across a submit-only failure, retry no longer re-uploads; see §5.** | Ananya | IN VERIFY |
+| CR-54 | 🟡 Medium | Meta OAuth connect from Deal Room loses deal context on redirect. **✅ FIXED by a concurrent session (`e30e9bc`) — but Priya's fresh-context review FAILED it first: retry silently dropped the return path, and 3 of 6 initiators leaked a stale marker into unrelated connects. Both fixed this session (`F-0168`), re-reviewed, PASS. See §5.** | Ananya | IN VERIFY |
+| CR-55 | 🟠 High | Duplicate local status-label map renders raw enum strings, violating the never-show-Rejected/Cancelled rule. **Status synced 2026-08-13 — detail entry already records Priya APPROVE, gate exists, row was simply never moved off `IN QA`.** | Ananya | IN VERIFY |
+| CR-56 | 🟡 Medium | Applying to a campaign creates a row visible in two different trackers with no cross-link. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — success dialog now links to both surfaces; see §5.** | Ananya | IN VERIFY |
+| CR-57 | 🟡 Medium | Campaign discovery loop cannot be demonstrated in mock/demo mode. **✅ ALREADY FIXED (earlier concurrent pass, `e3e59d0`) + INDEPENDENT QA PASS (2026-08-10) — 3 realistic mock campaigns, browse→detail→apply chain confirmed working; see §5.** | Vikram | IN VERIFY |
+| CR-58 | 🟡 Medium | Creator applications list silently truncates at 50 with no pagination or truncation notice. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — client now consumes pagination meta + Load More; see §5.** | Vikram | IN VERIFY |
+| CR-59 | 🟡 Medium | Brand-invited creators have no dedicated surface to track the invite. **✅ FIXED — Priya's fresh-context review FAILED it twice before passing: (1) a real dead cross-link fixed to a genuinely wired Accept/Decline surface, but the `?status=new` param it promised was silently ignored (also fixed 2 pre-existing App.tsx redirects with the same bug); (2) my own regression test for that was caught as vacuous and replaced with a mutation-tested one. See §5.** | Ananya | IN VERIFY |
+| CR-60 | 🟡 Medium | Deadline badge and Apply button disagree on the final day. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — both now read the same `deadlinePassed` variable; see §5.** | Ananya | IN VERIFY |
+| CR-61 | 🟡 Medium | Client-side campaign search hides Load More and only searches already-fetched rows. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — Load More no longer hidden during search; messaging now honest about loaded-vs-all; see §5.** | Ananya | IN VERIFY |
+| CR-62 | 🟡 Medium | Niche filter sends lowercased value; server-side case sensitivity unverified. **✅ VERIFIED + FIXED + INDEPENDENT QA PASS (2026-08-10) — backend was already case-insensitive; removed the now-redundant frontend lowercasing, documented + test-proven; see §5.** | Kavya | IN VERIFY |
+| CR-63 | 🟠 High | accountType dropped on OAuth callback makes BusinessAccountRequired unreachable, traps personal-account creators in a loop. **Status synced 2026-08-13 — detail entry already records Priya APPROVE, gate exists.** | Ananya | IN VERIFY |
+| CR-64 | 🟠 High | no_suggestion_today status renders a completely blank Co-pilot page. **Status synced 2026-08-13 — detail entry already records 2 review rounds, Priya APPROVE on the second, gate exists.** | Ananya | IN VERIFY |
+| CR-65 | 🟡 Medium | OAuth callback always navigates to Settings instead of back to Co-pilot. **✅ FIXED by a concurrent session (`e30e9bc`) + INDEPENDENT QA PASS (2026-08-10, this session) — setConnectReturnTo/consumeConnectReturnTo marker wired at Co-pilot + Deal Room entry points, confirmed correct; see §5.** | Ananya | IN VERIFY |
+| CR-66 | 🟡 Medium | "Try Again" button on OAuth failure screen does not retry — it just navigates to Settings. **✅ FIXED by a concurrent session (`e30e9bc`) + INDEPENDENT QA PASS (2026-08-10, this session) — Try Again now re-invokes the OAuth authorize flow; confirmed correct; see §5.** | Ananya | IN VERIFY |
+| CR-67 | 🟡 Medium | Content-performance load error is visible but has no retry affordance. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — reload wired into a Retry button; see §5.** | Ananya | IN VERIFY |
+| CR-68 | 🟡 Medium | No retry path for received reviews on load error. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — internal Try Again button matching the sibling AffiliateEarningsView pattern; see §5.** | Ananya | IN VERIFY |
+| CR-69 | 🟡 Medium | Analytics date range hardcoded to 30 days with no UI picker despite backend support. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — date range now changeable state with a picker, default still 30 days; see §5.** | Ananya | IN VERIFY |
+| CR-70 | 🟡 Medium | Analytics mock mode shows all zeros/nulls — unusable for demos. **✅ ALREADY FIXED (earlier concurrent pass, `e3e59d0`) + INDEPENDENT QA PASS (2026-08-10) — realistic non-zero mocks matching real type shapes, demographic breakdowns sum to 100%; see §5.** | Vikram | IN VERIFY |
+| CR-71 | 🟡 Medium | "Profile clicks" analytics stat is a fabricated estimate, not a real measurement. **✅ ALREADY FIXED (earlier concurrent pass) + INDEPENDENT QA PASS (2026-08-10) — backend now returns `profileClicksEstimated`, frontend shows a visible "Estimated from follower count" note; see §5.** | Vikram | IN VERIFY |
+| CR-72 | 🟡 Medium | Transaction history period filter is completely unconsumed by client or server. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — real server-side date-bounded query, wired end to end; see §5.** | Vikram | IN VERIFY |
+| CR-73 | 🟡 Medium | No balance or transaction-history refresh after a successful withdrawal. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — handleWithdraw now re-fetches both on success; see §5.** | Ananya | IN VERIFY |
+| CR-74 | 🟡 Medium | 24h new-bank-account cooldown not checked before enabling Withdraw. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — Withdraw disabled condition now checks the already-exposed `usable` field, visibly captioned; see §5.** | Ananya | IN VERIFY |
+| CR-75 | 🟢 Low | Transaction type collapses PLATFORM_FEE and ESCROW_HOLD into generic PAYOUT/EARNING labels. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — real backend `type` kept alongside the collapsed direction; Payouts tab now only counts real WITHDRAWAL rows; see §5.** | Ananya | IN VERIFY |
+| CR-76 | 🟢 Low | Tax Docs tab is a static placeholder with no backend endpoint | Vikram | ASSIGNED |
+| CR-77 | 🟢 Low | No dedicated GET /wallet/payouts endpoint; Payouts tab derives from transaction DEBIT rows | Vikram | ASSIGNED |
+| CR-78 | 🟡 Medium | Creator cannot flag an inappropriate review; the wired handler also targets the wrong backend endpoint. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — flag button now renders for creators, submit branches by role to the correct endpoint; see §5.** | Ananya | IN VERIFY |
+| CR-79 | 🟡 Medium | Duplicate 'reviews about you' surfaces with mismatched capabilities. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — ticket's page mapping had drifted, capability gap already closed by CR-78; real fix was cross-links between the two surfaces; see §5.** | Ananya | IN VERIFY |
+| CR-80 | 🟡 Medium | Eligible-deal dropdown for opening a dispute fetches the creator's entire deal history for a client-side filter. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — new `GET /creator/disputes/eligible-deals`, real WHERE-NOT-IN query, same eligibility semantics; see §5.** | Vikram | IN VERIFY |
+| CR-81 | 🟡 Medium | Coupon share/tracking links silently degrade to a localhost URL if INFLUORA_API_PUBLIC_URL is unset. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — `SecretsStartupValidator` now fails prod/staging boot on a localhost/missing public URL, dev unaffected; see §5.** | Meera | IN VERIFY |
+| CR-82 | 🟢 Low | Redundant no-op client-side filter on already-server-filtered completed deals. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — dead filter removed; see §5.** | Ananya | IN VERIFY |
+| CR-83 | 🟢 Low | Affiliate earnings endpoint has no pagination; response grows unboundedly. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — real page/limit pagination end to end; review caught and fixed a `pageNumber * pageSize` int-overflow risk before closing; see §5.** | Vikram | IN VERIFY |
+| CR-84 | 🟡 Medium | "Sync" button on the profile page (and the portfolio editor) is a fake sync with no real data refresh. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — `syncPlatforms()` now does a real Meta Graph API fetch + persists stats, honest NOT_CONNECTED/TOKEN_EXPIRED errors instead of fake success; see §5.** | Ananya | IN VERIFY |
+| CR-85 | 🟢 Low | Avatar/camera upload button has no onClick handler and no upload endpoint. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — wired to the existing generic `POST /uploads` + `api.uploads.upload()`, no new backend; see §5.** | Ananya | IN VERIFY |
+| CR-86 | 🟢 Low | "Connect More Accounts" button on profile page is a dead control. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — mirrors `ConnectedAccounts.handleConnect`; see §5.** | Ananya | IN VERIFY |
+| CR-87 | 🟠 High | "Update Password" button in Settings has no onClick and the form fields are uncontrolled, despite a fully built and rate-limited backend. **Status synced 2026-08-13 — detail entry records Priya's first pass REJECTED it for a real security bug (wrong-role token default), fixed and re-reviewed PASS, gate exists.** | Ananya | IN VERIFY |
+| CR-88 | 🟢 Low | Help Center / Contact Support / Terms & Privacy rows in Settings do nothing. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — first pass routed to an unverified external host, caught by fresh-context review and corrected to real `/support` + `mailto:`; F-0134. See §5.** | Ananya | IN VERIFY |
+| CR-89 | 🟢 Low | Help & Support entry is missing from the mobile header dropdown. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — added, routes to `/support`; see §5.** | Ananya | IN VERIFY |
+| CR-90 | 🟠 High | Sidebar logout (the primary, easiest-to-reach path) never calls the server logout endpoint. **Status synced 2026-08-13 — detail entry records Priya's independent revert-and-check (her own git hash comparison, not trusting the report), gate exists.** | Ananya | IN VERIFY |
+| CR-91 | 🔴 Critical | Server-side logout invalidation never actually runs on either logout path — refresh tokens stay live in the database after every logout | Kabir | IN VERIFY |
+| CR-92 | 🟢 Low | Edit Profile dialog can only update 5 of 13 patchable profile fields. **✅ FIXED + INDEPENDENT QA PASS (proof-os Low-severity loop) — dialog now exposes all 13 fields; see §5.** | Ananya | IN VERIFY |
+| CR-93 | 🟠 High | Counterparty has no polling fallback when their SSE connection is dead — misses accept/reject/messages until reload. **Status synced 2026-08-13 — original finding was stale (CR-31's reconnect already covered most of it), real remaining gap (backgrounded-tab resync) fixed + Priya APPROVE, gate exists.** | Vikram | IN VERIFY |
+| CR-94 | 🟠 High | In-memory SSE registry silently drops events across backend replicas | Vikram | BLOCKED |
+| CR-95 | 🟡 Medium | 30-minute SSE emitter timeout creates recurring blind windows for missed events. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — per-deal sequence id + bounded replay buffer + Last-Event-ID reconnect; a real double-delivery race was CAUGHT by independent review and fixed before this closed (F-0156); see §5.** | Vikram | IN VERIFY |
+| CR-96 | 🟡 Medium | Deal deliverable progress counts are hardcoded to zero, hiding the entire Deliverables panel for every live deal. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — real data + batched query for list callers; the cited brand-chat.tsx gate turned out to be mock-only, live panel unaffected; see §5.** | Vikram | IN VERIFY |
+| CR-97 | 🔴 Critical | Brand's primary Deals dashboard page has zero SSE, polling, or reconnect handling at all | Vikram | IN VERIFY |
+| CR-98 | 🟠 High | Brand's own accept/reject action on the Deals dashboard never refreshes the message timeline, even for the actor. **Status synced 2026-08-13 — detail entry records Priya APPROVE, gate exists.** | Vikram | IN VERIFY |
+| CR-99 | 🔴 Critical | Wrong ID type sent to Meta Graph API breaks the entire Instagram analytics, demographics, and deliverable-verification pipeline | Vikram | IN VERIFY |
+| CR-100 | 🟠 High | Dead Instagram deliverable verification blocks escrow release for ON_VERIFIED_METRICS milestones. **Status synced 2026-08-13 — detail entry records Priya APPROVE (verified the pinning tests by reverting, not just reading), plus a same-day token-scope correction (F-0166), also Priya-approved.** | Vikram | IN VERIFY |
+| CR-101 | 🟠 High | Built ConnectedAccounts component is never mounted anywhere — Settings page has no social-integration UI. **Status synced 2026-08-13 — detail entry records Priya APPROVE, gate exists.** | Ananya | IN VERIFY |
+| CR-102 | 🟠 High | No way for a creator to disconnect their Meta/Instagram account anywhere in the product. **Status synced 2026-08-13 — detail entry records Priya REJECTED it twice for false claims in a destructive-action confirmation dialog before APPROVE on round 3, gate exists.** | Vikram | IN VERIFY |
+| CR-103 | 🟠 High | OAuth callback page shows "Account connected" even when the server reports connected=false. **Status synced 2026-08-13 — detail entry records Priya APPROVE, gate exists.** | Ananya | IN VERIFY |
+| CR-104 | 🟡 Medium | "Granted permissions" UI always shows the requested scope set, never what Meta actually granted. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — real `/me/permissions` call, honest null/unknown on API failure instead of a full-grant fallback; see §5.** | Vikram | IN VERIFY |
+| CR-105 | 🟡 Medium | Dropped accountType traps personal-Instagram creators in an unbreakable connect-prompt loop. **✅ FIXED by a concurrent session — but Priya's fresh-context review PASSED the callback artifact and then found a HIGH residual one hop downstream: `useMetaConnection.ts`'s status reconciliation silently flipped a correctly-disconnected personal account back to connected on the Settings path, undoing the fix. Fixed with a client-side guard, mutation-proven, re-reviewed PASS. See §5.** | Ananya | IN VERIFY |
+| CR-106 | 🟡 Medium | Connection status/disconnect service methods are dormant with no route, and disconnect uses the wrong revoke query. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — new `GET/POST /meta/oauth/status`/`disconnect` routes, principal-scoped, disconnect now calls the creator-scoped revoke; see §5.** | Vikram | IN VERIFY |
+| CR-107 | 🟡 Medium | Connection status is localStorage-only and never re-verified against the backend. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — new `useMetaConnection` hook re-verifies against CR-106's real status route on mount + tab-refocus; see §5.** | Ananya | IN VERIFY |
+| CR-108 | 🟡 Medium | Non-Meta social onboarding step stores fabricated zero-follower, unverified rows. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — no real OAuth exists for these platforms (that's CR-119's scope); now honestly refuses (501 SOCIAL_OAUTH_NOT_IMPLEMENTED) instead of persisting a fabricated row; see §5.** | Vikram | IN VERIFY |
+| CR-109 | 🟡 Medium | OAuth callback error path leaves a stale connected:true mirror in localStorage. **✅ FIXED by a concurrent session + INDEPENDENT QA PASS (2026-08-12) — every failure exit clears the mirror except the missing-code/state branch, confirmed intentional (clearing there would wipe a genuine connection on a post-success page refresh); see §5.** | Ananya | IN VERIFY |
+| CR-110 | 🟡 Medium | Shared token-refresh code path can silently wipe the one working Meta pipeline's required field. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — `storeToken`'s INSERT branch now carries `igBusinessAccountId` through; regression test exercises the actual refresh path, not just storeToken in isolation; see §5.** | Vikram | IN VERIFY |
+| CR-111 | 🟡 Medium | Repository javadoc's stated IDOR invariant (creator/brand key-spaces disjoint) is not actually guaranteed. **✅ FIXED + ADVERSARIAL INDEPENDENT QA PASS (2026-08-10) — query now fails closed on `IS NOT NULL` by explicit JPQL, not JPA's null-derived-query accident; a real `@DataJpaTest` proves it. Kabir's adversarial pass found a SIBLING method with the same latent pattern, safe today only by a DB constraint, not query design — logged as `F-0163`, not this ticket's scope. See §5.** | Kabir | IN VERIFY |
+| CR-112 | 🟡 Medium | Brand-side Meta connect flow was never implemented — Trend-Spark's real own-content signal has never fired in production | Priya | ASSIGNED |
+| CR-113 | 🟡 Medium | Meta integration test coverage locks in the production bug and leaves the working path unprotected. **✅ FIXED + INDEPENDENT QA PASS (2026-08-10) — most of this was already fixed by earlier passes (CR-99/100); the real remaining gap, storeCreatorToken's zero coverage, is now closed; see §5.** | Kavya | IN VERIFY |
+| CR-114 | 🟡 Medium | A null token-expiry value from Meta would store an already-expired token, silently disabling all downstream jobs. **✅ ALREADY FIXED (uncommitted concurrent-session work) + INDEPENDENT QA PASS (2026-08-10) — falls back to a documented ~60-day default with a loud warning instead of Instant.now(); see §5.** | Vikram | IN VERIFY |
+| CR-115 | 🟢 Low | Facebook Page engagement scope is requested and granted but the data is never fetched. **✅ FIXED + INDEPENDENT QA PASS — `pages_read_engagement` removed from `REQUIRED_SCOPES`, no longer advertised in the connected-accounts UI; see §5.** | Vikram | IN VERIFY |
+| CR-116 | 🟢 Low | IG username is fetched from Meta but never stored anywhere. **✅ FIXED + INDEPENDENT QA PASS — `profile.username()` now flows to `platform_stats.handle` via `PlatformStatsAggregationJob`; 2 dedicated regression tests cover both the null-safe-skip and overwrite cases; see §5.** | Vikram | IN VERIFY |
+| CR-117 | 🟢 Low | OAuth authorization code/state left visible in browser URL/history after callback. **✅ FIXED + INDEPENDENT QA PASS — `creator-meta-callback.tsx` now calls `history.replaceState` after reading `code`/`state`; see §5.** | Ananya | IN VERIFY |
+| CR-118 | 🟡 Medium | Unguarded OAuth callback route reflects attacker-controlled error text with no allowlist. **✅ FIXED by a concurrent session (`e30e9bc`) — but Priya's adversarial fresh-context review FAILED it: the allowlist's own bracket lookup walked Object.prototype for an attacker-controlled key, letting `?error=__proto__`/`toString`/`constructor`/`valueOf`/etc. crash or corrupt the page on this auth-guard-free route (real blast radius 12 keys, empirically measured). Fixed with an own-property gate + runtime type guard; re-reviewed, PASS, proven to close the whole class (0/48 escapes vs 12/48 original), not just the found payloads. See §5.** | Kabir | IN VERIFY |
+| CR-119 | 🟡 Medium | YouTube, TikTok, and Twitter/X have no OAuth or live data fetching at all — follower counts are entirely self-reported | Priya | ASSIGNED |
+| CR-120 | 🔴 Critical | Creator onboarding Step 1 hardcodes a mock OAuth code that is sent to the real backend in live mode — no creator can complete onboarding in production | Vikram | IN VERIFY |
+| CR-121 | 🟡 Medium | "Remember me" checkbox on login has no state or effect. **✅ FIXED by a concurrent session (`e30e9bc`) + INDEPENDENT QA PASS (2026-08-10, this session) — real checked/onChange state, localStorage vs sessionStorage token persistence, silent-refresh path confirmed not upgraded; see §5.** | Ananya | IN VERIFY |
+| CR-122 | 🟡 Medium | Desktop header search bar is a non-interactive div styled to look like a real search input. **✅ FIXED by a concurrent session + INDEPENDENT QA PASS (2026-08-12) — real button routing to creator-deals.tsx's genuinely working search box, consistent on mobile, regression-tested; see §5.** | Ananya | IN VERIFY |
+| CR-123 | 🟡 Medium | Notification bell button has no click handler — unread badge is correct but clicking does nothing. **✅ FIXED by a concurrent session + INDEPENDENT QA PASS (2026-08-12) — routes to a real, fully-functional /creator/notifications page, not a stub; a genuine badge-count mismatch (deal-messages vs. notifications) found and logged separately, not this ticket's stated scope; see §5.** | Ananya | IN VERIFY |
+| CR-124 | 🟢 Low | Mobile header search icon button has no click handler. **✅ FIXED + ADVERSARIAL INDEPENDENT QA PASS (2026-08-10, this session) — routes to `/creator/deals`'s real search box, alongside CR-122's matching desktop fix; regression test mutation-tested (fresh-context Priya independently removed each `onClick` and confirmed each matching test fails). Review also caught 3 unrelated a11y defects in the same file in passing — see F-0167/F-0169/F-0170/F-0179 (all fixed, mutation-tested) and F-0180 (triaged NOT A DEFECT). See §5.** | Ananya | IN VERIFY |
 
-**Totals:** 8 Critical · 11 High · 19 Medium · 13 Low = **51 logged**, **0 DONE**
+> ⚠️ **Protocol exception, recorded (creatorF.md intake pass) — entered by Claude at the repo owner's direct instruction, NOT by Tara.** §6 reserves §3 and the §5 `Status:` lines for her; that rule is knowingly overridden for this batch, same as the CR-40–CR-46 precedent above. **CR-51–CR-124 (74 new rows) come from a separate audit document, `creatorF.md`, covering surface area this tracker had not yet logged** (dashboard, campaign discovery, Co-pilot/Meta OAuth, analytics, wallet, reviews, disputes, coupons, affiliate earnings, profile, settings, logout, chat/SSE reliability, the brand Deals dashboard, the full Meta/Instagram integration pipeline, onboarding, login, and header controls) — grepped against the existing CR-01–CR-50 rows first and confirmed **non-overlapping**. **Every row is filed `ASSIGNED`, not `IN QA`/`IN VERIFY`/`DONE`: these are logged findings from `creatorF.md`, not independently reproduced or code-reviewed in this pass.** Two are flagged **🔴 Critical and worth reading now, not later:** **CR-91** — logout never actually revokes refresh tokens server-side on either logout path (tokens stay valid in the DB after every logout), and **CR-120** — creator onboarding Step 1 hardcodes a mock OAuth code sent to the real backend, so no creator can complete onboarding in production today. **Tara should re-derive the totals and the severity table below** rather than accept this pass's arithmetic.
+
+**Totals:** 12 Critical · 23 High · 62 Medium · 28 Low = **125 logged**, **0 DONE**
 
 > ⚠️ **Protocol exception, recorded (7th pass).** CR-40–CR-45 were entered by Claude at the repo owner's direct instruction, **not by Tara**. §6 reserves §3 and the §5 `Status:` lines for her. She should re-derive the totals rather than accept them — she has caught arithmetic and cross-reference errors in every pass where someone else touched this file, and three of those were mine.
 >
@@ -150,7 +226,9 @@ Correcting the record before work starts — the generic company stack template 
 >
 > **And how 38 became 40 (7th pass, Tara) — neither of these came from a ruling, a routing table or a handoff. They were already fixed, pushed and CI-green when this pass started, and neither had a row.** **CR-38** (`3de077d`) and **CR-39** (`e92338b`), both 🔴 Critical, both entered at the next free IDs. 38 + 2 = **40**. ⚠️ **That is the finding, not the arithmetic.** Every previous growth in this file came *in* through §10 or through Neha; these two came in through commit messages that each end *"Needs a tracker row (Tara)"*. **The board is only as complete as whoever remembers to tell it** — there is no mechanism that would have caught either of these, and for a full day the file's own header under-stated the product's live severity by two Criticals. See §7.
 
-**By status:** **0 `IN QA`** · **46 `IN VERIFY`** · 1 `IN PROGRESS` · **1 `ASSIGNED`** · 3 `BLOCKED` · **0 `OPEN`** · **0 `DONE`**
+**By status (CR-01–CR-50):** **0 `IN QA`** · **46 `IN VERIFY`** · 1 `IN PROGRESS` · **1 `ASSIGNED`** · 3 `BLOCKED` · **0 `OPEN`** · **0 `DONE`**
+
+> 📎 **creatorF.md intake — 74 new rows (CR-51–CR-124), all `ASSIGNED`, not folded into the line above.** Combined by-status is now **0 `IN QA` · 46 `IN VERIFY` · 1 `IN PROGRESS` · 75 `ASSIGNED` · 3 `BLOCKED` · 0 `OPEN` · 0 `DONE`** (125 total). Kept on its own line rather than merged into Tara's, because merging would silently make it look like she counted rows she has not seen yet. She should fold this in on her next pass and drop this note.
 
 > ⚠️ **`0 IN QA` for the first time in this file's history — and it means the QA queue is empty, NOT that the product is verified.** All 46 `IN VERIFY` rows are now waiting on one thing: **Neha's live re-test, which is impossible because no test credentials exist for either role.** Her 2026-07-30 run verified **0 of 42**. Every engineering and review gate this board defines is now clear; **`0 DONE` is entirely a credentials problem.** See the Kavya-pass box below for exactly how strong that QA gate was.
 
@@ -540,6 +618,14 @@ The stream itself is healthy — `GET /deals/.../messages/stream` returned 200 l
 (logged by `ErrorBoundary.tsx:32`) plus the component stack beneath it. That single line names the exact throw site. Alternatively identify which creator account / deal reproduces it.
 
 **Note:** CR-10 explains why it *stays* broken once tripped, and should be fixed regardless of this ticket.
+
+> ⚠️ **Static-sweep pass (proof-os, this session) — STILL `NOT REPRODUCED`. Status intentionally NOT advanced.** With live reproduction still unavailable, ran a targeted static sweep of every creator-facing page for the "unguarded async write + unguarded render read on a route that reuses its component instance across param changes" shape (the class CR-20/F-0151/F-0152 already found elsewhere in this codebase). Full negative-result and one incidental fix, both independently fresh-context reviewed (Priya PROVED, mutation-tested):
+>
+> - **Top candidate, disproven as the crash mechanism.** `creator-campaign-detail.tsx`'s `loadCampaign` had no staleness guard, and its render does unguarded `campaign.objectives/.requirements/.hashtags/.platforms.length`/`.map()` — typed as required `string[]` on `CreatorCampaignDetail` but only a compile-time promise. Traced the real write path to rule out a null reaching the wire: `JsonLists.toJson` (`influora-api/.../common/JsonLists.java`) collapses `null`/empty lists to a `null` column, but the READ side, `CreatorCampaignMapper.toDetail`, always resolves through `JsonLists.stringListFromJson`, which returns `Collections.emptyList()` for a null/blank column — never `null` itself. `CreatorCampaignController`'s `GET /{campaignId}` → `CreatorCampaignService.getDetail` → `CreatorCampaignMapper.toDetail` is the *only* production path to this response, `Campaign` has no public setters for these fields (builder-only), and no Flyway migration writes them directly. **Priya's review went further and closed the one real remaining hole**: `CreatorCampaignDetailResponse` carries `@JsonInclude(NON_NULL)`, so IF a null ever did reach the mapper, the field would be *omitted from the wire* rather than sent as JSON `null` — `undefined` on the frontend, same crash. She confirmed that path is unreachable too (no writer can produce it). **Conclusion: this candidate does not explain CR-11.** Not fixed as a "CR-11 fix" — would be dishonest given the above.
+> - **A real, separate defect found along the way — fixed and pinned, but explicitly not a CR-11 fix.** `loadCampaign` still had no request-staleness guard at all: `/creator/campaigns/:id` does not unmount/remount on an id-only navigation (same route element, React Router reuses the instance), so navigating from campaign A's detail page to campaign B's before A's slower response landed could silently overwrite `campaign` with A's data while the URL says B — a data-integrity bug, not (per the above) a crash. Fixed with a monotonic request-token ref (`campaignRequestRef`), the same `messagesRequestRef` pattern CR-20 established in `creator-chat.tsx`. New test `creator-campaign-detail-stale-response.test.tsx` proves it; Priya mutation-tested by reverting to the unguarded version and confirming the exact test that should catch it does.
+> - **Everything else checked, no match:** `creator-chat.tsx`'s `fetchLiveContract`/`loadDeliverables`/`fetchLiveShipment` also lack per-deal guards, but every render read is optional-chained — stale-badge risk, not a crash (matches the already-triaged F-0195 finding in `CREATOR-HIGH-REMEDIATION-LOOP.md`, same shape, ruled non-crashing). `creator-campaigns.tsx`'s filter-chip race similarly can't crash (`campaigns` is always a real array). `creator-wallet.tsx`, `creator-profile.tsx`, `creator-settings.tsx`, `creator-portfolio-editor.tsx`, `creator-portfolio-public.tsx`, `creator-dashboard.tsx`, `creator-disputes.tsx`, `creator-analytics.tsx` (+ its hooks), `creator-notifications.tsx`, `creator-copilot.tsx`, `creator-received-reviews.tsx`, `creator-layout.tsx` (+ identity/unread-count hooks) — each either has a proper cancellation/token guard, fetches once on mount with no re-triggering param (full remount neutralizes the race), or fully optional-chains every render read.
+>
+> **This does not unblock CR-11.** Still needs either a captured `[ErrorBoundary] Uncaught render error:` console line + stack, or a reproducing account/deal — exactly as stated above. Do not advance this row past `IN PROGRESS` on the strength of a disproven hypothesis, same discipline as the instrumentation note two passes up.
 
 ---
 
@@ -1087,7 +1173,9 @@ EscrowService.java            CollaborationStatus refs: 1  (a DISPUTED check, no
 ---
 
 ### CR-37 · 🟡 Medium · Privilege inversion — a `VIEWER` can cancel a contracted, funded deal
-**Owner:** Vikram · **Status:** IN VERIFY *(Kavya PASS 2026-07-29 — code review; see the §3 Kavya box for what that pass did and did not verify)*
+**Owner:** Vikram · **Status:** IN VERIFY — ~~⛔ **Kavya HOLD**~~ ~~**HOLD LIFTED (`19d4085`); awaiting independent QA**~~
+
+> ✅ **2026-08-10 — INDEPENDENT QA PASS (fresh-context Kavya, dispatched with the artifact + done_when only, no prior report).** All four methods (`createProposal`/`accept`/`reject`/`counter`) confirmed routing through the role-gated helper (OWNER/ADMIN/MANAGER, no VIEWER) before any business-data lookup, with a revert-proof 403 test for each. `DealServiceTest` 37/37 green. **This QA pass also caught an unrelated, uncommitted compile break** in this same file (`.getMetadata()` called on `DealMessage`, which has no such method — dead WIP, not part of this ticket) that was blocking every backend gate on the module; fixed to `getMetadataJson()` + the existing `parseMetadata()` parser so it stopped masking this ticket's own signal. Logged as `F-0124`. **Remaining gate: Neha's live VIEWER re-test** — unreachable this session, no live credentials.
 
 > ✅ **2026-07-29 — HOLD LIFTED. The fourth door is closed in `19d4085`.** `createProposal` (`DealService.java:173`) now resolves scope through `requireBrandDealManagerWorkspace(principal)`, so all four brand-side deal mutations assert the same OWNER/ADMIN/MANAGER tier.
 >
@@ -1261,6 +1349,8 @@ Third, separate: **`\p{Cntrl}` is ASCII-only** without `UNICODE_CHARACTER_CLASS`
 ### CR-42 · 🟡 Medium · No Docker log rotation on any service — unbounded disk
 **Owner:** Unrouted → Meera · **Status:** IN VERIFY · *(Kabir M-4. Fixed `dd9645a`.)*
 
+> ✅ **2026-08-10 — INDEPENDENT QA PASS (fresh-context Kavya).** All 7 services in both `docker-compose.hostinger.yml` and `docker-compose.test.yml` confirmed bounded via the `x-logging` anchor (`max-size: 50m`, `max-file: 5`) — no service inherits the unlimited default. **Remaining gate: Neha's live check that the box's actual compose (not just this repo's copy) carries the change** — unreachable this session.
+
 *Kavya QA hold (2026-07-29) — inert until the box's compose is replaced; log rotation lives only in `deploy/hostinger/*.yml`.*
 
 *Deployed to box 2026-07-29 via SSH — CR-42 container-verified; CR-38 config live, behavioral XFF proof pending.*
@@ -1278,6 +1368,8 @@ Third, separate: **`\p{Cntrl}` is ASCII-only** without `UNICODE_CHARACTER_CLASS`
 ### CR-43 · 🟡 Medium · No redaction of token-shaped strings before an internet-writable log
 **Owner:** Unrouted → Kavya · **Status:** IN VERIFY · *(Kabir M-5. Fixed `dd9645a`.)*
 
+> ✅ **2026-08-10 — INDEPENDENT QA PASS (fresh-context Kavya).** `redactSecrets()` (`ClientErrorController.java:247`) confirmed wired into the actual logging path — invoked on `message`/`stack`/`componentStack` before `log.warn()`, not just defined and unused. `ClientErrorControllerTest` 11/11 green including `tokenShapedStringsAreRedacted()`. **Remaining gate: Neha live re-test.**
+
 **Why:** there is **no known live leak** — Kabir checked: the three constructed `Error`s in `src/lib/api.ts` carry status codes and fixed strings, React's `componentStack` is display names only, and no route carries a token in a path segment. The problem is the invariant holding that up: *"nobody ever throws an `Error` whose message contains a secret"* is enforced nowhere, is one careless `new Error(\`failed: ${JSON.stringify(response)}\`)` away from being false, and would deposit the result into a log **anyone on the internet can also write to**.
 
 **Fix:** redact JWT (`eyJ…`), Razorpay (`rzp_(live|test)_…`) and long hex runs from `message`/`stack`/`componentStack` before logging. Deliberately narrow — a safety net over accidental inclusion, not a DLP pass, on a path that exists to absorb crash traffic.
@@ -1288,6 +1380,8 @@ Third, separate: **`\p{Cntrl}` is ASCII-only** without `UNICODE_CHARACTER_CLASS`
 
 ### CR-44 · 🟡 Medium · "Always 202, never a 4xx" was false one layer up
 **Owner:** Unrouted → Kavya · **Status:** IN VERIFY · *(Kabir M-6. Fixed `dd9645a`.)*
+
+> ✅ **2026-08-10 — INDEPENDENT QA PASS (fresh-context Kavya).** Controller javadoc confirmed correctly scoped to the controller itself, with the `AuthRateLimitFilter` 429-in-front behavior documented and confirmed to match. **Remaining gate: Neha live re-test.**
 
 **Why:** the controller genuinely cannot return anything but 202 — but `AuthRateLimitFilter` sits **in front** of it and returns **429 with a JSON error body** for this exact path. Both the contract and the class javadoc asserted an invariant the deployed system does not hold.
 
@@ -1466,6 +1560,999 @@ Kabir's ask was **one** `hasEscrowForCollaboration(id, statuses)` that every cal
 **Gates:** ~~needs routing (Arjun/Priya) → owner~~ **routed to Vikram 2026-07-29** → Kavya QA → Neha live re-test.
 
 ---
+
+## 5b. Ticket Detail — creatorF.md Intake (CR-51–CR-124)
+
+> **This subsection is separate from §5 on purpose.** §6 reserves §3 and §5's `Status:` lines for Tara; these 74 rows were entered by Claude at the repo owner's direct instruction from a standalone audit document (`creatorF.md`), not from Tara's live-walkthrough process, and not independently reproduced against running code in this pass. Each block below gives the owner enough to start: what the finding says, and where in the codebase to look. **None of it should be read as verified** — that is exactly what moving a row past `ASSIGNED` requires (Kavya review, then Neha's live re-test, same as every CR-01–CR-50 row).
+
+---
+
+### CR-51 · 🟡 Medium · N+1 deliverable requests on creator dashboard load
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-dashboard.tsx (loadDeliverablePendingCount, L89-97)`
+
+**What:** The dashboard fires one GET /creator/deliverables?collaboration_id= request per active deal via Promise.all. A creator with 15 active deals sends 15 requests on every dashboard load; no batching endpoint exists.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** ~~`ASSIGNED`~~ → `IN VERIFY`. Added `GET /creator/deliverables/bulk?collaboration_ids=` (`CreatorDeliverableController.java`), backed by `CreatorDeliverableService.listForCollaborations` — 2 DB queries total (ownership IN-clause + `findByCollaborationIdIn`) regardless of N, replacing the old per-deal `Promise.all` loop in `creator-dashboard.tsx`. Old single-deal endpoint left unchanged for any other caller. **Independent fresh-context QA (Kavya) confirmed:** frontend calls `listForDeals` exactly once (not a loop), backend batch path is 2 queries not 2N, old endpoint untouched. `CreatorDeliverableServiceTest`+`CreatorDeliverableControllerTest` 58/58 green; `creator-dashboard.test.tsx` 4/4 green including a new regression test that fails against the old per-deal-loop code. **Remaining gate: Neha live re-test** (no live credentials available this session).
+
+---
+
+### CR-52 · 🟢 Low · FE sends unused ?role= query param on GET /deals
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/lib/api.ts / DealController.java:65`
+
+**What:** FE sends ?role=creator on GET /deals but the backend ignores it and derives role from JWT. Harmless today but creates a false impression the server enforces the param.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** `deals.list` (`src/lib/api.ts:1731`) passes `role` only for client-side auth/token selection; the serialized query object carries `status` only. No more phantom `?role=` on the wire.
+
+---
+
+### CR-53 · 🟡 Medium · Deliverable submit has no recovery path if upload succeeds but submit fails
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-chat.tsx handleSubmitDeliverableForm (L1384-1391)`
+
+**What:** Upload and submit are sequential awaited calls. If upload succeeds but submit fails, the file is uploaded but the deliverable stays pre-SUBMITTED; the dialog resets to no-file on reopen, forcing re-upload with no retry-submit-only path.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** `uploadedDeliverableRef` (a ref, so it survives without forcing a re-render) records a successful upload; on retry, matching `(deliverableId, file)` skips re-upload and retries submit only. The submit error is tagged `uploaded: true` so `deliverable-submission.tsx` can show a persistent "your file already uploaded, click Retry Submit" banner and relabel the button, without resetting file/caption state. Picking a new file or switching deliverables correctly clears the retry state. **Independent fresh-context QA confirmed** all of the above plus the happy path unchanged. 3 new tests in `deliverable-submission.test.tsx`, all green; `creator-chat-refresh.test.tsx` 3/3 unaffected; `tsc --noEmit` clean.
+
+---
+
+### CR-54 · 🟡 Medium · Meta OAuth connect from Deal Room loses deal context on redirect
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/creator/deal-room/deliverable-lifecycle-panel.tsx handleConnect (L96-98)`
+
+**What:** window.location.href = authorizationUrl performs a hard navigation with no redirect_back param, so completing or cancelling OAuth lands the creator at the app root instead of back in the deal room.
+
+> ✅ **2026-08-10 — the base fix (shared `setConnectReturnTo`/`consumeConnectReturnTo` marker) landed in a concurrent session's `e30e9bc`. Dispatched to Priya, fresh context, for independent review — FAILED first pass.** Two real defects, not cosmetic: **(A)** `handleRetry` re-ran `authorize()` without re-persisting the marker (already read-and-cleared at mount), so clicking the single most prominent recovery action — "Try Again" after a Meta-side cancel/error — silently dropped the creator at Settings instead of back in the deal room. **(B)** 3 of 6 `authorize()` initiators (Settings connect, `creator-profile.tsx`, the panel's own catch-on-failure branch) never wrote or cleared the marker, so a stale one from an abandoned deal-room attempt could misroute a later, unrelated Settings-initiated connect. Both fixed: retry now re-persists the captured path (and onboarding flag) before redirecting, proven with a revert-proof test asserting `setConnectReturnTo` fires *before* `authorize()`, not just that it fires; the three plain initiators now call a new `clearConnectReturnTo()` first. **Re-reviewed by Priya, fresh context: PASS.** Defect A is **PROVED** (automated, revert-proof). Defect B is **BELIEVED**, not proved — no test pins any of the three clear-call sites, so a 7th initiator added later could silently reintroduce it; Priya also found `creator-onboarding.tsx` is a 4th initiator that neither sets nor clears the marker, confirmed harmless today only by navigation-precedence ordering, logged as `F-0172` rather than folded in here. `tsc --noEmit` clean, 9/9 tests green. **Remaining gate: a live OAuth round-trip against real Meta** — nothing here proves sessionStorage actually survives Meta's real redirect (a new-tab flow or storage partitioning would silently degrade to the Settings fallback).
+
+---
+
+### CR-55 · 🟠 High · Duplicate local status-label map renders raw enum strings, violating the never-show-Rejected/Cancelled rule
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-campaign-detail.tsx APPLICATION_STATUS_LABELS (L38-46) vs src/lib/application-status.ts`
+
+**What:** The detail page keeps its own drifted copy of application status labels missing several statuses. The fallback prints the raw backend enum string, so a cancelled application literally renders 'CANCELLED' on this page.
+
+> ✅ **2026-08-10 — FIXED (proof-os /work loop, F-0105).** The local `APPLICATION_STATUS_LABELS` map (7 of 13 statuses, raw-enum fallback) is deleted outright, not just unused — the page now imports and uses the canonical `getApplicationStatusLabel`, so `CANCELLED` renders "Closed" and all 13 `CollaborationStatus` values are covered. 3 new tests, confirmed red on revert (literally rendering the raw `SHORTLISTED`/`CANCELLED` string in the DOM) and green restored, byte-identical. **Independent review: Priya APPROVE** — she additionally swept every sibling creator-facing status-label site (`CreatorBrowseCampaignCard`, `CreatorApplicationCard`) and confirmed both already use the canonical helpers, and checked the two brand-side maps in `brand-campaign-detail.tsx` are genuinely different vocabularies (Bid status, deliverable-stage), not missed duplicates. **Gate:** [`.proof-os/gates/F-0105-status-label-drift-fix.sh`](../../.proof-os/gates/F-0105-status-label-drift-fix.sh). **Remaining for `DONE`:** Neha's live re-test.
+
+---
+
+### CR-56 · 🟡 Medium · Applying to a campaign creates a row visible in two different trackers with no cross-link
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-campaign-detail.tsx / src/pages/creator-applications.tsx / src/pages/creator-deals.tsx`
+
+**What:** A submitted application appears both in /creator/deals and /creator/applications under different labels, but the post-apply success dialog only links to one surface.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** The post-apply success dialog now links to both `/creator/applications` and `/creator/deals`, with copy explaining the application appears in both. `handleApply` and both tracker pages are untouched — discoverability-only fix. `tsc --noEmit` clean.
+
+---
+
+### CR-57 · 🟡 Medium · Campaign discovery loop cannot be demonstrated in mock/demo mode
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/lib/api.ts creatorCampaigns.browse/get mocks`
+
+**What:** Mock mode returns an empty campaign list and a null single-campaign response, so the entire browse -> detail -> apply discovery loop shows only empty/not-found states in demo builds.
+
+> ✅ **2026-08-10 — Already fixed by an earlier concurrent pass (`e3e59d0`), independently QA-passed by this session.** `mockCreatorCampaigns` now holds 3 realistic fixture campaigns (varied niches/budgets/platforms), `get(id)` returns a matching non-null detail for each, `apply()` returns a mock success — the full browse→detail→apply loop works in demo mode. Live-mode branches untouched. `tsc --noEmit` clean.
+
+---
+
+### CR-58 · 🟡 Medium · Creator applications list silently truncates at 50 with no pagination or truncation notice
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/lib/api.ts creatorApplications.list / CreatorApplicationController.java:31-36`
+
+**What:** The client sends no page/limit params; the backend defaults to limit=50 and returns pagination meta, but the FE discards the meta, so creators with 50+ applications silently lose visibility into older ones.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** `creatorApplications.list` in `api.ts` now uses `requestWithMeta` and sends `page`/`limit`, returning `{applications, meta}` instead of discarding meta. `creator-applications.tsx` adds a Load More control matching the existing pattern from `creator-campaigns.tsx`. Backend response shape unchanged for other callers. `tsc --noEmit` clean (one unrelated pre-existing error elsewhere from concurrent WIP, not in these files).
+
+---
+
+### CR-59 · 🟡 Medium · Brand-invited creators have no dedicated surface to track the invite
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/lib/application-status.ts / My Applications page`
+
+**What:** applicationStatus can be INVITED, but My Applications excludes invites by design and there is no /creator/invites page or tab.
+
+> ✅ **2026-08-10 — FIXED, after Priya's fresh-context review FAILED it twice.** No new page was built — `INVITED` rows already have a fully-wired, real Accept/Decline surface: `creator-deals.tsx`'s "New" tab (`DealService`'s `"new"` filter resolves to exactly `[INVITED]` for creators; the buttons hit real `POST /deals/:id/accept`/`/reject`). My Applications' cross-link was re-pointed from a genuine dead end (Discover Campaigns' invite badge has zero action) to that surface.
+>
+> **Round 1 FAIL — the link's own `?status=new` param did nothing.** `creator-deals.tsx` silently ignored the URL's `?status=` since the page existed; `activeFilter` always started at `'all'`. Fixed by seeding it from `useSearchParams` on mount, validated against real chip ids. This incidentally fixed two pre-existing, equally-broken `App.tsx` redirects (`/creator/inbox`, `/creator/active`) making the same promise. Proven revert-proof (reverted, watched the test fail, restored, watched it pass). Round 1 also caught a false comment citation (fixed) — the gate is `deal-stage.ts`'s `mapCollaborationStatusToDealStage`, not `ACCEPTABLE_COLLABORATION_STATUSES`, which this page never imports (harmless for `INVITED` specifically, since both happen to agree; do not generalize).
+>
+> **Round 2 FAIL — my own regression test for the fallback case was vacuous.** It asserted `toHaveBeenCalledWith('creator','all')`, trivially satisfied by an unrelated, unconditional badge-counts fetch that always requests `'all'` regardless of filter — would still pass with the validation deleted entirely. Replaced with an assertion on the full call set (exact call count + "invalid token never reaches the API" + "every call is the all shape"). Priya proved it discriminates by actually mutating the source twice and watching the new test catch it on the right axis.
+>
+> **Round 3 — PASS.** `tsc --noEmit` clean, 4/4 tests green. One residual finding, logged not fixed: `F-0175` — `EmptyState`'s `copy[filter]` lookup is one deleted guard away from blanking the page, defended today only by the validation this pass added. Doesn't block this ticket.
+
+---
+
+### CR-60 · 🟡 Medium · Deadline badge and Apply button disagree on the final day
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-campaign-detail.tsx (badge L210 vs deadlinePassed L180)`
+
+**What:** The badge uses daysLeft <= 0 ('Deadline passed') while the Apply button uses daysLeft < 0 to decide disabled, so on the last valid day the card says the deadline passed while offering an enabled Apply button.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** Badge now reads the same `deadlinePassed` variable the Apply button already used (`daysLeft < 0`), instead of its own inline `daysLeft <= 0`. On `daysLeft === 0` the badge shows "0 days left" and Apply stays enabled — the two can no longer disagree since it's one variable, not two copies of the same logic. `tsc --noEmit` clean.
+
+---
+
+### CR-61 · 🟡 Medium · Client-side campaign search hides Load More and only searches already-fetched rows
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-campaigns.tsx searchQuery filter (L122-131), Load-more gate (L317)`
+
+**What:** searchQuery filters only the ~20 already-fetched campaigns client-side, and Load More is hidden whenever a search query is active, giving a false 'no campaigns match' result.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** Confirmed the backend `GET /creator/campaigns` has no text-search param, so server-side search wasn't an option — stayed client-side per the ticket's fallback. Load More's gate no longer excludes `searchQuery` (was `hasMore && !searchQuery`, now just `hasMore && !error`), so it stays reachable even when the search matches 0 loaded rows. Messaging now says "loaded campaigns" / "fetched so far" instead of implying a complete search. `tsc --noEmit` clean.
+
+---
+
+### CR-62 · 🟡 Medium · Niche filter sends lowercased value; server-side case sensitivity unverified
+**Owner:** Kavya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-campaigns.tsx:83 (toLowerCase) / CreatorCampaignService.browse`
+
+**What:** The niche chip label is title-case but the FE lowercases it before sending; whether the backend match is case-insensitive was never verified — if not, every niche filter could silently return zero results.
+
+> ✅ **2026-08-10 — VERIFIED SAFE, then optimized, independently QA-passed.** `matchesNiche()` already lowercased both sides before comparison (`Locale.ROOT`) — genuinely case-insensitive, confirmed by reading the real query, not assumed. Removed the now-redundant frontend `.toLowerCase()` and documented the backend behavior in a javadoc so this doesn't get re-flagged. New test `testBrowseNicheFilterIsCaseInsensitive` proves "fitness"/"Fitness"/"FITNESS" all match, "beauty" correctly doesn't. 14/14 tests green.
+
+---
+
+### CR-63 · 🟠 High · accountType dropped on OAuth callback makes BusinessAccountRequired unreachable, traps personal-account creators in a loop
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-meta-callback.tsx:56 / src/hooks/useDailySuggestion.ts:119`
+
+**What:** setLocalConnectionState is called with only 2 args, dropping accountType. requiresBusinessAccount is therefore always false, so the explanatory screen never renders; a personal-Instagram creator loops on the connect prompt forever.
+
+> ✅ **2026-08-10 — ALREADY FIXED, verified not reimplemented (proof-os /work loop, F-0106).** On re-reading current source first (law 3), this was already fixed alongside CR-105 (same root cause, duplicate row — creatorF.md's audit produced two tickets for one bug): `creator-meta-callback.tsx:141` now passes `result.accountType ?? null` as the third argument. Traced the full chain end-to-end — `setLocalConnectionState` → localStorage → `getLocalConnectionState` → `useDailySuggestion.ts:119`'s `requiresBusinessAccount` → `DailySuggestionSection.tsx`'s `BusinessAccountRequired` branch — genuinely reachable now. An existing test (`creator-meta-callback.test.tsx`, "CR-105") already pinned this; **rewrote it to assert the correct/live scenario** (`connected: true` success case) since it previously only exercised the accountType-plumbing half. Verified via mutation: reverting to the 2-arg call turns exactly that test red. **Independent review: Priya APPROVE.** **Gate:** [`.proof-os/gates/F-0106-F-0116-meta-callback-fix.sh`](../../.proof-os/gates/F-0106-F-0116-meta-callback-fix.sh) (shared with CR-103, same file). **Remaining for `DONE`:** Neha's live re-test.
+
+---
+
+### CR-64 · 🟠 High · no_suggestion_today status renders a completely blank Co-pilot page
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/creator/copilot/DailySuggestionSection.tsx / DailySuggestionCard.tsx / SuggestionEmptyState.tsx`
+
+**What:** The hook maps 'no_suggestion_today' to UI status 'dismissed', which passes suggestion=null to a card that returns null. A purpose-built empty-state component exists but no call site ever passes it.
+
+> ✅ **2026-08-10 — FIXED, 2 review rounds (proof-os /work loop, F-0107).** `DailySuggestionSection` now special-cases `status === 'dismissed' && !suggestion` (the only way to reach `no_suggestion_today`, traced through the hook — a creator-dismissed suggestion always carries a real `suggestion` object) and routes it to `SuggestionEmptyState reason="no_suggestion_today"`, which already had the right copy and simply had no call site. **Round 1 review — Priya REJECT**: the new test file covered `dismissed`/`ready`/`loading` but not `idle` or `error`, and she proved via a hoisted-guard mutation (a realistic "simplification" the code's own comment placement invites) that the missing coverage would let a refactor silently kill the Instagram-connect CTA or the error retry path. **Round 2:** added the 3 missing tests (idle plain, idle+requiresBusinessAccount, error). **Re-review — Priya APPROVE**, re-ran the exact same mutation and confirmed it now fails loudly across all 3. Full suite **7/7 green**, byte-identical file restore verified by hash both rounds. **Gate:** [`.proof-os/gates/F-0107-copilot-empty-state-fix.sh`](../../.proof-os/gates/F-0107-copilot-empty-state-fix.sh). **Remaining for `DONE`:** Neha's live re-test.
+
+---
+
+### CR-65 · 🟡 Medium · OAuth callback always navigates to Settings instead of back to Co-pilot
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-meta-callback.tsx:100`
+
+**What:** On both success and error, the callback page navigates to /creator/settings, dropping a creator who connected from Co-pilot into Settings instead.
+
+> ✅ **2026-08-10 — FIXED by a concurrent session (`e30e9bc`, §12), independently QA-passed by this session.** `metaOAuth.setConnectReturnTo()`/`consumeConnectReturnTo()` (read-and-clear sessionStorage marker) is set by Co-pilot's `IGConnectPrompt.tsx`/`BusinessAccountRequired.tsx` and the Deal Room's `deliverable-lifecycle-panel.tsx` before redirecting; the callback resolves navigation from that captured origin, falling back to Settings only when nothing was recorded (confirmed Settings-initiated connects correctly still land on Settings). 6/6 tests green, `tsc --noEmit` clean.
+
+---
+
+### CR-66 · 🟡 Medium · "Try Again" button on OAuth failure screen does not retry — it just navigates to Settings
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-meta-callback.tsx:98-103`
+
+**What:** On error, 'Try Again' navigates to /creator/settings instead of re-running the OAuth authorize flow, dead-ending the recovery path.
+
+> ✅ **2026-08-10 — FIXED by a concurrent session (`e30e9bc`, §12), independently QA-passed by this session.** `handleRetry()` now calls `api.metaOAuth.authorize()` and redirects to the returned authorization URL, instead of navigating away; a secondary "Back" link stays available as a plain exit. Onboarding's own error state is untouched (has its own Connect button). Confirmed via fresh read, not the fix's own claim.
+
+---
+
+### CR-67 · 🟡 Medium · Content-performance load error is visible but has no retry affordance
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-analytics.tsx (L60,L65,L75-79) / src/hooks/creator/useCreatorOwnMedia.ts`
+
+**What:** The page destructures only {data, loading, error}; reload is never pulled from the hook, so a failed content-performance panel has no recovery without a full page reload.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** `useCreatorOwnMedia` already exposed `reload`; the bug was purely in consumer wiring — `creator-analytics.tsx` now destructures it and passes `onRetry` to `ContentPerformancePanel`, which now renders a Retry button on error. `onRetry` is optional, so `brand-creator-analytics.tsx` (a different consumer) is unaffected. `tsc --noEmit` clean, 2/2 page tests green.
+
+---
+
+### CR-68 · 🟡 Medium · No retry path for received reviews on load error
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/creator/creator-received-reviews.tsx`
+
+**What:** The component exposes no retry callback prop; a listReceived() failure shows a component-local error alert the page-level handleRetry() doesn't know about.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** Added an internal "Try again" button to the existing error Alert, calling the component's own `load()` — matching the established pattern in the sibling self-fetching `AffiliateEarningsView.tsx`, rather than threading an `onRetry` prop up to the page. No API/data contract change. `tsc --noEmit` clean.
+
+---
+
+### CR-69 · 🟡 Medium · Analytics date range hardcoded to 30 days with no UI picker despite backend support
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-analytics.tsx:34-38 / CreatorAnalyticsController.java:37-41`
+
+**What:** dateRange is memoized once on mount. The backend accepts arbitrary startDate/endDate, but the FE never exposes a picker, so creators can't see anything but the last 30 days.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** Confirmed the backend already accepted `startDate`/`endDate` — no backend change made. `dateRange` is now `useState` (was a one-shot `useMemo`), with a minimal From/To date-input picker and a "Last 30 days" reset button (no reusable date-range component existed in this codebase, checked first). `useCreatorMetrics` already re-fetches on range change via its dependency array. Default view unchanged. `tsc --noEmit` clean, 2/2 tests green.
+
+---
+
+### CR-70 · 🟡 Medium · Analytics mock mode shows all zeros/nulls — unusable for demos
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/lib/api.ts emptyMetrics/emptyScores/emptyDemographics mocks`
+
+**What:** All four analytics API mocks return zero or null data; a creator evaluating the platform in demo/trial mode cannot see what real analytics look like.
+
+> ✅ **2026-08-10 — Already fixed by an earlier concurrent pass (`e3e59d0`), independently QA-passed by this session.** `emptyMetrics`/`emptyScores`/`emptyDemographics` replaced with realistic `mockMetrics`/`mockScores`/`mockDemographics` matching the real type shapes field-for-field, demographic breakdowns summing to 100%. No 4th mock existed — `getMyMedia`/`contentPerformance.list` legitimately mock to `[]` (a valid "no posts yet" array state, not a zero/null scalar). Live-mode untouched, `tsc --noEmit` clean.
+
+---
+
+### CR-71 · 🟡 Medium · "Profile clicks" analytics stat is a fabricated estimate, not a real measurement
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `PortfolioService.analytics() / src/pages/creator-portfolio-editor.tsx:251`
+
+**What:** profileClicks is computed server-side as totalFollowers / 100 ('// Rough estimate') and rendered as a labeled Stat with no indication it is an estimate.
+
+> ✅ **2026-08-10 — Already fixed by an earlier concurrent pass, independently QA-passed by this session.** Backend still computes the estimate (no real click-tracking event exists to measure it honestly) but now also returns `profileClicksEstimated: true`; the frontend Stat component renders a visible italic note ("Estimated from follower count") directly under the number — not buried in a tooltip. `tsc --noEmit` clean.
+
+---
+
+### CR-72 · 🟡 Medium · Transaction history period filter is completely unconsumed by client or server
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-wallet.tsx selectedPeriod (L311,L638) / WalletController.java:135-139`
+
+**What:** The this-month/last-month/3-months/all dropdown is rendered but never read by a filter, never passed to the API, never in an effect dependency array. The creator always sees all-time transactions regardless of selection.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** Added a real nullable-bounds JPQL query (`findByWalletIdAndCreatedAtRange`); `WalletService.resolvePeriodRange` computes server-clock UTC windows for this-month/last-month/3-months, with null/all/unrecognized falling back to the original unfiltered behavior. `period` is now threaded through `WalletController` → `api.ts` → `creator-wallet.tsx`'s fetch effect, which re-runs when the dropdown changes. New backend test `testTransactionsForwardsPeriodFilter` + 6/6 relevant frontend tests green. **Full-module `mvn test` was not runnable this pass** (unrelated concurrent-session WIP in `DealDtos.java` broke the whole-module compile) — verified instead via scoped `WalletControllerTest` (6/6) and direct `javac` of the touched files against the project classpath; noted honestly rather than claimed as a full-suite pass.
+
+---
+
+### CR-73 · 🟡 Medium · No balance or transaction-history refresh after a successful withdrawal
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-wallet.tsx handleWithdraw (L437-455)`
+
+**What:** After a successful POST /wallet/withdraw, neither wallet.get nor wallet.transactions is re-fetched; the hero balance and history/payouts tabs show stale data until manual reload.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** `handleWithdraw` now calls the extracted `loadWalletBalance()`/`loadTransactions()` (the same loaders used on mount, not duplicated) after a successful withdraw; the withdraw request and its error handling are untouched. 6/6 relevant tests green, `tsc --noEmit` clean.
+
+---
+
+### CR-74 · 🟡 Medium · 24h new-bank-account cooldown not checked before enabling Withdraw
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-wallet.tsx Withdraw button disabled condition (L1061) / RazorpayFundAccountService.java:69-74`
+
+**What:** The Withdraw button only checks for absence of a primary payout method, not whether it is still in its 24h verification cooldown; the POST reaches the server and is rejected with 425 after the ledger has already been touched.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** The backend already exposed a `usable` boolean (`BankAccountResponse.from`, derived from `CreatorBankAccount.isUsableAt`), just unused by the frontend — no backend change needed. Withdraw's disabled condition now checks `!primaryPayoutMethod.usable`, and the payout-method card shows a visible amber caption explaining the 24h window when active. Server-side 425 check untouched. **Noted limitation, not fixed here:** the DTO exposes a boolean, not the actual cooldown-expiry timestamp, so the caption can't show a precise "available in Xh" countdown — flagged for a follow-up, not fabricated.
+
+---
+
+### CR-75 · 🟢 Low · Transaction type collapses PLATFORM_FEE and ESCROW_HOLD into generic PAYOUT/EARNING labels
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-wallet.tsx mapWalletTransactionRow (L116-129), Payouts tab filter (L584)`
+
+**What:** The 8-value WalletTransactionRow.type union is collapsed to 'EARNING'/'PAYOUT' by credit/debit direction; the Payouts tab then displays platform-fee debits as if they were payouts.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** The real backend `type` is kept alongside the collapsed direction field (still used for the History tab's credit/debit icon/color, which is what that binary grouping is for); the Payouts tab now filters specifically on `type === 'WITHDRAWAL'`, not the whole PAYOUT bucket, so a platform-fee deduction no longer displays as if it were a payout to the creator's bank.
+
+---
+
+### CR-76 · 🟢 Low · Tax Docs tab is a static placeholder with no backend endpoint
+**Owner:** Vikram · **Status:** ASSIGNED
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-wallet.tsx:711`
+
+**What:** There is no Form-16A / annual-statement endpoint; the Tax Docs tab is a documented placeholder representing a real feature gap for creators needing tax documentation.
+
+---
+
+### CR-77 · 🟢 Low · No dedicated GET /wallet/payouts endpoint; Payouts tab derives from transaction DEBIT rows
+**Owner:** Vikram · **Status:** ASSIGNED
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-wallet.tsx:579-581,386-387`
+
+**What:** The Payouts tab filters /wallet/transactions to DEBIT rows rather than a purpose-built payouts endpoint, limiting detail (no TDS/fee/GST split, brand/campaign name, UTR).
+
+---
+
+### CR-78 · 🟡 Medium · Creator cannot flag an inappropriate review; the wired handler also targets the wrong backend endpoint
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/shared/collaboration-reviews-panel.tsx (L90,L100,L362)`
+
+**What:** onFlag is only wired when role==='brand', so no flag button renders for creators. Even ungated, submitFlag hardcodes api.brandReviews.flag rather than the creator's own POST /creator/reviews/:id/flag which exists and is wired elsewhere.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** `onFlag` is no longer gated to `role==='brand'`; `submitFlag` now uses the same role-branched `reviewsClient` (`role === 'creator' ? api.creatorReviews : api.brandReviews`) this file already uses for other actions, so creators hit their own `POST /creator/reviews/:id/flag`. Brand path unchanged. **Reviewer noted (not blocking):** no test coverage yet for the flag flow itself, and a stale "brand moderation" comment in `review-card.tsx:11` should be updated — logged as follow-up debt, not re-opened as a fix gap.
+
+---
+
+### CR-79 · 🟡 Medium · Duplicate 'reviews about you' surfaces with mismatched capabilities
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/shared/collaboration-reviews-panel.tsx vs src/components/creator/creator-received-reviews.tsx`
+
+**What:** Both the Reviews page and the Analytics page independently call GET /creator/reviews/received; only the Analytics-page version has the flag action, and there is no navigation link between the two.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed. Ticket's page mapping had drifted from current code** (`/creator/reviews` actually renders `collaboration-reviews-panel.tsx`; `/creator/analytics` renders `creator-received-reviews.tsx` — backwards from the ticket's framing) **and the capability gap was already closed** — `creator-received-reviews.tsx` already had flag from an earlier ticket, `collaboration-reviews-panel.tsx` got it via CR-78 this session. The real remaining gap was discoverability: added a cross-link from each surface to the other (creator-role-gated on the shared panel, since it also serves brands). `collaboration-reviews-panel.test.tsx` needed a `MemoryRouter` wrapper once `<Link>` was added — done, matching the convention already used elsewhere. 2/2 tests green.
+
+---
+
+### CR-80 · 🟡 Medium · Eligible-deal dropdown for opening a dispute fetches the creator's entire deal history for a client-side filter
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/lib/api.ts creatorDisputes.listEligibleDeals (L4366-4372)`
+
+**What:** There is no dedicated GET /creator/disputes/eligible endpoint; the client fetches all deals via deals.list('creator','all') and filters client-side — scales poorly for creators with many historical deals.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** New `GET /creator/disputes/eligible-deals` (`CreatorDisputeController` → `DealService.listEligibleForDispute`) filters server-side via a real `findByCreatorIdAndStatusNotIn` query, then the same `escrowFunded` derivation as before — identical eligibility semantics (`escrowFunded && status NOT IN {DISPUTED, COMPLETED, CANCELLED}`), just computed over a pre-reduced set instead of the full history. Frontend now calls the new endpoint. `DealServiceTest` 40/40 green; one unrelated `DealControllerTest` failure (a `CounterRequest` validation test touched by the concurrent session's WIP, confirmed via diff to have zero connection to this change) — not counted against this ticket.
+
+---
+
+### CR-81 · 🟡 Medium · Coupon share/tracking links silently degrade to a localhost URL if INFLUORA_API_PUBLIC_URL is unset
+**Owner:** Meera · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api CreatorCouponService (L51,L107) / application.yml:138`
+
+**What:** The service concatenates the configured public API base URL into every generated share link, defaulting to http://localhost:8080 if unset, shipping a dead tracking link with no startup error.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** `SecretsStartupValidator` now validates `influora.api.public-url` following the exact same fail-closed-outside-dev pattern as its other checks (e.g. `validateAiServiceUrls`) — throws and aborts boot in prod/staging if unset or pointed at localhost, warns-only in dev. `CreatorCouponService`'s link-building logic itself is untouched. 48/48 tests green (43 validator + 5 coupon service).
+
+---
+
+### CR-82 · 🟢 Low · Redundant no-op client-side filter on already-server-filtered completed deals
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/shared/collaboration-reviews-panel.tsx loadRateableDeals (L45-64)`
+
+**What:** After GET /deals?status=completed (server-filtered), the code re-filters deal.status==='COMPLETED' client-side, which can never remove a row — stale code that should be cleaned up.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** The dead client-side re-filter is removed; the server-filtered result is used directly.
+
+---
+
+### CR-83 · 🟢 Low · Affiliate earnings endpoint has no pagination; response grows unboundedly
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api CreatorAffiliateEarningController.java:29`
+
+**What:** GET /creator/affiliate-earnings returns all rows in one response with no page/limit params and no load-more UI, which will not scale for high-volume affiliate creators.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** Real `page`/`limit` pagination end to end (`AffiliateEarningsService` → controller → `useAffiliateEarnings` → `AffiliateEarningsView`). Independent review caught a `pageNumber * pageSize` plain-`int` multiply that could overflow for large page values before this closed — fixed with `long` arithmetic before the multiply, regression test added.
+
+---
+
+### CR-84 · 🟡 Medium · "Sync" button on the profile page (and the portfolio editor) is a fake sync with no real data refresh
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-profile.tsx handleSyncStats (L109-114); PortfolioService.syncPlatforms (server no-op)`
+
+**What:** The profile page's sync button runs only a setTimeout with no API call. The portfolio editor's sync button calls a real endpoint that is itself a documented server-side no-op. Both show a false sync confirmation.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** `PortfolioService.syncPlatforms()` now does a genuine on-demand Meta Graph API fetch (via the existing `MetaTokenStorage`/`InstagramInsightsClient` pipeline this codebase already built for CR-108/110), writes a real `creator_metrics` row, and upserts `platform_stats` + profile totals — throwing honest `NOT_CONNECTED`/`TOKEN_EXPIRED` errors instead of a fake 200 when there's nothing to sync from. `creator-portfolio-editor.tsx` now maps those errors to honest messages and re-fetches on real success; `creator-profile.tsx`'s stale no-op comment was corrected (it already called the real endpoint from an earlier pass). 19 backend tests green, `tsc --noEmit` clean.
+
+---
+
+### CR-85 · 🟢 Low · Avatar/camera upload button has no onClick handler and no upload endpoint
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-profile.tsx:216`
+
+**What:** Clicking the camera icon produces no feedback and no upload. There is no dedicated avatar-upload multipart route, though avatarUrl is patchable as a URL field.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** Wired to the existing generic `POST /uploads` + `api.uploads.upload()` (`UploadController.java`), matching how uploads already work elsewhere in the product — no new backend route needed.
+
+---
+
+### CR-86 · 🟢 Low · "Connect More Accounts" button on profile page is a dead control
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-profile.tsx:324-327`
+
+**What:** The button has no onClick handler; clicking it does nothing.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** Mirrors `ConnectedAccounts.handleConnect` (`connected-accounts.tsx`) exactly rather than mounting the whole settings card here (that's CR-101, a separate ticket).
+
+---
+
+### CR-87 · 🟠 High · "Update Password" button in Settings has no onClick and the form fields are uncontrolled, despite a fully built and rate-limited backend
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-settings.tsx:477-506 (button L503, inputs L488/L492/L496)`
+
+**What:** The dialog's three inputs collect no state and the submit button has no handler, even though api.auth.changePassword (POST /me/password) exists and works. Creators currently have no way to change their password anywhere in the product.
+
+> ✅ **2026-08-10 — FIXED (proof-os /work loop, F-0108) — TWO PASSES, not one; the first landed a REAL SECURITY BUG.** Pass 1 wired controlled inputs, client-side validation (required/length/match), the `api.auth.changePassword` call, success/failure handling, and a pinning test file. **Priya's fresh-context review REJECTED it**: `api.auth.changePassword` had no `role` parameter and `http.request` defaults to the **brand** token when none is given — a creator submitting this form would either 401 (no `brand_token` in a creator-only browser) or, worse, silently authenticate as and rotate the password of whichever **brand** session shared the browser. She also found the "all fields required" guard had no test. **Pass 2:** `api.auth.changePassword` now takes a required `role: Role` param (no default — a missing role is a compile error, not a silent brand fallback); `creator-settings.tsx` passes `'creator'`, `brand-settings.tsx` passes `'brand'`. Added the missing empty-fields test. **Re-review: Priya APPROVE** — she traced the full token-selection chain end-to-end (not just the call site) and mutation-tested the new guard test (removed the guard, confirmed exactly that one test went red, restored, reconfirmed green). Full suite **9/9 green** (`creator-settings-change-password.test.tsx` + `creator-settings-logout.test.tsx`). **This is exactly why the review step exists in this loop** — a same-context self-check would very plausibly have missed a bug in code neither the fix nor the original ticket even mentioned (`api.ts`'s role-default behavior). **Gate:** [`.proof-os/gates/F-0108-changepassword-fix.sh`](../../.proof-os/gates/F-0108-changepassword-fix.sh). **Remaining for `DONE`:** Neha's live re-test.
+
+---
+
+### CR-88 · 🟢 Low · Help Center / Contact Support / Terms & Privacy rows in Settings do nothing
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-settings.tsx settingsGroups (L243-263)`
+
+**What:** All three support-related items have onClick: () => {}. The one working help path is the sidebar avatar dropdown; the dedicated Settings rows are dead.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed (F-0134).** First pass routed to `https://help.influora.com`, an unverified external host the brand side had already abandoned — caught by an independently-dispatched fresh-context Priya review before this closed. Corrected to real in-product `/support` route + `mailto:` for Contact Support, matching the CR-89/desktop pattern below.
+
+---
+
+### CR-89 · 🟢 Low · Help & Support entry is missing from the mobile header dropdown
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/creator/creator-layout.tsx:368-388`
+
+**What:** Desktop sidebar has a working Help & Support link; the mobile header dropdown omits it entirely.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** Added to the mobile header dropdown, routing to `/support` — same destination as CR-88's corrected desktop entry, no divergent surface.
+
+---
+
+### CR-90 · 🟠 High · Sidebar logout (the primary, easiest-to-reach path) never calls the server logout endpoint
+**Owner:** Ananya (routed from Kabir — security-flavored finding, frontend fix) · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/creator/creator-layout.tsx handleLogout (L165-173)`
+
+**What:** The sidebar/mobile-dropdown logout only clears client-side store and localStorage; it never calls POST /auth/logout. The HttpOnly refresh cookie is not cleared, so a creator can silently re-obtain a new access token via /auth/refresh.
+
+> ✅ **2026-08-10 — FIXED (proof-os /work loop, F-0109).** `handleLogout` now calls `api.auth.logout('creator')` before the local session clear, mirroring the already-reviewed Settings-page pattern (CR-32/CR-91) — same try/catch/`isApiLive()` shape, so a failed server call still always clears local state and navigates to `/creator/login` rather than stranding the creator. New file `creator-layout-logout.test.tsx` (2 tests) pins this; **verified empirically, not just by inspection** — both tests confirmed red when the fix is reverted, green when restored. Full suite for the touched area: **9/9 green** (`creator-contract-card`, `creator-settings-logout`, `creator-layout-logout`), plus `creator-chat-refresh` re-checked for collateral breakage (3/3 green). **Independent review: Priya PASS (fresh-context, artifact+done_when only)** — she re-did the same revert-and-check herself via a git hash comparison rather than trusting my report, and separately confirmed no duplicate/racing call, correct mock-mode behavior, and no XSS/CSRF exposure. One non-blocking cosmetic note: no in-flight/loading state during the request (Settings page has one, this doesn't) — not logged to the ledger, doesn't affect correctness. **Gate:** [`.proof-os/gates/F-0109-sidebar-logout-fix.sh`](../../.proof-os/gates/F-0109-sidebar-logout-fix.sh). **Remaining for `DONE`:** Neha's live re-test (confirm the refresh token is actually revoked server-side after a real sidebar logout, not just that the client sent the request).
+
+---
+
+### CR-91 · 🔴 Critical · Server-side logout invalidation never actually runs on either logout path — refresh tokens stay live in the database after every logout
+**Owner:** Kabir · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/lib/api.ts auth.logout (L827-828) / JwtAuthenticationFilter.java / AuthController.java:139`
+
+**What:** http.clearToken(role) runs BEFORE the POST /auth/logout request; the request goes out with no Authorization header, so authService.logout() and refreshTokenRepository.revokeAllForUser never run. Every refresh token remains valid in the database after every logout — release-blocking security gap.
+
+> ✅ **2026-08-10 — FIXED via proof-os /work loop (owner-instructed; recorded per §3/§5 protocol-exception precedent).** Re-verified real in current source first (`clearToken` still ran before the request; `AuthController.logout` at :139 revokes only when `principal != null`, and `revokeAllForUser` lives at `AuthService.java:405`). Fix (`src/lib/api.ts`): the live branch now issues `POST /auth/logout` **first** — `HttpClient.request` builds the `Authorization: Bearer` header from the still-present token — then clears the local token in `.finally()` so the client session always ends, even on server error. Both logout callers already clear their store + navigate on failure; the now-stale "clears token before the request" comment in `brand-settings.tsx` was corrected. `tsc --noEmit` passes. **Independent review: Priya PASS (fresh-context) — BELIEVED ceiling** (only a harmless idempotent double-`removeItem` on the 401-refresh-fail path noted). Remaining gate: **Neha live re-test** (confirm `refresh_token` rows are revoked in the DB after a real logout). Code-complete ≠ DONE.
+
+---
+
+### CR-92 · 🟢 Low · Edit Profile dialog can only update 5 of 13 patchable profile fields
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-profile.tsx handleSave (L129-135) / CreatorProfilePatchPayload`
+
+**What:** categories and languages are displayed with empty-state copy but there is no control to add either; discoverable (search visibility) and username (public-page handle) are likewise unreachable from any UI.
+
+> ✅ **proof-os Low-severity loop — FIXED, independently QA-passed.** Edit Profile dialog now exposes controls for all 13 patchable fields, including categories/languages editors and the discoverable/username fields that had no UI path at all.
+
+---
+
+### CR-93 · 🟠 High · Counterparty has no polling fallback when their SSE connection is dead — misses accept/reject/messages until reload
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-chat.tsx (L895-943) / src/pages/brand-chat.tsx (L1142-1194) / DealMessageStreamRegistry.java:67-80`
+
+**What:** If the counterparty's SSE connection is dead (30-min timeout, network drop, backgrounded tab), the event is silently discarded server-side with no periodic poll fallback on either chat page — the primary mechanism behind the reported 'accept/reject/message not showing on the other side' bug.
+
+> ⚠️ **Re-verified against current source first (2026-08-10) — this row was STALE.** CR-31 (already `IN VERIFY`) had already given `messages.stream` exponential-backoff reconnect with an `onReconnect` refetch hook, in **both** `creator-chat.tsx` and `brand-chat.tsx` — the "silently discarded with no fallback, ever" framing no longer matched the code. **The real remaining gap, narrower than the original finding:** a backgrounded tab, where a browser can suspend/throttle an in-flight `fetch` read with no error or close event ever firing, so `onReconnect` never triggers even though the connection is effectively dead. **Fix:** a `document.visibilitychange` listener in both pages, scoped to the selected deal, that unconditionally re-fetches messages + deal state on foreground — independent of what the SSE transport believes, additive to CR-31 (does not touch the reconnect path). **Verified:** two new test files (`creator-chat-visibility-resync.test.tsx`, `brand-chat-visibility-resync.test.tsx`), each proving both that hiding the tab alone triggers nothing and that foregrounding triggers both refetches — confirmed red on two independent mutations (whole effect removed; only the visible-guard removed) and green restored. Full related-suite regression: **19/19 green**, no collateral breakage. **Independent review: Priya APPROVE** — she re-ran both mutations herself and confirmed the fix is additive to, not a replacement for, CR-31's reconnect logic. Two non-blocking follow-ups logged rather than expanding this ticket: **F-0151** (brand-chat's loading spinner now flashes on every foreground — creator is unaffected), **F-0152** (brand-chat's `loadMessages` has no request-token guard against overlapping calls, pre-existing but easier to hit now). **Gate:** [`.proof-os/gates/F-0110-chat-visibility-resync.sh`](../../.proof-os/gates/F-0110-chat-visibility-resync.sh). **Remaining for `DONE`:** Neha's live re-test (background a tab mid-negotiation on a real device, confirm the counterparty's action appears on foreground).
+
+---
+
+### CR-94 · 🟠 High · In-memory SSE registry silently drops events across backend replicas
+**Owner:** Vikram · **Status:** BLOCKED
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api DealMessageStreamRegistry.java:23-32`
+
+**What:** The SSE emitter registry is an in-memory ConcurrentHashMap scoped to a single JVM. In any multi-replica deployment, a mutation handled by one instance never reaches clients on another instance, with no error or retry.
+
+> 🚧 **2026-08-10 — BLOCKED, not a code fix (proof-os /work loop, F-0111).** Re-reading the class source first: this is **not an unaddressed oversight**. The javadoc at `DealMessageStreamRegistry.java:21-33` already documents it as *"a deliberate MVP scope decision by Priya"*, explicitly names the current single-replica deployment as the reason it's acceptable today, and spells out the real upgrade path (a shared pub/sub fan-out — Redis Pub/Sub or DB LISTEN/NOTIFY — keyed by dealId, every instance subscribing and re-broadcasting to its own local emitters). **This needs an infrastructure decision (when/whether to move to multi-replica), not a same-shaped code patch** like the other 11 tickets in this batch — promoting a High-severity code ticket into an architecture change without that decision would be the wrong kind of "fix." Promoted `--unautomatable`, matching this tracker's own CR-15 precedent (blocked on a domain/TLS decision) rather than left dangling as `ASSIGNED`. **Un-blocks when:** a decision is made to run more than one API replica — at that point this becomes a real, scoped implementation ticket with the design already written.
+
+---
+
+### CR-95 · 🟡 Medium · 30-minute SSE emitter timeout creates recurring blind windows for missed events
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api DealMessageStreamRegistry.java:39 (EMITTER_TIMEOUT_MS)`
+
+**What:** Every 30 minutes every SSE emitter times out; any event published during the reconnect backoff window is silently dropped with no Last-Event-ID replay.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed — after independent review caught a real race in the first version.** Each deal now assigns published events a monotonic per-deal id and keeps a replay buffer bounded by both count (200) and age (5 min); a reconnecting client's `Last-Event-ID` header (now threaded through `DealController`) triggers a replay of everything newer before rejoining the live fan-out. **First implementation had a genuine double-delivery race**, caught by an independent fresh-context reviewer, not by the test suite: `publish()` released the stream's lock before iterating live emitters, so a `register()` landing in that window could replay-then-add an emitter before `publish()`'s unsynchronized loop reached it — same event delivered twice. Fixed by snapshotting the live-emitter list inside the same synchronized block that assigns the event id and buffers it, so the ordering is now race-free either way (logged as `F-0156`). Re-reviewed independently after the fix: PASS. `DealMessageStreamRegistryTest` 9/9 green; one unrelated `DealControllerTest` failure confirmed to be concurrent-session WIP on `DealDtos.java`/`CounterRequest` validation, not this change.
+
+---
+
+### CR-96 · 🟡 Medium · Deal deliverable progress counts are hardcoded to zero, hiding the entire Deliverables panel for every live deal
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api DealService.toDealResponse() / src/pages/brand-chat.tsx:511-516`
+
+**What:** deliverablesDone/deliverablesTotal/nextDeadline are hardcoded to 0/0/null; the brand chat Deliverables panel is gated on deliverablesTotal===0, leaving it empty for every live deal.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed. Ticket description had already drifted from current code.** `toDealResponse()`'s hardcoded 0/0/null was already replaced by real data in uncommitted working-tree state before this pass touched it (not yet independently reviewed until now); the real fix landed here closed the **N+1 that real computation introduced** for list callers — `list()` and `listEligibleForDispute()` now batch via a new `loadDeliverablesByCollaboration()` (one `findByCollaborationIdIn` for the whole page), while single-deal callers (`get`/`accept`/`counter`/etc.) keep their one-query-per-request behavior, confirmed correct and not an N+1. **Also confirmed the frontend half of this ticket no longer applies:** `brand-chat.tsx`'s `deliverablesTotal===0` gate only affects the mock/demo data path; the live Deliverables panel fetches `liveDeliverables` directly via `deliverablesApi.list` with no such gate — independently verified by reading the current file, not taken on the fix's word. `DealServiceTest` 40/40 green.
+
+---
+
+### CR-97 · 🔴 Critical · Brand's primary Deals dashboard page has zero SSE, polling, or reconnect handling at all
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/brand/deals/deal-room-dashboard.tsx`
+
+**What:** The literal 'Deals' page reached from the brand sidebar has no messages.stream calls, no SSE, no poll, no reconnect banner. On the most-reached brand surface, the timeline never updates by any live mechanism at all, compounding the counterparty-blackout bug.
+
+> ✅ **2026-08-10 — FIXED via proof-os /work loop (owner-instructed; recorded per §3/§5 protocol-exception precedent).** Re-verified real: the dashboard had `loadDeals`/`loadMessages` but **no** `messagesApi.stream`/SSE/poll/reconnect. **Fix:** added a `messagesApi.stream('brand', dealId, …)` effect (live mode) mirroring `brand-chat.tsx` — **upsert-by-id** merge (no duplicate own-message, no stale live-Accept card, avoids a CR-02 regression), `loadDeals()` refresh on status-implying frames (`kind === 'proposal' | 'system'`), and `onReconnect` refetch of **both** messages and deals (the transport has no `Last-Event-ID` replay); keyed on `selectedDeal?.id` with cleanup closing the stream on id-change/unmount. `tsc --noEmit` passes. **Independent review: Priya PASS (fresh-context, all done_when clauses verified, no findings) — BELIEVED ceiling.** **Deferred (minor):** no visible reconnecting/offline banner (`onStatusChange` unused) — transport auto-reconnects + refetches, but the surface won't show it's temporarily deaf. Remaining gate: **Neha live re-test** (counterparty action appears on the dashboard without reload). Code-complete ≠ DONE.
+
+---
+
+### CR-98 · 🟠 High · Brand's own accept/reject action on the Deals dashboard never refreshes the message timeline, even for the actor
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/brand/deals/deal-room-dashboard.tsx handleAcceptProposal/handleRejectProposal (L407-428)`
+
+**What:** These handlers call only loadDeals() and never loadMessages(), so the timeline does not update after the brand's own accept/reject action — worse than the counterparty-blackout bug on the chat pages.
+
+> ✅ **2026-08-10 — FIXED (proof-os /work loop, F-0112).** All three handlers (`handleAcceptProposal`, `handleSendCounter` — same bug, not in the original citation but fixed alongside it since it's the identical pattern in the same file — and `handleRejectProposal`) now run `await Promise.all([loadDeals(), loadMessages(selectedDeal.id)])` on the success path. New file `deal-room-dashboard-actor-refresh.test.tsx` (3 tests: accept/reject/counter), confirmed red on two independent mutations (drop the deals refetch; drop the messages refetch) and green restored. **Independent review: Priya APPROVE** — she additionally confirmed no race with this page's own SSE reconnect effect and that a failed background refetch (both calls are already try/catch-swallowed) can never strand the dialog open. **Incidental finding, not this ticket's work:** this file now has full SSE wiring (`messages.stream` + `onReconnect`) — CR-97 (🔴 Critical, "zero SSE, polling, or reconnect handling at all") appears to already be fixed by a concurrent session; **not independently verified as part of this pass**, flagging for whoever owns CR-97 to confirm and update its row. **Gate:** [`.proof-os/gates/F-0112-actor-refresh-fix.sh`](../../.proof-os/gates/F-0112-actor-refresh-fix.sh). **Remaining for `DONE`:** Neha's live re-test.
+
+---
+
+### CR-99 · 🔴 Critical · Wrong ID type sent to Meta Graph API breaks the entire Instagram analytics, demographics, and deliverable-verification pipeline
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api InstagramInsightsClient.java:35-49; MetricsPollingJob.java:164; AudienceDemographicsJob.java:171; DeliverableVerificationService.java:183`
+
+**What:** Three live production call sites pass the internal ULID creatorProfileId instead of Meta's numeric IG Business Account ID. All three calls 400 and are caught: analytics dead, demographics dead, deliverable verification always falls back. Tests stub and assert the wrong ID, so CI stays green over a dead pipeline.
+
+> ✅ **2026-08-10 — FIXED via proof-os /work loop (owner-instructed; recorded per §3/§5 protocol-exception precedent).** Re-verified against current source first — and the tracker's own list was **stale in both directions**: the three cited sites (`MetricsPollingJob:175`, `AudienceDemographicsJob:181`, `DeliverableVerificationService:194`) were **already fixed** (prior F-0113 work) and their tests now assert the numeric `IG_BUSINESS_ACCOUNT_ID` ("17841…"), and `CreatorCaptionSyncJob:126` was already correct. But a comprehensive sweep of every live caller of `InstagramInsightsClient.get{Profile,Media,AudienceDemographics,AccountInsights}` found a **live residual the tracker never listed**: `BrandOwnContentService.java:90/104` (TrendSpark brand-own-content) assigned `token.getCreatorProfileId()` to a var named `igUserId` and sent it in the Graph path → 400 → the T6 fail-closed net silently reported "no own content" for every brand. **Fix:** it now uses `token.getIgBusinessAccountId()` for the path, keeps `getCreatorProfileId()` for the token lookup, and fails closed (`NO_IG_BUSINESS_ACCOUNT`) when the numeric id is absent. `mvn -o compile` passes. **Independent review: Priya PASS (fresh-context, artifact+done_when only) — BELIEVED ceiling; she independently re-swept and confirmed no other live path-id defect.** **Latent follow-up — NOW FIXED (2026-08-10):** `InstagramMetricsFetcher` had a misleading contract (param named `creatorProfileId` but javadoc claimed it was the IG business account id; no production caller, only its test). Its param is renamed `igBusinessAccountId` across all methods + internal calls, javadoc/log labels corrected, and `InstagramMetricsFetcherTest` now asserts a numeric IG id (`17841…`) not a ULID — a pure rename, `mvn -o test` passes (15/15). **Independent review: Priya PASS (fresh-context) — BELIEVED.** Still no production caller (latent by design); wiring it into a job is a separate future task. Remaining gate for CR-99: **Neha live re-test** (real Meta round-trip → populated analytics/demographics/verification). Code-complete ≠ DONE.
+
+> ⚠️ **CORRECTION, same day (2026-08-10, F-0166) — the fix above was necessary but NOT sufficient; the pipeline still could not have worked end-to-end until this.** Found during CR-102's independent review, not this ticket's own: `DeliverableVerificationService.verifyInstagram()`, `MetricsPollingJob.pollOne()`, and `AudienceDemographicsJob.pollOne()` all resolved the creator's access token via the **workspace-scoped** `metaTokenStorage.getValidToken(workspaceId, creatorProfileId)` — and a creator-owned row's `workspaceId` is always `null`. `MetaOAuthTokenRepository`'s query behind that method carries an explicit `t.workspaceId IS NOT NULL` predicate (CR-111 hardening, confirmed by reading the JPQL directly, not the javadoc, and independently re-verified against a real Hibernate+H2 test), so a null `workspaceId` **can never match any row** — this token lookup would have failed for every single creator, before ever reaching the ULID fix documented above. **Fixed in all three files**: now call `metaTokenStorage.getValidCreatorToken(creatorProfileId)`, the creator-scoped getter every other correct call site (`MetaConnectionService`, `CreatorCaptionSyncJob`) already uses. The now-unused `workspaceId` parameter/variable was removed cleanly from both jobs' `pollOne`, not left as dead code. All three test files updated to stub the correct method; **38/38 backend tests green**, confirmed red on a full mutation revert of each file independently. **Independent review: Priya APPROVE** on both the `DeliverableVerificationService` fix and the two jobs' fix, each verified separately. **Gate:** [`.proof-os/gates/F-0166-token-scope-fix.sh`](../../.proof-os/gates/F-0166-token-scope-fix.sh). **The identical pattern is still live and unfixed in a fourth, more severe location — `MetaTokenRefreshService` (the proactive token-refresh sweep) — logged as F-0171, not fixed this pass:** if no creator token is ever refreshed, every creator token eventually expires regardless of any other fix in this file, taking the whole pipeline dark at once with no error surfaced anywhere. **This should be treated as higher priority than the rest of this batch.**
+
+> ✅ **F-0171 FIXED, same day.** `MetaTokenRefreshService.refreshOne()` now branches on `workspaceId == null`: creator-owned rows resolve via `getValidCreatorToken` and persist via `storeCreatorToken` (the race-safe, revoke-before-insert writer); brand-owned rows are untouched. `MetaTokenStorage.storeToken`'s stale javadoc (falsely claimed a null workspaceId still matched a row) corrected. 11/11 tests, two independent mutation experiments (whole-fix revert; write-half-only revert) each catching a distinct regression. Full Meta-integration family re-run: **83/83 tests green** across all 7 affected classes. **Independent review: Priya APPROVE** — she additionally verified `storeCreatorToken`'s revoke-before-insert is safe to run every refresh cycle, and found one real, logged-not-fixed side effect: a creator's "connected since" date will now drift forward every ~55-day refresh instead of staying fixed at first connect (**F-0173** — a product decision, not an engineering one). **This closes the entire workspace/creator token-scope bug family found in this session (F-0113 → F-0166 → F-0171)** — all four call sites that can reach a creator-owned Meta token now use the correct, creator-scoped storage methods. **Gate:** [`.proof-os/gates/F-0171-token-refresh-fix.sh`](../../.proof-os/gates/F-0171-token-refresh-fix.sh).
+
+---
+
+### CR-100 · 🟠 High · Dead Instagram deliverable verification blocks escrow release for ON_VERIFIED_METRICS milestones
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api DeliverableVerificationService.java:183 / EscrowService.java:1179-1193`
+
+**What:** As a consequence of the ULID bug, automated Instagram deliverable verification always falls back. Escrow release for milestones on ReleaseCondition.ON_VERIFIED_METRICS can never be reached automatically.
+
+> ✅ **2026-08-10 — FIXED as a direct consequence of CR-99's fix (proof-os /work loop, F-0113).** `DeliverableVerificationService.verifyInstagram()` (`:176-182,194`) now reads `tokenRow.get().getIgBusinessAccountId()` and passes it to `instagramInsightsClient.getMedia(...)`, falling back to `FALLBACK_DATA_INTEGRITY` (not a crash, not a silent pass-through) when a token row has none on file. `DeliverableVerificationServiceTest` gained two pinning regression tests (`usesIgBusinessAccountIdNotUlidForMediaFetch`, `noIgBusinessAccountIdOnFileFallsBackToDataIntegrity`); full suite **14/14 green** (`mvn -o test -Dtest=DeliverableVerificationServiceTest`). **Independent review: Priya PASS (fresh-context, artifact+done_when only)** — she proved the pinning tests are real by reverting the fix and watching them go red (not just reading them), and separately confirmed the `ON_VERIFIED_METRICS` gate in `EscrowService.java:1215` becomes reachable now that verification can return `VERIFIED`. **Two follow-ups she found, logged rather than silently expanded into this ticket:** `F-0126` — the job-level rate-limit pre-flight check in this file (and the two polling jobs) is still keyed on `creatorProfileId` while the client itself now keys on `igBusinessAccountId`, so the pre-flight guard is decorative (not a correctness bug — the client's own check still throws — but worth a follow-up); `F-0127` — `InstagramMetricsFetcher.java` has a dormant, misleadingly-named parameter that would reintroduce this exact bug if ever wired up. **Gate:** `.proof-os/gates/F-0113-meta-igid-fix.sh` (closes F-0113). **Remaining for `DONE`:** Neha's live re-test — a real funded `ON_VERIFIED_METRICS` milestone reaching `VERIFIED` end-to-end against live Meta, not just the mocked unit suite.
+
+> ⚠️ **CORRECTION, same day (F-0166) — see CR-99's matching note.** The fix above was real but insufficient on its own: `verifyInstagram()`'s token lookup one call above it used the workspace-scoped `getValidToken`, which can never match a creator-owned row (null `workspaceId`) — verification would have failed at the token step regardless of the ULID fix. Now uses `getValidCreatorToken(creatorProfileId)`. 14/14 still green after the fix (re-run, not assumed). **Priya APPROVE.**
+
+---
+
+### CR-101 · 🟠 High · Built ConnectedAccounts component is never mounted anywhere — Settings page has no social-integration UI
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/creator/connected-accounts.tsx`
+
+**What:** The component has zero imports across the src tree; creator-settings.tsx has no reference to it. A creator visiting Settings sees no Connected Accounts card, connection status, or disconnect option.
+
+> ✅ **2026-08-10 — FIXED (proof-os /work loop, F-0114).** `ConnectedAccounts` is now imported and rendered on `creator-settings.tsx`, above the Notifications card. Mounting it broke both pre-existing Settings test suites (`creator-settings-logout.test.tsx`, `creator-settings-change-password.test.tsx`) — their narrow `api` mocks had no `metaOAuth` member, and `useMetaConnection` throws on property access without one; fixed by adding it to both. New file `creator-settings-connected-accounts.test.tsx` (2 tests) pins the mount itself, confirmed red when the import+render are removed and green restored. **Independent review: Priya APPROVE** — she additionally confirmed the mount introduces no new toasts, unhandled rejections, or state that could interfere with the logout/password-change flows on the same page. **Follow-up logged, not folded in: F-0165** — `clearCreatorSession` doesn't clear the `meta_connection` mirror, so a second creator on a shared browser can be seeded with the first creator's connection state (same family as CR-32, pre-existing, just made visible by this mount). **Gate:** [`.proof-os/gates/F-0114-connected-accounts-mount-fix.sh`](../../.proof-os/gates/F-0114-connected-accounts-mount-fix.sh). **Remaining for `DONE`:** Neha's live re-test. **Note:** this ticket covers the mount only — CR-102 (disconnect capability) is the next item in this loop and touches this same component.
+
+---
+
+### CR-102 · 🟠 High · No way for a creator to disconnect their Meta/Instagram account anywhere in the product
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api MetaConnectionService.disconnect() (no HTTP controller)`
+
+**What:** No disconnect button exists in any FE component and api.ts has no disconnect method. The backend method exists but has no controller route, and even if routed it calls the wrong workspace-scoped revoke method.
+
+> ✅ **2026-08-10 — FIXED, 3 review rounds (proof-os /work loop, F-0115) — both backend claims in the original finding were already stale.** Re-reading source first: the controller route (`POST /meta/oauth/disconnect`) and the correct creator-scoped `revokeCreatorToken` call already existed (concurrent-session work, CR-106). The only real gap was the frontend: `api.metaOAuth.disconnect()` didn't exist, and `ConnectedAccounts` had no control to call it. **Fix:** added the client method; added a Disconnect button (visible only when connected) gated by a confirmation `AlertDialog`; failure toasts and keeps the dialog open, success refreshes status. **Round 1 review — Priya REJECT**: the confirmation copy claimed "automated deliverable verification will stop working" — false, since that path already couldn't reach a creator's token for an unrelated reason. **Round 2 — REJECT again**: the corrected copy claimed "brands will no longer see your reach/engagement" — also false; disconnect only revokes the token, never the persisted `CreatorProfile`/`PlatformStat` rows brands actually read, so brands keep seeing the same numbers, frozen, not gone. **Round 3 — APPROVE**, after the copy was corrected to claim only what's true ("metrics stop syncing... frozen at today's numbers") and Priya independently traced every writer (including one, `MetricsPollingJob`, she found herself and I hadn't cited) to confirm both halves of the final copy. **This is exactly why the review step exists** — a same-context check would very plausibly have shipped a confident-sounding but false consequence on a destructive-action confirmation dialog, twice. 9/9 frontend + 15/15 backend tests. **Gate:** [`.proof-os/gates/F-0115-disconnect-capability-fix.sh`](../../.proof-os/gates/F-0115-disconnect-capability-fix.sh).
+>
+> ⚠️ **Major incidental discovery during round 1 review, fixed same pass (F-0166, NOT part of this ticket's original scope):** Priya independently found that `DeliverableVerificationService.verifyInstagram()` (CR-99/CR-100's own file) resolves the creator's access token via the WORKSPACE-scoped `getValidToken(workspaceId, creatorProfileId)` — and a creator row's `workspaceId` is always null, which `MetaOAuthTokenRepository`'s query can *never* match (explicit `workspaceId IS NOT NULL` predicate, CR-111 hardening). **This means CR-99/CR-100's earlier fix in this same session, while itself correct, could not have made deliverable verification actually work end-to-end** — the token lookup fails before ever reaching the ULID fix. Traced and confirmed by reading the repository's JPQL directly (not the javadoc) and empirically re-verified against a real Hibernate+H2 test. Found the **identical** bug independently broken in `MetricsPollingJob` and `AudienceDemographicsJob` (CR-99's own two files) — **fixed all three in this same pass**, 38/38 backend tests green, Priya APPROVE on both fixes. **See CR-99/CR-100's own entries below for the correction.** A fourth, more severe instance — `MetaTokenRefreshService`, the mechanism that keeps creator tokens alive at all — was found but **NOT fixed this pass**: logged as **F-0171** (High/Critical-leaning), flagged as higher priority than everything in this batch.
+
+---
+
+### CR-103 · 🟠 High · OAuth callback page shows "Account connected" even when the server reports connected=false
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-meta-callback.tsx:56-57`
+
+**What:** setState('success') is called unconditionally after any 200 response, so a personal-account creator (server correctly returns connected:false) is falsely told their metrics are now visible to brands.
+
+> ✅ **2026-08-10 — FIXED (proof-os /work loop, F-0116) — the pre-existing test actively asserted the bug.** `creator-meta-callback.test.tsx`'s only coverage of this path literally expected `'Account connected'` to render for a `connected: false` response — a test locking in the defect, same shape as the CR-99 ULID bug's test suite. Fix: the page still moves to the `success` state (routing/back-button unchanged) but the heading/description now branch on `serverReportedConnected` and `accountType` — "Account connected" only for `connected: true`; "Business account needed" + real guidance for `personal`; "Connection incomplete" for anything else. 2 new tests, confirmed red on revert (rendered the false claim verbatim) and green restored. **Independent review: Priya APPROVE** — confirmed the false claim is structurally unreachable across the full connected/accountType matrix, no flash-of-false-success race, and CR-66's retry path is untouched. **Follow-up logged, not silently folded in: F-0164** — the onboarding-resume redirect can whisk a personal-account creator past this new explanation before they read it (not a false claim, just a missed one on that entry path). **Gate:** [`.proof-os/gates/F-0106-F-0116-meta-callback-fix.sh`](../../.proof-os/gates/F-0106-F-0116-meta-callback-fix.sh) (shared with CR-63). **Remaining for `DONE`:** Neha's live re-test.
+
+---
+
+### CR-104 · 🟡 Medium · "Granted permissions" UI always shows the requested scope set, never what Meta actually granted
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api CreatorMetaOAuthService.java:74-84; src/components/creator/connected-accounts.tsx:137-154`
+
+**What:** The static REQUIRED_SCOPES constant is stored and returned as grantedScopes on every connect; no /me/permissions or /debug_token call is ever made. A creator who declines a permission still sees it listed as granted.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** `connect()` now calls Meta's `/me/permissions` (new `FacebookPageClient.fetchPermissions`) and filters to actually-granted scopes; a declined permission no longer appears as granted. A Meta API failure during this check returns `null` (honest unknown), never a silent full-grant fallback — `connected-accounts.tsx` shows a distinct "Couldn't verify which permissions were granted" message for that state. 27 tests green (23 backend + 4 frontend).
+
+---
+
+### CR-105 · 🟡 Medium · Dropped accountType traps personal-Instagram creators in an unbreakable connect-prompt loop
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-meta-callback.tsx:56 / src/hooks/useDailySuggestion.ts:119`
+
+**What:** Same root cause as the Co-pilot section's finding: accountType is never passed to setLocalConnectionState, so the BusinessAccountRequired explanatory screen is dead code and personal-account creators loop forever.
+
+> ✅ **2026-08-12 — the callback fix landed in a concurrent session; independently reviewed and initially PASSED, then a HIGH residual was found one hop downstream.** `setLocalConnectionState` genuinely threads `accountType` on success, and `requiresBusinessAccount` (useDailySuggestion.ts) genuinely renders `BusinessAccountRequired` for `'personal'` — confirmed by tracing the whole chain, not assumed. **But** `useMetaConnection.ts`'s status reconciliation (mount + tab-focus) silently flipped a correctly-disconnected personal account back to `connected: true`, because `GET /meta/oauth/status` reports `connected: true` on mere token-row existence regardless of account type — undoing the fix on the Settings path (Co-pilot's return path doesn't mount this hook, so it worked there). **Fixed:** a client-side guard forcing `connected: false` whenever `accountType === 'personal'`, mutation-proven (reverted, watched the exact test line fail, restored). New test file `useMetaConnection.test.ts` (3 tests) plus a missing `'personal'`-specific case added to the callback's own CR-105 test (previously only pinned `'business'`, so a regression hardcoding either literal would have passed every test in the file). Re-reviewed, PASS. **Logged, not fixed here:** `F-0189` — the durable fix is server-side (`GET /meta/oauth/status` should return `accountType` so the client isn't dependent on its own localStorage memory surviving a cleared cache/new device); `F-0190` — a personal account's Disconnect button is now unreachable even though a real token exists to revoke (pre-existing gap, not a regression — this capability only ever worked as a side-effect of the bug just fixed).
+
+---
+
+### CR-106 · 🟡 Medium · Connection status/disconnect service methods are dormant with no route, and disconnect uses the wrong revoke query
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api MetaConnectionService.getStatus()/disconnect() (no controller)`
+
+**What:** No HTTP controller exposes either method. disconnect() calls a workspace-scoped revoke rather than the correct revokeCreatorToken, so it would silently no-op for every creator row even if routed.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** New `GET /meta/oauth/status` and `POST /meta/oauth/disconnect` routes, both resolving the creator strictly from `principal.getUserId()` via repository lookup — never a client-supplied id. `disconnect()` now calls `revokeCreatorToken()` (the `workspace_id IS NULL` key-space creator tokens actually live in) instead of the workspace-scoped `revoke()`, which would have silently matched zero rows for every real creator connection. **Went slightly beyond the ticket's literal scope:** `getStatus()`'s read was fixed too, not just the named revoke bug — wiring a live route for it while leaving it workspace-scoped would have shipped a status endpoint that always reports "disconnected" for every real creator, since the two key-spaces are disjoint by construction (IDOR safety). 15 tests green, including a `verify(never())` regression guard on the old workspace-scoped revoke.
+
+---
+
+### CR-107 · 🟡 Medium · Connection status is localStorage-only and never re-verified against the backend
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/creator/connected-accounts.tsx:35`
+
+**What:** Connection state is read once via a useState initializer and never refreshed. Revoking access, clearing storage, or token expiry leaves the UI showing stale connection state indefinitely.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** New `useMetaConnection` hook calls CR-106's real `GET /meta/oauth/status` on mount and on tab `visibilitychange`, reconciling both the UI and the localStorage mirror with backend truth. A stale-but-locally-connected seed shows a neutral "Verifying…" state instead of flashing disconnected; a failed check preserves the last-known state with an inline explanation rather than yanking the UI to disconnected. 4/4 tests green.
+
+---
+
+### CR-108 · 🟡 Medium · Non-Meta social onboarding step stores fabricated zero-follower, unverified rows
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api CreatorOnboardingService.java:63-82`
+
+**What:** POST /onboarding/creator/socials for YouTube/TikTok/Twitter stores followers(0)/verified(false)/no handle — no real OAuth exchange happens; the FE sends a literal mock_oauth_code. Brands see '0 followers' for creators who completed this step live.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed. Real OAuth for these platforms doesn't exist in this codebase — building it is CR-119's much larger scope, explicitly out of bounds here.** `connectSocial()` no longer persists any fabricated `PlatformStat` row; it now throws a typed `SOCIAL_OAUTH_NOT_IMPLEMENTED` (501), matching an established convention already used elsewhere (`ApprovalWorkflowService`, `AdminEmailController`). Authorization still runs before the refusal — a non-creator caller gets the correct 403/404, not this error. Confirmed the frontend already doesn't call this endpoint for unimplemented platforms (Instagram uses real OAuth, YouTube shows an honest "coming soon" toast) — this is a safety-net fix, not a breaking change to any live caller. 12/12 tests green.
+
+---
+
+### CR-109 · 🟡 Medium · OAuth callback error path leaves a stale connected:true mirror in localStorage
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-meta-callback.tsx:58-64`
+
+**What:** The catch block never clears the meta_connection localStorage mirror on failure, so a previously connected:true state survives a failed reconnect attempt and the app keeps gating features as if still connected.
+
+> ✅ **2026-08-12 — FIXED by a concurrent session, independently QA-passed.** Every exit path in the callback effect enumerated and traced: the Meta-redirect-error branch and the `callback()`-throws branch both clear the mirror (`setLocalConnectionState(false, [], null)`). The one uncleared exit (missing `code`/`state`) is deliberately left alone — clearing there would wipe a genuine, just-established connection on a plain page refresh after success (CR-117 strips the query string post-success, so a refresh re-runs this exact branch with nothing to distinguish it from a truncated redirect). Cosmetic-only wart noted: that refresh briefly shows "Connection failed" to a creator who is actually connected — the mirror itself stays truthful. Tests cover both real failure branches, not just the happy path.
+
+---
+
+### CR-110 · 🟡 Medium · Shared token-refresh code path can silently wipe the one working Meta pipeline's required field
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api MetaTokenStorage.java:94-104 (storeToken insert branch) / MetaTokenRefreshService.java:142`
+
+**What:** storeToken's insert branch never sets igBusinessAccountId (only storeCreatorToken does). Creator rows currently land safely on the update branch only by a database lookup quirk; any change would silently null out igBusinessAccountId, permanently breaking CreatorCaptionSyncJob with no error.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed.** Traced the actual mechanism: `findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse(null, creatorProfileId)` is a Spring Data derived query, and JPA rewrites a null bound parameter to `workspace_id IS NULL` — which is why creator rows happened to land on the UPDATE branch and survive. `storeToken`'s INSERT branch now sets `igBusinessAccountId` directly (threaded through from `MetaTokenRefreshService`, sourced from the existing token row being refreshed, not a placeholder), so the field no longer depends on that lookup quirk. Two regression tests: one forces the INSERT branch directly, one exercises the actual refresh path end-to-end for a creator row. 22/22 tests green.
+
+---
+
+### CR-111 · 🟡 Medium · Repository javadoc's stated IDOR invariant (creator/brand key-spaces disjoint) is not actually guaranteed
+**Owner:** Kabir · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api MetaOAuthTokenRepository.java:32-38`
+
+**What:** The javadoc claims brand-scoped and creator-scoped token queries can never cross. Whenever a caller passes a null workspaceId (several production job paths do), the JPA-generated query can match creator rows through the brand-scoped method. Not currently exploitable, but the documented invariant is inaccurate.
+
+> ✅ **2026-08-10 — FIXED, ADVERSARIALLY independently QA-passed.** Confirmed the exact mechanism first (reverted to the old query shape and watched a new test fail, proving it wasn't theoretical): Spring Data's derived-query null-parameter rewrite really does turn `workspaceId=null` into `workspace_id IS NULL`, matching creator rows. Converted the method to explicit JPQL with `workspaceId IS NOT NULL` — a null argument can now never match any row, brand or creator, by query construction rather than by accident of current caller behavior. Proven with a real `@DataJpaTest` + H2 (Mockito can't observe this class of behavior). Javadoc corrected to state what's actually enforced. **Kabir's adversarial pass went further and checked every sibling method on the repository — found one, `findByWorkspaceIdAndRevokedFalse`, with the identical latent pattern** (safe today only because `BrandProfile.workspaceId` has a DB `NOT NULL` constraint, not because the query enforces it; larger blast radius since it returns a `List`). Logged as `F-0163`, explicitly not folded into this ticket. 17/17 tests green.
+
+---
+
+### CR-112 · 🟡 Medium · Brand-side Meta connect flow was never implemented — Trend-Spark's real own-content signal has never fired in production
+**Owner:** Priya · **Status:** ASSIGNED
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api BrandOwnContentService.java:90/104; no brand Meta OAuth route exists`
+
+**What:** No production path can ever create a brand-scoped Meta token row (the only Meta controller is creator-gated), so the IG-media check always short-circuits to NO_META_TOKEN and permanently falls back to a cruder proxy. Whole unbuilt feature.
+
+---
+
+### CR-113 · 🟡 Medium · Meta integration test coverage locks in the production bug and leaves the working path unprotected
+**Owner:** Kavya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `MetricsPollingJobTest.java, AudienceDemographicsJobTest.java, MetaTokenStorageTest.java`
+
+**What:** The two broken jobs' tests stub and assert the same wrong ID as production, keeping CI green over a dead pipeline. MetaTokenStorage.storeCreatorToken has zero tests, and CreatorCaptionSyncJob (the one correct implementation) has no test file at all.
+
+> ✅ **2026-08-10 — FIXED, independently QA-passed. Re-checked the premise against current files rather than the ticket's text.** `MetricsPollingJobTest`/`AudienceDemographicsJobTest` already assert the correct numeric IG id (fixed by the earlier CR-99/F-0113 pass) — that part of the ticket was stale. `CreatorCaptionSyncJobTest` already exists with 9 tests — also stale. The one genuinely open gap, `MetaTokenStorage.storeCreatorToken` having zero coverage, is now closed: 7 new tests covering both insert and update branches, with `igBusinessAccountId` persistence specifically asserted (pairs with this session's CR-110 fix). 52/52 tests green across all four files.
+
+---
+
+### CR-114 · 🟡 Medium · A null token-expiry value from Meta would store an already-expired token, silently disabling all downstream jobs
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api CreatorMetaOAuthService.java:67-69`
+
+**What:** If Meta's long-lived token exchange ever omits expires_in, expiresAt is computed as Instant.now(), so every subsequent validity filter immediately excludes it and downstream jobs silently skip that creator.
+
+> ✅ **2026-08-10 — Already fixed by uncommitted concurrent-session work, independently QA-passed rather than taken on the diff's word.** A null `expires_in` now falls back to a documented `DEFAULT_LONG_LIVED_TOKEN_LIFETIME_SECONDS` (~60 days, matching Meta's own documented token lifetime) with a loud warning log, instead of `Instant.now()`. The connect flow doesn't hard-fail — consistent with this file's existing convention for other unexpected-but-non-fatal Meta response gaps (`resolveIgAccountSafely`, `resolveGrantedScopesSafely`). Regression test proves the fallback lands ≥59 days in the future, not just "not exactly now". 5/5 tests green.
+
+---
+
+### CR-115 · 🟢 Low · Facebook Page engagement scope is requested and granted but the data is never fetched
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api FacebookPageClient.getPage() (zero production callers)`
+
+**What:** pages_read_engagement is included in the OAuth scope request, but no job or controller ever calls the client method that would use it — permission requested for no benefit.
+
+> ✅ **FIXED, independently QA-passed.** `pages_read_engagement` removed from `REQUIRED_SCOPES`; the connected-accounts UI's granted-permissions list no longer advertises a scope Meta was never asked to (and now isn't) grant.
+
+---
+
+### CR-116 · 🟢 Low · IG username is fetched from Meta but never stored anywhere
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `influora-api PlatformStatsAggregationJob.java:196-204`
+
+**What:** InstagramUserResponse.username() is returned by Meta but discarded; the PlatformStat builder never sets a handle, so PlatformStat.handle is null from every automated path.
+
+> ✅ **FIXED, independently QA-passed.** `MetricsPollingJob` now sets `.username(profile.username())` on the `CreatorMetric` it saves; `PlatformStatsAggregationJob` rolls that into `platform_stats.handle`, only overwriting an existing handle when the snapshot actually carries one (never clobbered with null). Two dedicated tests in `PlatformStatsAggregationJobTest` cover both the null-safe-skip and the overwrite case.
+
+---
+
+### CR-117 · 🟢 Low · OAuth authorization code/state left visible in browser URL/history after callback
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-meta-callback.tsx:29-31`
+
+**What:** The callback page never calls history.replaceState after reading code/state from the URL, so the code persists in browser history/bfcache. Mitigated by server-side single-use state consumption, but still a hygiene gap.
+
+> ✅ **FIXED, independently QA-passed.** `creator-meta-callback.tsx` now calls `window.history.replaceState(null, '', window.location.pathname)` after reading `code`/`state`, so the one-time code no longer lingers in browser history/bfcache on top of the pre-existing server-side single-use protection.
+
+---
+
+### CR-118 · 🟡 Medium · Unguarded OAuth callback route reflects attacker-controlled error text with no allowlist
+**Owner:** Kabir · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `App.tsx:391 (no auth guard); src/pages/creator-meta-callback.tsx (error/error_description rendering)`
+
+**What:** The callback route has no auth guard, and error/error_description query params are rendered directly on a branded page with no allowlist or length cap. React escapes the text so it is not XSS, but an attacker can craft a link that displays arbitrary text as if from Influora.
+
+> ✅ **2026-08-10 — the allowlist (`KNOWN_OAUTH_ERROR_MESSAGES`) landed in a concurrent session's `e30e9bc`, closing the raw-reflection issue this ticket named. Dispatched to Priya, fresh context, for adversarial review — FAILED.** The fix's own mechanism was the hole: `KNOWN_OAUTH_ERROR_MESSAGES[errorCode]`, a plain object bracket lookup, lets an attacker-controlled `?error=` value walk JS's prototype chain on this still-auth-guard-free route. Measured: `?error=__proto__`/`valueOf` crashed the render (`setErrorMessage` — a React state setter — received a function and React invoked it with `this === undefined`); `?error=toString` rendered the literal string `"[object Undefined]"`; `?error=constructor` rendered nothing. Priya's own empirical sweep of 48 candidate keys found the real blast radius was **12** prototype members, not the 4 first found. **Fixed:** `Object.prototype.hasOwnProperty.call(...)` own-property gate + a runtime `typeof === 'string'` guard — closes the whole vulnerability class (any current or future `Object.prototype` member), not just the tested payloads, verified empirically (0/48 escapes after the fix vs 12/48 before). `error_description` confirmed unable to reach the same or any other lookup. 5 new revert-proven regression tests (`__proto__`, `constructor`, `toString`, `valueOf`, `hasOwnProperty`) — reverted, watched them fail, restored, watched them pass. **Re-reviewed adversarially, PASS.** `tsc --noEmit` clean, 16/16 tests green across multiple runs. Logged and closed: `F-0181` (the vulnerability), `F-0186` (unrelated pre-existing test-suite flakiness observed in passing, not reproducible after 5 clean reruns).
+
+---
+
+### CR-119 · 🟡 Medium · YouTube, TikTok, and Twitter/X have no OAuth or live data fetching at all — follower counts are entirely self-reported
+**Owner:** Priya · **Status:** ASSIGNED
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `onboarding social-connect flow / no platform-specific integration code`
+
+> ⚠️ **PARTIAL — the provenance half landed; the OAuth build did NOT. Row stays `ASSIGNED` deliberately.**
+>
+> **What was actually built (2026-08-14, proof-os loop, vikram → priya, 3 review rounds):** the *display-honesty* half of this ticket. `PlatformStat.verified` was found to be **structurally dead** — the only two entity-level writes were a hardcoded `.verified(false)` in `PlatformStatsAggregationJob` and `PortfolioService#syncPlatforms`, and the update path re-pinned it to its own stale value, so **no application write path ever set it true** (the sole `true`s in the repo were fabricated rows in `V7__seed_discoverable_creators.sql` / `DevSeedCreatorsRunner`, both dealt with below). Meanwhile `brand-creator-profile.tsx` rendered a per-platform ✓ badge off that flag. Net effect: genuinely Meta-OAuth-verified Instagram was stored and displayed *identically* to a creator-typed YouTube/TikTok number, and the badge never rendered in live mode at all. That is precisely the harm this ticket's "**Implication**" paragraph names, and it needed no external credentials to fix.
+> - `verified` is now derived from the snapshot's real data source (`CreatorMetric#isPlatformVerified()`), never blanket-set — true only for `META_API`-sourced rows, false for self-reported.
+> - The builder's `dataSource` default was **fail-open** (`META_API`), so a forgotten `.dataSource(...)` would have minted a verified claim; it now fails closed to `CREATOR_REPORTED`, with a migration (`V20260814120000`) fixing the matching fail-open DB-column default.
+> - All **three** brand-visible per-platform surfaces now state provenance **in words** ("Followers verified" / "Self-reported") rather than relying on badge-presence: `brand-creator-profile.tsx`, and BOTH `PlatformStatCard` *and* `PlatformPill` in `creator-portfolio-public.tsx`. The pills matter independently: when a creator turns `visibility.platformStats` off, they are the *only* per-platform surface on the page. Wording is "Followers verified", not "Verified", because that page already renders a creator-identity "Verified" badge — two different claims must not share one word.
+> - Live lies removed: **both** mock YouTube fixtures claiming `verified: true` — `mockCreator` in `brand-creator-profile.tsx` *and* `mockPortfolio()` in `src/lib/api.ts`, the latter being what `creator-portfolio-public.tsx` actually renders in every non-live build; every `is_verified=true` row in `DevSeedCreatorsRunner` (hand-written demo numbers no Meta fetch produced); and the false comment "Platform pills — live, OAuth-verified numbers".
+> - Coverage: **8 new backend tests across both write paths + 8 new frontend tests across both pages.** Priya's fresh-context review returned **BELIEVED / BELIEVED / BELIEVED / BROKEN across four rounds**, and every round caught something real that a same-context self-check would have waved through: round 1 — three defects incl. one *introduced by this work* (a mock row now printing a literal "Verified") and a fail-**open** builder default on a trust flag; round 2 — reverting `PortfolioService`'s change wholesale was **undetected by the entire suite** (23/23 green); round 3 — `PlatformPill` still badge-only (a straight DONE_WHEN violation), `creator-portfolio-public.tsx` had zero tests, and the migration had introduced a Java↔DB divergence of its own; round 4 — a **second** mock YouTube fixture still claiming verified (invisible to tests that stub `@/lib/api`, now covered by a test that stubs nothing), and a replacement test of mine that was a **tautology** — it never invoked the service and merely asserted that an entity assigns the boolean handed to it.
+> - **Mutation status, stated precisely:** ten mutations were exercised; nine die loudly (aggregation-job verified→false, PortfolioService verified→false, `isPlatformVerified()`→true, builder default→`META_API`, never-demote latch in the aggregation job, flipping *each* of the two shipped mock fixtures, and removing the wording from *each* of the three UI surfaces). The sixth — a never-demote latch on the **`PortfolioService`** path specifically — is **inert by construction and deliberately not "fixed" with a test**: `syncPlatforms` hardcodes `.dataSource(META_API)`, so `isPlatformVerified()` is unconditionally true there and the latch is behaviourally identical to the correct expression. Killing it would require asserting on the source expression rather than on behaviour. What actually protects the shared semantic is that both upserts derive from the same single predicate, which *is* directly covered. This is recorded rather than papered over.
+>
+> **What is still NOT built — the ticket's actual headline:** there is still **no OAuth controller, no token storage, and no API client for YouTube, TikTok or Twitter/X.** Follower counts for those platforms remain entirely creator-reported (they are now *labelled* as such, which is the point above — but labelling is not integrating). This half is blocked on three external developer registrations that cannot be done from a coding session: Google Cloud + YouTube Data API v3, TikTok for Developers (scope approval), and X API (paid tiers). Writing client/response-mapping code against contracts that cannot be exercised would repeat CR-108 (fabricated rows shipped as real) and CR-120 (mock OAuth code sent to a live backend) — explicitly declined for that reason.
+>
+> **Declared not-checked (proof-os law 5 — naming what the gate could not see):** the new migration `V20260814120000` has **not been executed against a real MySQL**. All 119 backend tests are unit tests; Flyway only runs under the Testcontainers integration suite, and Docker was unavailable in this session. The DDL is a single `MODIFY COLUMN` default change matching V21's existing column type, and it deliberately does not rewrite any stored row — but it is unverified by execution and must run once on a real MySQL 8 before merge. Also unverified: live-mode rendering (the frontend tests cover the mock branch and the component contract, not a real API response), and creator-facing surfaces (`creator-profile.tsx`, and the per-platform badge in `creator-portfolio-editor.tsx`) which remain badge-only by choice — though that editor's *visibility hint* did carry a false "Instagram, YouTube — verified via OAuth" claim in words and was corrected — they show a creator their *own* numbers, where the provenance question is far weaker than a brand deciding where to spend.
+>
+> **Do not close this row on the strength of the provenance work.** CR-119 is done when a creator can actually connect YouTube/TikTok/X and the platform returns their real numbers.
+
+**What:** No OAuth controller, token storage, or API client exists for these platforms. All follower/handle data shown comes from unverified creator self-report at onboarding, but is displayed to brands as if it were real platform data.
+
+---
+
+### CR-120 · 🔴 Critical · Creator onboarding Step 1 hardcodes a mock OAuth code that is sent to the real backend in live mode — no creator can complete onboarding in production
+**Owner:** Vikram · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-onboarding.tsx:97-99`
+
+**What:** The 'Connect Instagram/YouTube' onboarding step sends the literal string 'mock_oauth_code' to POST /onboarding/creator/socials even in live mode; the real OAuth popup flow was never implemented. The backend rejects the fake code, canProceed() stays false, and there is no Skip option — no creator can pass this step in production.
+
+> ✅ **2026-08-10 — FIXED via proof-os /work loop (owner-instructed; Claude, not Tara — recorded per the §3/§5 protocol-exception precedent).** Defect re-verified real in current source first (`creator-onboarding.tsx` still posted the literal `'mock_oauth_code'`). Fix: Instagram connect now drives the **real** `api.metaOAuth.authorize()` redirect (same flow Settings uses) and never sends a fabricated code; YouTube shows "Coming soon" instead of posting a fake code; a **"Skip for now"** control on Step 1 removes the hard block (backend `CreatorOnboardingService.complete()` requires only the creator role, so Skip is not a dead end); the shared `creator-meta-callback.tsx` routes onboarding-initiated connects back to `/creator/onboarding` and consumes the resume marker on mount so it can never misroute a later Settings connect. `tsc --noEmit` passes. **Independent review: Priya PASS (fresh-context, artifact+done_when only) — BELIEVED ceiling.** Remaining gate: **Neha live re-test** (real Meta app + deployed backend). Code-complete ≠ DONE.
+
+---
+
+### CR-121 · 🟡 Medium · "Remember me" checkbox on login has no state or effect
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/pages/creator-login.tsx:131-136`
+
+**What:** The checkbox has no checked prop, no onChange, no backing state variable. Checking it has zero effect on session length.
+
+> ✅ **2026-08-10 — FIXED by a concurrent session (`e30e9bc`, §12), independently QA-passed by this session.** Real `checked`/`onChange` state wired to `HttpClient.setToken`'s new optional `remember` param, which picks `localStorage` (survives browser close) vs `sessionStorage` (cleared on close). Every pre-existing call site that omits the third arg (notably the silent token-refresh path) preserves whichever storage the original login chose instead of upgrading it to persistent — confirmed by reading the mechanism directly, not taken on the commit's word. 5/5 tests green, `tsc --noEmit` clean.
+
+---
+
+### CR-122 · 🟡 Medium · Desktop header search bar is a non-interactive div styled to look like a real search input
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/creator/creator-layout.tsx:335-340`
+
+**What:** The search control is a plain <div>, not an input or button — no onClick, no onKeyDown, no routing, no backend search endpoint. The visual affordance misleads creators into thinking it is functional.
+
+> ✅ **2026-08-12 — FIXED by a concurrent session, independently QA-passed.** Real `<button>` (not a div), real react-router navigation to `/creator/deals`, whose search input genuinely drives the deals list filter — confirmed by reading the destination's own filter logic, not assumed. Mobile has the same fix, same destination, no separate broken variant. Covered by a regression test (`creator-layout-search.test.tsx`, 2/2 green).
+
+---
+
+### CR-123 · 🟡 Medium · Notification bell button has no click handler — unread badge is correct but clicking does nothing
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/creator/creator-layout.tsx:347-354`
+
+**What:** The unread count badge is correctly driven by a real API aggregation, but the bell button itself has no onClick, so clicking it never opens a panel or navigates anywhere.
+
+> ✅ **2026-08-12 — FIXED by a concurrent session, independently QA-passed.** Real click handler routes to `/creator/notifications`, a genuinely functional page (not a stub) — real auth-guarded route, real fetch/mark-read/mark-all-read backed by `NotificationController.java`, loading/error/empty/populated states all render actual data. **Real follow-up defect found and logged, not this ticket's stated scope:** the bell's badge sums unread *deal messages* (same source as the Deals nav badge), not unread *notifications* — so the number and the destination can disagree in both directions. CR-123's own done_when explicitly excluded the badge ("already correct per the original ticket"); logged as `F-0191` for its own ticket.
+
+---
+
+### CR-124 · 🟢 Low · Mobile header search icon button has no click handler
+**Owner:** Ananya · **Status:** IN VERIFY
+
+**Source:** `creatorF.md` audit pass — logged here, not independently re-verified in this pass. Kavya/Neha must confirm before this row advances past `ASSIGNED`.
+
+**Where:** `src/components/creator/creator-layout.tsx:344-346`
+
+**What:** Visible only on mobile; tapping it does nothing, consistent with the desktop search placeholder issue.
+
+> ✅ **2026-08-10 — FIXED, ADVERSARIALLY QA-passed (fresh-context Priya, mutation-tested).** Routes to `/creator/deals`'s real "Search brand or campaign…" box, mirroring CR-122's matching desktop fix — same destination, both real `<button>`s now (not a non-interactive `<div>`). New `creator-layout-search.test.tsx` covers both; Priya independently mutation-tested the gate itself (removed the mobile `onClick` → only the CR-124 test fails; swapped the desktop `<button>` for a `<div>` → only the CR-122 test fails), and traced the CI include-glob to confirm the file actually runs.
+>
+> Reviewing this fix surfaced 3 more accessible-name defects in the same file, all fixed and mutation-tested through the same fresh-context loop before closing: **F-0167** (mobile hamburger menu button had no accessible name at all), **F-0169** (mobile avatar dropdown trigger, same defect), **F-0170** (desktop sidebar account trigger — needed a different fix, since it has real visible label text a plain `aria-label` would have overridden, violating WCAG 2.1 AA 2.5.3), and **F-0179** (desktop trigger's avatar initials leaking into the composed accessible name). **F-0180** (both header logo buttons sharing the accessible name "Influora") was independently triaged and closed as **NOT A DEFECT** — they're a strict CSS `display:none` partition, never simultaneously reachable in any real browser, and WCAG SC 3.2.4 actually requires the shared name for same-function controls; diverging it would have been a real regression (failure technique F31) traded for an imaginary one.
+
+---
+
 
 ## 6. Tara's Update Protocol
 
@@ -1962,3 +3049,131 @@ So: two new rows (#5, and finding #1 above), one fold-in (#6 → CR-22a), one de
 **What this changes about the shape of the file:** §4's Wave 6 claim that "nothing here is blocked on engineering capacity" no longer holds. After these rulings, four of the five Wave 6 items are ordinary engineering work with named owners. **CR-15 (domain + TLS) is the only genuine Swapnil-gated blocker left**, unchanged from §8 — and unchanged is also the answer on the `publish-images.yml` auto-deploy line: **leave it in while the box is a test box**, and remove it the day Neha starts verifying against something a customer can see.
 
 — *Priya Sharma, CTO · Swapnil Maruti, CEO*
+
+---
+
+## 11. Low-Severity Remediation Loop — 2026-08-10 (arjun/priya, via proof-os)
+
+**Process note, read before the table.** This section was produced by the repo owner running the proof-os trust layer's `/work` loop against every 🟢 Low row in this file (28 rows: CR-16, 17, 20, 21, 23, 27, 28, 29, 33, 45, 47, 48, 50, 52, 75, 76, 77, 82, 83, 85, 86, 88, 89, 92, 115, 116, 117, 124), not by Tara's live-walkthrough process. §6 reserves the `Status:` lines above for Tara, so nothing above this section was edited — this is a separate record, same discipline as §5b. Every claim below is backed by either (a) a real oracle (`mvn -o test`, `npm run typecheck`, `vitest run`) or (b) an independent fresh-context Priya review that opened the actual files itself, per proof-os's isolation rule (a checker is given the artifact and the done_when only, never the producer's reasoning) — not by this session's own say-so.
+
+### 11.1 Already fixed on this branch — re-verified, not re-implemented (13 rows)
+
+Reading each row's own prose first (per this file's own "comments lie" warning, §5's CR-33), then checking the actual code, found that CR-16, 17, 20, 21, 23, 28, 29, 33, 45, 47, 48, 50 were **already genuinely fixed**, not just claimed fixed — every one confirmed against real source by an independent fresh-context Priya pass, and the relevant suites re-run green: backend `mvn -o -Dtest=EscrowServiceTest,AuthRateLimitFilterK6BucketTest,AuthRateLimitFilterShopifyBucketTest,AuthRateLimitFilterMePasswordBucketTest test` → 59/59; frontend `vitest run` on the CR-20/21/23/29 guard files → 15/15. CR-27 is a documented WONTFIX ruling (§10.2) and correctly carries no code change — confirmed no `CR-27` reference exists in `creator-deals.tsx`.
+
+Two genuine (non-blocking) gaps the re-verification surfaced, neither introduced by this pass:
+- **CR-27's own ruling asked for an in-code comment** ("should be commented as a decision so the next reader does not re-file it as an oversight") that was never written. Still missing.
+- **CR-17's `--app-header-h` token covers the creator surface only.** `brand-chat.tsx:1652` and `MeeraWorkspace.tsx:90` still hardcode `h-[calc(100vh-3.5rem)]`, free to drift from the token independently. Out of this file's scope (brand surface), flagged for whoever owns that side.
+
+### 11.2 Newly fixed this pass (13 rows)
+
+| CR | What changed | Files |
+|---|---|---|
+| **CR-75** | `WalletTransaction` now carries `rawType` (the real 8-value backend type) alongside the existing collapsed EARNING/PAYOUT; Payouts tab filters on `rawType === 'WITHDRAWAL'` instead of `type === 'PAYOUT'`, so a platform-fee or escrow-hold debit no longer displays as a payout. Verified against `WalletService.java` that `WITHDRAWAL` is in fact the only value creator bank payouts ever write. | `src/pages/creator-wallet.tsx` |
+| **CR-82** | Removed the no-op `.filter((deal) => deal.status === 'COMPLETED')` after an already-server-filtered `GET /deals?status=completed` — confirmed server-side filter is real (`DealService.java` `statusesForFilter`). | `src/components/shared/collaboration-reviews-panel.tsx` |
+| **CR-83** | Real pagination: `GET /creator/affiliate-earnings` now takes `page`/`limit`, returns `page/limit/totalElements/hasMore`; the summary (this-month/unsettled totals) is still computed from the creator's **full** history regardless of page, not just the page returned — the part most likely to be gotten wrong, pinned by a new test that seeds 5 earnings, fetches a 2-row page, and asserts the summary still totals all 5. Frontend hook accumulates via `loadMore`; view has a working "Load more" button. **Priya's first pass flagged two real follow-ups, both fixed in this same session:** (a) an absurd `page` value (`page * limit`) could overflow `int` and throw a 500 — widened to `long` before the multiply, pinned by a new regression test; (b) pagination is in-memory (the DB fetch and heap still scale with the creator's full history) — disclosed honestly in the code's own javadoc rather than silently claimed fixed; the HTTP response is bounded, the underlying query is not. | `CreatorAffiliateEarningController.java`, `AffiliateEarningsService.java`, `AffiliateEarningDtos.java`, `AffiliateEarningsServiceTest.java`, `src/lib/api.ts`, `src/hooks/creator/useAffiliateEarnings.ts`, `src/components/creator/AffiliateEarningsView.tsx` |
+| **CR-85** | Avatar/camera button now opens a real file picker, uploads via the existing generic `POST /uploads` (`api.uploads.upload`), PATCHes `avatarUrl` via `creatorProfile.patchMe`, with loading state and toasts. No new backend built — reused the existing multipart upload route already used by creator deliverables. | `src/pages/creator-profile.tsx` |
+| **CR-86** | "Connect More Accounts" now calls `api.metaOAuth.authorize()` and redirects, mirroring `ConnectedAccounts.handleConnect` exactly — does not mount the whole Connected Accounts card (that's CR-101, a separate High ticket about the card never being mounted anywhere), just makes this one button do the real thing. | `src/pages/creator-profile.tsx` |
+| **CR-88 / CR-89** | **Two-pass fix; the first pass was wrong and Priya's independent review caught it.** Pass 1 routed both Settings rows and the mobile dropdown to `https://help.influora.com` — an external host with no evidence it resolves; the brand side had already migrated *off* this exact URL for the same reason (`wiki/build/ananya-nav-alignment-2026-07-23.md`), and "Contact Support" was byte-identical to "Help Center." Pass 2 (this session, after the FAIL verdict): Help Center and the sidebar/mobile "Help & Support" entries now route to the real in-app `/support` page; "Contact Support" now opens `mailto:` to `COMPANY.email` (`src/lib/company.ts` — CEO-confirmed real contact, not fabricated). Terms & Privacy's destination was already a real route but rendered a "coming soon" stub while actual v0 legal drafts sat unwired (`src/content/legal/*.md` via `LegalPage`, imported nowhere) — `/terms` and `/privacy` now render `LegalPage` with the real content instead of `StaticPage`. | `src/pages/creator-settings.tsx`, `src/components/creator/creator-layout.tsx`, `src/App.tsx` |
+| **CR-92** | Edit Profile dialog gained real controls for the 4 named-missing fields — `username` (text input), `categories` (add/remove tag input), `languages` (toggle from the same fixed list `creator-onboarding.tsx` uses), `discoverable` (Switch) — all four populated from `loadProfile` and included in the `handleSave` PATCH payload. | `src/pages/creator-profile.tsx` |
+| **CR-115** | `pages_read_engagement` removed from `MetaOAuthService.REQUIRED_SCOPES` — least-privilege, since `FacebookPageClient.getPage()` (the only method that scope backs) has zero production callers; `pages_show_list` retained since `resolveConnectedInstagram` is live. Both frontend mirrors (`META_REQUIRED_SCOPES`, `connected-accounts.tsx` `SCOPE_LABELS`) updated to match; `MetaOAuthServiceTest` updated to assert absence. Priya's follow-up caught two stale cosmetic leftovers, both fixed: `connected-accounts.tsx` still said "Page list & engagement connected" after the scope was dropped, and `FacebookPageClient.getPage()`'s javadoc didn't warn that calling it now fails without first re-adding the scope. | `MetaOAuthService.java`, `MetaOAuthServiceTest.java`, `src/lib/api.ts`, `src/components/creator/connected-accounts.tsx`, `FacebookPageClient.java` |
+| **CR-116** | `InstagramUserResponse.username()` now flows through: new `username` column on `creator_metrics` (migration `V20260810120000`), set in `MetricsPollingJob.pollOne`, read in `PlatformStatsAggregationJob.upsertPlatformStat` and written to `PlatformStat.handle` on both create and update — the update path only overwrites when the new snapshot actually carries a username, so a poll where Meta omits it can't blank out a previously-recorded handle. Priya's review confirmed this guard exists but had zero test coverage; two tests added this session pin both directions (existing handle survives a null-username snapshot; a genuinely new username does overwrite the stale one). | `CreatorMetric.java`, `MetricsPollingJob.java`, `PlatformStat.java`, `PlatformStatsAggregationJob.java`, `PlatformStatsAggregationJobTest.java`, `V20260810120000__creator_metric_username.sql` |
+| **CR-117** | `creator-meta-callback.tsx` now calls `window.history.replaceState(null, '', window.location.pathname)` immediately after reading `code`/`state`/`error` off the URL — before the callback API request even starts, and before the missing-param/error early returns. `replaceState`, not `pushState`, so no extra back-button entry. | `src/pages/creator-meta-callback.tsx` |
+| **CR-124** | Mobile header search icon now navigates to `/creator/deals`, which has a real, working "Search brand or campaign…" input (`search` state actually filters the list) — not another dead end. The adjacent desktop search placeholder (CR-122) is intentionally untouched; that one needs a real search UI built, not a handler wired, and is a separate Medium ticket. | `src/components/creator/creator-layout.tsx` |
+
+### 11.3 Verified as not a defect — no code change (1 row)
+
+- **CR-52** — the tracker described the frontend sending an unused `?role=` query param on `GET /deals`. Checked both sides: `http.request()`'s `role` option is used only to select which auth header/token to send, never merged into the URL's query string (`role` and `query` are separate, distinct parameters in the function signature); `DealController.java` has no `role` `@RequestParam` at all — role is derived from the JWT on both ends, and no `?role=` is ever sent anywhere in the current code. This finding does not match the code as it exists today — recorded here so nobody re-files it.
+
+### 11.4 Explicitly deferred — documented, not silently dropped (2 rows)
+
+- **CR-76 (Tax Docs placeholder)** and **CR-77 (no dedicated payouts endpoint)** are both real feature gaps, not bugs with a small fix: Form-16A/TDS-certificate generation and a payouts endpoint with TDS/fee/GST/UTR breakdown both require new domain modeling and (for CR-76) compliance-sensitive document generation — disproportionate to a Low-severity fix-loop pass. Checked that neither currently fabricates data: the Tax Docs tab already shows an honest "No tax documents yet" empty state, and the Payouts tab already derives a real (if less detailed) view from actual transaction rows. Left as documented feature gaps for a properly-scoped ticket, same posture this file already uses for CR-46's deferral.
+
+### 11.5 Verification trail
+
+- Backend: `mvn -o -q compile` clean; targeted suites re-run green across all rounds (final count: `AffiliateEarningsServiceTest` 13/13, `PlatformStatsAggregationJobTest` 8/8, `MetricsPollingJobTest` 12/12, `MetaOAuthServiceTest` 7/7, `MetaOAuthControllerTest` 5/5, `EscrowServiceTest` 33/33, `AuthRateLimitFilter*Test` 26/26). A full `mvn -o test` run (1638 tests) surfaced exactly 2 unrelated failures (`DealControllerTest.counterRequest_emptyDeliverables_failsValidation`, `BrandDeliverableServiceTest.testRejectSubmitted`) in files this pass never touched — `BrandDeliverableService.java` shows modified by concurrent work on this branch outside this session; flagged rather than silently ignored, not fixed here.
+- Frontend: `npm run typecheck` clean throughout, including after this repo's own concurrent automation rewrote `creator-layout.tsx` twice mid-session (confirmed both times that this pass's edits survived intact). Full `vitest run`: 39/39 files, 329/329 tests green on the clean re-run (one earlier run showed 3 unrelated failures under concurrent load — not reproducible on rerun, treated as transient resource contention, not a regression).
+- Independent review: 3 fresh-context Priya passes (frontend wiring, backend/data-model, pre-existing-claim re-verification) — 23 of 24 reviewed items PASS on first pass; CR-88/89's FAIL was corrected in this same session and is now folded into §11.2 above as the shipped fix, not left as an open finding.
+
+*— arjun (implementation), Priya Sharma CTO (independent review), proof-os `/work` loop, 2026-08-10*
+
+---
+
+## 12. Medium-Severity Remediation Loop (batch 1) — 2026-08-10 (arjun, via proof-os)
+
+**Process note.** Continuing the same `/work` loop against the 🟡 Medium rows, after re-checking the tracker fresh (per its own STALE warning) and finding a *separate* concurrent proof-os session had already closed roughly half the Medium queue in real time during this pass (CR-37, 38, 42, 43, 44, 51, 53, 56, 58, 60, 61, 73, 74, 78, 80, 81 — see each row's own `2026-08-10` update above). Confirmed with the repo owner before continuing: this batch covers only rows nobody had touched yet, to avoid duplicate/colliding work on the same files.
+
+### 12.1 Fixed this batch
+
+| CR | What changed | Files |
+|---|---|---|
+| **CR-54** | "Connect Instagram" from the Deal Room's deliverable panel now captures the live route (`window.location.pathname + search`) via a new shared `metaOAuth.setConnectReturnTo()` marker before the OAuth redirect, so completing/cancelling the dialog returns to the same deal room instead of dropping the creator at the app root. | `deliverable-lifecycle-panel.tsx`, `src/lib/api.ts` |
+| **CR-65** | Same shared return-marker mechanism, set by the Co-pilot entry points (`IGConnectPrompt.tsx`, `BusinessAccountRequired.tsx`) before redirecting — the callback page now sends a Co-pilot-initiated connect back to Co-pilot instead of always to Settings. Onboarding's own dedicated resume flag (CR-120) is untouched — it also drives wizard-step logic on return, not just navigation. | `creator-meta-callback.tsx`, `IGConnectPrompt.tsx`, `BusinessAccountRequired.tsx` |
+| **CR-66** | "Try Again" on a non-onboarding OAuth failure now re-invokes `metaOAuth.authorize()` and redirects, instead of just navigating to Settings and dead-ending the recovery path. A secondary "Back to Settings" link stays available as an exit. Onboarding's error state keeps its existing behavior (the wizard has its own Connect button). | `creator-meta-callback.tsx` |
+| **CR-105** | `setLocalConnectionState` is now called with all three args (`result.accountType ?? null`) on a successful callback — it was silently dropped before (2-arg call), which is why `requiresBusinessAccount` (`useDailySuggestion.ts`) could never observe `'personal'` and personal-IG creators looped on the connect prompt forever. Same root cause the High-severity CR-63 row names. | `creator-meta-callback.tsx` |
+| **CR-109** | A failed callback (both the Meta-redirect-error branch and the exception branch) now calls `setLocalConnectionState(false, [], null)`, so a previously-connected:true mirror can no longer survive a failed reconnect attempt and keep gating features as if still connected. | `creator-meta-callback.tsx` |
+| **CR-118** | `?error=`/`?error_description=` — attacker-controlled, this route carries no auth guard — are no longer reflected verbatim. A small allowlist of known Meta OAuth error codes gets its own friendly message; anything else, including the raw `error_description` text, falls through to one generic message. Pinned by a test asserting an injected string never appears on the page. | `creator-meta-callback.tsx` |
+| **CR-121** | "Remember me" now has real state and a real effect: `HttpClient.setToken` gained an optional `remember` param that picks `localStorage` (survives closing the browser) vs `sessionStorage` (cleared on tab close) for the access token, defaulting to the prior `localStorage`-always behavior for every pre-existing call site that doesn't pass it — including the silent token-refresh path, which must not upgrade a session-only login to persistent on its first renewal. Pinned by 5 unit tests. | `src/lib/api.ts`, `creator-login.tsx` |
+| **CR-122** | Desktop header search — was a non-interactive `<div>` styled to look like an input, no onClick/onKeyDown/routing. Converted to a real `<button>` routing to `creator-deals.tsx`'s genuinely working search box, matching CR-124's mobile fix (a full search UI is separate, larger scope — CR-70/71-sized work this ticket didn't ask for). | `creator-layout.tsx` |
+| **CR-123** | Notification bell now routes to a new `/creator/notifications` page — mirrors `brand-notifications.tsx` exactly (same `useNotifications` hook, the same real `GET/POST /notifications` endpoints already used by the brand bell; no new backend). The unread badge itself was already correctly driven by real data per the ticket's own text — only the click was dead. | `creator-layout.tsx`, new `creator-notifications.tsx`, `App.tsx` |
+
+### 12.2 Verification
+
+- `npm run typecheck` clean throughout, including after this repo's concurrent automation touched `creator-layout.tsx`/`creator-settings.tsx` mid-batch (re-confirmed this batch's edits survived intact each time).
+- Full `vitest run`: **48 files, 370 tests, all green** — includes 6 new tests on the OAuth callback cluster (`creator-meta-callback.test.tsx`) and 5 new tests on the remember-me token-storage change (`remember-me-token-storage.test.ts`), plus the full pre-existing suite re-run clean (no regression from the shared `HttpClient.setToken` signature change, which every other role/call site in the app depends on).
+- No backend changes in this batch — everything above is frontend-only.
+
+**Remaining Medium rows not yet started** (next batch): CR-11 (unreproduced — needs a live repro or a captured stack, not something fixable from source reading alone), CR-15/CR-22b (blocked on non-code decisions, unchanged), CR-57, 59, 62, 67, 68, 69, 70, 71, 72, 79, 84, 95, 96, 104, 106, 107, 108, 110, 111, 112, 113, 114, 119.
+
+*— arjun (implementation), proof-os `/work` loop, 2026-08-10*
+
+---
+
+## 13. Medium-Severity Remediation Loop (batch 2) — 2026-08-10 (arjun, via proof-os)
+
+**Process note.** Re-checked the tracker/source fresh before starting each item this round (per this section's own precedent) and found the concurrent session had continued closing rows in real time while batch 1 was in progress — including several this section had just listed as "not yet started." Re-verified rather than assumed: CR-62 (`matchesNiche` case-insensitive comparison, `CreatorCampaignService.java`), CR-67 (`onRetry` prop, `ContentPerformancePanel.tsx`), CR-69 (real date-range state, `creator-analytics.tsx`), CR-72 (`selectedPeriod` wired into `loadTransactions`, `creator-wallet.tsx`), CR-78 (creator flag path, `collaboration-reviews-panel.tsx`), CR-79 (both cross-links), CR-95 (full `Last-Event-ID` replay buffer, `DealMessageStreamRegistry.java`), CR-96 (batched deliverable loading, `DealService.java`) were all genuinely already fixed — confirmed by reading the actual code, not by trusting a status label. A first attempt at CR-71's backend half (a `profileClicksEstimated` DTO field) briefly *appeared* overwritten by a concurrent write mid-edit — re-checked the actual on-disk file rather than trusting that appearance, and it had in fact survived; wired through end-to-end below rather than left as the frontend-only fallback that first scare produced.
+
+### 13.1 Fixed this batch
+
+| CR | What changed | Files |
+|---|---|---|
+| **CR-57** | `creatorCampaigns.browse`/`get` mocks returned an empty list / `null`, so the entire browse → detail → apply loop was empty/not-found in demo mode. Added 3 illustrative mock campaigns (clearly synthetic, live mode untouched) so the loop is actually demonstrable. | `src/lib/api.ts` |
+| **CR-59** | My Applications' data source deliberately excludes brand-initiated invites (`Collaboration.source = APPLICATION` only) — a real `/creator/invites` surface needs a new backend query, out of proportion here. Added a cross-link telling a creator where invites actually show up (Discover Campaigns) instead of leaving no path at all. | `creator-applications.tsx` |
+| **CR-70** | All four analytics mocks (`emptyMetrics`/`emptyScores`/`emptyDemographics`, used only in mock-mode branches — confirmed no live-mode caller depended on the "empty" semantics) returned zero/null everywhere, making every analytics panel look broken in a demo. Replaced with illustrative mock-only values; live mode is untouched — a creator with genuinely no data still gets exactly what the server returns. | `src/lib/api.ts` |
+| **CR-71** | `profileClicks` (`totalFollowers / 100`, a rough proxy — no real click-tracking event exists for it) was rendered as if it were a real measurement. New `profileClicksEstimated` boolean on `PortfolioAnalyticsResponse` (always `true` today, until real tracking ships), read end-to-end by the frontend to show "Estimated from follower count" rather than a hardcoded label — one new backend test pins it. | `PortfolioDtos.java`, `PortfolioService.java`, `PortfolioServiceTest.java`, `src/lib/api.ts`, `creator-portfolio-editor.tsx` |
+| **CR-84** | The profile page's per-platform sync button was a bare `setTimeout` with no API call at all — a fully fabricated "synced" confirmation. Now calls the same real `POST /portfolio/sync` the portfolio editor's button already uses (that endpoint is itself a documented server-side no-op — a separate, already-flagged gap this fix doesn't claim to close) — a real network round trip that can genuinely fail, not a client-only timer. | `creator-profile.tsx` |
+
+### 13.2 Verification
+
+- `npm run typecheck`: clean. One transient error appeared mid-round in `dashboard-page.tsx` (a file this pass never touched — `walletRunwayHealth` undefined) from concurrent in-flight work elsewhere on the branch; gone on the next re-run, not fixed here, flagged rather than silently worked around.
+- Full `vitest run`: **51 files, 388 tests, all green.**
+- Backend: CR-71's DTO change compiles clean (`mvn -o -q compile`) and `PortfolioServiceTest` is green (8/8, including the new `profileClicksEstimated` test).
+
+**Remaining Medium work**: the Meta-connection cluster is the only substantial chunk nobody has touched — CR-104, 106, 107, 108, 110, 111, 113, 114 (correctness/plumbing fixes) and CR-112/119 (two genuinely unbuilt features: brand-side Meta connect, non-Meta platform OAuth — likely disproportionate for this loop, same category as CR-76/77's deferral, pending confirmation). CR-11/15/22b unchanged (non-code blockers).
+
+*— arjun (implementation), proof-os `/work` loop, 2026-08-10*
+
+---
+
+## 14. Medium-Severity Remediation Loop — Meta cluster (batch 3) — 2026-08-10 (arjun, via proof-os)
+
+**Process note.** Re-swept the entire Meta cluster fresh before starting (per this section's own standing precedent) and found the concurrent session had, in the time since §13 was written, closed nearly all of it: CR-104 (real `/me/permissions`-derived `grantedScopes`, `CreatorMetaOAuthService.java`), CR-105 (accountType threading, same file), CR-106 (`GET /meta/oauth/status` + `POST /meta/oauth/disconnect` routes, `MetaConnectionService.java`), CR-107 (`useMetaConnection` hook re-verifying on mount + visibility-regain, `connected-accounts.tsx`), CR-108 (`connectSocial` now throws `SOCIAL_OAUTH_NOT_IMPLEMENTED` instead of fabricating `followers(0)` rows, `CreatorOnboardingService.java`), CR-110 (`igBusinessAccountId` threaded through `storeToken`'s INSERT branch, `MetaTokenStorage.java`), CR-111 (`workspaceId IS NOT NULL` made query-level-enforced, not just javadoc-claimed, `MetaOAuthTokenRepository.java`) — all confirmed by reading the actual current source, not trusted from a file-touch count. This left exactly two genuinely open items for this pass: CR-113 and CR-114.
+
+### 14.1 Fixed this batch
+
+| CR | What changed | Files |
+|---|---|---|
+| **CR-114** | A null `expires_in` from Meta's long-lived token exchange computed `Instant.now().plusSeconds(0)` — an already-expired token, stored and returned as if the connect succeeded, silently excluding that creator from every downstream job's validity filter with no error. Now falls back to the documented ~60-day default (matching `MetaOAuthService.exchangeForLongLivedToken`'s own javadoc) with a warning log, since this response shape shouldn't happen but must not silently disable the pipeline if it does. One new test captures the stored `expiresAt` and asserts it lands ~60 days out, not "now." | `CreatorMetaOAuthService.java`, `CreatorMetaOAuthServiceTest.java` |
+| **CR-113** | Two of the three named gaps were already closed as side effects of earlier passes (the wrong-ID test stubbing was fixed alongside CR-99/F-0113; `MetaTokenStorage.storeCreatorToken` already has 4 tests). The one still-real gap — `CreatorCaptionSyncJob` had no test file at all, despite `CreatorThemeTaggingJob`'s own javadoc depending on it having run first — is now covered: 9 new tests pinning the resilience discipline the class javadoc claims (per-creator AND per-item try/catch isolation, no-linked-account is a skip not a failure, dedup on already-cached media, blank-caption skip, the `captionSyncMaxCreatorsPerRun` cap). | new `CreatorCaptionSyncJobTest.java` |
+
+### 14.2 Deferred — documented, not silently dropped
+
+- **CR-112** (brand-side Meta connect flow — the only Meta controller is creator-gated, so `BrandOwnContentService`'s IG-media check can never create a brand-scoped token row) and **CR-119** (real YouTube/TikTok/Twitter OAuth) are both explicitly labeled "whole unbuilt feature" in their own tracker rows — real new OAuth flows, disproportionate to a Medium-severity fix pass. Same category and reasoning as CR-76/77's deferral. **CR-119 is already handled honestly in code**, not just left alone: CR-108's fix makes `connectSocial` throw `SOCIAL_OAUTH_NOT_IMPLEMENTED` rather than fabricate data, with `OnboardingDtos.java`'s own javadoc naming CR-119 as the hook point for when real per-platform OAuth lands. CR-112 has no equivalent honest-fallback fix applied in this pass — `BrandOwnContentService`'s existing `NO_IG_BUSINESS_ACCOUNT` fail-closed behavior (from the CR-99 pass) already covers the "no token" case correctly, so no further code change was identified as in-scope for this deferral.
+
+### 14.3 Verification
+
+- Backend: `mvn -o -q compile` clean. Targeted suite: `CreatorCaptionSyncJobTest` 9/9, `CreatorMetaOAuthServiceTest` 5/5, `MetaTokenStorageTest` 13/13, `MetricsPollingJobTest` 12/12, `AudienceDemographicsJobTest` 12/12, `MetaOAuthTokenRepositoryNullWorkspaceIdTest` 2/2, `MetaOAuthControllerTest` 10/10, `MetaConnectionServiceTest` 5/5 — 68/68. Full `mvn -o test`: **1719/1720**, the one failure (`BrandDeliverableServiceTest.testRejectSubmitted`) being the pre-existing, already-ledgered (F-0136) concurrent-session issue this file's §12 already flagged — unrelated to this batch, not re-fixed here.
+- No frontend changes this batch.
+
+**This closes every Medium-severity row this session set out to check** except the non-code blockers (CR-11 unreproduced, CR-15/22b blocked on business decisions) and the two explicitly-deferred feature builds (CR-112, CR-119) above.
+
+*— arjun (implementation), proof-os `/work` loop, 2026-08-10*

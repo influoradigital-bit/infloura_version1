@@ -75,6 +75,7 @@ import re
 import uuid
 from typing import Any
 
+import anyio
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.auth.service_token import AuthError, auth_error_to_http, verify_creator_token
@@ -91,8 +92,8 @@ from app.prompt.trend_tag import THEME_SET
 from app.prompt.validators import (
     _CODE_FENCE_RE,
     _has_forbidden_petname,
-    _PRICE_RE,
     _statement_count,
+    has_invented_price,
 )
 from app.providers.claude import ClaudeProvider
 from app.security.redaction import log_event, shape_of
@@ -189,7 +190,7 @@ def parse_and_validate(
             return None
         if _has_forbidden_petname(field_value):
             return None
-        if _PRICE_RE.search(field_value):  # echoed/invented price -> reject
+        if has_invented_price(field_value):  # echoed/invented price -> reject
             return None
         if _MARKETPLACE_RE.search(field_value):  # brand name must never surface
             return None
@@ -210,10 +211,16 @@ async def creator_suggestion(request: Request, authorization: str | None = Heade
         )
 
     try:
-        verify_creator_token(
-            _bearer(authorization),
-            endpoint="creator_suggestion",
-            body_creator_profile_id=creator_profile_id,
+        # F-09 (round 2): this was the seventh route, and the only one still
+        # calling token verification inline. verify_creator_token shares
+        # _decode_and_verify, so an unknown-`kid` miss blocks the event loop
+        # for the JWKS timeout here too.
+        await anyio.to_thread.run_sync(
+            lambda: verify_creator_token(
+                _bearer(authorization),
+                endpoint="creator_suggestion",
+                body_creator_profile_id=creator_profile_id,
+            )
         )
     except AuthError as exc:
         raise auth_error_to_http(exc) from exc
@@ -254,7 +261,14 @@ async def creator_suggestion(request: Request, authorization: str | None = Heade
     # Redis/in-memory keys are opaque strings, so this works with zero changes
     # to gate.py/spend_tracker.py (plan §1.2 step 4). On kill-switch / ceiling,
     # skip the AI call and return the deterministic fallback (still 200).
-    gate = await check_spend_gate(workspace_id=creator_profile_id)
+    gate = await check_spend_gate(
+        workspace_id=creator_profile_id,
+        # F-05: hold budget between this check and the recorded spend, so
+        # concurrent callers see each other's in-flight cost instead of all
+        # reading the same stale total. Settled by record_spend below; expires
+        # on its own if this request dies before it gets there.
+        reserve_usd=get_settings().ai_reservation_per_call_usd or None,
+    )
     if not gate.allowed:
         log_event(
             logger, logging.WARNING, "creator_suggestion_blocked_spend_gate",
@@ -286,7 +300,7 @@ async def creator_suggestion(request: Request, authorization: str | None = Heade
     if result.usage:
         try:
             cost_usd = estimate_cost_usd(CREATOR_COPILOT_MODEL, result.usage)
-            spend_today = await record_spend(cost_usd, creator_profile_id)
+            spend_today = await record_spend(cost_usd, creator_profile_id, reservation=gate.reservation)
             log_event(
                 logger, logging.INFO, "ai_spend",
                 workspace_id=creator_profile_id, request_id=request_id,

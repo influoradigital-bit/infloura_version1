@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, CheckCircle2, Sparkles, Target, Users } from 'lucide-react';
 
 import { OnboardingLayout } from '@/components/brand/onboarding/onboarding-layout';
@@ -28,6 +29,7 @@ const TOTAL_STEPS = 3;
  */
 export default function BrandOnboardingPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   // Step 1 collects registration credentials (email/password) -- only relevant to a brand-new
   // signup landing here mid-wizard. A user who arrives already authenticated (e.g. logged into an
   // existing account whose onboarding was never finished) has no reason to re-enter a password,
@@ -97,6 +99,13 @@ export default function BrandOnboardingPage() {
       await api.onboarding.completeBrand();
       localStorage.setItem('brand_onboarding_complete', 'true');
       localStorage.setItem('onboarding_complete', 'true');
+      // OB-2: App.tsx's ProtectedRoute caches GET /onboarding/brand/status under
+      // queryKey ['brand-onboarding-status', isAuthenticated] with a 5min staleTime.
+      // Without invalidating it here, a freshly-onboarded brand hits /brand/dashboard
+      // on a still-fresh cached `false` and gets bounced straight back to
+      // /brand/onboarding until the cache expires or a hard reload. Partial key match
+      // (no isAuthenticated segment) invalidates every variant of this query.
+      await queryClient.invalidateQueries({ queryKey: ['brand-onboarding-status'] });
       navigate('/brand/dashboard');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not complete onboarding');

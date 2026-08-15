@@ -87,6 +87,14 @@ vi.mock('@/lib/api', async () => {
       // present so a stray property access can't fail as something unrelated.
       me: { deleteAccount: vi.fn().mockResolvedValue({ ok: true }) },
       creatorProfile: { getMe: vi.fn().mockResolvedValue(null) },
+      // CR-101/F-0114 — ConnectedAccounts is now mounted on this page; its useMetaConnection
+      // hook needs both members present or property access on the mock throws.
+      metaOAuth: {
+        getLocalConnectionState: vi.fn().mockReturnValue({ connected: false, scopes: [], accountType: null }),
+        status: vi.fn().mockResolvedValue({ connected: false, grantedScopes: [] }),
+        setLocalConnectionState: vi.fn(),
+        authorize: vi.fn(),
+      },
     },
   };
 });

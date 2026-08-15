@@ -86,7 +86,11 @@ public class MetaTokenRefreshService {
             String creatorProfileId = tokenRow.getCreatorProfileId();
 
             try {
-                if (refreshOne(workspaceId, creatorProfileId, tokenRow.getGrantedScopesJson())) {
+                if (refreshOne(
+                        workspaceId,
+                        creatorProfileId,
+                        tokenRow.getGrantedScopesJson(),
+                        tokenRow.getIgBusinessAccountId())) {
                     refreshed++;
                 } else {
                     failed++;
@@ -116,8 +120,24 @@ public class MetaTokenRefreshService {
     }
 
     /** @return true if the token was successfully refreshed and re-persisted. */
-    private boolean refreshOne(String workspaceId, String creatorProfileId, String grantedScopesJson) {
-        Optional<String> currentToken = tokenStorage.getValidToken(workspaceId, creatorProfileId);
+    private boolean refreshOne(
+            String workspaceId,
+            String creatorProfileId,
+            String grantedScopesJson,
+            String igBusinessAccountId) {
+        // F-0171 fix: this sweep is system-wide (findTokensExpiringSoon has no workspace filter,
+        // by design — see class javadoc), so it processes both brand rows (workspaceId non-null)
+        // and creator rows (workspaceId always null). It was calling the WORKSPACE-scoped
+        // getValidToken/storeToken unconditionally, including for creator rows — and
+        // MetaOAuthTokenRepository's query behind getValidToken carries an explicit
+        // `workspaceId IS NOT NULL` predicate (CR-111 hardening), so a null workspaceId can never
+        // match any row. Every creator-owned token silently failed "no valid token to refresh,
+        // skipping" here and was never refreshed at all, riding to expiry with no error anywhere.
+        boolean isCreatorOwned = workspaceId == null;
+        Optional<String> currentToken =
+                isCreatorOwned
+                        ? tokenStorage.getValidCreatorToken(creatorProfileId)
+                        : tokenStorage.getValidToken(workspaceId, creatorProfileId);
         if (currentToken.isEmpty()) {
             // Already expired/revoked by the time the sweep got to it — nothing to refresh;
             // StaleTokenCleanupJob is responsible for that state, not this service.
@@ -139,8 +159,24 @@ public class MetaTokenRefreshService {
             Instant newExpiresAt = computeExpiresAt(refreshed.expiresInSeconds());
             List<String> grantedScopes = JsonLists.stringListFromJson(grantedScopesJson);
 
-            tokenStorage.storeToken(
-                    creatorProfileId, workspaceId, refreshed.accessToken(), newExpiresAt, grantedScopes);
+            // F-0171 fix, second half: storeToken's lookup (findByWorkspaceIdAndCreatorProfileId
+            // AndRevokedFalse) can also never match a creator row post-CR-111 — had the read
+            // above ever succeeded, this would have taken the INSERT branch on every refresh,
+            // minting a duplicate non-revoked creator-owned row each time (the exact self-DoS
+            // storeCreatorToken's own revoke-before-insert step exists to prevent — see its
+            // javadoc). storeCreatorToken is the correct, race-safe writer for this key-space.
+            if (isCreatorOwned) {
+                tokenStorage.storeCreatorToken(
+                        creatorProfileId, refreshed.accessToken(), newExpiresAt, grantedScopes, igBusinessAccountId);
+            } else {
+                tokenStorage.storeToken(
+                        creatorProfileId,
+                        workspaceId,
+                        refreshed.accessToken(),
+                        newExpiresAt,
+                        grantedScopes,
+                        igBusinessAccountId);
+            }
 
             return true;
         } catch (MetaApiException e) {

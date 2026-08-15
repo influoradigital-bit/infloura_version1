@@ -25,6 +25,9 @@ export function IGConnectPrompt({ className }: IGConnectPromptProps) {
   const handleConnect = async () => {
     setIsConnecting(true);
     try {
+      // CR-65 — without this, the callback page has no way to know this connect started from
+      // Co-pilot and always sends the creator to Settings instead.
+      api.metaOAuth.setConnectReturnTo('/creator/copilot');
       const { authorizationUrl } = await api.metaOAuth.authorize();
       // Full-page navigation, not a fetch — same as connected-accounts.tsx's
       // handleConnect: Meta's OAuth dialog must load in the top-level

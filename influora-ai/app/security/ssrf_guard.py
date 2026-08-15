@@ -98,6 +98,8 @@ def resolve_and_pin(url: str) -> PinnedTarget:
     scheme = _validate_scheme(url)
     parsed = urlparse(url)
     host = parsed.hostname
+    if not host:  # _validate_scheme already enforces this; narrows the type too
+        raise SsrfBlockedError("URL has no hostname")
     port = parsed.port or (443 if scheme == "https" else 80)
 
     try:
@@ -110,15 +112,39 @@ def resolve_and_pin(url: str) -> PinnedTarget:
 
     # Reject the whole host if ANY resolved address is private/blocked. A host that
     # resolves to a mix of public+private addresses is a rebind/multi-homing risk.
+    #
+    # F-11: `sockaddr[0]` is typed `str | int` (AF_UNIX sockaddrs are ints), which
+    # is what mypy flagged here; for the INET families it is always the address
+    # string, and str() keeps _is_blocked_ip's fail-closed contract for anything
+    # else — an unparsable value is blocked, never passed through.
     resolved_ips: list[str] = []
-    for family, _type, _proto, _canon, sockaddr in addr_infos:
-        ip_str = sockaddr[0]
+    for _family, _type, _proto, _canon, sockaddr in addr_infos:
+        ip_str = str(sockaddr[0])
         resolved_ips.append(ip_str)
         if _is_blocked_ip(ip_str):
             raise SsrfBlockedError(f"resolved address {ip_str} for {host!r} is blocked")
 
     pinned_ip = resolved_ips[0]
     return PinnedTarget(host=host, port=port, ip=pinned_ip, scheme=scheme)
+
+
+def _authority(ip: str, port: int) -> str:
+    """`ip:port` for a URL authority, with IPv6 literals bracketed.
+
+    F-11: this used to be a bare f"{ip}:{port}". For an IPv6 address that
+    produces `https://2606:4700::1111:443/...`, which httpx rejects with
+    `httpx.InvalidURL` — NOT a subclass of `httpx.HTTPError`, so it escaped the
+    `except` below and surfaced as an unhandled 500. Any host whose AAAA record
+    is ordered first by getaddrinfo (the RFC 6724 default on a dual-stack host)
+    took that path, so the guard did not fail closed on IPv6 — it fell over.
+    """
+    try:
+        parsed_ip = ipaddress.ip_address(ip)
+    except ValueError:
+        return f"{ip}:{port}"
+    if parsed_ip.version == 6:
+        return f"[{ip}]:{port}"
+    return f"{ip}:{port}"
 
 
 def guarded_fetch(url: str, *, max_bytes: int | None = None, timeout: float | None = None) -> tuple[bytes, str]:
@@ -152,35 +178,73 @@ def guarded_fetch(url: str, *, max_bytes: int | None = None, timeout: float | No
             follow_redirects=False,
             verify=True,
         ) as client:
-            netloc = f"{target.ip}:{target.port}"
-            pinned_url = f"{target.scheme}://{netloc}{path_qs}"
+            pinned_url = f"{target.scheme}://{_authority(target.ip, target.port)}{path_qs}"
             headers = {"Host": target.host}
+            # F-11: STREAM the response and stop reading the moment the cap is
+            # exceeded. The previous `client.get()` was non-streaming, so
+            # `response.content` buffered the ENTIRE body into memory before
+            # `len(body) > max_bytes` was ever evaluated — a measured 78MB was
+            # fully buffered against a 5MB cap, and a chunked response with no
+            # Content-Length could OOM the pod. The cap is now enforced during
+            # the read, not after it.
+            #
+            # `httpx.InvalidURL` is caught alongside `httpx.HTTPError` because it
+            # is NOT a subclass of it (see _authority) — anything the client
+            # raises here must fail CLOSED as an SSRF rejection, never escape as
+            # an unhandled 500.
             try:
-                response = client.get(
+                with client.stream(
+                    "GET",
                     pinned_url,
                     headers=headers,
                     extensions={"sni_hostname": target.host},
-                )
-            except httpx.HTTPError as exc:
+                ) as response:
+                    status_code = response.status_code
+                    response_headers = response.headers
+
+                    if status_code in (301, 302, 303, 307, 308):
+                        body = b""
+                    else:
+                        content_length = response_headers.get("content-length")
+                        if content_length:
+                            try:
+                                declared = int(content_length)
+                            except ValueError:
+                                declared = -1
+                            if declared > max_bytes:
+                                raise SsrfBlockedError("response exceeds max size cap")
+
+                        chunks: list[bytes] = []
+                        total = 0
+                        for chunk in response.iter_bytes():
+                            total += len(chunk)
+                            if total > max_bytes:
+                                # Abort mid-stream: the connection is closed by the
+                                # context manager and the rest is never read.
+                                raise SsrfBlockedError("response exceeds max size cap")
+                            chunks.append(chunk)
+                        body = b"".join(chunks)
+            except SsrfBlockedError:
+                raise
+            except (httpx.HTTPError, httpx.InvalidURL) as exc:
                 raise SsrfBlockedError(f"fetch failed: {exc}") from exc
 
-        if response.status_code in (301, 302, 303, 307, 308):
+        if status_code in (301, 302, 303, 307, 308):
             hops += 1
             if hops > max_hops:
                 raise SsrfBlockedError(f"too many redirects (> {max_hops})")
-            location = response.headers.get("location")
+            location = response_headers.get("location")
             if not location:
                 raise SsrfBlockedError("redirect with no Location header")
             # Resolve relative redirects against the current URL.
             current_url = str(httpx.URL(current_url).join(location))
             continue  # re-validate + re-pin the new hop from scratch
 
-        content_length = response.headers.get("content-length")
-        if content_length and int(content_length) > max_bytes:
-            raise SsrfBlockedError("response exceeds max size cap")
-
-        body = response.content
-        if len(body) > max_bytes:
-            raise SsrfBlockedError("response exceeds max size cap")
-
         return body, current_url
+
+
+# F-11 (Priya round 6): a `guarded_fetch_async` wrapper used to live here and
+# was dead — the real offload is inlined at `app/routes/analyze_site.py`, which
+# keeps `guarded_fetch` patchable by the route's own tests. Its docstring
+# presented it as the F-11 fix, so anyone reading this module would have
+# believed the offload lived here. Deleted; read the call site instead.

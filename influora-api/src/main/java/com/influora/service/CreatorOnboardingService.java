@@ -2,13 +2,10 @@ package com.influora.service;
 
 import com.influora.common.ApiException;
 import com.influora.common.JsonLists;
-import com.influora.common.Ulids;
 import com.influora.domain.entity.CreatorBankAccount;
 import com.influora.domain.entity.CreatorProfile;
-import com.influora.domain.entity.PlatformStat;
 import com.influora.domain.entity.User;
 import com.influora.repository.CreatorProfileRepository;
-import com.influora.repository.PlatformStatRepository;
 import com.influora.repository.UserRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.payout.CreatorBankAccountService;
@@ -36,49 +33,47 @@ public class CreatorOnboardingService {
 
     private final CreatorContextService creatorContext;
     private final CreatorProfileRepository creatorProfileRepository;
-    private final PlatformStatRepository platformStatRepository;
     private final UserRepository userRepository;
     private final CreatorBankAccountService creatorBankAccountService;
 
     public CreatorOnboardingService(
             CreatorContextService creatorContext,
             CreatorProfileRepository creatorProfileRepository,
-            PlatformStatRepository platformStatRepository,
             UserRepository userRepository,
             CreatorBankAccountService creatorBankAccountService) {
         this.creatorContext = creatorContext;
         this.creatorProfileRepository = creatorProfileRepository;
-        this.platformStatRepository = platformStatRepository;
         this.userRepository = userRepository;
         this.creatorBankAccountService = creatorBankAccountService;
     }
 
     /**
-     * See {@link CreatorSocialResponse} javadoc — no real OAuth token exchange exists yet for any
-     * platform, so this persists the connection (one row per creator+platform, upserted) without
-     * fabricating handle/follower data. {@code oauthCode} is accepted and validated non-blank (it's
-     * the hook point for a future real exchange) but not decoded today.
+     * CR-108: no real OAuth token exchange exists for ANY social platform through this endpoint —
+     * Instagram now has its own real, dedicated flow ({@link com.influora.web.MetaOAuthController}
+     * / {@link com.influora.service.MetaConnectionService}, CR-120) and the frontend never calls
+     * this endpoint any more (creator-onboarding.tsx shows an honest "coming soon" toast for
+     * YouTube/TikTok/Twitter locally instead). This method used to paper over that by silently
+     * upserting a {@code PlatformStat} row with {@code followers(0)}/{@code verified(false)} for
+     * whatever platform was requested. That row fed straight into the same discovery-ranking /
+     * brand-facing substrate ({@link com.influora.job.PlatformStatsAggregationJob}, {@code
+     * CreatorMapper.toPlatformResponse}) that real, Meta-verified rows use, and brand-creator-profile.tsx
+     * renders the number unconditionally — so brands saw a literal, confident-looking "0" next to a
+     * platform the creator had supposedly "connected" live, not an honest not-yet-available state.
+     *
+     * <p>Per TECH-STACK.md rule 7 (no fabricated backend contracts), this now refuses the call
+     * outright instead of inventing a row: nothing is persisted, so nothing fabricated ever reaches
+     * discovery ranking or the brand-facing profile. Building real YouTube/TikTok/Twitter OAuth is
+     * CR-119's scope, not this fix's — {@code oauthCode} stays accepted/validated non-blank on the
+     * request DTO as the hook point for that future work.
      */
-    @Transactional
+    @Transactional(readOnly = true)
     public CreatorSocialResponse connectSocial(AuthPrincipal principal, CreatorSocialRequest req) {
-        CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
+        creatorContext.requireCreatorProfile(principal);
         String platform = req.platform().trim().toUpperCase();
-
-        PlatformStat stat =
-                platformStatRepository
-                        .findByCreatorProfileIdAndPlatform(profile.getId(), platform)
-                        .orElseGet(
-                                () ->
-                                        PlatformStat.builder()
-                                                .id(Ulids.newUlid())
-                                                .creatorProfileId(profile.getId())
-                                                .platform(platform)
-                                                .followers(0)
-                                                .verified(false)
-                                                .build());
-        platformStatRepository.save(stat);
-
-        return new CreatorSocialResponse(platform, stat.getHandle() != null ? stat.getHandle() : "", stat.getFollowers());
+        throw new ApiException(
+                "SOCIAL_OAUTH_NOT_IMPLEMENTED",
+                "Live OAuth for " + platform + " isn't available yet. Connect it from Settings once it launches.",
+                HttpStatus.NOT_IMPLEMENTED);
     }
 
     @Transactional

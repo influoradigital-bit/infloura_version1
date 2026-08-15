@@ -39,6 +39,7 @@ tone. There is exactly ONE voice; no mode branch. The AI invents no facts
 from __future__ import annotations
 
 from app.prompt.trendspark import FORBIDDEN_PETNAMES  # reuse the one list verbatim,
+
 # do not re-type it a second time — it's a content-policy constant, not route
 # logic, so importing it doesn't couple prompt modules the way importing
 # regexes/validators would (see app/prompt/validators.py for those instead).

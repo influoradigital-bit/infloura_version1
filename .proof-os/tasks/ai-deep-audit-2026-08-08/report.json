@@ -1,0 +1,640 @@
+{
+ "rows": [
+  {
+   "subject": "F-01 app/costs/pricing.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/costs/test_f01_f07_money_path.py::test_f01_cached_prefix_is_billed_not_free tests/costs/test_f01_f07_money_path.py::test_f01_alternate_cache_field_spellings_are_all_billed",
+    "result": "2 passed",
+    "where": "influora-ai/tests/costs/test_f01_f07_money_path.py:45"
+   }
+  },
+  {
+   "subject": "F-02 app/routes/chat.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/routes/test_f02_f14_route_level.py::test_f02_a_client_disconnect_records_the_spend_the_provider_billed tests/routes/test_f02_f14_route_level.py::test_f02_usage_on_an_error_event_is_recorded_too tests/routes/test_f02_f14_route_level.py::test_f02_a_normal_turn_still_records_exactly_once tests/providers/test_f02_partial_usage_flush.py::test_f02_cancelled_stream_emits_the_usage_already_billed tests/providers/test_f02_partial_usage_flush.py::test_f02_cancelling_before_any_usage_arrived_emits_nothing",
+    "result": "5 passed, 1 warning (each verified to FAIL when its fix is reverted)",
+    "where": "influora-ai/tests/routes/test_f02_f14_route_level.py:92"
+   }
+  },
+  {
+   "subject": "F-03 app/costs/spend_tracker.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/costs/test_f01_f07_money_path.py::test_f03_a_lagging_redis_total_never_masks_a_higher_memory_total tests/costs/test_f01_f07_money_path.py::test_f03_a_higher_redis_total_still_wins",
+    "result": "2 passed",
+    "where": "influora-ai/tests/costs/test_f01_f07_money_path.py:104"
+   }
+  },
+  {
+   "subject": "F-04 app/costs/pricing.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/costs/test_f01_f07_money_path.py::test_f04_pricing_table_is_keyed_by_literal_model_ids tests/costs/test_f01_f07_money_path.py::test_f04_an_unpriced_model_override_fails_loud",
+    "result": "2 passed",
+    "where": "influora-ai/tests/costs/test_f01_f07_money_path.py:80"
+   }
+  },
+  {
+   "subject": "F-05 app/costs/gate.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/costs/test_f01_f07_money_path.py::test_f05_race_stays_closed_with_redis_and_a_workspace_cap_configured tests/costs/test_f01_f07_money_path.py::test_f05_the_per_workspace_cap_still_blocks tests/costs/test_f01_f07_money_path.py::test_f05_concurrent_callers_cannot_all_pass_the_same_stale_total tests/costs/test_f01_f07_money_path.py::test_f05_recording_the_real_spend_settles_the_reservation tests/costs/test_f01_f07_money_path.py::test_f05_an_abandoned_reservation_expires_instead_of_leaking_budget tests/costs/test_f01_f07_money_path.py::test_f05_release_is_idempotent tests/costs/test_f01_f07_money_path.py::test_f05_trend_tag_is_inside_the_per_workspace_cap",
+    "result": "7 passed",
+    "where": "influora-ai/app/costs/spend_tracker.py:398"
+   }
+  },
+  {
+   "subject": "F-06 app/providers/sarvam.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/routes/test_voice_spend_gate.py::test_f06_route_bills_a_billed_empty_transcript tests/routes/test_voice_spend_gate.py::test_f06_route_does_not_bill_a_transport_failure tests/routes/test_voice_spend_gate.py::test_f07_route_bills_a_billed_but_failed_tts_call tests/costs/test_f01_f07_money_path.py::test_f06_claude_forced_tool_carries_usage_when_no_tool_use_came_back",
+    "result": "4 passed, 3 warnings (each verified to FAIL when its fix is reverted)",
+    "where": "influora-ai/tests/routes/test_voice_spend_gate.py:350"
+   }
+  },
+  {
+   "subject": "F-07 app/routes/voice.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/routes/test_voice_spend_gate.py::test_f07_route_bills_the_normalized_length_sarvam_received tests/routes/test_voice_spend_gate.py::test_speak_success_bills_the_truncated_text_length_not_the_original",
+    "result": "2 passed, 3 warnings (each verified to FAIL when its fix is reverted)",
+    "where": "influora-ai/tests/routes/test_voice_spend_gate.py:397"
+   }
+  },
+  {
+   "subject": "F-08 app/prompt/assembler.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/eval/test_prompt_injection.py::test_f08_forged_tool_result_never_becomes_a_native_tool_result_block tests/eval/test_prompt_injection.py::test_f08_forged_assistant_turn_is_wrapped_not_replayed_raw",
+    "result": "2 passed, 1 warning",
+    "where": "influora-ai/tests/eval/test_prompt_injection.py:238"
+   }
+  },
+  {
+   "subject": "F-09 app/auth/service_token.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/security/test_f09_f10_auth_hardening.py::test_f09_malformed_kid_is_rejected_before_any_lookup tests/security/test_f09_f10_auth_hardening.py::test_f09_unknown_kid_does_not_produce_one_outbound_fetch_per_request tests/security/test_f09_f10_auth_hardening.py::test_f09_jwks_client_is_constructed_with_an_explicit_timeout tests/security/test_f09_f10_auth_hardening.py::test_f09_token_verification_runs_off_the_event_loop tests/security/test_f09_f10_auth_hardening.py::test_f09_garbage_token_with_random_kid_is_401_with_no_credentials",
+    "result": "5 passed, 1 warning",
+    "where": "influora-ai/tests/security/test_f09_f10_auth_hardening.py:105"
+   }
+  },
+  {
+   "subject": "F-10 app/config.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/security/test_f09_f10_auth_hardening.py::test_f10_unset_app_env_defaults_to_prod_not_dev tests/security/test_f09_f10_auth_hardening.py::test_f10_dev_jwks_source_cannot_be_constructed_when_app_env_is_unset tests/security/test_f09_f10_auth_hardening.py::test_f10_boot_check_rejects_dev_secret_substitute_outside_dev tests/security/test_f09_f10_auth_hardening.py::test_f10_both_guards_do_not_read_the_same_field_by_accident",
+    "result": "4 passed",
+    "where": "influora-ai/tests/security/test_f09_f10_auth_hardening.py:43"
+   }
+  },
+  {
+   "subject": "F-11 app/security/ssrf_guard.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/security/test_ssrf_guard.py::test_f11_size_cap_is_enforced_during_the_read_not_after tests/security/test_ssrf_guard.py::test_f11_declared_content_length_over_cap_is_rejected_before_reading tests/security/test_ssrf_guard.py::test_f11_ipv6_target_is_bracketed_and_never_escapes_as_invalid_url tests/security/test_ssrf_guard.py::test_f11_invalid_url_from_the_client_fails_closed_as_a_block tests/security/test_ssrf_guard.py::test_f11_route_fetch_does_not_block_the_event_loop",
+    "result": "5 passed, 1 warning",
+    "where": "influora-ai/tests/security/test_ssrf_guard.py:346"
+   }
+  },
+  {
+   "subject": "F-12 app/routes/trend_tag.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/security/test_f12_f13_regressions.py::test_f12_failed_auth_attempts_consume_the_rate_limit tests/security/test_f12_f13_regressions.py::test_f12_non_ascii_bearer_is_401_not_an_unhandled_500 tests/security/test_f12_f13_regressions.py::test_f12_correct_secret_still_works",
+    "result": "3 passed",
+    "where": "influora-ai/tests/security/test_f12_f13_regressions.py:49"
+   }
+  },
+  {
+   "subject": "F-13 app/security/redaction.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/security/test_f12_f13_regressions.py::test_f13_an_object_never_reaches_the_log_as_a_stringified_payload tests/security/test_f12_f13_regressions.py::test_f13_tuples_and_sets_are_redacted_like_lists tests/security/test_f12_f13_regressions.py::test_f13_brand_catalog_key_names_are_not_logged tests/security/test_f12_f13_regressions.py::test_f13_non_sensitive_dict_keys_are_still_useful_and_scrubbed tests/security/test_f12_f13_regressions.py::test_f13_a_decimal_cost_is_not_scrubbed_as_a_phone_number tests/security/test_f12_f13_regressions.py::test_f13_a_real_phone_number_is_still_scrubbed tests/security/test_f12_f13_regressions.py::test_f13_formatter_end_to_end_does_not_emit_a_raw_object",
+    "result": "7 passed",
+    "where": "influora-ai/tests/security/test_f12_f13_regressions.py:109"
+   }
+  },
+  {
+   "subject": "F-14 app/routes/chat.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/routes/test_f02_f14_route_level.py::test_f14_a_slow_tool_still_delivers_result_and_done_through_the_route tests/routes/test_f02_f14_route_level.py::test_f14_the_heartbeat_is_actually_delivered_during_the_wait tests/prompt/test_f14_f20_correctness.py::test_f14_a_heartbeat_timeout_does_not_kill_the_generator",
+    "result": "3 passed, 1 warning (each verified to FAIL when its fix is reverted)",
+    "where": "influora-ai/tests/routes/test_f02_f14_route_level.py:204"
+   }
+  },
+  {
+   "subject": "F-15 app/prompt/assembler.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/eval/test_prompt_injection.py::test_f15_multi_tool_turn_cannot_brick_the_conversation tests/eval/test_prompt_injection.py::test_replayed_assistant_tool_call_becomes_anthropic_tool_use_block",
+    "result": "2 passed, 1 warning",
+    "where": "influora-ai/tests/eval/test_prompt_injection.py:281"
+   }
+  },
+  {
+   "subject": "F-16 app/tools/loop.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/prompt/test_f14_f20_correctness.py::test_f16_a_narrated_then_truncated_turn_is_not_reported_as_a_clean_stop tests/prompt/test_f14_f20_correctness.py::test_f16_truncated_finish_reason_is_refunded_not_billed_as_an_answer",
+    "result": "2 passed, 1 warning",
+    "where": "influora-ai/tests/prompt/test_f14_f20_correctness.py:94"
+   }
+  },
+  {
+   "subject": "F-17 app/prompt/persona.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/prompt/test_f14_f20_correctness.py::test_f17_persona_references_the_field_that_actually_exists tests/prompt/test_f14_f20_correctness.py::test_f17_no_module_anywhere_still_uses_the_phantom_field",
+    "result": "2 passed",
+    "where": "influora-ai/tests/prompt/test_f14_f20_correctness.py:148"
+   }
+  },
+  {
+   "subject": "F-18 app/tools/schemas.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/prompt/test_f14_f20_correctness.py::test_f18_block_b_renders_a_campaign_id_when_the_payload_carries_one tests/prompt/test_f14_f20_correctness.py::test_f18_no_id_in_the_payload_renders_no_marker tests/prompt/test_f14_f20_correctness.py::test_f18_the_tool_says_where_the_id_must_come_from",
+    "result": "3 passed",
+    "where": "influora-ai/tests/prompt/test_f14_f20_correctness.py:175"
+   }
+  },
+  {
+   "subject": "F-19 app/prompt/structured_extract.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/prompt/test_f14_f20_correctness.py::test_f19_price_parsing tests/prompt/test_f14_f20_correctness.py::test_f19_aggregate_offer_low_price_is_read tests/prompt/test_f14_f20_correctness.py::test_f19_a_currency_prefixed_price_survives_end_to_end",
+    "result": "10 passed",
+    "where": "influora-ai/tests/prompt/test_f14_f20_correctness.py:231"
+   }
+  },
+  {
+   "subject": "F-20 app/prompt/validators.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/prompt/test_f14_f20_correctness.py::test_f20_decimals_and_abbreviations_do_not_inflate_the_statement_count tests/prompt/test_f14_f20_correctness.py::test_f20_the_invented_price_kill_switch_catches_bare_magnitudes tests/prompt/test_f14_f20_correctness.py::test_f20_the_verb_to_love_is_not_a_pet_name tests/prompt/test_f14_f20_correctness.py::test_f20_own_content_regex_no_longer_bans_ordinary_words",
+    "result": "4 passed",
+    "where": "influora-ai/tests/prompt/test_f14_f20_correctness.py:269"
+   }
+  },
+  {
+   "subject": "F-21 evals/run_eval.py",
+   "owner": "meera",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/evals/test_eval_harness_offline.py::test_every_case_was_scored_not_silently_skipped tests/evals/test_eval_harness_offline.py::test_unmeasured_coverage_is_named_not_hidden",
+    "result": "2 passed — the harness now reports NOT RUN and exits non-zero, but 25 of 85 golden cases still never execute (no fixtures for outcome_recommendation or campaign_performance); the blind spot is labelled, not closed",
+    "where": "influora-ai/tests/evals/test_eval_harness_offline.py:121"
+   }
+  },
+  {
+   "subject": "F-22 evals/run_eval.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/evals/test_eval_harness_offline.py::test_pure_function_dataset_offline_actually_runs_the_function",
+    "result": "1 passed",
+    "where": "influora-ai/tests/evals/test_eval_harness_offline.py:161"
+   }
+  },
+  {
+   "subject": "F-23 evals/run_eval.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/evals/test_eval_harness_offline.py::test_f23_idor_case_fails_when_another_workspace_data_comes_back tests/evals/test_eval_harness_offline.py::test_f23_an_error_envelope_that_also_leaks_campaign_data_still_fails",
+    "result": "2 passed",
+    "where": "influora-ai/tests/evals/test_eval_harness_offline.py:500"
+   }
+  },
+  {
+   "subject": "F-24 evals/run_eval.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/evals/test_eval_harness_offline.py::test_f24_live_without_keys_exits_non_zero",
+    "result": "1 passed",
+    "where": "influora-ai/tests/evals/test_eval_harness_offline.py:510"
+   }
+  },
+  {
+   "subject": "F-25 evals/run_eval.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/evals/test_eval_harness_offline.py::test_f25_budget_band_is_gated_not_just_printed tests/evals/test_eval_harness_offline.py::test_f25_fabricated_band_makes_the_whole_run_red",
+    "result": "2 passed",
+    "where": "influora-ai/tests/evals/test_eval_harness_offline.py:526"
+   }
+  },
+  {
+   "subject": "F-26 evals/run_eval.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/evals/test_eval_harness_offline.py::test_f26_fabricated_product_alongside_a_correct_one_is_a_false_positive tests/evals/test_eval_harness_offline.py::test_f26_name_match_with_wrong_price_is_also_a_false_positive",
+    "result": "2 passed",
+    "where": "influora-ai/tests/evals/test_eval_harness_offline.py:553"
+   }
+  },
+  {
+   "subject": "F-27 evals/scorers.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/evals/test_eval_harness_offline.py::test_f27_spelled_out_numbers_are_extracted tests/evals/test_eval_harness_offline.py::test_f27_wildcard_case_cannot_be_evaded_by_spelling_the_number_out",
+    "result": "2 passed",
+    "where": "influora-ai/tests/evals/test_eval_harness_offline.py:587"
+   }
+  },
+  {
+   "subject": "F-28 evals/scorers.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/evals/test_eval_harness_offline.py::test_f28_unit_suffixed_forbidden_tokens_stay_in_the_veto_set",
+    "result": "1 passed",
+    "where": "influora-ai/tests/evals/test_eval_harness_offline.py:607"
+   }
+  },
+  {
+   "subject": "F-29 evals/run_eval.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/evals/test_eval_harness_offline.py::test_f29_a_figure_hidden_in_an_unexpected_key_is_still_scored tests/evals/test_eval_harness_offline.py::test_f29_a_figure_nested_below_the_top_level_is_still_scored",
+    "result": "2 passed",
+    "where": "influora-ai/tests/evals/test_eval_harness_offline.py:625"
+   }
+  },
+  {
+   "subject": "F-30 evals/scorers.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/evals/test_eval_harness_offline.py::test_f30_empty_expected_cases_do_not_prop_up_the_category_f1_bar tests/evals/test_eval_harness_offline.py::test_f30_trend_tag_expected_drop_cases_do_not_dilute_theme_f1",
+    "result": "2 passed",
+    "where": "influora-ai/tests/evals/test_eval_harness_offline.py:645"
+   }
+  },
+  {
+   "subject": "influora-ai/app (ruff)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "ruff",
+    "command": "ruff check app/ ; ruff check app/ --isolated --select E402",
+    "result": "All checks passed (both selects)",
+    "where": "influora-ai/app/__init__.py:1"
+   }
+  },
+  {
+   "subject": "influora-ai/app (mypy)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mypy",
+    "command": "mypy app/ --ignore-missing-imports",
+    "result": "no issues found in 41 source files",
+    "where": "influora-ai/app/__init__.py:1"
+   }
+  },
+  {
+   "subject": "influora-ai (full suite)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q",
+    "result": "615 passed, 0 skipped",
+    "where": "influora-ai/pytest.ini:1"
+   }
+  },
+  {
+   "subject": "F-20b app/prompt/validators.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/prompt/test_f14_f20_correctness.py::test_f20_round2_a_year_or_a_view_count_is_not_an_invented_price tests/prompt/test_f14_f20_correctness.py::test_f20_round2_a_real_invented_price_is_still_caught tests/prompt/test_f14_f20_correctness.py::test_f20_round2_the_real_route_validator_accepts_a_numeric_nudge",
+    "result": "3 passed",
+    "where": "influora-ai/app/prompt/validators.py:47"
+   }
+  },
+  {
+   "subject": "F-04b app/costs/pricing.py (override never bills cheaper)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/costs/test_pricing.py::test_brand_safety_model_override_falls_back_to_claude_model_rate tests/costs/test_pricing.py::test_trend_tag_model_override_falls_back_to_trendspark_rate",
+    "result": "2 passed",
+    "where": "influora-ai/app/costs/pricing.py:200"
+   }
+  },
+  {
+   "subject": "F-05b app/config.py (reservation sizing + chat TTL)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/costs/test_f01_f07_money_path.py::test_f05_concurrent_callers_cannot_all_pass_the_same_stale_total tests/costs/test_f01_f07_money_path.py::test_f05_trend_tag_is_inside_the_per_workspace_cap",
+    "result": "2 passed",
+    "where": "influora-ai/app/config.py:432"
+   }
+  },
+  {
+   "subject": "F-14b app/routes/chat.py (behavioural heartbeat test)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/prompt/test_f14_f20_correctness.py::test_f14_a_slow_tool_still_delivers_its_result_after_several_heartbeats",
+    "result": "1 passed, 1 warning",
+    "where": "influora-ai/tests/prompt/test_f14_f20_correctness.py:76"
+   }
+  },
+  {
+   "subject": "F-06b app/providers/claude.py (behavioural usage test)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/costs/test_f01_f07_money_path.py::test_f06_claude_forced_tool_carries_usage_when_no_tool_use_came_back",
+    "result": "1 passed",
+    "where": "influora-ai/tests/costs/test_f01_f07_money_path.py:236"
+   }
+  },
+  {
+   "subject": "mutation coverage: F-02, F-06, F-07, F-14 reverts are caught",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/routes/test_f02_f14_route_level.py tests/providers/test_f02_partial_usage_flush.py tests/routes/test_voice_spend_gate.py  (run once per reverted fix)",
+    "result": "19 passed, 3 warnings",
+    "where": "influora-ai/tests/routes/test_f02_f14_route_level.py:1"
+   }
+  },
+  {
+   "subject": "mutation coverage round 3: F-05 ordering and F-23 leak check",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/costs/test_f01_f07_money_path.py tests/evals/test_eval_harness_offline.py  (run once per reverted fix)",
+    "result": "71 passed",
+    "where": "influora-ai/app/costs/gate.py:82"
+   }
+  },
+  {
+   "subject": "pin coverage: 13 fix-halves Priya's mutation sweeps found unpinned",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/routes/test_f02_f30_pin_gaps.py tests/providers/test_f06_f07_provider_level.py  (run once per reverted fix half)",
+    "result": "14 passed, 1 warning",
+    "where": "influora-ai/tests/routes/test_f02_f30_pin_gaps.py:1"
+   }
+  },
+  {
+   "subject": "O-1 (Priya round 6): the eval harness is inside the gates",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "ruff",
+    "command": "ruff check app/ evals/ tests/",
+    "result": "All checks passed!",
+    "where": "influora-ai/evals/run_eval.py:56"
+   }
+  },
+  {
+   "subject": "O-1 (Priya round 6): mypy now covers evals/ as well as app/",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mypy",
+    "command": "python3 -m mypy app/ evals/ --ignore-missing-imports",
+    "result": "Success: no issues found in 44 source files",
+    "where": "influora-ai/evals/scorers.py:1"
+   }
+  },
+  {
+   "subject": "F-05: every one of the 8 gated routes asks for a reservation",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/routes/test_f05_f09_every_gated_route.py",
+    "result": "12 passed, 1 warning",
+    "where": "influora-ai/tests/routes/test_f05_f09_every_gated_route.py:1"
+   }
+  },
+  {
+   "subject": "chat.py's F-14 exhaustion sentinel is restored and its revert goes red",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/prompt/test_f14_f20_correctness.py  (the two F-14 tests that go red when the sentinel is reverted)",
+    "result": "26 passed, 1 warning",
+    "where": "influora-ai/app/routes/chat.py:98"
+   }
+  },
+  {
+   "subject": "full mutation sweep: 96 reverts across all 30 findings, 0 survive on a live spec",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "bash /tmp/final_sweep.sh  (one full-suite run per revert; log at influora-ai/MUTATION-SWEEP-2026-08-09.log)",
+    "result": "96 reverts: 93 RED (pinned); 3 stale specs (2 SETUP_FAIL, 1 no-op) each superseded by a live respec that is RED",
+    "where": "influora-ai/MUTATION-SWEEP-2026-08-09.log:1"
+   }
+  },
+  {
+   "subject": "round-7 pin gaps: 13 fix-halves the sweep found unpinned are now pinned",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/costs/test_round7_mutation_gaps.py tests/security/test_f11_f13_pin_gaps.py tests/evals/test_f24_f28_pin_gaps.py",
+    "result": "36 passed",
+    "where": "influora-ai/tests/evals/test_f24_f28_pin_gaps.py:1"
+   }
+  },
+  {
+   "subject": "done_when oracle: full suite green with no skips",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q",
+    "result": "663 passed, 11 warnings",
+    "where": "influora-ai/pytest.ini:1"
+   }
+  },
+  {
+   "subject": "Priya round-7 BLOCKER closed: the daily ceiling counts holds from every workspace",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/costs/test_f01_f07_money_path.py",
+    "result": "20 passed",
+    "where": "influora-ai/app/costs/spend_tracker.py:443"
+   }
+  },
+  {
+   "subject": "Priya round-7 advisories 1/3/5 closed: F-23 nested leak, F-13 decimal guard, F-13 dict keys",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/evals/test_f24_f28_pin_gaps.py tests/security/test_f11_f13_pin_gaps.py",
+    "result": "36 passed",
+    "where": "influora-ai/app/security/redaction.py:169"
+   }
+  },
+  {
+   "subject": "Priya round-7 advisory 4 resolved as documented redundancy, with the behaviour pinned instead",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q tests/prompt/test_structured_extract.py",
+    "result": "23 passed",
+    "where": "influora-ai/app/prompt/structured_extract.py:137"
+   }
+  },
+  {
+   "subject": "done_when oracle after round 7b: full suite green, no skips",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "pytest",
+    "command": "python3 -m pytest -q",
+    "result": "681 passed, 11 warnings",
+    "where": "influora-ai/pytest.ini:1"
+   }
+  },
+  {
+   "subject": "Priya (CTO) SIGNED the ai-deep-audit-2026-08-08 remediation, round 8, fresh context",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "human",
+    "command": "fresh-context sign-off review: 48 self-authored mutations over two rounds, all six oracles re-run by the reviewer",
+    "result": "VERDICT: SIGNED",
+    "where": "influora-ai/EVAL-COVERAGE-DEFERRAL.md:1"
+   }
+  }
+ ]
+}

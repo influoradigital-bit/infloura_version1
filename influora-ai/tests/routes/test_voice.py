@@ -1,8 +1,7 @@
 """Tests for voice route utilities (P18 TTS cap per 20-ROHAN-COST-REVIEW.md §3)."""
 
-import pytest
 
-from app.routes.voice import _truncate_for_tts, TTS_MAX_CHARS
+from app.routes.voice import TTS_MAX_CHARS, _truncate_for_tts
 
 
 class TestTruncateForTts:

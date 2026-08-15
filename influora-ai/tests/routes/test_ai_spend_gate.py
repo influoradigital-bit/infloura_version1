@@ -155,7 +155,7 @@ async def test_kill_switch_blocks_with_zero_provider_calls(monkeypatch):
         assert detail.get("code") == "AI_KILL_SWITCH_ACTIVE"
         mock_get_claude.assert_not_called()
 
-    assert await spend_tracker.get_global_total_today() == Decimal("0")
+    assert await spend_tracker.get_global_total_today() == Decimal(0)
 
 
 @pytest.mark.asyncio
@@ -199,5 +199,5 @@ async def test_normal_request_under_ceiling_proceeds_and_records_spend(monkeypat
     mock_claude.complete_with_forced_tool.assert_awaited_once()
 
     expected_cost = estimate_cost_usd(CLAUDE_MODEL, usage)
-    assert expected_cost > Decimal("0")
+    assert expected_cost > Decimal(0)
     assert await spend_tracker.get_global_total_today() == expected_cost

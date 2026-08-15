@@ -42,6 +42,25 @@ public interface WalletTransactionRepository extends JpaRepository<WalletTransac
             @Param("since") Instant since);
 
     /**
+     * CR-72 — same paging/ordering as {@link #findByWalletIdOrderByCreatedAtDesc(String,
+     * Pageable)} but with an optional {@code [startDate, endDate)} window, backing the
+     * creator-wallet History tab's period dropdown (this-month/last-month/3-months/all).
+     * Either bound may be {@code null} — a {@code null} bound is unconstrained, so passing both
+     * as {@code null} reproduces the unfiltered "all time" query.
+     */
+    @Query(
+            "SELECT t FROM WalletTransaction t "
+                    + "WHERE t.walletId = :walletId "
+                    + "AND (:startDate IS NULL OR t.createdAt >= :startDate) "
+                    + "AND (:endDate IS NULL OR t.createdAt < :endDate) "
+                    + "ORDER BY t.createdAt DESC")
+    Page<WalletTransaction> findByWalletIdAndCreatedAtRange(
+            @Param("walletId") String walletId,
+            @Param("startDate") Instant startDate,
+            @Param("endDate") Instant endDate,
+            Pageable pageable);
+
+    /**
      * Sums {@code amount} across every ledger row of the given {@code type} posted with {@code
      * createdAt <= asOf} — the platform-revenue formula (Rohan, CFO, signed off 2026-07-15):
      * {@code revenue = SUM(wallet_transactions.amount) WHERE type = 'PLATFORM_FEE' AND created_at

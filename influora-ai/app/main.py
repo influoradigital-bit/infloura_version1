@@ -160,7 +160,7 @@ async def _redis_ready() -> tuple[str, bool]:
         )
         await client.ping()
         return "ok", True
-    except Exception:  # noqa: BLE001 - any failure means Redis can't back the safeguards
+    except Exception:
         logger.warning(
             "readyz: REDIS_URL is set but PING failed — the daily-spend ceiling and "
             "stream-token replay guard are running on per-process memory. Reporting NOT ready.",
@@ -171,7 +171,7 @@ async def _redis_ready() -> tuple[str, bool]:
         if client is not None:
             try:
                 await client.aclose()
-            except Exception:  # noqa: BLE001 - best-effort cleanup, never fail readiness on close
+            except Exception:
                 logger.debug("readyz: error closing probe Redis client", exc_info=True)
 
 

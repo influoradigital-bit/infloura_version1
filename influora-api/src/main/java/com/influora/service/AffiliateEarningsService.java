@@ -162,29 +162,55 @@ public class AffiliateEarningsService {
         this.self = instance;
     }
 
+    /** CR-83 — caps a caller-supplied {@code limit} so a large value can't force one unbounded query. */
+    private static final int MAX_PAGE_SIZE = 100;
+    private static final int DEFAULT_PAGE_SIZE = 20;
+
     /**
      * Principal-scoped list + SETTLED-vs-pending summary for the authenticated creator (V-GA-7).
      * Never accepts a creator-id path/query param — identity from JWT via {@link
      * CreatorContextService#requireCreatorProfile}.
+     *
+     * <p>CR-83 — {@code page}/{@code limit} slice which rows come back; {@code summary} is still
+     * computed from the creator's FULL history (it has to be — "unsettled commission" and "this
+     * month" are all-time/period aggregates, not properties of one page) so the underlying full
+     * fetch stays as it was. What changed is that the response no longer serializes every row
+     * ever recorded — only the requested page, plus enough metadata ({@code totalElements},
+     * {@code hasMore}) for the client to page through the rest instead of it growing unboundedly.
      */
     @Transactional(readOnly = true)
-    public CreatorAffiliateEarningsResponse listForCreator(AuthPrincipal principal) {
+    public CreatorAffiliateEarningsResponse listForCreator(AuthPrincipal principal, Integer page, Integer limit) {
+        int pageNumber = page != null && page >= 0 ? page : 0;
+        int pageSize = limit != null && limit > 0 ? Math.min(limit, MAX_PAGE_SIZE) : DEFAULT_PAGE_SIZE;
+
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
         List<AffiliateEarning> earnings =
                 affiliateEarningRepository.findByCreatorIdOrderByCreatedAtDesc(profile.getId());
 
+        // CR-83 follow-up (Priya red-team) — `pageNumber * pageSize` as a plain int multiply
+        // overflows for a large caller-supplied page (e.g. page=100000000, limit=100), wrapping
+        // negative and throwing IndexOutOfBoundsException out of subList. Widened to long before
+        // the multiply so an absurd page number degrades to "empty page", not a 500.
+        long fromIndexLong = (long) pageNumber * pageSize;
+        int fromIndex = (int) Math.min(fromIndexLong, earnings.size());
+        int toIndex = (int) Math.min(fromIndexLong + pageSize, earnings.size());
+        List<AffiliateEarning> pageOfEarnings = earnings.subList(fromIndex, toIndex);
+
         Set<String> campaignIds =
-                earnings.stream().map(AffiliateEarning::getCampaignId).collect(Collectors.toSet());
+                pageOfEarnings.stream().map(AffiliateEarning::getCampaignId).collect(Collectors.toSet());
         Map<String, Campaign> campaignsById =
                 campaignRepository.findAllById(campaignIds).stream()
                         .collect(Collectors.toMap(Campaign::getId, Function.identity()));
 
         Set<String> workspaceIds =
-                earnings.stream().map(AffiliateEarning::getWorkspaceId).collect(Collectors.toSet());
+                pageOfEarnings.stream().map(AffiliateEarning::getWorkspaceId).collect(Collectors.toSet());
         Map<String, Workspace> workspacesById =
                 workspaceRepository.findAllById(workspaceIds).stream()
                         .collect(Collectors.toMap(Workspace::getId, Function.identity()));
 
+        // Fetched once against the FULL history, not just this page — buildSummary needs every
+        // earning's redemption for its all-time/this-month aggregates, and reusing this map for
+        // row-building too (rather than a second, page-scoped query) avoids querying it twice.
         Set<String> redemptionIds =
                 earnings.stream().map(AffiliateEarning::getRedemptionId).collect(Collectors.toSet());
         Map<String, CouponRedemption> redemptionsById =
@@ -192,7 +218,7 @@ public class AffiliateEarningsService {
                         .collect(Collectors.toMap(CouponRedemption::getId, Function.identity()));
 
         List<AffiliateEarningRow> rows =
-                earnings.stream()
+                pageOfEarnings.stream()
                         .map(
                                 e ->
                                         toRow(
@@ -202,7 +228,13 @@ public class AffiliateEarningsService {
                                                 redemptionsById.get(e.getRedemptionId())))
                         .toList();
 
-        return new CreatorAffiliateEarningsResponse(rows, buildSummary(earnings, redemptionsById));
+        return new CreatorAffiliateEarningsResponse(
+                rows,
+                buildSummary(earnings, redemptionsById),
+                pageNumber,
+                pageSize,
+                earnings.size(),
+                toIndex < earnings.size());
     }
 
     private static AffiliateEarningRow toRow(

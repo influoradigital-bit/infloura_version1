@@ -11,12 +11,14 @@ import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Contract;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.DealMessage;
+import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DealSenderType;
+import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.UserType;
@@ -45,6 +47,7 @@ import com.influora.web.dto.deal.DealDtos.SendMessageRequest;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.DeliverableListItem;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -54,6 +57,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -125,9 +129,21 @@ public class DealService {
         UserType role = requireRole(principal);
         List<Collaboration> collaborations = loadCollaborations(principal, role);
         List<CollaborationStatus> allowed = statusesForFilter(statusFilter, role);
-        return collaborations.stream()
-                .filter(c -> allowed == null || allowed.contains(c.getStatus()))
-                .map(c -> toDealResponse(c, principal, role))
+        List<Collaboration> filtered =
+                collaborations.stream()
+                        .filter(c -> allowed == null || allowed.contains(c.getStatus()))
+                        .toList();
+        Map<String, List<Deliverable>> deliverablesByCollaboration =
+                loadDeliverablesByCollaboration(filtered);
+        return filtered.stream()
+                .map(
+                        c ->
+                                toDealResponse(
+                                        c,
+                                        principal,
+                                        role,
+                                        deliverablesByCollaboration.getOrDefault(
+                                                c.getId(), List.of())))
                 .toList();
     }
 
@@ -399,7 +415,7 @@ public class DealService {
                                                 "CAMPAIGN_NOT_FOUND",
                                                 "Campaign not found",
                                                 HttpStatus.NOT_FOUND));
-        validateProposalAmount(campaign, body.amount());
+        validateCounterAmount(campaign, body.amount());
 
         UserType role = principal.getUserType();
         String scopeId =
@@ -743,6 +759,34 @@ public class DealService {
         // "countered" is styled by the SPA and is != "pending", so the stale cards go inert.
         Optional<DealMessage> supersededCard =
                 settleLatestProposal(collaboration.getId(), "countered");
+
+        // Carry forward deliverables from the superseded proposal when the counter does not
+        // revise them (e.g. a creator countering on price/deadline only). Without this, a counter
+        // with no deliverables field produces a proposal card with an empty deliverables list,
+        // which breaks the contract generator even though the parties never renegotiated scope.
+        // Slots are stored as List<LinkedHashMap> after JSON round-trip (Jackson deserialises
+        // them as Map, not DeliverableSlot records), so we rehydrate them here.
+        var effectiveDeliverables = body.deliverables();
+        if ((effectiveDeliverables == null || effectiveDeliverables.isEmpty())
+                && supersededCard.isPresent()) {
+            Map<String, Object> supersededMetadata =
+                    parseMetadata(supersededCard.get().getMetadataJson());
+            Object rawSlots = supersededMetadata == null ? null : supersededMetadata.get("deliverables");
+            if (rawSlots instanceof List<?> slotList && !slotList.isEmpty()) {
+                effectiveDeliverables = slotList.stream()
+                        .filter(item -> item instanceof Map)
+                        .map(item -> {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> m = (Map<String, Object>) item;
+                            String type = String.valueOf(m.getOrDefault("type", ""));
+                            int qty = ((Number) m.getOrDefault("qty", 1)).intValue();
+                            return new com.influora.web.dto.deal.DealDtos.DeliverableSlot(type, qty);
+                        })
+                        .filter(slot -> !slot.type().isBlank())
+                        .toList();
+            }
+        }
+
         DealMessage newProposal =
                 persistProposalMessage(
                         collaboration,
@@ -750,7 +794,7 @@ public class DealService {
                         senderType,
                         body.amount(),
                         body.message(),
-                        body.deliverables(),
+                        effectiveDeliverables,
                         body.deadline());
 
         // CR-08 — publish the superseded card BEFORE the new one. This mirrors the [H1] persistence
@@ -836,6 +880,64 @@ public class DealService {
         return collaborationRepository.findByWorkspaceId(workspace.getId());
     }
 
+    /** CR-80 — statuses a dispute can never be opened against; see {@link #listEligibleForDispute}. */
+    private static final Set<CollaborationStatus> DISPUTE_INELIGIBLE_STATUSES =
+            Set.of(
+                    CollaborationStatus.DISPUTED,
+                    CollaborationStatus.COMPLETED,
+                    CollaborationStatus.CANCELLED);
+
+    /**
+     * CR-80 — backs the creator "open a dispute" deal dropdown ({@code GET
+     * /creator/disputes/eligible-deals}, {@code CreatorDisputeController}). Eligible = funded
+     * escrow, not already disputed/completed/cancelled — same rule the client used to apply in JS
+     * after fetching {@code GET /deals?status=all} (the creator's ENTIRE deal history).
+     *
+     * <p>The status half of the rule is now a real {@code WHERE status NOT IN (...)} ({@link
+     * CollaborationRepository#findByCreatorIdAndStatusNotIn}), so terminal-state deals never reach
+     * this service, let alone {@link #toDealResponse}'s per-row enrichment (campaign/contract/
+     * escrow/deliverable lookups). {@code escrowFunded} is not a {@link Collaboration} column —
+     * it's derived per-row in {@link #toDealResponse} from {@link EscrowHoldRepository} — so it
+     * stays a final in-memory filter, but now over only the creator's non-terminal deals instead
+     * of their whole history.
+     */
+    @Transactional(readOnly = true)
+    public List<DealResponse> listEligibleForDispute(AuthPrincipal principal) {
+        CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
+        List<Collaboration> collaborations =
+                collaborationRepository.findByCreatorIdAndStatusNotIn(
+                        profile.getUserId(), DISPUTE_INELIGIBLE_STATUSES);
+        Map<String, List<Deliverable>> deliverablesByCollaboration =
+                loadDeliverablesByCollaboration(collaborations);
+        return collaborations.stream()
+                .map(
+                        c ->
+                                toDealResponse(
+                                        c,
+                                        principal,
+                                        UserType.CREATOR,
+                                        deliverablesByCollaboration.getOrDefault(
+                                                c.getId(), List.of())))
+                .filter(DealResponse::escrowFunded)
+                .toList();
+    }
+
+    /**
+     * CR-96 — batch source for {@link #list} and {@link #listEligibleForDispute}'s deliverable
+     * aggregation, mirroring {@code AdminCampaignService}'s H-22 pattern: one {@link
+     * DeliverableRepository#findByCollaborationIdIn} for the whole page of collaborations instead
+     * of {@link #toDealResponse} issuing a per-row query when called in a loop.
+     */
+    private Map<String, List<Deliverable>> loadDeliverablesByCollaboration(
+            List<Collaboration> collaborations) {
+        if (collaborations.isEmpty()) {
+            return Map.of();
+        }
+        List<String> collaborationIds = collaborations.stream().map(Collaboration::getId).toList();
+        return deliverableRepository.findByCollaborationIdIn(collaborationIds).stream()
+                .collect(Collectors.groupingBy(Deliverable::getCollaborationId));
+    }
+
     private UserType requireRole(AuthPrincipal principal) {
         if (principal == null
                 || (principal.getUserType() != UserType.CREATOR
@@ -917,6 +1019,83 @@ public class DealService {
                     "AMOUNT_EXCEEDS_BUDGET",
                     "Proposed amount exceeds campaign budget",
                     HttpStatus.BAD_REQUEST);
+        }
+        if (campaign.getBudgetMin() != null && amount.compareTo(campaign.getBudgetMin()) < 0) {
+            throw new ApiException(
+                    "AMOUNT_BELOW_BUDGET",
+                    "Proposed amount is below campaign minimum budget",
+                    HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    /**
+     * [BUG FIX 2026-08-13, Arjun-routed] Amount validation for {@link #counter}, deliberately
+     * narrower than {@link #validateProposalAmount} — which {@link #counter} used to call
+     * verbatim, sharing the {@code AMOUNT_EXCEEDS_BUDGET} ceiling with a brand's very first
+     * offer.
+     *
+     * <p><b>Why sharing it was a bug, not just strict:</b> {@code campaign.budgetMax} exists to
+     * catch a brand's wildly-out-of-range FIRST offer ({@link #createProposal}) — it is not a
+     * ceiling on where a live negotiation between two already-engaged parties may land. The
+     * standing price on a deal is, by construction, already {@code <= budgetMax} (it passed this
+     * same check to get there), so ANY counter that raised the price at all risked landing above
+     * the cap whenever the standing offer was already near it — structurally squeezing out the
+     * one thing a counter exists to do. No {@code DealServiceTest} case ever exercised a value
+     * near/above {@code budgetMax}, and the frontend counter form ({@code
+     * counter-proposal-form.tsx}) gives no pre-submit warning, so the bug shipped silent.
+     *
+     * <p><b>What stays enforced:</b> the positive-amount check (a counter collapsing to $0/
+     * negative is nonsensical regardless of role) and the {@code budgetMin} floor — that
+     * protection is unrelated to this defect and is left exactly as strict as before. Only the
+     * upper ceiling is lifted, and deliberately by removing the check rather than widening it by
+     * some percentage: there is no principled number to hardcode, and see below for why an
+     * unbounded ceiling is still safe here.
+     *
+     * <p><b>Symmetric across both roles that call {@link #counter}</b> (brand and creator share
+     * the one endpoint, disambiguated only by {@code senderType} inside {@link #doCounter}) —
+     * deliberately NOT creator-only. Once a deal is {@code IN_NEGOTIATION}, the ceiling is
+     * equally pointless against a BRAND counter: e.g. a creator counters above {@code budgetMax}
+     * and the brand wants to meet in the middle at a figure still above {@code budgetMax} but
+     * below the creator's ask — that is a legitimate compromise move, not a fat-fingered opening
+     * offer, and gating only the creator's half of the negotiation would just as structurally
+     * strangle compromise from the brand's side.
+     *
+     * <p><b>Why lifting the ceiling is safe (the money-path question — this paragraph took five
+     * fresh-context Priya review rounds before every claim in it held true; the change was never
+     * committed between rounds, so there is no git history of the four narrower-each-time false
+     * claims it replaced. Do not re-add a "safety" sentence to this javadoc without re-verifying it
+     * against the code, not against how convincing it sounds):</b>
+     *
+     * <ul>
+     * <li>A counter cannot inflate any escrow amount by itself. Both fund amounts are always
+     *     server-derived from persisted rows — {@code milestone.getAmount()} or {@code
+     *     campaign.getBudgetMax()} ({@link EscrowService#deriveFundAmount}) — never from a
+     *     proposal/counter request payload.
+     * <li>{@link #doCounter} writes {@code collaboration.agreedRate} from this amount immediately,
+     *     at counter time, not only after {@link #accept}. {@code ContractService#generate} does
+     *     not require {@code TERMS_AGREED} (it only blocks {@code CANCELLED}), and its milestone
+     *     total is capped at {@code agreedRate} with no {@code budgetMax} check — so on the
+     *     MILESTONE path, an inflated {@code agreedRate} can reach a hold, but only after both
+     *     {@code contract.getBrandSignedAt()} and {@code contract.getCreatorSignedAt()} are
+     *     non-null ({@code EscrowService}'s {@code milestoneId != null} funding branch).
+     * <li>On the NO-MILESTONE ("pool") path the fund amount is {@code campaign.getBudgetMax()}
+     *     itself, counter-independent, so an inflated counter cannot inflate it. This path is
+     *     ungated by contract signatures in BOTH directions (funding and release) — that is a
+     *     pre-existing property of the campaign-level pool model, not something this change
+     *     touches or widens. The one real consequence of lifting the ceiling: a pool hold can now
+     *     legitimately UNDER-cover an above-{@code budgetMax} {@code agreedRate}. That is a
+     *     funding-coverage gap worth its own ticket, not a way to move money without consent.
+     * <li>No release can be redirected: every release is initiated by the brand side or by admin
+     *     dispute settlement, and the payee is always resolved server-side from {@code
+     *     Collaboration.creatorId}, never from the request. (This says nothing about {@code
+     *     EscrowService#refund}, which the brand can invoke unilaterally on either route — that is
+     *     pre-existing behavior, unrelated to and unwidened by this change.)
+     * </ul>
+     */
+    private void validateCounterAmount(Campaign campaign, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(
+                    "INVALID_AMOUNT", "Amount must be positive", HttpStatus.BAD_REQUEST);
         }
         if (campaign.getBudgetMin() != null && amount.compareTo(campaign.getBudgetMin()) < 0) {
             throw new ApiException(
@@ -1060,8 +1239,29 @@ public class DealService {
         return message;
     }
 
+    /**
+     * Single-collaboration convenience overload for the non-list call sites ({@code get},
+     * {@code accept}, {@code reject}, {@code counter}, {@code createProposal}, {@code
+     * sendMessage}) — one deliverable query for one row is not the N+1 the batched overload below
+     * exists to avoid.
+     */
     private DealResponse toDealResponse(
             Collaboration collaboration, AuthPrincipal principal, UserType role) {
+        List<Deliverable> deliverables =
+                deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(collaboration.getId());
+        return toDealResponse(collaboration, principal, role, deliverables);
+    }
+
+    /**
+     * CR-96 — batched-friendly overload: callers iterating a list of collaborations ({@link #list},
+     * {@link #listEligibleForDispute}) pass in deliverables pre-fetched via {@link
+     * #loadDeliverablesByCollaboration} instead of triggering a per-row query here.
+     */
+    private DealResponse toDealResponse(
+            Collaboration collaboration,
+            AuthPrincipal principal,
+            UserType role,
+            List<Deliverable> deliverables) {
         Campaign campaign =
                 campaignRepository.findById(collaboration.getCampaignId()).orElse(null);
         String campaignName = campaign != null ? campaign.getTitle() : "Campaign";
@@ -1098,49 +1298,87 @@ public class DealService {
                 escrowHoldRepository.hasEscrowForCollaboration(
                         collaboration.getId(), Set.of(EscrowStatus.FUNDED));
 
+        // PL-1 (BrandF.md §69) / creatorF.md C-4: deliverablesDone/Total/nextDeadline used to be
+        // hardcoded 0/0/null here regardless of real deliverable state, which is why the brand
+        // pipeline board's SLA "at-risk" filter was structurally always empty in live mode — there
+        // was never a deadline for it to compare against. Computed for real below from the
+        // `deliverables` param (single-row query for single-item callers, batched via {@link
+        // #loadDeliverablesByCollaboration} for list callers — see the two overloads above).
+        int deliverablesTotal = deliverables.size();
+        int deliverablesDone =
+                (int)
+                        deliverables.stream()
+                                .filter(d -> DELIVERABLE_DONE_STATUSES.contains(d.getStatus()))
+                                .count();
+        Instant nextDeadline =
+                deliverables.stream()
+                        .filter(d -> !DELIVERABLE_DONE_STATUSES.contains(d.getStatus()))
+                        .filter(d -> d.getStatus() != DeliverableStatus.REJECTED)
+                        .map(Deliverable::getDeadline)
+                        .filter(java.util.Objects::nonNull)
+                        .min(java.util.Comparator.naturalOrder())
+                        .map(d -> d.atStartOfDay(ZoneOffset.UTC).toInstant())
+                        .orElse(null);
+
         return new DealResponse(
                 collaboration.getId(),
                 collaboration.getCampaignId(),
                 campaignName,
                 counterparty.id(),
+                counterparty.profileId(),
                 counterparty.name(),
                 counterparty.avatar(),
                 counterparty.handle(),
+                counterparty.verificationStatus(),
                 collaboration.getStatus(),
                 collaboration.getAgreedRate(),
                 collaboration.getCurrency(),
                 lastMsg.map(DealMessage::getContent).orElse(collaboration.getNotes()),
                 lastMsg.map(DealMessage::getCreatedAt).orElse(collaboration.getUpdatedAt()),
                 unread,
-                0,
-                0,
-                null,
+                deliverablesDone,
+                deliverablesTotal,
+                nextDeadline,
                 latest != null ? latest.getId() : null,
                 latest != null ? latest.getStatus() : null,
                 escrowFunded);
     }
+
+    /** Brand-approved-or-beyond — see {@link #toDealResponse} deliverable aggregation. */
+    private static final Set<DeliverableStatus> DELIVERABLE_DONE_STATUSES =
+            Set.of(
+                    DeliverableStatus.APPROVED,
+                    DeliverableStatus.POSTED,
+                    DeliverableStatus.METRICS_REPORTED,
+                    DeliverableStatus.VERIFIED);
 
     private Counterparty resolveCounterparty(
             Collaboration collaboration, Campaign campaign, UserType viewerRole) {
         if (viewerRole == UserType.CREATOR) {
             String workspaceId = campaign != null ? campaign.getWorkspaceId() : null;
             if (workspaceId == null) {
-                return new Counterparty("unknown", "Brand", null, null);
+                return new Counterparty("unknown", null, "Brand", null, null, null);
             }
             Workspace workspace = workspaceRepository.findById(workspaceId).orElse(null);
             return new Counterparty(
                     workspaceId,
+                    null,
                     workspace != null ? workspace.getName() : "Brand",
                     workspace != null ? workspace.getLogoUrl() : null,
-                    null);
+                    null,
+                    workspace != null && workspace.getVerificationStatus() != null
+                            ? workspace.getVerificationStatus().name()
+                            : null);
         }
         CreatorProfile creator =
                 creatorProfileRepository.findByUserId(collaboration.getCreatorId()).orElse(null);
         return new Counterparty(
                 collaboration.getCreatorId(),
+                creator != null ? creator.getId() : null,
                 creator != null ? creator.getDisplayName() : "Creator",
                 creator != null ? creator.getAvatarUrl() : null,
-                creator != null ? creator.getUsername() : null);
+                creator != null ? creator.getUsername() : null,
+                null);
     }
 
     private DealMessageResponse seedNotesMessage(Collaboration collaboration) {
@@ -1336,5 +1574,11 @@ public class DealService {
         }
     }
 
-    private record Counterparty(String id, String name, String avatar, String handle) {}
+    private record Counterparty(
+            String id,
+            String profileId,
+            String name,
+            String avatar,
+            String handle,
+            String verificationStatus) {}
 }

@@ -74,7 +74,8 @@ class MetaTokenRefreshServiceTest {
                         eq(WORKSPACE_ID),
                         eq(REFRESHED_TOKEN),
                         any(Instant.class),
-                        scopesCaptor.capture());
+                        scopesCaptor.capture(),
+                        any());
 
         assertEquals(List.of("instagram_basic", "pages_show_list"), scopesCaptor.getValue());
 
@@ -104,7 +105,8 @@ class MetaTokenRefreshServiceTest {
 
         ArgumentCaptor<Instant> expiryCaptor = ArgumentCaptor.forClass(Instant.class);
         verify(tokenStorage)
-                .storeToken(anyString(), anyString(), anyString(), expiryCaptor.capture(), any());
+                .storeToken(
+                        anyString(), anyString(), anyString(), expiryCaptor.capture(), any(), any());
 
         Instant expected = Instant.now().plusSeconds(5_184_000L);
         long diffSeconds = Math.abs(ChronoUnit.SECONDS.between(expected, expiryCaptor.getValue()));
@@ -134,9 +136,9 @@ class MetaTokenRefreshServiceTest {
 
         // creator1's failure must not prevent creator2 from being refreshed and stored.
         verify(tokenStorage, times(1))
-                .storeToken(eq(creator2), eq(WORKSPACE_ID), eq(REFRESHED_TOKEN), any(), any());
+                .storeToken(eq(creator2), eq(WORKSPACE_ID), eq(REFRESHED_TOKEN), any(), any(), any());
         verify(tokenStorage, never())
-                .storeToken(eq(creator1), anyString(), anyString(), any(), any());
+                .storeToken(eq(creator1), anyString(), anyString(), any(), any(), any());
 
         verify(auditLog).recordToolCall(any(), any(), any(), any(), any(), any(), any(), any());
     }
@@ -162,7 +164,78 @@ class MetaTokenRefreshServiceTest {
         refreshService.refreshExpiringTokens();
 
         verify(tokenStorage, times(1))
-                .storeToken(eq(creator2), eq(WORKSPACE_ID), eq(REFRESHED_TOKEN), any(), any());
+                .storeToken(eq(creator2), eq(WORKSPACE_ID), eq(REFRESHED_TOKEN), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "F-0171 regression: a creator-owned row (workspaceId null) is resolved via"
+                    + " getValidCreatorToken, never the workspace-scoped getValidToken which can"
+                    + " never match it")
+    void testRefreshResolvesCreatorOwnedTokenViaCreatorScopedGetter() {
+        MetaOAuthToken token = createTestToken(null, CREATOR_ID, null);
+        when(tokenStorage.findTokensExpiringSoon(props.getTokenRefreshDaysBeforeExpiry()))
+                .thenReturn(List.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(CURRENT_TOKEN));
+        when(oAuthService.refreshLongLivedToken(CURRENT_TOKEN))
+                .thenReturn(new MetaTokenResponse(REFRESHED_TOKEN, "bearer", 5184000L));
+
+        refreshService.refreshExpiringTokens();
+
+        // The regression this guards against: calling the workspace-scoped getter with a null
+        // workspaceId, which MetaOAuthTokenRepository's query (workspaceId IS NOT NULL, CR-111)
+        // can never satisfy — every creator token would silently never refresh.
+        verify(tokenStorage, never()).getValidToken(eq((String) null), anyString());
+        verify(oAuthService).refreshLongLivedToken(CURRENT_TOKEN);
+    }
+
+    @Test
+    @DisplayName(
+            "CR-110/F-0171 regression: a refreshed creator-owned row is persisted via"
+                    + " storeCreatorToken (race-safe, revoke-before-insert), never the"
+                    + " workspace-scoped storeToken which would mint a duplicate row every refresh")
+    void testRefreshPersistsCreatorOwnedTokenViaCreatorScopedWriter() {
+        String igBusinessAccountId = "17841400000000000";
+        MetaOAuthToken token =
+                createTestToken(
+                        null, CREATOR_ID, "[\"instagram_basic\"]", igBusinessAccountId);
+        when(tokenStorage.findTokensExpiringSoon(props.getTokenRefreshDaysBeforeExpiry()))
+                .thenReturn(List.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(CURRENT_TOKEN));
+        when(oAuthService.refreshLongLivedToken(CURRENT_TOKEN))
+                .thenReturn(new MetaTokenResponse(REFRESHED_TOKEN, "bearer", 5184000L));
+
+        refreshService.refreshExpiringTokens();
+
+        verify(tokenStorage)
+                .storeCreatorToken(
+                        eq(CREATOR_ID),
+                        eq(REFRESHED_TOKEN),
+                        any(Instant.class),
+                        eq(List.of("instagram_basic")),
+                        eq(igBusinessAccountId));
+        // The regression this guards against: the shared workspace-scoped writer, which would
+        // silently mint a duplicate non-revoked creator row on every refresh (self-DoS).
+        verify(tokenStorage, never())
+                .storeToken(anyString(), eq((String) null), anyString(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("brand-owned row (workspaceId present) is unaffected — still uses the workspace-scoped getter/writer")
+    void testRefreshStillUsesWorkspaceScopedPathForBrandOwnedRow() {
+        MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID, null);
+        when(tokenStorage.findTokensExpiringSoon(props.getTokenRefreshDaysBeforeExpiry()))
+                .thenReturn(List.of(token));
+        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(CURRENT_TOKEN));
+        when(oAuthService.refreshLongLivedToken(CURRENT_TOKEN))
+                .thenReturn(new MetaTokenResponse(REFRESHED_TOKEN, "bearer", 5184000L));
+
+        refreshService.refreshExpiringTokens();
+
+        verify(tokenStorage)
+                .storeToken(eq(CREATOR_ID), eq(WORKSPACE_ID), eq(REFRESHED_TOKEN), any(), any(), any());
+        verify(tokenStorage, never()).getValidCreatorToken(anyString());
+        verify(tokenStorage, never()).storeCreatorToken(anyString(), anyString(), any(), any(), any());
     }
 
     @Test
@@ -174,7 +247,8 @@ class MetaTokenRefreshServiceTest {
         refreshService.refreshExpiringTokens();
 
         verify(oAuthService, never()).refreshLongLivedToken(anyString());
-        verify(tokenStorage, never()).storeToken(anyString(), anyString(), anyString(), any(), any());
+        verify(tokenStorage, never())
+                .storeToken(anyString(), anyString(), anyString(), any(), any(), any());
         verify(auditLog).recordToolCall(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
@@ -189,7 +263,8 @@ class MetaTokenRefreshServiceTest {
         refreshService.refreshExpiringTokens();
 
         verify(oAuthService, never()).refreshLongLivedToken(anyString());
-        verify(tokenStorage, never()).storeToken(anyString(), anyString(), anyString(), any(), any());
+        verify(tokenStorage, never())
+                .storeToken(anyString(), anyString(), anyString(), any(), any(), any());
     }
 
     @Test
@@ -204,7 +279,8 @@ class MetaTokenRefreshServiceTest {
 
         refreshService.refreshExpiringTokens();
 
-        verify(tokenStorage, never()).storeToken(anyString(), anyString(), anyString(), any(), any());
+        verify(tokenStorage, never())
+                .storeToken(anyString(), anyString(), anyString(), any(), any(), any());
     }
 
     @Test
@@ -237,6 +313,14 @@ class MetaTokenRefreshServiceTest {
 
     private MetaOAuthToken createTestToken(
             String workspaceId, String creatorProfileId, String grantedScopesJson) {
+        return createTestToken(workspaceId, creatorProfileId, grantedScopesJson, null);
+    }
+
+    private MetaOAuthToken createTestToken(
+            String workspaceId,
+            String creatorProfileId,
+            String grantedScopesJson,
+            String igBusinessAccountId) {
         return new MetaOAuthToken() {
             @Override
             public String getId() {
@@ -251,6 +335,11 @@ class MetaTokenRefreshServiceTest {
             @Override
             public String getCreatorProfileId() {
                 return creatorProfileId;
+            }
+
+            @Override
+            public String getIgBusinessAccountId() {
+                return igBusinessAccountId;
             }
 
             @Override

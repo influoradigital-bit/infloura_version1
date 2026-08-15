@@ -395,6 +395,12 @@ class BrandDeliverableServiceTest {
     @DisplayName("reject: SUBMITTED transitions to REJECTED and stores feedback")
     void testRejectSubmitted() {
         when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        // D-9/CR-22a — reject() gained the same requireNotCancelled(collaborationId) guard
+        // approve() already had (BrandDeliverableService.java:192), but this test was never
+        // updated to stub the collaboration lookup that guard performs, so it fell through
+        // Mockito's default Optional.empty() and threw "Collaboration not found" instead of
+        // exercising the reject path this test is actually about.
+        stubActiveCollaboration();
         Deliverable deliverable = submittedDeliverable();
         when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
                 .thenReturn(java.util.Optional.of(deliverable));

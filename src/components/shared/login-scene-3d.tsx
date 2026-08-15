@@ -77,7 +77,7 @@ export function LoginScene3D({ accent = 'brand' }: LoginScene3DProps) {
         camera={{ position: [0, 0.3, 5.5], fov: 40 }}
         dpr={[1, 1.5]}
         gl={{ alpha: true, antialias: false, powerPreference: 'high-performance' }}
-        style={{ background: 'transparent' }}
+        className="bg-transparent"
       >
         <PerformanceMonitor onDecline={() => setDegraded(true)} onIncline={() => setDegraded(false)} />
         <Suspense fallback={null}>

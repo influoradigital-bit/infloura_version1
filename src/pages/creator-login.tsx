@@ -19,6 +19,9 @@ export default function CreatorLoginPage() {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [error, setError] = React.useState('');
+  // CR-121 — was a checkbox with no state or effect at all. Defaults to checked, matching this
+  // app's existing de-facto behavior (the token already persisted in localStorage regardless).
+  const [rememberMe, setRememberMe] = React.useState(true);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +39,7 @@ export default function CreatorLoginPage() {
       // guard, Kabir A3) when VITE_API_MODE !== 'live' — so a live/prod build can no longer
       // fake a successful login.
       const result = await api.auth.creatorLogin({ email, password });
-      api.auth.setToken('creator', result.token);
+      api.auth.setToken('creator', result.token, rememberMe);
 
       // CR-06 — the auth store is populated in BOTH modes.
       //
@@ -131,6 +134,8 @@ export default function CreatorLoginPage() {
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
               className="w-4 h-4 rounded border-input accent-primary cursor-pointer"
             />
             <span className="text-sm text-muted-foreground">Remember me</span>

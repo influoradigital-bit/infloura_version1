@@ -129,6 +129,14 @@ export interface CreatorChatDealRoom {
   brandName: string;
   brandLogo: string;
   brandInitials: string;
+  /**
+   * M-1 (BrandF.md §83c/§87) — real backend field, `Deal.counterpartyVerificationStatus`
+   * (DealDtos.java:39 / `Workspace.verificationStatus`), true only when it equals
+   * `'VERIFIED'`. Drives the "Verified Brand" badge in the deal room header. Do NOT
+   * hardcode this to `true` — that was the exact defect this field replaces, and it let
+   * an UNVERIFIED brand read as verified to a creator deciding whether to ship product.
+   */
+  brandVerified: boolean;
   campaignName: string;
   status: CreatorChatDealStatus;
   dealAmount: number;
@@ -138,7 +146,8 @@ export interface CreatorChatDealRoom {
   deliverablesDone: number;
   deliverablesTotal: number;
   /**
-   * Real backend fields (DealDtos.java:38-40) — the honest source for contract state in
+   * Real backend fields (DealDtos.java:49-51 — shifted from 38-40 by VER-1's
+   * counterpartyVerificationStatus field) — the honest source for contract state in
    * live mode; undefined/false in mock mode (mock rooms keep using the
    * creator-contract-store demo backbone instead).
    */
@@ -181,7 +190,11 @@ export function mapDealToDealsPageRow(deal: Deal): CreatorDealsPageRow {
     brandId: deal.counterpartyId,
     brandName: deal.counterpartyName,
     brandLogo: deal.counterpartyAvatar ?? undefined,
-    brandVerified: true,
+    // M-1 (BrandF.md §83c/§87) — used to be hardcoded `true`, so every deal showed a
+    // fabricated "Verified Brand" badge regardless of the brand's actual verification
+    // state. Real source: `Deal.counterpartyVerificationStatus`
+    // (DealDtos.java:39 / `Workspace.verificationStatus`).
+    brandVerified: deal.counterpartyVerificationStatus === 'VERIFIED',
     campaignTitle: deal.campaignName,
     status: mapCollaborationStatusToDealStage(deal.status),
     budget: parseDealAmount(deal.dealValue),
@@ -196,8 +209,10 @@ export function mapDealToDealsPageRow(deal: Deal): CreatorDealsPageRow {
     escrowFunded: deal.escrowFunded,
     // Explicitly undefined: the `GET /deals` summary payload does not carry these.
     // The page renders each behind a truthy guard, so they simply don't show — an
-    // honest empty state, never a fabricated rating/badge. If the deals summary API
-    // later returns brand rating / payout-speed / an offer-expiry, populate here.
+    // honest empty state, not a fabricated rating. If the deals summary API later
+    // returns brand rating / payout-speed / an offer-expiry, populate here.
+    // (`brandVerified` above is NOT in this bucket — as of M-1 it's a real field
+    // sourced from `counterpartyVerificationStatus` on the wire, never fabricated.)
     brandRating: undefined,
     brandPaymentSpeed: undefined,
     expiresAt: undefined,
@@ -210,6 +225,7 @@ export function mapDealToChatRoom(deal: Deal): CreatorChatDealRoom {
     brandName: deal.counterpartyName,
     brandLogo: deal.counterpartyAvatar ?? '',
     brandInitials: getInitials(deal.counterpartyName),
+    brandVerified: deal.counterpartyVerificationStatus === 'VERIFIED',
     campaignName: deal.campaignName,
     status: mapCollaborationStatusToDealStage(deal.status),
     dealAmount: parseDealAmount(deal.dealValue),

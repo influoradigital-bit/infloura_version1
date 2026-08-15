@@ -24,10 +24,18 @@ from app.config import PROMPT_VERSION
 # --- Backstop regex patterns -------------------------------------------------
 # Indian PAN: 5 letters, 4 digits, 1 letter (e.g. ABCDE1234F)
 _PAN_RE = re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b")
-# Phone numbers: optional +country code, 10-15 digits, allow separators
-_PHONE_RE = re.compile(r"(?<!\d)(?:\+?\d{1,3}[-.\s]?)?\d{10}(?!\d)")
-# Bank account / IBAN-ish: 9-18 digit runs (typical Indian bank account length)
-_BANK_ACCOUNT_RE = re.compile(r"\b\d{9,18}\b")
+# Phone numbers: optional +country code, 10-15 digits, allow separators.
+#
+# F-13 (inverse failure): this used to be `(?<!\d)…\d{10}(?!\d)`, which matched
+# ANY 10-digit run — including the digits of a decimal. `cost_usd=0.0123456789`
+# scrubbed to `[REDACTED_PHONE]`, so the CFO's daily cost reports read back
+# nothing. A digit run that is part of a decimal number (a `.` or `,` on either
+# side) is not a phone number; the lookarounds now say so.
+_PHONE_RE = re.compile(r"(?<![\d.,])(?:\+?\d{1,3}[-\s]?)?\d{10}(?![\d.,]*\d)")
+# Bank account / IBAN-ish: 9-18 digit runs (typical Indian bank account length).
+# Same F-13 decimal exclusion as the phone pattern above — the fractional digits
+# of `0.0123456789` are not an account number.
+_BANK_ACCOUNT_RE = re.compile(r"(?<![\d.,])\d{9,18}(?![\d.,]*\d)")
 # Generic secret-looking tokens: sk-..., Bearer <jwt>, long base64/hex blobs
 _SECRET_RE = re.compile(
     r"(?:sk-[A-Za-z0-9_-]{10,}|Bearer\s+[A-Za-z0-9\-_.]{20,}|[A-Za-z0-9+/]{40,}={0,2})"
@@ -109,9 +117,16 @@ def scrub_text(value: str) -> str:
     return value
 
 
-def shape_of(value: Any) -> Any:
+def shape_of(value: Any, *, reveal_keys: bool = True) -> Any:
     """Convert a value into a safe 'shape' descriptor: lengths/counts/types, never
     the raw value itself. Use this instead of logging payloads directly.
+
+    F-13: for a dict this returned `sorted(value.keys())` unconditionally —
+    including for values reached under a SENSITIVE key. A brand catalog is a
+    dict keyed BY PRODUCT NAME, so `{"brand_catalog": {"Chanel No 5 (SKU 991)": 1}}`
+    logged `{"keys": ["Chanel No 5 (SKU 991)"]}`: the catalog contents this
+    module's docstring promises never to log. `reveal_keys=False` (used for every
+    redacted key) emits only a count. Key names that ARE emitted are scrubbed.
     """
     if value is None:
         return None
@@ -119,33 +134,67 @@ def shape_of(value: Any) -> Any:
         return {"type": "str", "len": len(value)}
     if isinstance(value, (bytes, bytearray)):
         return {"type": "bytes", "len": len(value)}
-    if isinstance(value, list):
-        return {"type": "list", "count": len(value)}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return {"type": type(value).__name__, "count": len(value)}
     if isinstance(value, dict):
-        return {"type": "dict", "keys": sorted(value.keys())}
-    if isinstance(value, (int, float, bool)):
+        if not reveal_keys:
+            return {"type": "dict", "key_count": len(value)}
+        return {"type": "dict", "keys": sorted(scrub_text(str(k)) for k in value)}
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
         return value
     return {"type": type(value).__name__}
 
 
+# Scalars that are safe to emit verbatim. Everything else is reduced to a shape
+# descriptor — see _redact_for_log.
+_SAFE_SCALARS = (bool, int, float)
+
+
 def _redact_for_log(obj: Any) -> Any:
     """Recursively redact a structure before it is serialized into a log line:
-    - known-sensitive keys get replaced with a shape descriptor
+    - known-sensitive keys get replaced with a shape descriptor (no key names)
     - any remaining raw strings get regex-scrubbed as a backstop
+    - anything that is NOT a container, string or safe scalar is reduced to a
+      type descriptor and never stringified
+
+    F-13: this handled `dict` and `list` and let EVERYTHING else fall through to
+    the formatter's `json.dumps(default=str)`. A pydantic/dataclass request model
+    reached the logger as `str(model)`, so
+    `{"req": RequestModel(prompt="…", token="sk-live-…")}` put the full prompt
+    and bearer token into stdout with zero scrubbing. Tuples and sets had the
+    same hole. Objects no longer reach `default=str` from here.
     """
     if isinstance(obj, dict):
         out: dict[str, Any] = {}
         for key, val in obj.items():
-            if key.lower() in _REDACT_KEYS:
-                out[key] = shape_of(val)
+            # F-13 (round 7, Priya advisory 5): the KEY is data too. A dict keyed
+            # by catalog entries — `{"catalog": {"Chanel No 5 (SKU 991)": 1}}` —
+            # used to emit every key verbatim because only the VALUES were
+            # scrubbed and `catalog` is not in _REDACT_KEYS. `shape_of` already
+            # scrubs the keys it reveals; this is the same rule one level up.
+            safe_key = scrub_text(str(key))
+            if str(key).lower() in _REDACT_KEYS:
+                out[safe_key] = shape_of(val, reveal_keys=False)
             else:
-                out[key] = _redact_for_log(val)
+                out[safe_key] = _redact_for_log(val)
         return out
-    if isinstance(obj, list):
+    if isinstance(obj, (list, tuple, set, frozenset)):
         return [_redact_for_log(item) for item in obj]
     if isinstance(obj, str):
         return scrub_text(obj)
-    return obj
+    if obj is None or isinstance(obj, _SAFE_SCALARS):
+        return obj
+    if isinstance(obj, (bytes, bytearray)):
+        return {"type": "bytes", "len": len(obj)}
+    # Arbitrary object: describe it, never render it. If it exposes a mapping of
+    # its own fields, recurse into that so the shape stays useful — every value
+    # inside still goes through this same function.
+    fields = getattr(obj, "__dict__", None)
+    if isinstance(fields, dict) and fields:
+        return {"type": type(obj).__name__, "fields": _redact_for_log(dict(fields))}
+    return {"type": type(obj).__name__}
 
 
 class RedactionJsonFormatter(logging.Formatter):

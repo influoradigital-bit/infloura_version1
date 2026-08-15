@@ -1,6 +1,7 @@
 package com.influora.integration.meta.oauth;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -60,7 +61,8 @@ class MetaOAuthServiceTest {
         assertTrue(url.contains("scope=instagram_basic"));
         assertTrue(url.contains("instagram_manage_insights"));
         assertTrue(url.contains("pages_show_list"));
-        assertTrue(url.contains("pages_read_engagement"));
+        // CR-115 — pages_read_engagement removed from REQUIRED_SCOPES; assert it's gone.
+        assertFalse(url.contains("pages_read_engagement"));
         assertTrue(url.contains("response_type=code"));
         assertTrue(url.contains("state=" + state));
     }
@@ -146,13 +148,13 @@ class MetaOAuthServiceTest {
     }
 
     @Test
-    @DisplayName("REQUIRED_SCOPES: contains all four required scopes in correct order")
+    @DisplayName("REQUIRED_SCOPES: contains exactly the three required scopes (CR-115 — pages_read_engagement removed, unused)")
     void testRequiredScopes() {
-        assertEquals(4, MetaOAuthService.REQUIRED_SCOPES.size());
+        assertEquals(3, MetaOAuthService.REQUIRED_SCOPES.size());
         assertTrue(MetaOAuthService.REQUIRED_SCOPES.contains("instagram_basic"));
         assertTrue(MetaOAuthService.REQUIRED_SCOPES.contains("instagram_manage_insights"));
         assertTrue(MetaOAuthService.REQUIRED_SCOPES.contains("pages_show_list"));
-        assertTrue(MetaOAuthService.REQUIRED_SCOPES.contains("pages_read_engagement"));
+        assertFalse(MetaOAuthService.REQUIRED_SCOPES.contains("pages_read_engagement"));
     }
 
     private MetaApiProperties createTestProperties() {

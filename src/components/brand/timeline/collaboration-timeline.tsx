@@ -211,6 +211,41 @@ export function CollaborationTimeline({
     void loadMessages();
   }, [loadMessages]);
 
+  // T-1 (BrandF.md §61): the timeline used to fetch once on mount and never open a
+  // realtime connection at all — a creator's reply or a system event (proposal/
+  // accept/counter) written by the other party never appeared until the brand
+  // reloaded the page. Mirrors brand-chat.tsx's stream effect (same transport,
+  // same reconnect-recovery shape), scoped to this one collaboration's dealId.
+  React.useEffect(() => {
+    if (!isApiLive()) return;
+
+    const handle = api.messages.stream(currentUserType, dealId, {
+      onMessage: (incoming) => {
+        setLiveMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === incoming.id);
+          if (idx === -1) return [...prev, incoming];
+          const next = prev.slice();
+          next[idx] = incoming;
+          return next;
+        });
+      },
+      onError: (err) => {
+        // Non-fatal — the initial `loadMessages()` fetch already rendered the thread;
+        // the stream only adds realtime updates on top of it.
+        if (import.meta.env.DEV) console.warn('[collaboration-timeline] message stream error for deal', dealId, err);
+      },
+      onReconnect: () => {
+        // Nothing published during the gap is recoverable from the transport — re-fetch
+        // to catch up on whatever the stream missed while it was down.
+        void loadMessages();
+      },
+    });
+
+    return () => {
+      handle.close();
+    };
+  }, [dealId, currentUserType, loadMessages]);
+
   const baseEvents = React.useMemo(
     () => buildDefaultEvents(collaboration, brandLabel),
     [collaboration, brandLabel],

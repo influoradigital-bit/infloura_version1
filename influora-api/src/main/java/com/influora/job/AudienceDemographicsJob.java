@@ -114,11 +114,11 @@ public class AudienceDemographicsJob {
         int failed = 0;
 
         for (MetaOAuthToken tokenRow : connectedTokens) {
-            String workspaceId = tokenRow.getWorkspaceId();
             String creatorProfileId = tokenRow.getCreatorProfileId();
+            String igBusinessAccountId = tokenRow.getIgBusinessAccountId();
 
             try {
-                if (pollOne(workspaceId, creatorProfileId)) {
+                if (pollOne(creatorProfileId, igBusinessAccountId)) {
                     polled++;
                 } else {
                     failed++;
@@ -148,15 +148,31 @@ public class AudienceDemographicsJob {
     }
 
     /** @return true if a demographics snapshot was successfully written for this creator. */
-    private boolean pollOne(String workspaceId, String creatorProfileId) {
-        Optional<String> token = tokenStorage.getValidToken(workspaceId, creatorProfileId);
+    private boolean pollOne(String creatorProfileId, String igBusinessAccountId) {
+        // CR-99/F-0113 fix: same ULID-vs-real-Meta-ID bug as MetricsPollingJob — Meta's Graph API
+        // path segment must be the numeric IG Business Account ID, never our internal ULID.
+        if (igBusinessAccountId == null || igBusinessAccountId.isBlank()) {
+            log.warn(
+                    "AudienceDemographicsJob: no igBusinessAccountId on file for creator {}, skipping",
+                    creatorProfileId);
+            return false;
+        }
+
+        // F-0166 follow-up (Priya review): this called the WORKSPACE-scoped getValidToken with
+        // `workspaceId`, always null for a creator-owned row — the backing repository query has
+        // an explicit `workspaceId IS NOT NULL` predicate (CR-111), so it could never match.
+        Optional<String> token = tokenStorage.getValidCreatorToken(creatorProfileId);
         if (token.isEmpty()) {
             log.warn(
                     "AudienceDemographicsJob: no valid token for creator {}, skipping", creatorProfileId);
             return false;
         }
 
-        int usage = rateLimitTracker.getCurrentUsage(creatorProfileId);
+        // F-0126: keyed on creatorProfileId (internal ULID) while MetaGraphApiClient's own
+        // enforcement and usage-header parsing key on igBusinessAccountId — two disjoint key
+        // namespaces for the same account meant this pre-flight guard could never see usage the
+        // client itself had recorded, so it always read 0 and was decorative.
+        int usage = rateLimitTracker.getCurrentUsage(igBusinessAccountId);
         if (usage >= RATE_LIMIT_THRESHOLD_PERCENT) {
             log.warn(
                     "AudienceDemographicsJob: creator {} at {}% Meta rate-limit usage, deferring to next"
@@ -168,7 +184,7 @@ public class AudienceDemographicsJob {
 
         try {
             AudienceDemographicsResponse response =
-                    instagramClient.getAudienceDemographics(creatorProfileId, token.get());
+                    instagramClient.getAudienceDemographics(igBusinessAccountId, token.get());
 
             if (response == null || response.data() == null || response.data().isEmpty()) {
                 // Accounts under Meta's 100+ follower threshold (or with no audience data yet) return
@@ -210,7 +226,9 @@ public class AudienceDemographicsJob {
             demographicsRepository.save(snapshot);
             return true;
         } catch (MetaRateLimitException e) {
-            rateLimitTracker.markLimited(creatorProfileId);
+            // F-0126: markLimited must use the same key as getCurrentUsage() above (and the same
+            // key MetaGraphApiClient itself uses) — igBusinessAccountId, not creatorProfileId.
+            rateLimitTracker.markLimited(igBusinessAccountId);
             log.warn(
                     "AudienceDemographicsJob: rate limited for creator {}, will retry next cycle",
                     creatorProfileId);

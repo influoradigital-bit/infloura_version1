@@ -1,0 +1,4 @@
+{"verdict": "believed", "oracle": "model", "isolation": "fresh-context",
+ "done_when": "InstagramMetricsFetcher's misleading ID contract fixed: param creatorProfileId renamed to igBusinessAccountId across all methods + internal calls, javadoc/log labels no longer mislabel the value, and InstagramMetricsFetcherTest asserts a numeric IG Business Account ID (17841...) not a ULID; pure rename, module compiles + test passes under mvn -o.",
+ "not_checked": ["still no production caller (latent by design) — wiring it into a job is a separate future task", "runtime Meta round-trip (Neha's gate), same as parent CR-99"],
+ "skipped": []}

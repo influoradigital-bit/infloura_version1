@@ -2,10 +2,12 @@ package com.influora.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,6 +25,7 @@ import com.influora.service.ErrorLogService;
 import com.influora.service.EscrowService;
 import com.influora.service.EscrowService.PagedEscrowHolds;
 import com.influora.service.PayoutService;
+import com.influora.web.dto.money.MoneyDtos.EscrowReleaseRequest;
 import com.influora.web.dto.money.MoneyDtos.EscrowStatusResponse;
 import java.math.BigDecimal;
 import java.util.List;
@@ -101,6 +104,86 @@ class EscrowControllerTest {
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertEquals(0, response.getBody().data().size());
     verify(escrowService).listForWorkspace(principal, WORKSPACE_ID, 1, 20);
+  }
+
+  // --------------------------------------------------------------------------------------------
+  // [P-1' fix, BrandF.md §47a] POST /wallet/escrow/release now accepts EITHER milestoneId (routes
+  // to EscrowService#release) OR escrowHoldId (routes to the new EscrowService#releaseByHoldId).
+  // --------------------------------------------------------------------------------------------
+
+  private static final String MILESTONE_ID = "01HMILESTONE123456789";
+
+  @Test
+  @DisplayName("POST /wallet/escrow/release with milestoneId routes to EscrowService#release")
+  void testReleaseRoutesToMilestonePath() {
+    when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+    when(workspace.getId()).thenReturn(WORKSPACE_ID);
+    EscrowStatusResponse expected =
+        new EscrowStatusResponse(
+            ESCROW_HOLD_ID, WORKSPACE_ID, "campaign", MILESTONE_ID, new BigDecimal("100"), "INR",
+            EscrowStatus.RELEASED, null, null);
+    when(escrowService.release(principal, WORKSPACE_ID, MILESTONE_ID)).thenReturn(expected);
+
+    ApiResponse<EscrowStatusResponse> response =
+        controller.release(principal, new EscrowReleaseRequest(MILESTONE_ID, null));
+
+    assertEquals(expected, response.data());
+    verify(escrowService).release(principal, WORKSPACE_ID, MILESTONE_ID);
+    verify(escrowService, org.mockito.Mockito.never())
+        .releaseByHoldId(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName(
+      "POST /wallet/escrow/release with escrowHoldId routes to the new"
+          + " EscrowService#releaseByHoldId path (P-1' fix)")
+  void testReleaseRoutesToHoldIdPath() {
+    when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+    when(workspace.getId()).thenReturn(WORKSPACE_ID);
+    EscrowStatusResponse expected =
+        new EscrowStatusResponse(
+            ESCROW_HOLD_ID, WORKSPACE_ID, "campaign", null, new BigDecimal("100"), "INR",
+            EscrowStatus.RELEASED, null, null);
+    when(escrowService.releaseByHoldId(principal, WORKSPACE_ID, ESCROW_HOLD_ID)).thenReturn(expected);
+
+    ApiResponse<EscrowStatusResponse> response =
+        controller.release(principal, new EscrowReleaseRequest(null, ESCROW_HOLD_ID));
+
+    assertEquals(expected, response.data());
+    verify(escrowService).releaseByHoldId(principal, WORKSPACE_ID, ESCROW_HOLD_ID);
+    verify(escrowService, org.mockito.Mockito.never()).release(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("POST /wallet/escrow/release with NEITHER milestoneId nor escrowHoldId is rejected")
+  void testReleaseRejectsWhenNeitherTargetSupplied() {
+    when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+
+    ApiException ex =
+        assertThrows(
+            ApiException.class,
+            () -> controller.release(principal, new EscrowReleaseRequest(null, null)));
+
+    assertEquals("ESCROW_RELEASE_TARGET_REQUIRED", ex.getCode());
+    verify(escrowService, org.mockito.Mockito.never()).release(any(), any(), any());
+    verify(escrowService, org.mockito.Mockito.never()).releaseByHoldId(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("POST /wallet/escrow/release with BOTH milestoneId and escrowHoldId is rejected (ambiguous)")
+  void testReleaseRejectsWhenBothTargetsSupplied() {
+    when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+
+    ApiException ex =
+        assertThrows(
+            ApiException.class,
+            () ->
+                controller.release(
+                    principal, new EscrowReleaseRequest(MILESTONE_ID, ESCROW_HOLD_ID)));
+
+    assertEquals("ESCROW_RELEASE_TARGET_REQUIRED", ex.getCode());
+    verify(escrowService, org.mockito.Mockito.never()).release(any(), any(), any());
+    verify(escrowService, org.mockito.Mockito.never()).releaseByHoldId(any(), any(), any());
   }
 
   // --------------------------------------------------------------------------------------------

@@ -2,6 +2,7 @@ package com.influora.service.creatorcopilot;
 
 import com.influora.integration.meta.client.FacebookPageClient;
 import com.influora.integration.meta.dto.FacebookAccountsListResponse.InstagramBusinessAccount;
+import com.influora.integration.meta.dto.MetaPermissionsResponse;
 import com.influora.integration.meta.dto.MetaTokenResponse;
 import com.influora.integration.meta.exception.MetaApiException;
 import com.influora.integration.meta.oauth.MetaOAuthService;
@@ -38,6 +39,16 @@ public class CreatorMetaOAuthService {
 
     private static final String ACCOUNT_TYPE_BUSINESS = "business";
 
+    /**
+     * CR-114 — {@code MetaOAuthService.exchangeForLongLivedToken}'s javadoc documents Meta's
+     * long-lived token as valid ~60 days; used ONLY as the fallback when Meta's response
+     * unexpectedly omits {@code expires_in}. Before this fix, a missing {@code expires_in}
+     * computed {@code expiresAt = Instant.now().plusSeconds(0)} — an already-expired token,
+     * stored and returned as if the connect succeeded, silently excluding that creator from
+     * every downstream job's validity filter with no error anywhere.
+     */
+    private static final long DEFAULT_LONG_LIVED_TOKEN_LIFETIME_SECONDS = 60L * 24 * 60 * 60;
+
     private final MetaOAuthService oAuthService;
     private final MetaTokenStorage tokenStorage;
     private final FacebookPageClient facebookPageClient;
@@ -52,7 +63,14 @@ public class CreatorMetaOAuthService {
     }
 
     /** {@code accountType} is {@code "personal" | "business"}, matching API-CONTRACT.md §4.2's
-     * {@code MetaCallbackResponse.accountType} exactly — the controller maps this 1:1. */
+     * {@code MetaCallbackResponse.accountType} exactly — the controller maps this 1:1.
+     *
+     * <p>{@code grantedScopes} (CR-104) is the REAL set of scopes Meta's {@code /me/permissions}
+     * reports as granted for this token — never {@code MetaOAuthService.REQUIRED_SCOPES}, which
+     * is only what the dialog *requested*; a creator can decline individual permissions there.
+     * {@code null} means the permissions check itself failed (network/Meta API issue) and the
+     * true grant set is unknown — callers must render that as "unknown", never silently fall
+     * back to claiming the full requested set was granted. */
     public record ConnectResult(boolean connected, List<String> grantedScopes, String accountType) {}
 
     /**
@@ -64,24 +82,35 @@ public class CreatorMetaOAuthService {
         MetaTokenResponse shortLived = oAuthService.exchangeCodeForToken(code);
         MetaTokenResponse longLived = oAuthService.exchangeForLongLivedToken(shortLived.accessToken());
 
-        Instant expiresAt =
-                Instant.now()
-                        .plusSeconds(longLived.expiresInSeconds() != null ? longLived.expiresInSeconds() : 0);
+        // CR-114 — a null expires_in used to compute Instant.now() (0-second lifetime), silently
+        // storing an already-expired token. Meta's long-lived exchange is documented ~60 days;
+        // fall back to that rather than "already expired" for a response shape that should not
+        // happen but must not silently disable the creator's whole Meta pipeline if it does.
+        if (longLived.expiresInSeconds() == null) {
+            log.warn(
+                    "CreatorMetaOAuthService: Meta long-lived token exchange for creator {} omitted"
+                            + " expires_in; falling back to the documented ~60-day default instead of"
+                            + " storing an already-expired token",
+                    creatorProfileId);
+        }
+        long expiresInSeconds =
+                longLived.expiresInSeconds() != null
+                        ? longLived.expiresInSeconds()
+                        : DEFAULT_LONG_LIVED_TOKEN_LIFETIME_SECONDS;
+        Instant expiresAt = Instant.now().plusSeconds(expiresInSeconds);
 
         InstagramBusinessAccount igAccount = resolveIgAccountSafely(longLived.accessToken(), creatorProfileId);
         String igBusinessAccountId = igAccount != null ? igAccount.id() : null;
 
+        List<String> grantedScopes = resolveGrantedScopesSafely(longLived.accessToken(), creatorProfileId);
+
         tokenStorage.storeCreatorToken(
-                creatorProfileId,
-                longLived.accessToken(),
-                expiresAt,
-                MetaOAuthService.REQUIRED_SCOPES,
-                igBusinessAccountId);
+                creatorProfileId, longLived.accessToken(), expiresAt, grantedScopes, igBusinessAccountId);
 
         if (igAccount == null) {
-            return new ConnectResult(false, MetaOAuthService.REQUIRED_SCOPES, ACCOUNT_TYPE_PERSONAL);
+            return new ConnectResult(false, grantedScopes, ACCOUNT_TYPE_PERSONAL);
         }
-        return new ConnectResult(true, MetaOAuthService.REQUIRED_SCOPES, ACCOUNT_TYPE_BUSINESS);
+        return new ConnectResult(true, grantedScopes, ACCOUNT_TYPE_BUSINESS);
     }
 
     /** {@link FacebookPageClient#resolveConnectedInstagram} is a live Graph API call — a
@@ -95,6 +124,41 @@ public class CreatorMetaOAuthService {
         } catch (MetaApiException e) {
             log.warn(
                     "CreatorMetaOAuthService: IG business account resolution failed for creator {}: {}",
+                    creatorProfileId,
+                    e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * CR-104 — resolves the REAL granted-scope set via {@link FacebookPageClient#fetchPermissions},
+     * not {@code MetaOAuthService.REQUIRED_SCOPES}. That constant is only what the authorize URL
+     * requested (see {@code MetaOAuthService#buildAuthorizationUrl}); Meta's consent dialog lets a
+     * user approve some scopes and decline others, and only {@code GET /me/permissions} reflects
+     * which is which. Previously this method didn't exist at all — {@code connect} stored and
+     * returned {@code REQUIRED_SCOPES} unconditionally, so a creator who declined a permission
+     * still saw it listed as granted in Settings.
+     *
+     * <p>Same resilience discipline as {@link #resolveIgAccountSafely}: a transient Graph API
+     * failure here must not fail the whole connect flow (the token exchange already succeeded).
+     * Unlike that method, the failure fallback here is deliberately {@code null} ("unknown"), not
+     * an empty list and not {@code REQUIRED_SCOPES} — either of those would misrepresent what was
+     * actually verified. {@code null} is the caller's/UI's signal to render "could not verify
+     * permissions" rather than asserting a specific (and possibly wrong) grant state.
+     */
+    private List<String> resolveGrantedScopesSafely(String accessToken, String creatorProfileId) {
+        try {
+            MetaPermissionsResponse response = facebookPageClient.fetchPermissions(accessToken);
+            if (response == null || response.data() == null) {
+                return null;
+            }
+            return response.data().stream()
+                    .filter(MetaPermissionsResponse.Permission::isGranted)
+                    .map(MetaPermissionsResponse.Permission::permission)
+                    .toList();
+        } catch (MetaApiException e) {
+            log.warn(
+                    "CreatorMetaOAuthService: granted-permissions check failed for creator {}: {}",
                     creatorProfileId,
                     e.getMessage());
             return null;

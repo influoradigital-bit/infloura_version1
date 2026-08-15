@@ -27,6 +27,7 @@ import logging
 import uuid
 from typing import Any
 
+import anyio
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.auth.service_token import AuthError, auth_error_to_http, verify_token
@@ -270,7 +271,12 @@ async def brand_safety(request: Request, authorization: str | None = Header(defa
         )
 
     try:
-        verify_token(_bearer(authorization), endpoint="brand_safety", body_workspace_id=workspace_id)
+        # F-09: off the event loop (blocking JWKS fetch).
+        await anyio.to_thread.run_sync(
+            lambda: verify_token(
+                _bearer(authorization), endpoint="brand_safety", body_workspace_id=workspace_id
+            )
+        )
     except AuthError as exc:
         raise auth_error_to_http(exc) from exc
 
@@ -278,7 +284,14 @@ async def brand_safety(request: Request, authorization: str | None = Header(defa
     # (Claude) call, zero provider calls made if blocked. Placed after the
     # workspace_id/auth checks above (same "auth first" ordering as chat.py
     # and analyze_site.py) but before the Claude call itself.
-    gate = await check_spend_gate(workspace_id=workspace_id)
+    gate = await check_spend_gate(
+        workspace_id=workspace_id,
+        # F-05: hold budget between this check and the recorded spend, so
+        # concurrent callers see each other's in-flight cost instead of all
+        # reading the same stale total. Settled by record_spend below; expires
+        # on its own if this request dies before it gets there.
+        reserve_usd=get_settings().ai_reservation_per_call_usd or None,
+    )
     if not gate.allowed:
         log_event(
             logger, logging.WARNING, "brand_safety_blocked_spend_gate",
@@ -323,7 +336,7 @@ async def brand_safety(request: Request, authorization: str | None = Header(defa
     if result.usage:
         try:
             cost_usd = estimate_cost_usd(BRAND_SAFETY_MODEL, result.usage)
-            spend_today = await record_spend(cost_usd, workspace_id)
+            spend_today = await record_spend(cost_usd, workspace_id, reservation=gate.reservation)
             log_event(
                 logger, logging.INFO, "ai_spend",
                 workspace_id=workspace_id, request_id=request_id,

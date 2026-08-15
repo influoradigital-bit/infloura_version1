@@ -87,7 +87,7 @@ async def _consume_memory(jti: str, ttl_seconds: float) -> bool:
 # Redis-backed store
 # ---------------------------------------------------------------------------
 
-_redis_client: "redis_asyncio.Redis | None" = None  # type: ignore[name-defined]
+_redis_client: redis_asyncio.Redis | None = None  # type: ignore[name-defined]
 _redis_client_lock = asyncio.Lock()
 
 
@@ -96,7 +96,7 @@ def _redis_configured() -> bool:
     return bool(settings.redis_url) and redis_asyncio is not None
 
 
-async def _get_redis_client() -> "redis_asyncio.Redis | None":  # type: ignore[name-defined]
+async def _get_redis_client() -> redis_asyncio.Redis | None:  # type: ignore[name-defined]
     """Lazily creates (and caches) the shared async Redis client. Returns
     None when Redis isn't configured/importable so every call site has a
     single, uniform "no Redis available" branch. Deliberately a distinct
@@ -125,7 +125,7 @@ async def close_redis_client() -> None:
     if _redis_client is not None:
         try:
             await _redis_client.aclose()
-        except Exception:  # noqa: BLE001 - best-effort shutdown, never raise
+        except Exception:
             logger.warning("replay_guard: error closing Redis client", exc_info=True)
         finally:
             _redis_client = None
@@ -143,7 +143,7 @@ async def _consume_redis(jti: str, ttl_seconds: float) -> bool | None:
         ttl = max(int(ttl_seconds), int(_MIN_TTL_SECONDS))
         was_set = await client.set(key, "1", nx=True, ex=ttl)
         return bool(was_set)
-    except Exception:  # noqa: BLE001 - any Redis failure -> caller falls back
+    except Exception:
         logger.warning(
             "replay_guard: Redis consume_once failed, falling back to in-memory store",
             exc_info=True,

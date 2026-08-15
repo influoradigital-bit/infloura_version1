@@ -147,6 +147,145 @@ class SubscriptionRenewalResetJobTest {
                 .recordMoneyEvent(any(), eq("SUBSCRIPTION_RENEWAL_SAFETY_NET"), any(), any(), any(), contains(goodSub.getId()), any());
     }
 
+    /**
+     * BL-2 fix (BrandF.md §98) tests — a cancel-at-period-end row past its lapsed period must be
+     * routed to {@link SubscriptionService#finalizeLapsedCancellation}, NEVER to {@link
+     * SubscriptionService#applyRenewalSafetyNet} (which would silently undo the cancellation by
+     * re-renewing the period and re-allotting Pro AI credits).
+     */
+    @Test
+    @DisplayName("BL-2: a cancel-at-period-end subscription whose period has lapsed is finalized to CANCELLED, NOT renewed")
+    void testCancelAtPeriodEndLapsedSubscriptionIsFinalizedNotRenewed() {
+        Instant oldStart = Instant.now().minusSeconds(2592000 + 86400);
+        Instant oldEnd = Instant.now().minusSeconds(86400); // ended yesterday
+        Subscription sub = activeSubscription(oldStart, oldEnd);
+        sub.setCancelAtPeriodEnd(true);
+
+        when(subscriptionRepository.findByStatus(SubscriptionStatus.ACTIVE)).thenReturn(List.of(sub));
+
+        job.runRenewalSafetyNet();
+
+        // The BL-2 assertion: this row must NEVER reach the renewal path.
+        verify(subscriptionService, never()).applyRenewalSafetyNet(any(), any(), any());
+        verify(subscriptionService).finalizeLapsedCancellation(sub);
+
+        verify(auditLog)
+                .recordMoneyEvent(
+                        eq(WORKSPACE_ID),
+                        eq("SUBSCRIPTION_CANCELLATION_FINALIZED"),
+                        any(),
+                        any(),
+                        any(),
+                        anyString(),
+                        any());
+    }
+
+    @Test
+    @DisplayName("BL-2: a cancel-at-period-end subscription still WITHIN its period is left untouched by both paths")
+    void testCancelAtPeriodEndWithinPeriodIsNotTouched() {
+        Instant futureEnd = Instant.now().plusSeconds(2592000);
+        Subscription sub = activeSubscription(Instant.now().minusSeconds(86400), futureEnd);
+        sub.setCancelAtPeriodEnd(true);
+
+        when(subscriptionRepository.findByStatus(SubscriptionStatus.ACTIVE)).thenReturn(List.of(sub));
+
+        job.runRenewalSafetyNet();
+
+        verify(subscriptionService, never()).applyRenewalSafetyNet(any(), any(), any());
+        verify(subscriptionService, never()).finalizeLapsedCancellation(any());
+        verify(auditLog, never())
+                .recordMoneyEvent(any(), anyString(), any(), any(), any(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("BL-2: a NOT-cancelled ACTIVE subscription past its period still renews normally (no regression) alongside a cancelled one in the same batch")
+    void testNonCancelledSubscriptionStillRenewsAlongsideCancelledOneInSameBatch() {
+        Instant oldEnd = Instant.now().minusSeconds(86400);
+        Subscription renewMe =
+                Subscription.builder()
+                        .id("01HWXYZSUBRENEW000000001")
+                        .workspaceId(WORKSPACE_ID)
+                        .planId(PRO_PLAN_ID)
+                        .status(SubscriptionStatus.ACTIVE)
+                        .razorpaySubscriptionId("sub_renew")
+                        .currentPeriodStart(oldEnd.minusSeconds(2592000))
+                        .currentPeriodEnd(oldEnd)
+                        .cancelAtPeriodEnd(false)
+                        .build();
+        Subscription cancelMe =
+                Subscription.builder()
+                        .id("01HWXYZSUBCANCEL0000001")
+                        .workspaceId(WORKSPACE_ID)
+                        .planId(PRO_PLAN_ID)
+                        .status(SubscriptionStatus.ACTIVE)
+                        .razorpaySubscriptionId("sub_cancel")
+                        .currentPeriodStart(oldEnd.minusSeconds(2592000))
+                        .currentPeriodEnd(oldEnd)
+                        .cancelAtPeriodEnd(true)
+                        .build();
+
+        when(subscriptionRepository.findByStatus(SubscriptionStatus.ACTIVE))
+                .thenReturn(List.of(renewMe, cancelMe));
+
+        job.runRenewalSafetyNet();
+
+        // renewMe: exactly the pre-existing renewal path, untouched by the BL-2 fix.
+        verify(subscriptionService).applyRenewalSafetyNet(eq(renewMe), any(), any());
+        verify(subscriptionService, never()).finalizeLapsedCancellation(renewMe);
+        // cancelMe: routed to the new terminal path instead.
+        verify(subscriptionService).finalizeLapsedCancellation(cancelMe);
+        verify(subscriptionService, never()).applyRenewalSafetyNet(eq(cancelMe), any(), any());
+
+        verify(auditLog)
+                .recordMoneyEvent(
+                        any(), eq("SUBSCRIPTION_RENEWAL_SAFETY_NET"), any(), any(), any(), contains(renewMe.getId()), any());
+        verify(auditLog)
+                .recordMoneyEvent(
+                        any(), eq("SUBSCRIPTION_CANCELLATION_FINALIZED"), any(), any(), any(), contains(cancelMe.getId()), any());
+    }
+
+    @Test
+    @DisplayName("BL-2: a failure finalizing one cancelled subscription does not abort the rest of the batch")
+    void testCancellationFinalizeFailureDoesNotAbortBatch() {
+        Instant oldEnd = Instant.now().minusSeconds(86400);
+        Subscription badSub =
+                Subscription.builder()
+                        .id("01HWXYZSUBCANCELBAD0001")
+                        .workspaceId(WORKSPACE_ID)
+                        .planId(PRO_PLAN_ID)
+                        .status(SubscriptionStatus.ACTIVE)
+                        .razorpaySubscriptionId("sub_cancel_bad")
+                        .currentPeriodStart(oldEnd.minusSeconds(2592000))
+                        .currentPeriodEnd(oldEnd)
+                        .cancelAtPeriodEnd(true)
+                        .build();
+        Subscription goodSub =
+                Subscription.builder()
+                        .id("01HWXYZSUBCANCELGOOD001")
+                        .workspaceId(WORKSPACE_ID)
+                        .planId(PRO_PLAN_ID)
+                        .status(SubscriptionStatus.ACTIVE)
+                        .razorpaySubscriptionId("sub_cancel_good")
+                        .currentPeriodStart(oldEnd.minusSeconds(2592000))
+                        .currentPeriodEnd(oldEnd)
+                        .cancelAtPeriodEnd(true)
+                        .build();
+
+        when(subscriptionRepository.findByStatus(SubscriptionStatus.ACTIVE))
+                .thenReturn(List.of(badSub, goodSub));
+        doThrow(new RuntimeException("simulated optimistic-lock failure"))
+                .when(subscriptionService)
+                .finalizeLapsedCancellation(badSub);
+
+        job.runRenewalSafetyNet();
+
+        verify(subscriptionService, times(1)).finalizeLapsedCancellation(goodSub);
+        verify(auditLog, never())
+                .recordMoneyEvent(any(), eq("SUBSCRIPTION_CANCELLATION_FINALIZED"), any(), any(), any(), contains(badSub.getId()), any());
+        verify(auditLog)
+                .recordMoneyEvent(any(), eq("SUBSCRIPTION_CANCELLATION_FINALIZED"), any(), any(), any(), contains(goodSub.getId()), any());
+    }
+
     private Subscription activeSubscription(Instant periodStart, Instant periodEnd) {
         return Subscription.builder()
                 .id("01HWXYZSUB000000000000" + Math.abs(periodEnd.hashCode() % 10))

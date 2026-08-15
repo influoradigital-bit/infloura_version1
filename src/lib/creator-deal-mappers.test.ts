@@ -205,3 +205,46 @@ describe('mapDealToChatRoom (CR-02 gate input)', () => {
     expect(mapDealToChatRoom(liveDeal).collaborationStatus).toBe('TERMS_AGREED');
   });
 });
+
+/**
+ * M-1 (BrandF.md §83c/§87) — the "Verified Brand" badge fabrication.
+ *
+ * `brandVerified` used to be hardcoded `true` in both mappers, so the creator deal room
+ * (`creator-chat.tsx`) and the creator deals list (`creator-deals.tsx`) displayed "Verified
+ * Brand" for every deal regardless of the real `Workspace.verificationStatus` — a live
+ * misstatement at the exact moment a creator decides whether to ship physical product to an
+ * UNVERIFIED brand (every workspace defaults to UNVERIFIED, `Workspace.java:126`).
+ *
+ * Both mappers now derive it from `Deal.counterpartyVerificationStatus`
+ * (DealDtos.java:39 / `Workspace.verificationStatus`, populated only when the viewer is a
+ * CREATOR). Only the literal string `'VERIFIED'` is true; PENDING, UNVERIFIED, REJECTED, and
+ * the null case (missing workspace, or viewer is a BRAND) all resolve to false — no badge.
+ */
+describe('brandVerified (M-1 — real verification status, not a hardcoded true)', () => {
+  const withStatus = (status: string | null) => ({
+    ...liveDeal,
+    counterpartyVerificationStatus: status as unknown as (typeof liveDeal)['counterpartyVerificationStatus'],
+  });
+
+  it('mapDealToChatRoom: true only for VERIFIED', () => {
+    expect(mapDealToChatRoom(withStatus('VERIFIED')).brandVerified).toBe(true);
+  });
+
+  it.each(['UNVERIFIED', 'PENDING', 'REJECTED', null])(
+    'mapDealToChatRoom: false for %s',
+    (status) => {
+      expect(mapDealToChatRoom(withStatus(status)).brandVerified).toBe(false);
+    },
+  );
+
+  it('mapDealToDealsPageRow: true only for VERIFIED', () => {
+    expect(mapDealToDealsPageRow(withStatus('VERIFIED')).brandVerified).toBe(true);
+  });
+
+  it.each(['UNVERIFIED', 'PENDING', 'REJECTED', null])(
+    'mapDealToDealsPageRow: false for %s',
+    (status) => {
+      expect(mapDealToDealsPageRow(withStatus(status)).brandVerified).toBe(false);
+    },
+  );
+});

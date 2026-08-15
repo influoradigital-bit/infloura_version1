@@ -271,6 +271,10 @@ public class CreatorCampaignService {
                 .anyMatch(p -> p.toUpperCase(Locale.ROOT).equals(needle));
     }
 
+    /**
+     * Case-insensitive niche matching (CR-62): lowercases the incoming niche parameter and all
+     * campaign fields before comparison, so the frontend need not lowercase before calling browse().
+     */
     private static boolean matchesNiche(Campaign c, String niche) {
         String needle = niche.trim().toLowerCase(Locale.ROOT);
         if (containsIgnoreCase(c.getTitle(), needle) || containsIgnoreCase(c.getDescription(), needle)) {

@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/dialog';
 
 import { cn, formatINR, publicProfileLabel } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 import {
   api,
   ApiError,
@@ -300,14 +301,11 @@ export default function CreatorPortfolioPublicPage() {
           {/* Hero cover — soft branded gradient with decorative glow (pure CSS, no WebGL) */}
           <div
             className={cn(
-              'relative h-36 sm:h-52 w-full overflow-hidden',
+              'relative h-36 sm:h-52 w-full overflow-hidden bg-cover bg-center',
+              page.coverUrl && 'bg-[image:var(--cover-url)]',
               !page.coverUrl && 'bg-gradient-to-br from-primary/25 via-accent/40 to-primary/10',
             )}
-            style={
-              page.coverUrl
-                ? { backgroundImage: `url(${page.coverUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-                : undefined
-            }
+            ref={page.coverUrl ? cssVars({ '--cover-url': `url(${page.coverUrl})` }) : undefined}
           >
             {!page.coverUrl && (
               <div aria-hidden className="pointer-events-none absolute inset-0">
@@ -352,7 +350,12 @@ export default function CreatorPortfolioPublicPage() {
                 <p className="mt-3 text-sm leading-relaxed max-w-xl">{page.bio}</p>
               )}
 
-              {/* Platform pills — live, OAuth-verified numbers */}
+              {/* CR-119 — was "live, OAuth-verified numbers", which is false: only Instagram has
+                  an OAuth integration at all, so a YouTube/TikTok/X pill here carries a
+                  creator-reported figure. Each pill states its own provenance. This block also
+                  renders when `visibility.platformStats` is off, in which case these pills are
+                  the ONLY per-platform surface on the page — so provenance cannot live solely in
+                  the PlatformStatCard grid below. */}
               <div className="mt-4 flex flex-wrap gap-2">
                 {page.platforms.map((p) => (
                   <PlatformPill key={p.platform} stats={p} />
@@ -721,7 +724,16 @@ function PlatformPill({ stats }: { stats: PortfolioPlatformStats }) {
       <Icon className="h-3.5 w-3.5" />
       <span className="font-medium">{formatFollowers(stats.followers)}</span>
       <span className="text-muted-foreground">{platformLabel(stats.platform)}</span>
-      {stats.verified && <BadgeCheck className="h-3 w-3 text-blue-500" />}
+      {/* CR-119 — same two-state wording as PlatformStatCard below. Badge-presence alone left a
+          self-reported YouTube pill indistinguishable from a Meta-verified Instagram one. */}
+      {stats.verified ? (
+        <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500">
+          <BadgeCheck className="h-3 w-3" />
+          Followers verified
+        </span>
+      ) : (
+        <span className="text-[10px] text-muted-foreground">Self-reported</span>
+      )}
       <ArrowUpRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
     </a>
   );
@@ -739,7 +751,19 @@ function PlatformStatCard({ stats }: { stats: PortfolioPlatformStats }) {
           <div className="flex items-center gap-2">
             <Icon className="h-4 w-4" />
             <span className="font-medium text-sm">{platformLabel(stats.platform)}</span>
-            {stats.verified && <BadgeCheck className="h-3.5 w-3.5 text-blue-500" />}
+            {/* CR-119 — same two-state provenance wording as brand-creator-profile.tsx. This page
+                is publicly linkable and brand-viewable, and badge-presence alone was too quiet a
+                way to say "this number is self-reported": a missing mark reads as an oversight,
+                not as a claim. YouTube/TikTok/X have no OAuth or data-fetch integration at all, so
+                their figures are always creator-reported and must say so. */}
+            {stats.verified ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-blue-500">
+                <BadgeCheck className="h-3.5 w-3.5" />
+                Followers verified
+              </span>
+            ) : (
+              <span className="text-[11px] text-muted-foreground">Self-reported</span>
+            )}
           </div>
           <a
             href={stats.url}

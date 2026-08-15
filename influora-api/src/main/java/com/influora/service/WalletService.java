@@ -20,6 +20,7 @@ import com.influora.repository.PayoutRepository;
 import com.influora.repository.WalletRepository;
 import com.influora.repository.WalletTransactionRepository;
 import com.influora.service.payout.RazorpayFundAccountService;
+import com.influora.web.dto.money.MoneyDtos.CreatorPayoutRowResponse;
 import com.influora.web.dto.money.MoneyDtos.CreatorWithdrawResponse;
 import com.influora.web.dto.money.MoneyDtos.WalletBalanceResponse;
 import com.influora.web.dto.money.MoneyDtos.WalletSummaryResponse;
@@ -27,6 +28,8 @@ import com.influora.web.dto.money.MoneyDtos.WalletTransactionRowResponse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import org.springframework.data.domain.Page;
@@ -100,6 +103,9 @@ public class WalletService {
     }
 
     public record PagedWalletTransactions(List<WalletTransactionRowResponse> items, PageMeta meta) {}
+
+    /** CR-77 — paged creator payout history, from the {@code payouts} table. */
+    public record PagedCreatorPayouts(List<CreatorPayoutRowResponse> items, PageMeta meta) {}
 
     @Transactional
     public WalletBalanceResponse getBalance(String workspaceId) {
@@ -326,21 +332,95 @@ public class WalletService {
     }
 
     /**
-     * Paginated ledger history for the creator's own wallet. Returns an empty page when no wallet
-     * row exists yet (creators are not provisioned a wallet at signup).
+     * CR-77 — GET /wallet/payouts. The creator's real payout history, read from the {@code
+     * payouts} table rather than derived by filtering the ledger to {@code WITHDRAWAL} debits.
+     *
+     * <p>The derivation it replaces was not merely thin, it could misreport money. A ledger debit
+     * records that funds left the creator's Influora wallet; it does not record whether they
+     * arrived at the bank. On a RazorpayX {@code reversed}/{@code rejected}/{@code cancelled},
+     * {@link PayoutReconciliationService} posts a separate compensating credit and leaves the
+     * original debit standing (append-only, correct accounting) — so the old Payouts tab kept
+     * presenting a bounced payout as money paid out, while the offsetting credit was invisible to
+     * it because a credit is not a WITHDRAWAL. Reading the payout row surfaces the gateway's own
+     * terminal state instead.
+     *
+     * <p>Scoping is done by the derived query ({@code findByCreatorUserIdOrderByCreatedAtDesc}),
+     * not by filtering a broader read, so another creator's payout cannot enter the result set.
+     * {@code userId} must come from the authenticated principal.
+     *
+     * <p>{@code failed} is computed from {@link PayoutReconciliationService#FAILURE_STATUSES} —
+     * the same public set the reconciliation service and the orphaned-debit sweep check against,
+     * deliberately reused rather than re-listed here so this display cannot drift from what the
+     * platform actually treats as a terminal failure.
      */
     @Transactional(readOnly = true)
-    public PagedWalletTransactions getTransactionsForUser(String userId, int page, int limit) {
+    public PagedCreatorPayouts getPayoutsForCreator(String userId, int page, int limit) {
         int safePage = Math.max(page, 1);
         int safeLimit = Math.min(Math.max(limit, 1), 100);
+
+        Page<Payout> result =
+                payoutRepository.findByCreatorUserIdOrderByCreatedAtDesc(
+                        userId, PageRequest.of(safePage - 1, safeLimit));
+
+        List<CreatorPayoutRowResponse> items =
+                result.getContent().stream()
+                        .map(
+                                p -> {
+                                    boolean isFailed =
+                                            PayoutReconciliationService.FAILURE_STATUSES.contains(
+                                                    p.getStatus());
+                                    return new CreatorPayoutRowResponse(
+                                                p.getId(),
+                                                p.getRazorpayPayoutId(),
+                                                p.getAmount(),
+                                                p.getCurrency(),
+                                                p.getStatus(),
+                                                isFailed,
+                                                p.getCreatedAt(),
+                                                // settledAt is "when the money landed", so it is
+                                                // null for a failed payout — money never landed.
+                                                // Payout#confirmStatus stamps confirmedAt on EVERY
+                                                // terminal webhook, including reversed/rejected/
+                                                // cancelled, so that column is really
+                                                // "last-terminal-confirmation time" and cannot be
+                                                // passed through raw without the UI printing
+                                                // "Settled <date>" under "Payout failed".
+                                                isFailed ? null : p.getConfirmedAt());
+                                })
+                        .toList();
+
+        return new PagedCreatorPayouts(
+                items,
+                new PageMeta(safePage, safeLimit, result.getTotalElements(), result.hasNext()));
+    }
+
+    /**
+     * Paginated ledger history for the creator's own wallet. Returns an empty page when no wallet
+     * row exists yet (creators are not provisioned a wallet at signup).
+     *
+     * <p>{@code period} is the same value the creator-wallet History tab's dropdown sends
+     * ("this-month" / "last-month" / "3-months" / "all", CR-72) — resolved server-side (not
+     * client-supplied dates) so the window is always anchored to the server clock. {@code null}
+     * or any unrecognized value (including "all") is unfiltered, preserving prior behavior.
+     */
+    @Transactional(readOnly = true)
+    public PagedWalletTransactions getTransactionsForUser(
+            String userId, int page, int limit, String period) {
+        int safePage = Math.max(page, 1);
+        int safeLimit = Math.min(Math.max(limit, 1), 100);
+        Instant[] range = resolvePeriodRange(period);
+        Instant startDate = range[0];
+        Instant endDate = range[1];
 
         return walletRepository
                 .findByOwnerId(userId)
                 .map(
                         wallet -> {
                             Page<WalletTransaction> result =
-                                    walletTransactionRepository.findByWalletIdOrderByCreatedAtDesc(
+                                    walletTransactionRepository.findByWalletIdAndCreatedAtRange(
                                             wallet.getId(),
+                                            startDate,
+                                            endDate,
                                             PageRequest.of(
                                                     safePage - 1,
                                                     safeLimit,
@@ -360,6 +440,39 @@ public class WalletService {
                                 new PagedWalletTransactions(
                                         List.of(),
                                         new PageMeta(safePage, safeLimit, 0, false)));
+    }
+
+    /**
+     * Resolves the History tab's period filter to a {@code [start, end)} {@link Instant} window,
+     * anchored to the server clock in UTC. Index 0 is the (nullable) lower bound, index 1 the
+     * (nullable) upper bound — either or both {@code null} means unconstrained on that side.
+     */
+    private Instant[] resolvePeriodRange(String period) {
+        if (period == null) {
+            return new Instant[] {null, null};
+        }
+        Instant now = Instant.now();
+        switch (period) {
+            case "this-month":
+                {
+                    YearMonth currentMonth = YearMonth.now(ZoneOffset.UTC);
+                    Instant start = currentMonth.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+                    return new Instant[] {start, null};
+                }
+            case "last-month":
+                {
+                    YearMonth currentMonth = YearMonth.now(ZoneOffset.UTC);
+                    YearMonth lastMonth = currentMonth.minusMonths(1);
+                    Instant start = lastMonth.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+                    Instant end = currentMonth.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+                    return new Instant[] {start, end};
+                }
+            case "3-months":
+                return new Instant[] {now.minus(90, ChronoUnit.DAYS), null};
+            default:
+                // "all" or any unrecognized value — unfiltered (preserves prior behavior).
+                return new Instant[] {null, null};
+        }
     }
 
     private void validateCreatorWithdrawalAmount(BigDecimal amount) {

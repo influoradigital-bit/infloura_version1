@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 
 import { MEERA_REDUCED_AURA_MS } from '@/data/motion-tokens'
 import { cn } from '@/lib/utils'
+import { cssVars } from '@/lib/css-vars'
 
 interface PulseAuraProps {
   /** Increment this to re-trigger the pulse (e.g. on each payout release). */
@@ -30,11 +31,11 @@ export function PulseAura({ triggerKey, className }: PulseAuraProps) {
       <span
         key={triggerKey}
         className={cn(
-          'absolute inset-0 rounded-[inherit] bg-meera-escrow-soft',
+          'absolute inset-0 rounded-[inherit] bg-meera-escrow-soft [transition:var(--pulse-aura-transition)]',
           reducedVisible ? 'opacity-60' : 'opacity-0',
           className,
         )}
-        style={{ transition: `opacity ${MEERA_REDUCED_AURA_MS}ms ease-out` }}
+        ref={cssVars({ '--pulse-aura-transition': `opacity ${MEERA_REDUCED_AURA_MS}ms ease-out` })}
         aria-hidden="true"
       />
     )

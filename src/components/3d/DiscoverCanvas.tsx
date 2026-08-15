@@ -91,7 +91,6 @@ function Satellite({ label, color, radius, speed, tilt, angleOffset }: Satellite
           center
           distanceFactor={8}
           className="pointer-events-none select-none"
-          style={{ pointerEvents: 'none' }}
         >
           <span className="rounded-full bg-card/90 px-2 py-0.5 text-[10px] font-medium text-foreground shadow-sm backdrop-blur-sm">
             {label}
@@ -162,7 +161,7 @@ export function DiscoverCanvas() {
         camera={{ position: [0, 0, 6], fov: 42 }}
         dpr={[1, 1.5]}
         gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
-        style={{ background: 'transparent' }}
+        className="bg-transparent"
       >
         <PerformanceMonitor onDecline={() => setDegraded(true)} onIncline={() => setDegraded(false)} />
         <Suspense fallback={null}>

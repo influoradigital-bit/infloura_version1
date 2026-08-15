@@ -70,9 +70,24 @@ public class MetaTokenStorage {
     }
 
     /**
-     * Stores (or rotates) the encrypted token for a creator, scoped to the owning workspace.
-     * Emits a {@code META_OAUTH_TOKEN_STORED} audit record — detail carries only ids/counts, never
-     * the token or its ciphertext.
+     * Stores (or rotates) the encrypted token for a brand, scoped to the owning workspace. Emits a
+     * {@code META_OAUTH_TOKEN_STORED} audit record — detail carries only ids/counts, never the
+     * token or its ciphertext.
+     *
+     * <p><b>Brand-owned rows only — never call this with a {@code null} workspaceId.</b> Use {@link
+     * #storeCreatorToken} for creator-owned rows instead. This was NOT always true: {@link
+     * com.influora.job.MetaTokenRefreshService} used to call this method unconditionally for every
+     * row it refreshes, including creator-owned rows (F-0171). The lookup below
+     * ({@code findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse}) carries an explicit {@code
+     * workspaceId IS NOT NULL} predicate (CR-111 hardening) and can therefore NEVER match a
+     * creator-owned row — an earlier, now-superseded version of this comment claimed the
+     * opposite (that a null workspaceId "happens to translate into {@code workspace_id IS NULL}
+     * and still finds the row"; that was true only of the query's OLD, unhardened form). Had that
+     * stale claim been trusted, a creator-owned refresh reaching this method would always take the
+     * INSERT branch below, minting a duplicate non-revoked creator row on every single refresh —
+     * the exact self-DoS {@link #storeCreatorToken}'s own revoke-before-insert step exists to
+     * prevent. [CR-110] {@code igBusinessAccountId} is threaded through the INSERT branch the same
+     * way {@code storeCreatorToken} does, for whatever legitimate brand-owned inserts do occur.
      */
     @Transactional
     public void storeToken(
@@ -80,7 +95,8 @@ public class MetaTokenStorage {
             String workspaceId,
             String accessToken,
             Instant expiresAt,
-            List<String> grantedScopes) {
+            List<String> grantedScopes,
+            String igBusinessAccountId) {
         String encrypted = encrypt(accessToken);
         String scopesJson = JsonLists.toJson(grantedScopes);
 
@@ -96,6 +112,7 @@ public class MetaTokenStorage {
                             .id(Ulids.newUlid())
                             .workspaceId(workspaceId)
                             .creatorProfileId(creatorProfileId)
+                            .igBusinessAccountId(igBusinessAccountId)
                             .encryptedAccessToken(encrypted)
                             .expiresAt(expiresAt)
                             .grantedScopesJson(scopesJson)
@@ -188,18 +205,29 @@ public class MetaTokenStorage {
             Instant expiresAt,
             List<String> grantedScopes,
             String igBusinessAccountId) {
-        repository
-                .findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(creatorProfileId)
-                .ifPresent(
-                        existing -> {
-                            existing.revoke();
-                            repository.save(existing);
-                        });
+        // F-0173 — the revoke-before-insert step above mints a brand-new row (fresh createdAt)
+        // on EVERY call, not just first-connect: MetaTokenRefreshService routes every creator
+        // token refresh through this same method (F-0171), so the row this creator's Meta
+        // connection lives on is replaced roughly every ~55 days. Capture the ORIGINAL row's
+        // createdAt (if one exists) before revoking it, and carry it forward onto the new row —
+        // otherwise MetaConnectionService.getStatus's "connected since" date, which reads this
+        // column directly, silently advances forward on every refresh cycle instead of reflecting
+        // when the creator actually first connected.
+        Optional<Instant> preservedConnectedAt =
+                repository
+                        .findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(creatorProfileId)
+                        .map(
+                                existing -> {
+                                    Instant createdAt = existing.getCreatedAt();
+                                    existing.revoke();
+                                    repository.save(existing);
+                                    return createdAt;
+                                });
 
         String encrypted = encrypt(accessToken);
         String scopesJson = JsonLists.toJson(grantedScopes);
 
-        MetaOAuthToken entity =
+        MetaOAuthToken.Builder builder =
                 MetaOAuthToken.builder()
                         .id(Ulids.newUlid())
                         .creatorProfileId(creatorProfileId)
@@ -208,8 +236,9 @@ public class MetaTokenStorage {
                         .encryptedAccessToken(encrypted)
                         .expiresAt(expiresAt)
                         .grantedScopesJson(scopesJson)
-                        .lastRefreshedAt(Instant.now())
-                        .build();
+                        .lastRefreshedAt(Instant.now());
+        preservedConnectedAt.ifPresent(builder::createdAt);
+        MetaOAuthToken entity = builder.build();
         repository.save(entity);
 
         auditLog.recordToolCall(

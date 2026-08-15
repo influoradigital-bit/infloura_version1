@@ -12,6 +12,8 @@ browser.
 
 from __future__ import annotations
 
+import pytest
+
 from app.prompt.structured_extract import (
     ScrapedProduct,
     extract_json_ld_products,
@@ -239,3 +241,47 @@ def test_zero_price_is_allowed_through_as_a_real_fact():
     assert len(products) == 1
     assert products[0].name == "Free Sample"
     assert products[0].price == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Round-7, Priya advisory 4 — ranges never yield a price, by whichever guard
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "499-999",
+        "499 – 999",
+        "₹1,000 to ₹5,000",
+        "1,499.00-2,999.00",
+        "10 through 20",
+        "499to999",
+        "₹2-3k",
+        "between 499 and 999",
+    ],
+)
+def test_a_price_range_is_never_coerced_to_a_scraped_fact(text):
+    """`_coerce_price` has two guards against ranges — `_RANGE_HINT_RE` and the
+    "exactly one price token" rule — and today the token rule alone would catch
+    every case (see the comment at structured_extract.py's range guard). These
+    pin the BEHAVIOUR rather than either line, so the contract survives a
+    tokenizer change that makes one of the two guards stop firing.
+
+    Why it matters: a coerced range becomes a `price_source="scraped"` fact that
+    `merge_known_products` lets override the model, and Meera then quotes it to
+    a brand as a verified price.
+    """
+    from app.prompt.structured_extract import _coerce_price
+
+    assert _coerce_price(text) is None
+
+
+def test_a_single_price_with_range_like_neighbours_still_parses():
+    """Control: the guards must not swallow an ordinary price that merely sits
+    near a hyphen or the word "to"."""
+    from app.prompt.structured_extract import _coerce_price
+
+    assert _coerce_price("₹499") == 499.0
+    assert _coerce_price("Rs. 1,499.00") == 1499.0
+    assert _coerce_price("starting at 499") == 499.0

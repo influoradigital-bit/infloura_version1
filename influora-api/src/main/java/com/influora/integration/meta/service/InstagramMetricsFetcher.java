@@ -96,7 +96,10 @@ public class InstagramMetricsFetcher {
      * captured in the returned {@link Result} instead, so a caller can decide what to persist/log
      * without this class making that decision for them.
      *
-     * @param creatorProfileId the Instagram business account id (also the rate-limit tracker key)
+     * @param igBusinessAccountId the numeric Instagram Business Account ID Meta's Graph API requires
+     *     in the request path (also the rate-limit tracker key). This is NOT the internal ULID
+     *     {@code creatorProfileId} — passing that here is the CR-99 class of bug: Meta 400s every call.
+     *     Callers resolve it from {@code MetaOAuthToken.getIgBusinessAccountId()}.
      * @param accessToken the creator's valid Meta access token; never logged
      * @return a {@link Result} describing what was fetched and what was skipped/degraded
      * @throws MetaRateLimitException if the profile fetch itself is rate-limited -- unlike the
@@ -107,8 +110,8 @@ public class InstagramMetricsFetcher {
      * @throws MetaApiException for any other profile-fetch failure -- propagates for the same
      *     reason
      */
-    public Result fetchAll(String creatorProfileId, String accessToken) {
-        return fetchAll(creatorProfileId, accessToken, DEFAULT_MEDIA_LIMIT);
+    public Result fetchAll(String igBusinessAccountId, String accessToken) {
+        return fetchAll(igBusinessAccountId, accessToken, DEFAULT_MEDIA_LIMIT);
     }
 
     /**
@@ -125,9 +128,9 @@ public class InstagramMetricsFetcher {
      * pollRecentMedia}'s second guard, since the profile call may have pushed usage higher) IS
      * applied here, inside {@link #fetchMediaWithInsights}.
      */
-    public Result fetchAll(String creatorProfileId, String accessToken, int mediaLimit) {
-        InstagramUserResponse profile = instagramClient.getProfile(creatorProfileId, accessToken);
-        List<MediaWithInsights> media = fetchMediaWithInsights(creatorProfileId, accessToken, mediaLimit);
+    public Result fetchAll(String igBusinessAccountId, String accessToken, int mediaLimit) {
+        InstagramUserResponse profile = instagramClient.getProfile(igBusinessAccountId, accessToken);
+        List<MediaWithInsights> media = fetchMediaWithInsights(igBusinessAccountId, accessToken, mediaLimit);
         return new Result(profile, media);
     }
 
@@ -140,25 +143,25 @@ public class InstagramMetricsFetcher {
      * "persist base fields only" degradation) rather than dropping the item entirely.
      */
     public List<MediaWithInsights> fetchMediaWithInsights(
-            String creatorProfileId, String accessToken, int mediaLimit) {
-        if (isRateLimited(creatorProfileId, "media_metrics (pre media-list fetch)")) {
+            String igBusinessAccountId, String accessToken, int mediaLimit) {
+        if (isRateLimited(igBusinessAccountId, "media_metrics (pre media-list fetch)")) {
             return List.of();
         }
 
         InstagramMediaResponse mediaResponse;
         try {
-            mediaResponse = instagramClient.getMedia(creatorProfileId, accessToken, mediaLimit);
+            mediaResponse = instagramClient.getMedia(igBusinessAccountId, accessToken, mediaLimit);
         } catch (MetaRateLimitException e) {
-            rateLimitTracker.markLimited(creatorProfileId);
+            rateLimitTracker.markLimited(igBusinessAccountId);
             log.warn(
-                    "InstagramMetricsFetcher: rate limited fetching media list for creator {}, returning"
+                    "InstagramMetricsFetcher: rate limited fetching media list for IG account {}, returning"
                             + " empty media result this cycle",
-                    creatorProfileId);
+                    igBusinessAccountId);
             return List.of();
         } catch (MetaApiException e) {
             log.error(
-                    "InstagramMetricsFetcher: failed to fetch media list for creator {}: {}",
-                    creatorProfileId,
+                    "InstagramMetricsFetcher: failed to fetch media list for IG account {}: {}",
+                    igBusinessAccountId,
                     e.getMessage());
             return List.of();
         }
@@ -169,7 +172,7 @@ public class InstagramMetricsFetcher {
 
         List<MediaWithInsights> results = new ArrayList<>(mediaResponse.data().size());
         for (InstagramMediaResponse.MediaItem mediaItem : mediaResponse.data()) {
-            results.add(fetchOneMediaWithInsights(creatorProfileId, accessToken, mediaItem));
+            results.add(fetchOneMediaWithInsights(igBusinessAccountId, accessToken, mediaItem));
         }
         return results;
     }
@@ -180,24 +183,24 @@ public class InstagramMetricsFetcher {
      * throwing -- mirrors {@code MetricsPollingJob.pollOneMedia}'s per-item try/catch exactly.
      */
     private MediaWithInsights fetchOneMediaWithInsights(
-            String creatorProfileId, String accessToken, InstagramMediaResponse.MediaItem mediaItem) {
+            String igBusinessAccountId, String accessToken, InstagramMediaResponse.MediaItem mediaItem) {
         try {
             InstagramInsightsResponse insights =
-                    instagramClient.getMediaInsights(mediaItem.id(), accessToken, creatorProfileId);
+                    instagramClient.getMediaInsights(mediaItem.id(), accessToken, igBusinessAccountId);
             return new MediaWithInsights(mediaItem, insights);
         } catch (MetaRateLimitException e) {
-            rateLimitTracker.markLimited(creatorProfileId);
+            rateLimitTracker.markLimited(igBusinessAccountId);
             log.warn(
-                    "InstagramMetricsFetcher: rate limited fetching insights for media {} (creator {}),"
+                    "InstagramMetricsFetcher: rate limited fetching insights for media {} (IG account {}),"
                             + " returning base media fields only",
                     mediaItem.id(),
-                    creatorProfileId);
+                    igBusinessAccountId);
             return new MediaWithInsights(mediaItem, null);
         } catch (MetaApiException e) {
             log.warn(
-                    "InstagramMetricsFetcher: insights unavailable for media {} (creator {}): {}",
+                    "InstagramMetricsFetcher: insights unavailable for media {} (IG account {}): {}",
                     mediaItem.id(),
-                    creatorProfileId,
+                    igBusinessAccountId,
                     e.getMessage());
             return new MediaWithInsights(mediaItem, null);
         }
@@ -209,13 +212,13 @@ public class InstagramMetricsFetcher {
      * #RATE_LIMIT_THRESHOLD_PERCENT}+ usage rather than spending budget on a call already known to
      * be near-limited.
      */
-    private boolean isRateLimited(String creatorProfileId, String context) {
-        int usage = rateLimitTracker.getCurrentUsage(creatorProfileId);
+    private boolean isRateLimited(String igBusinessAccountId, String context) {
+        int usage = rateLimitTracker.getCurrentUsage(igBusinessAccountId);
         if (usage >= RATE_LIMIT_THRESHOLD_PERCENT) {
             log.warn(
-                    "InstagramMetricsFetcher: creator {} at {}% Meta rate-limit usage, deferring {} to"
+                    "InstagramMetricsFetcher: IG account {} at {}% Meta rate-limit usage, deferring {} to"
                             + " next cycle",
-                    creatorProfileId,
+                    igBusinessAccountId,
                     usage,
                     context);
             return true;

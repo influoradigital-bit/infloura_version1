@@ -175,8 +175,15 @@ export function generateContractHTML(data: ContractData): string {
  * Generate a downloadable PDF from contract data
  * Uses browser's print-to-PDF or requires backend PDF library
  */
-export function downloadContractPDF(data: ContractData, _filename: string = 'contract.pdf') {
-  const html = generateContractHTML(data)
+export function downloadContractPDF(data: ContractData, filename: string = 'contract.pdf') {
+  // F-0213: this print-dialog flow has exactly one channel for naming the saved
+  // file — browsers derive the default print-to-PDF filename from document.title.
+  // Inject the caller's filename (sans extension) as the <title> of the opened doc.
+  const title = filename
+    .replace(/\.pdf$/i, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+  const html = generateContractHTML(data).replace('<head>', `<head>\n      <title>${title}</title>`)
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   

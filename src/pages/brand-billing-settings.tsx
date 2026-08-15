@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { api, ApiError, brandInvoicing, type BillingInvoice, type CampaignServiceInvoice, type PlatformCommissionInvoice } from '@/lib/api';
 import { useBilling } from '@/hooks/brand/useBilling';
+import { useBrandBillingAccess } from '@/hooks/brand/useBrandBillingAccess';
 import { toast } from '@/hooks/use-toast';
 
 interface UsageMeterRow {
@@ -244,6 +245,12 @@ export default function BrandBillingSettingsPage() {
 
   const [checkoutBusy, setCheckoutBusy] = React.useState(false);
   const [cancelBusy, setCancelBusy] = React.useState(false);
+
+  // F-0132: mirror BillingController's requireRole(OWNER, ADMIN) on /checkout and /cancel so a
+  // MANAGER/MEMBER/VIEWER sees a disabled control with a reason, not a fully-enabled button that
+  // only reveals the 403 as an error toast after clicking.
+  const { canManage: canManageBilling } = useBrandBillingAccess();
+  const billingRoleHint = 'Only workspace owners and admins can change the plan.';
 
   // F-0070: initiate a real Razorpay checkout (POST /billing/checkout) and hand
   // off to the hosted checkout URL. Live behaviour is gated on provisioned
@@ -460,10 +467,19 @@ export default function BrandBillingSettingsPage() {
                   <span className="font-medium">{formatDate(subscription.currentPeriodEnd)}</span>
                 </div>
                 {!subscription.cancelAtPeriodEnd && (
-                  <div className="flex justify-end">
+                  <div className="flex items-center justify-end gap-3">
+                    {!canManageBilling && (
+                      <span className="text-xs text-muted-foreground">{billingRoleHint}</span>
+                    )}
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={cancelBusy}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground"
+                          disabled={cancelBusy || !canManageBilling}
+                          title={!canManageBilling ? billingRoleHint : undefined}
+                        >
                           {cancelBusy && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
                           Cancel subscription
                         </Button>
@@ -537,8 +553,16 @@ export default function BrandBillingSettingsPage() {
                     <p className="text-sm text-muted-foreground">
                       Start growing with Pro — {formatCurrency(4999)}/month
                     </p>
+                    {!canManageBilling && (
+                      <p className="mt-1 text-xs text-muted-foreground">{billingRoleHint}</p>
+                    )}
                   </div>
-                  <Button className="gap-2" onClick={handleUpgrade} disabled={checkoutBusy}>
+                  <Button
+                    className="gap-2"
+                    onClick={handleUpgrade}
+                    disabled={checkoutBusy || !canManageBilling}
+                    title={!canManageBilling ? billingRoleHint : undefined}
+                  >
                     {checkoutBusy ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (

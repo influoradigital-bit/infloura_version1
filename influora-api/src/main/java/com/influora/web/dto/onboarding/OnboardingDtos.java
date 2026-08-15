@@ -28,6 +28,26 @@ public final class OnboardingDtos {
 
     public record OkResponse(boolean ok) {}
 
+    /**
+     * OB-2 (BrandF.md §102) — server-authoritative onboarding state, read fresh from the
+     * {@code User} row rather than trusted from a client-cached token/localStorage flag. Backs
+     * {@code GET /onboarding/brand/status}, the guard `/brand/dashboard` previously had no
+     * server-side equivalent of.
+     *
+     * <p>OB-1 (BrandF.md §105/§91) extension: {@code kycPromptDismissed} is the server-side
+     * mirror of the KYC prompt's "skip for now" state ({@code User.kycPromptDismissed}), read
+     * here so a frontend can hide the prompt across devices instead of relying on its
+     * per-browser localStorage flag alone. This is deliberately a separate field from workspace
+     * KYC/verification status ({@code GET /workspaces/me} → {@code verificationStatus}) — a
+     * brand can be {@code UNVERIFIED} and have still explicitly dismissed the nag; the frontend
+     * is expected to hide the prompt when EITHER {@code kycPromptDismissed} is true OR
+     * {@code verificationStatus != UNVERIFIED}.
+     */
+    public record OnboardingStatusResponse(boolean onboardingCompleted, boolean kycPromptDismissed) {}
+
+    /** POST /onboarding/brand/kyc-prompt-dismissed — no request body, principal-scoped. */
+    public record KycPromptDismissedResponse(boolean kycPromptDismissed) {}
+
     public record KycRequest(
             @NotBlank
                     @Pattern(
@@ -47,18 +67,23 @@ public final class OnboardingDtos {
     // Creator onboarding (N1, Wave 6) — mirrors src/lib/api.ts `onboarding.*Creator*` exactly.
     // -------------------------------------------------------------------------------------------
 
-    /** POST /onboarding/creator/socials — matches connectCreatorSocial(platform, oauthCode). */
+    /**
+     * POST /onboarding/creator/socials — matches connectCreatorSocial(platform, oauthCode) in
+     * src/lib/api.ts, but nothing in the live frontend calls it any more: Instagram now goes
+     * through the real Meta OAuth flow (MetaOAuthController, CR-120) and creator-onboarding.tsx
+     * shows an honest "coming soon" toast for YouTube/TikTok/Twitter without ever posting here.
+     * {@code oauthCode} stays required/non-blank as the hook point for a future real exchange
+     * (CR-119's scope), but the service (CR-108) now always rejects the call with a typed
+     * NOT_IMPLEMENTED rather than faking a successful connection.
+     */
     public record CreatorSocialRequest(
             @NotBlank @Size(max = 32) String platform, @NotBlank String oauthCode) {}
 
     /**
-     * No real OAuth token exchange exists yet for any social platform (Instagram/YouTube/etc.) —
-     * the frontend itself sends a hardcoded {@code mock_oauth_code} today (creator-onboarding.tsx,
-     * "Real flow opens an OAuth popup; we fake the code here for the mock"). Per TECH-STACK.md rule
-     * 7 (no fabricated backend contracts / no silent mock data), this endpoint honestly persists the
-     * connection with zero real follower data rather than inventing a plausible-looking number —
-     * {@code handle}/{@code followers} come back empty/zero until a real OAuth+Insights integration
-     * lands and {@code PlatformStatsAggregationJob} (H-10) populates real values.
+     * CR-108: this response shape is retained for the day real per-platform OAuth lands (CR-119),
+     * but {@code CreatorOnboardingService.connectSocial} never actually returns it today — it
+     * throws a typed {@code SOCIAL_OAUTH_NOT_IMPLEMENTED} instead of fabricating {@code
+     * followers(0)}/{@code verified(false)} the way it used to. See that method's javadoc for why.
      */
     public record CreatorSocialResponse(String platform, String handle, long followers) {}
 

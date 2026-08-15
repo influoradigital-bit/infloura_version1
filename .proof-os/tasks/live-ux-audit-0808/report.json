@@ -1,0 +1,88 @@
+{
+ "rows": [
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/DealService.java:1115",
+   "owner": "neha",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "curl",
+    "command": "GET http://200.141.1.6/api/v1/deals/01KZ1TXGC97APN7YT0MKK0N0P1 and .../messages",
+    "result": "deal returns deliverablesTotal=0, nextDeadline=null while the accepted proposal message carries deadline=2026-08-25 and deliverableCount=1",
+    "where": "influora-api/src/main/java/com/influora/service/DealService.java:1115"
+   }
+  },
+  {
+   "subject": "src/components/brand/dashboard/dashboard-page.tsx:125",
+   "owner": "neha",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "curl",
+    "command": "GET http://200.141.1.6/api/v1/wallet",
+    "result": "response body is {availableBalance,escrowLocked,pendingPayouts} with no runwayDays field, so ?? 0 always yields health=critical",
+    "where": "src/components/brand/dashboard/dashboard-page.tsx:125"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/MetricsAuthorizationService.java:72",
+   "owner": "neha",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "curl",
+    "command": "GET http://200.141.1.6/api/v1/analytics/creators/01KY4YGN9MHZBEB7MY5ETVYWTK/metrics",
+    "result": "403 FORBIDDEN on a creator with an active TERMS_AGREED deal; gate is an active meta_oauth_tokens row, not workspace membership",
+    "where": "influora-api/src/main/java/com/influora/service/MetricsAuthorizationService.java:72"
+   }
+  },
+  {
+   "subject": ".proof-os/gates/fe_be_endpoints_app.py",
+   "owner": "neha",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "gate",
+    "command": "python .proof-os/gates/fe_be_endpoints_app.py .",
+    "result": "exit 0 - 100 of 100 brand/creator FE call paths resolve to a backend @Mapping, 0 verb mismatches",
+    "where": ".proof-os/gates/fe_be_endpoints_app.py"
+   }
+  },
+  {
+   "subject": "src/components/creator/connected-accounts.tsx:97",
+   "owner": "neha",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "curl",
+    "command": "live DOM scan of /creator/settings|analytics|copilot|profile|portfolio for a connect control; GET http://200.141.1.6/api/v1/meta/oauth/authorize",
+    "result": "settings has no Instagram control at all while /creator/analytics instructs 'Connect Instagram in Settings'; ConnectedAccounts has zero imports in src/; the OAuth initiate endpoint itself returns 200",
+    "where": "src/components/creator/connected-accounts.tsx:97"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/repository/PaymentMilestoneRepository.java:63",
+   "owner": "neha",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "curl",
+    "command": "GET http://200.141.1.6/api/v1/wallet and /wallet/transactions as creator tejas.chache5",
+    "result": "wallet returns pendingPayouts=20000 with escrowLocked=0 and transactions=[]; the 20000 is entirely the DISPUTED deal 'QA E2E Flow Test - Contract and Escrow'; the FUNDED-milestone sum has no dispute filter",
+    "where": "influora-api/src/main/java/com/influora/repository/PaymentMilestoneRepository.java:63"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/web/CreatorAnalyticsController.java:48",
+   "owner": "neha",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "curl",
+    "command": "GET http://200.141.1.6/api/v1/creator/analytics/me/{scores,metrics,media,demographics}",
+    "result": "scores returns 404 while metrics, media and demographics all return 200; the @GetMapping exists in source, so the deployed jar predates it",
+    "where": "influora-api/src/main/java/com/influora/web/CreatorAnalyticsController.java:48"
+   }
+  }
+ ]
+}

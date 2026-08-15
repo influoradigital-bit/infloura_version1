@@ -31,9 +31,12 @@ os.environ.setdefault("INTERNAL_HMAC_KEY", "test-key")
 os.environ.setdefault("SERVICE_TOKEN_SIGNING_KEY", "test-key")
 os.environ.setdefault("DEV_SHARED_JWT_SECRET", "test-secret")
 
-from app.providers.claude import ClaudeProvider, ClaudeStreamEvent, CircuitBreaker  # noqa: E402
-from app.tools.loop import ToolLoopContext, run_tool_loop  # noqa: E402
-
+from app.providers.claude import (
+    CircuitBreaker,
+    ClaudeProvider,
+    ClaudeStreamEvent,
+)
+from app.tools.loop import ToolLoopContext, run_tool_loop
 
 # A create_campaign tool call whose JSON is cut off partway (a max_tokens cut).
 _TRUNCATED_JSON = (

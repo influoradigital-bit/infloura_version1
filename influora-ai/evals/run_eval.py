@@ -28,8 +28,11 @@ Design notes:
   module level. app.config / app.providers.* are imported lazily inside the
   live callers only — offline mode must run with zero env vars set and must
   not race concurrent edits to config/provider files.
-- Exit codes: 0 = all thresholds met (or live mode skipped for missing keys),
-  1 = threshold failure / missing fixtures, 2 = usage error.
+- Exit codes: 0 = every requested dataset was SCORED and met its thresholds,
+  1 = threshold failure / missing fixtures, 2 = usage error, 3 = nothing was
+  scored (F-24: `--live` with no API key used to print SKIPPED and exit 0, so a
+  CI job wired to the mode that actually calls a model reported green having
+  scored zero cases against zero models). An unscored dataset is never green.
 """
 
 from __future__ import annotations
@@ -39,9 +42,10 @@ import hashlib
 import json
 import os
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, cast
 
 EVALS_DIR = Path(__file__).resolve().parent
 SERVICE_ROOT = EVALS_DIR.parent  # influora-ai/
@@ -129,7 +133,27 @@ def case_input_key(case_input: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
+# Datasets whose "model" is a deterministic pure function in THIS repo, not a
+# provider call. F-22: replaying a recorded fixture for one of these means the
+# eval never executes the code it claims to measure -- an auditor replaced the
+# body of extract_structured_facts with `return []` and the harness still
+# reported recall 1.000 / PASS / exit 0. For these datasets, "offline" and
+# "live" are the same thing: call the real function.
+PURE_FUNCTION_DATASETS: frozenset[str] = frozenset({"analyze_site_extraction"})
+
+
 def make_offline_caller(dataset_name: str) -> ModelCaller:
+    """Caller used by --offline and by the CI wrapper.
+
+    For a PURE_FUNCTION dataset this returns the REAL function caller, so
+    offline mode exercises the actual extractor instead of a recording of what
+    it once returned (F-22). For every provider-backed dataset it replays the
+    recorded fixture, and a missing fixture raises FixtureMissingError, which
+    run_dataset turns into a hard report failure -- never a silent skip.
+    """
+    if dataset_name in PURE_FUNCTION_DATASETS:
+        return FEATURES[dataset_name].live_caller_factory()
+
     fixture_dir = FIXTURES_DIR / dataset_name
 
     def caller(case_input: dict[str, Any]) -> dict[str, Any]:
@@ -180,13 +204,13 @@ def make_live_brand_safety_caller() -> ModelCaller:
         response = client.messages.create(
             model=model,
             max_tokens=4096,
-            system=[build_system_block()],
-            messages=[build_user_message([item])],
-            tools=[tool_schema],
-            tool_choice={"type": "tool", "name": tool_schema["name"]},
+            system=cast("Any", [build_system_block()]),
+            messages=cast("Any", [build_user_message([item])]),
+            tools=cast("Any", [tool_schema]),
+            tool_choice=cast("Any", {"type": "tool", "name": tool_schema["name"]}),
         )
         tool_use = next(b for b in response.content if getattr(b, "type", None) == "tool_use")
-        items = tool_use.input.get("items") or []
+        items = getattr(tool_use, "input", {}).get("items") or []
         return items[0] if items else {}
 
     return caller
@@ -201,9 +225,12 @@ def make_live_analyze_site_caller() -> ModelCaller:
     from app.providers.gemini import _CLASSIFY_SYSTEM_INSTRUCTION
 
     try:
-        from app.prompt.assembler import wrap_untrusted_scrape
-    except Exception:  # pragma: no cover - assembler shape may change
-        wrap_untrusted_scrape = lambda text: text  # noqa: E731
+        from app.prompt.assembler import wrap_untrusted_scrape as _wrap
+    except Exception:  # noqa: BLE001 # pragma: no cover - assembler shape may change
+        def _wrap(html_text: str) -> str:
+            return html_text
+
+    wrap_untrusted_scrape: Callable[[str], str] = _wrap
 
     model = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
@@ -295,18 +322,18 @@ def make_live_template_recommendation_caller() -> ModelCaller:
         response = client.messages.create(
             model=model,
             max_tokens=512,
-            system=[block_a, block_b],
-            messages=[
+            system=cast("Any", [block_a, block_b]),
+            messages=cast("Any", [
                 {
                     "role": "user",
                     "content": str(case_input.get("product_description") or ""),
                 }
-            ],
-            tools=[recommend_tool],
-            tool_choice={"type": "tool", "name": "recommend_template"},
+            ]),
+            tools=cast("Any", [recommend_tool]),
+            tool_choice=cast("Any", {"type": "tool", "name": "recommend_template"}),
         )
         tool_use = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
-        return dict(tool_use.input) if tool_use is not None else {}
+        return dict(getattr(tool_use, "input", None) or {}) if tool_use is not None else {}
 
     return caller
 
@@ -331,8 +358,8 @@ def make_live_trend_tag_caller() -> ModelCaller:
         response = client.messages.create(
             model=model,
             max_tokens=80,
-            system=[{"type": "text", "text": build_system_prompt()}],
-            messages=[{"role": "user", "content": user}],
+            system=cast("Any", [{"type": "text", "text": build_system_prompt()}]),
+            messages=cast("Any", [{"role": "user", "content": user}]),
         )
         text_block = next((b for b in response.content if getattr(b, "type", None) == "text"), None)
         text = fence_re.sub("", (getattr(text_block, "text", "") or "").strip()).strip()
@@ -389,8 +416,8 @@ def make_live_outcome_recommendation_caller() -> ModelCaller:
         response = client.messages.create(
             model=model,
             max_tokens=600,
-            system=system_blocks,
-            messages=[{"role": "user", "content": user_message}],
+            system=cast("Any", system_blocks),
+            messages=cast("Any", [{"role": "user", "content": user_message}]),
         )
         text = "".join(
             getattr(b, "text", "") for b in response.content if getattr(b, "type", None) == "text"
@@ -435,11 +462,32 @@ def _meera_response_text(raw: dict[str, Any] | str) -> str:
         return raw
     if not isinstance(raw, dict):
         return ""
+    # F-29: EVERY string value is scored, not just the seven preferred keys.
+    # The old fallback only fired when none of the preferred keys was a string,
+    # so a leaked figure sitting in `disclaimer` alongside a populated
+    # `response` was never looked at -- the exact hiding place the docstring
+    # promised to close. Preferred keys are ordered first for readable output;
+    # nothing is excluded.
     preferred = ("card", "bubble", "narrative", "response", "text", "assistant_text", "message")
-    parts = [str(raw[k]) for k in preferred if isinstance(raw.get(k), str)]
-    if not parts:
-        parts = [v for v in raw.values() if isinstance(v, str)]
-    return "\n".join(parts)
+    parts: list[str] = [str(raw[k]) for k in preferred if isinstance(raw.get(k), str)]
+    parts += [
+        _stringify_nested(value)
+        for key, value in raw.items()
+        if key not in preferred
+    ]
+    return "\n".join(p for p in parts if p)
+
+
+def _stringify_nested(node: Any) -> str:
+    """Every string reachable under a value, joined. A figure nested one level
+    down (``{"meta": {"note": "about ₹99,999"}}``) is still a quoted figure."""
+    if isinstance(node, str):
+        return node
+    if isinstance(node, dict):
+        return "\n".join(p for p in (_stringify_nested(v) for v in node.values()) if p)
+    if isinstance(node, list):
+        return "\n".join(p for p in (_stringify_nested(v) for v in node) if p)
+    return ""
 
 
 def _garm_flagged_categories(raw: dict[str, Any]) -> list[str] | None:
@@ -472,6 +520,7 @@ def score_brand_safety(expected: dict[str, Any], raw: dict[str, Any]) -> dict[st
         return {
             "unsafe_acc": 0.0,
             "category_f1": 0.0,
+            "category_scored": 1.0,  # a malformed output is a real miss, always scored
             "unsafe_to_safe_miss": 1.0 if exp_unsafe else 0.0,
             "malformed": 1.0,
         }
@@ -480,6 +529,13 @@ def score_brand_safety(expected: dict[str, Any], raw: dict[str, Any]) -> dict[st
     return {
         "unsafe_acc": exact_match(pred_unsafe, exp_unsafe),
         "category_f1": overlap.f1,
+        # F-30: a case where BOTH sides are empty scores a free 1.0. Five of the
+        # twelve brand-safety cases expect no flagged categories, so folding
+        # those into the mean turns the stated 0.85 discrimination bar into an
+        # effective ~0.74. `category_scored` marks the cases that actually test
+        # discrimination; the aggregator averages only those and gates the
+        # empty-set agreement separately.
+        "category_scored": 0.0 if overlap.trivial_empty else 1.0,
         # The one unforgivable direction: expected unsafe, model said safe.
         "unsafe_to_safe_miss": 1.0 if (exp_unsafe and not pred_unsafe) else 0.0,
         "malformed": 0.0,
@@ -487,17 +543,38 @@ def score_brand_safety(expected: dict[str, Any], raw: dict[str, Any]) -> dict[st
 
 
 def aggregate_brand_safety(per_case: list[dict[str, float]]) -> tuple[dict[str, float], list[str]]:
+    # F-30: the 0.85 bar is applied to the cases that actually discriminate
+    # (non-empty expected category set). Cases where the correct answer is "no
+    # categories" are scored on their own axis, at 1.00 -- correctly saying
+    # "nothing applies" is mandatory, not partial credit that props up the mean.
+    scored = [s for s in per_case if s.get("category_scored", 1.0) >= 1.0]
+    trivial = [s for s in per_case if s.get("category_scored", 1.0) < 1.0]
     agg = {
         "unsafe_acc": mean([s["unsafe_acc"] for s in per_case]),
-        "category_f1": mean([s["category_f1"] for s in per_case]),
+        "category_f1": mean([s["category_f1"] for s in scored]) if scored else 1.0,
+        "category_f1_scored_cases": float(len(scored)),
+        "empty_set_agreement": mean([s["category_f1"] for s in trivial]) if trivial else 1.0,
         "unsafe_to_safe_misses": sum(s["unsafe_to_safe_miss"] for s in per_case),
         "malformed_outputs": sum(s["malformed"] for s in per_case),
     }
     failures = []
     if agg["unsafe_acc"] < 0.90:
         failures.append(f"unsafe/safe accuracy {agg['unsafe_acc']:.2f} < 0.90")
-    if agg["category_f1"] < 0.85:
-        failures.append(f"flagged-category F1 {agg['category_f1']:.2f} < 0.85")
+    if not scored:
+        failures.append(
+            "flagged-category F1 measured over 0 discriminating cases "
+            "(every case expected an empty set — the metric proves nothing)"
+        )
+    elif agg["category_f1"] < 0.85:
+        failures.append(
+            f"flagged-category F1 {agg['category_f1']:.2f} < 0.85 "
+            f"(over {len(scored)} discriminating case(s); empty-expected cases excluded)"
+        )
+    if agg["empty_set_agreement"] < 1.0:
+        failures.append(
+            f"empty-set agreement {agg['empty_set_agreement']:.2f} < 1.00 "
+            "(flagged a category on a case where nothing applies)"
+        )
     if agg["unsafe_to_safe_misses"] > 0:
         failures.append(f"{agg['unsafe_to_safe_misses']:.0f} unsafe->safe miss(es) (hard veto: must be 0)")
     if agg["malformed_outputs"] > 0:
@@ -556,7 +633,23 @@ def score_analyze_site_extraction(expected: dict[str, Any], raw: dict[str, Any])
         act = actual_by_name.get(exp["name"])
         if act is not None and act.get("price") == exp.get("price") and act.get("currency") == exp.get("currency"):
             hits += 1
-    return {"recall": hits / len(expected_products), "false_positive": 0.0}
+    # F-26: false_positive used to be hardcoded 0.0 whenever ANY product was
+    # expected, so precision was never measured on the cases that matter. A
+    # model returning the right product PLUS a fabricated "₹99,999 Gold Kit"
+    # scored a clean PASS -- the exact money-path hallucination this metric
+    # exists to close. A returned product is a false positive when its name is
+    # not in the expected set, or when its name matches but its price/currency
+    # does not (a wrong "scraped" price is a fabricated fact, not a near miss).
+    expected_by_name = {e.get("name"): e for e in expected_products if isinstance(e, dict)}
+    fabricated = 0
+    for act in actual_products:
+        if not isinstance(act, dict):
+            fabricated += 1
+            continue
+        exp = expected_by_name.get(act.get("name"))
+        if exp is None or act.get("price") != exp.get("price") or act.get("currency") != exp.get("currency"):
+            fabricated += 1
+    return {"recall": hits / len(expected_products), "false_positive": float(fabricated)}
 
 
 def aggregate_analyze_site_extraction(per_case: list[dict[str, float]]) -> tuple[dict[str, float], list[str]]:
@@ -570,7 +663,10 @@ def aggregate_analyze_site_extraction(per_case: list[dict[str, float]]) -> tuple
     if agg["recall"] < 1.0:
         failures.append(f"structured-extraction recall {agg['recall']:.2f} < 1.00 (must recover every expected fact exactly)")
     if agg["false_positives"] > 0:
-        failures.append(f"{agg['false_positives']:.0f} fabricated product(s) on a no-structured-data page (must be 0)")
+        failures.append(
+            f"{agg['false_positives']:.0f} fabricated product(s) — a product not in the "
+            "expected set, or a name match with a wrong price/currency (must be 0)"
+        )
     return agg, failures
 
 
@@ -589,20 +685,33 @@ def score_trend_tag(expected: dict[str, Any], raw: dict[str, Any]) -> dict[str, 
     overlap = set_overlap_f1(pred_themes, exp_themes)
     return {
         "theme_f1": overlap.f1,
+        # F-30: same dilution as brand_safety — an expected-drop case scores a
+        # free 1.0 on theme_f1 and quietly lowers the stated 0.70 bar to ~0.67.
+        "theme_scored": 0.0 if overlap.trivial_empty else 1.0,
         "campaign_acc": exact_match(pred_type, exp_type),
         "drop_agreement": exact_match(pred_type is None, exp_type is None),
     }
 
 
 def aggregate_trend_tag(per_case: list[dict[str, float]]) -> tuple[dict[str, float], list[str]]:
+    scored = [s for s in per_case if s.get("theme_scored", 1.0) >= 1.0]
     agg = {
-        "theme_f1": mean([s["theme_f1"] for s in per_case]),
+        "theme_f1": mean([s["theme_f1"] for s in scored]) if scored else 1.0,
+        "theme_f1_scored_cases": float(len(scored)),
         "campaign_acc": mean([s["campaign_acc"] for s in per_case]),
         "drop_agreement": mean([s["drop_agreement"] for s in per_case]),
     }
     failures = []
-    if agg["theme_f1"] < 0.70:
-        failures.append(f"theme F1 {agg['theme_f1']:.2f} < 0.70")
+    if not scored:
+        failures.append(
+            "theme F1 measured over 0 discriminating cases "
+            "(every case expected a drop — the metric proves nothing)"
+        )
+    elif agg["theme_f1"] < 0.70:
+        failures.append(
+            f"theme F1 {agg['theme_f1']:.2f} < 0.70 "
+            f"(over {len(scored)} discriminating case(s); expected-drop cases excluded)"
+        )
     if agg["campaign_acc"] < 0.80:
         failures.append(f"campaign_type accuracy {agg['campaign_acc']:.2f} < 0.80")
     if agg["drop_agreement"] < 1.0:
@@ -645,6 +754,16 @@ def aggregate_template_recommendation(per_case: list[dict[str, float]]) -> tuple
         failures.append(f"template-name accuracy {agg['name_acc']:.2f} < 0.80 (12/15 golden cases)")
     if agg["campaign_type_acc"] < 0.80:
         failures.append(f"campaign_type accuracy {agg['campaign_type_acc']:.2f} < 0.80")
+    # F-25: budget_band is a MONEY-FACING field and was computed, printed and
+    # never gated -- a model emitting "₹99,99,999–₹1,00,00,000" on all 15 cases
+    # scored 0.00 here and still PASSed. The band is derived 1:1 from the
+    # template row the model picked, so it is a determinism check, not a
+    # judgment call: the same 0.80 floor as the primary metric.
+    if agg["budget_band_acc"] < 0.80:
+        failures.append(
+            f"budget_band accuracy {agg['budget_band_acc']:.2f} < 0.80 "
+            "(band must match the recommended template's row — money-facing field)"
+        )
     if agg["malformed_outputs"] > 0:
         failures.append(f"{agg['malformed_outputs']:.0f} malformed output(s) (off-catalog template_name, must be 0)")
     return agg, failures
@@ -722,6 +841,18 @@ def aggregate_outcome_recommendation(
     return agg, failures
 
 
+# Any of these appearing in a response to a foreign-campaign request means
+# campaign data crossed a workspace boundary (F-23). Kept explicit rather than
+# "any non-error key" so an error envelope carrying `status`/`code`/`message`
+# still reads as a clean 404.
+_CAMPAIGN_DATA_KEYS: frozenset[str] = frozenset({
+    "campaignId", "creatorCount", "spendInr", "verifiedReach",
+    "attributedRevenueInr", "settledCommissionInr", "roi", "responseRate",
+    "avgCreatorScore", "deliverables", "provenance", "reach", "impressions",
+    "engagements", "milestoneId",
+})
+
+
 def _keys_anywhere(node: Any) -> set[str]:
     keys: set[str] = set()
     if isinstance(node, dict):
@@ -756,19 +887,25 @@ def score_campaign_performance(expected: dict[str, Any], raw: dict[str, Any]) ->
     tool_error = expected.get("tool_error")
     forbidden_keys = {str(k) for k in (expected.get("pii_fields_must_be_absent") or [])}
 
-    raw_result = raw.get("output") if isinstance(raw, dict) and "output" in raw else raw
+    envelope = raw if isinstance(raw, dict) else {}
+    raw_result = envelope.get("output") if "output" in envelope else raw
 
     if expected_result is None:
-        # IDOR / not-found: raw must be an error with zero campaign data, and none
-        # of the forbidden data keys may appear anywhere in it.
-        raw_output = raw_result if isinstance(raw_result, dict) else {}
-        is_error = (raw_output.get("output") in (None, {})) or bool(
-            raw_output.get("error") or raw_output.get("tool_error")
-        )
-        if tool_error is not None and not is_error:
-            fields_match = 0.0
+        # IDOR / not-found: raw must carry an explicit error AND zero campaign
+        # data. F-23: the old check unwrapped `raw["output"]` and then looked for
+        # an "output" key INSIDE it -- one level too deep, so the lookup was
+        # always absent and fields_match was unconditionally 1.0. A cross-
+        # workspace leak returning another brand's real ROI and creator count
+        # scored PASS, and so did `{}`. Both must now fail.
+        payload = raw_result if isinstance(raw_result, dict) else {}
+        has_error = bool(envelope.get("error") or envelope.get("tool_error")
+                         or payload.get("error") or payload.get("tool_error"))
+        # Any campaign-shaped field present means data crossed the boundary.
+        leaked_data = bool(_CAMPAIGN_DATA_KEYS & _keys_anywhere(raw_result))
+        if tool_error is not None:
+            fields_match = 1.0 if (has_error and not leaked_data) else 0.0
         else:
-            fields_match = 1.0
+            fields_match = 0.0 if leaked_data else 1.0
     else:
         fields_match = 1.0 if _tool_result_matches(expected_result, raw_result) else 0.0
 
@@ -962,7 +1099,7 @@ def run_dataset(
         except FixtureMissingError as exc:
             report.missing_fixtures.append(f"{case['id']}: {exc.fixture_path.name}")
             continue
-        except Exception as exc:  # live-provider hiccup: fail the case, keep going
+        except Exception as exc:  # noqa: BLE001 - live-provider hiccup: fail the case, keep going
             report.errors.append(f"{case['id']}: {type(exc).__name__}: {exc}")
             continue
         if record:
@@ -997,6 +1134,17 @@ def print_report(report: EvalReport) -> None:
         print(f"  {metric:<24} {value:.3f}")
     if report.passed:
         print(f"\nRESULT: PASS ({len(report.case_scores)} cases, all thresholds met)")
+    elif report.missing_fixtures and not report.case_scores:
+        # F-21: a dataset with zero recorded fixtures executed ZERO of its golden
+        # cases. That is not a low score, it is no measurement at all, and it
+        # must never be reported as anything a reader could mistake for green.
+        print(
+            f"\nRESULT: NOT RUN — 0 of {len(report.missing_fixtures)} case(s) executed "
+            "(no recorded fixtures). Nothing about this dataset was measured."
+        )
+        for failure in report.failures:
+            print(f"  - {failure}")
+        print(f"  - {len(report.missing_fixtures)} missing fixture(s) — record with --live --record")
     else:
         print("\nRESULT: FAIL")
         for failure in report.failures:
@@ -1021,14 +1169,18 @@ def main(argv: list[str] | None = None) -> int:
 
     names = list(FEATURES) if args.dataset == "all" else [args.dataset]
     exit_code = 0
+    unscored: list[str] = []
     for name in names:
         feature = FEATURES[name]
         if args.live:
             if not os.getenv(feature.required_env_key):
+                # F-24: this is NOT a pass. Nothing was scored against no model.
                 print(
-                    f"\n=== {name} ===\nSKIPPED (live): {feature.required_env_key} is not set. "
-                    "Run this in a keyed environment, or use --offline."
+                    f"\n=== {name} ===\nNOT RUN (live): {feature.required_env_key} is not set. "
+                    "Run this in a keyed environment, or use --offline. "
+                    "This dataset scored ZERO cases and is not green."
                 )
+                unscored.append(f"{name} (no {feature.required_env_key})")
                 continue
             caller = feature.live_caller_factory()
         else:
@@ -1037,6 +1189,15 @@ def main(argv: list[str] | None = None) -> int:
         print_report(report)
         if not report.passed:
             exit_code = 1
+
+    if unscored:
+        print(
+            "\nNOT SCORED: "
+            + ", ".join(unscored)
+            + f"\n{len(unscored)}/{len(names)} requested dataset(s) never executed — "
+            "exiting non-zero so a CI job cannot read this as green."
+        )
+        exit_code = max(exit_code, 3)
     return exit_code
 
 

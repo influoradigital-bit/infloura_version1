@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -55,7 +56,11 @@ class IdempotencyServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new IdempotencyService(repository);
+        // [SEC: Vikram, round-4 fix] IdempotencyReservationOps constructed directly (not a Spring
+        // proxy) -- fine here since this class tests IdempotencyService's own status/branching
+        // logic, not IdempotencyReservationOps's transactional-boundary behavior (covered by
+        // IdempotencyServicePersistenceTest against a real DB).
+        service = new IdempotencyService(repository, new IdempotencyReservationOps(repository));
     }
 
     private IdempotencyKeyRecord recordWithStatus(IdempotencyKeyRecord.Status status) {
@@ -80,20 +85,24 @@ class IdempotencyServiceTest {
     @Test
     @DisplayName("executeOnce: fresh key reserves under the composite key, runs the action once, and marks COMPLETED")
     void testFreshKeyRunsActionAndCompletes() {
-        when(repository.save(any())).thenReturn(null);
+        when(repository.saveAndFlush(any())).thenReturn(null);
 
         String result = service.executeOnce(KEY, WORKSPACE_ID, SCOPE, () -> "ok");
 
         assertEquals("ok", result);
-        verify(repository, times(1)).findByIdempotencyKey(COMPOSITE_KEY); // markCompletedTransactional lookup
+        // [SEC: Priya round-2 fix] markCompletedTransactional now delegates to the real
+        // @Modifying UPDATE (repository.markCompleted) instead of find-then-mutate-in-memory --
+        // the old find-then-mutate never actually persisted the transition (Defect 2).
+        verify(repository, times(1))
+                .markCompleted(
+                        eq(COMPOSITE_KEY), eq(IdempotencyKeyRecord.Status.COMPLETED), isNull(), any());
+        verify(repository, never()).findByIdempotencyKey(COMPOSITE_KEY);
     }
 
     @Test
     @DisplayName("executeOnce: action throws -> key marked FAILED, exception propagates, never masked")
     void testActionThrowsMarksFailedAndRethrows() {
-        when(repository.save(any())).thenReturn(null);
-        when(repository.findByIdempotencyKey(COMPOSITE_KEY))
-                .thenReturn(Optional.of(recordWithStatus(IdempotencyKeyRecord.Status.IN_PROGRESS)));
+        when(repository.saveAndFlush(any())).thenReturn(null);
 
         RuntimeException boom = new RuntimeException("gateway timeout");
         assertThrows(
@@ -106,6 +115,10 @@ class IdempotencyServiceTest {
                                 () -> {
                                     throw boom;
                                 }));
+
+        // [SEC: Priya round-2 fix] markFailedTransactional now delegates to the real @Modifying
+        // UPDATE (repository.markFailed) instead of find-then-mutate-in-memory.
+        verify(repository, times(1)).markFailed(eq(COMPOSITE_KEY), eq(IdempotencyKeyRecord.Status.FAILED), any());
     }
 
     // ------------------------------------------------------------------
@@ -115,7 +128,7 @@ class IdempotencyServiceTest {
     @Test
     @DisplayName("executeOnce: existing COMPLETED row -> AlreadyCompletedException, action never re-run")
     void testCompletedStaysTerminal() {
-        when(repository.save(any())).thenThrow(new DataIntegrityViolationException("dup"));
+        when(repository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
         when(repository.findByIdempotencyKey(COMPOSITE_KEY))
                 .thenReturn(Optional.of(recordWithStatus(IdempotencyKeyRecord.Status.COMPLETED)));
 
@@ -134,7 +147,7 @@ class IdempotencyServiceTest {
     @Test
     @DisplayName("executeOnce: existing IN_PROGRESS row -> AlreadyInProgressException, action never re-run")
     void testInProgressStaysRejected() {
-        when(repository.save(any())).thenThrow(new DataIntegrityViolationException("dup"));
+        when(repository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
         when(repository.reclaimFailedForRetry(
                         eq(COMPOSITE_KEY),
                         eq(IdempotencyKeyRecord.Status.FAILED),
@@ -158,15 +171,12 @@ class IdempotencyServiceTest {
     @Test
     @DisplayName("executeOnce: existing FAILED row is atomically reclaimed and the action re-runs successfully")
     void testFailedKeyIsReclaimedAndSucceedsOnRetry() {
-        when(repository.save(any())).thenThrow(new DataIntegrityViolationException("dup"));
+        when(repository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
         when(repository.reclaimFailedForRetry(
                         eq(COMPOSITE_KEY),
                         eq(IdempotencyKeyRecord.Status.FAILED),
                         eq(IdempotencyKeyRecord.Status.IN_PROGRESS)))
                 .thenReturn(1); // this caller's UPDATE matched the FAILED row
-
-        when(repository.findByIdempotencyKey(COMPOSITE_KEY))
-                .thenReturn(Optional.of(recordWithStatus(IdempotencyKeyRecord.Status.IN_PROGRESS)));
 
         AtomicInteger calls = new AtomicInteger();
         String result =
@@ -179,8 +189,11 @@ class IdempotencyServiceTest {
                         eq(COMPOSITE_KEY),
                         eq(IdempotencyKeyRecord.Status.FAILED),
                         eq(IdempotencyKeyRecord.Status.IN_PROGRESS));
-        // reaching COMPLETED proves the reclaim let the action run instead of throwing terminal
-        verify(repository, times(1)).findByIdempotencyKey(COMPOSITE_KEY); // markCompletedTransactional lookup
+        // reaching COMPLETED proves the reclaim let the action run instead of throwing terminal --
+        // [SEC: Priya round-2 fix] via the real markCompleted UPDATE, not a find-then-mutate lookup.
+        verify(repository, times(1))
+                .markCompleted(
+                        eq(COMPOSITE_KEY), eq(IdempotencyKeyRecord.Status.COMPLETED), isNull(), any());
     }
 
     @Test
@@ -188,7 +201,7 @@ class IdempotencyServiceTest {
             "executeOnce: two concurrent reclaim attempts on the same FAILED key -> exactly one proceeds, the"
                     + " other is rejected as still in progress")
     void testTwoConcurrentRetriesOfFailedKeyExactlyOneProceeds() {
-        when(repository.save(any())).thenThrow(new DataIntegrityViolationException("dup"));
+        when(repository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
         // First caller's UPDATE wins (affected rows = 1); the DB row lock means the second
         // caller's UPDATE runs against a row already flipped to IN_PROGRESS and matches 0 rows.
         when(repository.reclaimFailedForRetry(
@@ -222,7 +235,7 @@ class IdempotencyServiceTest {
     @Test
     @DisplayName("executeOnce: reclaimed-then-action-throws-again -> marked FAILED again, still reclaimable next time")
     void testReclaimedKeyCanFailAgainAndRemainsReclaimable() {
-        when(repository.save(any())).thenThrow(new DataIntegrityViolationException("dup"));
+        when(repository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
         when(repository.reclaimFailedForRetry(
                         eq(COMPOSITE_KEY),
                         eq(IdempotencyKeyRecord.Status.FAILED),
@@ -241,7 +254,8 @@ class IdempotencyServiceTest {
                                     throw gatewayTimeout;
                                 }));
 
-        verify(repository, times(1)).findByIdempotencyKey(COMPOSITE_KEY); // markFailedTransactional lookup
+        // [SEC: Priya round-2 fix] markFailedTransactional lookup -> now the real markFailed UPDATE.
+        verify(repository, times(1)).markFailed(eq(COMPOSITE_KEY), eq(IdempotencyKeyRecord.Status.FAILED), any());
     }
 
     // COMPLETED must never be reclaimed -- reclaimFailedForRetry is FAILED-only by construction of
@@ -259,12 +273,18 @@ class IdempotencyServiceTest {
             "executeOnce: the SAME raw idempotencyKey in a DIFFERENT scope reserves a DIFFERENT composite"
                     + " key -- no cross-scope collision")
     void testSameRawKeyDifferentScopeReservesDifferentCompositeKey() {
-        when(repository.save(any())).thenReturn(null);
+        when(repository.saveAndFlush(any())).thenReturn(null);
 
         service.executeOnce(KEY, WORKSPACE_ID, "other.scope", () -> "ok");
 
-        verify(repository, never()).findByIdempotencyKey(COMPOSITE_KEY);
-        verify(repository, times(1)).findByIdempotencyKey("other.scope:" + WORKSPACE_ID + ":" + KEY);
+        verify(repository, never())
+                .markCompleted(eq(COMPOSITE_KEY), any(), any(), any());
+        verify(repository, times(1))
+                .markCompleted(
+                        eq("other.scope:" + WORKSPACE_ID + ":" + KEY),
+                        eq(IdempotencyKeyRecord.Status.COMPLETED),
+                        isNull(),
+                        any());
     }
 
     @Test
@@ -272,13 +292,19 @@ class IdempotencyServiceTest {
             "executeOnce: the SAME raw idempotencyKey+scope in a DIFFERENT workspace reserves a DIFFERENT"
                     + " composite key -- no cross-tenant collision")
     void testSameRawKeyDifferentWorkspaceReservesDifferentCompositeKey() {
-        when(repository.save(any())).thenReturn(null);
+        when(repository.saveAndFlush(any())).thenReturn(null);
         String otherWorkspace = "01HOTHERWORKSPACE1234A";
 
         service.executeOnce(KEY, otherWorkspace, SCOPE, () -> "ok");
 
-        verify(repository, never()).findByIdempotencyKey(COMPOSITE_KEY);
-        verify(repository, times(1)).findByIdempotencyKey(SCOPE + ":" + otherWorkspace + ":" + KEY);
+        verify(repository, never())
+                .markCompleted(eq(COMPOSITE_KEY), any(), any(), any());
+        verify(repository, times(1))
+                .markCompleted(
+                        eq(SCOPE + ":" + otherWorkspace + ":" + KEY),
+                        eq(IdempotencyKeyRecord.Status.COMPLETED),
+                        isNull(),
+                        any());
     }
 
     // ------------------------------------------------------------------
@@ -288,14 +314,17 @@ class IdempotencyServiceTest {
     @Test
     @DisplayName("executeOnce (5-arg): captures the result digest on COMPLETED via the supplied function")
     void testFiveArgOverloadCapturesResultDigest() {
-        when(repository.save(any())).thenReturn(null);
+        when(repository.saveAndFlush(any())).thenReturn(null);
 
         String result =
                 service.executeOnce(KEY, WORKSPACE_ID, SCOPE, () -> "created-id-42", digest -> digest);
 
         assertEquals("created-id-42", result);
+        // [SEC: Priya round-2 fix] markCompletedTransactional's own lookup -> now the real
+        // markCompleted UPDATE, carrying the captured digest through.
         verify(repository)
-                .findByIdempotencyKey(COMPOSITE_KEY); // markCompletedTransactional's own lookup runs
+                .markCompleted(
+                        eq(COMPOSITE_KEY), eq(IdempotencyKeyRecord.Status.COMPLETED), eq("created-id-42"), any());
     }
 
     @Test

@@ -120,7 +120,8 @@ public class RateEstimationService {
         // === Confidence ===
         // Based on data completeness
         double confidence = 50.0;
-        if (metric.get().getDataSource().equals("META_API")) confidence += 30;
+        // CR-119 — same predicate that decides PlatformStat.verified, via the canonical constant.
+        if (metric.get().isPlatformVerified()) confidence += 30;
         if (qualityScore.overall().doubleValue() > 0) confidence += 20;
         confidence = Math.min(100, confidence);
 

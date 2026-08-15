@@ -12,12 +12,8 @@
 
 from __future__ import annotations
 
-import time
-from decimal import Decimal
-from typing import Any
 from unittest.mock import AsyncMock, patch
 
-import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -163,13 +159,15 @@ async def test_empty_visible_text_but_json_ld_present_does_not_degrade_to_empty_
         usage=None,
     )
 
-    with patch.object(analyze_site_route, "guarded_fetch", return_value=(SPA_HTML_WITH_JSON_LD, "https://brand.test/")):
-        with patch.object(analyze_site_route, "_get_gemini") as mock_get_gemini:
-            mock_gemini = AsyncMock()
-            mock_gemini.classify_site = AsyncMock(return_value=mock_result)
-            mock_get_gemini.return_value = mock_gemini
+    with patch.object(
+        analyze_site_route, "guarded_fetch",
+        return_value=(SPA_HTML_WITH_JSON_LD, "https://brand.test/"),
+    ), patch.object(analyze_site_route, "_get_gemini") as mock_get_gemini:
+        mock_gemini = AsyncMock()
+        mock_gemini.classify_site = AsyncMock(return_value=mock_result)
+        mock_get_gemini.return_value = mock_gemini
 
-            result = await perform_site_analysis(url="https://brand.test/", workspace_id=WORKSPACE_ID)
+        result = await perform_site_analysis(url="https://brand.test/", workspace_id=WORKSPACE_ID)
 
     assert result["success"] is True
     catalog = result["data"]["product_catalog"]
@@ -185,10 +183,10 @@ async def test_truly_empty_page_with_no_structured_data_still_degrades():
     """No regression: a genuinely empty page (no visible text, no structured
     data at all) still returns the empty_page degrade exactly as before."""
     with patch.object(
-        analyze_site_route, "guarded_fetch", return_value=(b"<html><body></body></html>", "https://brand.test/")
-    ):
-        with patch.object(analyze_site_route, "_get_gemini") as mock_get_gemini:
-            result = await perform_site_analysis(url="https://brand.test/", workspace_id=WORKSPACE_ID)
+        analyze_site_route, "guarded_fetch",
+        return_value=(b"<html><body></body></html>", "https://brand.test/"),
+    ), patch.object(analyze_site_route, "_get_gemini") as mock_get_gemini:
+        result = await perform_site_analysis(url="https://brand.test/", workspace_id=WORKSPACE_ID)
 
     assert result["success"] is False
     assert result["error"]["code"] == "empty_page"

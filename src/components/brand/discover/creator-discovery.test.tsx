@@ -46,6 +46,7 @@ vi.mock('@/lib/api', async () => {
         search: (...a: unknown[]) => creatorsSearch(...a),
         invite: (...a: unknown[]) => creatorsInvite(...a),
         toggleSaved: vi.fn().mockResolvedValue({ saved: true }),
+        featured: vi.fn().mockResolvedValue({ featured: [] }),
       },
       deals: { create: (...a: unknown[]) => dealsCreate(...a) },
       campaigns: { list: (...a: unknown[]) => campaignsList(...a) },
@@ -97,9 +98,10 @@ describe('CreatorDiscovery — invite vs priced offer', () => {
       creators: [CREATOR],
       meta: { page: 1, limit: 20, hasMore: false },
     });
-    campaignsList.mockResolvedValue([
-      { id: 'camp_1', title: 'Summer Launch', status: 'ACTIVE' },
-    ]);
+    campaignsList.mockResolvedValue({
+      campaigns: [{ id: 'camp_1', title: 'Summer Launch', status: 'ACTIVE' }],
+      meta: { page: 1, limit: 50, hasMore: false },
+    });
     creatorsInvite.mockResolvedValue({ collaborationId: 'col_1' });
     dealsCreate.mockResolvedValue({ id: 'deal_1' });
   });

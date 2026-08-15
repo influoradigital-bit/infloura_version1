@@ -120,4 +120,60 @@ class DealMessageStreamRegistryTest {
 
         assertEquals(0, registry.emitterCount(DEAL_ID));
     }
+
+    @Test
+    @DisplayName(
+            "CR-95: a message published while no emitter is connected (post-timeout reconnect "
+                    + "backoff) is replayed to the reconnecting client via Last-Event-ID")
+    void testReplayMissedEventsOnReconnect() throws Exception {
+        SseEmitter firstEmitter = mock(SseEmitter.class);
+        ArgumentCaptor<Runnable> timeoutCallback = ArgumentCaptor.forClass(Runnable.class);
+
+        registry.register(DEAL_ID, firstEmitter);
+        verify(firstEmitter).onTimeout(timeoutCallback.capture());
+
+        // Delivered live to firstEmitter as SSE event id "1".
+        registry.publish(DEAL_ID, sampleMessage());
+
+        // Emitter hits the 30-minute SseEmitter timeout — client is now in its reconnect backoff.
+        timeoutCallback.getValue().run();
+        assertEquals(0, registry.emitterCount(DEAL_ID));
+
+        // This message used to be silently dropped: nobody is connected when it's published.
+        registry.publish(DEAL_ID, sampleMessage());
+
+        // Reconnect: EventSource automatically resends the Last-Event-ID of the last event this
+        // client actually processed (event id "1" from the first publish).
+        SseEmitter reconnected = mock(SseEmitter.class);
+        registry.register(DEAL_ID, reconnected, "1");
+
+        verify(reconnected, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        assertEquals(1, registry.emitterCount(DEAL_ID));
+    }
+
+    @Test
+    @DisplayName("register: reconnecting already caught up (Last-Event-ID == latest) replays nothing")
+    void testNoReplayWhenAlreadyCaughtUp() throws Exception {
+        SseEmitter firstEmitter = mock(SseEmitter.class);
+        registry.register(DEAL_ID, firstEmitter);
+        registry.publish(DEAL_ID, sampleMessage()); // event id "1"
+
+        SseEmitter reconnected = mock(SseEmitter.class);
+        registry.register(DEAL_ID, reconnected, "1");
+
+        verify(reconnected, times(0)).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    @DisplayName("register: a blank/absent Last-Event-ID replays nothing (first-time connection)")
+    void testNoReplayWhenLastEventIdAbsent() throws Exception {
+        SseEmitter first = mock(SseEmitter.class);
+        registry.register(DEAL_ID, first);
+        registry.publish(DEAL_ID, sampleMessage());
+
+        SseEmitter second = mock(SseEmitter.class);
+        registry.register(DEAL_ID, second, null);
+
+        verify(second, times(0)).send(any(SseEmitter.SseEventBuilder.class));
+    }
 }

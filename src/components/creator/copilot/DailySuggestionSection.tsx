@@ -75,7 +75,20 @@ export function DailySuggestionSection({ className }: DailySuggestionSectionProp
     );
   }
 
-  // status is 'ready' | 'dismissed' here — DailySuggestionCard renders both bodies.
+  // CR-64/F-0107: the hook collapses the backend's 'no_suggestion_today' wire status into
+  // this same 'dismissed' UI status (useDailySuggestion.ts) — but unlike a creator-dismissed
+  // suggestion, there is no `suggestion` object at all in that case. DailySuggestionCard
+  // renders both 'ready' and 'dismissed' bodies, but ONLY when it has a suggestion to key
+  // off of (`!suggestion` short-circuits to `return null`), so 'no_suggestion_today' fell
+  // through to a blank page under a normal, expected server state — not an error. Route it
+  // to the purpose-built empty state instead, which already had the exact copy for this
+  // reason and simply had no call site.
+  if (status === 'dismissed' && !suggestion) {
+    return <SuggestionEmptyState reason="no_suggestion_today" className={className} />;
+  }
+
+  // status is 'ready' | 'dismissed' (with a suggestion) here — DailySuggestionCard renders
+  // both of those bodies.
   return (
     <DailySuggestionCard
       suggestion={suggestion}

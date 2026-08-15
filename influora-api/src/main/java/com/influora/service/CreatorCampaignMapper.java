@@ -57,7 +57,13 @@ public final class CreatorCampaignMapper {
         if (workspace == null) {
             return null;
         }
-        return new BrandSummary(workspace.getId(), workspace.getName(), workspace.getLogoUrl());
+        return new BrandSummary(
+                workspace.getId(),
+                workspace.getName(),
+                workspace.getLogoUrl(),
+                workspace.getVerificationStatus() != null
+                        ? workspace.getVerificationStatus().name()
+                        : null);
     }
 
     private static BudgetDto toBudget(Campaign c) {

@@ -1,0 +1,18 @@
+{
+ "verdict": "believed",
+ "oracle": "script",
+ "isolation": "oracle",
+ "done_when": "wiki/errors/CREATOR-BUG-TRACKER.md gains one new row per distinct creatorF.md finding (CR-51 upward), each with severity, a named owner from registry.json, and a status, and the Totals line is updated to match.",
+ "not_checked": [
+  "whether each of the 74 creatorF.md findings is a real, correctly-triaged defect and not a misreading of the source code by the extraction pass",
+  "whether the suggested owner is actually the right expert once someone opens the file (only Kavya/Neha re-derivation per this tracker's own \u00a76 protocol can confirm that)",
+  "whether any of the 74 findings overlaps in substance (not just filename) with an existing CR-01..CR-50 ticket under different wording",
+  "the pre-existing By-status line above CR-51 was left untouched, per Tara's exclusive \u00a76 ownership of it \u2014 the new 75 ASSIGNED rows are recorded on a separate addendum line, not merged in"
+ ],
+ "skipped": [
+  {
+   "step": "full Tara-style forensic detail block (live repro, evidence block, numbered fix steps) per new ticket",
+   "reason": "that requires live code inspection and reproduction the audit document itself did not include for each item, and fabricating it would misrepresent unverified claims as verified ones; each block instead cites the exact creatorF.md source location and file/line"
+  }
+ ]
+}

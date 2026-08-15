@@ -133,15 +133,15 @@ class DealControllerTest {
     }
 
     @Test
-    @DisplayName("CounterRequest: empty deliverables list fails validation (@NotEmpty)")
-    void counterRequest_emptyDeliverables_failsValidation() {
-        CounterRequest request = new CounterRequest(new BigDecimal("100"), null, List.of(), null, null);
+    @DisplayName(
+            "CounterRequest: omitted deliverables (null or empty) pass validation — DealService.doCounter()"
+                    + " carries them forward from the superseded proposal card")
+    void counterRequest_omittedDeliverables_passesValidation() {
+        CounterRequest emptyList = new CounterRequest(new BigDecimal("100"), null, List.of(), null, null);
+        CounterRequest nullList = new CounterRequest(new BigDecimal("100"), null, null, null, null);
 
-        Set<ConstraintViolation<CounterRequest>> violations = validator.validate(request);
-
-        assertFalse(violations.isEmpty());
-        assertTrue(
-                violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals("deliverables")));
+        assertTrue(validator.validate(emptyList).isEmpty());
+        assertTrue(validator.validate(nullList).isEmpty());
     }
 
     @Test
@@ -175,7 +175,9 @@ class DealControllerTest {
                         "camp1",
                         "Campaign",
                         "cp1",
+                        null,
                         "Brand",
+                        null,
                         null,
                         null,
                         CollaborationStatus.INVITED,
@@ -209,7 +211,9 @@ class DealControllerTest {
                         "camp1",
                         "Campaign",
                         "cp1",
+                        null,
                         "Brand",
+                        null,
                         null,
                         null,
                         CollaborationStatus.TERMS_AGREED,
@@ -280,7 +284,9 @@ class DealControllerTest {
                         "camp1",
                         "Campaign",
                         "cp1",
+                        null,
                         "Brand",
+                        null,
                         null,
                         null,
                         CollaborationStatus.IN_NEGOTIATION,
@@ -337,12 +343,22 @@ class DealControllerTest {
     @Test
     @DisplayName("GET /deals/{dealId}/messages/stream authorizes THEN registers an emitter")
     void testStreamMessagesRegistersEmitterOnAuthorizedOpen() {
-        SseEmitter emitter = controller.streamMessages(principal, "deal1");
+        SseEmitter emitter = controller.streamMessages(principal, "deal1", null);
 
         assertNotNull(emitter);
         var inOrder = org.mockito.Mockito.inOrder(dealService, messageStreamRegistry);
         inOrder.verify(dealService).authorizeMessageStream(principal, "deal1");
-        inOrder.verify(messageStreamRegistry).register(eq("deal1"), any(SseEmitter.class));
+        inOrder.verify(messageStreamRegistry).register(eq("deal1"), any(SseEmitter.class), eq((String) null));
+    }
+
+    @Test
+    @DisplayName(
+            "GET /deals/{dealId}/messages/stream: a Last-Event-ID reconnect header is passed"
+                    + " through to the registry unchanged")
+    void testStreamMessagesPassesThroughLastEventId() {
+        controller.streamMessages(principal, "deal1", "42");
+
+        verify(messageStreamRegistry).register(eq("deal1"), any(SseEmitter.class), eq("42"));
     }
 
     @Test
@@ -352,7 +368,8 @@ class DealControllerTest {
                 .when(dealService)
                 .authorizeMessageStream(principal, "deal1");
 
-        assertThrows(ApiException.class, () -> controller.streamMessages(principal, "deal1"));
+        assertThrows(
+                ApiException.class, () -> controller.streamMessages(principal, "deal1", null));
 
         verifyNoInteractions(messageStreamRegistry);
     }

@@ -95,9 +95,18 @@ export function DeliverableLifecyclePanel({
   const handleConnect = async () => {
     setConnecting(true);
     try {
+      // CR-54 — without this, completing (or cancelling) the OAuth dialog performs a hard
+      // navigation to Settings/root and drops the creator out of this deal room. Capturing the
+      // live location (not a prop) works regardless of which route mounts this panel.
+      api.metaOAuth.setConnectReturnTo(window.location.pathname + window.location.search);
       const { authorizationUrl } = await api.metaOAuth.authorize();
       window.location.href = authorizationUrl;
     } catch (err) {
+      // F-0168 — authorize() threw AFTER the marker was written, so the redirect to Meta never
+      // happened and the callback page will never run to consume/clear it. Left as-is, it would
+      // survive to misroute a later, unrelated connect attempt (e.g. from Settings) into this
+      // deal room instead.
+      api.metaOAuth.clearConnectReturnTo();
       setConnecting(false);
       toast({
         variant: 'destructive',

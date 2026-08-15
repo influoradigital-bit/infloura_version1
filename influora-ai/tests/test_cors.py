@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import importlib
 
+from fastapi.testclient import TestClient
+
 import app.main as main_module
 from app.config import get_settings
-from fastapi.testclient import TestClient
 
 
 def _reload_main(monkeypatch, allowed_origins: str | None):

@@ -13,8 +13,10 @@ only found by driving the live system + reading container logs.
 This test closes that gap deterministically — no API key, no network, no cost,
 runs in the existing ai-tests.yml on every PR that touches influora-ai/**. It
 validates the EXACT payload `get_tool_schemas()` hands to the Claude Messages
-API (the 6 Spring-contract tools + the 2 local tools), so a combinator or a
-malformed node can never reach the wire again.
+API — as of ME-2 (BrandF.md §115), the 4 non-money Spring-contract tools + the
+2 local tools; `request_payment`/`confirm_launch` are deliberately excluded
+until scope actually grants them (see schemas.py's get_tool_schemas docstring)
+— so a combinator or a malformed node can never reach the wire again.
 
 Ref: wiki/ai-review/meera-blank-turn-ai-review.md, MEMORY
 reference_anthropic_tool_schema_no_combinators.
@@ -110,18 +112,29 @@ def test_every_node_is_wellformed(name: str, tool: dict[str, Any]):
 
 
 def test_get_tool_schemas_returns_expected_count():
-    """Guards against a tool silently dropping out of the offered set (6 Spring
-    contract tools + analyze_site + present_options = 8)."""
+    """Guards against a tool silently dropping out of the offered set (4
+    non-money Spring-contract tools + analyze_site + present_options = 6)."""
     schemas = get_tool_schemas()
     names = {t["name"] for t in schemas}
     for required_tool in (
         "show_creators",
         "calculate_budget",
         "create_campaign",
-        "request_payment",
-        "confirm_launch",
         "get_campaign_performance",
         "analyze_site",
         "present_options",
     ):
         assert required_tool in names, f"tool '{required_tool}' missing from get_tool_schemas()"
+
+
+def test_get_tool_schemas_excludes_money_tools():
+    """ME-2 (BrandF.md §115): request_payment/confirm_launch must NOT be offered
+    to Claude — every real on-behalf token today is minted with SCOPE_DEFAULT,
+    which excludes both, so offering them only sets up a guaranteed Spring 403
+    with nothing productive Claude could do about it. This is the flip side of
+    test_get_tool_schemas_returns_expected_count: that guards against an
+    ACCIDENTAL drop, this guards against the exclusion silently regressing back
+    to "always offered" without anyone noticing."""
+    names = {t["name"] for t in get_tool_schemas()}
+    assert "request_payment" not in names
+    assert "confirm_launch" not in names

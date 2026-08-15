@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { StaggerContainer, StaggerItem } from '@/components/motion/StaggerContainer'
+import { cssVars } from '@/lib/css-vars'
 import { StageLoadingState } from '@/components/feature/meera/StageLoadingState'
 import { formatINR } from '@/lib/utils'
 import { isApiLive } from '@/lib/api'
@@ -122,8 +123,8 @@ export function StageSnapshot({ toolResult, className }: StageSnapshotProps) {
             <p className="truncate text-xs text-meera-text-muted">{MOCK_BRAND_SNAPSHOT.siteUrl}</p>
           </div>
           <span
-            className="h-6 w-6 shrink-0 rounded-full border border-meera-border-strong"
-            style={{ backgroundColor: MOCK_BRAND_SNAPSHOT.brandColorHex }}
+            className="h-6 w-6 shrink-0 rounded-full border border-meera-border-strong bg-[var(--brand-swatch)]"
+            ref={cssVars({ '--brand-swatch': MOCK_BRAND_SNAPSHOT.brandColorHex })}
             aria-label="Detected brand colour"
           />
         </div>

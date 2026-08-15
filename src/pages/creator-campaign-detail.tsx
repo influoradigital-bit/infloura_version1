@@ -34,16 +34,7 @@ import type { CreatorCampaignDetail } from '@/lib/api';
 import { api, ApiError } from '@/lib/api';
 import { formatINR } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-
-const APPLICATION_STATUS_LABELS: Record<string, string> = {
-  APPLIED: 'Applied',
-  SHORTLISTED: 'Shortlisted',
-  IN_NEGOTIATION: 'In negotiation',
-  TERMS_AGREED: 'Terms agreed',
-  CONTRACT_PENDING: 'Contract pending',
-  CONTRACTED: 'Contracted',
-  INVITED: 'Invited',
-};
+import { getApplicationStatusLabel } from '@/lib/application-status';
 
 function formatDate(value: string | null): string {
   if (!value) return 'TBD';
@@ -77,12 +68,28 @@ export default function CreatorCampaignDetailPage() {
   const [applying, setApplying] = React.useState(false);
   const [applySuccess, setApplySuccess] = React.useState(false);
 
+  // CR-11 static-sweep hardening — this route (/creator/campaigns/:id) does NOT unmount/remount
+  // when the id param changes (same route element, React Router reuses the instance), and this
+  // fetch had no staleness guard at all: navigating from campaign A's detail page to campaign B's
+  // before A's slower response lands could silently overwrite `campaign` with A's data while the
+  // URL, and every derived affordance (Apply button, breadcrumbs), still say B. Monotonic token
+  // matches the `messagesRequestRef` pattern already established in creator-chat.tsx (CR-20) —
+  // "latest request wins," not just "ignore responses after unmount."
+  // NOTE: this hardening does NOT reproduce or confirm CR-11's actual white-screen crash — see
+  // that ticket's tracker entry for why (CreatorCampaignMapper.toDetail always resolves
+  // objectives/hashtags/requirements/platforms through JsonLists.stringListFromJson, which
+  // returns emptyList() rather than null, so the render's unguarded .length/.map() calls were
+  // not the throw site). This is a real, separate stale-response race, fixed on its own merits.
+  const campaignRequestRef = React.useRef(0);
+
   const loadCampaign = React.useCallback(async () => {
     if (!id) return;
+    const requestId = ++campaignRequestRef.current;
     setLoading(true);
     setError(null);
     try {
       const data = await api.creatorCampaigns.get(id);
+      if (requestId !== campaignRequestRef.current) return; // a newer request has since started
       if (!data) {
         setError('Campaign not found.');
         setCampaign(null);
@@ -90,12 +97,13 @@ export default function CreatorCampaignDetailPage() {
         setCampaign(data);
       }
     } catch (e) {
+      if (requestId !== campaignRequestRef.current) return;
       const message =
         e instanceof ApiError ? e.message : 'Could not load campaign details.';
       setError(message);
       setCampaign(null);
     } finally {
-      setLoading(false);
+      if (requestId === campaignRequestRef.current) setLoading(false);
     }
   }, [id]);
 
@@ -207,7 +215,7 @@ export default function CreatorCampaignDetailPage() {
                 </div>
                 {daysLeft != null && (
                   <Badge variant={daysLeft <= 3 ? 'destructive' : 'secondary'} className="shrink-0">
-                    {daysLeft <= 0 ? 'Deadline passed' : `${daysLeft} days left`}
+                    {deadlinePassed ? 'Deadline passed' : `${daysLeft} days left`}
                   </Badge>
                 )}
               </div>
@@ -349,8 +357,13 @@ export default function CreatorCampaignDetailPage() {
                     <div className="rounded-lg border border-border bg-muted/50 p-4 text-center">
                       <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-success-foreground" />
                       <p className="font-medium">
-                        {APPLICATION_STATUS_LABELS[campaign.applicationStatus!] ??
-                          campaign.applicationStatus}
+                        {/* CR-55/F-0105: this used to keep its own drifted copy of the status
+                            label map and fall back to the raw backend enum string when a
+                            status wasn't in it — so a cancelled application literally
+                            rendered "CANCELLED", the exact thing the platform-wide
+                            never-show-Rejected/Cancelled rule (src/lib/application-status.ts)
+                            exists to prevent. Uses the canonical, always-labeled map now. */}
+                        {getApplicationStatusLabel(campaign.applicationStatus!)}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         You&apos;ve already applied to this campaign.
@@ -386,12 +399,16 @@ export default function CreatorCampaignDetailPage() {
                 <div className="flex flex-col items-center py-6 text-center">
                   <CheckCircle2 className="mb-3 h-12 w-12 text-success-foreground" />
                   <p className="text-sm text-muted-foreground">
-                    Track progress in your Deals inbox once the brand responds.
+                    You can track this application under My Applications, and it will also
+                    appear in your Deals inbox once the brand responds.
                   </p>
                 </div>
                 <DialogFooter className="flex-col gap-2 sm:flex-col">
                   <Button className="w-full" onClick={closeApplyDialog}>
                     Done
+                  </Button>
+                  <Button variant="outline" className="w-full" asChild>
+                    <Link to="/creator/applications">View my applications</Link>
                   </Button>
                   <Button variant="outline" className="w-full" asChild>
                     <Link to="/creator/deals">Go to deals</Link>

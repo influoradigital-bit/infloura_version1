@@ -75,11 +75,16 @@ public class PlatformStat {
      * site anywhere) — {@code PlatformStatsAggregationJob} calls this to roll the latest {@code
      * creator_metrics} snapshot up into the discovery-ranking substrate. Never fabricates a value;
      * {@code engagementRate} may legitimately be {@code null} if Meta hasn't returned one yet.
+     *
+     * <p>CR-116 — {@code handle} added so a real Instagram username rolls up here too; the caller
+     * is responsible for not passing {@code null} over an existing value (a single poll omitting
+     * the field must not blank out a previously-recorded handle).
      */
-    public void applySnapshot(long followers, BigDecimal engagementRate, boolean verified) {
+    public void applySnapshot(long followers, BigDecimal engagementRate, boolean verified, String handle) {
         this.followers = followers;
         this.engagementRate = engagementRate;
         this.verified = verified;
+        this.handle = handle;
     }
 
     public static Builder builder() {

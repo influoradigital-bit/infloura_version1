@@ -304,6 +304,25 @@ influora:
     api-base-url: ${RAZORPAY_API_BASE_URL:https://api.razorpay.com/v1}
     payout-api-base-url: ${RAZORPAYX_API_BASE_URL:https://api.razorpay.com/v1}
     platform-fee-percent: ${PLATFORM_FEE_PERCENT:15.00}
+  # Meta Graph API (Instagram/Facebook) OAuth + insights credentials -> MetaApiProperties
+  # (@ConfigurationProperties prefix "influora.meta"). One platform-wide Meta app, same for every
+  # brand/creator; the per-user OAuth access tokens obtained after connecting are stored ENCRYPTED
+  # in the DB by MetaTokenStorage, not here. Placeholder defaults follow the msg91/r2/razorpay
+  # convention above — real values via env on any deploy; dev literals in application-dev.yml.
+  meta:
+    # Blank defaults (NOT a REPLACE_WITH placeholder): MetaApiProperties.isConfigured() is just
+    # "app-id AND app-secret both non-blank", and it's the gate that decides whether Meta OAuth is
+    # live. A non-blank placeholder would flip isConfigured() to true with no real credentials set,
+    # firing real Graph API calls with garbage — so Meta must stay OFF by default (leave unset
+    # unless used). Supply real values via env (prod) or application-dev.yml (dev).
+    app-id: ${META_APP_ID:}
+    app-secret: ${META_APP_SECRET:}
+    redirect-uri: ${META_REDIRECT_URI:}
+    graph-api-version: ${META_GRAPH_API_VERSION:v25.0}
+    # [SEC: Kabir sign-off gate] DISTINCT AES-256 secret from every other key; must decode to
+    # exactly 32 bytes (enforced in MetaTokenStorage). No committed default here — application-dev.yml
+    # supplies a throwaway dev value; a real deploy MUST set META_TOKEN_ENCRYPTION_KEY.
+    token-encryption-key: ${META_TOKEN_ENCRYPTION_KEY:}
   # [SEC: Kabir Option-1 audit P1 must-fix] Wallet business limits. max-topup-amount is the
   # authoritative server-side ceiling on POST /wallet/topup — enforced in
   # WalletTopUpService#initiateTopUp, right after the existing positive-amount check. The DTO's

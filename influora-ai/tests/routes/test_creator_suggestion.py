@@ -440,7 +440,7 @@ async def test_spend_gate_blocks_call_no_provider_call():
     request = _make_request(BASE_BODY, authorization=f"Bearer {token}")
     ctx, mock_claude = _mock_claude("{}")
 
-    async def _blocked_gate(workspace_id=None):
+    async def _blocked_gate(workspace_id=None, **_kwargs):  # F-05: gate now takes reserve_usd
         from app.costs.gate import SpendGateResult
 
         return SpendGateResult(

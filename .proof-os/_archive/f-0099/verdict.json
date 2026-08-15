@@ -1,0 +1,5 @@
+{"verdict": "proved", "oracle": "vitest", "isolation": "oracle",
+ "done_when": "F-0099 fixed: null/unknown/dormant/404'd/pre-load runway never renders a false CRITICAL red alarm. dashboard EMPTY_WALLET.runwayDays=null (health logic already treats null as healthy); brand-wallet keeps null (no ?? 0) and all render comparisons route through the shared runwayTone helper which maps null->healthy; a genuine low numeric runway still alarms. Pinned by src/lib/wallet-runway.test.ts (gate .proof-os/gates/F-0099-runway-alarm-fix.sh).",
+ "evidence": {"oracle": "vitest", "command": "npx vitest run src/lib/wallet-runway.test.ts", "result": "5 passed", "where": "src/lib/wallet-runway.test.ts:1"},
+ "not_checked": ["live browser render of a 404'd new-workspace dashboard showing green (Neha's gate) — logic + unit-pinned, runtime not exercised"],
+ "skipped": []}

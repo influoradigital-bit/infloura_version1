@@ -138,6 +138,27 @@
             <scope>test</scope>
         </dependency>
         <!--
+          [SEC: Vikram, FLAGGED: new test-scope dependency, needs Priya/CTO sign-off per
+          TECH-STACK.md rule 6 / wiki/tech/approved-deps.md — requested BY Priya's round-2
+          IdempotencyService review itself ("a real (non-Mockito) Hibernate+H2 test"), added here to
+          act on that instruction; flagging per protocol rather than silently adding it]
+          com.h2database:h2 — genuinely no H2 (or any lightweight embedded-DB) test dependency
+          existed in this pom before now (confirmed: only testcontainers-mysql, which needs Docker,
+          unavailable in this offline environment — see BrandAiCreditRepositoryQueryTest's
+          docstring). Backs a real @DataJpaTest for IdempotencyKeyRecordRepository/IdempotencyService
+          (IdempotencyKeyRecordRepositoryPersistenceTest) proving actual Hibernate persist/merge and
+          @Modifying-UPDATE semantics against a running DB, not a Mockito-stubbed
+          ConcurrentHashMap. Version intentionally UNPINNED — inherits whatever
+          spring-boot-dependencies:3.3.5 manages (2.2.224, already present in the local ~/.m2 cache,
+          confirmed fully offline-resolvable). Test-only scope; never reaches the production
+          artifact or affects the MySQL-backed runtime datasource.
+        -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
           [SEC: Vikram, P5 test-compile fix, FLAGGED: new test-scope dependency, needs Priya/CTO
           sign-off per TECH-STACK.md rule 6 / wiki/tech/approved-deps.md] AbstractIntegrationTest
           (Wave E task E3) has referenced org.testcontainers.* since it was written, but no

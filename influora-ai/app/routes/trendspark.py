@@ -32,6 +32,7 @@ import re
 import uuid
 from typing import Any
 
+import anyio
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.auth.service_token import AuthError, auth_error_to_http, verify_token
@@ -50,8 +51,8 @@ from app.prompt.trendspark import (
 from app.prompt.validators import (
     _CODE_FENCE_RE,
     _has_forbidden_petname,
-    _PRICE_RE,
     _statement_count,
+    has_invented_price,
 )
 from app.providers.claude import ClaudeProvider
 from app.security.redaction import log_event, shape_of
@@ -65,7 +66,16 @@ _claude_provider: ClaudeProvider | None = None
 # Trendspark-specific (unlike the 5 regexes above, now shared via
 # app.prompt.validators per Priya R1 Conflict 7) — this one stays local since
 # it only applies to trendspark's OWN_CONTENT mode branch.
-_OWN_CONTENT_FORBIDDEN_RE = re.compile(r"\bsnapsby\b|\bvideos?\b|\bbuy\b", re.IGNORECASE)
+#
+# F-20: this banned "video" and "buy". The sibling creator route removed exactly
+# those two words after Ash's ruling (see app/routes/creator_suggestion.py's
+# `_MARKETPLACE_RE`) because they are ordinary English in a content idea and
+# banning them forced a near-permanent fallback — and the fallback happens AFTER
+# the paid Haiku call, so every rejected nudge is billed and thrown away. The
+# fix was applied there and never here. The system prompt's tone control is what
+# keeps this voice from sounding like a marketplace pitch; the only thing this
+# regex needs to catch is the literal brand name leaking through.
+_OWN_CONTENT_FORBIDDEN_RE = re.compile(r"\bsnapsby\b", re.IGNORECASE)
 
 
 def _get_claude() -> ClaudeProvider:
@@ -96,8 +106,8 @@ def _normalize_videos(raw: Any, max_videos: int) -> tuple[list[dict[str, Any]], 
         if not isinstance(vid, str) or not vid.strip():
             continue
         title = item.get("title") if isinstance(item.get("title"), str) else ""
-        themes = item.get("themes") if isinstance(item.get("themes"), list) else []
-        themes = [t for t in themes if isinstance(t, str)]
+        raw_themes = item.get("themes")
+        themes = [t for t in raw_themes if isinstance(t, str)] if isinstance(raw_themes, list) else []
         videos.append({"video_id": vid, "title": title, "themes": themes})
         sent_ids.append(vid)
         if len(videos) >= max_videos:
@@ -138,7 +148,7 @@ def parse_and_validate(
         return None
     if _has_forbidden_petname(message):
         return None
-    if _PRICE_RE.search(message):  # echoed/invented price -> reject
+    if has_invented_price(message):  # echoed/invented price -> reject
         return None
     if mode == MODE_OWN_CONTENT and _OWN_CONTENT_FORBIDDEN_RE.search(message):
         return None
@@ -170,7 +180,12 @@ async def trendspark_nudge(request: Request, authorization: str | None = Header(
         )
 
     try:
-        verify_token(_bearer(authorization), endpoint="trendspark", body_workspace_id=workspace_id)
+        # F-09: off the event loop (blocking JWKS fetch).
+        await anyio.to_thread.run_sync(
+            lambda: verify_token(
+                _bearer(authorization), endpoint="trendspark", body_workspace_id=workspace_id
+            )
+        )
     except AuthError as exc:
         raise auth_error_to_http(exc) from exc
 
@@ -210,7 +225,14 @@ async def trendspark_nudge(request: Request, authorization: str | None = Header(
     # Spend gate: on kill-switch / ceiling, skip the AI call and return the
     # deterministic fallback (still 200) — the user never sees an error and no
     # provider tokens are spent.
-    gate = await check_spend_gate(workspace_id=workspace_id)
+    gate = await check_spend_gate(
+        workspace_id=workspace_id,
+        # F-05: hold budget between this check and the recorded spend, so
+        # concurrent callers see each other's in-flight cost instead of all
+        # reading the same stale total. Settled by record_spend below; expires
+        # on its own if this request dies before it gets there.
+        reserve_usd=get_settings().ai_reservation_per_call_usd or None,
+    )
     if not gate.allowed:
         log_event(
             logger, logging.WARNING, "trendspark_nudge_blocked_spend_gate",
@@ -251,7 +273,7 @@ async def trendspark_nudge(request: Request, authorization: str | None = Header(
     if result.usage:
         try:
             cost_usd = estimate_cost_usd(TRENDSPARK_MODEL, result.usage)
-            spend_today = await record_spend(cost_usd, workspace_id)
+            spend_today = await record_spend(cost_usd, workspace_id, reservation=gate.reservation)
             log_event(
                 logger, logging.INFO, "ai_spend",
                 workspace_id=workspace_id, request_id=request_id,

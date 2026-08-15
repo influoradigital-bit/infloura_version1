@@ -24,8 +24,8 @@ import time
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.auth.service_token import (
     AuthError,

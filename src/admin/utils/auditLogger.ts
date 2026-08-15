@@ -134,7 +134,7 @@ function enqueueFailedEntry(entry: AuditLogInput): void {
   setRetryQueue(queue);
 
   if (import.meta.env?.DEV) {
-    console.info(`[auditLogger] queued failed entry (queue size: ${queue.length})`);
+    console.warn(`[auditLogger] queued failed entry (queue size: ${queue.length})`);
   }
 }
 
@@ -172,7 +172,7 @@ async function processRetryQueue(): Promise<void> {
   setRetryQueue(remaining);
 
   if (import.meta.env?.DEV && queue.length > remaining.length) {
-    console.info(`[auditLogger] processed queue: ${queue.length - remaining.length} delivered, ${remaining.length} remaining`);
+    console.warn(`[auditLogger] processed queue: ${queue.length - remaining.length} delivered, ${remaining.length} remaining`);
   }
 }
 

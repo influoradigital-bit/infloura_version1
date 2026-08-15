@@ -1,6 +1,11 @@
 package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -34,6 +39,7 @@ import com.influora.web.dto.money.MoneyDtos.WalletBalanceResponse;
 import com.influora.web.dto.money.MoneyDtos.WalletSummaryResponse;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
@@ -515,5 +521,147 @@ class WalletServiceTest {
      */
     private abstract static class Wallet extends com.influora.domain.entity.Wallet {
         // Test subclass that allows us to override methods
+    }
+
+    // ===================================================================================
+    // CR-77 — GET /wallet/payouts, the creator's real payout history.
+    //
+    // The Payouts tab used to derive itself by filtering the ledger to WITHDRAWAL debits. A debit
+    // records that money left the creator's Influora wallet; it does NOT record that it reached
+    // their bank. On a RazorpayX reversed/rejected/cancelled, PayoutReconciliationService posts a
+    // SEPARATE compensating credit and correctly leaves the debit standing — so a bounced payout
+    // kept rendering as money paid out. These pin the endpoint that replaces that derivation.
+    // ===================================================================================
+
+    private static Payout payoutRow(String id, String creatorUserId, String status, Instant when) {
+        return Payout.createQueued(
+                id,
+                null, // wallet withdrawals carry no milestone — see doProcessWithdrawal
+                creatorUserId,
+                "pout_" + id,
+                "fa_1",
+                new BigDecimal("2500.00"),
+                "INR",
+                status,
+                "idem_" + id,
+                when);
+    }
+
+    @Test
+    @DisplayName(
+            "CR-77 getPayoutsForCreator: scopes to the caller by the QUERY, so another creator's"
+                    + " payout can never enter the result set")
+    void getPayoutsForCreator_scopesToCallerInTheQuery() {
+        when(payoutRepository.findByCreatorUserIdOrderByCreatedAtDesc(eq(USER_ID), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(payoutRow("p1", USER_ID, "processed", Instant.now()))));
+
+        var result = walletService.getPayoutsForCreator(USER_ID, 1, 20);
+
+        // The scoping predicate must be IN the repository call — not applied afterwards to a
+        // broader read, which is the shape CR-111 had to fix elsewhere in this codebase.
+        ArgumentCaptor<String> ownerCaptor = ArgumentCaptor.forClass(String.class);
+        verify(payoutRepository)
+                .findByCreatorUserIdOrderByCreatedAtDesc(ownerCaptor.capture(), any(Pageable.class));
+        assertEquals(USER_ID, ownerCaptor.getValue(), "must query by the authenticated creator's own id");
+        assertEquals(1, result.items().size());
+    }
+
+    @Test
+    @DisplayName(
+            "CR-77 getPayoutsForCreator: a reversed payout is reported as FAILED — the one thing the"
+                    + " old WITHDRAWAL-debit derivation could not express at all")
+    void getPayoutsForCreator_reportsReversedPayoutAsFailed() {
+        when(payoutRepository.findByCreatorUserIdOrderByCreatedAtDesc(eq(USER_ID), any(Pageable.class)))
+                .thenReturn(
+                        new PageImpl<>(List.of(payoutRow("p1", USER_ID, "reversed", Instant.now()))));
+
+        var result = walletService.getPayoutsForCreator(USER_ID, 1, 20);
+
+        assertTrue(
+                result.items().get(0).failed(),
+                "a reversed payout never reached the bank and was re-credited — showing it as a"
+                        + " completed payout is the money-surface bug CR-77 exists to fix");
+    }
+
+    @Test
+    @DisplayName(
+            "CR-77 getPayoutsForCreator: a failed payout reports NO settlement time even though the"
+                    + " entity stamped confirmedAt — money that never landed has no landing date")
+    void getPayoutsForCreator_failedPayoutHasNoSettlementTimeDespiteConfirmedAt() {
+        // The trap this pins. Payout#confirmStatus stamps confirmedAt on EVERY terminal webhook,
+        // including reversed/rejected/cancelled (PayoutReconciliationService calls it for all of
+        // them), so that column is really "last terminal confirmation", not "settled". A fixture
+        // built with createQueued has a null confirmedAt and therefore CANNOT catch this — it is
+        // a row the webhook path never produces. Build the real shape instead: confirm it, the way
+        // a reversal webhook would.
+        Payout reversed = payoutRow("p1", USER_ID, "queued", Instant.now());
+        reversed.confirmStatus("reversed", "{\"event\":\"payout.reversed\"}");
+        assertNotNull(
+                reversed.getConfirmedAt(),
+                "precondition: the entity really does stamp confirmedAt on a failure webhook");
+
+        when(payoutRepository.findByCreatorUserIdOrderByCreatedAtDesc(eq(USER_ID), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(reversed)));
+
+        var result = walletService.getPayoutsForCreator(USER_ID, 1, 20);
+
+        assertTrue(result.items().get(0).failed());
+        assertNull(
+                result.items().get(0).settledAt(),
+                "a failed payout must report no settlement time — otherwise the UI prints"
+                        + " 'Settled <date>' directly under 'Payout failed'");
+    }
+
+    @Test
+    @DisplayName("CR-77 getPayoutsForCreator: a processed payout is NOT flagged failed")
+    void getPayoutsForCreator_processedPayoutIsNotFailed() {
+        when(payoutRepository.findByCreatorUserIdOrderByCreatedAtDesc(eq(USER_ID), any(Pageable.class)))
+                .thenReturn(
+                        new PageImpl<>(List.of(payoutRow("p1", USER_ID, "processed", Instant.now()))));
+
+        var result = walletService.getPayoutsForCreator(USER_ID, 1, 20);
+
+        assertFalse(result.items().get(0).failed());
+        assertEquals("processed", result.items().get(0).status(), "gateway status passes through unmapped");
+    }
+
+    @Test
+    @DisplayName(
+            "CR-77 getPayoutsForCreator: the failed flag tracks the SHARED failure-status set, not a"
+                    + " re-listed local copy — rejected and cancelled count too")
+    void getPayoutsForCreator_failedFlagCoversEveryTerminalFailureStatus() {
+        for (String status : PayoutReconciliationService.FAILURE_STATUSES) {
+            when(payoutRepository.findByCreatorUserIdOrderByCreatedAtDesc(eq(USER_ID), any(Pageable.class)))
+                    .thenReturn(new PageImpl<>(List.of(payoutRow("p1", USER_ID, status, Instant.now()))));
+
+            var result = walletService.getPayoutsForCreator(USER_ID, 1, 20);
+
+            assertTrue(
+                    result.items().get(0).failed(),
+                    "'" + status + "' is a terminal failure per PayoutReconciliationService and must"
+                            + " render as failed here — a local copy of this set could drift");
+        }
+    }
+
+    @Test
+    @DisplayName("CR-77 getPayoutsForCreator: clamps pagination and reports real meta")
+    void getPayoutsForCreator_clampsPaginationAndReportsMeta() {
+        when(payoutRepository.findByCreatorUserIdOrderByCreatedAtDesc(eq(USER_ID), any(Pageable.class)))
+                .thenReturn(
+                        new PageImpl<>(
+                                List.of(payoutRow("p1", USER_ID, "processed", Instant.now())),
+                                PageRequest.of(0, 100),
+                                1));
+
+        var result = walletService.getPayoutsForCreator(USER_ID, 0, 5000);
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(payoutRepository)
+                .findByCreatorUserIdOrderByCreatedAtDesc(eq(USER_ID), pageableCaptor.capture());
+        assertEquals(0, pageableCaptor.getValue().getPageNumber(), "page 0 clamps to the first page");
+        assertEquals(100, pageableCaptor.getValue().getPageSize(), "limit clamps to the 100 ceiling");
+        assertEquals(1, result.meta().page());
+        assertEquals(100, result.meta().limit());
+        assertEquals(1L, result.meta().total());
     }
 }

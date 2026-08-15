@@ -50,6 +50,10 @@ export function DeliverableSubmission({
   const [dragActive, setDragActive] = React.useState(false);
   const [preview, setPreview] = React.useState<string>('');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  // CR-53 — set when a previous attempt uploaded this file successfully but the submit
+  // step failed. Kept in state (not just the toast) so the dialog can show a persistent
+  // "just retry, no re-upload needed" message and relabel the action button.
+  const [uploadedAwaitingRetry, setUploadedAwaitingRetry] = React.useState(false);
 
   const selectedDeliverableObj = deliverables.find(d => d.id === selectedDeliverable);
   const isRevision = selectedDeliverableObj?.currentRevision ? selectedDeliverableObj.currentRevision > 0 : false;
@@ -89,6 +93,8 @@ export function DeliverableSubmission({
     }
 
     setFile(selectedFile);
+    // A newly picked file has never been uploaded — any pending retry-only state is stale.
+    setUploadedAwaitingRetry(false);
 
     // Create preview
     if (selectedFile.type.startsWith('image/')) {
@@ -119,11 +125,20 @@ export function DeliverableSubmission({
       setCaption('');
       setPreview('');
       setSelectedDeliverable(deliverables[0]?.id || '');
+      setUploadedAwaitingRetry(false);
       onOpenChange(false);
     } catch (error) {
+      // CR-53: if the upload step already succeeded and only submit failed, the handler
+      // tags the error with `uploaded: true`. Keep file/caption/selectedDeliverable exactly
+      // as they are (no reset below) so clicking the button again retries submit only —
+      // it does not force the creator to re-pick and re-upload the file.
+      const uploaded = Boolean(error && typeof error === 'object' && (error as { uploaded?: boolean }).uploaded);
+      setUploadedAwaitingRetry(uploaded);
       toast({
-        title: 'Could not submit deliverable',
-        description: error instanceof ApiError ? error.message : 'Please try again.',
+        title: uploaded ? 'Upload complete, submit failed' : 'Could not submit deliverable',
+        description: uploaded
+          ? 'Your file was uploaded. Click Retry Submit to finish — no need to upload again.'
+          : error instanceof ApiError ? error.message : 'Please try again.',
         variant: 'destructive',
       });
     }
@@ -143,7 +158,15 @@ export function DeliverableSubmission({
           {/* Deliverable Selection */}
           <div className="space-y-2">
             <Label htmlFor="deliverable">Select Deliverable</Label>
-            <Select value={selectedDeliverable} onValueChange={setSelectedDeliverable}>
+            <Select
+              value={selectedDeliverable}
+              onValueChange={(value) => {
+                setSelectedDeliverable(value);
+                // Switching deliverables invalidates any "already uploaded, just retry
+                // submit" state — that upload was for the previously selected deliverable.
+                setUploadedAwaitingRetry(false);
+              }}
+            >
               <SelectTrigger id="deliverable">
                 <SelectValue placeholder="Choose a deliverable..." />
               </SelectTrigger>
@@ -256,6 +279,17 @@ export function DeliverableSubmission({
             <p className="text-xs text-muted-foreground">{caption.length}/500 characters</p>
           </div>
 
+          {/* CR-53: upload succeeded, submit didn't — surface the safe retry path */}
+          {uploadedAwaitingRetry && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Your file uploaded successfully, but submitting the deliverable failed. Click
+                &quot;Retry Submit&quot; below to finish — your file is already saved, no need to upload it again.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Revision Alert */}
           {isRevision && (
             <Alert>
@@ -279,7 +313,7 @@ export function DeliverableSubmission({
             onClick={handleSubmit}
             disabled={!file || !selectedDeliverable || !caption || isSubmitting}
           >
-            {isSubmitting ? 'Submitting...' : 'Submit Deliverable'}
+            {isSubmitting ? 'Submitting...' : uploadedAwaitingRetry ? 'Retry Submit' : 'Submit Deliverable'}
           </Button>
         </DialogFooter>
       </DialogContent>

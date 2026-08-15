@@ -2,6 +2,7 @@ import { AlertTriangle, Image as ImageIcon, TrendingUp } from 'lucide-react';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from '@/components/ui/empty';
 import type { ContentPerformanceItem } from '@/lib/api';
@@ -12,6 +13,8 @@ interface ContentPerformancePanelProps {
   error?: string | null;
   notImplemented?: boolean;
   className?: string;
+  /** CR-67 — lets the error state offer a retry instead of requiring a full page reload. */
+  onRetry?: () => void;
 }
 
 /**
@@ -46,6 +49,7 @@ export function ContentPerformancePanel({
   error,
   notImplemented = false,
   className,
+  onRetry,
 }: ContentPerformancePanelProps) {
   if (loading) {
     return (
@@ -91,7 +95,16 @@ export function ContentPerformancePanel({
           <Alert className="mb-4" variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Couldn't load content performance</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>
+              {error}
+              {onRetry && (
+                <div className="mt-2">
+                  <Button size="sm" variant="outline" onClick={onRetry}>
+                    Retry
+                  </Button>
+                </div>
+              )}
+            </AlertDescription>
           </Alert>
         )}
 

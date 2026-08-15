@@ -1,0 +1,19 @@
+{"verdict": "believed",
+ "oracle": "mvn",
+ "isolation": "oracle",
+ "done_when": "each available oracle ran, findings are classed into ledger records with missed_by, and the blind spots are named",
+ "not_checked": [
+   "runtime behaviour against real API data — no dev server or deployed URL was exercised; a hardcoded mock passes every oracle that ran",
+   "FE-BE contract agreement — tsc green and mvn green do not prove the two sides agree on response shapes (known divergence class)",
+   "frontend unit tests — npm test could not run (gates/build.sh: tests unavailable); the 1763 green tests are backend-only",
+   "SAST / taint analysis — no semgrep or codeql exists in this toolchain",
+   "authentication and authorisation logic — no oracle here inspects it",
+   "secrets outside gitleaks' rule set, and whether any leaked value was ever rotated",
+   "whether the 89 gitleaks findings' benign classification holds for rules gitleaks does not have — the classification is a lookup of the flagged lines only"
+ ],
+ "skipped": [
+   {"step": "gates/build.go.sh", "reason": "no Go module in this repo"},
+   {"step": "gates/e2e.sh and live-URL security headers", "reason": "no deployed URL supplied to the gates"},
+   {"step": "eslint inside gates/frontend.sh", "reason": "step exceeded its 300s budget (F-0025); re-run standalone with a raised budget instead — results included in the report"},
+   {"step": "mvn -o test (offline)", "reason": "offline plugin resolution failed (environment, not code); re-run with network allowed — results included in the report"}
+ ]}

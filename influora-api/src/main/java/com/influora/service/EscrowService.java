@@ -504,6 +504,113 @@ public class EscrowService {
     }
 
     /**
+     * [P-1' fix, BrandF.md §47a] Releases a FUNDED escrow hold addressed by its OWN id, for holds
+     * that have no {@link PaymentMilestone} — {@code EscrowHold.milestoneId} is null. {@code
+     * PaymentMilestone} rows are created in exactly one place ({@link ContractService} when a
+     * contract is generated), but {@link #initiateFund} has always supported funding a hold at the
+     * campaign level with no milestone (see its javadoc) — this is the shape Meera's workspace
+     * funds before any contract/milestone exists. Before this method, such a hold had no release
+     * path at all: {@link #release}/{@link #releaseInternal} require a milestone to resolve, and
+     * {@link #refund} (which already takes a bare {@code escrowHoldId}) only sends the money back
+     * to the brand, never out to a creator. Money would sit FUNDED forever with no exit.
+     *
+     * <p>Deliberately REJECTS a hold that DOES have a milestone (routes the caller back to {@link
+     * #release}) — that keeps the B5 {@link #assertReleaseConditionSatisfied} gate, which is
+     * milestone-{@code release_condition}-driven, as the sole authority for milestone-backed holds
+     * instead of creating a second path that could silently skip it.
+     *
+     * <p>Same authorization (brand OWNER/ADMIN), row-lock, tenant check, cancellation/dispute
+     * guards, FUNDED-state requirement, idempotent RELEASED no-op, and ledger idempotency-key
+     * discipline ({@code "release:<holdId>"}, disjoint from milestone releases because this path is
+     * only reachable for holds {@link #releaseInternal} can never touch) as the milestone path —
+     * this does not weaken or duplicate that logic, it extends the same guard set to holds
+     * {@link #releaseInternal} structurally cannot address. Payee is resolved server-side from
+     * {@code Collaboration.creatorId}, same as {@link #releaseInternal}, never from the request.
+     */
+    @Transactional
+    public EscrowStatusResponse releaseByHoldId(
+            AuthPrincipal principal, String workspaceId, String escrowHoldId) {
+        WorkspaceMember member = brandContext.requireMember(principal, workspaceId);
+        brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN);
+        return releaseByHoldIdInternal(workspaceId, escrowHoldId);
+    }
+
+    private EscrowStatusResponse releaseByHoldIdInternal(String workspaceId, String escrowHoldId) {
+        EscrowHold hold = requireHoldForUpdate(escrowHoldId);
+        if (!hold.getWorkspaceId().equals(workspaceId)) {
+            throw new ApiException("ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND);
+        }
+        if (hold.getMilestoneId() != null) {
+            // Milestone-backed hold — must go through release(milestoneId) so the B5
+            // release_condition gate is never bypassed by addressing the hold directly.
+            throw new ApiException(
+                    "ESCROW_HOLD_HAS_MILESTONE",
+                    "This escrow hold is tied to milestone "
+                            + hold.getMilestoneId()
+                            + " — release it via POST /wallet/escrow/release with that milestoneId"
+                            + " instead of escrowHoldId",
+                    HttpStatus.CONFLICT);
+        }
+
+        String collaborationId = resolveCollaborationId(hold);
+        if (collaborationId == null) {
+            // Funded at campaign level and never bound to a collaboration yet (see initiateFund's
+            // javadoc) — there is no payee to resolve. This is a real "not yet releasable" state,
+            // not a bug; refund() remains available to send the money back to the brand.
+            throw new ApiException(
+                    "ESCROW_HOLD_NOT_LINKED",
+                    "This escrow hold is not yet linked to a creator collaboration — nothing to"
+                            + " release to",
+                    HttpStatus.CONFLICT);
+        }
+        Collaboration collaboration =
+                collaborationRepository
+                        .findById(collaborationId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "COLLABORATION_NOT_FOUND",
+                                                "Collaboration not found",
+                                                HttpStatus.NOT_FOUND));
+        String payeeUserId = collaboration.getCreatorId();
+
+        assertReleaseNotBlockedByCancellation(collaboration);
+        assertEscrowNotBlockedByDispute(collaboration);
+
+        if (hold.getStatus() == EscrowStatus.RELEASED) {
+            return toStatusResponse(hold); // idempotent no-op
+        }
+        requireStatus(hold, EscrowStatus.FUNDED, "release");
+
+        // No PaymentMilestone exists for this hold, so the B5 release_condition gate
+        // (assertReleaseConditionSatisfied) does not apply — that gate reads a milestone's
+        // configured release_condition, which has no equivalent here. Nothing to check before
+        // moving money for this shape of hold.
+
+        String idempotencyKey = "release:" + hold.getId();
+        var outcome =
+                escrowBackend.release(
+                        new EscrowBackend.ReleaseCommand(
+                                hold.getId(),
+                                payeeUserId,
+                                hold.getAmount(),
+                                hold.getCurrency(),
+                                referenceIdFor(hold),
+                                TxnReferenceType.ESCROW_HOLD,
+                                hold.getId(),
+                                "Escrow hold release for campaign " + hold.getCampaignId(),
+                                idempotencyKey));
+
+        hold.markReleased(outcome.releaseTxnId());
+        escrowHoldRepository.save(hold);
+
+        safelyCreateServiceInvoice(hold, collaboration, outcome.releaseTxnId());
+        publishPayoutReleasedEvent(workspaceId, null, collaboration, hold);
+
+        return toStatusResponse(hold);
+    }
+
+    /**
      * [B3] Best-effort release attempt invoked from {@code BrandDeliverableService#approve}'s own
      * transaction, right after a deliverable is approved. Runs the exact same release logic/gates
      * as {@link #release} — {@link #assertReleaseConditionSatisfied} (B5), the dispute block, the

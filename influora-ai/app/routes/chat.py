@@ -45,6 +45,7 @@ import json
 import logging
 import time
 import uuid
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Header, Request, status
@@ -55,7 +56,7 @@ from app.clients.spring import SpringCallError, SpringInternalClient
 from app.config import CLAUDE_MODEL, get_settings
 from app.costs.gate import check_spend_gate
 from app.costs.pricing import estimate_cost_usd
-from app.costs.spend_tracker import get_workspace_total_today, record_spend
+from app.costs.spend_tracker import get_workspace_total_today, record_spend, release
 from app.prompt.assembler import assemble_prompt
 from app.providers.claude import ClaudeProvider
 from app.security.redaction import log_event, shape_of
@@ -75,7 +76,32 @@ _spring_client: SpringInternalClient | None = None
 # IS streamed text), which would otherwise silently flip them from the
 # existing refund path into the persist-and-charge path below. Checked before
 # the `if final_text:` branch for exactly that reason.
-FALLBACK_FINISH_REASONS = {"empty_response"}
+# F-16: "truncated_tool_use" joins this set. A turn that narrated ("Scanning
+# creators in Mumbai...") and then truncated mid `create_campaign` used to be
+# reported as finish_reason="stop", so the narration was persisted as the
+# assistant's answer and the charge was kept — the brand was told a campaign
+# was being built when nothing was built and nothing was logged as a failure.
+FALLBACK_FINISH_REASONS = {"empty_response", "truncated_tool_use"}
+
+
+class _StreamExhausted:
+    """Sentinel: the tool-loop generator is finished. F-14 — the heartbeat path
+    wraps `__anext__()` in a task, and StopAsyncIteration does not survive a
+    task boundary cleanly, so exhaustion is signalled by value instead."""
+
+    __slots__ = ()
+
+
+_STREAM_EXHAUSTED = _StreamExhausted()
+
+
+async def _next_event(loop_iter: Any) -> Any:
+    """One step of the tool loop, or the exhaustion sentinel. Kept as a task so
+    a heartbeat timeout can leave it running instead of cancelling it (F-14)."""
+    try:
+        return await loop_iter.__anext__()
+    except StopAsyncIteration:
+        return _STREAM_EXHAUSTED
 
 
 def _get_claude() -> ClaudeProvider:
@@ -132,7 +158,7 @@ async def _fetch_brand_context(
             fields={"error_code": exc.code, "status_code": exc.status_code},
         )
         context_data = {}
-    except Exception as exc:  # network/timeout/unexpected -- never 500 the turn
+    except Exception as exc:  # noqa: BLE001 - network/timeout/unexpected; never 500 the turn
         log_event(
             logger, logging.WARNING, "meera_context_fetch_failed",
             workspace_id=workspace_id, request_id=request_id,
@@ -223,14 +249,35 @@ async def chat(request: Request, authorization: str | None = Header(default=None
     # P2-17 call sites (H-25) — previously this route imported nothing from
     # app.costs, so the gate never actually enforced the ceiling/kill-switch
     # on the highest-traffic route.
-    gate = await check_spend_gate(workspace_id=workspace_id)
+    # F-05: ONE gate check here covers a tool loop of up to
+    # `tool_loop_max_iterations` separate Claude turns, and the old gate held
+    # nothing between the check and the recorded spend. Reserve a pessimistic
+    # estimate for the whole loop so concurrent turns see this one's in-flight
+    # cost instead of every caller reading the same stale total.
+    reserve_usd = (
+        Decimal(str(settings.ai_reservation_per_call_usd)) * settings.tool_loop_max_iterations
+        if settings.ai_reservation_per_call_usd
+        else None
+    )
+    gate = await check_spend_gate(
+        workspace_id=workspace_id,
+        reserve_usd=reserve_usd,
+        # The tool loop can legitimately run for minutes; the 60s default would
+        # expire the hold mid-turn and reopen the F-05 race for exactly the slow
+        # tail it exists to cover. (spend_tracker documented this contract; the
+        # caller never honoured it until Priya's review caught the mismatch.)
+        reserve_ttl_seconds=settings.ai_reservation_chat_ttl_seconds,
+    )
     if not gate.allowed:
         log_event(
             logger, logging.WARNING, "chat_turn_blocked_spend_gate",
             workspace_id=workspace_id, request_id=request_id,
             fields={"error_code": gate.error_code},
         )
-        return _error_response(503, gate.error_code, gate.error_message)
+        return _error_response(
+            503, gate.error_code or "AI_SPEND_BLOCKED", gate.error_message or "spend gate blocked this call"
+        )
+    spend_reservation = gate.reservation
 
     log_event(
         logger,
@@ -268,6 +315,8 @@ async def chat(request: Request, authorization: str | None = Header(default=None
     )
 
     async def event_stream():
+        # F-05: the reservation is settled or released inside this generator.
+        nonlocal spend_reservation
         disconnected = False
         # SECURITY FIX (Kabir FAILs #1/#2): tracks a genuine PROVIDER failure, as opposed to a
         # client disconnect -- the two are deliberately never conflated. Only `provider_failed`
@@ -291,6 +340,8 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         yield sse_event("prompt_meta", {"prompt_version": prompt.prompt_version})
 
         last_heartbeat = time.monotonic()
+        # F-14: the in-flight `__anext__()` task, kept alive across heartbeats.
+        next_event_task: asyncio.Future[Any] | None = None
         assistant_text_accum: list[str] = []
         final_usage: dict[str, Any] | None = None
         finish_reason = "stop"
@@ -313,7 +364,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                     turn_id=turn_id,
                     onbehalf_jwt=onbehalf_jwt,
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a lost refund is a bad credit, not a hole
                 log_event(
                     logger, logging.WARNING, "release_turn_credit_failed",
                     workspace_id=workspace_id, request_id=request_id,
@@ -333,16 +384,65 @@ async def chat(request: Request, authorization: str | None = Header(default=None
             while True:
                 if await request.is_disconnected():
                     disconnected = True
+                    # ── F-02 ────────────────────────────────────────────────
+                    # Breaking out immediately threw away the provider's usage,
+                    # so a client that POSTed /chat, read 200 tokens and hung up
+                    # was billed by Anthropic for the full 8k+ cached prefix and
+                    # everything generated, while get_global_total_today() never
+                    # moved. A loop of connect-and-disconnect therefore drove
+                    # unbounded REAL spend with the ceiling reading zero.
+                    #
+                    # `disconnected` is already True, so is_cancelled() now
+                    # returns True and the loop flushes a partial-usage event on
+                    # its next step. Give it one bounded chance to do so.
+                    if next_event_task is None:
+                        next_event_task = asyncio.ensure_future(_next_event(loop_iter))
+                    drained, _still_running = await asyncio.wait(
+                        {next_event_task}, timeout=settings.sse_heartbeat_seconds
+                    )
+                    if drained:
+                        drained_event = next_event_task.result()
+                        next_event_task = None
+                        drained_usage = getattr(drained_event, "usage", None)
+                        if drained_usage:
+                            final_usage = drained_usage
+                            stop_reason = getattr(drained_event, "stop_reason", None) or stop_reason
+                    else:
+                        next_event_task.cancel()
+                    finish_reason = "client_disconnected"
                     break
 
-                try:
-                    event = await asyncio.wait_for(
-                        loop_iter.__anext__(), timeout=settings.sse_heartbeat_seconds
-                    )
-                except asyncio.TimeoutError:
+                # ── F-14 ────────────────────────────────────────────────
+                # This was `asyncio.wait_for(loop_iter.__anext__(), timeout=…)`.
+                # On timeout `wait_for` CANCELS the task, which throws
+                # CancelledError into run_tool_loop at its current await point
+                # and terminates the generator. The next `__anext__()` then
+                # raised StopAsyncIteration and the route `break`ed as if the
+                # turn had ended normally: the client received `tool_start` and
+                # then nothing — no result, no `done`, no `error` — while the
+                # tokens burned went unrecorded and the refund fired on a turn
+                # whose Spring write-back had already executed.
+                #
+                # The trigger is ordinary: a brand pastes a product URL, Claude
+                # calls analyze_site, the fetch takes longer than one heartbeat
+                # interval (the SSRF timeout alone is 15s per hop, plus Gemini's
+                # 20s read). So the heartbeat could never be delivered during a
+                # long provider wait — which is its entire purpose.
+                #
+                # `asyncio.wait` does not cancel on timeout: the pending task
+                # survives the ping and is awaited again on the next pass.
+                if next_event_task is None:
+                    next_event_task = asyncio.ensure_future(_next_event(loop_iter))
+                done_tasks, _pending = await asyncio.wait(
+                    {next_event_task}, timeout=settings.sse_heartbeat_seconds
+                )
+                if not done_tasks:
+                    last_heartbeat = time.monotonic()
                     yield ": ping\n\n"
                     continue
-                except StopAsyncIteration:
+                event = next_event_task.result()
+                next_event_task = None
+                if event is _STREAM_EXHAUSTED:
                     break
 
                 if event.type == "token":
@@ -377,6 +477,10 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                     yield sse_event("done", {"finish_reason": finish_reason})
                     break
                 elif event.type == "error":
+                    # F-02: an error event can carry the usage the provider
+                    # already billed (notably the client-disconnect flush).
+                    if event.usage:
+                        final_usage = event.usage
                     yield sse_event("error", {"code": event.error_code, "fallback": "text"})
                     # SECURITY FIX (Kabir red-team follow-up, item 6 / MUST-FIX #2): a
                     # "client_disconnected" error event (emitted by tools/loop.py's own
@@ -398,7 +502,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         except ToolLoopCapExceeded:
             yield sse_event("error", {"code": "tool_loop_cap", "fallback": "text"})
             provider_failed = True
-        except Exception as exc:  # provider timeout / circuit open / unexpected
+        except Exception as exc:  # noqa: BLE001 - provider timeout / circuit open / unexpected
             log_event(
                 logger,
                 logging.ERROR,
@@ -415,10 +519,15 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         # blocking — see budget-proposals/2026-07-12-ai-spend-ceiling-and-
         # killswitch.md §2/§3.5: chat is the only route with a reliable
         # workspace_id on every call today).
+        # F-02: this block runs on EVERY exit path, including a client
+        # disconnect — `final_usage` is now populated there too.
         if final_usage:
             try:
                 cost_usd = estimate_cost_usd(CLAUDE_MODEL, final_usage)
-                spend_today = await record_spend(cost_usd, workspace_id)
+                spend_today = await record_spend(
+                    cost_usd, workspace_id, reservation=spend_reservation
+                )
+                spend_reservation = None  # F-05: settled
                 log_event(
                     logger, logging.INFO, "ai_spend",
                     workspace_id=workspace_id, request_id=request_id,
@@ -453,6 +562,12 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                     workspace_id=workspace_id, request_id=request_id,
                     fields={"error": str(exc)},
                 )
+
+        # F-05: any path that did not settle the reservation must release it, or
+        # this turn's hold sits on the ceiling until it expires.
+        if spend_reservation is not None:
+            await release(spend_reservation)
+            spend_reservation = None
 
         if disconnected:
             # Kabir FAIL 1 fix: the client already received every `token` event it read before
@@ -505,7 +620,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                     turn_id=turn_id,
                     onbehalf_jwt=onbehalf_jwt,
                 )
-            except Exception as exc:  # persistence failure shouldn't break the stream
+            except Exception as exc:  # noqa: BLE001 - persistence failure must not break the stream
                 log_event(
                     logger, logging.WARNING, "persist_assistant_message_failed",
                     workspace_id=workspace_id, request_id=request_id,

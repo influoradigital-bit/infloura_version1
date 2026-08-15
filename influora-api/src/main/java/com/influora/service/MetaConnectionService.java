@@ -23,7 +23,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Meta/Instagram connection status and disconnect for creators (CREATOR_EXEC_PLAN_PRIYA.md §2.3).
- * Mirrors the workspace-scoped revoke pattern in {@link MetaTokenStorage#revoke}.
+ *
+ * <p>Creator-owned key-space only ({@code workspace_id IS NULL}) — matches {@link
+ * com.influora.service.creatorcopilot.CreatorMetaOAuthService#connect} and {@link
+ * com.influora.web.MetaOAuthController#callback}, which always store the creator's token via
+ * {@link MetaTokenStorage#storeCreatorToken}, never the workspace-scoped {@link
+ * MetaTokenStorage#storeToken}. A CREATOR-type principal has no {@code workspaceId} (see {@code
+ * MetaOAuthController} javadoc), so this class must use the creator-scoped repository/storage
+ * methods throughout — {@link MetaTokenStorage#revokeCreatorToken}, not the brand/workspace-scoped
+ * {@link MetaTokenStorage#revoke}, which silently no-ops for every creator-owned row (CR-106).
  */
 @Service
 public class MetaConnectionService {
@@ -48,10 +56,10 @@ public class MetaConnectionService {
     }
 
     @Transactional(readOnly = true)
-    public MetaConnectionStatusResponse getStatus(CreatorProfile profile, String workspaceId) {
+    public MetaConnectionStatusResponse getStatus(CreatorProfile profile) {
         Optional<MetaOAuthToken> tokenRow =
-                tokenRepository.findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse(
-                        workspaceId, profile.getId());
+                tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(
+                        profile.getId());
 
         if (tokenRow.isEmpty() || tokenRow.get().getExpiresAt().isBefore(Instant.now())) {
             return disconnected();
@@ -73,7 +81,7 @@ public class MetaConnectionService {
             followers = cachedInstagram.get().getFollowers();
         }
 
-        Optional<String> accessToken = tokenStorage.getValidToken(workspaceId, profile.getId());
+        Optional<String> accessToken = tokenStorage.getValidCreatorToken(profile.getId());
         if (accessToken.isPresent()) {
             try {
                 FacebookAccountsListResponse.InstagramBusinessAccount igAccount =
@@ -105,8 +113,8 @@ public class MetaConnectionService {
     }
 
     @Transactional
-    public MetaDisconnectResponse disconnect(String workspaceId, String creatorProfileId) {
-        tokenStorage.revoke(workspaceId, creatorProfileId);
+    public MetaDisconnectResponse disconnect(String creatorProfileId) {
+        tokenStorage.revokeCreatorToken(creatorProfileId);
         return new MetaDisconnectResponse(true);
     }
 

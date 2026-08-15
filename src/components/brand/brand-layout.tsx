@@ -64,6 +64,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { IconBadge } from '@/components/shared/icon-badge';
 import { InfluoraLogo } from '@/components/shared/influora-logo';
+import { WorkspaceVerificationBanner } from '@/components/brand/WorkspaceVerificationBanner';
 import { getBrandNavIconVariant } from '@/lib/icon-theme';
 
 interface BrandNavItem {
@@ -84,9 +85,16 @@ interface BrandNavGroup {
  * avatar menu, not here.
  *
  * MAIN mirrors the day-to-day brand workflow; MANAGE holds the ops/oversight
- * surfaces. "Deals" now points at `/brand/deals` (`DealRoomDashboard`) —
- * the actively-maintained Deal Room — not the older `/brand/chat` page,
- * which `/brand/messages` now covers for pure messaging.
+ * surfaces.
+ *
+ * D-8 (BrandF.md §24): "Deals" points at `/brand/chat` (`BrandChatPage`), not
+ * `/brand/deals` (`DealRoomDashboard`) — this comment previously claimed the
+ * opposite. `DealRoomDashboard` only has overview/messages/history tabs;
+ * `BrandChatPage` is the one with the shipment control, contract tab,
+ * deliverables tab, and payments tab — sending brands to the thinner page
+ * meant every deal's shipment control was one click further away than it
+ * needed to be, reachable only via ⌘K or a deep link. `/brand/messages`
+ * still covers pure messaging with no deal-room chrome.
  */
 const navGroups: BrandNavGroup[] = [
   {
@@ -96,7 +104,7 @@ const navGroups: BrandNavGroup[] = [
       { label: 'Meera', href: '/brand/meera', icon: Sparkles },
       { label: 'Campaigns', href: '/brand/campaigns', icon: Megaphone },
       { label: 'Creators', href: '/brand/discover', icon: Users2 },
-      { label: 'Deals', href: '/brand/deals', icon: MessageCircle },
+      { label: 'Deals', href: '/brand/chat', icon: MessageCircle },
       { label: 'Messages', href: '/brand/messages', icon: MessageSquare },
       { label: 'Wallet', href: '/brand/wallet', icon: Wallet },
     ],
@@ -140,11 +148,19 @@ export function BrandLayout({ children }: BrandLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
-  const { notifications, unreadCount, loading, error, markRead, markAllRead } = useNotifications('brand');
+  const { notifications, unreadCount, loading, error, refresh: refreshNotifications, markRead, markAllRead } = useNotifications('brand');
   const { mobileMenuOpen, toggleMobileMenu, setMobileMenuOpen, closeMobileMenu } = useUIStore();
   const [showLogoutDialog, setShowLogoutDialog] = React.useState(false);
   const [commandBarOpen, setCommandBarOpen] = React.useState(false);
   const [notificationsOpen, setNotificationsOpen] = React.useState(false);
+
+  // M-B (BrandF.md §78): refetch when the bell popover opens, not just once
+  // at page-load — the hook's own interval poll is the floor, this is the
+  // "I just clicked the bell, show me what's current" path.
+  React.useEffect(() => {
+    if (notificationsOpen) refreshNotifications();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notificationsOpen]);
 
   const getInitials = (name?: string | null, fallback = 'IN') => {
     if (!name?.trim()) return fallback;
@@ -165,9 +181,16 @@ export function BrandLayout({ children }: BrandLayoutProps) {
     if (href === '/brand/discover') {
       return pathname.startsWith('/brand/discover') || pathname.startsWith('/brand/creators');
     }
-    // Deals (/brand/deals) covers its own deep-link variant (/brand/deals/:id)
-    // only — Contracts and Messages are now separate nav items, each with
-    // their own real page, not sub-surfaces of Deals.
+    // D-8 follow-up (Priya review): "Deals" now routes to /brand/chat, but
+    // /brand/chat, /brand/deals AND /brand/deals/:id are all still live entry
+    // points into a deal room (Pipeline still navigates straight into
+    // /brand/deals/:id — see brand-pipeline.tsx). Without this, opening a deal
+    // from Pipeline landed on a page where no sidebar item lit up at all.
+    if (href === '/brand/chat') {
+      return pathname.startsWith('/brand/chat') || pathname.startsWith('/brand/deals');
+    }
+    // Contracts and Messages are separate nav items, each with their own real
+    // page, not sub-surfaces of Deals.
     return pathname.startsWith(href);
   };
 
@@ -406,8 +429,12 @@ export function BrandLayout({ children }: BrandLayoutProps) {
                           <div
                             key={notification.id}
                             onClick={() => {
+                              // Priya review finding (N-1/M-B follow-up): a full `window.location.href`
+                              // reload here would cancel the markRead POST in flight and blow away all
+                              // SPA state — use router navigation instead, same as every other in-app link.
                               if (!notification.read) markRead(notification.id);
-                              if (notification.link) window.location.href = notification.link;
+                              setNotificationsOpen(false);
+                              if (notification.link) navigate(notification.link);
                             }}
                             className={cn(
                               'flex gap-3 p-3 hover:bg-accent cursor-pointer rounded-lg transition-colors',
@@ -436,7 +463,10 @@ export function BrandLayout({ children }: BrandLayoutProps) {
                       variant="ghost"
                       size="sm"
                       className="w-full text-xs"
-                      onClick={() => setNotificationsOpen(false)}
+                      onClick={() => {
+                        setNotificationsOpen(false);
+                        navigate('/brand/notifications');
+                      }}
                     >
                       View all notifications
                     </Button>
@@ -532,7 +562,10 @@ export function BrandLayout({ children }: BrandLayoutProps) {
           </Sheet>
 
           {/* Page content */}
-          <main className="flex-1">{children}</main>
+          <main className="flex-1">
+            <WorkspaceVerificationBanner />
+            {children}
+          </main>
         </div>
 
         {/* Command bar */}

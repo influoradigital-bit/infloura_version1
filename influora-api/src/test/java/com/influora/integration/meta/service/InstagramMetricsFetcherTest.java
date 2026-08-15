@@ -39,7 +39,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class InstagramMetricsFetcherTest {
 
-    private static final String CREATOR_ID = "01HWXYZCREATOR123456789";
+    // Meta's Graph API requires the numeric IG Business Account ID in the request path — this is
+    // what fetchAll/fetchMediaWithInsights take and what the client stubs/verifications assert,
+    // NOT the internal ULID creatorProfileId. Mirrors MetricsPollingJobTest.IG_BUSINESS_ACCOUNT_ID.
+    private static final String IG_BUSINESS_ACCOUNT_ID = "17841400000000001";
     private static final String TOKEN_VALUE = "test-meta-token-1234567890";
 
     @Mock private InstagramInsightsClient instagramClient;
@@ -59,17 +62,17 @@ class InstagramMetricsFetcherTest {
     @Test
     @DisplayName("fetchAll: composes profile fetch + media list + per-media insights into one Result")
     void testFetchAllComposesProfileMediaAndInsights() {
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(50);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
 
         InstagramUserResponse profile =
                 new InstagramUserResponse("ig_1", "user1", "User", "Bio", 1000L, 100L, 20L, null, null);
-        when(instagramClient.getProfile(CREATOR_ID, TOKEN_VALUE)).thenReturn(profile);
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE)).thenReturn(profile);
 
         InstagramMediaResponse.MediaItem mediaItem =
                 new InstagramMediaResponse.MediaItem(
                         "media_1", "caption", "IMAGE", "http://img", "http://permalink/1",
                         "2026-06-01T10:15:30+00:00", 42L, 7L);
-        when(instagramClient.getMedia(CREATOR_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
                 .thenReturn(new InstagramMediaResponse(List.of(mediaItem), null));
 
         InstagramInsightsResponse insights =
@@ -78,9 +81,9 @@ class InstagramMetricsFetcherTest {
                                 new InstagramInsightsResponse.InsightMetric(
                                         "reach", "lifetime", "reach", "reach",
                                         List.of(new InstagramInsightsResponse.InsightValue(500L, null)))));
-        when(instagramClient.getMediaInsights("media_1", TOKEN_VALUE, CREATOR_ID)).thenReturn(insights);
+        when(instagramClient.getMediaInsights("media_1", TOKEN_VALUE, IG_BUSINESS_ACCOUNT_ID)).thenReturn(insights);
 
-        InstagramMetricsFetcher.Result result = fetcher.fetchAll(CREATOR_ID, TOKEN_VALUE);
+        InstagramMetricsFetcher.Result result = fetcher.fetchAll(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE);
 
         assertEquals(profile, result.profile());
         assertEquals(1, result.media().size());
@@ -92,38 +95,38 @@ class InstagramMetricsFetcherTest {
     @Test
     @DisplayName("fetchAll: default media limit passed through to getMedia is 25 (matches MetricsPollingJob.RECENT_MEDIA_LIMIT)")
     void testFetchAllUsesDefaultMediaLimitOf25() {
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
-        when(instagramClient.getProfile(CREATOR_ID, TOKEN_VALUE))
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
                 .thenReturn(new InstagramUserResponse("ig_1", "u", "n", "b", 1L, 1L, 1L, null, null));
-        when(instagramClient.getMedia(CREATOR_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
                 .thenReturn(new InstagramMediaResponse(Collections.emptyList(), null));
 
-        fetcher.fetchAll(CREATOR_ID, TOKEN_VALUE);
+        fetcher.fetchAll(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE);
 
-        verify(instagramClient).getMedia(CREATOR_ID, TOKEN_VALUE, 25);
+        verify(instagramClient).getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
     }
 
     @Test
     @DisplayName("fetchAll: an explicit mediaLimit overload passes that limit through to getMedia")
     void testFetchAllExplicitMediaLimit() {
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
-        when(instagramClient.getProfile(CREATOR_ID, TOKEN_VALUE))
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
                 .thenReturn(new InstagramUserResponse("ig_1", "u", "n", "b", 1L, 1L, 1L, null, null));
-        when(instagramClient.getMedia(CREATOR_ID, TOKEN_VALUE, 10))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 10))
                 .thenReturn(new InstagramMediaResponse(Collections.emptyList(), null));
 
-        fetcher.fetchAll(CREATOR_ID, TOKEN_VALUE, 10);
+        fetcher.fetchAll(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 10);
 
-        verify(instagramClient).getMedia(CREATOR_ID, TOKEN_VALUE, 10);
+        verify(instagramClient).getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 10);
     }
 
     @Test
     @DisplayName("fetchAll: profile-fetch rate-limit exception propagates to the caller (no partial Result to return)")
     void testFetchAllPropagatesProfileRateLimitException() {
-        when(instagramClient.getProfile(CREATOR_ID, TOKEN_VALUE))
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
                 .thenThrow(new MetaRateLimitException("rate limited"));
 
-        assertThrows(MetaRateLimitException.class, () -> fetcher.fetchAll(CREATOR_ID, TOKEN_VALUE));
+        assertThrows(MetaRateLimitException.class, () -> fetcher.fetchAll(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE));
 
         verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt());
     }
@@ -131,19 +134,19 @@ class InstagramMetricsFetcherTest {
     @Test
     @DisplayName("fetchAll: profile-fetch token-expired exception propagates to the caller")
     void testFetchAllPropagatesTokenExpiredException() {
-        when(instagramClient.getProfile(CREATOR_ID, TOKEN_VALUE))
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
                 .thenThrow(new MetaTokenExpiredException("expired"));
 
-        assertThrows(MetaTokenExpiredException.class, () -> fetcher.fetchAll(CREATOR_ID, TOKEN_VALUE));
+        assertThrows(MetaTokenExpiredException.class, () -> fetcher.fetchAll(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE));
     }
 
     @Test
     @DisplayName("fetchAll: generic profile-fetch MetaApiException propagates to the caller")
     void testFetchAllPropagatesGenericProfileApiException() {
-        when(instagramClient.getProfile(CREATOR_ID, TOKEN_VALUE))
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
                 .thenThrow(new MetaApiException("server error"));
 
-        assertThrows(MetaApiException.class, () -> fetcher.fetchAll(CREATOR_ID, TOKEN_VALUE));
+        assertThrows(MetaApiException.class, () -> fetcher.fetchAll(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE));
     }
 
     // ------------------------------------------------------------------
@@ -153,10 +156,10 @@ class InstagramMetricsFetcherTest {
     @Test
     @DisplayName("fetchMediaWithInsights: at >=90% rate-limit usage, returns empty list without calling getMedia")
     void testFetchMediaSkipsWhenRateLimitApproaching() {
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(95);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(95);
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
-                fetcher.fetchMediaWithInsights(CREATOR_ID, TOKEN_VALUE, 25);
+                fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
 
         assertTrue(media.isEmpty());
         verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt());
@@ -165,10 +168,10 @@ class InstagramMetricsFetcherTest {
     @Test
     @DisplayName("fetchMediaWithInsights: exactly at the 90% threshold is treated as rate-limited (>= not >)")
     void testFetchMediaThresholdIsInclusive() {
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(90);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(90);
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
-                fetcher.fetchMediaWithInsights(CREATOR_ID, TOKEN_VALUE, 25);
+                fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
 
         assertTrue(media.isEmpty());
         verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt());
@@ -181,26 +184,26 @@ class InstagramMetricsFetcherTest {
     @Test
     @DisplayName("fetchMediaWithInsights: media-list rate-limited marks limited and returns empty list, no throw")
     void testFetchMediaListRateLimitedReturnsEmptyAndMarksLimited() {
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
-        when(instagramClient.getMedia(CREATOR_ID, TOKEN_VALUE, 25))
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
                 .thenThrow(new MetaRateLimitException("rate limited"));
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
-                fetcher.fetchMediaWithInsights(CREATOR_ID, TOKEN_VALUE, 25);
+                fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
 
         assertTrue(media.isEmpty());
-        verify(rateLimitTracker).markLimited(CREATOR_ID);
+        verify(rateLimitTracker).markLimited(IG_BUSINESS_ACCOUNT_ID);
     }
 
     @Test
     @DisplayName("fetchMediaWithInsights: media-list generic API failure returns empty list, no throw")
     void testFetchMediaListApiFailureReturnsEmpty() {
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
-        when(instagramClient.getMedia(CREATOR_ID, TOKEN_VALUE, 25))
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
                 .thenThrow(new MetaApiException("server error"));
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
-                fetcher.fetchMediaWithInsights(CREATOR_ID, TOKEN_VALUE, 25);
+                fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
 
         assertTrue(media.isEmpty());
         verify(rateLimitTracker, never()).markLimited(anyString());
@@ -209,12 +212,12 @@ class InstagramMetricsFetcherTest {
     @Test
     @DisplayName("fetchMediaWithInsights: null media response data yields empty list, no NPE")
     void testFetchMediaNullDataYieldsEmptyList() {
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
-        when(instagramClient.getMedia(CREATOR_ID, TOKEN_VALUE, 25))
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
                 .thenReturn(new InstagramMediaResponse(null, null));
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
-                fetcher.fetchMediaWithInsights(CREATOR_ID, TOKEN_VALUE, 25);
+                fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
 
         assertTrue(media.isEmpty());
     }
@@ -222,12 +225,12 @@ class InstagramMetricsFetcherTest {
     @Test
     @DisplayName("fetchMediaWithInsights: empty media list yields empty result, never calls getMediaInsights")
     void testFetchMediaEmptyListNoInsightsCalls() {
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
-        when(instagramClient.getMedia(CREATOR_ID, TOKEN_VALUE, 25))
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
                 .thenReturn(new InstagramMediaResponse(Collections.emptyList(), null));
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
-                fetcher.fetchMediaWithInsights(CREATOR_ID, TOKEN_VALUE, 25);
+                fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
 
         assertTrue(media.isEmpty());
         verify(instagramClient, never()).getMediaInsights(anyString(), anyString(), anyString());
@@ -240,40 +243,40 @@ class InstagramMetricsFetcherTest {
     @Test
     @DisplayName("per-media insights: rate-limited insights call marks limited and yields null insights, base media item preserved")
     void testPerMediaInsightsRateLimitedDegradesToNullInsights() {
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
         InstagramMediaResponse.MediaItem mediaItem =
                 new InstagramMediaResponse.MediaItem(
                         "media_rl", "caption", "IMAGE", "http://img", "http://permalink/rl",
                         "2026-06-04T00:00:00+00:00", 1L, 1L);
-        when(instagramClient.getMedia(CREATOR_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
                 .thenReturn(new InstagramMediaResponse(List.of(mediaItem), null));
-        when(instagramClient.getMediaInsights("media_rl", TOKEN_VALUE, CREATOR_ID))
+        when(instagramClient.getMediaInsights("media_rl", TOKEN_VALUE, IG_BUSINESS_ACCOUNT_ID))
                 .thenThrow(new MetaRateLimitException("rate limited"));
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
-                fetcher.fetchMediaWithInsights(CREATOR_ID, TOKEN_VALUE, 25);
+                fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
 
         assertEquals(1, media.size());
         assertEquals("media_rl", media.get(0).mediaItem().id());
         assertNull(media.get(0).insights());
-        verify(rateLimitTracker).markLimited(CREATOR_ID);
+        verify(rateLimitTracker).markLimited(IG_BUSINESS_ACCOUNT_ID);
     }
 
     @Test
     @DisplayName("per-media insights: unsupported metric/type combo (Meta 400 -> MetaApiException) degrades to null insights, base item preserved")
     void testPerMediaInsightsUnsupportedComboDegradesToNullInsights() {
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
         InstagramMediaResponse.MediaItem mediaItem =
                 new InstagramMediaResponse.MediaItem(
                         "media_reels", "caption", "REELS", "http://reels", "http://permalink/reels",
                         "2026-06-03T12:00:00+00:00", 999L, 88L);
-        when(instagramClient.getMedia(CREATOR_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
                 .thenReturn(new InstagramMediaResponse(List.of(mediaItem), null));
-        when(instagramClient.getMediaInsights("media_reels", TOKEN_VALUE, CREATOR_ID))
+        when(instagramClient.getMediaInsights("media_reels", TOKEN_VALUE, IG_BUSINESS_ACCOUNT_ID))
                 .thenThrow(new MetaApiException("Meta Graph API call failed with status 400"));
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
-                fetcher.fetchMediaWithInsights(CREATOR_ID, TOKEN_VALUE, 25);
+                fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
 
         assertEquals(1, media.size());
         assertEquals("media_reels", media.get(0).mediaItem().id());
@@ -283,7 +286,7 @@ class InstagramMetricsFetcherTest {
     @Test
     @DisplayName("per-media insights: one item's insights failure does not prevent other items from being fetched")
     void testOneMediaItemInsightsFailureDoesNotAbortOthers() {
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
 
         InstagramMediaResponse.MediaItem good1 =
                 new InstagramMediaResponse.MediaItem(
@@ -294,7 +297,7 @@ class InstagramMetricsFetcherTest {
         InstagramMediaResponse.MediaItem good2 =
                 new InstagramMediaResponse.MediaItem(
                         "media_ok2", "c", "IMAGE", "u", "p3", "2026-06-05T00:00:00+00:00", 1L, 1L);
-        when(instagramClient.getMedia(CREATOR_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
                 .thenReturn(new InstagramMediaResponse(List.of(good1, bad, good2), null));
 
         InstagramInsightsResponse okInsights =
@@ -309,7 +312,7 @@ class InstagramMetricsFetcherTest {
         when(instagramClient.getMediaInsights(eq("media_ok2"), anyString(), anyString())).thenReturn(okInsights);
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
-                fetcher.fetchMediaWithInsights(CREATOR_ID, TOKEN_VALUE, 25);
+                fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
 
         assertEquals(3, media.size());
         assertEquals(okInsights, media.get(0).insights());

@@ -35,7 +35,7 @@ const SECTIONS = [
   {
     icon: FileSignature,
     title: 'Contracts',
-    body: `Once you and the creator agree on terms, a contract is generated right inside the Deal Room. Both sides e-sign before work starts. The contract locks in deliverables, payment schedule, and usage rights, and triggers escrow funding automatically.`,
+    body: `Once you and the creator agree on terms, a contract is generated right inside the Deal Room. Both sides e-sign before work starts. The contract locks in deliverables, payment schedule, and usage rights — once it's signed, ask Meera to fund escrow for the deal (escrow funding isn't automatic; it's a step you or Meera trigger).`,
   },
   {
     icon: Wallet,
@@ -63,6 +63,17 @@ export default function BrandHelpPage() {
     navigate(`/brand/meera?${MEERA_HELP_PRESEED_PARAM}=${encodeURIComponent(MEERA_HELP_PRESEED_PROMPT)}`);
   };
 
+  // H-2 (BrandF.md §76): quick-action cards were plain `<Card onClick>` divs —
+  // no role, no tabIndex, no Enter/Space handler, so keyboard and
+  // screen-reader users had no path to either action. Fires the same
+  // handler on click or on Enter/Space, matching native button semantics.
+  const handleActionKeyDown = (handler: () => void) => (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handler();
+    }
+  };
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="p-8 max-w-3xl mx-auto">
@@ -78,7 +89,14 @@ export default function BrandHelpPage() {
 
         {/* Quick actions */}
         <div className="mb-8 grid gap-3 sm:grid-cols-2">
-          <Card className="cursor-pointer transition-colors hover:border-primary/40" onClick={handleTakeTour}>
+          <Card
+            role="button"
+            tabIndex={0}
+            aria-label="Take the tour again — replay the nav walkthrough"
+            className="cursor-pointer transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            onClick={handleTakeTour}
+            onKeyDown={handleActionKeyDown(handleTakeTour)}
+          >
             <CardContent className="flex items-center gap-3 p-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                 <Compass className="h-4.5 w-4.5 text-primary" />
@@ -91,7 +109,14 @@ export default function BrandHelpPage() {
             </CardContent>
           </Card>
 
-          <Card className="cursor-pointer transition-colors hover:border-primary/40" onClick={handleAskMeera}>
+          <Card
+            role="button"
+            tabIndex={0}
+            aria-label="Ask Meera — get a walkthrough from your AI cofounder"
+            className="cursor-pointer transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            onClick={handleAskMeera}
+            onKeyDown={handleActionKeyDown(handleAskMeera)}
+          >
             <CardContent className="flex items-center gap-3 p-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                 <Sparkles className="h-4.5 w-4.5 text-primary" />

@@ -36,7 +36,6 @@ import httpx
 
 from app.auth.service_token_minter import mint_service_token
 from app.config import get_settings
-from app.tools.schemas import IDEMPOTENT_REQUIRED_TOOLS
 
 logger = logging.getLogger(__name__)
 

@@ -160,6 +160,46 @@ class RazorpayWebhookControllerTest {
                 + "\"created_at\":1705000000}";
     }
 
+    private static String cancelledPayload() {
+        // [Mutation-testing fix, Priya's 2nd-round review] Real Razorpay `subscription.cancelled`
+        // payloads always carry current_start/current_end (the subscription entity's period
+        // fields don't disappear on cancellation) — omitting them here made
+        // receive_subscriptionCancelled_appliesCancelledStatus's isNull()/isNull() assertion
+        // unfalsifiable: SubscriptionWebhookEvent.parse() returned null for these fields
+        // regardless of whether the handler correctly passes updatePeriod=false, so a bug that
+        // flipped updatePeriod to true for this event would have gone undetected.
+        return "{"
+                + "\"event\":\"subscription.cancelled\","
+                + "\"payload\":{\"subscription\":{\"entity\":{"
+                + "\"id\":\""
+                + SUBSCRIPTION_ID
+                + "\",\"plan_id\":\""
+                + PLAN_ID
+                + "\",\"status\":\"cancelled\","
+                + "\"current_start\":1703000000,\"current_end\":1705592000,"
+                + "\"notes\":{\"workspaceId\":\""
+                + WORKSPACE_ID
+                + "\"}}}},"
+                + "\"created_at\":1706000000}";
+    }
+
+    private static String completedPayload() {
+        // Same fix as cancelledPayload() above, for the same reason.
+        return "{"
+                + "\"event\":\"subscription.completed\","
+                + "\"payload\":{\"subscription\":{\"entity\":{"
+                + "\"id\":\""
+                + SUBSCRIPTION_ID
+                + "\",\"plan_id\":\""
+                + PLAN_ID
+                + "\",\"status\":\"completed\","
+                + "\"current_start\":1703000010,\"current_end\":1705592010,"
+                + "\"notes\":{\"workspaceId\":\""
+                + WORKSPACE_ID
+                + "\"}}}},"
+                + "\"created_at\":1706000010}";
+    }
+
     private static String activatedPayloadMissingWorkspaceId() {
         return "{"
                 + "\"event\":\"subscription.activated\","
@@ -297,6 +337,48 @@ class RazorpayWebhookControllerTest {
         assertEquals(SUBSCRIPTION_ID, captor.getValue().entityId());
         assertEquals(WORKSPACE_ID, captor.getValue().workspaceId());
         assertEquals("brand@example.com", captor.getValue().recipientEmail());
+    }
+
+    @Test
+    @DisplayName("BL-2 fix [BrandF.md §98]: subscription.cancelled applies CANCELLED status with NO period update — this event was previously discarded entirely by the default no-op")
+    void receive_subscriptionCancelled_appliesCancelledStatus() {
+        stubIdempotencyServiceRunsAction();
+
+        ResponseEntity<Void> response = controller.receive(VALID_SIGNATURE, cancelledPayload());
+
+        assertEquals(200, response.getStatusCode().value());
+        verify(subscriptionService)
+                .applySubscriptionWebhookUpdate(
+                        eq(SUBSCRIPTION_ID),
+                        eq(WORKSPACE_ID),
+                        eq(PLAN_ID),
+                        eq(SubscriptionStatus.CANCELLED),
+                        isNull(),
+                        isNull(),
+                        eq(Instant.ofEpochSecond(1706000000)));
+        verify(invoiceService, never()).generateInvoiceFromWebhook(any(), any(), anyLong(), any(), any(), any());
+        // No cancellation email/event is published by this fix — only status/allotment reconciliation.
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("BL-2 fix [BrandF.md §98]: subscription.completed also applies CANCELLED status with NO period update (terminal event, same treatment as cancelled)")
+    void receive_subscriptionCompleted_appliesCancelledStatus() {
+        stubIdempotencyServiceRunsAction();
+
+        ResponseEntity<Void> response = controller.receive(VALID_SIGNATURE, completedPayload());
+
+        assertEquals(200, response.getStatusCode().value());
+        verify(subscriptionService)
+                .applySubscriptionWebhookUpdate(
+                        eq(SUBSCRIPTION_ID),
+                        eq(WORKSPACE_ID),
+                        eq(PLAN_ID),
+                        eq(SubscriptionStatus.CANCELLED),
+                        isNull(),
+                        isNull(),
+                        eq(Instant.ofEpochSecond(1706000010)));
+        verify(invoiceService, never()).generateInvoiceFromWebhook(any(), any(), anyLong(), any(), any(), any());
     }
 
     @Test

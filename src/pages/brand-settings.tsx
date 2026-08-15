@@ -381,7 +381,7 @@ export default function BrandSettingsPage() {
     setPasswordSubmitting(true);
     setPasswordError(null);
     try {
-      await api.auth.changePassword({ currentPassword, newPassword });
+      await api.auth.changePassword('brand', { currentPassword, newPassword });
       toast({ title: 'Password changed', description: 'Your password has been updated.' });
       setIsPasswordOpen(false);
       setCurrentPassword('');
@@ -402,8 +402,9 @@ export default function BrandSettingsPage() {
     try {
       await api.auth.logout('brand');
     } catch (err) {
-      // `api.auth.logout` already clears the local token before the request fires, so a
-      // failed network call still leaves this session logged out client-side.
+      // `api.auth.logout` clears the local token in its own `finally` (CR-91: after the
+      // request, so the server can revoke refresh tokens), and `clearAuthStore()` below
+      // runs regardless — a failed network call still leaves this session logged out.
       console.error('Logout-all-devices request failed', err);
     } finally {
       clearAuthStore();

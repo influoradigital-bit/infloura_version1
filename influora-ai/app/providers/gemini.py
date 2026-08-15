@@ -262,7 +262,7 @@ class GeminiProvider:
                 ),
             )
             self._breaker.on_success()
-        except Exception as exc:  # provider/network error -> degrade, don't crash
+        except Exception as exc:  # noqa: BLE001 - provider/network error -> degrade, don't crash
             self._breaker.on_failure()
             logger.warning("gemini classify_site failed: %s", type(exc).__name__)
             return ClassifyResult(ok=False, error="provider_error")
@@ -304,7 +304,7 @@ class GeminiProvider:
                 ),
             )
             self._breaker.on_success()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - provider/network error -> degrade, don't crash
             self._breaker.on_failure()
             logger.warning("gemini cleanup_transcript failed: %s", type(exc).__name__)
             return CleanupResult(ok=False, error="provider_error")

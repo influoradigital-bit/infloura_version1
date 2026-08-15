@@ -1,0 +1,5 @@
+{"verdict": "proved", "oracle": "vitest", "isolation": "oracle",
+ "done_when": "F-0131 fixed: Fund Campaign Escrow card renders a polite role=status/aria-live=polite region (sr-only, layout unchanged) mounted unconditionally in the card, driven by the real state, announcing loading/empty states and the FundEscrowButton's appearance once a campaign is selected. Render test asserts getByRole('status') so removing it fails; tsc + vitest pass.",
+ "evidence": {"oracle": "vitest", "command": "npx vitest run src/components/brand/wallet/FundEscrowStatus.test.tsx", "result": "5 passed", "where": "src/components/brand/wallet/FundEscrowStatus.test.tsx:1"},
+ "not_checked": ["actual screen-reader announcement audibility (NVDA/VoiceOver pass) — DOM live-region presence + text are gated, but real AT verbalization is a manual a11y pass"],
+ "skipped": []}

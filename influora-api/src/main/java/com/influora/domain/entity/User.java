@@ -44,6 +44,12 @@ public class User {
     @Column(name = "onboarding_completed", nullable = false)
     private boolean onboardingCompleted;
 
+    // [OB-1, BrandF.md §105/§91] Server-side home for "brand skipped the KYC prompt" so the
+    // dismissal survives across devices/browsers instead of living only in the client's
+    // localStorage flag. See V20260809120000__brand_kyc_prompt_dismissed.sql.
+    @Column(name = "kyc_prompt_dismissed", nullable = false)
+    private boolean kycPromptDismissed;
+
     @Column(name = "display_name", length = 100)
     private String displayName;
 
@@ -176,6 +182,16 @@ public class User {
 
     public void setOnboardingCompleted(boolean onboardingCompleted) {
         this.onboardingCompleted = onboardingCompleted;
+        this.updatedAt = Instant.now();
+    }
+
+    public boolean isKycPromptDismissed() {
+        return kycPromptDismissed;
+    }
+
+    /** OB-1: marks the brand KYC prompt as explicitly skipped, server-side, for this user. */
+    public void dismissKycPrompt() {
+        this.kycPromptDismissed = true;
         this.updatedAt = Instant.now();
     }
 

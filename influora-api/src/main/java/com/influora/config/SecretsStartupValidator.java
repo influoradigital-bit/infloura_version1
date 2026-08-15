@@ -92,6 +92,16 @@ import org.springframework.context.annotation.Configuration;
  * localhost — brand-safety scoring, TrendSpark nudges, and Meera's chat turn would all either
  * connect-refuse or, worse on a shared host, hit whatever happens to be listening on 8000. Fails
  * closed (non-dev) if any of the three still resolves to a loopback host.
+ *
+ * <p><b>CR-81 addition:</b> {@link #validateApiPublicUrl} — {@code influora.api.public-url}
+ * ({@code INFLUORA_API_PUBLIC_URL}, {@code application.yml}) defaults to {@code
+ * http://localhost:8080} and is bound directly (not via a {@code @ConfigurationProperties}
+ * bean) into {@link com.influora.service.CreatorCouponService}, which concatenates it into
+ * every creator coupon share/click-tracking link ({@code {publicBaseUrl}/track/click/{id}}). A
+ * prod deploy that forgot the env var previously booted clean and shipped every one of those
+ * links pointing at localhost — dead on click, with no signal at startup. Same
+ * fail-closed-outside-dev, warn-only-in-dev treatment as the AI service URLs above, reusing
+ * {@link #checkNotLocalhost}.
  */
 @Configuration
 public class SecretsStartupValidator {
@@ -168,6 +178,16 @@ public class SecretsStartupValidator {
      */
     @Value("${server.forward-headers-strategy:none}")
     private String forwardHeadersStrategy;
+
+    /**
+     * [CR-81] Bound here for the same reason as the cookie flags and forward-headers-strategy
+     * above: {@link com.influora.service.CreatorCouponService} binds this same key via a bare
+     * {@code @Value}, not a shared {@code @ConfigurationProperties} bean, and nothing else stops
+     * a deploy from leaving it at its {@code application.yml} localhost default — the consequence
+     * (a dead tracking link shipped to creators) is silent until someone clicks it.
+     */
+    @Value("${influora.api.public-url:http://localhost:8080}")
+    private String apiPublicUrl;
 
     public SecretsStartupValidator(
             JwtProperties jwtProperties,
@@ -249,6 +269,7 @@ public class SecretsStartupValidator {
         validateDatabaseCredentials(problems);
         validateAiServiceUrls(problems);
         validateMeeraPublicStreamUrl(problems);
+        validateApiPublicUrl(problems);
 
         if (problems.length() == 0) {
             return;
@@ -529,6 +550,19 @@ public class SecretsStartupValidator {
                     .append(url)
                     .append("\n");
         }
+    }
+
+    /**
+     * [CR-81] Fails closed (non-dev) if {@code influora.api.public-url} still resolves to a
+     * loopback host. Unlike {@link #validateAiServiceUrls} (Spring calling out to a private
+     * Python service, where plain HTTP/loopback can be legitimate off-dev), this URL is
+     * concatenated into creator-facing coupon share/click-tracking links
+     * ({@link com.influora.service.CreatorCouponService#toListItem}) that get handed to
+     * external browsers — a leftover {@code http://localhost:8080} default ships every one of
+     * those links dead, with no boot-time signal.
+     */
+    private void validateApiPublicUrl(StringBuilder problems) {
+        checkNotLocalhost(problems, "influora.api.public-url", apiPublicUrl);
     }
 
     private void checkNotLocalhost(StringBuilder problems, String name, String url) {

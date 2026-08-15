@@ -182,6 +182,33 @@ const mockCampaigns: (Campaign & { collaboratorsCount: number; progress: number 
 
 type CampaignRow = Campaign & { collaboratorsCount: number; progress: number };
 
+// Matches the server-side page-size ceiling (CampaignService.list hard-caps `limit` at 100) —
+// fetched per page via api.campaigns.list's `requestWithMeta`-backed pagination (D-2 fix).
+const CAMPAIGNS_PAGE_SIZE = 100;
+
+/** Normalizes a raw API campaign row into the row shape this list renders (adds UI-only fields). */
+function toCampaignRow(row: Campaign): CampaignRow {
+  const extended = row as Campaign & {
+    collaboratorsCount?: number;
+    completedCollaborations?: number;
+  };
+  const collaboratorsCount = extended.collaboratorsCount ?? 0;
+  return {
+    ...row,
+    collaboratorsCount,
+    // D-3 (BrandF.md §12): there is still no dedicated `progress` field on
+    // CampaignResponse, but `collaboratorsCount`/`completedCollaborations` (D-5's fix)
+    // are now real, server-computed counts — not the CampaignMetrics.empty() stub they
+    // were when this ticket was originally filed. completed/total is exactly the ratio
+    // BrandF.md's own §19 fix proposal specified; it only looked like a no-op back when
+    // the backend always returned zeros for both sides of the division.
+    progress:
+      collaboratorsCount > 0
+        ? Math.round(((extended.completedCollaborations ?? 0) / collaboratorsCount) * 100)
+        : 0,
+  };
+}
+
 const statusConfig: Record<CampaignStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   DRAFT: { label: 'Draft', variant: 'secondary' },
   PENDING_APPROVAL: { label: 'Pending', variant: 'outline' },
@@ -221,6 +248,13 @@ export function CampaignsList() {
   const [isLoading, setIsLoading] = React.useState(liveApi);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [reloadToken, setReloadToken] = React.useState(0);
+  // Server-side pagination (GET /campaigns?page=&limit=, hard-capped at 100/page) — without
+  // this, brands with 101+ campaigns silently lost everything past #100 with no way to reach
+  // it (D-2). Mirrors `creators.search`'s page/hasMore/Load-more pattern on the discover page.
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false);
+  const [apiPage, setApiPage] = React.useState(1);
+  const [apiHasMore, setApiHasMore] = React.useState(false);
+  const [apiTotal, setApiTotal] = React.useState<number | undefined>(undefined);
 
   // Optimistic UI state for row actions (works in both live + mock mode,
   // since the facade methods themselves branch on isApiLive()).
@@ -269,24 +303,23 @@ export function CampaignsList() {
     setLoadError(null);
     const t = window.setTimeout(async () => {
       try {
-        const rows = await api.campaigns.list({
+        const { campaigns: rows, meta } = await api.campaigns.list({
           status: statusFilter,
           search: searchQuery || undefined,
-          limit: 100,
+          page: 1,
+          limit: CAMPAIGNS_PAGE_SIZE,
+          // D-6 (BrandF.md §12): 'date' maps straight to the backend's real Sort field
+          // (createdAt); 'budget'/'progress' have no backend Sort field yet (progress isn't
+          // even stored server-side — see D-3), so those two keep the server's default
+          // ordering and stay client-side-only re-sorts of the fetched window below.
+          sortBy: sortBy === 'date' ? 'createdAt' : undefined,
+          sortOrder: sortBy === 'date' ? 'desc' : undefined,
         });
         if (cancelled) return;
-        setLiveCampaigns(
-          rows.map((row) => {
-            const extended = row as Campaign & { collaboratorsCount?: number; progress?: number };
-            return {
-              ...row,
-              collaboratorsCount: extended.collaboratorsCount ?? 0,
-              // No `progress` field exists on the API contract yet — default to 0
-              // until the backend exposes a computed campaign progress value.
-              progress: extended.progress ?? 0,
-            };
-          }),
-        );
+        setLiveCampaigns(rows.map(toCampaignRow));
+        setApiPage(1);
+        setApiHasMore(meta.hasMore);
+        setApiTotal(meta.total);
       } catch (e) {
         if (!cancelled) {
           setLoadError(e instanceof ApiError ? e.message : 'Could not load campaigns. Try again.');
@@ -299,7 +332,37 @@ export function CampaignsList() {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [liveApi, statusFilter, searchQuery, reloadToken]);
+    // `sortBy` drives a real refetch (from page 1) only for values with a backend Sort field —
+    // see the ternary above — but is listed here unconditionally so switching sort modes always
+    // restarts pagination cleanly rather than appending onto a differently-ordered page 1.
+  }, [liveApi, statusFilter, searchQuery, reloadToken, sortBy]);
+
+  const handleLoadMore = async () => {
+    const nextPage = apiPage + 1;
+    setIsLoadingMore(true);
+    try {
+      const { campaigns: rows, meta } = await api.campaigns.list({
+        status: statusFilter,
+        search: searchQuery || undefined,
+        page: nextPage,
+        limit: CAMPAIGNS_PAGE_SIZE,
+        sortBy: sortBy === 'date' ? 'createdAt' : undefined,
+        sortOrder: sortBy === 'date' ? 'desc' : undefined,
+      });
+      setLiveCampaigns((prev) => [...prev, ...rows.map(toCampaignRow)]);
+      setApiPage(nextPage);
+      setApiHasMore(meta.hasMore);
+      setApiTotal(meta.total);
+    } catch (e) {
+      toast({
+        title: 'Could not load more campaigns',
+        description: e instanceof ApiError ? e.message : 'Try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   const allCampaigns = React.useMemo<CampaignRow[]>(() => {
     // Hype demo campaign renders first in mock mode — it's the demo-day hero.
@@ -463,6 +526,11 @@ export function CampaignsList() {
           </div>
           <p className="text-muted-foreground">
             Create and manage your influencer marketing campaigns
+            {liveApi && apiTotal != null && (
+              <span className="ml-1">
+                &middot; Showing {liveCampaigns.length} of {apiTotal}
+              </span>
+            )}
           </p>
         </div>
         <Button asChild>
@@ -480,7 +548,9 @@ export function CampaignsList() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Campaigns</p>
-                <p className="text-2xl font-bold">{stats.total}</p>
+                <p className="text-2xl font-bold">
+                  {liveApi && apiTotal != null ? apiTotal : stats.total}
+                </p>
               </div>
               <IconBadge icon={TrendingUp} variant="primary" size="md" rounded="full" />
             </div>
@@ -716,7 +786,7 @@ export function CampaignsList() {
                           View Details
                         </Link>
                       </DropdownMenuItem>
-                      {canEdit ? (
+                      {canEdit && campaign.status !== 'ACTIVE' ? (
                         <DropdownMenuItem asChild>
                           <Link to={`/brand/campaigns/${campaign.id}/edit`}>
                             <Edit className="mr-2 h-4 w-4" />
@@ -724,7 +794,14 @@ export function CampaignsList() {
                           </Link>
                         </DropdownMenuItem>
                       ) : (
-                        <DropdownMenuItem disabled title="Only the Owner, Admin, or Manager can edit a campaign">
+                        <DropdownMenuItem
+                          disabled
+                          title={
+                            !canEdit
+                              ? 'Only the Owner, Admin, or Manager can edit a campaign'
+                              : 'Pause the campaign before editing its details'
+                          }
+                        >
                           <Edit className="mr-2 h-4 w-4" />
                           Edit
                         </DropdownMenuItem>
@@ -892,7 +969,7 @@ export function CampaignsList() {
                           View Details
                         </Link>
                       </DropdownMenuItem>
-                      {canEdit ? (
+                      {canEdit && campaign.status !== 'ACTIVE' ? (
                         <DropdownMenuItem asChild>
                           <Link to={`/brand/campaigns/${campaign.id}/edit`}>
                             <Edit className="mr-2 h-4 w-4" />
@@ -900,7 +977,14 @@ export function CampaignsList() {
                           </Link>
                         </DropdownMenuItem>
                       ) : (
-                        <DropdownMenuItem disabled title="Only the Owner, Admin, or Manager can edit a campaign">
+                        <DropdownMenuItem
+                          disabled
+                          title={
+                            !canEdit
+                              ? 'Only the Owner, Admin, or Manager can edit a campaign'
+                              : 'Pause the campaign before editing its details'
+                          }
+                        >
                           <Edit className="mr-2 h-4 w-4" />
                           Edit
                         </DropdownMenuItem>
@@ -954,6 +1038,28 @@ export function CampaignsList() {
             ))}
           </div>
         </Card>
+      )}
+
+      {/* Load more — server-side pagination (GET /campaigns?page=&limit=, capped at 100/page
+          server-side), live mode only. Without this a brand with 101+ campaigns had no way to
+          reach anything past #100 (D-2). Mirrors the creator-discovery "Load more" pattern. */}
+      {liveApi && apiHasMore && !isLoading && (
+        <div className="flex justify-center pt-2">
+          <Button
+            variant="outline"
+            disabled={isLoadingMore}
+            onClick={() => void handleLoadMore()}
+          >
+            {isLoadingMore ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              'Load more'
+            )}
+          </Button>
+        </div>
       )}
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>

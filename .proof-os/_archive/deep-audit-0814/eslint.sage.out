@@ -1,0 +1,40 @@
+  1162:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found                    react-hooks/exhaustive-deps
+  1230:9  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  1249:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found                    react-hooks/exhaustive-deps
+  1266:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found                    react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-creator-profile.tsx
+  692:19  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  694:54  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  816:21  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  820:21  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  824:21  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-messages.tsx
+  466:9  error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-pipeline.tsx
+  642:19  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-wallet.tsx
+  552:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat-bare-invite.test.tsx
+  47:5  error  'streamHandlers' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx
+   937:9   error  Unexpected console statement. Only these console methods are allowed: warn, error  no-console
+  1465:38  error  '_revisionNotes' is defined but never used                                         @typescript-eslint/no-unused-vars
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-deals.tsx
+  631:54  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-portfolio-editor.tsx
+  299:17  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-portfolio-public.tsx
+  306:13  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+✖ 88 problems (87 errors, 1 warning)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+

@@ -14,6 +14,7 @@ import { CreatorReceivedReviews } from '@/components/creator/creator-received-re
 import { useCreatorOwnMedia } from '@/hooks/creator/useCreatorOwnMedia';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   CREATOR_ANALYTICS_SELF,
@@ -30,12 +31,53 @@ import type { AnalyticsDateRange } from '@/lib/types';
  * Reuses the same analytics components as brand-creator-analytics.tsx; hooks
  * route to creatorAnalytics client when creatorId is CREATOR_ANALYTICS_SELF.
  */
+/** Default window: last 30 days (inclusive of today), matching prior hardcoded behavior. */
+function defaultDateRange(): AnalyticsDateRange {
+  const end = new Date();
+  const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+  return { start, end };
+}
+
+/** yyyy-mm-dd for a native <input type="date"> value, in UTC to match ISO serialization. */
+function toDateInputValue(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function parseDateInputStart(value: string): Date {
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+function parseDateInputEnd(value: string): Date {
+  return new Date(`${value}T23:59:59.999Z`);
+}
+
 export default function CreatorAnalyticsPage() {
-  const dateRange: AnalyticsDateRange = React.useMemo(() => {
-    const end = new Date();
-    const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
-    return { start, end };
-  }, []);
+  // CR-69: was a useMemo(() => ..., []) fixed to the last 30 days with no way
+  // to change it, despite the backend (CreatorAnalyticsController.getMyMetrics)
+  // accepting arbitrary startDate/endDate. Now real, user-editable state —
+  // default view is unchanged (last 30 days).
+  const [dateRange, setDateRange] = React.useState<AnalyticsDateRange>(defaultDateRange);
+
+  const handleStartDateChange = (value: string) => {
+    if (!value) return;
+    const start = parseDateInputStart(value);
+    if (Number.isNaN(start.getTime())) return;
+    setDateRange((prev) => (start > prev.end ? prev : { ...prev, start }));
+  };
+
+  const handleEndDateChange = (value: string) => {
+    if (!value) return;
+    const end = parseDateInputEnd(value);
+    if (Number.isNaN(end.getTime())) return;
+    setDateRange((prev) => (end < prev.start ? prev : { ...prev, end }));
+  };
+
+  const handleResetToLast30Days = () => setDateRange(defaultDateRange());
+
+  const rangeDays = Math.max(
+    1,
+    Math.round((dateRange.end.getTime() - dateRange.start.getTime()) / (24 * 60 * 60 * 1000)),
+  );
 
   const {
     data: metrics,
@@ -57,7 +99,12 @@ export default function CreatorAnalyticsPage() {
     refresh: refreshDemographics,
   } = useCreatorDemographics(CREATOR_ANALYTICS_SELF);
   // creator-missing-0804 — the creator's own per-post content performance (GET /me/media).
-  const { data: myMedia, loading: myMediaLoading, error: myMediaError } = useCreatorOwnMedia();
+  const {
+    data: myMedia,
+    loading: myMediaLoading,
+    error: myMediaError,
+    reload: reloadMyMedia,
+  } = useCreatorOwnMedia();
 
   // C27: scoresError no longer fires for a 404 SCORE_NOT_FOUND (useCreatorScores
   // treats that as an honest empty state via `notFound`) — only a real load
@@ -84,13 +131,46 @@ export default function CreatorAnalyticsPage() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold">Analytics</h1>
           <p className="text-muted-foreground">
-            Track your reach, engagement, and audience growth over the last 30 days.
+            Track your reach, engagement, and audience growth over the last {rangeDays} days.
           </p>
           {!isApiLive() && (
             <p className="mt-2 text-xs text-muted-foreground">
               Demo data — connect a live API (`VITE_API_MODE=live`) for your real metrics.
             </p>
           )}
+
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="analytics-start-date" className="text-xs font-medium text-muted-foreground">
+                From
+              </label>
+              <Input
+                id="analytics-start-date"
+                type="date"
+                value={toDateInputValue(dateRange.start)}
+                max={toDateInputValue(dateRange.end)}
+                onChange={(e) => handleStartDateChange(e.target.value)}
+                className="h-8 w-[150px]"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="analytics-end-date" className="text-xs font-medium text-muted-foreground">
+                To
+              </label>
+              <Input
+                id="analytics-end-date"
+                type="date"
+                value={toDateInputValue(dateRange.end)}
+                min={toDateInputValue(dateRange.start)}
+                max={toDateInputValue(new Date())}
+                onChange={(e) => handleEndDateChange(e.target.value)}
+                className="h-8 w-[150px]"
+              />
+            </div>
+            <Button size="sm" variant="outline" onClick={handleResetToLast30Days}>
+              Last 30 days
+            </Button>
+          </div>
         </div>
 
         {hasLoadError && (
@@ -158,7 +238,7 @@ export default function CreatorAnalyticsPage() {
             <div className="grid gap-4 lg:grid-cols-3">
               <MetricsTrendChart
                 className="lg:col-span-2"
-                title="Follower & Reach Trend (30d)"
+                title={`Follower & Reach Trend (${rangeDays}d)`}
                 data={metrics?.trendData ?? []}
                 metrics={[
                   { key: 'followers', label: 'Followers', color: 'var(--chart-1)' },
@@ -209,7 +289,12 @@ export default function CreatorAnalyticsPage() {
             />
 
             {/* creator-missing-0804 — your own per-post content performance + received reviews */}
-            <ContentPerformancePanel data={myMedia} loading={myMediaLoading} error={myMediaError} />
+            <ContentPerformancePanel
+              data={myMedia}
+              loading={myMediaLoading}
+              error={myMediaError}
+              onRetry={reloadMyMedia}
+            />
 
             <CreatorReceivedReviews />
           </div>

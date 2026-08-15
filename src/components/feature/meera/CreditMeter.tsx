@@ -20,6 +20,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 
 import type { CreditState } from '@/hooks/useMeeraCredits';
 import { cn } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 
 interface CreditMeterProps {
   state: CreditState;
@@ -104,10 +105,10 @@ export function CreditMeter({
           {reduceMotion ? (
             <div
               className={cn(
-                'absolute inset-y-0 left-0 rounded-full',
+                'absolute inset-y-0 left-0 rounded-full w-[var(--credit-progress-w)]',
                 isLow ? 'bg-meera-warning' : 'bg-meera-accent'
               )}
-              style={{ width: `${Math.max(progress, 2)}%` }}
+              ref={cssVars({ '--credit-progress-w': `${Math.max(progress, 2)}%` })}
             />
           ) : (
             <motion.div

@@ -1,0 +1,74 @@
+NOT CHECKED (eslint.sage.mjs): eslint-plugin-jsx-a11y — alt-text and anchor-is-valid NOT CHECKED | eslint.sage.json could not be read, so the eslintrc fallback was not compared with this config
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ErrorBoundary.tsx
+  63:5  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\brand-layout.tsx
+  162:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\campaigns\campaign-form.tsx
+  196:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  206:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  250:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\contracts\contracts-and-deliverables.tsx
+  597:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\deals\deal-room-dashboard.tsx
+  353:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\FundEscrowButton.tsx
+  190:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  206:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  258:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\MeeraChatPanel.tsx
+  349:5   error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  670:41  error  '_lang' is defined but never used                                @typescript-eslint/no-unused-vars
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\StageSnapshot.tsx
+  90:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\feature\meera\VoiceMode.tsx
+  119:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\motion\EscrowFlowAnimation.tsx
+  62:22  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  96:19  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\motion\EscrowLockSequence.tsx
+  52:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\motion\TiltCard.tsx
+  62:7  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+  74:9  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\ui\sonner.tsx
+  8:7  error  kavya: no inline styles — Tailwind only  no-restricted-syntax
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\analytics\useCreatorMetrics.ts
+  84:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\hooks\useNotifications.ts
+  165:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  190:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  221:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\lib\contract-generator.ts
+  178:57  error  '_filename' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-chat.tsx
+   869:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  1162:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  1249:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+  1266:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-wallet.tsx
+  552:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-chat.tsx
+  1465:38  error  '_revisionNotes' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 31 problems (30 errors, 1 warning)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+

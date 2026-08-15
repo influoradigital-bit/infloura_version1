@@ -1,7 +1,8 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { api, isApiLive } from '@/lib/api';
 import { Toaster } from '@/components/ui/toaster';
 import { DemoModeBanner } from '@/components/DemoModeBanner';
 import BrandLoginPage from '@/pages/brand-login';
@@ -22,6 +23,7 @@ import BrandEditCampaignPage from '@/pages/brand-edit-campaign';
 import BrandCreatorProfilePage from '@/pages/brand-creator-profile';
 import BrandWalletPage from '@/pages/brand-wallet';
 import BrandSettingsPage from '@/pages/brand-settings';
+import BrandVerificationPage from '@/pages/brand-verification';
 import BrandBillingSettingsPage from '@/pages/brand-billing-settings';
 import BrandChatPage from '@/pages/brand-chat';
 import BrandContractsPage from '@/pages/brand-contracts';
@@ -32,6 +34,7 @@ import PricingPage from '@/pages/pricing';
 import AdminLoginPage from '@/pages/admin-login';
 import AdminConsolePage from '@/pages/admin-console';
 import StaticPage from '@/pages/static-page';
+import LegalPage from '@/pages/legal/LegalPage';
 import { BrandLayout } from '@/components/brand/brand-layout';
 import BrandAnalyticsPage from '@/pages/brand-analytics';
 import BrandCampaignTrackingPage from '@/pages/brand-campaign-tracking';
@@ -39,6 +42,7 @@ import BrandCreatorAnalyticsPage from '@/pages/brand-creator-analytics';
 import BrandDisputesPage from '@/pages/brand-disputes';
 import BrandReviewsPage from '@/pages/brand-reviews';
 import BrandHelpPage from '@/pages/brand-help';
+import BrandNotificationsPage from '@/pages/brand-notifications';
 import AboutPage from '@/pages/about';
 import ContactPage from '@/pages/contact';
 import HowItWorksBrandsPage from '@/pages/how-it-works-brands';
@@ -69,6 +73,7 @@ import CreatorCopilotPage from '@/pages/creator-copilot';
 import CreatorCampaignDetailPage from '@/pages/creator-campaign-detail';
 import CreatorDisputesPage from '@/pages/creator-disputes';
 import CreatorReviewsPage from '@/pages/creator-reviews';
+import CreatorNotificationsPage from '@/pages/creator-notifications';
 import CreatorCouponsPage from '@/pages/creator-coupons';
 import CreatorAffiliateEarningsPage from '@/pages/creator-affiliate-earnings';
 import CreatorMetaCallbackPage from '@/pages/creator-meta-callback';
@@ -82,7 +87,38 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   // production build statically resolves this branch to `false` and the
   // dead-stripped code path can never honor `?demo=true` (Kabir A2).
   const isDemoMode = import.meta.env.DEV && new URLSearchParams(window.location.search).get('demo') === 'true';
-  return isAuthenticated || isDemoMode ? <>{children}</> : <Navigate to="/brand/login" />;
+
+  // OB-2 (BrandF.md §102) — server-side onboarding-completion check. Previously this guard only
+  // checked token *presence*; onboarding completion was decided once, client-side, at login
+  // (brand-login.tsx reads the login response + the `brand_onboarding_complete` localStorage
+  // flag `persistBrandSession` sets). That flag can go stale — a second device, a login before
+  // onboarding finished and the flag never got set, cleared storage — and nothing re-verified it
+  // against the server before letting the brand reach `/brand/dashboard` and its siblings.
+  //
+  // `useQuery` (not a bare effect) so the check is cached and shared across every
+  // `ProtectedRoute`/`BrandLayoutWrapper` mount app-wide — the brand navigating between
+  // /brand/dashboard, /brand/campaigns, etc. doesn't re-fetch or flicker on each click; it only
+  // re-checks after `staleTime` or a manual invalidation. Mock mode and the dev `?demo=true`
+  // bypass skip the check entirely (nothing to verify server-side). On a fetch error `status`
+  // stays `undefined`, which fails OPEN — a transient network hiccup must not strand an
+  // already-onboarded brand outside their own dashboard.
+  const shouldCheckOnboarding = isApiLive() && !!isAuthenticated && !isDemoMode;
+  const { data: status, isLoading: checkingOnboarding } = useQuery({
+    queryKey: ['brand-onboarding-status', isAuthenticated],
+    queryFn: () => api.onboarding.getBrandStatus(),
+    enabled: shouldCheckOnboarding,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  if (!isAuthenticated && !isDemoMode) return <Navigate to="/brand/login" />;
+  // Brief server round-trip on first mount of a session — avoid a flash of dashboard content
+  // that a moment later turns out to be gated.
+  if (shouldCheckOnboarding && checkingOnboarding) return null;
+  if (shouldCheckOnboarding && status && !status.onboardingCompleted) {
+    return <Navigate to="/brand/onboarding" replace />;
+  }
+  return <>{children}</>;
 };
 
 // Layout wrapper for brand pages
@@ -272,6 +308,14 @@ export default function App() {
           }
         />
         <Route
+          path="/brand/settings/verification"
+          element={
+            <BrandLayoutWrapper>
+              <BrandVerificationPage />
+            </BrandLayoutWrapper>
+          }
+        />
+        <Route
           path="/brand/settings/billing"
           element={
             <BrandLayoutWrapper>
@@ -332,6 +376,16 @@ export default function App() {
           element={
             <BrandLayoutWrapper>
               <BrandHelpPage />
+            </BrandLayoutWrapper>
+          }
+        />
+        {/* M-C (BrandF.md §78): the bell popover's "View all notifications"
+            button used to only close the popover — this route didn't exist. */}
+        <Route
+          path="/brand/notifications"
+          element={
+            <BrandLayoutWrapper>
+              <BrandNotificationsPage />
             </BrandLayoutWrapper>
           }
         />
@@ -515,6 +569,14 @@ export default function App() {
           }
         />
         <Route
+          path="/creator/notifications"
+          element={
+            <CreatorProtectedRoute>
+              <CreatorNotificationsPage />
+            </CreatorProtectedRoute>
+          }
+        />
+        <Route
           path="/creator/coupons"
           element={
             <CreatorProtectedRoute>
@@ -566,21 +628,32 @@ export default function App() {
         <Route path="/blog" element={<BlogIndexPage />} />
         <Route path="/blog/category/:category" element={<BlogIndexPage />} />
         <Route path="/blog/:slug" element={<BlogPostPage />} />
+        {/*
+          CR-88 red-team follow-up (Priya) — these two routes rendered a "coming soon"
+          StaticPage stub while real v0 legal drafts already existed at
+          src/content/legal/{terms-of-service,privacy-policy}.md with a renderer (LegalPage)
+          built for them and imported nowhere. Wired here instead of leaving Settings'
+          "Terms & Privacy" row pointing at a placeholder one wiring change away from the
+          real content. LegalPage marks both `noindex` — these are v0 drafts pending legal
+          counsel review (see that component's javadoc), not published legal text.
+        */}
         <Route
           path="/terms"
           element={
-            <StaticPage
-              title="Terms of Service"
-              description="Our terms of service are being finalized and will be available here soon."
+            <LegalPage
+              docSlug="terms-of-service"
+              description="Influora's Terms of Service."
+              canonical="/terms"
             />
           }
         />
         <Route
           path="/privacy"
           element={
-            <StaticPage
-              title="Privacy Policy"
-              description="Our privacy policy is being finalized and will be available here soon."
+            <LegalPage
+              docSlug="privacy-policy"
+              description="Influora's Privacy Policy."
+              canonical="/privacy"
             />
           }
         />

@@ -156,6 +156,73 @@ function ReviseModal({
   );
 }
 
+/**
+ * D-9 (BrandF.md §25): the backend reject route existed (BrandDeliverableController#reject)
+ * with no UI path to reach it at all — approve and request-revision both had buttons, reject
+ * did not, even though the status badge map above already knows how to render REJECTED.
+ * Mirrors ReviseModal's shape; feedback is required for the same reason revision feedback is —
+ * a rejection with no explanation gives the creator nothing to act on.
+ */
+function RejectModal({
+  open,
+  onOpenChange,
+  onSubmit,
+  isSubmitting,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (feedback: string) => Promise<void>;
+  isSubmitting: boolean;
+}) {
+  const [feedback, setFeedback] = React.useState('');
+
+  const handleSubmit = async () => {
+    if (!feedback.trim()) return;
+    await onSubmit(feedback);
+    setFeedback('');
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Reject Deliverable</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="reject-feedback">Reason for Creator</Label>
+            <Textarea
+              id="reject-feedback"
+              placeholder="Explain why this deliverable is being rejected..."
+              rows={5}
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              disabled={isSubmitting}
+            />
+            <p className="text-xs text-muted-foreground">
+              This is a final decision, not a request for changes — the creator can't resubmit
+              against this deliverable slot afterward. Use Request Changes if revision is what you
+              actually want.
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleSubmit}
+            disabled={!feedback.trim() || isSubmitting}
+          >
+            {isSubmitting ? 'Rejecting...' : 'Reject Deliverable'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function DeliverableViewer({
   deliverableId,
   open,
@@ -166,8 +233,10 @@ export function DeliverableViewer({
   const { deliverable, isLoading, error, refetch } = useDeliverableDetail(deliverableId);
   const { review: safetyReview, loading: safetyReviewLoading } = useDeliverableSafetyReview(deliverableId);
   const [reviseModalOpen, setReviseModalOpen] = React.useState(false);
+  const [rejectModalOpen, setRejectModalOpen] = React.useState(false);
   const [isApproving, setIsApproving] = React.useState(false);
   const [isRevising, setIsRevising] = React.useState(false);
+  const [isRejecting, setIsRejecting] = React.useState(false);
   const [currentFileIndex, setCurrentFileIndex] = React.useState(0);
   const shouldReduceMotion = useReducedMotion();
 
@@ -207,6 +276,25 @@ export function DeliverableViewer({
       });
     } finally {
       setIsRevising(false);
+    }
+  };
+
+  const handleReject = async (feedback: string) => {
+    if (!deliverable) return;
+    setIsRejecting(true);
+    try {
+      await api.deliverables.reject(deliverable.id, feedback);
+      setRejectModalOpen(false);
+      onActionComplete?.();
+      onOpenChange(false);
+    } catch (err) {
+      toast({
+        title: 'Could not reject deliverable',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -349,8 +437,18 @@ export function DeliverableViewer({
             <DeliverableSafetyReviewCard review={safetyReview} loading={safetyReviewLoading} />
 
             {/* Action Buttons */}
-            {(deliverable.canApprove || deliverable.canRequestRevision) && (
+            {(deliverable.canApprove || deliverable.canRequestRevision || deliverable.canReject) && (
               <div className="flex items-center justify-end gap-3 pt-4 border-t">
+                {deliverable.canReject && (
+                  <Button
+                    variant="outline"
+                    className="text-destructive-foreground border-destructive-foreground/30 hover:bg-destructive/10"
+                    onClick={() => setRejectModalOpen(true)}
+                    disabled={isApproving}
+                  >
+                    Reject
+                  </Button>
+                )}
                 {deliverable.canRequestRevision && (
                   <Button
                     variant="outline"
@@ -398,6 +496,13 @@ export function DeliverableViewer({
         onOpenChange={setReviseModalOpen}
         onSubmit={handleRequestRevision}
         isSubmitting={isRevising}
+      />
+
+      <RejectModal
+        open={rejectModalOpen}
+        onOpenChange={setRejectModalOpen}
+        onSubmit={handleReject}
+        isSubmitting={isRejecting}
       />
     </>
   );

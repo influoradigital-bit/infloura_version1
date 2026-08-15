@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,6 +38,7 @@ import com.influora.web.dto.deliverable.CreatorDeliverableDtos.SubmitResponse;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.UploadResponse;
 import org.springframework.http.HttpStatus;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -362,6 +364,112 @@ class CreatorDeliverableServiceTest {
 
         assertEquals("INVALID_REQUEST", ex.getCode());
         verify(collaborationRepository, never()).findByIdAndCreatorId(any(), any());
+    }
+
+    // ---------------------------------------------------------------------
+    // CR-51 — listForCollaborations (batched N+1 fix)
+    // ---------------------------------------------------------------------
+
+    private static final String COLLAB_ID_2 = "01HCOLLAB29876543210";
+
+    /**
+     * Regression test for CR-51: before the fix, the creator dashboard issued one
+     * {@code findByIdAndCreatorId} + one {@code findByCollaborationIdOrderBySlotIndexAsc} call PER
+     * deal id (an N+1 waterfall). This asserts the batched replacement makes exactly one ownership
+     * call and one deliverables call no matter how many deal ids are requested — the old N+1 shape
+     * would fail this test the moment N != 1 because the mocked single-id finders below are never
+     * stubbed and Mockito's strict stubbing (or a `never()` on them) would catch a fallback to the
+     * old per-id path.
+     */
+    @Test
+    @DisplayName(
+            "listForCollaborations: fetches deliverables for 2 owned deals with exactly 1 ownership"
+                    + " query + 1 deliverables query (not one pair per deal)")
+    void testListForCollaborationsBatchesIntoOneQueryPair() {
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        when(collaborationRepository.findByCreatorIdAndIdIn(
+                        CREATOR_USER_ID, List.of(COLLAB_ID, COLLAB_ID_2)))
+                .thenReturn(
+                        List.of(
+                                Collaboration.invite(
+                                        COLLAB_ID, "01HCAMPAIGN123456789A", CREATOR_USER_ID, null, "INR"),
+                                Collaboration.invite(
+                                        COLLAB_ID_2, "01HCAMPAIGN223456789A", CREATOR_USER_ID, null, "INR")));
+
+        Deliverable dealASlot1 = pendingDeliverable(); // collaborationId = COLLAB_ID, slotIndex 1
+        Deliverable dealASlot2 =
+                Deliverable.builder()
+                        .id("01HDELIVERABLE2234567")
+                        .collaborationId(COLLAB_ID)
+                        .creatorProfileId("profile1")
+                        .slotIndex(2)
+                        .type(DeliverableType.INSTAGRAM_REEL)
+                        .title("Workout Reel 2")
+                        .status(DeliverableStatus.APPROVED)
+                        .build();
+        Deliverable dealBSlot1 =
+                Deliverable.builder()
+                        .id("01HDELIVERABLE3234567")
+                        .collaborationId(COLLAB_ID_2)
+                        .creatorProfileId("profile1")
+                        .slotIndex(1)
+                        .type(DeliverableType.INSTAGRAM_REEL)
+                        .title("Unboxing")
+                        .status(DeliverableStatus.PENDING)
+                        .build();
+        when(deliverableRepository.findByCollaborationIdIn(List.of(COLLAB_ID, COLLAB_ID_2)))
+                .thenReturn(List.of(dealASlot1, dealASlot2, dealBSlot1));
+
+        Map<String, List<DeliverableListItem>> result =
+                service.listForCollaborations(principal, List.of(COLLAB_ID, COLLAB_ID_2));
+
+        assertEquals(2, result.size());
+        assertEquals(2, result.get(COLLAB_ID).size());
+        assertEquals(DELIVERABLE_ID, result.get(COLLAB_ID).get(0).id());
+        assertEquals("01HDELIVERABLE2234567", result.get(COLLAB_ID).get(1).id());
+        assertEquals(1, result.get(COLLAB_ID_2).size());
+        assertEquals("01HDELIVERABLE3234567", result.get(COLLAB_ID_2).get(0).id());
+
+        // The actual N+1 regression guard: exactly one call each, never per-deal-id repeats.
+        verify(collaborationRepository, times(1)).findByCreatorIdAndIdIn(any(), any());
+        verify(deliverableRepository, times(1)).findByCollaborationIdIn(any());
+        verify(collaborationRepository, never()).findByIdAndCreatorId(any(), any());
+        verify(deliverableRepository, never()).findByCollaborationIdOrderBySlotIndexAsc(any());
+    }
+
+    @Test
+    @DisplayName("listForCollaborations: a foreign/unowned deal id is silently dropped, not thrown")
+    void testListForCollaborationsDropsUnownedId() {
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        String foreignId = "01HFOREIGNCOLLAB12345";
+        when(collaborationRepository.findByCreatorIdAndIdIn(
+                        CREATOR_USER_ID, List.of(COLLAB_ID, foreignId)))
+                .thenReturn(
+                        List.of(
+                                Collaboration.invite(
+                                        COLLAB_ID, "01HCAMPAIGN123456789A", CREATOR_USER_ID, null, "INR")));
+        when(deliverableRepository.findByCollaborationIdIn(List.of(COLLAB_ID)))
+                .thenReturn(List.of(pendingDeliverable()));
+
+        Map<String, List<DeliverableListItem>> result =
+                service.listForCollaborations(principal, List.of(COLLAB_ID, foreignId));
+
+        assertEquals(1, result.size());
+        assertEquals(1, result.get(COLLAB_ID).size());
+        assertEquals(null, result.get(foreignId));
+    }
+
+    @Test
+    @DisplayName("listForCollaborations: empty id list short-circuits to an empty map with no queries")
+    void testListForCollaborationsEmptyInput() {
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+
+        Map<String, List<DeliverableListItem>> result =
+                service.listForCollaborations(principal, List.of());
+
+        assertEquals(Map.of(), result);
+        verify(collaborationRepository, never()).findByCreatorIdAndIdIn(any(), any());
+        verify(deliverableRepository, never()).findByCollaborationIdIn(any());
     }
 
     /** CR-22a — submitForReview's new CollaborationStatus guard needs a resolvable, non-CANCELLED row. */

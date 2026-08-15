@@ -12,6 +12,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { cssVars } from '@/lib/css-vars';
 import { IconBadge } from '@/components/shared/icon-badge';
 import { getCampaignStateIconVariant } from '@/lib/icon-theme';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -252,9 +253,9 @@ export function CampaignStateMachine({
       <div className="absolute top-6 left-6 right-6 h-1 bg-muted rounded-full" />
       
       {/* Progress line filled */}
-      <div 
-        className="absolute top-6 left-6 h-1 bg-stage-approved-fg rounded-full transition-all duration-500"
-        style={{ width: `calc(${(currentIndex / (STATES.length - 1)) * 100}% - 24px)` }}
+      <div
+        className="absolute top-6 left-6 h-1 bg-stage-approved-fg rounded-full transition-all duration-500 w-[var(--sm-progress-w)]"
+        ref={cssVars({ '--sm-progress-w': `calc(${(currentIndex / (STATES.length - 1)) * 100}% - 24px)` })}
       />
 
       {/* State nodes */}

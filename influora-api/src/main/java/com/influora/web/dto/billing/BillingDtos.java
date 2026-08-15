@@ -1,6 +1,7 @@
 package com.influora.web.dto.billing;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import jakarta.validation.constraints.NotBlank;
 import java.time.Instant;
 
 /**
@@ -63,7 +64,10 @@ public final class BillingDtos {
             // PlanDto from GET /billing/plan; this is just the live active-member count).
             long activeSeatsUsed) {}
 
-    public record CheckoutRequest(String planCode) {}
+    /** BL-1: {@code @NotBlank} + {@code @Valid} on the controller param — an empty/missing
+     * {@code planCode} is now rejected at the request-validation layer instead of falling through
+     * to {@code parsePlanCode}'s coercion. */
+    public record CheckoutRequest(@NotBlank String planCode) {}
 
     public record CheckoutResponse(String checkoutUrl) {}
 }

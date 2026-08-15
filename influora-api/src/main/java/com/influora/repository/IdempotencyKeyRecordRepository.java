@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface IdempotencyKeyRecordRepository extends JpaRepository<IdempotencyKeyRecord, String> {
 
@@ -40,7 +41,12 @@ public interface IdempotencyKeyRecordRepository extends JpaRepository<Idempotenc
      *     IN_PROGRESS} (already completed/failed/reclaimed by a concurrent run) or not yet past the
      *     threshold
      */
-    @Modifying
+    // [SEC: Vikram, round-4 Finding 2] clearAutomatically = true -- see #markCompleted's javadoc
+    // for why a bulk @Modifying UPDATE needs this: without it, an entity already loaded earlier in
+    // the SAME (ambient) persistence context stays stale after this UPDATE, even though the row is
+    // correctly updated in the DB.
+    @Modifying(clearAutomatically = true)
+    @Transactional
     @Query(
             "UPDATE IdempotencyKeyRecord r SET r.status = :to WHERE r.idempotencyKey = :key AND"
                     + " r.status = :from AND r.createdAt < :threshold")
@@ -66,11 +72,97 @@ public interface IdempotencyKeyRecordRepository extends JpaRepository<Idempotenc
      *     the row was not in {@code FAILED} state (already reclaimed by a concurrent caller, still
      *     {@code IN_PROGRESS}, or already {@code COMPLETED})
      */
-    @Modifying
+    // [SEC: Vikram, round-4 Finding 2] clearAutomatically = true -- see #markCompleted's javadoc.
+    @Modifying(clearAutomatically = true)
+    @Transactional
     @Query(
             "UPDATE IdempotencyKeyRecord r SET r.status = :to WHERE r.idempotencyKey = :key AND r.status = :from")
     int reclaimFailedForRetry(
             @Param("key") String idempotencyKey,
             @Param("from") IdempotencyKeyRecord.Status from,
             @Param("to") IdempotencyKeyRecord.Status to);
+
+    /**
+     * [SEC: Priya round-2 review fix, Defect 2] Replaces {@code
+     * IdempotencyService#markCompletedTransactional}'s old find-then-mutate-in-memory approach,
+     * which never persisted anything: {@code executeOnce}/{@code runExclusive} invoke that method
+     * via self-invocation ({@code this.markCompletedTransactional(...)}), which bypasses the
+     * Spring AOP transactional proxy entirely (Spring's documented self-invocation limitation), so
+     * the method's own {@code @Transactional} was a no-op; the entity returned by {@code
+     * findByIdempotencyKey} was already detached by the time {@code record.markCompleted(...)}
+     * mutated it in memory, and that mutation was never flushed to the DB — the row stayed {@code
+     * IN_PROGRESS} forever (until the 15-minute reaper swept it to {@code FAILED}), so {@code
+     * isCompleted}/{@code findCompletedResultDigest} could never resolve a freshly-completed key.
+     * A single {@code @Modifying} UPDATE (same pattern as {@link #reclaimFailedForRetry}) fixes
+     * that.
+     *
+     * <p><b>[Task item 3, verified] {@code @Transactional} is REQUIRED here, not optional.</b> A
+     * {@code @Modifying} JPQL {@code UPDATE} calls {@code Query#executeUpdate()}, which Hibernate
+     * refuses outright ({@code jakarta.persistence.TransactionRequiredException}, surfaced by
+     * Spring as {@code InvalidDataAccessApiUsageException}) unless a transaction is ALREADY active
+     * at the moment the repository method is invoked — confirmed empirically by a real (non-Mockito)
+     * {@code @DataJpaTest} (see {@code IdempotencyServicePersistenceTest}) that reproduced exactly
+     * this exception before this annotation was added, calling this method with no ambient
+     * transaction (mirroring {@code IdempotencyService}'s actual self-invocation call sites, which
+     * have none either). Unlike CRUD methods ({@code save}/{@code findById}/etc., which Spring Data
+     *'s {@code SimpleJpaRepository} itself already annotates {@code @Transactional}), a bare custom
+     * {@code @Query}+{@code @Modifying} method interface declaration does NOT reliably pick up a
+     * transaction from "default repository transactions" in practice in this app — this repository's
+     * sibling {@code UsageCounterRepository#tryIncrement} already established the working
+     * convention (explicit {@code @Transactional} directly on the {@code @Modifying} method) that
+     * this method and the three others below now follow. {@code reclaimFailedForRetry} above and
+     * {@code reclaimStaleInProgress} were retroactively given the same annotation for the identical
+     * reason — {@code reclaimFailedForRetry} was previously unreachable in the checkout path only
+     * because Defect 1 made every reservation spuriously succeed, so this latent bug never actually
+     * fired; fixing Defect 1 makes the reclaim path reachable, which is what surfaced this one.
+     *
+     * @return {@code 1} if the row was found and updated, {@code 0} if the key is unknown (should
+     *     not happen on the real success path — the row was just reserved/reclaimed by this same
+     *     caller — but is not itself a correctness issue if it does since there is nothing to mark)
+     */
+    // [SEC: Vikram, round-4 Finding 2, Priya's ambient-transaction review] clearAutomatically = true.
+    // A bulk JPQL @Modifying UPDATE goes straight to the DB and bypasses the first-level (Hibernate
+    // Session) persistence context entirely -- an entity for this SAME row, if already loaded
+    // earlier in the calling transaction (e.g. a caller that read the row via findByIdempotencyKey
+    // before calling isCompleted()/executeOnce() again in the same ambient transaction), stays
+    // cached with its PRE-update in-memory state. Without clearAutomatically, a subsequent
+    // findByIdempotencyKey()/isCompleted() call in that SAME transaction can return the stale
+    // (pre-UPDATE) status even though the UPDATE already committed correctly at the DB level --
+    // proved empirically (see IdempotencyServicePersistenceTest#markCompletedClearsStaleEntityInSameAmbientTransaction):
+    // isCompleted() read false immediately after a commit-visible COMPLETED write, in the same
+    // transaction, before this fix. clearAutomatically = true clears the persistence context after
+    // the UPDATE executes, forcing the next read in the same transaction to hit the DB fresh.
+    @Modifying(clearAutomatically = true)
+    @Transactional
+    @Query(
+            "UPDATE IdempotencyKeyRecord r SET r.status = :status, r.resultDigest = :resultDigest,"
+                    + " r.completedAt = :completedAt WHERE r.idempotencyKey = :key")
+    int markCompleted(
+            @Param("key") String idempotencyKey,
+            @Param("status") IdempotencyKeyRecord.Status status,
+            @Param("resultDigest") String resultDigest,
+            @Param("completedAt") Instant completedAt);
+
+    /**
+     * [SEC: Priya round-2 review fix, Defect 2] {@code FAILED} counterpart to {@link
+     * #markCompleted} — see that method's javadoc for why this replaces the old
+     * find-then-mutate-in-memory {@code markFailedTransactional} body, and for why the explicit
+     * {@code @Transactional} below is load-bearing, not decorative. A row that never actually
+     * reaches {@code FAILED} in the DB is not just "not retryable promptly" — {@code
+     * reclaimFailedForRetry}'s {@code WHERE status = FAILED} guard can never match it either, so
+     * the row would only ever recover via the 15-minute stale-{@code IN_PROGRESS} reaper, not the
+     * intended immediate reclaim-on-next-call path.
+     *
+     * @return {@code 1} if the row was found and updated, {@code 0} if the key is unknown
+     */
+    // [SEC: Vikram, round-4 Finding 2] clearAutomatically = true -- see #markCompleted's javadoc.
+    @Modifying(clearAutomatically = true)
+    @Transactional
+    @Query(
+            "UPDATE IdempotencyKeyRecord r SET r.status = :status, r.completedAt = :completedAt"
+                    + " WHERE r.idempotencyKey = :key")
+    int markFailed(
+            @Param("key") String idempotencyKey,
+            @Param("status") IdempotencyKeyRecord.Status status,
+            @Param("completedAt") Instant completedAt);
 }

@@ -8,13 +8,17 @@ import com.influora.integration.meta.oauth.MetaOAuthService;
 import com.influora.integration.meta.oauth.MetaOAuthStateStore;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.MetaConnectionService;
 import com.influora.service.creatorcopilot.CreatorMetaOAuthService;
 import com.influora.service.creatorcopilot.CreatorMetaOAuthService.ConnectResult;
 import com.influora.web.dto.meta.MetaDtos.MetaAuthorizeResponse;
 import com.influora.web.dto.meta.MetaDtos.MetaCallbackResponse;
+import com.influora.web.dto.meta.MetaDtos.MetaConnectionStatusResponse;
+import com.influora.web.dto.meta.MetaDtos.MetaDisconnectResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,16 +41,19 @@ public class MetaOAuthController {
     private final MetaOAuthStateStore stateStore;
     private final CreatorProfileRepository creatorProfileRepository;
     private final CreatorMetaOAuthService creatorMetaOAuthService;
+    private final MetaConnectionService metaConnectionService;
 
     public MetaOAuthController(
             MetaOAuthService oAuthService,
             MetaOAuthStateStore stateStore,
             CreatorProfileRepository creatorProfileRepository,
-            CreatorMetaOAuthService creatorMetaOAuthService) {
+            CreatorMetaOAuthService creatorMetaOAuthService,
+            MetaConnectionService metaConnectionService) {
         this.oAuthService = oAuthService;
         this.stateStore = stateStore;
         this.creatorProfileRepository = creatorProfileRepository;
         this.creatorMetaOAuthService = creatorMetaOAuthService;
+        this.metaConnectionService = metaConnectionService;
     }
 
     /** Mints a CSRF-bound state token and returns the Meta authorization dialog URL. */
@@ -101,10 +108,49 @@ public class MetaOAuthController {
                 new MetaCallbackResponse(result.connected(), result.grantedScopes(), result.accountType()));
     }
 
+    /**
+     * Current connection status for the caller's own creator profile (CR-106). Resolves the
+     * profile from the authenticated principal — never from a client-supplied id — same
+     * resolve-then-scope pattern as {@link #callback}.
+     */
+    @GetMapping("/status")
+    public ApiResponse<MetaConnectionStatusResponse> status(
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        CreatorProfile profile = requireCreatorProfile(principal);
+        return ApiResponse.ok(metaConnectionService.getStatus(profile));
+    }
+
+    /**
+     * Disconnects the caller's own Meta/Instagram connection (CR-106). Revokes the creator-owned
+     * token row via {@link MetaConnectionService#disconnect}, which calls the creator-scoped
+     * {@code MetaTokenStorage#revokeCreatorToken} — not the workspace-scoped {@code revoke}, which
+     * would silently no-op since creator rows always have {@code workspace_id IS NULL}.
+     */
+    @PostMapping("/disconnect")
+    public ApiResponse<MetaDisconnectResponse> disconnect(
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        CreatorProfile profile = requireCreatorProfile(principal);
+        return ApiResponse.ok(metaConnectionService.disconnect(profile.getId()));
+    }
+
     private void requireCreator(AuthPrincipal principal) {
         if (principal == null || principal.getUserType() != UserType.CREATOR) {
             throw new ApiException(
                     "WRONG_USER_TYPE", "This endpoint is for creator accounts only", HttpStatus.FORBIDDEN);
         }
+    }
+
+    /** Resolves the calling creator's own profile — the only source of {@code creatorProfileId}
+     * for these routes, so a client can never pass someone else's id (IDOR-safe by construction). */
+    private CreatorProfile requireCreatorProfile(AuthPrincipal principal) {
+        requireCreator(principal);
+        return creatorProfileRepository
+                .findByUserId(principal.getUserId())
+                .orElseThrow(
+                        () ->
+                                new ApiException(
+                                        "CREATOR_PROFILE_NOT_FOUND",
+                                        "No creator profile for this user",
+                                        HttpStatus.NOT_FOUND));
     }
 }

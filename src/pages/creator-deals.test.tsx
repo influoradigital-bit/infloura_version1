@@ -51,13 +51,13 @@ const liveDeal: Deal = {
   escrowFunded: false,
 };
 
-function renderPage() {
+function renderPage(initialEntry = '/creator/deals') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/creator/deals']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <CreatorDealsPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -92,5 +92,33 @@ describe('CreatorDealsPage', () => {
     expect(
       screen.getAllByText(/QA E2E — Diwali Skincare Reels/i).length,
     ).toBeGreaterThanOrEqual(1);
+  });
+
+  it('F-0168-followup: seeds the active filter from ?status= on mount — App.tsx\'s /creator/inbox redirect and CR-59\'s "New tab in Deals" cross-link both promise this and neither worked before', async () => {
+    renderPage('/creator/deals?status=new');
+
+    // The page's own effect re-fetches scoped to whatever activeFilter resolved to; asserting
+    // on that call (not just the visual "active" chip class) proves the seeded value actually
+    // drives data fetching, not just a cosmetic highlight. (A separate unfiltered 'all' fetch
+    // for the badge counts, per the CR-12 comment above, is expected and not asserted against.)
+    await waitFor(() => {
+      expect(api.deals.list).toHaveBeenCalledWith('creator', 'new');
+    });
+  });
+
+  it('F-0168-followup: an unrecognized ?status= value falls back to "all", same as no param at all', async () => {
+    renderPage('/creator/deals?status=not-a-real-chip');
+
+    // Priya's fresh-context review caught the first version of this test as vacuous: the
+    // separate unfiltered badge-counts effect (CR-12, always api.deals.list('creator', 'all'))
+    // satisfies a bare toHaveBeenCalledWith('creator', 'all') on every mount regardless of
+    // filter — it would still pass if validation were deleted and the bad token forwarded
+    // straight to the API. Assert on the FULL call set instead: the invalid token must never
+    // reach api.deals.list at all, and every call this mount makes must be the 'all' shape.
+    await waitFor(() => expect(api.deals.list).toHaveBeenCalledTimes(2));
+    expect(api.deals.list).not.toHaveBeenCalledWith('creator', 'not-a-real-chip');
+    expect(
+      vi.mocked(api.deals.list).mock.calls.every(([role, status]) => role === 'creator' && status === 'all'),
+    ).toBe(true);
   });
 });

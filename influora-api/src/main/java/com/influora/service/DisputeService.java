@@ -1,7 +1,6 @@
 package com.influora.service;
 
 import com.influora.common.ApiException;
-import com.influora.common.PageMeta;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
@@ -469,21 +468,12 @@ public class DisputeService {
                 items, result.getTotalElements(), safePage, safePageSize, totalPages);
     }
 
-    /** B7 — original paginated brand dispute list (no display fields). */
-    @Transactional(readOnly = true)
-    public PagedDisputes listForBrand(AuthPrincipal principal, int page, int limit) {
-        Workspace workspace = brandContext.requireBrandWorkspace(principal);
-        int safePage = Math.max(page, 1);
-        int safeLimit = Math.max(limit, 1);
-        PageRequest pageRequest =
-                PageRequest.of(safePage - 1, safeLimit, Sort.by(Sort.Direction.DESC, "createdAt"));
-
-        Page<Dispute> result = disputeRepository.findByWorkspaceId(workspace.getId(), pageRequest);
-        List<DisputeResponse> items = result.getContent().stream().map(this::toDisputeResponse).toList();
-        PageMeta meta =
-                new PageMeta(safePage, safeLimit, result.getTotalElements(), result.hasNext());
-        return new PagedDisputes(items, meta);
-    }
+    /*
+     * DP-2 (2026-08-09): removed `listForBrand` (B7 — original paginated brand dispute list, no
+     * display fields) — it backed only the now-removed `GET /brand/disputes` route on
+     * BrandDisputeController, which had zero callers in either frontend client layer. Superseded
+     * by `listDisplayForBrand` (P2-14), which is what `GET /brand/disputes/list` actually serves.
+     */
 
     /**
      * P2-14 — brand-scoped dispute list with display fields (campaign name, creator name, deal
@@ -612,5 +602,4 @@ public class DisputeService {
                 dispute.getResolvedAt());
     }
 
-    public record PagedDisputes(List<DisputeResponse> items, PageMeta meta) {}
 }

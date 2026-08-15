@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Link } from 'react-router-dom';
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, Loader2 } from 'lucide-react';
 
 import { CreatorLayout } from '@/components/creator/creator-layout';
 import { CreatorApplicationCard } from '@/components/creator/CreatorApplicationCard';
@@ -13,7 +13,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { APPLICATION_BUCKETS, bucketOf, type ApplicationBucket } from '@/lib/application-status';
 import type { CreatorApplicationRow } from '@/lib/api';
 import { api, ApiError } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+
+const PAGE_SIZE = 50;
 
 type FilterTab = 'all' | ApplicationBucket;
 
@@ -23,27 +26,47 @@ const TABS: Array<{ id: FilterTab; label: string }> = [
 ];
 
 export default function CreatorApplicationsPage() {
+  const { toast } = useToast();
   const [applications, setApplications] = React.useState<CreatorApplicationRow[]>([]);
   const [activeFilter, setActiveFilter] = React.useState<FilterTab>('all');
+  const [page, setPage] = React.useState(1);
+  const [hasMore, setHasMore] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const fetchApplications = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const rows = await api.creatorApplications.list();
-      setApplications(rows);
-    } catch (e) {
-      setApplications([]);
-      setError(e instanceof ApiError ? e.message : 'Could not load your applications. Try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const fetchApplications = React.useCallback(
+    async (pageNum: number, append: boolean) => {
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+        setError(null);
+      }
+      try {
+        const result = await api.creatorApplications.list(pageNum, PAGE_SIZE);
+        setApplications((prev) => (append ? [...prev, ...result.applications] : result.applications));
+        setHasMore(result.meta.hasMore);
+        setPage(pageNum);
+      } catch (e) {
+        const message = e instanceof ApiError ? e.message : 'Could not load your applications. Try again.';
+        if (!append) {
+          setApplications([]);
+          setError(message);
+        } else {
+          // Load-more failure shouldn't wipe the already-loaded page — keep it, surface a toast.
+          toast({ title: 'Couldn’t load more applications', description: message, variant: 'destructive' });
+        }
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [toast],
+  );
 
   React.useEffect(() => {
-    void fetchApplications();
+    void fetchApplications(1, false);
   }, [fetchApplications]);
 
   const counts = React.useMemo(() => {
@@ -72,6 +95,35 @@ export default function CreatorApplicationsPage() {
           <h1 className="text-2xl font-bold tracking-tight">My applications</h1>
           <p className="text-muted-foreground">
             Every campaign you&rsquo;ve applied to, and where it stands.
+          </p>
+          {/* CR-59 — this page's source (Collaboration.source = APPLICATION) deliberately
+              excludes brand-initiated invites by design (my-applications-plan-2026-07-24.md).
+              That's not a dead end, though: an invite is a `Collaboration` with
+              status=INVITED/source=INVITATION, which already has its own dedicated,
+              fully-actionable surface — the "New" tab on /creator/deals (DealService's
+              "new" filter resolves to exactly `[INVITED]` for CREATOR role, and
+              `DealRow` there renders real Accept/Decline buttons wired to
+              POST /deals/:id/accept and /reject — gated on `deal.status === 'new'`, i.e.
+              deal-stage.ts's mapCollaborationStatusToDealStage (re-exported, not
+              redefined, by creator-deal-mappers.ts), NOT that same file's
+              ACCEPTABLE_COLLABORATION_STATUSES, which this page never imports;
+              harmless for INVITED since both agree, but don't extend this cross-link's
+              reasoning to other statuses without checking the DealStage mapping first —
+              APPLIED/SHORTLISTED/IN_NEGOTIATION are server-acceptable but map to
+              'negotiating', which renders no Accept button here at all).
+              The previous version of this cross-link pointed at Discover Campaigns, which
+              only ever renders a static "Invited" badge (CreatorBrowseCampaignCard.tsx)
+              with no action at all — a real dead end. Point at the surface that actually
+              lets a creator act on the invite instead of reinventing that flow here. */}
+          <p className="mt-1 text-xs text-muted-foreground">
+            Brand invites don&rsquo;t show up here — check the{' '}
+            <Link
+              to="/creator/deals?status=new"
+              className="font-medium underline underline-offset-2 hover:text-foreground"
+            >
+              New tab in Deals
+            </Link>
+            {' '}to view and respond to any pending invites.
           </p>
         </FadeUp>
 
@@ -119,7 +171,7 @@ export default function CreatorApplicationsPage() {
             <AlertDescription>
               {error}
               <div className="mt-2">
-                <Button size="sm" variant="outline" onClick={() => void fetchApplications()}>
+                <Button size="sm" variant="outline" onClick={() => void fetchApplications(1, false)}>
                   Try again
                 </Button>
               </div>
@@ -139,13 +191,34 @@ export default function CreatorApplicationsPage() {
           ) : !error && filtered.length === 0 ? (
             <FilteredEmptyState filterLabel={TABS.find((t) => t.id === activeFilter)?.label ?? ''} />
           ) : !error ? (
-            <StaggerContainer className="space-y-4">
-              {filtered.map((application) => (
-                <StaggerItem key={application.dealId}>
-                  <CreatorApplicationCard application={application} />
-                </StaggerItem>
-              ))}
-            </StaggerContainer>
+            <>
+              <StaggerContainer className="space-y-4">
+                {filtered.map((application) => (
+                  <StaggerItem key={application.dealId}>
+                    <CreatorApplicationCard application={application} />
+                  </StaggerItem>
+                ))}
+              </StaggerContainer>
+
+              {hasMore && (
+                <div className="mt-6 flex justify-center">
+                  <Button
+                    variant="outline"
+                    disabled={loadingMore}
+                    onClick={() => void fetchApplications(page + 1, true)}
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      'Load more'
+                    )}
+                  </Button>
+                </div>
+              )}
+            </>
           ) : null}
         </div>
       </div>

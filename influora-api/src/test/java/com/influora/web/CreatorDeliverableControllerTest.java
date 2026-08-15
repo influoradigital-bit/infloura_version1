@@ -23,6 +23,7 @@ import com.influora.web.dto.deliverable.CreatorDeliverableDtos.SubmitRequest;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.SubmitResponse;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.UploadResponse;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -150,6 +151,37 @@ class CreatorDeliverableControllerTest {
         assertEquals(1, response.getBody().data().size());
         assertEquals(DELIVERABLE_ID, response.getBody().data().get(0).id());
         verify(creatorDeliverableService).listForCollaboration(principal, COLLAB_ID);
+    }
+
+    @Test
+    @DisplayName("GET /creator/deliverables/bulk?collaboration_ids= delegates to service (CR-51)")
+    void testListBulk() {
+        String collabId2 = "01HCOLLAB29876543210";
+        Map<String, List<DeliverableListItem>> bulkResponse =
+                Map.of(
+                        COLLAB_ID,
+                        List.of(
+                                new DeliverableListItem(
+                                        DELIVERABLE_ID,
+                                        "Workout Reel 1",
+                                        "Version 0",
+                                        DeliverableStatus.PENDING,
+                                        false,
+                                        null,
+                                        null)),
+                        collabId2,
+                        List.of());
+        when(creatorDeliverableService.listForCollaborations(
+                        principal, List.of(COLLAB_ID, collabId2)))
+                .thenReturn(bulkResponse);
+
+        ResponseEntity<ApiResponse<Map<String, List<DeliverableListItem>>>> response =
+                controller.listBulk(principal, List.of(COLLAB_ID, collabId2));
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(2, response.getBody().data().size());
+        assertEquals(1, response.getBody().data().get(COLLAB_ID).size());
+        verify(creatorDeliverableService).listForCollaborations(principal, List.of(COLLAB_ID, collabId2));
     }
 
     @Test

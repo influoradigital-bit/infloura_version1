@@ -1,0 +1,4 @@
+{"verdict": "believed", "oracle": "model", "isolation": "fresh-context",
+ "done_when": "CR-120 fixed: creator-onboarding.tsx no longer sends 'mock_oauth_code' to the live backend; Instagram connect uses the real api.metaOAuth.authorize() redirect; a Skip control lets a creator finish onboarding without a social; creator-meta-callback.tsx returns onboarding-initiated connects to /creator/onboarding without breaking the Settings flow; tsc --noEmit passes.",
+ "not_checked": ["the real Meta OAuth round-trip against a live Meta app + deployed backend (Neha's live re-test) — code compiles and is logically verified, but the production authorize->callback handshake was not exercised"],
+ "skipped": []}

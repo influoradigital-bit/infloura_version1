@@ -18,11 +18,13 @@ import org.hibernate.type.SqlTypes;
  * <p><b>{@code workspaceId} is nullable (V20260721150000, Creator AI Co-pilot Tier-1 OAuth flip)</b>
  * — a creator-owned row (this feature) always has {@code workspaceId == null}; a brand-owned row
  * (unchanged, pre-existing) always has a non-null {@code workspaceId}. The two key-spaces are
- * disjoint by construction: creator reads/writes key on {@code
- * findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse}, brand reads/writes key on the
- * untouched {@code findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse} (which never matches a
- * null-workspace row). See {@code MetaTokenStorage} for the creator-owned method pair and Kabir
- * gate finding F-1 for the revoke-before-insert discipline this nullability requires.
+ * disjoint: creator reads/writes key on {@code
+ * findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse}, brand reads/writes key on {@code
+ * findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse} (CR-111: that method's JPQL carries an
+ * explicit {@code workspaceId IS NOT NULL} predicate so a {@code null} workspaceId argument can
+ * never match a null-workspace row — this is enforced by the query itself, not just true of every
+ * current caller). See {@code MetaTokenStorage} for the creator-owned method pair and Kabir gate
+ * finding F-1 for the revoke-before-insert discipline this nullability requires.
  */
 @Entity
 @Table(name = "meta_oauth_tokens")
@@ -147,9 +149,26 @@ public class MetaOAuthToken {
 
     public static final class Builder {
         private final MetaOAuthToken t = new MetaOAuthToken();
+        private Instant createdAtOverride;
 
         public Builder id(String id) {
             t.id = id;
+            return this;
+        }
+
+        /**
+         * F-0173 — overrides the {@code createdAt} that {@link #build()} would otherwise stamp
+         * with "now". Exists for exactly one caller: {@code MetaTokenStorage.storeCreatorToken}'s
+         * revoke-then-insert rotation, which mints a brand-new row on every refresh (the
+         * revoke-before-insert step {@link #build()}'s own javadoc on {@code storeCreatorToken}
+         * documents as deliberate self-DoS prevention) — without this, {@code createdAt} silently
+         * advanced forward every ~55-day auto-refresh cycle instead of reflecting when the
+         * creator actually first connected, since {@code MetaConnectionService.getStatus} reads
+         * this column directly as the "connected since" date shown to the creator. Every other
+         * caller leaves this unset and gets the original "now" behavior.
+         */
+        public Builder createdAt(Instant createdAt) {
+            this.createdAtOverride = createdAt;
             return this;
         }
 
@@ -190,7 +209,7 @@ public class MetaOAuthToken {
 
         public MetaOAuthToken build() {
             Instant now = Instant.now();
-            t.createdAt = now;
+            t.createdAt = createdAtOverride != null ? createdAtOverride : now;
             t.updatedAt = now;
             return t;
         }

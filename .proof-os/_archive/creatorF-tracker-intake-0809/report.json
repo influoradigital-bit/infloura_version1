@@ -1,0 +1,16 @@
+{
+ "rows": [
+  {
+   "subject": "wiki/errors/CREATOR-BUG-TRACKER.md",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python verify_tracker.py",
+    "result": "PASS: 74 rows (CR-51..CR-124) present with valid owner+status+detail block; totals line consistent (12 Critical / 23 High / 62 Medium / 28 Low = 125 logged)",
+    "where": "wiki/errors/CREATOR-BUG-TRACKER.md:88-235"
+   }
+  }
+ ]
+}

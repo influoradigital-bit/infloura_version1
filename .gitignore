@@ -85,3 +85,7 @@ proof-os-0.1.8/
 # Production env secrets — currently TRACKED in history; still needs
 # `git rm --cached .env.production` + secret rotation to fully remediate
 .env.production
+
+# proof-os audit reports contain extracted secret-shaped strings — never commit them
+.proof-os/_archive/**/gitleaks.json
+.proof-os/tasks/**/gitleaks.json
