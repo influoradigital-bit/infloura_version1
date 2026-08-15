@@ -26,6 +26,16 @@ public final class DealDtos {
             String campaignId,
             String campaignName,
             String counterpartyId,
+            /**
+             * The counterparty's CreatorProfile id — distinct from {@code counterpartyId}, which
+             * is the creator's User id ({@code Collaboration.creatorId} / {@code
+             * DealService.resolveCounterparty}). Frontend profile pages (e.g. {@code
+             * brand-creator-profile.tsx}) navigate/match on CreatorProfile id, not User id, so
+             * without this field the brand-side "does a conversation already exist" lookup in
+             * {@code brand-messages.tsx} could never match a real deal. Null when the counterparty
+             * is a brand (viewer is CREATOR) — a brand counterparty has no CreatorProfile row.
+             */
+            String counterpartyProfileId,
             String counterpartyName,
             String counterpartyAvatar,
             String counterpartyHandle,

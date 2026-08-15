@@ -415,7 +415,7 @@ public class DealService {
                                                 "CAMPAIGN_NOT_FOUND",
                                                 "Campaign not found",
                                                 HttpStatus.NOT_FOUND));
-        validateProposalAmount(campaign, body.amount());
+        validateCounterAmount(campaign, body.amount());
 
         UserType role = principal.getUserType();
         String scopeId =
@@ -1029,6 +1029,83 @@ public class DealService {
     }
 
     /**
+     * [BUG FIX 2026-08-13, Arjun-routed] Amount validation for {@link #counter}, deliberately
+     * narrower than {@link #validateProposalAmount} — which {@link #counter} used to call
+     * verbatim, sharing the {@code AMOUNT_EXCEEDS_BUDGET} ceiling with a brand's very first
+     * offer.
+     *
+     * <p><b>Why sharing it was a bug, not just strict:</b> {@code campaign.budgetMax} exists to
+     * catch a brand's wildly-out-of-range FIRST offer ({@link #createProposal}) — it is not a
+     * ceiling on where a live negotiation between two already-engaged parties may land. The
+     * standing price on a deal is, by construction, already {@code <= budgetMax} (it passed this
+     * same check to get there), so ANY counter that raised the price at all risked landing above
+     * the cap whenever the standing offer was already near it — structurally squeezing out the
+     * one thing a counter exists to do. No {@code DealServiceTest} case ever exercised a value
+     * near/above {@code budgetMax}, and the frontend counter form ({@code
+     * counter-proposal-form.tsx}) gives no pre-submit warning, so the bug shipped silent.
+     *
+     * <p><b>What stays enforced:</b> the positive-amount check (a counter collapsing to $0/
+     * negative is nonsensical regardless of role) and the {@code budgetMin} floor — that
+     * protection is unrelated to this defect and is left exactly as strict as before. Only the
+     * upper ceiling is lifted, and deliberately by removing the check rather than widening it by
+     * some percentage: there is no principled number to hardcode, and see below for why an
+     * unbounded ceiling is still safe here.
+     *
+     * <p><b>Symmetric across both roles that call {@link #counter}</b> (brand and creator share
+     * the one endpoint, disambiguated only by {@code senderType} inside {@link #doCounter}) —
+     * deliberately NOT creator-only. Once a deal is {@code IN_NEGOTIATION}, the ceiling is
+     * equally pointless against a BRAND counter: e.g. a creator counters above {@code budgetMax}
+     * and the brand wants to meet in the middle at a figure still above {@code budgetMax} but
+     * below the creator's ask — that is a legitimate compromise move, not a fat-fingered opening
+     * offer, and gating only the creator's half of the negotiation would just as structurally
+     * strangle compromise from the brand's side.
+     *
+     * <p><b>Why lifting the ceiling is safe (the money-path question — this paragraph took five
+     * fresh-context Priya review rounds before every claim in it held true; the change was never
+     * committed between rounds, so there is no git history of the four narrower-each-time false
+     * claims it replaced. Do not re-add a "safety" sentence to this javadoc without re-verifying it
+     * against the code, not against how convincing it sounds):</b>
+     *
+     * <ul>
+     * <li>A counter cannot inflate any escrow amount by itself. Both fund amounts are always
+     *     server-derived from persisted rows — {@code milestone.getAmount()} or {@code
+     *     campaign.getBudgetMax()} ({@link EscrowService#deriveFundAmount}) — never from a
+     *     proposal/counter request payload.
+     * <li>{@link #doCounter} writes {@code collaboration.agreedRate} from this amount immediately,
+     *     at counter time, not only after {@link #accept}. {@code ContractService#generate} does
+     *     not require {@code TERMS_AGREED} (it only blocks {@code CANCELLED}), and its milestone
+     *     total is capped at {@code agreedRate} with no {@code budgetMax} check — so on the
+     *     MILESTONE path, an inflated {@code agreedRate} can reach a hold, but only after both
+     *     {@code contract.getBrandSignedAt()} and {@code contract.getCreatorSignedAt()} are
+     *     non-null ({@code EscrowService}'s {@code milestoneId != null} funding branch).
+     * <li>On the NO-MILESTONE ("pool") path the fund amount is {@code campaign.getBudgetMax()}
+     *     itself, counter-independent, so an inflated counter cannot inflate it. This path is
+     *     ungated by contract signatures in BOTH directions (funding and release) — that is a
+     *     pre-existing property of the campaign-level pool model, not something this change
+     *     touches or widens. The one real consequence of lifting the ceiling: a pool hold can now
+     *     legitimately UNDER-cover an above-{@code budgetMax} {@code agreedRate}. That is a
+     *     funding-coverage gap worth its own ticket, not a way to move money without consent.
+     * <li>No release can be redirected: every release is initiated by the brand side or by admin
+     *     dispute settlement, and the payee is always resolved server-side from {@code
+     *     Collaboration.creatorId}, never from the request. (This says nothing about {@code
+     *     EscrowService#refund}, which the brand can invoke unilaterally on either route — that is
+     *     pre-existing behavior, unrelated to and unwidened by this change.)
+     * </ul>
+     */
+    private void validateCounterAmount(Campaign campaign, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(
+                    "INVALID_AMOUNT", "Amount must be positive", HttpStatus.BAD_REQUEST);
+        }
+        if (campaign.getBudgetMin() != null && amount.compareTo(campaign.getBudgetMin()) < 0) {
+            throw new ApiException(
+                    "AMOUNT_BELOW_BUDGET",
+                    "Proposed amount is below campaign minimum budget",
+                    HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    /**
      * CR-08 — returns the persisted proposal card (it used to return {@code void}) so {@link
      * #doCounter} can publish the new offer over SSE. {@link #createProposal} ignores the return:
      * a brand-side proposal is the first event on a brand-new Collaboration, so there is no open
@@ -1248,6 +1325,7 @@ public class DealService {
                 collaboration.getCampaignId(),
                 campaignName,
                 counterparty.id(),
+                counterparty.profileId(),
                 counterparty.name(),
                 counterparty.avatar(),
                 counterparty.handle(),
@@ -1279,11 +1357,12 @@ public class DealService {
         if (viewerRole == UserType.CREATOR) {
             String workspaceId = campaign != null ? campaign.getWorkspaceId() : null;
             if (workspaceId == null) {
-                return new Counterparty("unknown", "Brand", null, null, null);
+                return new Counterparty("unknown", null, "Brand", null, null, null);
             }
             Workspace workspace = workspaceRepository.findById(workspaceId).orElse(null);
             return new Counterparty(
                     workspaceId,
+                    null,
                     workspace != null ? workspace.getName() : "Brand",
                     workspace != null ? workspace.getLogoUrl() : null,
                     null,
@@ -1295,6 +1374,7 @@ public class DealService {
                 creatorProfileRepository.findByUserId(collaboration.getCreatorId()).orElse(null);
         return new Counterparty(
                 collaboration.getCreatorId(),
+                creator != null ? creator.getId() : null,
                 creator != null ? creator.getDisplayName() : "Creator",
                 creator != null ? creator.getAvatarUrl() : null,
                 creator != null ? creator.getUsername() : null,
@@ -1495,5 +1575,10 @@ public class DealService {
     }
 
     private record Counterparty(
-            String id, String name, String avatar, String handle, String verificationStatus) {}
+            String id,
+            String profileId,
+            String name,
+            String avatar,
+            String handle,
+            String verificationStatus) {}
 }

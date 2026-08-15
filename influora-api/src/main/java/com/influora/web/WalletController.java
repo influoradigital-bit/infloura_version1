@@ -10,6 +10,7 @@ import com.influora.service.CreatorContextService;
 import com.influora.service.WalletService;
 import com.influora.service.WalletTopUpService;
 import com.influora.service.payout.CreatorBankAccountService;
+import com.influora.web.dto.money.MoneyDtos.CreatorPayoutRowResponse;
 import com.influora.web.dto.money.MoneyDtos.CreatorWithdrawRequest;
 import com.influora.web.dto.money.MoneyDtos.CreatorWithdrawResponse;
 import com.influora.web.dto.money.MoneyDtos.WalletBalanceResponse;
@@ -153,6 +154,31 @@ public class WalletController {
             ownerId = workspace.getId();
         }
         var result = walletService.getTransactionsForUser(ownerId, page, limit, period);
+        return ResponseEntity.ok(ApiResponse.ok(result.items(), result.meta()));
+    }
+
+    /**
+     * CR-77 — GET /wallet/payouts. The creator's real payout history, read from the {@code payouts}
+     * table instead of being derived client-side by filtering {@code /wallet/transactions} down to
+     * {@code WITHDRAWAL} debits.
+     *
+     * <p>CREATOR-ONLY, deliberately unlike the dual-role {@code /transactions} above. A payout is a
+     * disbursement to a creator's own bank account; {@code payouts.creator_user_id} has no brand or
+     * workspace analogue, so there is nothing coherent for a brand principal to receive here. It
+     * returns 403 rather than an empty list, because an empty list would read as "you have no
+     * payouts" to a caller who can never have any.
+     *
+     * <p>The owner id is taken from the authenticated principal and passed straight into a
+     * creator-scoped derived query — never from a request parameter (the Kabir Task #11 pattern
+     * this controller already follows for balances).
+     */
+    @GetMapping("/payouts")
+    public ResponseEntity<ApiResponse<List<CreatorPayoutRowResponse>>> payouts(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int limit) {
+        creatorContext.requireCreator(principal);
+        var result = walletService.getPayoutsForCreator(principal.getUserId(), page, limit);
         return ResponseEntity.ok(ApiResponse.ok(result.items(), result.meta()));
     }
 

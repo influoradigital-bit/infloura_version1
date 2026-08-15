@@ -131,6 +131,21 @@ public class RazorpayWebhookController {
                     handleSubscriptionEvent(rawPayload, SubscriptionStatus.HALTED, false, false);
             case "subscription.pending" ->
                     handleSubscriptionEvent(rawPayload, SubscriptionStatus.PAST_DUE, false, false);
+            // [BL-2 fix, BrandF.md §98] Razorpay's terminal cancellation events were previously
+            // discarded by the `default` no-op below, so nothing ever wrote SubscriptionStatus
+            // .CANCELLED for a cancelled-at-period-end subscription in production — combined with
+            // SubscriptionRenewalResetJob's old query (any ACTIVE row with a lapsed period,
+            // including cancel-at-period-end ones) re-renewing it forever, a cancellation never
+            // actually took effect. `subscription.cancelled` fires when the customer's subscription
+            // is genuinely cancelled (whether via the checked-in dashboard/API cancel or Razorpay's
+            // own end-of-cycle finalization of a scheduled `cancel_at_cycle_end`); `completed`
+            // fires only if the fixed DEFAULT_TOTAL_COUNT cycle horizon (SubscriptionService, 120
+            // cycles) is ever actually exhausted — practically unreachable for a subscription still
+            // in good standing, but routed identically since it is equally terminal. Both are
+            // status-only (no period touched, matches halted/pending) and never generate an
+            // invoice.
+            case "subscription.cancelled", "subscription.completed" ->
+                    handleSubscriptionEvent(rawPayload, SubscriptionStatus.CANCELLED, false, false);
             default -> {
                 // Unhandled event types are acknowledged (200) but not acted on, per Razorpay's
                 // webhook contract — returning a non-2xx for unknown-but-valid events causes
@@ -203,8 +218,10 @@ public class RazorpayWebhookController {
     }
 
     /**
-     * [W1-6] Shared entry point for {@code subscription.activated}/{@code subscription.charged}/
-     * {@code subscription.halted}. Parses {@code payload.subscription.entity} (and, for a charge,
+     * [W1-6, extended by the BL-2 fix] Shared entry point for {@code subscription.activated}/
+     * {@code subscription.charged}/{@code subscription.halted}/{@code subscription.pending}/
+     * {@code subscription.cancelled}/{@code subscription.completed}. Parses {@code
+     * payload.subscription.entity} (and, for a charge,
      * {@code payload.payment.entity}), then applies the transition via {@link
      * SubscriptionService#applySubscriptionWebhookUpdate} — the ONLY place local subscription state
      * is written from Razorpay's side (class javadoc there).

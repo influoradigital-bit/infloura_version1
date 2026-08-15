@@ -79,9 +79,9 @@ class MetricsPollingJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID))
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.of(TOKEN_VALUE));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(50);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
 
         InstagramUserResponse profile =
                 new InstagramUserResponse("ig_12345", "testuser", "Test User", "Bio", 10000L, 500L, 150L, null, null);
@@ -120,9 +120,9 @@ class MetricsPollingJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID))
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.of(TOKEN_VALUE));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(92); // >= 90 threshold
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(92); // >= 90 threshold
 
         pollingJob.pollMetrics();
 
@@ -140,7 +140,7 @@ class MetricsPollingJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID))
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.empty()); // No valid token (expired, revoked, or doesn't exist)
 
         pollingJob.pollMetrics();
@@ -159,16 +159,17 @@ class MetricsPollingJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID))
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.of(TOKEN_VALUE));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(50);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
         when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
                 .thenThrow(new MetaRateLimitException("Rate limit exceeded"));
 
         pollingJob.pollMetrics();
 
         // Verify rateLimitTracker.markLimited was called
-        verify(rateLimitTracker).markLimited(CREATOR_ID);
+        // F-0126: must use the same key as getCurrentUsage (igBusinessAccountId), not the ULID.
+        verify(rateLimitTracker).markLimited(IG_BUSINESS_ACCOUNT_ID);
 
         // Verify no metric was saved
         verify(creatorMetricsRepository, never()).save(any(CreatorMetric.class));
@@ -183,9 +184,9 @@ class MetricsPollingJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID))
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.of(TOKEN_VALUE));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(50);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
         when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
                 .thenThrow(new MetaTokenExpiredException("Token expired"));
 
@@ -202,9 +203,9 @@ class MetricsPollingJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID))
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.of(TOKEN_VALUE));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(50);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
         when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
                 .thenThrow(new MetaApiException("Server error"));
 
@@ -224,9 +225,9 @@ class MetricsPollingJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID))
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.of(TOKEN_VALUE));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(50);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
 
         InstagramUserResponse profile =
                 new InstagramUserResponse("ig_12345", "testuser", "Test User", "Bio", 10000L, 500L, 150L, null, null);
@@ -283,24 +284,24 @@ class MetricsPollingJobTest {
                 .thenReturn(List.of(token1, token2, token3));
 
         // Creator 1: success
-        when(tokenStorage.getValidToken(WORKSPACE_ID, creator1))
+        when(tokenStorage.getValidCreatorToken(creator1))
                 .thenReturn(Optional.of(TOKEN_VALUE));
-        when(rateLimitTracker.getCurrentUsage(creator1)).thenReturn(50);
+        when(rateLimitTracker.getCurrentUsage(igId1)).thenReturn(50);
         InstagramUserResponse profile1 =
                 new InstagramUserResponse("ig_1", "user1", "User 1", "Bio 1", 5000L, 100L, 50L, null, null);
         when(instagramClient.getProfile(igId1, TOKEN_VALUE)).thenReturn(profile1);
 
         // Creator 2: failure (MetaApiException)
-        when(tokenStorage.getValidToken(WORKSPACE_ID, creator2))
+        when(tokenStorage.getValidCreatorToken(creator2))
                 .thenReturn(Optional.of(TOKEN_VALUE));
-        when(rateLimitTracker.getCurrentUsage(creator2)).thenReturn(50);
+        when(rateLimitTracker.getCurrentUsage(igId2)).thenReturn(50);
         when(instagramClient.getProfile(igId2, TOKEN_VALUE))
                 .thenThrow(new MetaApiException("Error"));
 
         // Creator 3: success
-        when(tokenStorage.getValidToken(WORKSPACE_ID, creator3))
+        when(tokenStorage.getValidCreatorToken(creator3))
                 .thenReturn(Optional.of(TOKEN_VALUE));
-        when(rateLimitTracker.getCurrentUsage(creator3)).thenReturn(50);
+        when(rateLimitTracker.getCurrentUsage(igId3)).thenReturn(50);
         InstagramUserResponse profile3 =
                 new InstagramUserResponse("ig_3", "user3", "User 3", "Bio 3", 8000L, 200L, 80L, null, null);
         when(instagramClient.getProfile(igId3, TOKEN_VALUE)).thenReturn(profile3);
@@ -320,9 +321,9 @@ class MetricsPollingJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID))
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.of(TOKEN_VALUE));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(50);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
 
         // InstagramUserResponse with null followersCount
         InstagramUserResponse profile =
@@ -348,9 +349,9 @@ class MetricsPollingJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID, IG_BUSINESS_ACCOUNT_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID))
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.of(TOKEN_VALUE));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(50);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
         InstagramUserResponse profile =
                 new InstagramUserResponse("ig_12345", "testuser", "Test User", "Bio", 10000L, 500L, 150L, null, null);
         when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE)).thenReturn(profile);
@@ -364,6 +365,29 @@ class MetricsPollingJobTest {
 
     @Test
     @DisplayName(
+            "pollMetrics: F-0126 regression — pre-flight rate-limit check reads/marks usage under"
+                    + " igBusinessAccountId, the same key MetaGraphApiClient itself uses, never the"
+                    + " internal creatorProfileId ULID")
+    void testPollMetricsRateLimitTrackerKeyedOnIgBusinessAccountIdNotUlid() {
+        MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID, IG_BUSINESS_ACCOUNT_ID);
+        when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
+                .thenReturn(List.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID))
+                .thenReturn(Optional.of(TOKEN_VALUE));
+        // Stub the CORRECT key at the tripping threshold; the ULID key is left unstubbed (defaults
+        // to 0). If production regressed to keying on creatorProfileId, this stub would never be
+        // consulted and the creator would wrongly be polled instead of deferred.
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(95);
+
+        pollingJob.pollMetrics();
+
+        verify(rateLimitTracker, never()).getCurrentUsage(CREATOR_ID);
+        verify(instagramClient, never()).getProfile(anyString(), anyString());
+        verify(creatorMetricsRepository, never()).save(any(CreatorMetric.class));
+    }
+
+    @Test
+    @DisplayName(
             "pollMetrics: a token row with no igBusinessAccountId on file is skipped, never called"
                     + " with a null/ULID path segment")
     void testPollMetricsSkipsWhenIgBusinessAccountIdMissing() {
@@ -373,9 +397,9 @@ class MetricsPollingJobTest {
         // Priya review finding C: a valid token must be stubbed so the igBusinessAccountId guard,
         // not the unrelated no-valid-token branch, is what actually stops this call.
         lenient()
-                .when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID))
+                .when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.of(TOKEN_VALUE));
-        lenient().when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(50);
+        lenient().when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
 
         pollingJob.pollMetrics();
 

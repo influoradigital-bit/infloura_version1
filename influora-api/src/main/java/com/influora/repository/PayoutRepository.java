@@ -4,9 +4,26 @@ import com.influora.domain.entity.Payout;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PayoutRepository extends JpaRepository<Payout, String> {
+
+    /**
+     * CR-77 — backing query for {@code GET /wallet/payouts}, the creator-facing payout history.
+     *
+     * <p>Tenant-scoped by {@code creatorUserId} in the derived query itself, not by a filter
+     * applied after a broad read: the caller's own id comes straight off the authenticated
+     * principal, so a payout belonging to another creator can never enter the result set. (Same
+     * discipline as CR-111 — a scoping predicate that lives in the query, not in the service.)
+     *
+     * <p>Ordered newest-first because this feeds a reverse-chronological history list; {@code
+     * createdAt} is the request time, which is the order a creator experienced these in, whereas
+     * {@code confirmedAt} is null until settlement and would sort unsettled rows unpredictably.
+     */
+    @org.springframework.data.jpa.repository.Query("select p from Payout p order by p.createdAt desc")
+    Page<Payout> findByCreatorUserIdOrderByCreatedAtDesc(String creatorUserId, Pageable pageable);
 
     Optional<Payout> findByRazorpayPayoutId(String razorpayPayoutId);
 

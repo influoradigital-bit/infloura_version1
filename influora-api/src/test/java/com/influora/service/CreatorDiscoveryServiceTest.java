@@ -258,6 +258,44 @@ class CreatorDiscoveryServiceTest {
     }
 
     @Test
+    @DisplayName(
+            "getPublicProfile: resolves discoverable creator by their User id (brand-campaign-detail"
+                    + " bids-tab caller), not just profile id or username")
+    void testGetPublicProfileByUserId() {
+        stubWorkspace();
+        CreatorProfile profile = stubDiscoverableProfile();
+        // Isolation: stub ONLY findByUserId -- no findByIdAndDiscoverableTrue stub, no
+        // findByUsernameIgnoreCase stub. This is exactly the shape brand-campaign-detail.tsx's bids
+        // tab passes: deal.counterpartyId, which DealService's Counterparty.id sets to
+        // collaboration.getCreatorId() -- a Collaboration.creatorId / users.id, never a
+        // CreatorProfile id -- so findByIdAndDiscoverableTrue(CREATOR_USER_ID) would miss (wrong id
+        // type) and, under the old two-branch resolveDiscoverableProfile, findByUsernameIgnoreCase
+        // (CREATOR_USER_ID) would miss too, throwing CREATOR_NOT_FOUND (404). No stub exists for
+        // either of those calls here, so if the fix regresses to the old branch order/set, Mockito's
+        // default empty Optional makes this call 404 rather than silently mis-resolving.
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID)).thenReturn(Optional.of(profile));
+        when(platformStatRepository.findByCreatorProfileId(CREATOR_PROFILE_ID)).thenReturn(List.of());
+        when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileId(WORKSPACE_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.empty());
+        when(collaborationRepository.findByCreatorIdAndStatus(CREATOR_USER_ID, CollaborationStatus.COMPLETED))
+                .thenReturn(List.of());
+        CreatorScore score = mock(CreatorScore.class);
+        when(score.getQualityScore()).thenReturn(new BigDecimal("8.5"));
+        when(score.getFakeFollowerScore()).thenReturn(new BigDecimal("9.2"));
+        when(score.getBrandSafetyScore()).thenReturn(new BigDecimal("9.8"));
+        when(creatorScoreRepository.findFirstByCreatorProfileIdOrderByTimeDesc(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(score));
+
+        var response = service.getPublicProfile(principal, CREATOR_USER_ID);
+
+        assertEquals(CREATOR_PROFILE_ID, response.id());
+        assertEquals(USERNAME, response.username());
+        assertEquals("Riya Sharma", response.displayName());
+        assertNotNull(response.scores());
+        assertEquals(new BigDecimal("8.5"), response.scores().quality());
+    }
+
+    @Test
     @DisplayName("getPublicProfile: non-discoverable username returns 404")
     void testGetPublicProfileNotDiscoverable() {
         stubWorkspace();

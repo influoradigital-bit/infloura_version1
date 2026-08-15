@@ -52,7 +52,6 @@ class DeliverableVerificationServiceTest {
     private static final String MILESTONE_ID = "01HMILESTONE1234567890";
     private static final String CREATOR_PROFILE_ID = "01HCREATORPROFILE1234";
     private static final String CREATOR_USER_ID = "01HCREATORUSER1234567";
-    private static final String WORKSPACE_ID = "01HWORKSPACE123456789";
     private static final String ACCESS_TOKEN = "decrypted-meta-token";
     private static final String IG_SHORTCODE = "ABC123xyz";
     private static final String POST_URL = "https://www.instagram.com/p/" + IG_SHORTCODE + "/";
@@ -104,10 +103,17 @@ class DeliverableVerificationServiceTest {
     }
 
     private static MetaOAuthToken activeTokenRow(String igBusinessAccountId) {
+        // Priya review residual (F-0166): this used to build a BRAND-shaped row
+        // (.workspaceId(WORKSPACE_ID)) even though every test here exercises the
+        // creator-verification path — so none of these 14 tests actually proved the fix against
+        // the real shape of a creator-owned row. Every creator Meta token has workspace_id NULL
+        // (CreatorMetaOAuthService.connect -> MetaTokenStorage.storeCreatorToken); this fixture
+        // now matches that, and the mocked getValidCreatorToken(CREATOR_PROFILE_ID) call is what
+        // production actually calls for exactly this shape.
         return MetaOAuthToken.builder()
                 .id("01HTOKEN1234567890AB")
-                .workspaceId(WORKSPACE_ID)
                 .creatorProfileId(CREATOR_PROFILE_ID)
+                // .workspaceId(...) intentionally omitted — stays null, a real creator-owned row.
                 .igBusinessAccountId(igBusinessAccountId)
                 .encryptedAccessToken("ignored-ciphertext")
                 .expiresAt(Instant.now().plusSeconds(3600))
@@ -118,9 +124,9 @@ class DeliverableVerificationServiceTest {
         when(metaOAuthTokenRepository.findFirstByCreatorProfileIdAndRevokedFalseOrderByCreatedAtAsc(
                         CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(activeTokenRow()));
-        when(metaTokenStorage.getValidToken(WORKSPACE_ID, CREATOR_PROFILE_ID))
+        when(metaTokenStorage.getValidCreatorToken(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(ACCESS_TOKEN));
-        lenient().when(rateLimitTracker.getCurrentUsage(CREATOR_PROFILE_ID)).thenReturn(0);
+        lenient().when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(0);
     }
 
     private static InstagramMediaResponse mediaListWithMatch() {
@@ -165,7 +171,7 @@ class DeliverableVerificationServiceTest {
         stubHappyPathTokenAndRateLimit();
         when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
                 .thenReturn(mediaListWithMatch());
-        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, CREATOR_PROFILE_ID))
+        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, IG_BUSINESS_ACCOUNT_ID))
                 .thenReturn(insightsWith(5000, 8000, 300));
         when(deliverableMetricRepository.findByMilestoneId(MILESTONE_ID)).thenReturn(Optional.empty());
         when(collaborationRepository.findById(COLLAB_ID))
@@ -195,7 +201,7 @@ class DeliverableVerificationServiceTest {
         stubHappyPathTokenAndRateLimit();
         when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
                 .thenReturn(mediaListWithMatch());
-        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, CREATOR_PROFILE_ID))
+        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, IG_BUSINESS_ACCOUNT_ID))
                 .thenReturn(insightsWith(9000, 12000, 500));
 
         DeliverableMetric existingVerifiedRow =
@@ -263,6 +269,44 @@ class DeliverableVerificationServiceTest {
 
     @Test
     @DisplayName(
+            "F-0166 regression: a creator-owned token row (workspace_id NULL) resolves via"
+                    + " getValidCreatorToken and verification proceeds, rather than falling back"
+                    + " to FALLBACK_NO_TOKEN")
+    void creatorOwnedTokenRowResolvesRatherThanFallingBackToNoToken() {
+        // The exact production shape: a real creator Meta token always has a null workspaceId
+        // (CreatorMetaOAuthService.connect -> MetaTokenStorage.storeCreatorToken). Before F-0166,
+        // verifyInstagram resolved the token via the WORKSPACE-scoped getValidToken(workspaceId,
+        // creatorProfileId) — and MetaOAuthTokenRepository's query behind it carries an explicit
+        // `workspaceId IS NOT NULL` predicate (CR-111), so a null workspaceId could never match
+        // any row. Every creator deliverable silently returned FALLBACK_NO_TOKEN regardless of
+        // whether the creator had a perfectly valid connection.
+        Deliverable deliverable = postedDeliverable(POST_URL);
+        MetaOAuthToken creatorOwnedRow = activeTokenRow(); // workspaceId is null by construction
+        when(metaOAuthTokenRepository.findFirstByCreatorProfileIdAndRevokedFalseOrderByCreatedAtAsc(
+                        CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(creatorOwnedRow));
+        when(metaTokenStorage.getValidCreatorToken(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(ACCESS_TOKEN));
+        lenient().when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(0);
+        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
+                .thenReturn(mediaListWithMatch());
+        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, IG_BUSINESS_ACCOUNT_ID))
+                .thenReturn(insightsWith(5000, 8000, 300));
+        when(deliverableMetricRepository.findByMilestoneId(MILESTONE_ID)).thenReturn(Optional.empty());
+        when(collaborationRepository.findById(COLLAB_ID))
+                .thenReturn(Optional.of(Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR")));
+
+        DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
+
+        // The regression this guards against: silently falling back to FALLBACK_NO_TOKEN for a
+        // token row that is, in fact, valid and connected.
+        assertEquals(DeliverableVerificationService.Outcome.VERIFIED, outcome);
+        verify(metaTokenStorage, never()).getValidToken(any(), any());
+        verify(metaTokenStorage).getValidCreatorToken(CREATOR_PROFILE_ID);
+    }
+
+    @Test
+    @DisplayName(
             "CR-99/F-0113 regression: verifyInstagram fetches media with igBusinessAccountId, never the"
                     + " internal creatorProfileId ULID")
     void usesIgBusinessAccountIdNotUlidForMediaFetch() {
@@ -270,7 +314,7 @@ class DeliverableVerificationServiceTest {
         stubHappyPathTokenAndRateLimit();
         when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
                 .thenReturn(mediaListWithMatch());
-        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, CREATOR_PROFILE_ID))
+        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, IG_BUSINESS_ACCOUNT_ID))
                 .thenReturn(insightsWith(5000, 8000, 300));
         when(deliverableMetricRepository.findByMilestoneId(MILESTONE_ID)).thenReturn(Optional.empty());
         when(collaborationRepository.findById(COLLAB_ID))
@@ -285,6 +329,31 @@ class DeliverableVerificationServiceTest {
 
     @Test
     @DisplayName(
+            "F-0126 regression: rate-limit tracker (pre-flight check, both markLimited calls, and"
+                    + " the businessAccountId arg passed into getMediaInsights) is keyed on"
+                    + " igBusinessAccountId — the same key MetaGraphApiClient itself uses — never the"
+                    + " internal creatorProfileId ULID")
+    void rateLimitTrackerAndInsightsCallKeyedOnIgBusinessAccountIdNotUlid() {
+        Deliverable deliverable = postedDeliverable(POST_URL);
+        when(metaOAuthTokenRepository.findFirstByCreatorProfileIdAndRevokedFalseOrderByCreatedAtAsc(
+                        CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(activeTokenRow()));
+        when(metaTokenStorage.getValidCreatorToken(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(ACCESS_TOKEN));
+        // Stub only the CORRECT key; the ULID key is left unstubbed (defaults to 0/empty). If
+        // production regressed to keying on creatorProfileId, the pre-flight check below would
+        // never see this stub and would wrongly proceed instead of deferring.
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(95);
+
+        DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
+
+        assertEquals(DeliverableVerificationService.Outcome.FALLBACK_RATE_LIMITED, outcome);
+        verify(rateLimitTracker, never()).getCurrentUsage(CREATOR_PROFILE_ID);
+        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt());
+    }
+
+    @Test
+    @DisplayName(
             "CR-99/F-0113 regression: a token row with no igBusinessAccountId on file falls back to"
                     + " FALLBACK_DATA_INTEGRITY rather than calling Meta with a null/ULID path segment")
     void noIgBusinessAccountIdOnFileFallsBackToDataIntegrity() {
@@ -292,7 +361,7 @@ class DeliverableVerificationServiceTest {
         when(metaOAuthTokenRepository.findFirstByCreatorProfileIdAndRevokedFalseOrderByCreatedAtAsc(
                         CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(activeTokenRow(null)));
-        when(metaTokenStorage.getValidToken(WORKSPACE_ID, CREATOR_PROFILE_ID))
+        when(metaTokenStorage.getValidCreatorToken(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(ACCESS_TOKEN));
 
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
@@ -309,7 +378,7 @@ class DeliverableVerificationServiceTest {
         when(metaOAuthTokenRepository.findFirstByCreatorProfileIdAndRevokedFalseOrderByCreatedAtAsc(
                         CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(activeTokenRow()));
-        when(metaTokenStorage.getValidToken(WORKSPACE_ID, CREATOR_PROFILE_ID)).thenReturn(Optional.empty());
+        when(metaTokenStorage.getValidCreatorToken(CREATOR_PROFILE_ID)).thenReturn(Optional.empty());
 
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
 
@@ -328,9 +397,9 @@ class DeliverableVerificationServiceTest {
         when(metaOAuthTokenRepository.findFirstByCreatorProfileIdAndRevokedFalseOrderByCreatedAtAsc(
                         CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(activeTokenRow()));
-        when(metaTokenStorage.getValidToken(WORKSPACE_ID, CREATOR_PROFILE_ID))
+        when(metaTokenStorage.getValidCreatorToken(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(ACCESS_TOKEN));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_PROFILE_ID)).thenReturn(95);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(95);
 
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
 
@@ -349,7 +418,8 @@ class DeliverableVerificationServiceTest {
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
 
         assertEquals(DeliverableVerificationService.Outcome.FALLBACK_RATE_LIMITED, outcome);
-        verify(rateLimitTracker).markLimited(CREATOR_PROFILE_ID);
+        // F-0126: must use the same key as getCurrentUsage (igBusinessAccountId), not the ULID.
+        verify(rateLimitTracker).markLimited(IG_BUSINESS_ACCOUNT_ID);
         verify(deliverableMetricRepository, never()).save(any());
     }
 

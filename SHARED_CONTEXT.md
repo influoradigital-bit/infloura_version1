@@ -460,3 +460,196 @@ Files: `src/pages/brand-creator-profile.tsx`, `src/pages/brand-creator-profile-p
 ```
 Ananya → Kavya | READY FOR QA: PR-1 close-out — honest attestation copy + null (not fabricated-0) reviewCount/completionRate/onTimeDelivery/repeatClients where the DTO genuinely has no field | src/pages/brand-creator-profile.tsx, src/pages/brand-creator-profile-pr1.test.tsx | READY_FOR_QA | NEXT: Kavya review, then Meera local-run verify (tsc + targeted vitest green above; full build/live-mode manual check not run here)
 ```
+
+---
+
+## Vikram — BL-2 re-subscribe latch fix + 2 vacuous test fixes (2026-08-10)
+
+Priya's 2nd-round mutation-testing review REJECTED the prior BL-2 fix: `cancelAtPeriodEnd` set `true` by `cancel()` was never cleared on re-activation, so a re-subscribed customer could later be wrongly finalized to CANCELLED by `SubscriptionRenewalResetJob` while Razorpay kept charging. Fixed all 4 items:
+
+1. `SubscriptionService.applySubscriptionWebhookUpdate` — clears `cancelAtPeriodEnd=false` on the existing-row UPDATE branch when `targetStatus == ACTIVE` (line ~512, alongside `setStatus`).
+2. New regression test `testReSubscribeAfterLapsedCancellationClearsCancelAtPeriodEndFlag` (SubscriptionServiceTest) — full sequence: cancel → lapse finalized CANCELLED → re-subscribe ACTIVE (flag cleared) → asserts the exact state `SubscriptionRenewalResetJob`'s partition would see.
+3. Fixed 2 vacuous assertions via `lenient().when(planRepository.findById(PRO_PLAN_ID))...` stubs in `testCancellationReconcilesDownToFreeImmediately` and `testGetActivePlanForWorkspaceReturnsFreeAfterFinalizeLapsedCancellation` — both previously passed even with `getActivePlanForWorkspace`'s ACTIVE filter deleted.
+4. Added realistic `current_start`/`current_end` to `cancelledPayload()`/`completedPayload()` fixtures (RazorpayWebhookControllerTest) so the no-period-update assertions are actually falsifiable.
+
+All 4 verified via break→red→fix→green mutation cycles (production filter/updatePeriod/latch-clear each temporarily reverted, confirmed the guarding test fails, then re-applied and confirmed green). Full target suite: `mvn -o -Dtest=SubscriptionServiceTest,SubscriptionRenewalResetJobTest,RazorpayWebhookControllerTest test` → 31/31 pass, BUILD SUCCESS.
+
+Files: `influora-api/src/main/java/com/influora/service/billing/SubscriptionService.java`, `influora-api/src/test/java/com/influora/service/billing/SubscriptionServiceTest.java`, `influora-api/src/test/java/com/influora/integration/razorpay/RazorpayWebhookControllerTest.java`.
+
+```
+Vikram → Arjun | BL-2 round 2: re-subscribe latch bug fixed + 2 vacuous mutation-testing holes closed | influora-api/src/main/java/com/influora/service/billing/SubscriptionService.java, influora-api/src/test/java/com/influora/service/billing/SubscriptionServiceTest.java, influora-api/src/test/java/com/influora/integration/razorpay/RazorpayWebhookControllerTest.java | READY_FOR_REVIEW | NEXT: Priya re-review (mutation-proof cycles run and green — see full transcript for break/red/fix/green output per fix)
+```
+
+---
+
+## Vikram — BL-3 checkout double-submit fix (2026-08-10)
+
+BrandF.md §99 HIGH: `initiateCheckout` writes no local row before calling Razorpay (by design — see class javadoc), so `ALREADY_SUBSCRIBED` has nothing to catch on a workspace's FIRST upgrade. Two concurrent requests (2 tabs / replay / curl) both pass the guard and both call `razorpayClient.createSubscription`, producing two real `sub_*` subscriptions; the webhook upsert resolves both into ONE local row, silently orphaning the first (still active, still charging, uncancellable through the product).
+
+**Approach chosen: new `IdempotencyService.runExclusive` (not `executeOnce`, not a PENDING-row/UNIQUE-constraint approach).** Read `IdempotencyService` + `Subscription`/`SubscriptionRepository` fully first. A static-key `executeOnce` was rejected: it marks COMPLETED forever on success, which would permanently lock a workspace out of ever calling `initiateCheckout` again after its first success — breaking the legitimate cancel-then-resubscribe flow this class's own webhook-upsert javadoc documents. The PENDING-row/`workspace_id`-UNIQUE approach was rejected because a Free-tier row already exists for most workspaces by the time checkout runs (lazily created on `GET /billing/plan`), so a second INSERT wouldn't even occur — only a second concurrent UPDATE, which the UNIQUE constraint doesn't arbitrate.
+
+`runExclusive` reserves a per-workspace row (own scope `billing.checkout.pro`) in its own transaction before the Razorpay call — same DB-`UNIQUE`-is-the-arbiter discipline as `executeOnce` — but unlike `executeOnce`, releases (deletes) the reservation on success instead of leaving it COMPLETED, so a later non-concurrent retry/resubscribe is never blocked. A concurrent second caller sees the row still `IN_PROGRESS` and is rejected with `AlreadyInProgressException`, translated to a clean 409 `CHECKOUT_IN_PROGRESS`. A failed Razorpay call leaves the row `FAILED` (reclaimable, same path `executeOnce` already uses), so a genuinely failed attempt is always retryable; a crashed-mid-flight caller is recovered by the existing generic `IdempotencyReservationReaperJob`. The pre-existing `ALREADY_SUBSCRIBED` check is untouched, still runs unconditionally before the lock.
+
+Verified: `testConcurrentCheckoutCallsCreateExactlyOneRazorpaySubscription` — two REAL threads (not mocked sequencing) race `initiateCheckout` for the same workspace via a `ConcurrentHashMap`-backed fake `IdempotencyKeyRecordRepository` (genuine `putIfAbsent` atomicity) + a `CountDownLatch` rendezvous inside the Razorpay stub, with an explicit poll-before-release guard proving true overlap. Asserts exactly 1 `createSubscription` call, exactly 1 success, exactly 1 `CHECKOUT_IN_PROGRESS` rejection. 5/5 repeat runs green (no flakiness). Plus `testFailedCheckoutAttemptCanBeRetried` (Razorpay throws → retry succeeds), `testSuccessfulCheckoutDoesNotPermanentlyLockOutFutureCheckout` (two sequential successful checkouts, not blocked), `testAlreadySubscribedGuardStillFiresAheadOfLock` (guard unweakened). `mvn -o -Dtest=SubscriptionServiceTest test` → 19/19 pass. Full module `mvn -o test` → 1685 run, only 2 pre-existing unrelated failures (`DealControllerTest`, `BrandDeliverableServiceTest` — confirmed untouched by this change, don't reference `IdempotencyService`/`SubscriptionService`, not modified in this working tree).
+
+Files: `influora-api/src/main/java/com/influora/service/IdempotencyService.java` (new `runExclusive`/`releaseTransactional`), `influora-api/src/main/java/com/influora/service/billing/SubscriptionService.java` (`initiateCheckout` wrapped, new constructor param), `influora-api/src/test/java/com/influora/service/billing/SubscriptionServiceTest.java` (4 new tests + in-memory idempotency repo fake).
+
+```
+Vikram → Arjun | BL-3 fix: checkout double-submit closed via IdempotencyService.runExclusive (new method) — same-instant concurrent checkout now yields exactly 1 Razorpay subscription, loser gets clean 409 CHECKOUT_IN_PROGRESS, failed/retried/resubscribe flows unaffected | influora-api/src/main/java/com/influora/service/IdempotencyService.java, influora-api/src/main/java/com/influora/service/billing/SubscriptionService.java, influora-api/src/test/java/com/influora/service/billing/SubscriptionServiceTest.java | READY_FOR_REVIEW | NEXT: Priya/Kabir review; mvn -o test 1685 run, 2 pre-existing unrelated failures only (DealControllerTest, BrandDeliverableServiceTest)
+```
+
+---
+
+## Vikram — BL-3 round 2: IdempotencyService foundational fix (2026-08-10)
+
+Priya's round-2 review (real Hibernate+H2 probe) REJECTED the BL-3 checkout fix, finding the defect is in shared `IdempotencyService` itself, used by 26 call sites across 18 files, not the checkout code. Two defects fixed:
+
+**Defect 1 (save() silently upserts instead of locking):** `IdempotencyKeyRecord` now `implements Persistable<String>` with a `@Transient isNew` flag (default `true`, flipped `false` by a `@PostLoad`/`@PostPersist` `markNotNew()`). Chosen over the native-INSERT-query alternative because it's the standard Spring Data recipe for a manually-assigned `@Id` with no `@Version`, needs no schema change, and every other write path for this entity (`IdempotencyReservationReaperJob`, `IdempotencyService`) already avoids re-`save()`-ing a loaded instance. `repository.save()` on a fresh reservation now genuinely routes to `entityManager.persist()` (real INSERT), so a duplicate reservation hits the DB `UNIQUE(idempotency_key)` constraint and throws `DataIntegrityViolationException` instead of silently merging over the first row.
+
+**Defect 2 (status transitions never persist):** `markCompletedTransactional`/`markFailedTransactional` no longer find-then-mutate a detached entity in memory (which never flushed). Both now delegate to two new `@Modifying @Query` UPDATE methods on `IdempotencyKeyRecordRepository` (`markCompleted`/`markFailed`), matching the existing `reclaimFailedForRetry` pattern.
+
+**Item 3 (reclaimFailedForRetry transaction requirement) — confirmed via a REAL test, not reasoning:** a `@DataJpaTest`+H2 probe (see below) initially proved that relying on Spring Data's "default repository transactions" for `@Modifying` UPDATE methods does NOT work in this app — `reclaimFailedForRetry`/`reclaimStaleInProgress`/the two new methods all threw `TransactionRequiredException` when called with no ambient transaction (exactly the self-invocation call sites `executeOnce`/`runExclusive` use). Fixed by adding explicit `@Transactional` to all four `@Modifying` methods on the repository interface — matching the codebase's own pre-existing convention already established by `UsageCounterRepository#tryIncrement`. This was a real latent bug: `reclaimFailedForRetry` was previously unreachable on the checkout path only because Defect 1 made every reservation spuriously succeed.
+
+**Real (non-Mockito) test coverage added:** new `IdempotencyServicePersistenceTest` — genuine `@DataJpaTest` + H2 in-memory (MySQL-compat mode; Flyway disabled, `ddl-auto=create-drop`; entity/repository scanning restricted to just `IdempotencyKeyRecord`/`IdempotencyKeyRecordRepository` to avoid unrelated MySQL-only native queries elsewhere in the app). 7/7 pass, proving: duplicate reservation now genuinely rejected (repo-level + end-to-end 2-real-thread `executeOnce`/`runExclusive` races), `markCompleted`/`markFailed` visible on a fresh read (new query, not the same Java object), a real failure→retry cycle actually works end-to-end, and `reclaimFailedForRetry` doesn't throw with no ambient transaction. New test-scope dependency `com.h2database:h2` added to `influora-api/pom.xml` (flagged per TECH-STACK.md rule 6 — no lightweight embedded-DB test dependency existed before; testcontainers-mysql needs Docker, unavailable here) — Priya/CTO sign-off needed since this was requested BY her own review.
+
+Existing `IdempotencyServiceTest` (Mockito) updated to assert the new `repository.markCompleted`/`markFailed` calls instead of the old find-then-mutate lookup. `SubscriptionServiceTest`'s in-memory fake repository (BL-3's `ConcurrentHashMap`-backed mock) updated to stub `markCompleted`/`markFailed` too, so its checkout-concurrency tests stay faithful to the corrected call pattern.
+
+**26 call sites across 18 files reviewed** (all wrap `executeOnce`/`runExclusive` in try/catch for `AlreadyInProgressException`/`AlreadyCompletedException` already — none assumed double-execution was safe, so none needed behavior changes, only correctly get the guarantee they always assumed): `AffiliateEarningsService` (1), `AffiliateSettlementJob` (1), `SubscriptionService` (1, BL-3's `runExclusive`), `ContractService` (2, contract sign brand/creator), `DealService` (3, accept/reject/counter), `WooCommerceWebhookController` (1), `ShopifyWebhookController` (1), `RazorpayWebhookController` (1), `PayoutService` (1), `PayoutReconciliationService` (1), `WalletService` (1, creator withdraw), `RequestPaymentExecutor` (1), `CreateCampaignExecutor` (1), `ConfirmLaunchExecutor` (1), `RedemptionService` (1), `ConversionTrackingService` (1), `MeeraSessionService` (2, send-turn + persist-writeback), `AICreditService` (5: 2×`executeOnce`, 3×`isCompleted` — the money-relevant one: `isCompleted` for AI-credit charge/release markers now actually resolves post-fix instead of always seeing a stuck `IN_PROGRESS` row). None mock `IdempotencyKeyRecordRepository` directly (all mock `IdempotencyService` at the service layer), so none of their own test files needed changes.
+
+Verification: `mvn -o -Dtest=IdempotencyServiceTest,IdempotencyServicePersistenceTest,SubscriptionServiceTest test` → 32/32 pass. Full module `mvn -o test` → 1692 run, only the SAME 2 pre-existing unrelated failures already documented in the prior BL-3 entry (`DealControllerTest`, `BrandDeliverableServiceTest` — confirmed 0 references to `IdempotencyService`/`IdempotencyKeyRecord`).
+
+Files: `influora-api/src/main/java/com/influora/domain/entity/IdempotencyKeyRecord.java`, `influora-api/src/main/java/com/influora/repository/IdempotencyKeyRecordRepository.java`, `influora-api/src/main/java/com/influora/service/IdempotencyService.java`, `influora-api/pom.xml`, `influora-api/src/test/java/com/influora/service/IdempotencyServiceTest.java`, `influora-api/src/test/java/com/influora/service/IdempotencyServicePersistenceTest.java` (new), `influora-api/src/test/java/com/influora/service/billing/SubscriptionServiceTest.java`.
+
+```
+Vikram → Arjun | BL-3 round 2: foundational IdempotencyService fix — Persistable<String> makes save() genuinely INSERT/lock (Defect 1), markCompleted/markFailed now real @Modifying UPDATEs (Defect 2), reclaimFailedForRetry+3 others given explicit @Transactional after a real @DataJpaTest proved TransactionRequiredException without it (item 3) | influora-api/src/main/java/com/influora/domain/entity/IdempotencyKeyRecord.java, influora-api/src/main/java/com/influora/repository/IdempotencyKeyRecordRepository.java, influora-api/src/main/java/com/influora/service/IdempotencyService.java, influora-api/pom.xml, influora-api/src/test/java/com/influora/service/IdempotencyServiceTest.java, influora-api/src/test/java/com/influora/service/IdempotencyServicePersistenceTest.java, influora-api/src/test/java/com/influora/service/billing/SubscriptionServiceTest.java | READY_FOR_REVIEW | NEXT: Priya re-review (esp. sign-off on new h2 test-scope dep) + Kabir; mvn -o test 1692 run, 2 pre-existing unrelated failures only (DealControllerTest, BrandDeliverableServiceTest); 26 callers reviewed, none needed code changes
+```
+
+---
+
+## Kabir — CR-111 (Medium): MetaOAuthTokenRepository null-workspaceId IDOR-invariant fix (2026-08-10)
+
+Verified the ticket's exact claim against real Spring Data JPA behavior (not assumed): the brand-scoped `findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse` was a plain derived-query method. Spring Data JPA's query-derivation machinery (`ParameterMetadataProvider`/`PredicateBuilder`) rewrites a `SIMPLE_PROPERTY` equality part into `IS NULL` whenever the bound runtime parameter is `null` — so `findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse(null, creatorProfileId)` generated `workspace_id IS NULL AND creator_profile_id = ? AND revoked = false`, matching a creator-owned row (creator rows always have `workspace_id IS NULL`). Proved this for real with a red→green test: reverted to the derived-query form temporarily, the new `@DataJpaTest`+H2 regression test failed exactly as predicted (returned the creator row), confirming the bug is real, not theoretical.
+
+Checked every current production caller (`MetaTokenStorage.storeToken/getValidToken/revoke`, `MetricsAuthorizationService.resolveAuthorizedCreatorProfileId` — the latter a real security seam gating `AnalyticsController`/`AnalyticsService` reads) — none currently pass `null`, matching the ticket's claim, but `MetricsAuthorizationService` is exactly the kind of caller where a future null (e.g. malformed/creator-type principal) would silently bypass the authorization check it exists to enforce.
+
+**Fix (option a — fail-closed at the query):** converted the method from a derived query to explicit `@Query` JPQL with `t.workspaceId IS NOT NULL AND t.workspaceId = :workspaceId AND ...` — hand-written JPQL doesn't get Spring Data's null→IS-NULL rewrite (that only applies to method-name-derived `PartTree` queries), and the explicit `IS NOT NULL` makes the guarantee textually enforced rather than an accident of caller behavior. Updated both javadocs that made the same false "never returns a creator-owned row" / "disjoint by construction" claim (`MetaOAuthTokenRepository`, `MetaOAuthToken` entity) to state the guarantee now enforced by the query, not just true of current callers.
+
+**Regression test:** new `MetaOAuthTokenRepositoryNullWorkspaceIdTest` — genuine `@DataJpaTest`+H2 (Mockito mocks can't observe Spring Data's query-derivation behavior at all), scoped to just `MetaOAuthTokenRepository` (same pattern as `IdempotencyServicePersistenceTest`). 2 tests: null workspaceId never matches the creator-owned row (proved red on the old code, green on the fix); a real workspaceId still resolves the legitimate brand row (no regression).
+
+Verified: `mvn -o -Dtest=MetaOAuthTokenRepositoryNullWorkspaceIdTest,MetaTokenStorageTest,MetricsAuthorizationServiceTest test` → 17/17 pass (2 new + 13 existing MetaTokenStorageTest + 2 existing MetricsAuthorizationServiceTest, both existing suites are Mockito-based and unaffected by the query-body change since the method signature is unchanged). Full-module `mvn -o test` currently blocked by a PRE-EXISTING, UNRELATED compile break in `CreatorOnboardingServiceTest.java` (constructor arg-count mismatch vs `CreatorOnboardingService` — 5 args supplied, 4 accepted; zero references to Meta OAuth anything) — isolated via `-Dmaven.compiler.testExcludes=**/CreatorOnboardingServiceTest.java` to scope this run; did not touch that file (looks like a concurrent-session mid-edit, per the "don't fix unrelated failures" instruction).
+
+Files: `influora-api/src/main/java/com/influora/repository/MetaOAuthTokenRepository.java` (method → `@Query` JPQL with explicit `IS NOT NULL`, both javadocs updated), `influora-api/src/main/java/com/influora/domain/entity/MetaOAuthToken.java` (class javadoc updated to match), `influora-api/src/test/java/com/influora/repository/MetaOAuthTokenRepositoryNullWorkspaceIdTest.java` (new).
+
+```
+Kabir → Arjun | CR-111 fixed: brand-scoped MetaOAuthTokenRepository query now carries explicit workspaceId IS NOT NULL (JPQL, not derived-query) so a null workspaceId can never cross into creator-owned (workspace_id IS NULL) rows — proved red→green with a real H2 test, old derived-query form DID return the creator row when called with null | influora-api/src/main/java/com/influora/repository/MetaOAuthTokenRepository.java, influora-api/src/main/java/com/influora/domain/entity/MetaOAuthToken.java, influora-api/src/test/java/com/influora/repository/MetaOAuthTokenRepositoryNullWorkspaceIdTest.java | READY_FOR_REVIEW | NEXT: full `mvn -o test` blocked by unrelated pre-existing CreatorOnboardingServiceTest.java compile break (not touched, flagging for whoever owns it); scoped run 17/17 green
+```
+
+## Kabir (adversarial re-review) — CR-111 verification: MetaOAuthTokenRepository null-workspaceId fix (2026-08-10)
+
+Independent adversarial re-check of the CR-111 fix above (fresh context, no prior report read). Confirmed by direct inspection + live Hibernate SQL log: `findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse` is now hand-written `@Query` JPQL with `t.workspaceId IS NOT NULL AND t.workspaceId = :workspaceId AND ...` — generated SQL literally shows `where mot1_0.workspace_id is not null and mot1_0.workspace_id=? and ...`. `MetaOAuthTokenRepositoryNullWorkspaceIdTest` is a genuine `@DataJpaTest` + H2 (not Mockito), asserts null-workspaceId returns empty AND that a real workspaceId still resolves the brand row — both present, both pass. `mvn -o test -Dtest=MetaOAuthTokenRepositoryNullWorkspaceIdTest,MetaTokenStorageTest,MetricsAuthorizationServiceTest` → 17/17 pass, BUILD SUCCESS. Javadoc claims match what the query now actually enforces.
+
+**Remaining finding (not blocking this ticket, flagging per audit scope):** `findByWorkspaceIdAndRevokedFalse(String workspaceId)` (same repository, List-returning, line 42) is still a plain derived query with the *identical* null→`IS NULL` rewrite exposure CR-111 just fixed elsewhere — if ever called with `workspaceId == null` it would return the FULL list of every non-revoked creator-owned row system-wide (bigger blast radius than the fixed method, since it's a List not a single Optional). Its only caller, `BrandOwnContentService.checkOwnContent` (line 78), sources the argument from `brandProfile.getWorkspaceId()` — currently safe only because `brand_profiles.workspace_id` has a DB-level `NOT NULL` constraint, not because the query itself enforces it. This is exactly the "true by accident of current caller behavior, not enforced by the query" pattern CR-111's own javadoc calls out as the wrong standard. LOW severity (no live path to null today), but same class of bug; recommend the same `@Query` + explicit `IS NOT NULL` treatment for consistency/defense-in-depth.
+
+Verdict: PASS for CR-111's stated done_when. LOW finding opened for the sibling method above.
+
+```
+Kabir(review) → Arjun | CR-111 verified PASS: real IS NOT NULL JPQL confirmed via live Hibernate SQL log, real H2 DataJpaTest proves it (not Mockito), 17/17 green | influora-api/src/main/java/com/influora/repository/MetaOAuthTokenRepository.java | VERIFIED | LOW finding: sibling method findByWorkspaceIdAndRevokedFalse (same file, line 42) still a derived query with the same null-rewrite exposure, currently guarded only by brand_profiles.workspace_id DB NOT NULL constraint not by the query — recommend same @Query fix for consistency
+```
+
+---
+
+## Vikram — bare-invite dead-end in creator chat room (investigated, NOT fixed — fix is 100% frontend, outside backend authority)
+
+Investigated the routed defect: a brand's bare invite (`POST /creators/:id/invite`, no budget) leaves the creator's chat room showing "No messages yet" with zero Accept/Decline affordance, even though `Collaboration.canAccept()` genuinely returns true for `INVITED`.
+
+**Read in full:** `CreatorDiscoveryService.invite()` (:434-474), `DealService.createProposal`/`persistProposalMessage` (:189-262, :1114-1169), `Collaboration.canAccept/canReject` (:185-227), `DealMessageKind` enum, and the FE consumers `creator-chat.tsx` (proposal card :2032-2163, `handleAcceptProposal`/`handleDeclineProposal` :1294-1371, `dealAllowsProposalResponse`/`mayIndicateDealStatusChange` :452-507) and `creator-deals.tsx` (New-tab accept/reject :353-402).
+
+**Direction chosen: (b), frontend-only — not (a).** Ruled out (a) (backend writes a `DealMessage` on invite) for a concrete reason found while reading, not just preference: the ONLY card renderer that shows Accept/Decline (`event.type === 'proposal'`, :2033) also renders `formatINR(Number(event.metadata?.amount))` and a full "Your Earnings Breakdown" (gross/platform-fee/net) computed off that same amount (:2063-2103). A bare invite has no amount. Reusing `kind='proposal'` would render "₹0" financials for a deal with no agreed price — exactly the fabricated-zero anti-pattern `TECH-STACK.md`'s locked UI Honesty rule forbids ("A numeric fallback of 0 for no data... is worse than an empty state"). A correct (a) would need a genuinely new `DealMessageKind` + a new, amount-free card component — strictly more surface than (b) for the same outcome.
+
+(b) needs **zero backend changes**: `POST /deals/:id/accept` and `/reject` already dual-role-authorize on `Collaboration.canAccept()`/`canReject()`, both of which already include `INVITED` (`Collaboration.java:185-190, 221-227`) — no gap there. `creator-chat.tsx`'s own `handleAcceptProposal`/`handleDeclineProposal` (:1294-1371) already call `api.deals.accept(selectedDeal.id, 'creator')` / `api.deals.reject(selectedDeal.id, undefined, 'creator')` — **deal-scoped, not message-scoped** (the `proposalId` argument is only used for local feedback-banner tracking, never sent to the server) — so they can be reused as-is against a synthetic id for a bare invite. And the exact gap is already self-documented in this file's own comment block (:490-497, `mayIndicateDealStatusChange` javadoc): *"an INVITED deal built by `Collaboration.invite(...)` has none [proposal card]: `persistProposalMessage` only runs from `createProposal` and `doCounter`"* — a prior pass already found half of this bug and worked around it for the SSE-refetch trigger, but never closed the render-side gap this ticket is about.
+
+**Spec for the FE half (Ananya — this is the entire fix):**
+- File: `src/pages/creator-chat.tsx`, in the message list render (around :1981-1986, the `events.length === 0` empty-state block).
+- Compute `const hasProposalEvent = events.some(e => e.type === 'proposal');` and `const showBareInviteCard = liveApi && !messagesLoading && !messagesError && !hasProposalEvent && dealAllowsProposalResponse(selectedDeal);` (reuse the existing `canRespondToProposal`/`dealAllowsProposalResponse` from :1723/:478 — do not invent a second status list, per that function's own CR-34 comment).
+- Render a new card (NOT inside `events.map`, since there is no backing message) when `showBareInviteCard` is true: "This brand invited you to [campaign]" + Accept/Decline buttons wired to `handleAcceptProposal('bare-invite-' + selectedDeal.id)` / `handleDeclineProposal('bare-invite-' + selectedDeal.id)` — same handlers `creator-deals.tsx`'s New tab and the real proposal card already use successfully, just with a synthetic id since there's no `DealMessage` row to reference. No amount, no earnings breakdown, no Counter button (nothing to counter on a bare invite) — Accept + Decline only.
+- Show this card whether or not `events.length === 0` — if the brand's invite included a message, `DealService.listMessages`'s notes-seeding (`:449-451`) already surfaces that as a plain text bubble, and this card should render alongside it, not only in the fully-empty case.
+- Leave `creator-deals.tsx`'s `isNew` New-tab flow and `DealService.createProposal`/`persistProposalMessage` untouched — out of scope, both confirmed working.
+
+**Why I'm not implementing this myself:** every line of the actual fix is in `creator-chat.tsx`, a React component — outside backend authority (no `app/api`/Prisma-equivalent/Java service file needs to change). Routing the spec above to Ananya rather than submitting a partial backend-only diff that wouldn't move the user-visible bug at all.
+
+```
+Vikram → Arjun | Bare-invite chat dead-end: root-caused, zero backend fix required (accept/reject already authorize INVITED; handlers already deal-scoped, reusable as-is) — full FE spec above is the entire fix | src/pages/creator-chat.tsx (events.length===0 block, :1981-1986; reuse dealAllowsProposalResponse :478, handleAcceptProposal/handleDeclineProposal :1294-1371) | NEEDS_ANANYA | NEXT: route to Ananya for implementation + a creator-chat.test.tsx (or equivalent) case: INVITED deal, no proposal-kind event → card renders with working Accept/Decline calling api.deals.accept/reject; then Kavya QA → Meera build/test (frontend-only, no mvn run needed)
+```
+
+---
+
+## Ananya — bare-invite dead-end fix (2026-08-13)
+
+Implemented Vikram's routed spec, per Arjun's task framing: `creator-chat.tsx` now shows a new fallback card — distinct from the `type === 'proposal'` message card — whenever the selected deal has zero timeline events AND `dealAllowsProposalResponse`/`canRespondToProposal` still says the deal is respondable (`showBareInviteResponse = events.length === 0 && canRespondToProposal`, right after the existing `canRespondToProposal` derivation). Scoped strictly to the zero-messages case per this task's explicit requirement 3 (a deal with any messages — chat, counter, settled/stale proposal card — is unaffected and keeps rendering the normal timeline/empty state exactly as before).
+
+The card ("Campaign Invite") names the brand and `selectedDeal.campaignName`, shows NO amount/deliverables/earnings-breakdown/Counter option (a bare invite has no price — fabricating one would be the exact UI-honesty violation `TECH-STACK.md`'s LOCKED rule forbids), and wires Accept/Decline to the SAME deal-scoped handlers the priced proposal card already uses (`handleAcceptProposal`/`handleDeclineProposal` → `api.deals.accept(selectedDeal.id, 'creator')` / `api.deals.reject(selectedDeal.id, undefined, 'creator')`), passing a synthetic per-deal id (`bare-invite-${selectedDeal.id}`) only to key the existing CR-03 feedback banner — confirmed by reading the handlers that this id is never sent to the server. Loading states, toasts, and the stale-409 "Refresh deal" affordance are the same code paths, reused as-is.
+
+Verified: `npx tsc --noEmit` exit 0. New `src/pages/creator-chat-bare-invite.test.tsx` (3 tests): (1) INVITED deal, zero messages → "Campaign Invite" card renders (not "No messages yet"), no amount/breakdown/Counter text, Accept click calls `dealsAccept('deal_bare', 'creator')` + success toast; (2) Decline click calls `dealsReject('deal_bare', undefined, 'creator')` + success toast; (3) regression — same INVITED deal but WITH a real `kind: 'proposal'` message → original "Brand Proposal" card renders (amount, Earnings Breakdown, Counter button all present), bare-invite card does NOT render, single Accept button still calls the same `api.deals.accept`. `npx vitest run src/pages/creator-chat-bare-invite.test.tsx` → 3/3 pass. Full creator-chat suite unaffected: `npx vitest run src/pages/creator-chat-refresh.test.tsx src/pages/creator-chat-verified-badge.test.tsx src/pages/creator-chat-visibility-resync.test.tsx src/pages/creator-chat-bare-invite.test.tsx` → 4 files, 13/13 pass. `npx vitest run src/lib/creator-deal-mappers.test.ts` → 36/36 pass (untouched, sanity check only).
+
+Files: `src/pages/creator-chat.tsx` (new `showBareInviteResponse`/`bareInviteFeedbackId` derivations + new card block, replacing the unconditional "No messages yet" render with a `!showBareInviteResponse` guard), `src/pages/creator-chat-bare-invite.test.tsx` (new).
+
+```
+Ananya → Kavya | READY FOR QA: bare-invite dead-end fix — new zero-messages-but-respondable fallback card in creator-chat.tsx, reuses existing deal-scoped accept/decline handlers, no fabricated amount/breakdown/Counter, 3 new tests (render + regression) | src/pages/creator-chat.tsx, src/pages/creator-chat-bare-invite.test.tsx | READY_FOR_QA | NEXT: Kavya review, then Meera local-run verify (tsc + targeted vitest already green above; full build/full suite not run here)
+```
+
+---
+
+## Ananya — bare-invite fix ROUND 2 (2026-08-13) — Priya reject remediated
+
+Priya's fresh-context review rejected round 1: `showBareInviteResponse = events.length === 0 && canRespondToProposal` was too broad. `canRespondToProposal` (`ACCEPTABLE_COLLABORATION_STATUSES`, `deal-stage.ts:90-95`) is also true for `APPLIED` — the creator's OWN pending application, not a brand invite — which also has zero messages (`persistProposalMessage` never ran, same structural reason as INVITED). The card's "Brand X invited you..." copy would be false, and worse: `DealService.doAccept`'s `CANNOT_ACCEPT_OWN_OFFER` guard only fires when a `proposal` DealMessage exists to read `senderType` off of — APPLIED has none — so nothing server-side stopped a self-accept straight to TERMS_AGREED.
+
+**Fix applied exactly as specified:**
+```diff
+- const showBareInviteResponse = events.length === 0 && canRespondToProposal;
++ const showBareInviteResponse =
++   events.length === 0 &&
++   canRespondToProposal &&
++   selectedDeal.collaborationStatus === 'INVITED';
+```
+Confirmed `collaborationStatus` is the correct real property before typing it in: `DealRoom.collaborationStatus?: CollaborationStatus` (`creator-deal-mappers.ts:167`), populated by `mapDealToChatRoom` as `collaborationStatus: deal.status` (`:240`) — the raw backend status, same field `dealAllowsProposalResponse`/`canRespondToProposal` already reads at line 1723. No new field, no type mismatch.
+
+**Two negative tests added** to `creator-chat-bare-invite.test.tsx`: (1) `APPLIED_DEAL` (zero messages, `collaborationStatus: 'APPLIED'`) — asserts "Campaign Invite" does NOT render and no Accept button exists anywhere on the page, falls through to "No messages yet"; (2) `TERMS_AGREED_DEAL` (zero messages, already-settled) — asserts the same, plain empty state shows.
+
+**Mutation-proof cycle, run for real (not narrated):**
+1. Fix in place → `npx vitest run src/pages/creator-chat-bare-invite.test.tsx` → **5/5 pass** (3 original unchanged + 2 new).
+2. Reverted to the old broad gate (`events.length === 0 && canRespondToProposal`, no status check) → re-ran same command → **4 passed, 1 failed** — the new APPLIED test failed exactly as predicted: `findByText(/No messages yet/i)` timed out because the broad gate rendered the bare-invite card instead. Proves the new test is a real guard, not vacuous.
+3. Fix restored → re-ran → **5/5 pass** again.
+
+The 3 original tests (INVITED renders the card + wires Accept/Decline; proposal-message deal shows the priced "Brand Proposal" card, not the fallback) pass unchanged throughout — confirmed in step 1 and step 3 output, no edits made to those three `it()` blocks.
+
+`npx tsc --noEmit`: exit 0, no output, 0 errors.
+
+Files: `src/pages/creator-chat.tsx` (`showBareInviteResponse` derivation only, ~line 1744), `src/pages/creator-chat-bare-invite.test.tsx` (2 new `it()` blocks + 2 new fixture consts, `APPLIED_DEAL`/`TERMS_AGREED_DEAL`).
+
+```
+Ananya → Kavya | READY FOR QA (round 2): CR-02 self-accept-on-own-application closed — showBareInviteResponse now also requires collaborationStatus === 'INVITED', 2 new negative tests, mutation-proof cycle run and documented above | src/pages/creator-chat.tsx, src/pages/creator-chat-bare-invite.test.tsx | READY_FOR_QA | NEXT: Kavya review, then Meera local-run verify
+```
+
+---
+
+## Vikram — ACTIVE campaign not editable (2026-08-14)
+
+Added the missing rule: `ensureEditable()` only blocked COMPLETED/CANCELLED — ACTIVE (and PAUSED/PENDING_APPROVAL/DRAFT) passed every PATCH through freely.
+
+**Confirmed status changes share the update() path — no separate endpoint.** There is exactly one PATCH `/campaigns/{id}` (`CampaignController.java:72-78` → `CampaignService.update`). `campaignsApi.update()` (`src/lib/api.ts:1328-1335`) is the only FE call site for status changes too — `brand-campaign-detail.tsx:778` and `campaigns-list.tsx:414` both call `api.campaigns.update(id, { status: next })` for pause/resume/cancel/complete, sending a status-only body through the same PATCH. So a blanket ACTIVE block would have broken every brand's ability to pause/cancel/complete a live campaign — confirmed by reading before writing the guard.
+
+**Fix: status-only patches are exempted.** `CampaignValidator` gets an overload `ensureEditable(CampaignStatus current, boolean statusOnlyPatch)` — COMPLETED/CANCELLED stay unconditionally blocked (delegates to the original method); ACTIVE is blocked only when `!statusOnlyPatch`. `CampaignService.update()` computes `isStatusOnlyPatch(req)` (true iff every `CampaignPatchRequest` field except `status` is null) and passes it in. New code `CAMPAIGN_ACTIVE_NOT_EDITABLE` (409), distinct from the existing `CAMPAIGN_NOT_EDITABLE` (409, terminal states) — grepped the FE for `CAMPAIGN_NOT_EDITABLE` first and confirmed zero existing special-case handling, so the new code is free to use for a follow-up FE gate without colliding with anything.
+
+**Error contract for the FE follow-up task:** PATCH `/campaigns/{id}` on an ACTIVE campaign with any non-status field set → `409 { code: "CAMPAIGN_ACTIVE_NOT_EDITABLE", message: "Cannot edit an active campaign — pause it first, or send a status-only update to pause/complete/cancel it" }`. A body containing ONLY `status` (e.g. `{ status: "PAUSED" }`) still succeeds on ACTIVE.
+
+**Tests added to `CampaignServiceTest.java`** (real file — no `CampaignValidatorTest`/`CampaignControllerTest` exist yet, deliberately didn't create one to avoid colliding with other in-flight validator work per the existing `CampaignValidatorHypeUrlTest` file-header note): ACTIVE + field edit → 409 `CAMPAIGN_ACTIVE_NOT_EDITABLE`, nothing persisted; ACTIVE + status-only (pause) → 200, persisted; ACTIVE + status bundled with a field edit → still 409 (status-only is the only exemption, not "status present"); PAUSED + field edit → 200 (regression); PENDING_APPROVAL + field edit → 200 (regression); COMPLETED + status-only patch → still 409 `CAMPAIGN_NOT_EDITABLE` (terminal states stay unconditional).
+
+**Real test output:** `mvn -o -Dtest=CampaignServiceTest,CampaignValidatorHypeUrlTest test` → both green — `CampaignServiceTest`: 31/31 (23 pre-existing + 8 new), `CampaignValidatorHypeUrlTest`: 7/7, BUILD SUCCESS. Regression sanity `mvn -o -Dtest=CreatorCampaignServiceTest,CampaignTemplateControllerTest,CreatorCampaignControllerTest,MeeraInternalControllerCreateCampaignTest,CampaignTrackingControllerTest test` → exit 0, no failures.
+
+Files: `influora-api/src/main/java/com/influora/service/CampaignValidator.java` (new `ensureEditable(CampaignStatus, boolean)` overload), `influora-api/src/main/java/com/influora/service/CampaignService.java` (`update()` call site + new private `isStatusOnlyPatch`), `influora-api/src/test/java/com/influora/service/CampaignServiceTest.java` (6 new tests + 2 new request-builder helpers).
+
+No frontend changes made — Edit-button gating for `CAMPAIGN_ACTIVE_NOT_EDITABLE` is a separate follow-up task per Arjun's framing.
+
+```
+Vikram → Arjun | ACTIVE campaign editability rule added, status-only patches (pause/resume/cancel/complete) confirmed to share update() and exempted so they still work, new code CAMPAIGN_ACTIVE_NOT_EDITABLE (409) | influora-api/.../CampaignValidator.java, CampaignService.java, CampaignServiceTest.java | READY_FOR_QA | NEXT: Kavya QA → Meera local-run verify → route CAMPAIGN_ACTIVE_NOT_EDITABLE + Edit-button-gating spec to Ananya for the FE follow-up
+```

@@ -774,17 +774,33 @@ public class CreatorDiscoveryService {
         return matches;
     }
 
-    // Every CreatorProfile#id is a 26-char lowercase-able ULID, and UsernameUtils#isValid's regex
-    // (^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$) matches any lowercased alphanumeric string of length
-    // 3-30 -- so a real ULID always passes isValid() too. Sniffing "is this a username or an id"
-    // from shape alone is therefore not possible; try id first (the only value every live caller
-    // actually passes -- creator-discovery, brand-campaign-detail, command-bar, this page's own
-    // Similar Creators grid), then fall back to username. Both branches keep the exact
-    // discoverable + not-suspended filtering requireDiscoverableProfile/requireDiscoverableByUsername
-    // already enforced.
+    // Backs GET /creators/profile/{usernameOrId} (CreatorController.getPublicProfile), the single
+    // API call behind the one /brand/creators/:id page every "view creator" link in the app routes
+    // through. Every CreatorProfile#id AND every User#id are 26-char ULIDs from the same generator
+    // (Ulids#newUlid) -- disjoint id spaces in principle, but not shape-distinguishable -- and
+    // UsernameUtils#isValid's regex (^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$) matches any lowercased
+    // alphanumeric string of length 3-30, so a real ULID (profile id OR user id) always passes
+    // isValid() too. Sniffing "is this a username, a profile id, or a user id" from shape alone is
+    // therefore not possible -- try each id-typed repository lookup in turn before falling back to
+    // username. The real live callers of this page pass two different id shapes:
+    //   - creator-discovery.tsx's search grid and this page's own Similar Creators grid both pass a
+    //     CreatorProfile id (CreatorResponse#id / SimilarCreator#id are CreatorProfile.getId()).
+    //   - brand-campaign-detail.tsx's bids tab passes a User id: DealService's Counterparty.id (->
+    //     Deal#counterpartyId -> dealToBidView -> creator.id) is collaboration.getCreatorId(), a
+    //     Collaboration.creatorId / users.id, never a CreatorProfile id.
+    // (command-bar.tsx's "Recent" creator shortcuts are demo-only fixtures explicitly gated out of
+    // live mode -- see that file's own comment -- so they never reach this endpoint live.)
+    // The userId branch mirrors the identical id/userId ambiguity fix already applied to
+    // requireDiscoverableProfile below. All three branches keep the exact discoverable +
+    // not-suspended filtering requireDiscoverableProfile/requireDiscoverableByUsername already
+    // enforce.
     private CreatorProfile resolveDiscoverableProfile(String usernameOrId) {
         return creatorProfileRepository
                 .findByIdAndDiscoverableTrue(usernameOrId)
+                .or(() ->
+                        creatorProfileRepository
+                                .findByUserId(usernameOrId)
+                                .filter(CreatorProfile::isDiscoverable))
                 .or(() ->
                         creatorProfileRepository
                                 .findByUsernameIgnoreCase(usernameOrId)

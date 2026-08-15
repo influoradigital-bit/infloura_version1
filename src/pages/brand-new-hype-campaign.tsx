@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Hash, IndianRupee, Link2, Loader2, Music2, Plus, Users, X, Zap } from 'lucide-react';
 
 import { api, ApiError } from '@/lib/api';
-import { isWorkspaceNotVerified } from '@/lib/api-errors';
+import { isWorkspaceNotVerified, isCampaignActiveNotEditable } from '@/lib/api-errors';
 import type { Campaign, CampaignStatus } from '@/lib/types';
 import { useWorkspaceVerification } from '@/hooks/brand/useWorkspaceVerification';
 import { VerificationRequiredBox } from '@/components/brand/VerificationRequiredBox';
@@ -225,6 +225,19 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
       // offers a way forward, not a disappearing toast. Every other failure stays a toast.
       if (isWorkspaceNotVerified(err)) {
         setVerificationBlocked(true);
+        return;
+      }
+      // This form always sends the full field payload (never a status-only patch), so an
+      // ACTIVE Hype campaign correctly 409s here on any edit/resume submit. Edit is hidden/
+      // disabled for ACTIVE campaigns at the entry points (campaigns-list.tsx,
+      // brand-campaign-detail.tsx), so this is reachable only via a stale link, a typed-in
+      // URL, or a race — give a specific, actionable message instead of a generic toast.
+      if (isCampaignActiveNotEditable(err)) {
+        toast({
+          title: 'This campaign is active',
+          description: 'Pause it first to make changes, or use the Pause/Resume/Cancel/Complete action to change its status directly.',
+          variant: 'destructive',
+        });
         return;
       }
       const description =

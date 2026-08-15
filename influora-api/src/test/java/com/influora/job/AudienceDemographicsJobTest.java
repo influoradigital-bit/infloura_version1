@@ -79,8 +79,8 @@ class AudienceDemographicsJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
 
         AudienceDemographicsResponse response =
                 new AudienceDemographicsResponse(
@@ -134,7 +134,7 @@ class AudienceDemographicsJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.empty());
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.empty());
 
         job.pollDemographics();
 
@@ -148,8 +148,8 @@ class AudienceDemographicsJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(0);
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(0);
         when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
                 .thenReturn(new AudienceDemographicsResponse(Collections.emptyList()));
 
@@ -164,8 +164,8 @@ class AudienceDemographicsJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(0);
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(0);
         when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN)).thenReturn(null);
 
         job.pollDemographics();
@@ -179,8 +179,8 @@ class AudienceDemographicsJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(95);
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(95);
 
         job.pollDemographics();
 
@@ -194,14 +194,15 @@ class AudienceDemographicsJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
         when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
                 .thenThrow(new MetaRateLimitException("rate limited"));
 
         job.pollDemographics();
 
-        verify(rateLimitTracker).markLimited(CREATOR_ID);
+        // F-0126: must use the same key as getCurrentUsage (igBusinessAccountId), not the ULID.
+        verify(rateLimitTracker).markLimited(IG_BUSINESS_ACCOUNT_ID);
         verify(demographicsRepository, never()).save(any());
     }
 
@@ -211,8 +212,8 @@ class AudienceDemographicsJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
         when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
                 .thenThrow(new MetaApiException("boom"));
 
@@ -234,11 +235,11 @@ class AudienceDemographicsJobTest {
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token1, token2));
 
-        when(tokenStorage.getValidToken(WORKSPACE_ID, creator1))
+        when(tokenStorage.getValidCreatorToken(creator1))
                 .thenThrow(new RuntimeException("unexpected decryption blow-up"));
 
-        when(tokenStorage.getValidToken(WORKSPACE_ID, creator2)).thenReturn(Optional.of(TOKEN));
-        when(rateLimitTracker.getCurrentUsage(creator2)).thenReturn(10);
+        when(tokenStorage.getValidCreatorToken(creator2)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
         when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
                 .thenReturn(
                         new AudienceDemographicsResponse(
@@ -263,8 +264,8 @@ class AudienceDemographicsJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID, IG_BUSINESS_ACCOUNT_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
         when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
                 .thenReturn(
                         new AudienceDemographicsResponse(
@@ -281,6 +282,28 @@ class AudienceDemographicsJobTest {
     }
 
     @Test
+    @DisplayName(
+            "F-0126 regression — pre-flight rate-limit check reads usage under igBusinessAccountId,"
+                    + " the same key MetaGraphApiClient itself uses, never the internal creatorProfileId"
+                    + " ULID")
+    void testRateLimitTrackerKeyedOnIgBusinessAccountIdNotUlid() {
+        MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID, IG_BUSINESS_ACCOUNT_ID);
+        when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
+                .thenReturn(List.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        // Stub only the CORRECT key at the tripping threshold; the ULID key is left unstubbed
+        // (defaults to 0). If production regressed to keying on creatorProfileId, this stub would
+        // never be consulted and the creator would wrongly be polled instead of deferred.
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(95);
+
+        job.pollDemographics();
+
+        verify(rateLimitTracker, never()).getCurrentUsage(CREATOR_ID);
+        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString());
+        verify(demographicsRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("a token row with no igBusinessAccountId on file is skipped, no API call attempted")
     void testSkipsWhenIgBusinessAccountIdMissing() {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID, null);
@@ -288,8 +311,8 @@ class AudienceDemographicsJobTest {
                 .thenReturn(List.of(token));
         // Priya review finding C: a valid token must be stubbed so the igBusinessAccountId guard,
         // not the unrelated no-valid-token branch, is what actually stops this call.
-        lenient().when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID)).thenReturn(Optional.of(TOKEN));
-        lenient().when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
+        lenient().when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        lenient().when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
 
         job.pollDemographics();
 
@@ -318,13 +341,13 @@ class AudienceDemographicsJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
-        when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID))
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenAnswer(
                         invocation -> {
                             Thread.sleep(100);
                             return Optional.of(TOKEN);
                         });
-        when(rateLimitTracker.getCurrentUsage(CREATOR_ID)).thenReturn(10);
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
         when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
                 .thenReturn(
                         new AudienceDemographicsResponse(
@@ -342,7 +365,7 @@ class AudienceDemographicsJobTest {
 
         thread1.join();
 
-        verify(tokenStorage, times(1)).getValidToken(WORKSPACE_ID, CREATOR_ID);
+        verify(tokenStorage, times(1)).getValidCreatorToken(CREATOR_ID);
         verify(auditLog, times(1))
                 .recordToolCall(any(), any(), any(), any(), any(), any(), any(), any());
     }

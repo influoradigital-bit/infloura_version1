@@ -786,7 +786,7 @@ export function CampaignsList() {
                           View Details
                         </Link>
                       </DropdownMenuItem>
-                      {canEdit ? (
+                      {canEdit && campaign.status !== 'ACTIVE' ? (
                         <DropdownMenuItem asChild>
                           <Link to={`/brand/campaigns/${campaign.id}/edit`}>
                             <Edit className="mr-2 h-4 w-4" />
@@ -794,7 +794,14 @@ export function CampaignsList() {
                           </Link>
                         </DropdownMenuItem>
                       ) : (
-                        <DropdownMenuItem disabled title="Only the Owner, Admin, or Manager can edit a campaign">
+                        <DropdownMenuItem
+                          disabled
+                          title={
+                            !canEdit
+                              ? 'Only the Owner, Admin, or Manager can edit a campaign'
+                              : 'Pause the campaign before editing its details'
+                          }
+                        >
                           <Edit className="mr-2 h-4 w-4" />
                           Edit
                         </DropdownMenuItem>
@@ -962,7 +969,7 @@ export function CampaignsList() {
                           View Details
                         </Link>
                       </DropdownMenuItem>
-                      {canEdit ? (
+                      {canEdit && campaign.status !== 'ACTIVE' ? (
                         <DropdownMenuItem asChild>
                           <Link to={`/brand/campaigns/${campaign.id}/edit`}>
                             <Edit className="mr-2 h-4 w-4" />
@@ -970,7 +977,14 @@ export function CampaignsList() {
                           </Link>
                         </DropdownMenuItem>
                       ) : (
-                        <DropdownMenuItem disabled title="Only the Owner, Admin, or Manager can edit a campaign">
+                        <DropdownMenuItem
+                          disabled
+                          title={
+                            !canEdit
+                              ? 'Only the Owner, Admin, or Manager can edit a campaign'
+                              : 'Pause the campaign before editing its details'
+                          }
+                        >
                           <Edit className="mr-2 h-4 w-4" />
                           Edit
                         </DropdownMenuItem>

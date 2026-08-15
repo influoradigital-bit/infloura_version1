@@ -23,6 +23,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import CreatorChatPage from './creator-chat';
 
@@ -138,5 +139,61 @@ describe('CreatorChatPage — foreground resync (CR-93 / F-0110 — creator half
 
     await waitFor(() => expect(creatorMessagesList).toHaveBeenCalledWith('creator', 'deal_1'));
     await waitFor(() => expect(creatorDealsGet).toHaveBeenCalledWith('creator', 'deal_1'));
+  });
+
+  function plainMessage(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'msg_1',
+      dealId: 'deal_1',
+      kind: 'text',
+      senderId: 'b_1',
+      senderType: 'brand',
+      content: 'Hey, excited to work on this!',
+      metadata: {},
+      createdAt: new Date('2026-07-20T11:00:00Z').toISOString(),
+      readBy: [],
+      ...overrides,
+    };
+  }
+
+  it('F-0192: switching deals clears the previous deal\'s thread instead of bleeding it into the new deal', async () => {
+    const DEAL_2 = {
+      ...DEAL,
+      id: 'deal_2',
+      campaignName: 'Winter Drop',
+      counterpartyId: 'b_2',
+      counterpartyName: 'Nykaa Fashion',
+    };
+    creatorDealsList.mockResolvedValue([DEAL, DEAL_2]);
+    creatorDealsGet.mockImplementation((_role: string, id: string) =>
+      Promise.resolve(id === 'deal_2' ? DEAL_2 : DEAL),
+    );
+
+    let resolveDeal2Messages: (v: unknown) => void = () => {};
+    creatorMessagesList.mockImplementation((_role: string, dealId: string) => {
+      if (dealId === 'deal_2') {
+        return new Promise((resolve) => {
+          resolveDeal2Messages = resolve;
+        });
+      }
+      return Promise.resolve([plainMessage()]);
+    });
+
+    renderRoom();
+    await screen.findByText('Hey, excited to work on this!');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByText('Nykaa Fashion'));
+
+    // Deal 2's fetch is still in flight — deal 1's message must NOT still be on screen.
+    await waitFor(() => expect(creatorMessagesList).toHaveBeenCalledWith('creator', 'deal_2'));
+    expect(screen.queryByText('Hey, excited to work on this!')).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveDeal2Messages([plainMessage({ id: 'msg_2', content: 'Deal 2 kickoff message', senderId: 'b_2' })]);
+    });
+
+    expect(await screen.findByText('Deal 2 kickoff message')).toBeInTheDocument();
+    expect(screen.queryByText('Hey, excited to work on this!')).not.toBeInTheDocument();
   });
 });

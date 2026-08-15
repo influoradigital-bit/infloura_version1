@@ -22,6 +22,7 @@ import { DealRoomDashboard } from './deal-room-dashboard';
 const dealsList = vi.fn();
 const dealsAccept = vi.fn();
 const dealsReject = vi.fn();
+const dealsCounter = vi.fn();
 const messagesList = vi.fn();
 
 vi.mock('@/lib/api', async () => {
@@ -33,7 +34,7 @@ vi.mock('@/lib/api', async () => {
       list: (...a: unknown[]) => dealsList(...a),
       accept: (...a: unknown[]) => dealsAccept(...a),
       reject: (...a: unknown[]) => dealsReject(...a),
-      counter: vi.fn(),
+      counter: (...a: unknown[]) => dealsCounter(...a),
     },
     messages: {
       list: (...a: unknown[]) => messagesList(...a),
@@ -109,6 +110,24 @@ describe('DealRoomDashboard — actor-side refresh (CR-98 / F-0112)', () => {
     await user.click(await screen.findByRole('button', { name: 'Reject Proposal' }));
 
     await waitFor(() => expect(dealsReject).toHaveBeenCalled());
+    await waitFor(() => expect(dealsList).toHaveBeenCalled());
+    await waitFor(() => expect(messagesList).toHaveBeenCalledWith('brand', 'deal_1'));
+  });
+
+  it('refetches messages after the brand sends a counter offer', async () => {
+    dealsCounter.mockResolvedValue({ ...PROPOSED_DEAL, status: 'IN_NEGOTIATION' });
+    const user = userEvent.setup();
+    renderDashboard();
+    await selectTheDeal(user);
+    messagesList.mockClear();
+    dealsList.mockClear();
+
+    await user.click(await screen.findByRole('button', { name: 'Counter Offer' }));
+    // The amount field's <label> has no htmlFor/id association — matched by placeholder.
+    await user.type(await screen.findByPlaceholderText('45000'), '35000');
+    await user.click(await screen.findByRole('button', { name: 'Send Counter Offer' }));
+
+    await waitFor(() => expect(dealsCounter).toHaveBeenCalled());
     await waitFor(() => expect(dealsList).toHaveBeenCalled());
     await waitFor(() => expect(messagesList).toHaveBeenCalledWith('brand', 'deal_1'));
   });

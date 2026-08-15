@@ -271,6 +271,150 @@ class CampaignServiceTest {
         verify(campaignRepository, never()).save(any(Campaign.class));
     }
 
+    // --- update(): ACTIVE campaigns are not editable, except a status-only patch (pause/complete/
+    // cancel) — there is no separate status-change endpoint; campaignsApi.update() in
+    // src/lib/api.ts sends { status } alone for those actions from brand-campaign-detail.tsx and
+    // campaigns-list.tsx, so the ACTIVE guard must let a status-only body through. ---
+
+    @Test
+    @DisplayName(
+            "update(): ACTIVE campaign, field edit (title) -> 409 CAMPAIGN_ACTIVE_NOT_EDITABLE,"
+                    + " nothing persisted")
+    void testUpdateActiveCampaignFieldEditRejected() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        Campaign campaign = activatableCampaign(CampaignStatus.ACTIVE);
+        when(campaignRepository.findByIdForUpdate(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.update(principal, CAMPAIGN_ID, titlePatchRequest("New Title")));
+
+        assertEquals("CAMPAIGN_ACTIVE_NOT_EDITABLE", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        verify(campaignRepository, never()).save(any(Campaign.class));
+        verify(brandCampaignFeeService, never()).chargeOnPublish(any(Campaign.class), anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "update(): ACTIVE campaign, status-only patch (pause) is still allowed -> 200, persisted")
+    void testUpdateActiveCampaignStatusOnlyPauseAllowed() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        Campaign campaign = activatableCampaign(CampaignStatus.ACTIVE);
+        when(campaignRepository.findByIdForUpdate(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CampaignResponse response =
+                service.update(principal, CAMPAIGN_ID, statusOnlyPatchRequest(CampaignStatus.PAUSED));
+
+        assertEquals(CampaignStatus.PAUSED, response.status());
+        verify(campaignRepository).save(any(Campaign.class));
+    }
+
+    @Test
+    @DisplayName(
+            "update(): ACTIVE campaign, status change bundled with a field edit -> 409"
+                    + " CAMPAIGN_ACTIVE_NOT_EDITABLE, nothing persisted (status-only is the only"
+                    + " exemption)")
+    void testUpdateActiveCampaignStatusPlusFieldEditRejected() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        Campaign campaign = activatableCampaign(CampaignStatus.ACTIVE);
+        when(campaignRepository.findByIdForUpdate(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+
+        CampaignPatchRequest req =
+                new CampaignPatchRequest(
+                        "New Title", null, null, CampaignStatus.PAUSED, null, null, null, null, null,
+                        null, null, null, null, null, null, null);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.update(principal, CAMPAIGN_ID, req));
+
+        assertEquals("CAMPAIGN_ACTIVE_NOT_EDITABLE", ex.getCode());
+        verify(campaignRepository, never()).save(any(Campaign.class));
+    }
+
+    @Test
+    @DisplayName("update(): PAUSED campaign, field edit (title) still allowed -> 200, persisted")
+    void testUpdatePausedCampaignFieldEditStillAllowed() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        Campaign campaign = activatableCampaign(CampaignStatus.PAUSED);
+        when(campaignRepository.findByIdForUpdate(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CampaignResponse response =
+                service.update(principal, CAMPAIGN_ID, titlePatchRequest("New Title"));
+
+        assertEquals("New Title", response.title());
+        verify(campaignRepository).save(any(Campaign.class));
+    }
+
+    @Test
+    @DisplayName("update(): PENDING_APPROVAL campaign, field edit (title) still allowed -> 200, persisted")
+    void testUpdatePendingApprovalCampaignFieldEditStillAllowed() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        Campaign campaign = activatableCampaign(CampaignStatus.PENDING_APPROVAL);
+        when(campaignRepository.findByIdForUpdate(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CampaignResponse response =
+                service.update(principal, CAMPAIGN_ID, titlePatchRequest("New Title"));
+
+        assertEquals("New Title", response.title());
+        verify(campaignRepository).save(any(Campaign.class));
+    }
+
+    @Test
+    @DisplayName(
+            "update(): COMPLETED campaign, status-only patch is still rejected -> 409"
+                    + " CAMPAIGN_NOT_EDITABLE (terminal states stay unconditionally blocked)")
+    void testUpdateCompletedCampaignStatusOnlyPatchStillRejected() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        Campaign campaign = activatableCampaign(CampaignStatus.COMPLETED);
+        when(campaignRepository.findByIdForUpdate(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.update(
+                                        principal, CAMPAIGN_ID, statusOnlyPatchRequest(CampaignStatus.CANCELLED)));
+
+        assertEquals("CAMPAIGN_NOT_EDITABLE", ex.getCode());
+        verify(campaignRepository, never()).save(any(Campaign.class));
+    }
+
+    private static CampaignPatchRequest titlePatchRequest(String title) {
+        return new CampaignPatchRequest(
+                title, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null);
+    }
+
+    private static CampaignPatchRequest statusOnlyPatchRequest(CampaignStatus status) {
+        return new CampaignPatchRequest(
+                null, null, null, status, null, null, null, null, null, null, null, null, null, null,
+                null, null);
+    }
+
     private static Campaign activatableCampaign(CampaignStatus status) {
         return Campaign.builder()
                 .id(CAMPAIGN_ID)

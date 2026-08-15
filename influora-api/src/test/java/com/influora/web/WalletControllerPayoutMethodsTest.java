@@ -123,4 +123,51 @@ class WalletControllerPayoutMethodsTest {
         verify(creatorContext).requireCreator(principal);
         verify(creatorBankAccountService).setPrimary(principal, "pm_2");
     }
+
+    // ===================================================================================
+    // CR-77 — GET /wallet/payouts. Creator-only by design: a payout is a disbursement to a
+    // creator's own bank account and has no brand/workspace analogue. The role gate is the only
+    // thing standing between a brand principal and an endpoint whose contract says creator-only,
+    // and it is one deletable line — so it gets a test rather than trust.
+    // ===================================================================================
+
+    @Test
+    @DisplayName("CR-77 GET /wallet/payouts: enforces the creator role gate before doing any work")
+    void payouts_enforcesCreatorRoleGate() {
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+        when(walletService.getPayoutsForCreator(CREATOR_USER_ID, 1, 20))
+                .thenReturn(
+                        new WalletService.PagedCreatorPayouts(
+                                List.of(), new com.influora.common.PageMeta(1, 20, 0, false)));
+
+        controller.payouts(principal, 1, 20);
+
+        // The gate must actually be invoked — deleting it left every other test in this module
+        // green, which is precisely why this assertion exists.
+        verify(creatorContext).requireCreator(principal);
+    }
+
+    @Test
+    @DisplayName(
+            "CR-77 GET /wallet/payouts: a principal the creator gate rejects gets the gate's error"
+                    + " — never a silent empty list")
+    void payouts_rejectedPrincipalPropagatesTheGateError() {
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        org.mockito.Mockito.doThrow(
+                        new com.influora.common.ApiException(
+                                "FORBIDDEN", "Creator account required", HttpStatus.FORBIDDEN))
+                .when(creatorContext)
+                .requireCreator(principal);
+
+        com.influora.common.ApiException ex =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        com.influora.common.ApiException.class, () -> controller.payouts(principal, 1, 20));
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        // An empty list would read as "you have no payouts" to a caller who can never have any.
+        org.mockito.Mockito.verify(walletService, org.mockito.Mockito.never())
+                .getPayoutsForCreator(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt());
+    }
 }

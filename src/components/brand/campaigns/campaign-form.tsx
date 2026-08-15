@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 import type { Platform, ContentType, CampaignStatus, TargetAudience } from '@/lib/types';
 import { useCampaignStore } from '@/lib/store';
 import { api, ApiError, type CreatorSuggestionItem } from '@/lib/api';
-import { isWorkspaceNotVerified } from '@/lib/api-errors';
+import { isWorkspaceNotVerified, isCampaignActiveNotEditable } from '@/lib/api-errors';
 import { validateCampaignTitle } from '@/lib/campaign-validation';
 import { useToast } from '@/hooks/use-toast';
 import { useWorkspaceVerification } from '@/hooks/brand/useWorkspaceVerification';
@@ -488,6 +488,18 @@ export function CampaignForm({
       // safe as a draft. Every other failure stays a toast.
       if (isWorkspaceNotVerified(err)) {
         setVerificationBlocked(true);
+        return;
+      }
+      // Edit is hidden/disabled for ACTIVE campaigns in the campaign list and detail page, so
+      // this 409 only reaches here via a stale link, a typed-in URL, or a race where the
+      // campaign went ACTIVE after the edit link rendered. Give a specific, actionable message
+      // instead of the generic "Could not save draft"/"Could not publish campaign" toast below.
+      if (isCampaignActiveNotEditable(err)) {
+        toast({
+          title: 'This campaign is active',
+          description: 'Pause it first to make changes, or use the Pause/Resume/Cancel/Complete action to change its status directly.',
+          variant: 'destructive',
+        });
         return;
       }
       const message =

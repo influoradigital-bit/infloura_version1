@@ -53,6 +53,12 @@ import {
 
 interface DealRoom {
   id: string;
+  /**
+   * The counterparty's real id (Deal.counterpartyId — a User id, not this room's own `id`,
+   * which is the Deal's id). Needed to link to `/brand/creators/:id`; was previously missing
+   * from this shape entirely, which is why that link used to be hardcoded to a fixture id.
+   */
+  creatorId: string;
   campaignName: string;
   creatorName: string;
   creatorAvatar: string;
@@ -118,6 +124,7 @@ function formatTimeline(nextDeadline?: string): string {
 function mapDealToRoom(deal: Deal): DealRoom {
   return {
     id: deal.id,
+    creatorId: deal.counterpartyId,
     campaignName: deal.campaignName,
     creatorName: deal.counterpartyName,
     creatorAvatar: deal.counterpartyAvatar || '',
@@ -134,6 +141,7 @@ function mapDealToRoom(deal: Deal): DealRoom {
 const mockDealRooms: DealRoom[] = [
   {
     id: '1',
+    creatorId: 'creator-1',
     campaignName: 'Summer Collection Launch',
     creatorName: 'Priya Sharma',
     creatorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya',
@@ -149,6 +157,7 @@ const mockDealRooms: DealRoom[] = [
   },
   {
     id: '2',
+    creatorId: 'creator-2',
     campaignName: 'Seasonal Campaign Q3',
     creatorName: 'Arjun Patel',
     creatorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun',
@@ -164,6 +173,7 @@ const mockDealRooms: DealRoom[] = [
   },
   {
     id: '3',
+    creatorId: 'creator-3',
     campaignName: 'Holiday Promo 2024',
     creatorName: 'Maya Gupta',
     creatorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Maya',
@@ -622,7 +632,11 @@ export function DealRoomDashboard() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => navigate(`/brand/creators/creator-1`)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate(`/brand/creators/${selectedDeal.creatorId}`)}
+                  >
                     View Profile
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => setShowProposalDialog(true)}>

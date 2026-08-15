@@ -283,6 +283,42 @@ class DealServiceTest {
         verify(collaborationRepository, never()).save(any(Collaboration.class));
     }
 
+    /**
+     * [BUG FIX 2026-08-13, no-regression guard] The counter-negotiation fix below narrows {@code
+     * counter()}'s amount validation, deliberately leaving {@code createProposal}'s untouched — a
+     * brand's very FIRST offer is exactly the "wildly outside their own stated range" case {@code
+     * campaign.budgetMax} exists to catch. This pins that the cap is still live here.
+     */
+    @Test
+    @DisplayName(
+            "createProposal: budget cap on a brand's OPENING offer is unchanged by the counter fix"
+                    + " — still 400 AMOUNT_EXCEEDS_BUDGET")
+    void testCreateProposalStillRejectsAboveBudgetMax() {
+        stubProposalCampaign();
+        when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
+                .thenReturn(
+                        Optional.of(
+                                CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+
+        // activeCampaign()'s budgetMax is 50000 — this offer is 75000, above it.
+        CreateDealRequest body =
+                new CreateDealRequest(
+                        CAMPAIGN_ID,
+                        CREATOR_PROFILE_ID,
+                        new BigDecimal("75000"),
+                        null,
+                        null,
+                        null,
+                        "Work with us");
+
+        ApiException ex =
+                assertThrows(ApiException.class, () -> service.createProposal(brandPrincipal, body));
+
+        assertEquals("AMOUNT_EXCEEDS_BUDGET", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+    }
+
     @Test
     @DisplayName("accept: creator can only accept own deal — foreign deal returns 404")
     void testAcceptRejectsForeignDeal() {
@@ -490,6 +526,118 @@ class DealServiceTest {
         // counter; and deliverables were persisted as a bare COUNT, losing type and quantity.
         assertTrue(metadata.contains("2026-08-15"), "deadline missing from proposal metadata");
         assertTrue(metadata.contains("REEL"), "deliverable type missing from proposal metadata");
+    }
+
+    // ------------------------------------------------------------------
+    // [BUG FIX 2026-08-13, Arjun-routed] counter() used to reuse createProposal's
+    // validateProposalAmount(), so ANY counter above campaign.budgetMax 400'd with
+    // AMOUNT_EXCEEDS_BUDGET — even though the standing offer is, by construction, already
+    // <= budgetMax, making an upward counter structurally near-impossible whenever the standing
+    // price was already close to the cap. validateCounterAmount() now drops the ceiling (for
+    // BOTH roles, since counter() is dual-role) while keeping the budgetMin floor.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "counter: creator CAN counter above campaign.budgetMax — the negotiation-squeeze bug"
+                    + " this fix closes")
+    void testCreatorCounterCanExceedBudgetMax() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
+                .thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(idempotencyService.executeOnce(anyString(), eq(CREATOR_USER_ID), eq("deal.counter"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        // activeCampaign()'s budgetMax is 50000. Pre-fix this 400'd with AMOUNT_EXCEEDS_BUDGET.
+        CounterRequest body = new CounterRequest(new BigDecimal("75000"), "Let's do 75k", null, null, null);
+        DealResponse response = service.counter(creatorPrincipal, DEAL_ID, body, null);
+
+        assertEquals(CollaborationStatus.IN_NEGOTIATION, response.status());
+        assertEquals(new BigDecimal("75000"), response.dealValue());
+    }
+
+    @Test
+    @DisplayName(
+            "counter: brand CAN also counter above campaign.budgetMax — meeting a creator's counter"
+                    + " partway is not a fat-fingered opening offer")
+    void testBrandCounterCanExceedBudgetMax() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any()))
+                .thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(Optional.of(CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(idempotencyService.executeOnce(anyString(), eq(WORKSPACE_ID), eq("deal.counter"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        // Above budgetMax(50000) but below the creator's hypothetical prior ask — a genuine
+        // meet-in-the-middle compromise, which the symmetric fix must also allow.
+        CounterRequest body = new CounterRequest(new BigDecimal("60000"), "Let's meet at 60k", null, null, null);
+        DealResponse response = service.counter(brandPrincipal, DEAL_ID, body, null);
+
+        assertEquals(CollaborationStatus.IN_NEGOTIATION, response.status());
+        assertEquals(new BigDecimal("60000"), response.dealValue());
+    }
+
+    @Test
+    @DisplayName(
+            "counter: still rejects below campaign.budgetMin — the floor guard is unrelated to this"
+                    + " fix and stays exactly as strict")
+    void testCounterStillRejectsBelowBudgetMin() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+
+        // activeCampaign()'s budgetMin is 10000.
+        CounterRequest body = new CounterRequest(new BigDecimal("5000"), "Lowball counter", null, null, null);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.counter(brandPrincipal, DEAL_ID, body, null));
+
+        assertEquals("AMOUNT_BELOW_BUDGET", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
     }
 
     // ------------------------------------------------------------------
@@ -1453,5 +1601,74 @@ class DealServiceTest {
         DealResponse response = service.get(brandPrincipal, DEAL_ID);
 
         assertEquals(null, response.counterpartyVerificationStatus());
+    }
+
+    // ------------------------------------------------------------------
+    // DealResponse.counterpartyProfileId — brand-creator-profile.tsx's Message button navigates
+    // using the creator's CreatorProfile id (CreatorPublicProfileResponse.id), but counterpartyId
+    // above is the creator's User id (Collaboration.creatorId / resolveCounterparty). Those are
+    // two different ULIDs on two different rows, so brand-messages.tsx's "does a conversation
+    // already exist for this creator" match against counterpartyId alone could never succeed.
+    // counterpartyProfileId carries the CreatorProfile id the frontend actually navigates with,
+    // reusing the same creatorProfileRepository.findByUserId lookup resolveCounterparty already
+    // performs for counterpartyName/Avatar/Handle — no new query.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "get(): brand viewer's counterparty is the creator — counterpartyProfileId carries the CreatorProfile id, not the User id")
+    void testGetSurfacesCreatorProfileIdToBrandViewer() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        stubToDealResponseCommonReads(DEAL_ID);
+
+        DealResponse response = service.get(brandPrincipal, DEAL_ID);
+
+        assertEquals(CREATOR_USER_ID, response.counterpartyId());
+        assertEquals(CREATOR_PROFILE_ID, response.counterpartyProfileId());
+        assertTrue(!response.counterpartyId().equals(response.counterpartyProfileId()));
+    }
+
+    @Test
+    @DisplayName(
+            "get(): brand viewer with no CreatorProfile row for the counterparty — counterpartyProfileId stays null (same null-safety as counterpartyName's \"Creator\" fallback)")
+    void testGetLeavesCounterpartyProfileIdNullWhenProfileRowMissing() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID)).thenReturn(Optional.empty());
+        stubToDealResponseCommonReads(DEAL_ID);
+
+        DealResponse response = service.get(brandPrincipal, DEAL_ID);
+
+        assertEquals(null, response.counterpartyProfileId());
+    }
+
+    @Test
+    @DisplayName(
+            "get(): creator viewer's counterparty is the brand — counterpartyProfileId is null (a CreatorProfile field is not meaningful for a brand counterparty)")
+    void testGetLeavesCounterpartyProfileIdNullForCreatorViewer() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        Workspace workspace =
+                Workspace.newBrand(WORKSPACE_ID, "Test Brand", "test-brand", "Beauty", "10-50");
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(workspace));
+        stubToDealResponseCommonReads(DEAL_ID);
+
+        DealResponse response = service.get(creatorPrincipal, DEAL_ID);
+
+        assertEquals(null, response.counterpartyProfileId());
+        verify(creatorProfileRepository, never()).findByUserId(anyString());
     }
 }

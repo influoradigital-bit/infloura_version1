@@ -5,10 +5,7 @@ import com.influora.repository.IdempotencyKeyRecordRepository;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Generic dedupe-by-key helper (Domain E / [SEC: 3.1, LB-3]). {@code executeOnce} inserts the
@@ -37,14 +34,58 @@ import org.springframework.transaction.annotation.Transactional;
  * for indexing/inspection; only the PRIMARY KEY value changes shape. This is fully transparent to
  * every existing caller of {@link #executeOnce(String, String, String, Supplier)} — none of them
  * need to change what they pass in.
+ *
+ * <p><b>[SEC: Vikram, BL-3 round-4 fix] Reservation/completion writes now go through {@link
+ * IdempotencyReservationOps}, a separate bean, not self-invoked methods on this class.</b> See
+ * that class's javadoc for the full ambient-transaction defect Priya's round-4 review found and
+ * why a separate bean (not just adding {@code REQUIRES_NEW}) was required to fix it — in short,
+ * {@code @Transactional} on a method this class called on itself ({@code this.foo(...)}) was a
+ * no-op (Spring's self-invocation limitation), which meant callers that invoke {@code
+ * executeOnce}/{@code runExclusive} from inside their OWN {@code @Transactional} method (e.g.
+ * {@code WalletService#requestCreatorWithdrawal}) never actually got the insert-first-wins
+ * guarantee at reservation time.
+ *
+ * <p><b>[SEC: Vikram, BL-3 round-5 fix — Priya's fresh review] {@code reclaimFailedForRetry} now
+ * goes through {@link IdempotencyReservationOps} too, not {@code repository} directly.</b> Round
+ * 4 moved {@code tryReserve}/{@code markCompleted}/{@code markFailed}/{@code release} onto that
+ * bean but missed this fifth write — {@code executeOnce}/{@code runExclusive} kept calling {@code
+ * repository.reclaimFailedForRetry(...)} directly, which carries its own bare {@code
+ * @Transactional} (REQUIRED propagation) and so, called from inside a caller's ambient
+ * transaction, JOINED it and held the row's write lock for that transaction's full lifetime —
+ * deadlocking against {@code markCompleted}/{@code markFailed}'s independent {@code
+ * REQUIRES_NEW} update to the SAME row moments later. Every write to the idempotency row now
+ * happens inside {@link IdempotencyReservationOps}'s own short-lived {@code REQUIRES_NEW}
+ * transaction — the caller's ambient transaction never touches the row directly. See {@link
+ * IdempotencyReservationOps#reclaimFailedForRetry} for the full defect writeup. {@code
+ * repository.findByIdempotencyKey}-style plain reads stay on {@code repository} directly — a
+ * non-locking SELECT has nothing to deadlock against and doesn't need this bean's transactional
+ * boundary.
  */
 @Service
 public class IdempotencyService {
 
-    private final IdempotencyKeyRecordRepository repository;
+    /**
+     * [SEC: Vikram, round-4 Finding 3] {@code idempotency_keys.idempotency_key} is {@code
+     * VARCHAR(128)} (V15) and this is the fully-composited primary-key VALUE ({@code scope +
+     * workspaceId + idempotencyKey}, see {@link #compositeKey}) — not just the caller-supplied raw
+     * token. At least one caller ({@code WalletService#requestCreatorWithdrawal}) namespaces the
+     * key twice before it ever reaches here ({@code "wallet.withdraw:" + userId + ":" +
+     * "creator-withdraw:" + userId + ":" + <client header>}), which alone consumes ~88 of the 128
+     * bytes before the client-supplied portion is even added. Validating up front, in code, turns
+     * a silent DB-level "value too long" failure (which the {@code tryReserve} catch below cannot
+     * safely distinguish from a genuine duplicate-key collision — see {@link
+     * IdempotencyReservationOps} — into a clear, typed {@link IllegalArgumentException} at the
+     * point of the call, instead of a misclassified "already in progress" response.
+     */
+    private static final int MAX_RESERVATION_KEY_LENGTH = 128;
 
-    public IdempotencyService(IdempotencyKeyRecordRepository repository) {
+    private final IdempotencyKeyRecordRepository repository;
+    private final IdempotencyReservationOps reservationOps;
+
+    public IdempotencyService(
+            IdempotencyKeyRecordRepository repository, IdempotencyReservationOps reservationOps) {
         this.repository = repository;
+        this.reservationOps = reservationOps;
     }
 
     /** Thrown when the same key is currently in flight (concurrent double-submit) — callers should surface a 409/202-style "already processing" response, never retry the effect themselves. */
@@ -94,19 +135,15 @@ public class IdempotencyService {
             Supplier<T> action,
             Function<T, String> resultDigestFn) {
         String reservationKey = compositeKey(idempotencyKey, workspaceId, scope);
-        boolean reserved = tryReserveTransactional(reservationKey, workspaceId, scope);
+        validateReservationKeyLength(reservationKey);
+        boolean reserved = reservationOps.tryReserve(reservationKey, workspaceId, scope);
         if (!reserved) {
             // [SEC: Kabir, E2 HIGH-1 -- fixed] A prior attempt that threw mid-effect leaves the row
             // FAILED, not terminal -- atomically reclaim it back to IN_PROGRESS (the UPDATE's WHERE
             // clause is itself the concurrency arbiter for the reclaim race) so this call can retry
             // the effect, instead of every future retry being permanently rejected as
             // "AlreadyInProgress" for a run that will never actually complete.
-            boolean reclaimed =
-                    repository.reclaimFailedForRetry(
-                                    reservationKey,
-                                    IdempotencyKeyRecord.Status.FAILED,
-                                    IdempotencyKeyRecord.Status.IN_PROGRESS)
-                            == 1;
+            boolean reclaimed = reservationOps.reclaimFailedForRetry(reservationKey) == 1;
             if (!reclaimed) {
                 IdempotencyKeyRecord existing = repository.findByIdempotencyKey(reservationKey).orElse(null);
                 if (existing != null && existing.getStatus() == IdempotencyKeyRecord.Status.COMPLETED) {
@@ -118,10 +155,11 @@ public class IdempotencyService {
 
         try {
             T result = action.get();
-            markCompletedTransactional(reservationKey, resultDigestFn == null ? null : resultDigestFn.apply(result));
+            reservationOps.markCompleted(
+                    reservationKey, resultDigestFn == null ? null : resultDigestFn.apply(result));
             return result;
         } catch (RuntimeException ex) {
-            markFailedTransactional(reservationKey);
+            reservationOps.markFailed(reservationKey);
             throw ex;
         }
     }
@@ -171,45 +209,78 @@ public class IdempotencyService {
     }
 
     /**
-     * NOTE on Spring AOP self-invocation: {@code executeOnce} calls these three methods on
-     * {@code this}, which bypasses the transactional proxy — {@code @Transactional} on a method
-     * invoked this way is a no-op wrapper (Spring's well-documented self-invocation limitation),
-     * so each call below actually runs without an explicit transaction demarcation. This does NOT
-     * break the core correctness guarantee: {@code repository.save()} on a fresh row is a single
-     * atomic INSERT statement, and the DB's {@code UNIQUE(idempotency_key)} constraint (V15) is
-     * still what arbitrates concurrent double-submits, not this method's transaction boundary. The
-     * {@code @Transactional(REQUIRES_NEW)} annotations are kept as documentation of intent and to
-     * make this correct-by-construction if a future caller reaches these methods through an
-     * injected proxy instead of {@code this} (e.g. by extracting them to a dedicated bean).
-     * {@code reclaimFailedForRetry} (used directly from {@code executeOnce}, not via one of these
-     * {@code this}-invoked helpers) is unaffected by this note — it is a genuine Spring Data
-     * repository method, which Spring Data JPA gives its own default transactional wrapping to
-     * independent of this class's self-invocation.
+     * [SEC: Vikram, round-4 Finding 3] Rejects up front, with a clear typed exception, a composite
+     * key that cannot possibly fit {@code idempotency_keys.idempotency_key VARCHAR(128)} — instead
+     * of letting it reach {@link IdempotencyReservationOps#tryReserve}, where a DB-level "value too
+     * long" error is a {@link org.springframework.dao.DataIntegrityViolationException} exactly like
+     * a genuine duplicate-key collision and cannot be cheaply/reliably told apart from one via JPA's
+     * exception translation (Hibernate collapses both into the same Spring exception type — see
+     * that class's javadoc). Validating length here, on the fully-composed key, closes the practical
+     * risk regardless of that ambiguity: a too-long key is refused before any DB call is made, so
+     * the ambiguous-catch scenario becomes unreachable for this cause. Deliberately conservative
+     * (composite length, not just the caller-supplied raw token) since {@code scope}/{@code
+     * workspaceId} prefixes are also attacker/caller-influenced in some call sites (e.g. {@code
+     * WalletService} folds a client-supplied header into both {@code scope} and the raw key).
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    protected boolean tryReserveTransactional(String idempotencyKey, String workspaceId, String scope) {
-        try {
-            repository.save(
-                    IdempotencyKeyRecord.builder()
-                            .idempotencyKey(idempotencyKey)
-                            .workspaceId(workspaceId)
-                            .scope(scope)
-                            .build());
-            return true;
-        } catch (DataIntegrityViolationException alreadyExists) {
-            return false;
+    private static void validateReservationKeyLength(String reservationKey) {
+        if (reservationKey.length() > MAX_RESERVATION_KEY_LENGTH) {
+            throw new IllegalArgumentException(
+                    "Idempotency reservation key exceeds "
+                            + MAX_RESERVATION_KEY_LENGTH
+                            + " chars ("
+                            + reservationKey.length()
+                            + "); refusing rather than risk a DB-level truncation/length error being"
+                            + " misclassified as a duplicate-key collision");
         }
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    protected void markCompletedTransactional(String idempotencyKey, String resultDigest) {
-        repository
-                .findByIdempotencyKey(idempotencyKey)
-                .ifPresent(record -> record.markCompleted(resultDigest));
-    }
+    /**
+     * [BL-3 fix, BrandF.md §99] Mutual-exclusion variant of {@link #executeOnce}: reserves {@code
+     * idempotencyKey} (scoped to {@code workspaceId}/{@code scope}) exactly like {@code
+     * executeOnce} — same insert-first-wins DB-UNIQUE-constraint arbiter, same FAILED-is-reclaimable
+     * retry path — but, unlike {@code executeOnce}, NEVER leaves the reservation {@code COMPLETED}
+     * forever. On success the row is deleted outright, so the very next (non-concurrent) call with
+     * the same key is free to proceed again.
+     *
+     * <p>Use this instead of {@code executeOnce} when the guarded effect legitimately needs to be
+     * callable again later by the SAME caller once the current call has finished — {@code
+     * executeOnce}'s permanent-COMPLETED contract is right for a dedupe-forever ledger (webhook
+     * deliveries, tool calls) but wrong for something like a payment-provider checkout call, where a
+     * workspace that completes one checkout episode (or cancels and later re-subscribes) must be
+     * able to initiate a brand-new one — see {@code SubscriptionService#initiateCheckout}'s BL-3 fix
+     * javadoc for the concrete scenario a static {@code executeOnce} key would have broken.
+     *
+     * <p>A concurrent second caller for the SAME key while {@code action} is still running sees the
+     * reservation row still present ({@code IN_PROGRESS}) and is rejected with {@link
+     * AlreadyInProgressException} — so exactly one concurrent caller's {@code action} ever runs for
+     * a given key at a time. A row left {@code FAILED} (the guarded action threw) is reclaimed
+     * exactly like {@code executeOnce} (see that method's javadoc), so a genuinely failed attempt —
+     * including one abandoned mid-flight by a crashed process, via {@code
+     * IdempotencyReservationReaperJob}'s generic stale-{@code IN_PROGRESS} sweep — can always be
+     * retried, never permanently stuck.
+     *
+     * <p>Because a row is never marked {@code COMPLETED} here, {@link #findCompletedResultDigest}
+     * and {@link #isCompleted} never resolve anything for a key only ever used through this method —
+     * callers needing result-digest replay should use {@link #executeOnce} instead.
+     */
+    public <T> T runExclusive(String idempotencyKey, String workspaceId, String scope, Supplier<T> action) {
+        String reservationKey = compositeKey(idempotencyKey, workspaceId, scope);
+        validateReservationKeyLength(reservationKey);
+        boolean reserved = reservationOps.tryReserve(reservationKey, workspaceId, scope);
+        if (!reserved) {
+            boolean reclaimed = reservationOps.reclaimFailedForRetry(reservationKey) == 1;
+            if (!reclaimed) {
+                throw new AlreadyInProgressException(idempotencyKey);
+            }
+        }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    protected void markFailedTransactional(String idempotencyKey) {
-        repository.findByIdempotencyKey(idempotencyKey).ifPresent(IdempotencyKeyRecord::markFailed);
+        try {
+            T result = action.get();
+            reservationOps.release(reservationKey);
+            return result;
+        } catch (RuntimeException ex) {
+            reservationOps.markFailed(reservationKey);
+            throw ex;
+        }
     }
 }

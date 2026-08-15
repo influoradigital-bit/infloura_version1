@@ -10,6 +10,7 @@ import com.influora.domain.enums.SubscriptionStatus;
 import com.influora.integration.razorpay.RazorpayClient;
 import com.influora.repository.PlanRepository;
 import com.influora.repository.SubscriptionRepository;
+import com.influora.service.IdempotencyService;
 import com.influora.service.meera.AICreditService;
 import java.time.Duration;
 import java.time.Instant;
@@ -69,6 +70,11 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>{@link #grantAdminPlan} — comp/override writes, any plan. SUPER_ADMIN + MFA-gated via
  *       {@code AdminBillingService}; intentionally an administrator-triggered exception to the
  *       "webhook-only" default, not a gap in it.
+ *   <li>{@link #finalizeLapsedCancellation} — BL-2 fix (BrandF.md §98): flips a
+ *       cancel-at-period-end row to {@code CANCELLED} once its period has lapsed. Not reachable
+ *       from any controller; called only by {@link com.influora.job.SubscriptionRenewalResetJob},
+ *       same trust boundary as {@link #applyRenewalSafetyNet}. No plan/status escalation and no
+ *       payment risk: this path can only move a row DOWN to the terminal cancelled state.
  * </ul>
  *
  * <p>The actual invariant this class enforces is narrower than "webhook-only": <b>no path other
@@ -95,6 +101,7 @@ public class SubscriptionService {
     private final PlanService planService;
     private final RazorpayClient razorpayClient;
     private final AICreditService aiCreditService;
+    private final IdempotencyService idempotencyService;
 
     /**
      * Collapses a rare concurrent-first-checkout race (two requests hitting {@link
@@ -104,17 +111,37 @@ public class SubscriptionService {
      */
     private final Object razorpayPlanLock = new Object();
 
+    /**
+     * [BL-3 fix, BrandF.md §99] {@link IdempotencyService#runExclusive} scope for {@link
+     * #initiateCheckout} — see that method's own javadoc for the full defect/fix writeup. A
+     * dedicated scope (distinct from every other {@code IdempotencyService} caller in the codebase)
+     * so a colliding raw key can never shadow an unrelated caller — same discipline {@code
+     * RazorpayWebhookController} already documents for its own scope constant.
+     */
+    private static final String CHECKOUT_IDEMPOTENCY_SCOPE = "billing.checkout.pro";
+
+    /**
+     * Constant on purpose — {@link IdempotencyService}'s composite reservation key already folds
+     * {@code workspaceId} + {@link #CHECKOUT_IDEMPOTENCY_SCOPE} in, so this raw key only needs to
+     * distinguish "a Pro checkout attempt" from any other reservation type; it does not need to be
+     * unique per-request (a per-request value, e.g. a client-supplied token, would defeat the
+     * cross-tab/cross-request mutual exclusion this exists for).
+     */
+    private static final String CHECKOUT_IDEMPOTENCY_KEY = "PRO_CHECKOUT";
+
     public SubscriptionService(
             SubscriptionRepository subscriptionRepository,
             PlanRepository planRepository,
             PlanService planService,
             RazorpayClient razorpayClient,
-            AICreditService aiCreditService) {
+            AICreditService aiCreditService,
+            IdempotencyService idempotencyService) {
         this.subscriptionRepository = subscriptionRepository;
         this.planRepository = planRepository;
         this.planService = planService;
         this.razorpayClient = razorpayClient;
         this.aiCreditService = aiCreditService;
+        this.idempotencyService = idempotencyService;
     }
 
     public Optional<Subscription> getByWorkspaceId(String workspaceId) {
@@ -181,6 +208,46 @@ public class SubscriptionService {
      * Razorpay Subscription with {@code notes.workspaceId} so the eventual webhook can correlate
      * back to this workspace, and returns the hosted checkout URL. Does NOT write a local {@link
      * Subscription} row — see class javadoc.
+     *
+     * <p><b>BL-3 fix (BrandF.md §99):</b> because this method deliberately writes no local row
+     * before calling Razorpay (see class javadoc), the {@code ALREADY_SUBSCRIBED} guard just above
+     * the Razorpay call has nothing to catch a concurrent double-submit — on a workspace's FIRST
+     * upgrade there is no row (or only a Free row), so two requests racing this method (two
+     * browser tabs, a replayed request, or a direct curl) both sail past that guard and would both
+     * reach {@link RazorpayClient#createSubscription}, producing two distinct real {@code sub_*}
+     * subscriptions billing the same workspace. The webhook upsert ({@link
+     * #applySubscriptionWebhookUpdate}, {@code findByRazorpaySubscriptionId(...).or(() ->
+     * findByWorkspaceId(...))}) then resolves both events into ONE local row — the second webhook's
+     * {@link Subscription#linkRazorpaySubscription} silently overwrites the first's link, leaving
+     * the first Razorpay subscription active, charging, and permanently un-cancellable through the
+     * product (its id is gone from the row the moment the second webhook lands).
+     *
+     * <p>The Razorpay-calling section below is now wrapped in {@link
+     * IdempotencyService#runExclusive} (scope {@link #CHECKOUT_IDEMPOTENCY_SCOPE}), which reserves
+     * a per-workspace row in its own transaction BEFORE the outbound Razorpay call — the DB's
+     * {@code UNIQUE(idempotency_key)} constraint (V15), not application logic, is what arbitrates a
+     * genuine concurrent double-submit: exactly one racing caller's reservation insert succeeds and
+     * proceeds to call Razorpay; every other concurrent caller sees the row already present and is
+     * rejected with {@code AlreadyInProgressException}, translated below to a clean 409 {@code
+     * CHECKOUT_IN_PROGRESS} — never silently retried, never allowed to call Razorpay a second time.
+     *
+     * <p><b>Why {@code runExclusive} and not the more familiar {@link IdempotencyService#executeOnce}
+     * with a static per-workspace key:</b> {@code executeOnce} marks a key COMPLETED forever on
+     * success, which is exactly right for a dedupe-forever ledger (webhook deliveries, tool calls)
+     * but wrong here — it would permanently lock a workspace out of ever calling {@code
+     * initiateCheckout} again after its first successful call, even months later after a
+     * legitimate cancel + re-subscribe (a normal flow this class's own webhook-upsert javadoc
+     * already documents: "may be from a prior Razorpay subscription if the workspace previously
+     * cancelled and is now re-subscribing"). {@code runExclusive} instead releases (deletes) the
+     * reservation the instant this call finishes — success or failure — so it only ever blocks a
+     * TRULY CONCURRENT duplicate, never a later legitimate retry or resubscription. If the Razorpay
+     * call itself throws (network error, timeout, Razorpay-side failure), the reservation is left
+     * {@code FAILED} (not deleted) but is atomically reclaimable by the very next call for this
+     * workspace — see {@code runExclusive}'s javadoc — so a genuinely failed attempt is always
+     * retryable, and even a caller that crashes between reserving and releasing is recovered by
+     * {@code IdempotencyReservationReaperJob}'s generic stale-{@code IN_PROGRESS} sweep. The
+     * pre-existing {@code ALREADY_SUBSCRIBED} check above is untouched by any of this — it still
+     * runs, unconditionally, before the lock is even attempted.
      */
     public String initiateCheckout(String workspaceId, PlanCode planCode) {
         if (planCode != PlanCode.PRO) {
@@ -224,14 +291,30 @@ public class SubscriptionService {
                     "ALREADY_SUBSCRIBED", "Workspace already has an active Pro subscription", HttpStatus.CONFLICT);
         }
 
-        String razorpayPlanId = ensureRazorpayPlanId(proPlan);
+        try {
+            return idempotencyService.runExclusive(
+                    CHECKOUT_IDEMPOTENCY_KEY,
+                    workspaceId,
+                    CHECKOUT_IDEMPOTENCY_SCOPE,
+                    () -> {
+                        String razorpayPlanId = ensureRazorpayPlanId(proPlan);
 
-        JSONObject notes = new JSONObject();
-        notes.put("workspaceId", workspaceId);
+                        JSONObject notes = new JSONObject();
+                        notes.put("workspaceId", workspaceId);
 
-        RazorpayClient.SubscriptionResult result =
-                razorpayClient.createSubscription(razorpayPlanId, DEFAULT_TOTAL_COUNT, notes);
-        return result.shortUrl();
+                        RazorpayClient.SubscriptionResult result =
+                                razorpayClient.createSubscription(razorpayPlanId, DEFAULT_TOTAL_COUNT, notes);
+                        return result.shortUrl();
+                    });
+        } catch (IdempotencyService.AlreadyInProgressException concurrentCheckout) {
+            // [BL-3 fix] A second racing request (or a stuck-mid-flight caller within the reaper's
+            // grace period) — never silently retried, never allowed to reach Razorpay a second time.
+            throw new ApiException(
+                    "CHECKOUT_IN_PROGRESS",
+                    "A checkout is already being processed for this workspace — please wait a"
+                            + " moment, then refresh your billing page before trying again.",
+                    HttpStatus.CONFLICT);
+        }
     }
 
     /**
@@ -505,6 +588,21 @@ public class SubscriptionService {
             subscription.changePlan(plan.getId());
         }
         subscription.setStatus(targetStatus);
+        if (targetStatus == SubscriptionStatus.ACTIVE) {
+            // [Re-subscribe latch fix] Clear a stale cancel-at-period-end flag on (re)activation.
+            // The flag is only ever SET by SubscriptionService#cancel and, before this fix, was
+            // only ever cleared on brand-new-row creation above — never on an existing row being
+            // reactivated. Left uncleared, a workspace that cancels and later re-subscribes (this
+            // UPDATE branch, via a subscription.activated webhook) keeps cancelAtPeriodEnd=true
+            // forever even though it is now ACTIVE and paying again. Any SUBSEQUENT missed/delayed
+            // webhook then leaves this ACTIVE row with a lapsed period AND the stale flag still
+            // set — exactly the input SubscriptionRenewalResetJob's cancelAtPeriodEnd partition
+            // (see that job's class javadoc) routes to finalizeLapsedCancellation, wrongly
+            // revoking a currently-paying customer's Pro entitlement while Razorpay keeps charging
+            // them. Clearing it here, alongside every other (re)activation write, keeps the flag
+            // meaning exactly one thing: "the customer's MOST RECENT cancel is still pending."
+            subscription.setCancelAtPeriodEnd(false);
+        }
         if (periodStart != null && periodEnd != null) {
             subscription.renewPeriod(periodStart, periodEnd);
         }
@@ -599,6 +697,45 @@ public class SubscriptionService {
             aiCreditService.applyPlanAllotment(workspaceId, activePlan.getAiMonthlyAllotment());
         }
         aiCreditService.resetForNewCycle(workspaceId);
+    }
+
+    /**
+     * BL-2 fix (BrandF.md §98): terminal transition for a subscription the customer already
+     * cancelled ({@link Subscription#isCancelAtPeriodEnd()} {@code == true}) whose paid period has
+     * now lapsed. Called only from {@link com.influora.job.SubscriptionRenewalResetJob}, for rows
+     * its own stale-period query would otherwise hand to {@link #applyRenewalSafetyNet} — which
+     * would silently RE-RENEW a subscription the customer cancelled (advancing the period and
+     * re-allotting Pro AI credits), undoing {@link #cancel(String)} every single day forever. That
+     * job partitions its stale-period batch on {@code cancelAtPeriodEnd} and routes rows with the
+     * flag set here instead of into {@code applyRenewalSafetyNet}.
+     *
+     * <p>Prior to this fix, {@code SubscriptionDunningJob} only ever queried {@code PAST_DUE} rows
+     * (a cancelled-at-period-end row is still {@code ACTIVE}, so it was never visible there) and
+     * {@code RazorpayWebhookController} had no {@code subscription.cancelled}/{@code
+     * subscription.completed} case (that terminal Razorpay event was silently discarded via {@code
+     * default -> {}}) — so nothing in production ever wrote {@link SubscriptionStatus#CANCELLED}
+     * for the scheduled-cancellation path. This method, together with the new webhook cases, are
+     * the two writers that now do.
+     *
+     * <p>{@code saveAndFlush} (not {@code save}), matching {@link #applySubscriptionWebhookUpdate}'s
+     * MEDIUM-2 pattern: the row's {@code @Version} optimistic lock is checked synchronously inside
+     * this method's own transaction, and a lock failure is deliberately left uncaught so it
+     * propagates up to the job's own per-subscription {@code catch (Exception)} — the row's status
+     * write (and this method's own {@code reconcileAiCreditAllotment} call) both roll back together,
+     * and because the row is still {@code ACTIVE} with {@code cancelAtPeriodEnd == true} and an
+     * elapsed period, it is picked up again cleanly on the job's very next run instead of being
+     * silently skipped for a full cycle.
+     */
+    @Transactional
+    public void finalizeLapsedCancellation(Subscription subscription) {
+        subscription.setStatus(SubscriptionStatus.CANCELLED);
+        subscriptionRepository.saveAndFlush(subscription);
+        // getActivePlanForWorkspace already falls back to Free the instant status != ACTIVE, so
+        // this brings BrandAiCredit.monthlyAllotment back down to Free's allotment immediately —
+        // same discipline as reconcileAiCreditAllotment's other callers (webhook activate/cancel/
+        // halt, SubscriptionDunningJob#haltOne) rather than leaving it to drift until the next
+        // monthly AICreditResetJob.
+        reconcileAiCreditAllotment(subscription.getWorkspaceId());
     }
 
     private Plan resolvePlanForWebhook(String razorpayPlanId) {

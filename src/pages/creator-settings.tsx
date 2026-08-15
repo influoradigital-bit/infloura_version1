@@ -47,6 +47,7 @@ import { useAuthStore } from '@/lib/store';
 import { clearCreatorSession } from '@/lib/auth-session';
 import { TaxIdentityForm } from '@/components/creator/TaxIdentityForm';
 import { KycIdentityForm } from '@/components/creator/KycIdentityForm';
+import { ConnectedAccounts } from '@/components/creator/connected-accounts';
 import { api, isApiLive } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 import { COMPANY } from '@/lib/company';
@@ -348,6 +349,11 @@ export default function CreatorSettingsPage() {
           <h1 className="text-2xl font-bold">Settings</h1>
           <p className="text-muted-foreground">Manage your account preferences</p>
         </div>
+
+        {/* CR-101/F-0114 — this component existed, fully built, with zero imports anywhere in
+            src/. A creator visiting Settings had no Connected Accounts card, no connection
+            status, and no way to see what's linked at all. */}
+        <ConnectedAccounts />
 
         {/* Notifications */}
         <Card className="mb-6">

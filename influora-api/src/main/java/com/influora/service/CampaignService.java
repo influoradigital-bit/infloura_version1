@@ -224,7 +224,7 @@ public class CampaignService {
         // below must be serialized by a real row lock, not merely by the fee ledger's idempotency
         // key (which stops protecting concurrent activation once brandFeeBps resolves to 0).
         Campaign campaign = loadOwnedForUpdate(campaignId, workspace.getId());
-        validator.ensureEditable(campaign.getStatus());
+        validator.ensureEditable(campaign.getStatus(), isStatusOnlyPatch(req));
 
         if (req.budget() != null) {
             validator.validateBudget(req.budget());
@@ -591,6 +591,31 @@ public class CampaignService {
         Sort.Direction dir =
                 "asc".equalsIgnoreCase(sortOrder) ? Sort.Direction.ASC : Sort.Direction.DESC;
         return Sort.by(dir, field);
+    }
+
+    /**
+     * True when the patch carries a {@code status} change (or nothing at all) and no other field —
+     * the shape {@code campaignsApi.update(id, { status })} always sends for pause/resume/cancel/
+     * complete (src/lib/api.ts, called from brand-campaign-detail.tsx and campaigns-list.tsx). Used
+     * by {@link CampaignValidator#ensureEditable(CampaignStatus, boolean)} to let an ACTIVE
+     * campaign's status still be changed while blocking any patch that also edits real content.
+     */
+    private static boolean isStatusOnlyPatch(CampaignPatchRequest req) {
+        return req.title() == null
+                && req.description() == null
+                && req.objectives() == null
+                && req.hype() == null
+                && req.budget() == null
+                && req.timeline() == null
+                && req.applicationDeadline() == null
+                && req.platforms() == null
+                && req.contentTypes() == null
+                && req.requirements() == null
+                && req.hashtags() == null
+                && req.brandGuidelines() == null
+                && req.isPrivate() == null
+                && req.maxCollaborators() == null
+                && req.targetAudience() == null;
     }
 
     private static TimelineDto mergedTimeline(Campaign campaign, CampaignPatchRequest req) {

@@ -53,7 +53,10 @@ public class MetricsPollingJob {
 
     private static final Logger log = LoggerFactory.getLogger(MetricsPollingJob.class);
     private static final String PLATFORM_INSTAGRAM = "INSTAGRAM";
-    private static final String DATA_SOURCE_META_API = "META_API";
+    // CR-119 — points at the canonical constant instead of re-declaring the literal; the same
+    // string now decides PlatformStat.verified via CreatorMetric#isPlatformVerified(), so a
+    // drifted local copy would mislabel real Meta data as creator-reported.
+    private static final String DATA_SOURCE_META_API = CreatorMetric.DATA_SOURCE_META_API;
     // Spec §3.1's recent-media fetch limit — currently referenced only in the class javadoc TODO
     // for the not-yet-implemented media_metrics polling; kept here so that follow-up work has the
     // agreed cap in one place rather than re-deriving it from the spec.
@@ -110,12 +113,11 @@ public class MetricsPollingJob {
         int failed = 0;
 
         for (MetaOAuthToken tokenRow : connectedTokens) {
-            String workspaceId = tokenRow.getWorkspaceId();
             String creatorProfileId = tokenRow.getCreatorProfileId();
             String igBusinessAccountId = tokenRow.getIgBusinessAccountId();
 
             try {
-                if (pollOne(workspaceId, creatorProfileId, igBusinessAccountId)) {
+                if (pollOne(creatorProfileId, igBusinessAccountId)) {
                     polled++;
                 } else {
                     failed++;
@@ -142,7 +144,7 @@ public class MetricsPollingJob {
     }
 
     /** @return true if a metric row was successfully written for this creator. */
-    private boolean pollOne(String workspaceId, String creatorProfileId, String igBusinessAccountId) {
+    private boolean pollOne(String creatorProfileId, String igBusinessAccountId) {
         // CR-99/F-0113 fix: Meta's Graph API requires the numeric IG Business Account ID in the
         // request path, not our internal ULID creatorProfileId — a token row with none on file
         // (pre-dating the field, or an incomplete OAuth exchange) cannot be polled at all.
@@ -153,7 +155,12 @@ public class MetricsPollingJob {
             return false;
         }
 
-        Optional<String> token = tokenStorage.getValidToken(workspaceId, creatorProfileId);
+        // F-0166 follow-up (Priya review): this called the WORKSPACE-scoped getValidToken with
+        // `workspaceId`, which is always null for a creator-owned row. The repository method
+        // backing it carries an explicit `workspaceId IS NOT NULL` predicate (CR-111 hardening),
+        // so a null workspaceId can never match ANY row — this could not have found a token for
+        // a single creator, independent of the igBusinessAccountId check above it.
+        Optional<String> token = tokenStorage.getValidCreatorToken(creatorProfileId);
         if (token.isEmpty()) {
             log.warn("MetricsPollingJob: no valid token for creator {}, skipping", creatorProfileId);
             return false;
@@ -162,7 +169,11 @@ public class MetricsPollingJob {
         // Pre-flight rate-limit guard mirrors MetaGraphApiClient's own check — belt-and-braces so a
         // creator already known to be near-limited doesn't spend budget on the profile call before
         // the media call would have tripped it anyway.
-        int usage = rateLimitTracker.getCurrentUsage(creatorProfileId);
+        // F-0126: keyed on creatorProfileId (internal ULID) while MetaGraphApiClient's own
+        // enforcement and update (usage-header parsing) key on igBusinessAccountId — two disjoint
+        // namespaces for the same account meant this pre-flight guard's getCurrentUsage() could
+        // never see usage the client itself had recorded, so it always read 0 and never tripped.
+        int usage = rateLimitTracker.getCurrentUsage(igBusinessAccountId);
         if (usage >= 90) {
             log.warn(
                     "MetricsPollingJob: creator {} at {}% Meta rate-limit usage, deferring to next cycle",
@@ -203,7 +214,9 @@ public class MetricsPollingJob {
 
             return true;
         } catch (MetaRateLimitException e) {
-            rateLimitTracker.markLimited(creatorProfileId);
+            // F-0126: markLimited must use the same key as getCurrentUsage() above (and the same
+            // key MetaGraphApiClient itself uses) — igBusinessAccountId, not creatorProfileId.
+            rateLimitTracker.markLimited(igBusinessAccountId);
             log.warn("MetricsPollingJob: rate limited for creator {}, will retry next cycle", creatorProfileId);
             return false;
         } catch (MetaTokenExpiredException e) {

@@ -133,15 +133,15 @@ class DealControllerTest {
     }
 
     @Test
-    @DisplayName("CounterRequest: empty deliverables list fails validation (@NotEmpty)")
-    void counterRequest_emptyDeliverables_failsValidation() {
-        CounterRequest request = new CounterRequest(new BigDecimal("100"), null, List.of(), null, null);
+    @DisplayName(
+            "CounterRequest: omitted deliverables (null or empty) pass validation — DealService.doCounter()"
+                    + " carries them forward from the superseded proposal card")
+    void counterRequest_omittedDeliverables_passesValidation() {
+        CounterRequest emptyList = new CounterRequest(new BigDecimal("100"), null, List.of(), null, null);
+        CounterRequest nullList = new CounterRequest(new BigDecimal("100"), null, null, null, null);
 
-        Set<ConstraintViolation<CounterRequest>> violations = validator.validate(request);
-
-        assertFalse(violations.isEmpty());
-        assertTrue(
-                violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals("deliverables")));
+        assertTrue(validator.validate(emptyList).isEmpty());
+        assertTrue(validator.validate(nullList).isEmpty());
     }
 
     @Test
@@ -175,6 +175,7 @@ class DealControllerTest {
                         "camp1",
                         "Campaign",
                         "cp1",
+                        null,
                         "Brand",
                         null,
                         null,
@@ -210,6 +211,7 @@ class DealControllerTest {
                         "camp1",
                         "Campaign",
                         "cp1",
+                        null,
                         "Brand",
                         null,
                         null,
@@ -282,6 +284,7 @@ class DealControllerTest {
                         "camp1",
                         "Campaign",
                         "cp1",
+                        null,
                         "Brand",
                         null,
                         null,

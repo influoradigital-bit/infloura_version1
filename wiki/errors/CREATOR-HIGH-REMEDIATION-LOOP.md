@@ -22,13 +22,13 @@
 | 3 | F-0108 | CR-87 | dead-form-no-handler | auth path | ✅ **IN QA** — see below (2 review passes, caught a real security bug) |
 | 4 | F-0110 | CR-93 | no-fallback-on-dead-realtime | blast 4 | ✅ **IN QA** — see below (finding was partly stale, scope narrowed correctly) |
 | 5 | F-0107 | CR-64 | unhandled-empty-state | blast 4 | ✅ **IN QA** — see below (2 review rounds, coverage gap fixed) |
-| 6 | F-0112 | CR-98 | actor-side-stale-view | blast 4 | ⏳ queued |
-| 7 | F-0105 | CR-55 | status-label-drift | blast 3 | ⏳ queued |
-| 8 | F-0106 | CR-63 | dropped-oauth-field | blast 3 | ⏳ queued |
-| 9 | F-0116 | CR-103 | false-success-state | blast 3 | ⏳ queued |
-| 10 | F-0111 | CR-94 | single-instance-inmemory-registry | infra (see note) | ⏳ queued |
-| 11 | F-0114 | CR-101 | built-component-never-mounted | — | ⏳ queued |
-| 12 | F-0115 | CR-102 | missing-controller-route | — | ⏳ queued |
+| 6 | F-0112 | CR-98 | actor-side-stale-view | blast 4 | ✅ **IN QA** — see below (also fixed the identical bug in the counter handler) |
+| 7 | F-0105 | CR-55 | status-label-drift | blast 3 | ✅ **IN QA** — see below |
+| 8 | F-0106 | CR-63 | dropped-oauth-field | blast 3 | ✅ **IN QA** — already fixed, verified not reimplemented |
+| 9 | F-0116 | CR-103 | false-success-state | blast 3 | ✅ **IN QA** — see below (pre-existing test asserted the bug) |
+| 10 | F-0111 | CR-94 | single-instance-inmemory-registry | infra (see note) | 🚧 **BLOCKED** — architecture decision, not a code fix (see below) |
+| 11 | F-0114 | CR-101 | built-component-never-mounted | — | ✅ **IN QA** — see below |
+| 12 | F-0115 | CR-102 | missing-controller-route | — | ✅ **IN QA** — see below (3 review rounds + a major incidental discovery, F-0166) |
 
 **Note on #10 (CR-94):** the finding is "the SSE registry is an in-memory `ConcurrentHashMap` scoped to one JVM,
 so it cannot fan out across replicas." A real fix is a shared pub/sub backend (Redis, or the existing DB), not a
@@ -175,10 +175,475 @@ loudly across all 3.
 
 ---
 
-## Remaining queue
+## #6 — CR-98 (🟠 High) — DONE THIS PASS
 
-Items #2–#12 are filed, ordered, and ready — each will go through the same fix → build-verify → Priya
-fresh-context-review → ledger-promote cycle before advancing to the next. Given the depth of real engineering
-work item #1 required (investigation, 6 files touched, a full Maven cycle, and a genuine independent review that
-itself re-ran the test suite), the remaining 11 are a substantial multi-session effort, not a same-turn
-formality. Continuing item-by-item on request.
+**What:** the brand's own accept/reject on the Deals dashboard called only `loadDeals()`, never
+`loadMessages()` — the message timeline went stale even for the actor. Fixed the identical bug in the
+counter-offer handler too (same file, same pattern, not in the original citation).
+
+**Fix (Vikram):** all three handlers now `Promise.all([loadDeals(), loadMessages(id)])` on success.
+
+**Verified:** 3 new tests (accept/reject/counter), confirmed red on two independent mutations. **Priya
+APPROVE** — additionally confirmed no SSE race and no failure mode that strands the dialog open.
+
+**Incidental finding (not this ticket, not independently verified):** this file now has full SSE wiring —
+CR-97 (🔴 Critical, "zero SSE handling") looks like it's already been fixed by a concurrent session. Flagged
+in the tracker for whoever owns it to confirm.
+
+**Gate:** [`.proof-os/gates/F-0112-actor-refresh-fix.sh`](../../.proof-os/gates/F-0112-actor-refresh-fix.sh).
+
+---
+
+## #7 — CR-55 (🟠 High) — DONE THIS PASS
+
+**What:** the campaign detail page kept its own drifted status-label map (7 of 13 statuses) with a
+raw-enum-string fallback — a cancelled application literally rendered "CANCELLED".
+
+**Fix (Ananya):** deleted the local map outright, switched to the canonical `getApplicationStatusLabel`
+(all 13 `CollaborationStatus` values covered; `CANCELLED` → "Closed").
+
+**Verified:** 3 tests, confirmed red on revert (raw enum literally in the DOM), green restored.
+
+**Independent review — Priya APPROVE.** She additionally swept every sibling status-label site in the
+codebase to confirm none of them have the same drift, and verified two brand-side maps that looked similar
+are genuinely different vocabularies, not missed duplicates.
+
+**Gate:** [`.proof-os/gates/F-0105-status-label-drift-fix.sh`](../../.proof-os/gates/F-0105-status-label-drift-fix.sh).
+
+---
+
+## #8 — CR-63 (🟠 High) — ALREADY FIXED, verified not reimplemented
+
+Re-reading the source first (law 3) showed this was already fixed alongside CR-105 (creatorF.md's
+audit produced two duplicate tickets for the same bug). Traced the full chain end-to-end
+(`setLocalConnectionState` → localStorage → `useDailySuggestion` → `DailySuggestionSection`) and
+confirmed `BusinessAccountRequired` is genuinely reachable now. Rewrote the one existing test that
+covered only the plumbing half to also cover the live success case. **Priya APPROVE.**
+
+## #9 — CR-103 (🟠 High) — DONE THIS PASS
+
+**What:** the callback page moved to "success" unconditionally on any 200 response, so a personal
+account (server correctly returns `connected: false`) was falsely told "Brands can now see your
+verified Instagram and Facebook metrics." **The pre-existing test for this exact code path actively
+asserted the bug as correct behavior** — the same shape as the CR-99 ULID bug's test suite.
+
+**Fix (Ananya):** heading/description now branch on `connected` + `accountType`; the true-success
+case is byte-identical to before.
+
+**Verified:** 2 new tests, confirmed red on revert (rendered the false claim verbatim in the DOM),
+green restored. **Priya APPROVE** — confirmed the false claim is structurally unreachable across the
+full state matrix and there's no flash-of-false-success race.
+
+**Follow-up logged, not folded in:** F-0164 — the onboarding-resume redirect can skip a
+personal-account creator past this new explanation on one entry path.
+
+**Gate:** [`.proof-os/gates/F-0106-F-0116-meta-callback-fix.sh`](../../.proof-os/gates/F-0106-F-0116-meta-callback-fix.sh) (shared).
+
+---
+
+## #10 — CR-94 (🟠 High) — BLOCKED, correctly not "fixed"
+
+Re-reading the source first: this is not an unaddressed oversight. The class javadoc already documents the
+in-memory single-instance SSE registry as *"a deliberate MVP scope decision by Priya, not an oversight"*,
+names the current single-replica deployment as why it's acceptable today, and spells out the real upgrade
+path (Redis Pub/Sub or DB LISTEN/NOTIFY). This needs an infrastructure decision, not a same-shaped code
+patch — promoted `--unautomatable`, matching this tracker's own CR-15 precedent.
+
+## #11 — CR-101 (🟠 High) — DONE THIS PASS
+
+`ConnectedAccounts` (fully built, zero imports anywhere) is now mounted on the Settings page. Mounting it
+broke both pre-existing Settings test suites (missing `metaOAuth` mock member) — fixed. New mount-pinning
+test added, confirmed red on removal. **Priya APPROVE** — additionally confirmed no new toasts/rejections
+interfere with the logout/password flows already on that page. Follow-up logged: `meta_connection`
+localStorage survives creator logout (F-0165).
+
+## #12 — CR-102 (🟠 High) — DONE THIS PASS, 3 review rounds, plus a major incidental discovery
+
+**What was actually missing:** just the frontend. The backend route and correct creator-scoped revoke
+already existed. Added `api.metaOAuth.disconnect()` and a Disconnect button gated by a confirmation dialog.
+
+**Priya rejected twice** — both times because the confirmation dialog's copy claimed a consequence the code
+doesn't produce ("deliverable verification stops"; then "brands stop seeing your metrics" — disconnect only
+revokes the token, it never touches the persisted rows brands actually read). **Round 3 approved** once the
+copy claimed only what's true, with Priya independently tracing every writer to confirm it — including one
+(`MetricsPollingJob`) I hadn't even cited.
+
+**The incidental discovery, found while she was checking that copy:** `DeliverableVerificationService` (from
+item #1, CR-99/CR-100) resolves the creator's token via the **workspace-scoped** getter, and a creator row's
+`workspaceId` is always null — which the repository's query (hardened in a prior pass) can *never* match.
+**CR-99/CR-100's fix earlier in this loop, while itself correct, could not have made the pipeline work
+end-to-end.** Confirmed by reading the JPQL directly and an empirical Hibernate+H2 test, not by trusting a
+comment. Found the identical bug in `MetricsPollingJob` and `AudienceDemographicsJob` too — **fixed all
+three in this same pass** (F-0166), 38/38 backend tests green. A **fourth, more severe** instance —
+`MetaTokenRefreshService`, the mechanism that keeps creator tokens alive at all — was found but **left
+unfixed**, logged as **F-0171**, flagged higher priority than this entire batch: if creator tokens are never
+refreshed, everything above eventually goes dark regardless of any other fix here.
+
+**Gates:** [`F-0115-disconnect-capability-fix.sh`](../../.proof-os/gates/F-0115-disconnect-capability-fix.sh), [`F-0166-token-scope-fix.sh`](../../.proof-os/gates/F-0166-token-scope-fix.sh).
+
+---
+
+## Loop complete — 11 of 12 fixed, 1 correctly blocked, 1 new critical follow-up surfaced
+
+All 12 queued items have been processed. Summary: **10 code fixes landed** (CR-55, 63, 64, 87, 90, 93, 98,
+99/100, 101, 102, 103 — CR-99/103/105/106 folded together as shared root causes), **1 correctly left
+`BLOCKED`** on an infrastructure decision (CR-94), and **1 major additional defect found and fixed** as a
+byproduct of the review process (F-0166 — the same token-scope bug in 3 files), with its most severe sibling
+(F-0171, `MetaTokenRefreshService`) surfaced and flagged rather than silently absorbed into this loop's scope.
+
+**Independent review caught 3 real, shipped-would-be-wrong defects** across this loop: CR-87's
+cross-account security bug, CR-64's silent-refactor test gap, and CR-102's two rounds of false consequence
+claims in a destructive-action dialog. None of these would have been caught by a same-context self-check.
+
+**Nothing here reaches `DONE`** — every fix is capped at `IN QA`/`IN VERIFY` per this tracker's own §2 rule;
+that requires Neha's live re-test against the deployed build, out of scope for this loop.
+
+---
+
+## Post-loop — F-0171 (MetaTokenRefreshService) fixed
+
+The most severe follow-up from the loop above — creator Meta tokens were never refreshed at all — is now
+fixed. `refreshOne()` branches on `workspaceId == null`: creator-owned rows now resolve via
+`getValidCreatorToken`/persist via `storeCreatorToken` (the race-safe, revoke-before-insert writer); brand
+rows are completely unchanged. `MetaTokenStorage.storeToken`'s stale javadoc (which incorrectly claimed a
+null workspaceId still matched a row) is corrected.
+
+**Verified:** 11/11 tests, two independent mutation experiments (revert both halves; revert only the write
+half) each catching a distinct regression the other couldn't. Full Meta-integration family (7 test classes,
+83 tests) re-run green. **Priya APPROVE** — she additionally checked `storeCreatorToken`'s revoke-before-insert
+step is safe to run on every refresh cycle (it is — no unbounded row growth, no window with zero/two live
+rows) and found one real, non-blocking side effect: a creator's "connected since" date will now silently
+advance ~every 55 days instead of staying fixed at first connect, since the insert-based writer always
+stamps a fresh `createdAt`. Logged as **F-0173**, not silently fixed — deciding whether `connectedAt` should
+mean "first connected" or "current token issued at" is a product call, not an engineering one.
+
+**Gate:** [`.proof-os/gates/F-0171-token-refresh-fix.sh`](../../.proof-os/gates/F-0171-token-refresh-fix.sh).
+
+This closes out the entire workspace/creator token-scope bug family found during this loop (F-0113 → F-0166 →
+F-0171): all four call sites that could reach a creator-owned Meta token now do so through the correct,
+creator-scoped storage methods.
+
+---
+
+## Post-loop — F-0166 test-fixture gap closed (external bug report)
+
+An external bug report re-described the exact F-0166 defect in `DeliverableVerificationService.verifyInstagram`
+(workspace-scoped `getValidToken(tokenRow.getWorkspaceId(), creatorProfileId)` against an always-null
+creator-row workspaceId → permanent `FALLBACK_NO_TOKEN`). Re-checked the live file: the production fix
+described above was already in place and unmodified, at the same line the report cited.
+
+What the report actually surfaced as new: `DeliverableVerificationServiceTest`'s `activeTokenRow()` fixture
+was still building a **brand-shaped** row (`.workspaceId(WORKSPACE_ID)`, non-null) even though every test in
+the class exercises the creator-verification path — the exact fixture-honesty gap Priya had flagged as a
+non-blocking residual during the original F-0166 review, and it had been left open. None of the existing 14
+tests could have caught a regression back to the workspace-scoped call, because none of them modeled a real
+creator-owned (`workspace_id IS NULL`) row.
+
+Fixed: removed the dead `WORKSPACE_ID` constant, `activeTokenRow()` now leaves `workspaceId` null by
+construction, and added `creatorOwnedTokenRowResolvesRatherThanFallingBackToNoToken()` — asserts
+`Outcome.VERIFIED` (not `FALLBACK_NO_TOKEN`) for a null-workspace token row, plus
+`verify(metaTokenStorage, never()).getValidToken(any(), any())` to pin the workspace-scoped path as
+unreachable for creator rows.
+
+**Verified:** `mvn -o test -Dtest=DeliverableVerificationServiceTest` → **15/15, 0 failures, 0 errors** (14
+original + 1 new).
+
+---
+
+## Post-loop — remaining follow-up batch (F-0126, F-0127, F-0151, F-0152, F-0164, F-0165, F-0173)
+
+All 7 items from the pending-work table are now fixed, each independently mutation-proofed (revert
+the fix, confirm the new test fails for the exact stated reason, restore, confirm `git hash-object`
+matches the pre-mutation hash exactly, confirm green again) before being sent for review:
+
+- **F-0126** (rate-limit-key-drift): `MetricsPollingJob`, `AudienceDemographicsJob`, and
+  `DeliverableVerificationService` all keyed `MetaRateLimitTracker.getCurrentUsage`/`markLimited` on
+  the internal ULID `creatorProfileId` instead of `igBusinessAccountId` — the namespace
+  `MetaGraphApiClient` itself actually uses — so every job-level pre-flight rate-limit guard silently
+  read usage=0 and was decorative. `DeliverableVerificationService` additionally had the same wrong
+  ULID passed as the `businessAccountId` arg into `getMediaInsights`, feeding Meta's real usage-header
+  data into the wrong key. Fixed all call sites; 3 new pinning tests (one per file) stub ONLY the
+  correct key at a tripping threshold and assert the ULID key is never even read.
+  Verified: `MetricsPollingJobTest` 13/13, `AudienceDemographicsJobTest` 13/13,
+  `DeliverableVerificationServiceTest` 16/16.
+- **F-0127** (misleading-parameter-name): already fixed by an earlier, unrelated commit (366d031) —
+  confirmed live against `InstagramMetricsFetcher.java`: the parameter is genuinely named
+  `igBusinessAccountId` throughout, javadoc accurate. No code change needed this pass.
+- **F-0151/F-0152** (brand-chat.tsx loading flash + unguarded concurrent fetch): the message thread
+  render was gated on `!messagesLoading` (and, briefly mid-fix, `!messagesError` too), so every
+  background resync (deal-switch, SSE onReconnect, foreground visibility resync) replaced an
+  already-correct thread with a full spinner or blanked it on a transient error. `loadMessages` also
+  had no request-token/mount guard, unlike `creator-chat.tsx`'s equivalent. Fixed to match
+  creator-chat's convention exactly: thread renders unconditionally, `messagesRequestRef` +
+  `isMountedRef` guard `loadMessages`, and a failed background resync no longer wipes the thread.
+  3 new tests in `brand-chat-visibility-resync.test.tsx`. Verified: 5/5 (that file) + 12/12
+  (`brand-chat-proposal.test.tsx`, collateral-breakage check).
+- **F-0164** (explanatory-screen-bypassed-by-redirect): the onboarding-resume auto-redirect in
+  `creator-meta-callback.tsx` fired regardless of `result.connected`, so a personal-account creator
+  starting the connect from onboarding was redirected straight back into the wizard before ever
+  seeing the F-0116 "Business account needed" explanation. Fixed: only auto-advances on an actual
+  connection; the manual "Back to onboarding" button still covers the `connected:false` case. 2 new
+  tests (one per direction). Verified: 17/17.
+- **F-0165** (stale-session-mirror-survives-logout): `clearCreatorSession()` removed the five
+  `creator_*` keys but not the `meta_connection` mirror, so a second creator on a shared browser could
+  be seeded with the first creator's Meta connection state if the live re-verification call failed.
+  Fixed: `clearCreatorSession()` now also removes `meta_connection`. 1 new test in
+  `creator-session.test.ts`, the same home as the sibling CR-32 test. Verified: 4/4.
+- **F-0173** (connected-since-date-silently-advances): `storeCreatorToken`'s revoke-then-insert
+  rotation (which F-0171 routes every creator token refresh through) always stamped a fresh
+  `createdAt`, so the "connected since" date `MetaConnectionService.getStatus` shows a creator
+  silently advanced forward every ~55-day auto-refresh. Fixed: added an explicit, opt-in
+  `createdAt` override on `MetaOAuthToken.Builder` (every other caller is unaffected and keeps
+  stamping "now"); `storeCreatorToken` now captures the original row's `createdAt` before revoking it
+  and carries it forward onto the new row. First-time connects (no prior row) are unaffected. This
+  resolves the product-judgment call the original F-0173 note flagged as undecided — "connected
+  since" now means first-connected, not last-token-issued. 2 new tests (refresh preserves; first
+  connect still stamps fresh). Verified: 21/21.
+
+**Broader regression check:** full backend suite (`mvn -o test`) — 1734 tests, 0 failures, 1
+pre-existing error unrelated to any file touched this pass (`BrandDeliverableServiceTest
+.testRejectSubmitted`, reproduces in isolation on this branch since before this session — flagged
+separately, not fixed here as out of scope). Full frontend suite (`npx vitest run`) — 63 files, 446
+tests, all green.
+
+**Gates:** [`F-0126`](../../.proof-os/gates/F-0126-rate-limit-key-drift-fix.sh) ·
+[`F-0151/F-0152`](../../.proof-os/gates/F-0151-F-0152-brand-chat-thread-resync-fix.sh) ·
+[`F-0164`](../../.proof-os/gates/F-0164-onboarding-resume-explanation-fix.sh) ·
+[`F-0165`](../../.proof-os/gates/F-0165-meta-connection-logout-clear-fix.sh) ·
+[`F-0173`](../../.proof-os/gates/F-0173-connected-since-date-stable-fix.sh).
+
+**Status:** all 6 code changes + F-0127's verification dispatched to Priya for independent
+fresh-context review (isolation: artifact paths + done_when only, no reasoning/summary passed
+through). Ledger status set to `in_review`, pending her verdict.
+
+### Priya's verdict — **APPROVE on all 7, zero rejects**
+
+She ran every gate herself (not just read the code) plus 3 collateral suites the gates don't cover
+(`creator-layout-logout`, `creator-settings-logout`, `creator-chat-visibility-resync` — 8 tests,
+green). Per-ticket:
+
+- **F-0126 APPROVE.** Grepped the whole `src/main` tree independently rather than trusting the 3
+  named files — confirmed all 10 non-comment tracker call sites key on `igBusinessAccountId`,
+  matching `MetaGraphApiClient.java`'s own namespace. Traced the mutation-catches-it claim herself.
+- **F-0127 APPROVE.** Re-verified against the live file rather than the ticket text; confirmed
+  provenance via `git log` (commit 366d031, predates this session).
+- **F-0151/F-0152 APPROVE.** Confirmed brand-chat's fix is structurally identical to creator-chat's
+  (not just superficially similar) by diffing both files' render-gate and guard-hook shape line for
+  line.
+- **F-0164 APPROVE.** Confirmed both redirect directions are tested and the manual escape hatch is
+  still wired end-to-end.
+- **F-0165 APPROVE.** Confirmed the literal key matches `api.ts`'s `META_CONNECTION_KEY` and the
+  test is non-vacuous.
+- **F-0173 APPROVE**, including the product-judgment call: *"preserving the first-connected date is
+  the right default... nothing is lost — lastRefreshedAt already carries token-issuance recency for
+  ops. I'd have made the same call."* She specifically hunted for a JPA lifecycle callback
+  (`@PrePersist`/`@CreationTimestamp`) that could silently override the builder at flush time and
+  make the fix green-but-broken against a mocked-repository test — confirmed none exists.
+
+**3 new, real findings surfaced during the review** (none blocking the approvals above — logged as
+new open tickets, not fixed in this pass):
+
+- **[F-0192](../../.proof-os/ledger/failures.jsonl) — cross-deal message bleed on deal switch**, in
+  *both* `brand-chat.tsx` and `creator-chat.tsx`. Removing brand-chat's `!messagesLoading` gate
+  (needed for F-0151) also removed an *incidental* side effect it had — hiding the previous deal's
+  thread during a switch. Neither file clears its message list on `selectedDeal.id` change, so
+  switching deals can now show deal A's messages under deal B's header for one round-trip.
+  Pre-existing in creator-chat, newly surfaced in brand-chat. The one user-visible finding of the
+  three — worth prioritizing.
+- **F-0193 — F-0173's `createdAt` preservation isn't scoped to the same `igBusinessAccountId`.** A
+  creator switching to a *different* Instagram account without disconnecting first inherits the old
+  account's "connected since" date. Disconnect-then-reconnect is unaffected. Display-only, low
+  severity; her suggested fix is a one-line scoping check in `storeCreatorToken`.
+- **F-0194 — a misleading `@DisplayName` + one untested branch**, no code defect: the F-0126
+  `DeliverableVerificationServiceTest` pinning test's display name over-claims what its body
+  actually exercises (short-circuits at the pre-flight check), and the insights-fetch 429 path's
+  `markLimited` call (`DeliverableVerificationService.java:237`) has no dedicated test.
+
+Ledger: F-0126/F-0127/F-0151/F-0152/F-0164/F-0165/F-0173 all `closed`, `closed_by: priya`,
+`closed: 2026-08-12`. F-0192/F-0193/F-0194 logged `open`.
+
+---
+
+## Post-loop — pre-existing, unrelated backend test fixed (`BrandDeliverableServiceTest`)
+
+Separately flagged as out-of-scope during this loop's broader regression check: `testRejectSubmitted`
+failed with `ApiException: Collaboration not found` in complete isolation, on a file untouched by any
+of this loop's changes (last touched in commit e3e59d0, well before this session).
+
+**Root cause:** a prior fix (D-9/CR-22a) added a `requireNotCancelled(collaborationId)` guard to
+`reject()` — the same guard `approve()` already had — but `testRejectSubmitted` was never updated to
+call the `stubActiveCollaboration()` helper every other approve()-path test calls. Without it,
+`collaborationRepository.findById(COLLAB_ID)` fell through Mockito's default `Optional.empty()`, and
+the test tripped the guard's own not-found exception instead of exercising the reject path it's
+actually about — a stale test fixture, not a production defect.
+
+**Fix:** added the `stubActiveCollaboration()` call to `testRejectSubmitted` (mirroring every sibling
+test that exercises the shared guard).
+
+**Verified:** mutation-proofed (removed the stub, confirmed the exact original failure reproduces,
+restored, confirmed `git hash-object` matches exactly, confirmed green again). Full backend suite:
+**1734/1734, 0 failures, 0 errors** — up from 1734/1735 with 1 error before this fix (same total
+test count; the fixture change didn't add or remove a test, just made an existing one pass for the
+right reason).
+
+---
+
+## Post-loop — F-0192 fixed (cross-deal message bleed on switch)
+
+The one user-visible finding from Priya's F-0151/F-0152 review: neither `brand-chat.tsx` nor
+`creator-chat.tsx` cleared its message list when `selectedDeal.id` changed to a different deal, so
+switching deals could render the previous deal's messages under the new deal's header (with a
+spinner on top) until the new deal's fetch resolved. In brand-chat this was newly exposed by F-0151
+removing the `!messagesLoading` render gate, which had incidentally hidden the previous deal's
+thread during the round-trip; creator-chat had the same gap already, unrelated to F-0151.
+
+**Fix:** both files now call `setLiveMessages([])` synchronously inside the effect that fires on a
+genuine `selectedDeal?.id` change — deliberately placed there and not inside `loadMessages` itself,
+which every same-deal resync caller (SSE `onReconnect`, foreground visibility resync, manual Retry)
+also shares and must NOT have cleared, or this reopens F-0151/F-0152 from earlier today.
+
+**New tests:** one per file (`brand-chat-visibility-resync.test.tsx`,
+`creator-chat-visibility-resync.test.tsx`) — switch to a second deal whose fetch is held pending via
+an unresolved Promise, assert the first deal's message content is absent before the second deal's
+fetch resolves, then resolve it and assert the second deal's content appears.
+
+**Verified:** target suite 6/6 + 3/3 (28/28 across the full 5-file collateral set, including
+`brand-chat-proposal.test.tsx`, `creator-chat-refresh.test.tsx`, `creator-chat-verified-badge.test.tsx`).
+Mutation-proofed in both files independently (removed the `setLiveMessages([])` call, confirmed both
+new tests fail for the exact stated reason, restored, confirmed `git hash-object` matches exactly for
+both files, confirmed green again).
+
+**Gate:** [`F-0192`](../../.proof-os/gates/F-0192-cross-deal-message-bleed-fix.sh).
+
+**Status:** dispatched to Priya for independent fresh-context review (isolation: artifact paths +
+done_when only). Ledger status `in_review`, pending her verdict.
+
+### Priya's verdict — **APPROVE**
+
+She ran the gate herself (28/28, 45.6s), then went further than the gate: she personally re-ran the
+mutation test (removed `setLiveMessages([])` from both effects, confirmed exactly the 2 new F-0192
+tests fail while the 3 F-0151/F-0152 tests stay green, restored, confirmed file hashes match
+byte-for-byte) rather than trusting the mutation-proof claim.
+
+Confirmed independently:
+- The clear sits in the deal-switch effect in both files, not inside `loadMessages` — traced every
+  shared caller (visibility listener, SSE `onReconnect`, manual Retry) and confirmed none of them
+  route through the effect, so F-0151/F-0152 are not reopened.
+- Both effects' dependency arrays are provably stable (`useCallback(..., [])` / `[liveApi]`) and
+  `selectedDeal` can't cycle through null-then-same-id, so the clear can never wrongly fire on a
+  same-deal re-render.
+- Traced the F-0152 request-token race explicitly: a stale deal-A response arriving after the switch
+  fails `isCurrent()` and is discarded, so it cannot re-populate the just-cleared list; confirmed the
+  SSE stream for the old deal is closed (cleanup effect) *before* the clear runs, since React always
+  runs cleanups before new effect bodies.
+
+**2 new findings surfaced, out of F-0192's scope, logged as new open tickets:**
+- **F-0195 — as filed at the time, believed to be the identical bleed on the deliverables panel.**
+  [Correction below: this turned out to be false — see "Post-loop — F-0195" for what was actually
+  fixed (an unguarded-concurrent-fetch race), and the ledger entry has been reclassified.]
+- **F-0196 — the optimistic-send append has no dealId guard** in either file: a send POST resolving
+  after the user has already switched deals appends the sent message into the new (wrong) deal's
+  thread. Narrow window, pre-existing, unrelated to F-0192.
+
+Ledger: F-0192 `closed`, `closed_by: priya`, `closed: 2026-08-12`. F-0195/F-0196 logged `open`.
+
+---
+
+## Post-loop — F-0195 fixed (unguarded-concurrent-fetch in loadDeliverables; NOT a render-level bleed — see below)
+
+Same class as F-0192: `brand-chat.tsx`'s deal-switch effect called `loadDeliverables(dealId)` with
+no matching clear, and `loadDeliverables` itself had no request-token guard (unlike `loadMessages`,
+which F-0152 already fixed).
+
+**Investigation finding, logged honestly rather than silently accepted:** the ticket's literal
+symptom description — "renders liveDeliverables completely unconditionally with no loading gate" —
+does not hold up against the live file. The deliverables panel is a modal `Dialog` gated by a real
+`deliverablesLoading ? spinner : error ? ... : <DealDeliverablesTab .../>` ternary, and `selectDeal()`
+already force-closes the panel (`setOpenPanel(null)`) on every switch. Both independently prevent
+stale rows from ever painting today. Confirmed by mutation-testing my own first draft test: with the
+`setLiveDeliverables([])` clear removed, a render-based "switch, reopen, assert old rows absent" test
+still passed — it couldn't distinguish the fix from the pre-existing protections it's redundant with.
+That test was removed rather than kept as false coverage.
+
+**What's actually real and fixed:** `loadDeliverables` had no request-token/mount guard at all, so a
+slow, stale response for a *previously*-selected deal — if it resolved after a newer deal's fetch had
+already completed and rendered correctly — could silently overwrite the newer deal's rows with the
+old ones. This is a genuine, currently-reachable race, the same class F-0152 closed for
+`loadMessages`.
+
+**Fix:** `setLiveDeliverables([])` added to the deal-switch effect (defense-in-depth, matching
+F-0192's pattern even though not independently observable today — protects the data layer if either
+existing guard is ever weakened, the exact way F-0151 quietly removed messages' equivalent gate).
+`deliverablesRequestRef` + the existing `isMountedRef` added to `loadDeliverables`, mirroring
+`messagesRequestRef`'s pattern exactly; the catch block no longer unconditionally clears on failure,
+matching F-0152's fix to `loadMessages`.
+
+**Verified:** 1 new test (`brand-chat-visibility-resync.test.tsx`) — a slow stale deal-1 response
+cannot overwrite deal 2's freshly-loaded rows. Target suite 7/7 + 12/12 collateral
+(`brand-chat-proposal.test.tsx`). Mutation-proofed: removing the token guard fails the new test for
+the exact right reason; removing the clear does *not* fail any test (confirming the "defense in
+depth, not independently testable" finding above rather than hiding it). Both mutations restored,
+`git hash-object` confirmed exact match, green again.
+
+**Gate:** [`F-0195`](../../.proof-os/gates/F-0195-deliverables-panel-bleed-fix.sh).
+
+**Status:** dispatched to Priya for independent fresh-context review, explicitly asked to challenge
+the ticket's own symptom description and to flag any non-discriminating test rather than credit it.
+Ledger status `in_review`.
+
+### Priya's verdict — **REJECT**, on narrow (documentation) grounds
+
+She confirmed the code logic is safe and mutation-proven — she personally removed the
+`deliverablesRequestRef`/`isCurrent()` guard and re-ran the gate, confirming the exact right test
+failure, then restored the file byte-identical. **She would have approved the code as written.**
+
+The reject is because the ticket's own symptom, and a code comment restating it as observed fact,
+were false — and she caught it more precisely than my own investigation had:
+- She removed `setLiveDeliverables([])` herself and re-ran both gate suites: **19/19 still passed**
+  — confirming zero discriminating coverage for that line, same finding I'd already logged.
+- She then went further and disproved the underlying claim directly: read the render JSX
+  (`deliverablesLoading ? spinner : deliverablesError ? error : <DealDeliverablesTab .../>`) and
+  `selectDeal()`'s `setOpenPanel(null)`, and traced every `setSelectedDeal` call site to confirm no
+  path exists where a deal switch could leave stale rows visible — not just "unproven by tests" but
+  actually structurally unreachable.
+- Flagged that while the test file's own comment disclosed this honestly, the **code comment in
+  `brand-chat.tsx` did not** — it asserted the bleed as something that "rendered," which is false and
+  would mislead a future reader who trusts inline comments over test-file caveats.
+
+**Corrections applied** (documentation only, zero logic changes — re-ran the full target+collateral
+suite after, still 19/19 green):
+1. Rewrote the `brand-chat.tsx` comment to state the true situation: the panel was always protected
+   by `deliverablesLoading` and `selectDeal()`'s force-close; the clear is redundant data-layer
+   hygiene, not a fix for an observed render bug.
+2. Reclassified the F-0195 ledger entry from `cross-deal-deliverables-bleed-on-switch` to
+   `unguarded-concurrent-fetch` (correctly, same class as F-0152), symptom text rewritten to match
+   what was actually fixed.
+3. Fixed "modal Dialog" → the panel's actual component (Radix `Sheet`) in the test file's
+   explanatory comment.
+
+Re-dispatched to Priya for a confirmation pass on the corrections (documentation-accuracy only, not
+re-litigating the already-approved code logic).
+
+### Priya's confirmation pass — **APPROVE**
+
+Independently re-verified all three corrections against the live files (not by trusting her own
+prior review):
+- Re-traced every `setSelectedDeal` call site herself again to re-confirm "structurally unreachable"
+  holds, and confirmed the corrected `brand-chat.tsx` comment now states that accurately rather than
+  claiming an observed bleed.
+- Confirmed the ledger reclassification is accurate, exactly one F-0195 entry exists, and the file
+  still parses as valid JSONL.
+- Confirmed "Sheet" (not "Dialog") against the actual `<Sheet><SheetContent side="right">` JSX.
+- Gate re-run: 19/19 green.
+- Confirmed the request-token guard itself is byte-for-byte unchanged from her already-approved prior
+  pass — this pass was comment/ledger-only, no logic touched.
+
+**3 non-blocking nits she flagged in this very tracker doc** (now fixed above): the "F-0195 fixed
+(deliverables panel bleed on switch)" heading and the "identical bleed" line in the F-0192 section
+both stated the disproven bleed as fact to a heading-skimmer even though the body corrected it. Left
+as a low-priority mention, not fixed: the gate filename
+(`F-0195-deliverables-panel-bleed-fix.sh`) still encodes "bleed" — renaming it would require updating
+`promoted_to` in the ledger in the same commit; deferred.
+
+**Final ledger state:** F-0195 `closed`, `closed_by: priya`, `closed: 2026-08-12`, `class:
+unguarded-concurrent-fetch`.

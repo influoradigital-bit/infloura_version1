@@ -161,8 +161,15 @@ public class DeliverableVerificationService {
                     deliverable, Outcome.FALLBACK_NO_TOKEN, "no active Meta connection for creator " + creatorProfileId);
         }
 
-        Optional<String> accessToken =
-                metaTokenStorage.getValidToken(tokenRow.get().getWorkspaceId(), creatorProfileId);
+        // F-0166: this called the WORKSPACE-scoped getValidToken(workspaceId, creatorProfileId)
+        // with tokenRow.get().getWorkspaceId() — always null for a creator-owned row. The
+        // repository method backing getValidToken carries an explicit `workspaceId IS NOT NULL`
+        // predicate (CR-111 hardening, MetaOAuthTokenRepository.java), so a null workspaceId can
+        // NEVER match any row, brand or creator — this could not have worked for a single
+        // creator, independent of the CR-99 ULID fix above it. getValidCreatorToken is the
+        // creator-scoped getter every other creator-owned code path already uses (e.g.
+        // MetaConnectionService, CreatorCaptionSyncJob).
+        Optional<String> accessToken = metaTokenStorage.getValidCreatorToken(creatorProfileId);
         if (accessToken.isEmpty()) {
             return fallback(
                     deliverable,
@@ -181,7 +188,11 @@ public class DeliverableVerificationService {
                     "no igBusinessAccountId on file for creator " + creatorProfileId);
         }
 
-        if (rateLimitTracker.getCurrentUsage(creatorProfileId) >= RATE_LIMIT_THRESHOLD_PERCENT) {
+        // F-0126: keyed on creatorProfileId (internal ULID) while MetaGraphApiClient's own
+        // enforcement and usage-header parsing key on igBusinessAccountId — two disjoint key
+        // namespaces for the same account meant this pre-flight guard could never see usage the
+        // client itself had recorded, so it always read 0 and was decorative.
+        if (rateLimitTracker.getCurrentUsage(igBusinessAccountId) >= RATE_LIMIT_THRESHOLD_PERCENT) {
             return fallback(
                     deliverable,
                     Outcome.FALLBACK_RATE_LIMITED,
@@ -193,7 +204,9 @@ public class DeliverableVerificationService {
             mediaResponse =
                     instagramInsightsClient.getMedia(igBusinessAccountId, accessToken.get(), RECENT_MEDIA_LIMIT);
         } catch (MetaRateLimitException e) {
-            rateLimitTracker.markLimited(creatorProfileId);
+            // F-0126: markLimited must use the same key as getCurrentUsage() above (and the same
+            // key MetaGraphApiClient itself uses) — igBusinessAccountId, not creatorProfileId.
+            rateLimitTracker.markLimited(igBusinessAccountId);
             return fallback(deliverable, Outcome.FALLBACK_RATE_LIMITED, "rate limited fetching media list: " + e.getMessage());
         } catch (MetaTokenExpiredException e) {
             return fallback(deliverable, Outcome.FALLBACK_TOKEN_EXPIRED, "token expired fetching media list: " + e.getMessage());
@@ -212,11 +225,16 @@ public class DeliverableVerificationService {
 
         InstagramInsightsResponse insights;
         try {
+            // F-0126: third arg is InstagramInsightsClient's businessAccountId param, which flows
+            // into MetaGraphApiClient's own rate-limit tracking (both its pre-flight check and its
+            // X-Business-Use-Case-Usage header parsing) — passing creatorProfileId here fed the
+            // client's real Meta-usage data into the wrong key, orphaned from every other read of
+            // this account's usage. Must be igBusinessAccountId, same as getMedia() above.
             insights =
                     instagramInsightsClient.getMediaInsights(
-                            matched.get().id(), accessToken.get(), creatorProfileId);
+                            matched.get().id(), accessToken.get(), igBusinessAccountId);
         } catch (MetaRateLimitException e) {
-            rateLimitTracker.markLimited(creatorProfileId);
+            rateLimitTracker.markLimited(igBusinessAccountId);
             return fallback(deliverable, Outcome.FALLBACK_RATE_LIMITED, "rate limited fetching insights: " + e.getMessage());
         } catch (MetaTokenExpiredException e) {
             return fallback(deliverable, Outcome.FALLBACK_TOKEN_EXPIRED, "token expired fetching insights: " + e.getMessage());
