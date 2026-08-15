@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { IndianRupee, CheckCircle2, X } from 'lucide-react';
+import { deliverableCountLabel, deliverableSlotsLabel } from '@/lib/deliverable-slots';
 
 export function ProposalEventCard({
   event,
@@ -19,6 +20,7 @@ export function ProposalEventCard({
   const meta = event.metadata;
   const isAccepted = meta?.status === 'accepted';
   const isRejected = meta?.status === 'rejected';
+  const slotsLabel = deliverableSlotsLabel(meta);
 
   return (
     <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent">
@@ -66,7 +68,10 @@ export function ProposalEventCard({
         <div className="grid grid-cols-2 gap-4 pt-2">
           <div>
             <p className="text-xs text-muted-foreground">Deliverables</p>
-            <p className="text-lg font-semibold">{meta?.deliverables || 0} pieces</p>
+            {/* `meta.deliverables` is the DeliverableSlot[] the backend persists, not a count —
+                rendering it straight into JSX threw React #31 and took the whole route down. */}
+            <p className="text-lg font-semibold">{deliverableCountLabel(meta) ?? 'Not specified'}</p>
+            {slotsLabel && <p className="text-xs text-muted-foreground mt-0.5">{slotsLabel}</p>}
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Deadline</p>

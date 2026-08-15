@@ -26,6 +26,7 @@ import {
 
 import { cn } from '@/lib/utils';
 import { uniqueId } from '@/lib/unique-id';
+import { deliverableCountLabel } from '@/lib/deliverable-slots';
 import {
   deals as dealsApi,
   messages as messagesApi,
@@ -891,7 +892,11 @@ export default function BrandMessagesPage() {
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">Deliverables</span>
-                                  <span className="font-medium">{String(message.metadata?.deliverables ?? '')} pieces</span>
+                                  {/* `String(...)` on the DeliverableSlot[] rendered the literal
+                                      text "[object Object] pieces" — no crash here, but wrong. */}
+                                  <span className="font-medium">
+                                    {deliverableCountLabel(message.metadata) ?? 'Not specified'}
+                                  </span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">Deadline</span>
