@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api, isApiLive, ApiError, type ContractApiRecord, type Deal } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Card } from '@/components/ui/card';
@@ -523,8 +523,14 @@ export function ContractsAndDeliverables() {
   const [contracts, setContracts] = useState<Contract[]>(liveApi ? [] : mockContracts);
   const [contractsLoading, setContractsLoading] = useState(false);
   const [contractsError, setContractsError] = useState<string | null>(null);
+  // `?contract=<id>` — the deep-link target used by the campaign page's collaborator cards
+  // (brand-campaign-detail.tsx). Read once as the initial selection: without it, landing here
+  // from a specific deal drops you on whichever contract sorts first, which is the wrong one
+  // often enough to make the link pointless.
+  const [searchParams] = useSearchParams();
+  const deepLinkedContractId = searchParams.get('contract');
   const [selectedContractId, setSelectedContractId] = useState<string | null>(
-    liveApi ? null : mockContracts[0]?.id ?? null,
+    deepLinkedContractId ?? (liveApi ? null : mockContracts[0]?.id ?? null),
   );
   const [activeTab, setActiveTab] = useState('overview');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -741,8 +747,11 @@ export function ContractsAndDeliverables() {
     }
     setIsFetchingPdf(true);
     try {
-      const { url } = await api.contracts.pdfDownloadUrl('brand', selectedContract.id);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      // `downloadUrl`, not `url` — see api.ts. An empty value must throw rather than reach
+      // window.open, which opens about:blank silently and skips the catch below entirely.
+      const { downloadUrl } = await api.contracts.pdfDownloadUrl('brand', selectedContract.id);
+      if (!downloadUrl) throw new Error('No download URL returned');
+      window.open(downloadUrl, '_blank', 'noopener,noreferrer');
     } catch (err) {
       toast({
         title: 'Could not download PDF',

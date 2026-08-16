@@ -1,0 +1,100 @@
+{
+  "rows": [
+    {
+      "subject": "src/pages/brand-campaign-detail.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "npx tsc --noEmit -p tsconfig.json",
+        "result": "0 errors",
+        "where": "src/pages/brand-campaign-detail.tsx:1468"
+      }
+    },
+    {
+      "subject": "src/pages/brand-campaign-detail.contract-wiring.test.ts",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "vitest",
+        "command": "npx vitest run src/pages/brand-campaign-detail.contract-wiring.test.ts",
+        "result": "5 passed, 0 failed",
+        "where": "src/pages/brand-campaign-detail.contract-wiring.test.ts:37"
+      }
+    },
+    {
+      "subject": "src/components/brand/contracts/contracts-and-deliverables.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "eslint",
+        "command": "npx eslint src/components/brand/contracts/contracts-and-deliverables.tsx",
+        "result": "0 errors, warnings only (pre-existing react-hooks rules, project-set to warn)",
+        "where": "src/components/brand/contracts/contracts-and-deliverables.tsx:531"
+      }
+    },
+    {
+      "subject": "src/lib/api.ts",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "npx tsc --noEmit -p tsconfig.json",
+        "result": "0 errors",
+        "where": "src/lib/api.ts:2435"
+      }
+    },
+    {
+      "subject": "src/pages/creator-chat.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "npx tsc --noEmit -p tsconfig.json",
+        "result": "0 errors",
+        "where": "src/pages/creator-chat.tsx:2213"
+      }
+    },
+    {
+      "subject": "src/components/brand/deal-room/deal-contract-tab.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "npx tsc --noEmit -p tsconfig.json",
+        "result": "0 errors",
+        "where": "src/components/brand/deal-room/deal-contract-tab.tsx:82"
+      }
+    },
+    {
+      "subject": "src/components/creator/deal-room/creator-deal-contract-tab.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "npx tsc --noEmit -p tsconfig.json",
+        "result": "0 errors",
+        "where": "src/components/creator/deal-room/creator-deal-contract-tab.tsx:100"
+      }
+    },
+    {
+      "subject": "src/lib/api.ts:3516",
+      "owner": "priya",
+      "status": "broken",
+      "isolation": "fresh-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "cross-read PortfolioPlatformStats against CreatorDtos.PlatformStatResponse",
+        "result": "TS declares url/verified; wire is profileUrl/isVerified — UNFIXED, queued",
+        "where": "influora-api/src/main/java/com/influora/web/dto/creator/CreatorDtos.java:13"
+      }
+    }
+  ]
+}

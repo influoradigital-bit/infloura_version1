@@ -45,6 +45,15 @@ jobs:
       - name: Typecheck (tsc --noEmit)
         run: npm run typecheck
 
+      # tsc only checks the TS side against itself, so a src/lib interface can drift from the
+      # Java record it mirrors and every read of the renamed field silently becomes `undefined`.
+      # That produced three shipped defects in one week — a React #31 crash that blanked
+      # /brand/campaigns/:id, a contract PDF button that opened about:blank, and a public
+      # portfolio that labelled Meta-verified accounts "Self-reported". This diffs the declared
+      # TS field names against the real Java record components.
+      - name: DTO drift (FE types vs Java records)
+        run: python ci/dto-drift-check.py
+
       - name: Unit tests + FE↔BE contract test
         run: npm test
 

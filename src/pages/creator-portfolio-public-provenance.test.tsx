@@ -44,12 +44,22 @@ vi.mock('@/lib/api', async () => {
   };
 });
 
-function platformStats(platform: string, verified: boolean) {
+/**
+ * Field names here are the REAL wire names from `CreatorDtos.PlatformStatResponse`
+ * (CreatorDtos.java:13-19): `isVerified` and `profileUrl`.
+ *
+ * This fixture said `verified`/`url` until 2026-08-16, matching a TS interface that had drifted
+ * from the Java record. That is why these tests passed while the live page was broken — the
+ * fixture reproduced the type's mistake instead of the server's output, so it asserted
+ * provenance against a field the backend never sends. A fixture built from the wrong shape
+ * tests nothing but itself.
+ */
+function platformStats(platform: string, isVerified: boolean) {
   return {
     platform,
     handle: `@demo_${platform.toLowerCase()}`,
-    url: `https://example.com/${platform.toLowerCase()}`,
-    verified,
+    profileUrl: `https://example.com/${platform.toLowerCase()}`,
+    isVerified,
     followers: 120000,
     engagementRate: 4.2,
     lastSyncedAt: '2026-08-01T00:00:00Z',

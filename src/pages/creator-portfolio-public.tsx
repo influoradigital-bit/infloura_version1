@@ -716,7 +716,7 @@ function PlatformPill({ stats }: { stats: PortfolioPlatformStats }) {
   const Icon = stats.platform === 'INSTAGRAM' ? Instagram : stats.platform === 'YOUTUBE' ? Youtube : Globe;
   return (
     <a
-      href={stats.url}
+      href={stats.profileUrl}
       target="_blank"
       rel="noreferrer"
       className="group inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs sm:text-sm hover:bg-muted transition-colors"
@@ -726,7 +726,7 @@ function PlatformPill({ stats }: { stats: PortfolioPlatformStats }) {
       <span className="text-muted-foreground">{platformLabel(stats.platform)}</span>
       {/* CR-119 — same two-state wording as PlatformStatCard below. Badge-presence alone left a
           self-reported YouTube pill indistinguishable from a Meta-verified Instagram one. */}
-      {stats.verified ? (
+      {stats.isVerified ? (
         <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500">
           <BadgeCheck className="h-3 w-3" />
           Followers verified
@@ -756,7 +756,7 @@ function PlatformStatCard({ stats }: { stats: PortfolioPlatformStats }) {
                 way to say "this number is self-reported": a missing mark reads as an oversight,
                 not as a claim. YouTube/TikTok/X have no OAuth or data-fetch integration at all, so
                 their figures are always creator-reported and must say so. */}
-            {stats.verified ? (
+            {stats.isVerified ? (
               <span className="inline-flex items-center gap-1 text-[11px] text-blue-500">
                 <BadgeCheck className="h-3.5 w-3.5" />
                 Followers verified
@@ -766,7 +766,7 @@ function PlatformStatCard({ stats }: { stats: PortfolioPlatformStats }) {
             )}
           </div>
           <a
-            href={stats.url}
+            href={stats.profileUrl}
             target="_blank"
             rel="noreferrer"
             className="text-xs text-primary hover:underline inline-flex items-center gap-0.5"

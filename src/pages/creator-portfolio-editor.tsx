@@ -485,7 +485,7 @@ export default function CreatorPortfolioEditorPage() {
                 <div key={p.platform} className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{p.handle}</span>
-                    {p.verified && (
+                    {p.isVerified && (
                       <Badge variant="secondary" className="h-5 px-1.5 text-[10px] gap-0.5">
                         <CheckCircle2 className="h-2.5 w-2.5 text-blue-500" /> Verified
                       </Badge>

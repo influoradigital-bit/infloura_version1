@@ -77,8 +77,11 @@ export function DealContractTab({
     if (liveApi) {
       setIsFetchingPdf(true);
       try {
-        const { url } = await api.contracts.pdfDownloadUrl('brand', contractId);
-        window.open(url, '_blank', 'noopener,noreferrer');
+        // `downloadUrl`, not `url` — see api.ts. Throwing on an empty value is what makes the
+        // F-CONTRACT-DL fallback below actually reachable; window.open(undefined) never threw.
+        const { downloadUrl } = await api.contracts.pdfDownloadUrl('brand', contractId);
+        if (!downloadUrl) throw new Error('No download URL returned');
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
       } catch {
         // F-CONTRACT-DL: don't strand the user if the server-side PDF never
         // becomes available — fall back to the client-side printable copy

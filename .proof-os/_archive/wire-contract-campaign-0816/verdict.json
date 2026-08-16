@@ -1,0 +1,23 @@
+{
+  "verdict": "believed",
+  "oracle": "model",
+  "isolation": "fresh-context",
+  "done_when": "On /brand/campaigns/:id every active collaborator card shows the real Deal.contractStatus; a card with a contractId deep-links to that contract at /brand/contracts?contract=<id> and that page actually preselects it; a card at TERMS_AGREED with no contract offers Generate contract which POSTs /contracts with milestones and surfaces a 403 honestly; npx tsc --noEmit exits 0, npx eslint on the changed files reports 0 errors, and the vitest suites for src/pages and src/components/brand pass.",
+  "not_checked": [
+    "the deep-link round trip at runtime — nothing renders brand-campaign-detail and follows ?contract=<id> into contracts-and-deliverables; verified only by reading both sides",
+    "the Generate contract dialog end-to-end — open, POST, success and 403 paths are unexercised by any test or live run",
+    "whether the deployed environment returns a populated contractId/contractStatus on a real deal; only that the code path is structurally correct",
+    "demo/mock mode renders no contract UI at all — the whole feature sits behind isApiLive()",
+    "whether the latest-contract-wins rule (version DESC) deep-links to the contract a brand actually wants when a collaboration has more than one"
+  ],
+  "skipped": [
+    {
+      "step": "browser verification of the contract controls",
+      "reason": "the local preview runs in mock mode and the whole contract UI is behind isApiLive(), so a preview renders the non-live card branch and cannot exercise the change"
+    },
+    {
+      "step": "live re-test on 200.141.1.6",
+      "reason": "not deployed — this work is committed to the branch only; the running bundle predates it"
+    }
+  ]
+}
