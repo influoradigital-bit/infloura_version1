@@ -54,6 +54,13 @@ jobs:
       - name: DTO drift (FE types vs Java records)
         run: python ci/dto-drift-check.py
 
+      # Comments here have been wrong in both directions and cost real time each way: a
+      # "Phase-2 stub" note nearly caused a shipped fix to be skipped, and a persona edit went
+      # out without the PROMPT_VERSION bump that `cache_key_for` depends on, so sessions kept
+      # serving the old prompt. Checks the three claims that are mechanically falsifiable.
+      - name: Stale comments (contradicted claims, dead citations, PROMPT_VERSION)
+        run: python ci/stale-comment-check.py --since "${{ github.event.pull_request.base.sha || github.event.before }}"
+
       - name: Unit tests + FE↔BE contract test
         run: npm test
 
