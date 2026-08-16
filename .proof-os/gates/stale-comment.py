@@ -8,9 +8,12 @@ command runs in CI (frontend-checks) and from a developer shell.
 Covers, each negative-control checked against the defect it was filed for:
   F-0075  a client method that both calls the backend and rejects as unimplemented
   F-0150  prompt/tool-schema content changed without a PROMPT_VERSION bump
-  F-0095  PARTIAL — dead `file.ext:NN` citations only. F-0095's actual form was a comment that
-          cited LIVE code and described it wrongly, which no rule here detects. Do not read a
-          green run as "the comments are accurate".
+
+NOT covered — F-0095 was closed 2026-08-16 as UNAUTOMATABLE by human:swapnil, not by this gate.
+Its form was a comment citing code that still exists and describing it wrongly; detecting that
+needs comprehension, not a rule. Rule 2 here catches only the adjacent case where the citation
+points at a file or line that no longer exists. Do not read a green run as "the comments are
+accurate".
 
 Usage: python .proof-os/gates/stale-comment.py [--since <ref>]
 Exit:  0 clean · 1 a stale claim found · 2 the check could not run
