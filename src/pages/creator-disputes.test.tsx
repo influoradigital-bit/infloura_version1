@@ -249,7 +249,7 @@ describe('CreatorDisputesPage', () => {
   });
 
   it('opens a dispute via api.creatorDisputes.open with trimmed reason', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderPage();
 
     await waitFor(() => {
@@ -279,7 +279,7 @@ describe('CreatorDisputesPage', () => {
   });
 
   it('surfaces DISPUTE_ALREADY_OPEN from open() — no silent second-active UX', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     openMock.mockRejectedValue(
       new ApiError('DISPUTE_ALREADY_OPEN', 'A dispute is already open on this collaboration.'),
     );
@@ -316,7 +316,7 @@ describe('CreatorDisputesPage', () => {
   });
 
   it('shows list error and retries on Try again', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     listMock
       .mockRejectedValueOnce(new ApiError('SERVER_ERROR', 'Upstream failed'))
       .mockResolvedValueOnce([]);

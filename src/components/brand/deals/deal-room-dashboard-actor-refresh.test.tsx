@@ -82,7 +82,7 @@ describe('DealRoomDashboard — actor-side refresh (CR-98 / F-0112)', () => {
 
   it('refetches messages (not just deals) after the brand accepts its own proposal', async () => {
     dealsAccept.mockResolvedValue({ ...PROPOSED_DEAL, status: 'CONTRACT_PENDING' });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderDashboard();
     await selectTheDeal(user);
     messagesList.mockClear();
@@ -98,7 +98,7 @@ describe('DealRoomDashboard — actor-side refresh (CR-98 / F-0112)', () => {
 
   it('refetches messages after the brand rejects its own proposal', async () => {
     dealsReject.mockResolvedValue({ ...PROPOSED_DEAL, status: 'CANCELLED' });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderDashboard();
     await selectTheDeal(user);
     messagesList.mockClear();
@@ -116,7 +116,7 @@ describe('DealRoomDashboard — actor-side refresh (CR-98 / F-0112)', () => {
 
   it('refetches messages after the brand sends a counter offer', async () => {
     dealsCounter.mockResolvedValue({ ...PROPOSED_DEAL, status: 'IN_NEGOTIATION' });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderDashboard();
     await selectTheDeal(user);
     messagesList.mockClear();

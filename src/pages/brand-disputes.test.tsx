@@ -81,7 +81,7 @@ describe('BrandDisputesPage', () => {
   });
 
   it('shows error alert and retries on Try again', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     listMock
       .mockRejectedValueOnce(new ApiError('SERVER_ERROR', 'Upstream failed'))
       .mockResolvedValueOnce([]);

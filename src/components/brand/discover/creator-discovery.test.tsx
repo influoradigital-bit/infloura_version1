@@ -82,6 +82,11 @@ function renderDiscovery() {
 
 /** Opens the modal and advances past step 1 (campaign selection). */
 async function openModalAndPickCampaign(user: ReturnType<typeof userEvent.setup>) {
+  // F-0217: the creator grid appears only after a 300ms debounce, the mocked search, and a
+  // render of the full result grid. Waiting for all three inside one findBy budget is what made
+  // this the suite's most load-sensitive assertion. Wait for the fetch first, so each step gets
+  // its own budget and a failure says which stage actually stalled.
+  await waitFor(() => expect(creatorsSearch).toHaveBeenCalled());
   await user.click(await screen.findByRole('button', { name: /^Invite$/i }));
 
   const dialog = await screen.findByRole('dialog');
@@ -107,7 +112,7 @@ describe('CreatorDiscovery — invite vs priced offer', () => {
   });
 
   it('sends a priced offer via deals.create when a budget is set', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderDiscovery();
 
     const dialog = await openModalAndPickCampaign(user);
@@ -132,7 +137,7 @@ describe('CreatorDiscovery — invite vs priced offer', () => {
   });
 
   it('falls back to creators.invite when the budget is cleared to zero', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderDiscovery();
 
     const dialog = await openModalAndPickCampaign(user);
@@ -157,7 +162,7 @@ describe('CreatorDiscovery — invite vs priced offer', () => {
     dealsCreate.mockRejectedValue(
       new ApiError('COLLABORATION_EXISTS', 'A deal already exists for this campaign and creator', 409),
     );
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderDiscovery();
 
     const dialog = await openModalAndPickCampaign(user);

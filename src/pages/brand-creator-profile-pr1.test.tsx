@@ -101,7 +101,7 @@ describe('PR-1 — creator profile track-record fields are never fabricated zero
   });
 
   it('creator with zero real reviews/campaigns: honest empty states, no fabricated zeros, no false attestation', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     getProfileMock.mockResolvedValue(UNRATED_CREATOR);
     renderProfile('cp_unrated');
 
@@ -126,7 +126,7 @@ describe('PR-1 — creator profile track-record fields are never fabricated zero
   });
 
   it('creator with real reviews/campaigns: real numbers render, attestation only appears with real data', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     getProfileMock.mockResolvedValue(RATED_CREATOR);
     renderProfile('cp_rated');
 

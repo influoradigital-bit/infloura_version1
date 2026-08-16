@@ -165,7 +165,7 @@ describe('creator-wallet Payouts tab — real payout history (CR-77)', () => {
     await renderPayoutsTab();
 
     expect(await screen.findByText(/Couldn’t load your payouts/)).toBeInTheDocument();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(payouts).toHaveBeenCalledTimes(2));
   });

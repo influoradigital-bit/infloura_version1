@@ -317,7 +317,7 @@ describe('BrandProfile Component', () => {
     });
 
     it('should open dialog, accept justification, and call verifyKyc(APPROVE) on Approve flow', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       mockUseBrandDetail.mockReturnValue({
         data: MOCK_BRAND_PENDING_KYC,
@@ -352,7 +352,7 @@ describe('BrandProfile Component', () => {
     });
 
     it('should open dialog, accept reason, and call verifyKyc(REJECT) on Reject flow', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       mockUseBrandDetail.mockReturnValue({
         data: MOCK_BRAND_PENDING_KYC,
@@ -421,7 +421,7 @@ describe('BrandProfile Component', () => {
     });
 
     it('should open dialog, accept reason, and call suspend on Suspend flow', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       mockUseBrandDetail.mockReturnValue({
         data: MOCK_BRAND_PENDING_KYC,
@@ -451,7 +451,7 @@ describe('BrandProfile Component', () => {
     });
 
     it('should open dialog, accept reason, and call reinstate on Reinstate flow', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       mockUseBrandDetail.mockReturnValue({
         data: MOCK_BRAND_SUSPENDED,

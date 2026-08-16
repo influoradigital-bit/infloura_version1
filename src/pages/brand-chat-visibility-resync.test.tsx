@@ -245,7 +245,7 @@ describe('BrandChatPage — F-0151/F-0152: background resync must not blank or c
     renderChat();
     await screen.findByText('Hey, excited to work on this!');
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     await user.click(screen.getByText('Rohan Verma'));
 
     // Deal 2's fetch is still in flight — deal 1's message must NOT still be on screen.
@@ -319,7 +319,7 @@ describe('BrandChatPage — F-0195: loadDeliverables must not be corrupted by a 
     renderChat();
     await screen.findAllByText('Summer Launch');
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     // deal 1's fetch is still pending (held by resolveDeal1Deliverables) when we switch away.
     await user.click(screen.getByText('Rohan Verma'));
     await user.click(screen.getByRole('button', { name: /Deliverables/ }));

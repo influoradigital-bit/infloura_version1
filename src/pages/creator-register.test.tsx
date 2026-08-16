@@ -83,7 +83,7 @@ describe('CreatorRegisterPage — email OTP gate', () => {
 
   it('registers directly when the server does not require OTP', async () => {
     publicConfig.mockResolvedValue({ requireEmailOtp: false });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderPage();
     await waitFor(() => expect(publicConfig).toHaveBeenCalled());
 
@@ -98,7 +98,7 @@ describe('CreatorRegisterPage — email OTP gate', () => {
 
   it('sends and verifies an OTP before registering when the server requires it', async () => {
     publicConfig.mockResolvedValue({ requireEmailOtp: true });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderPage();
     await waitFor(() => expect(publicConfig).toHaveBeenCalled());
 
@@ -132,7 +132,7 @@ describe('CreatorRegisterPage — email OTP gate', () => {
     sendCreatorEmailOtp.mockRejectedValue(
       new ApiError('EMAIL_DELIVERY_FAILED', 'Unable to send verification email. Try again later.', 503),
     );
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderPage();
     await waitFor(() => expect(publicConfig).toHaveBeenCalled());
 

@@ -157,7 +157,7 @@ describe('CreatorSettingsPage — logout clears the full creator session (CR-32)
   });
 
   it('removes every creator_* key, not just the token', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     seedCreatorSession();
     // Sanity: the keys really are there, so the assertion below cannot pass vacuously.
     expect(creatorKeys()).toEqual([
@@ -189,7 +189,7 @@ describe('CreatorSettingsPage — logout clears the full creator session (CR-32)
   });
 
   it('does not leave a name for the next creator to inherit', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     seedCreatorSession();
     renderSettings();
     await logOutFromSettings(user);
@@ -214,7 +214,7 @@ describe('CreatorSettingsPage — logout clears the full creator session (CR-32)
     // A 500 from POST /auth/logout must not strand the creator in a logged-in-looking UI with
     // their identity still in localStorage — the failure path is the one most likely to be
     // "fixed" later by trimming the clear back down.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     authLogout.mockRejectedValue(new Error('network down'));
     seedCreatorSession();
     renderSettings();

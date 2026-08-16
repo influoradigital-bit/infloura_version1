@@ -107,7 +107,7 @@ describe('CampaignsList — server-side pagination (D-2)', () => {
   });
 
   it('Load more fetches page 2 and appends the previously-unreachable 101st campaign', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderList();
 
     const loadMoreBtn = await screen.findByRole('button', { name: /load more/i });

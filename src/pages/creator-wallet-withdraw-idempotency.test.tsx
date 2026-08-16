@@ -78,7 +78,7 @@ function renderPage() {
 
 async function openWithdrawDialogWithAmount(amount: string) {
   renderPage();
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   // Wait for the payout-methods fetch to resolve so the dialog doesn't render the
   // "No payout method on file" empty state (which disables the confirm button).
   await waitFor(() => expect(getPayoutMethodsMock).toHaveBeenCalled());
