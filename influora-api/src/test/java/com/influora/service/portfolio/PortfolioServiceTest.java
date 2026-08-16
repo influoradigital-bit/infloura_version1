@@ -528,4 +528,74 @@ class PortfolioServiceTest {
                 statCaptor.getValue().isVerified(),
                 "and the written row must carry that provenance through");
     }
+
+    // ─── F-0139: getVisiblePinnedPosts — the brand-facing pinned-post read ──────────────────
+    //
+    // M-2 replaced CreatorMapper's hardcoded Collections.emptyList() with real pinned posts on
+    // GET /creators/{id}. Nothing asserted any of it: every existing test passed identically
+    // whether the mapping were right, inverted, or reverted to the stub. These pin the two
+    // things that actually matter — that real posts come through, and that the creator's
+    // contentPortfolio visibility flag is honoured on this path too (it is a different caller
+    // than the public portfolio page, and a leak here would expose a section the creator
+    // deliberately turned off).
+
+    private static CreatorProfile profileWithSettings(String settingsJson) {
+        CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Riya Sharma");
+        profile.applyPortfolioSettingsJson(settingsJson);
+        return profile;
+    }
+
+    /** `contentPortfolio` is the 5th component of PortfolioVisibility (PortfolioDtos.java:14-23). */
+    private static String settingsJson(boolean contentPortfolio, String pinnedPostsJson) {
+        return "{\"visibility\":{\"trustBar\":true,\"badges\":true,\"platformStats\":true,"
+                + "\"pastCollabs\":true,\"contentPortfolio\":"
+                + contentPortfolio
+                + ",\"customLinks\":true,\"rateCard\":\"brands_only\",\"languages\":true,"
+                + "\"contactForm\":true},\"pinnedPosts\":"
+                + pinnedPostsJson
+                + "}";
+    }
+
+    private static final String ONE_PINNED_POST =
+            "[{\"id\":\"pp_1\",\"platform\":\"INSTAGRAM\",\"embedUrl\":\"https://instagram.com/p/abc\","
+                    + "\"thumbnailUrl\":\"https://cdn/thumb.jpg\",\"caption\":\"Morning routine\","
+                    + "\"views\":12000,\"likes\":900}]";
+
+    @Test
+    @DisplayName("getVisiblePinnedPosts: returns the creator's real pinned posts when the section is on")
+    void getVisiblePinnedPosts_visible_returnsRealPosts() {
+        CreatorProfile profile = profileWithSettings(settingsJson(true, ONE_PINNED_POST));
+
+        var posts = service.getVisiblePinnedPosts(profile);
+
+        assertEquals(1, posts.size(), "a pinned post with the section visible must reach the brand");
+        assertEquals("pp_1", posts.get(0).id());
+        assertEquals("INSTAGRAM", posts.get(0).platform());
+        // Proves it is the stored row, not a placeholder: this is the exact regression M-2 fixed.
+        assertEquals("Morning routine", posts.get(0).caption());
+    }
+
+    @Test
+    @DisplayName("getVisiblePinnedPosts: contentPortfolio=false yields empty, even with posts stored")
+    void getVisiblePinnedPosts_sectionHidden_returnsEmpty() {
+        // Posts ARE stored — only the visibility flag is off. If the gate were dropped this test
+        // fails while the one above still passes, which is the whole point of asserting both.
+        CreatorProfile profile = profileWithSettings(settingsJson(false, ONE_PINNED_POST));
+
+        assertEquals(
+                List.of(),
+                service.getVisiblePinnedPosts(profile),
+                "a creator who hid their content portfolio must not have it leak into brand"
+                        + " discovery just because a different caller reads it");
+    }
+
+    @Test
+    @DisplayName("getVisiblePinnedPosts: absent or unparseable settings yield empty, never null")
+    void getVisiblePinnedPosts_noSettings_returnsEmpty() {
+        // loadSettings falls back to `new PortfolioSettings()` for both cases. Empty (not null)
+        // matters because CreatorMapper streams this straight into portfolioItems.
+        assertEquals(List.of(), service.getVisiblePinnedPosts(profileWithSettings(null)));
+        assertEquals(List.of(), service.getVisiblePinnedPosts(profileWithSettings("   ")));
+        assertEquals(List.of(), service.getVisiblePinnedPosts(profileWithSettings("{not json")));
+    }
 }

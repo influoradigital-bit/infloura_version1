@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,6 +33,7 @@ import com.influora.repository.ReviewRepository;
 import com.influora.repository.SavedCreatorRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.portfolio.PortfolioService;
+import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioPinnedPost;
 import com.influora.web.dto.creator.DiscoveryDtos.CreatorSuggestionRequest;
 import java.math.BigDecimal;
 import java.util.List;
@@ -541,5 +543,86 @@ class CreatorDiscoveryServiceTest {
         assertNotNull(result.envelope().filters());
         assertTrue(result.envelope().filters().applied().containsKey("q"));
         assertFalse(result.envelope().filters().available().categories().isEmpty());
+    }
+
+    // ─── F-0139: pinned posts on the single-profile read ────────────────────────────────────
+    //
+    // M-2 (BrandF.md §87) replaced CreatorMapper's hardcoded Collections.emptyList() with the
+    // creator's real pinned posts, but only on GET /creators/{id} — the batch/list paths still
+    // pass the empty list deliberately, to avoid an extra portfolio read per row. Nothing
+    // asserted either half, so the mapping could have been reverted, inverted, or accidentally
+    // extended to the list path without a single test noticing.
+
+    @Test
+    @DisplayName("get: surfaces the creator's real pinned posts, not the old empty-list stub")
+    void testGetHydratesRealPinnedPosts() {
+        stubWorkspace();
+        CreatorProfile profile = stubDiscoverableProfile();
+        stubSingleCreatorLookup(profile);
+        // The visibility gate itself is PortfolioService's job (covered in PortfolioServiceTest);
+        // what matters here is that this path asks for the posts and maps what comes back.
+        when(portfolioService.getVisiblePinnedPosts(profile))
+                .thenReturn(
+                        List.of(
+                                new PortfolioPinnedPost(
+                                        "pp_1",
+                                        "INSTAGRAM",
+                                        "https://instagram.com/p/abc",
+                                        "https://cdn/thumb.jpg",
+                                        "Morning routine",
+                                        12_000L,
+                                        900L)));
+
+        var response = service.get(principal, CREATOR_PROFILE_ID);
+
+        assertEquals(1, response.portfolioItems().size());
+        var item = response.portfolioItems().get(0);
+        assertEquals("pp_1", item.id());
+        assertEquals("INSTAGRAM", item.platform());
+        // PortfolioPinnedPost has no title/description split — caption maps into title, and
+        // description is deliberately left null rather than duplicating the same text.
+        assertEquals("Morning routine", item.title());
+        assertNull(item.description());
+        assertEquals("https://cdn/thumb.jpg", item.thumbnailUrl());
+    }
+
+    @Test
+    @DisplayName("get: an empty portfolio stays empty rather than becoming null")
+    void testGetEmptyPortfolioStaysEmpty() {
+        stubWorkspace();
+        CreatorProfile profile = stubDiscoverableProfile();
+        stubSingleCreatorLookup(profile);
+        when(portfolioService.getVisiblePinnedPosts(profile)).thenReturn(List.of());
+
+        assertEquals(List.of(), service.get(principal, CREATOR_PROFILE_ID).portfolioItems());
+    }
+
+    @Test
+    @DisplayName("search: the batch path never hydrates portfolios — one read per row is the cost being avoided")
+    void testSearchDoesNotHydratePortfolios() {
+        stubWorkspace();
+        CreatorProfile profile = stubDiscoverableProfile();
+        when(creatorProfileRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(profile), Pageable.ofSize(20), 1));
+        when(creatorProfileRepository.findAll(any(Specification.class), eq(Pageable.ofSize(5000))))
+                .thenReturn(new PageImpl<>(List.of(profile)));
+        when(platformStatRepository.findByCreatorProfileIdIn(any())).thenReturn(List.of());
+        when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileIdInAndSavedTrue(any(), any()))
+                .thenReturn(List.of());
+
+        var result =
+                service.search(
+                        principal, null, null, null, null, null, null, null, null, null, null,
+                        null, null, true, 1, 20, "engagement");
+
+        assertEquals(1, result.page().items().size());
+        assertEquals(
+                List.of(),
+                result.page().items().get(0).portfolioItems(),
+                "list rows carry no portfolio by design");
+        // The stronger assertion: it must not even ASK. If someone 'fixes' the empty list by
+        // calling through here, this fails loudly — an N+1 portfolio read across a whole page
+        // is the regression, and an assertion on the empty result alone would not catch it.
+        verify(portfolioService, never()).getVisiblePinnedPosts(any());
     }
 }
