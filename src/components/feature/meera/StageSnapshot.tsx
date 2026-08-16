@@ -59,10 +59,22 @@ interface CatalogProduct {
   price: number
 }
 
-/** `productCatalog` is `unknown` on the wire (02 §1.7) — narrow defensively, never trust the shape. */
+/**
+ * `productCatalog` is `unknown` on the wire (02 §1.7) — narrow defensively, never trust the shape.
+ *
+ * It arrives as a BARE ARRAY: `MeeraDtos.java:88` types it `Object`, and
+ * `BrandContextAssembler.java:72` fills it with `parseJsonOrNull(brandProfile.getProductCatalogJson())`,
+ * which parses the stored JSON array (`AnalyzeSiteAiDtos.java:49` — `List<Map<String,Object>>`).
+ * This only ever looked for a `{ products: [...] }` wrapper, which nothing produces, so
+ * `.products` was always undefined and a fully analysed brand always saw "No products detected"
+ * on the default snapshot stage. The wrapper form is still accepted because the mock at
+ * meera-api.ts:533 uses it.
+ */
 function extractCatalogProducts(catalog: unknown): CatalogProduct[] {
   if (!catalog || typeof catalog !== 'object') return []
-  const products = (catalog as { products?: unknown }).products
+  const products = Array.isArray(catalog)
+    ? catalog
+    : (catalog as { products?: unknown }).products
   if (!Array.isArray(products)) return []
   return products.filter((p): p is CatalogProduct => {
     if (!p || typeof p !== 'object') return false

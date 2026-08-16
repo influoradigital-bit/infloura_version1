@@ -140,7 +140,7 @@ interface CreateCampaignResultProps {
 }
 
 export function CreateCampaignResult({ data, className }: CreateCampaignResultProps) {
-  const { campaignId, serverBudget } = data;
+  const { campaignId } = data;
 
   return (
     <div
@@ -153,9 +153,12 @@ export function CreateCampaignResult({ data, className }: CreateCampaignResultPr
         <FileText className="h-4 w-4 text-meera-accent" />
         <div className="flex-1">
           <p className="text-xs font-medium text-meera-text">Draft ready — review & publish</p>
-          <p className="text-[10px] text-meera-text-muted">
-            {serverBudget == null ? 'Draft · budget not set yet' : `Draft · ${formatINR(serverBudget)}`}
-          </p>
+          {/* The budget branch here was dead: `create_campaign` returns
+              MeeraToolDtos.CreateCampaignResult(campaignId, campaignIntentId, status, replay)
+              (MeeraToolDtos.java:66) — no budget field exists on the wire, so this always fell
+              to "budget not set yet" even for a draft that had one. Saying nothing about the
+              budget is honest; asserting it is absent was not. */}
+          <p className="text-[10px] text-meera-text-muted">Draft saved to your campaigns</p>
         </div>
         <span className="rounded-full bg-meera-accent-soft px-2 py-0.5 text-[10px] font-medium text-meera-accent">
           Draft
