@@ -80,6 +80,9 @@ import {
 // CR-34 — the shared mirror of Collaboration.canAccept(), previously duplicated here and in
 // brand-chat.tsx. See lib/deal-stage.ts.
 import { allowsProposalResponse } from '@/lib/deal-stage';
+// Proposals written before 2026-07-26 store `metadata.deliverables` as a plain number, so the
+// old `(x as Array<…>)?.length || 0` rendered "0 items" for a real 3-deliverable offer.
+import { deliverableCountLabel } from '@/lib/deliverable-slots';
 import {
   dealHasContract,
   getAllContractStatuses,
@@ -2208,7 +2211,7 @@ export default function CreatorChatPage() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Deliverables</span>
-                            <span>{(event.metadata?.deliverables as Array<{type: string; quantity: number}>)?.length || 0} items</span>
+                            <span>{deliverableCountLabel(event.metadata, 'item') ?? 'Not specified'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Usage Rights</span>
@@ -2404,7 +2407,7 @@ export default function CreatorChatPage() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Deliverables</span>
-                            <span>{(event.metadata?.deliverables as Array<{type: string; quantity: number}>)?.length || 0} items</span>
+                            <span>{deliverableCountLabel(event.metadata, 'item') ?? 'Not specified'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Usage Rights</span>

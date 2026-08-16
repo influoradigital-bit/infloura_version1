@@ -2430,10 +2430,21 @@ export const contracts = {
    * and the PDF has been generated — that 404 is legitimate, surface it as
    * "PDF available after both sign" rather than retrying silently.
    */
+  /**
+   * The wire shape is `MoneyDtos.ContractPdfDownloadResponse(downloadUrl, expiresAt)`
+   * (MoneyDtos.java:264, minted at ContractService.java:914) — NOT `{ url }`. This said `url`
+   * until 2026-08-16, so every caller destructured `undefined` and called
+   * `window.open(undefined)`, which opens about:blank and throws nothing: the download looked
+   * like it worked and silently did nothing.
+   */
   pdfDownloadUrl: (role: Role, id: string) =>
     isLive()
-      ? http.request<{ url: string }>('GET', `/contracts/${id}/pdf-download-url`, { role })
-      : mockOr<{ url: string }>({ url: '' }),
+      ? http.request<{ downloadUrl: string; expiresAt: string }>(
+          'GET',
+          `/contracts/${id}/pdf-download-url`,
+          { role },
+        )
+      : mockOr<{ downloadUrl: string; expiresAt: string }>({ downloadUrl: '', expiresAt: '' }),
 };
 
 // ---------------------------------------------------------------------------
@@ -3516,8 +3527,15 @@ export type PortfolioBadge =
 export interface PortfolioPlatformStats {
   platform: Platform;
   handle: string;
-  url: string;
-  verified: boolean;
+  /**
+   * `profileUrl`/`isVerified` are the real wire names — `CreatorDtos.PlatformStatResponse`
+   * (CreatorDtos.java:13-19), built at PortfolioService.java:761. These were declared as
+   * `url`/`verified` until 2026-08-16, so both read as `undefined` on every live portfolio:
+   * the CR-119 provenance line said "Self-reported" even for Meta-verified Instagram accounts,
+   * and every platform link rendered with no href.
+   */
+  profileUrl: string;
+  isVerified: boolean;
   followers: number;
   engagementRate: number;
   avgReach?: number;
@@ -3713,8 +3731,8 @@ function mockPortfolio(username: string): PortfolioPage {
       {
         platform: 'INSTAGRAM',
         handle: '@priya_creates',
-        url: 'https://instagram.com/priya_creates',
-        verified: true,
+        profileUrl: 'https://instagram.com/priya_creates',
+        isVerified: true,
         followers: 125000,
         engagementRate: 4.2,
         avgReach: 180000,
@@ -3723,7 +3741,7 @@ function mockPortfolio(username: string): PortfolioPage {
       {
         platform: 'YOUTUBE',
         handle: 'Priya Creates',
-        url: 'https://youtube.com/@priyacreates',
+        profileUrl: 'https://youtube.com/@priyacreates',
         // CR-119 — was `true`. `verified` means "this follower count came back from the
         // platform's own API"; there is no YouTube OAuth or data-fetch integration anywhere in
         // this codebase, so no YouTube figure can carry that claim. This is the SECOND mock
@@ -3731,7 +3749,7 @@ function mockPortfolio(username: string): PortfolioPage {
         // feeds creator-portfolio-public.tsx — a publicly linkable, brand-viewable page — in
         // every non-live build, where it printed a literal "Followers verified" next to a
         // YouTube count once the provenance wording landed.
-        verified: false,
+        isVerified: false,
         followers: 50000,
         engagementRate: 3.8,
         avgReach: 25000,

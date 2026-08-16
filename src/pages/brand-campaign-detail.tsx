@@ -4,7 +4,7 @@ import {
   ArrowLeft, Calendar, Users, IndianRupee, Edit, Pause, Play,
   Copy, Trash2, MoreHorizontal, MessageSquare, CheckCircle2,
   XCircle, Clock, Star, TrendingUp, Instagram, Youtube, Twitter,
-  FileText, Download, AlertCircle, Sparkles, Filter, Search,
+  FileText, Download, AlertCircle, Sparkles, Filter, Search, FileSignature,
   BadgeCheck, Heart, Eye, BarChart2, Target, Award, RefreshCcw,
   ThumbsUp, Zap, TrendingDown, ChevronRight, Activity, Lock, DollarSign,
   Loader2,
@@ -39,7 +39,11 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { CampaignStateMachine } from '@/components/brand/campaigns/campaign-state-machine';
 import { CollaborationTimeline } from '@/components/brand/timeline/collaboration-timeline';
 import { api, isApiLive, ApiError, type Deal, type CampaignAnalytics } from '@/lib/api';
-import type { Campaign as ApiCampaign, Collaboration } from '@/lib/types';
+import type { Campaign as ApiCampaign, Collaboration, ContractStatus } from '@/lib/types';
+import {
+  DealContractGenerate,
+  type MilestoneDraft,
+} from '@/components/brand/deal-room/deal-contract-generate';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -318,6 +322,18 @@ interface ActiveCollaboratorView {
   lastActivity: string;
   deliverables: { completed: number; total: number };
   creator: { id: string; name: string; username: string; avatar: string };
+  /**
+   * Real contract linkage, straight off `DealResponse` (DealService.java:1342-1343 populates
+   * both from the deal's latest Contract). The data was already on every row this page fetched;
+   * it just never reached the UI, so a brand had no route from a campaign to its contracts.
+   * Optional because the mock fixtures below satisfy this interface too and have no contract.
+   */
+  contractId?: string;
+  contractStatus?: ContractStatus;
+  /** Unbucketed collaboration status — the contract gate keys off TERMS_AGREED exactly. */
+  rawStatus?: string;
+  /** Pre-fills the single default milestone at the full deal value. */
+  dealValue?: number;
 }
 
 /** Coarse status bucket for the existing 6-value `collabStatusConfig` vocabulary. */
@@ -327,7 +343,7 @@ function dealToCollabStatus(status: string): string {
   return 'IN_PROGRESS'; // TERMS_AGREED, CONTRACT_PENDING, CONTRACTED, IN_PROGRESS
 }
 
-function dealToActiveCollaboratorView(deal: Deal): ActiveCollaboratorView {
+export function dealToActiveCollaboratorView(deal: Deal): ActiveCollaboratorView {
   return {
     id: deal.id,
     status: dealToCollabStatus(deal.status),
@@ -341,6 +357,10 @@ function dealToActiveCollaboratorView(deal: Deal): ActiveCollaboratorView {
       username: deal.counterpartyHandle || deal.counterpartyName,
       avatar: deal.counterpartyAvatar || '',
     },
+    contractId: deal.contractId,
+    contractStatus: deal.contractStatus,
+    rawStatus: deal.status,
+    dealValue: deal.dealValue,
   };
 }
 
@@ -478,6 +498,23 @@ const collabStatusConfig: Record<string, { label: string; color: string; icon: R
   SETTLING:               { label: 'Settling',            color: 'text-stage-contracted-fg', icon: <Zap className="h-3.5 w-3.5" /> },
   SETTLED:                { label: 'Settled',             color: 'text-stage-approved-fg',   icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
   DISPUTED:               { label: 'Disputed',            color: 'text-stage-disputed-fg',   icon: <AlertCircle className="h-3.5 w-3.5" /> },
+};
+
+/**
+ * Button label for a deal's real `ContractStatus`. Says what the brand can do next rather than
+ * echoing the enum; an absent status still links out ("View contract") because a `contractId`
+ * with no status is a real contract whose status simply wasn't resolved — never "no contract".
+ */
+export const contractStatusLabel = (status?: ContractStatus): string => {
+  switch (status) {
+    case 'DRAFT': return 'Contract: draft';
+    case 'PENDING_SIGNATURES': return 'Sign contract';
+    case 'ACTIVE': return 'Contract active';
+    case 'COMPLETED': return 'Contract complete';
+    case 'TERMINATED': return 'Contract ended';
+    case 'DISPUTED': return 'Contract disputed';
+    default: return 'View contract';
+  }
 };
 
 const PlatformIcon = ({ platform, size = 'h-4 w-4' }: { platform: string; size?: string }) => {
@@ -632,6 +669,11 @@ export default function BrandCampaignDetailPage() {
   const [bids, setBids] = React.useState(mockBids);
   const [timelineOpen, setTimelineOpen] = React.useState(false);
   const [selectedCollaboration, setSelectedCollaboration] = React.useState<ActiveCollaboratorView | null>(null);
+  // Contract generation — same POST /contracts { collaborationId, milestones } the deal-room
+  // chat already uses (brand-chat.tsx:906). Reuses that page's milestone editor rather than
+  // growing a second one that could drift from the server's re-summed totalAmount.
+  const [contractDraftFor, setContractDraftFor] = React.useState<ActiveCollaboratorView | null>(null);
+  const [isGeneratingContract, setIsGeneratingContract] = React.useState(false);
 
   // Live mode: once a real campaign/deals fetch resolves, land on the right default tab and
   // replace the mock `bids` seed with the real bid-stage deals.
@@ -750,6 +792,56 @@ export default function BrandCampaignDetailPage() {
     setSelectedBid(null);
     setCounterAmount('');
     setCounterMessage('');
+  };
+
+  /**
+   * POST /contracts. `collaborationId` is the deal id (DealResponse.id IS the Collaboration id —
+   * brand-chat.tsx:907 passes it the same way). The server re-sums `totalAmount` from these
+   * milestones, so the editor's running total is cosmetic and never trusted.
+   *
+   * Contract creation is OWNER/ADMIN/MANAGER-only server-side (api.ts:2386). This page does not
+   * pre-gate on role — there is no client-side source of the caller's workspace role, and
+   * inventing one would either hide a control the server would have allowed or show one it
+   * refuses. It follows the campaign-delete precedent below instead: attempt, then surface the
+   * real 403 in the operator's own words.
+   */
+  const handleGenerateContract = async (milestones: MilestoneDraft[]) => {
+    const target = contractDraftFor;
+    if (!target) return;
+    setIsGeneratingContract(true);
+    try {
+      await api.contracts.generate({
+        collaborationId: target.id,
+        milestones: milestones.map((m, i) => ({
+          sequenceNo: i + 1,
+          description: m.description,
+          amount: m.amount,
+          dueDate: m.dueDate || undefined,
+        })),
+      });
+      toast({
+        title: 'Contract sent',
+        description: `Review and sign it in Contracts, then ${target.creator.name} will be notified.`,
+      });
+      setContractDraftFor(null);
+      // Re-fetch so the row's now-real contractId/contractStatus replace the generate button.
+      setReloadToken((k) => k + 1);
+    } catch (e) {
+      const isPermission =
+        e instanceof ApiError &&
+        (e.status === 403 || e.message.includes('Insufficient workspace permissions'));
+      toast({
+        title: isPermission ? "You can't create this contract" : 'Could not create contract',
+        description: isPermission
+          ? 'Only the workspace Owner, Admin or Manager can generate a contract. Ask one of them to send it.'
+          : e instanceof ApiError
+            ? e.message
+            : 'Try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGeneratingContract(false);
+    }
   };
 
   // ── Header action-menu handlers. These were dead controls (no onClick) — now wired to the
@@ -1365,6 +1457,34 @@ export default function BrandCampaignDetailPage() {
                               <MessageSquare className="h-3.5 w-3.5" />
                               Open Timeline
                             </Button>
+                            {/* The campaign had no route to its own contracts — the timeline
+                                can't show them (the backend writes no `contract` deal-message
+                                kind, see collaboration-timeline.tsx:253), so this is the link. */}
+                            {ac.contractId ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 gap-1.5 text-xs w-full"
+                                onClick={() => navigate(`/brand/contracts?contract=${ac.contractId}`)}
+                              >
+                                <FileSignature className="h-3.5 w-3.5" />
+                                {contractStatusLabel(ac.contractStatus)}
+                              </Button>
+                            ) : ac.rawStatus === 'TERMS_AGREED' ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 gap-1.5 text-xs w-full"
+                                onClick={() => setContractDraftFor(ac)}
+                              >
+                                <FileSignature className="h-3.5 w-3.5" />
+                                Generate contract
+                              </Button>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground text-center">
+                                No contract yet
+                              </span>
+                            )}
                           </div>
                         </div>
                       </CardContent>
@@ -2029,6 +2149,36 @@ export default function BrandCampaignDetailPage() {
                 Decline Bid
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Generate contract */}
+        <Dialog
+          open={contractDraftFor !== null}
+          onOpenChange={(open) => {
+            if (!open && !isGeneratingContract) setContractDraftFor(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileSignature className="h-5 w-5 text-primary" />
+                Send contract
+              </DialogTitle>
+              <DialogDescription>
+                Split the agreed amount into milestones. The server re-sums the total from these
+                rows, so what you set here is what the contract is worth.
+              </DialogDescription>
+            </DialogHeader>
+            {contractDraftFor && (
+              <DealContractGenerate
+                creatorName={contractDraftFor.creator.name}
+                campaignName={campaign.title}
+                dealValue={contractDraftFor.dealValue ?? 0}
+                isGenerating={isGeneratingContract}
+                onGenerate={(milestones) => void handleGenerateContract(milestones)}
+              />
+            )}
           </DialogContent>
         </Dialog>
 

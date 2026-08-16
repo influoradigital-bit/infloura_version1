@@ -1590,3 +1590,26 @@
 {"ts": "2026-08-15T14:34:40", "who": "meera", "what": "verdict", "file": "src/lib/contract-generator.ts", "task": "fix-f0213", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
 {"ts": "2026-08-15T14:34:40", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0213"}
 {"ts": "2026-08-15T14:34:40", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0213 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0213-contract-filename.sh"}
+{"ts": "2026-08-16T08:44:44", "who": "ananya", "what": "read", "file": "src/pages/brand-chat.tsx", "task": "wire-contract-campaign-0816", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-16T08:44:44", "who": "ananya", "what": "read", "file": "src/lib/api.ts", "task": "wire-contract-campaign-0816", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-16T08:44:44", "who": "ananya", "what": "read", "file": "src/components/brand/deal-room/deal-contract-generate.tsx", "task": "wire-contract-campaign-0816", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-16T08:44:44", "who": "ananya", "what": "read", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx", "task": "wire-contract-campaign-0816", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-16T08:44:44", "who": "ananya", "what": "read", "file": "influora-api/src/main/java/com/influora/service/DealService.java", "task": "wire-contract-campaign-0816", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-16T08:49:27", "who": "ananya", "what": "wire", "file": "src/pages/brand-campaign-detail.tsx", "task": "wire-contract-campaign-0816", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-16T08:49:27", "who": "ananya", "what": "wire", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx", "task": "wire-contract-campaign-0816", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-16T08:49:27", "who": "ananya", "what": "wire", "file": "src/pages/brand-campaign-detail.contract-wiring.test.ts", "task": "wire-contract-campaign-0816", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-16T08:49:27", "who": "meera", "what": "verdict", "file": "src/pages/brand-campaign-detail.tsx", "task": "wire-contract-campaign-0816", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-16T08:49:27", "who": "priya", "what": "audit", "file": "src", "task": "wire-contract-campaign-0816", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-16T09:15:50", "who": "priya", "what": "ledger-add", "file": "src/lib/api.ts:2435", "task": "", "stage": "intake", "gate_result": "F-0214"}
+{"ts": "2026-08-16T09:15:51", "who": "priya", "what": "ledger-add", "file": "src/pages/creator-chat.tsx:2211", "task": "", "stage": "intake", "gate_result": "F-0215"}
+{"ts": "2026-08-16T09:15:51", "who": "priya", "what": "ledger-add", "file": "src/lib/api.ts:3516", "task": "", "stage": "intake", "gate_result": "F-0216"}
+{"ts": "2026-08-16T09:15:51", "who": "meera", "what": "ledger-add", "file": "src/pages", "task": "", "stage": "intake", "gate_result": "F-0217"}
+{"ts": "2026-08-16T09:27:00", "who": "ananya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0214"}
+{"ts": "2026-08-16T09:27:00", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0214 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\dto-drift.py"}
+{"ts": "2026-08-16T09:27:00", "who": "ananya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0215"}
+{"ts": "2026-08-16T09:27:00", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0215 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\dto-drift.py"}
+{"ts": "2026-08-16T09:27:00", "who": "ananya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0216"}
+{"ts": "2026-08-16T09:27:00", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0216 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\dto-drift.py"}
+{"ts": "2026-08-16T09:28:09", "who": "ananya", "what": "read", "file": "tasks/wire-contract-campaign-0816/*", "task": "wire-contract-campaign-0816", "stage": "cleanup", "gate_result": "scanned 6 file(s) for failure markers before archive"}
+{"ts": "2026-08-16T09:28:09", "who": "ananya", "what": "delete", "file": "tasks/wire-contract-campaign-0816/*", "task": "wire-contract-campaign-0816", "stage": "cleanup", "gate_result": "archived \u2192 _archive/wire-contract-campaign-0816, purge 2026-09-15"}
+{"ts": "2026-08-16T09:40:01", "who": "meera", "what": "ledger-add", "file": "src/pages/brand-campaign-detail.tsx", "task": "", "stage": "intake", "gate_result": "F-0218"}
