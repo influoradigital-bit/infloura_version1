@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-proof-os gate for the `dto-drift` class (F-0214, F-0215, F-0216).
+proof-os gate for the `dto-drift` class
+(F-0214, F-0215, F-0216, F-0219, F-0220, F-0221).
 
 Thin wrapper. The real check lives at ci/dto-drift-check.py, inside the project, so the same
 command runs in CI and from a developer shell — a gate that only exists under .proof-os/ can
