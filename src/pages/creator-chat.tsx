@@ -2419,7 +2419,12 @@ export default function CreatorChatPage() {
                         <div className="mt-3 pt-3 border-t border-stage-negotiating-border">
                           <div className="flex justify-between text-sm font-semibold text-stage-approved-fg">
                             <span>You Receive</span>
-                            <span>{formatINR(Number(event.metadata?.netEarnings))}</span>
+                            {/* `netEarnings` is never written to proposal metadata by the backend
+                                (zero occurrences in influora-api) — only the mock fixtures carry
+                                it, so on live data Number(undefined) was NaN and this line always
+                                rendered "—". Derive it from the real amount, exactly as the
+                                sibling proposal card above already does. */}
+                            <span>{formatINR(calculateEarnings(Number(event.metadata?.amount ?? 0)).netEarnings)}</span>
                           </div>
                         </div>
                       </CardContent>

@@ -210,10 +210,20 @@ export interface CalculateBudgetPayload {
   rationale?: string;
 }
 
+/**
+ * `MeeraToolDtos.CreateCampaignResult` (MeeraToolDtos.java:66-67) — exactly
+ * `(campaignId, campaignIntentId, status, replay)`.
+ *
+ * This declared a required `serverBudget: number` until 2026-08-16. It has never existed on the
+ * wire in influora-api or influora-ai, so every draft rendered the "budget not set yet" branch,
+ * and `campaignIntentId`/`replay` — which the backend really does send — were invisible to the FE.
+ */
 export interface CreateCampaignPayload {
   campaignId: string;
+  campaignIntentId?: string;
   status: 'DRAFT';
-  serverBudget: number;
+  /** True when the tool call was replayed from the idempotency cache rather than re-executed. */
+  replay?: boolean;
 }
 
 /** `MeeraToolDtos.RequestPaymentResult` — no `escrowHoldId`/`razorpayOrderId`/`action` on this DTO. */

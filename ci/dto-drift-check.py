@@ -66,6 +66,20 @@ PAIRS = [
         "java_file": "influora-api/src/main/java/com/influora/web/dto/money/MoneyDtos.java",
         "fe_only": {},
     },
+    {
+        "ts": "CreateCampaignPayload",
+        "ts_file": "src/lib/meera-api.ts",
+        "java": "CreateCampaignResult",
+        "java_file": "influora-api/src/main/java/com/influora/web/dto/meera/MeeraToolDtos.java",
+        "fe_only": {},
+    },
+    {
+        "ts": "Deal",
+        "ts_file": "src/lib/api.ts",
+        "java": "DealResponse",
+        "java_file": "influora-api/src/main/java/com/influora/web/dto/deal/DealDtos.java",
+        "fe_only": {},
+    },
 ]
 
 TS_FIELD = re.compile(r"^\s*(?:readonly\s+)?([A-Za-z_$][\w$]*)\s*\??\s*:", re.M)
