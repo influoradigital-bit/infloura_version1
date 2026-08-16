@@ -3336,7 +3336,11 @@ export const billing = {
   initiateCheckout: (planCode: 'FREE' | 'PRO') =>
     isLive()
       ? http.request<{ checkoutUrl: string }>('POST', '/billing/checkout', { body: { planCode } })
-      : Promise.reject(new ApiError('NOT_YET_IMPLEMENTED', 'Razorpay checkout ships in Phase 2')),
+      // Mock mode has no Razorpay to redirect to — the same shape downloadInvoicePdf uses above.
+      // This said NOT_YET_IMPLEMENTED / "ships in Phase 2" until 2026-08-16, which was the exact
+      // stale claim F-0075 was filed for: the live branch right above it calls a real, shipped
+      // endpoint, so a reader of the mock branch concluded the feature did not exist yet.
+      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Checkout is not available in mock mode')),
 
   /**
    * POST /billing/cancel — real cancellation. SubscriptionService calls Razorpay
@@ -3346,7 +3350,8 @@ export const billing = {
   cancelSubscription: () =>
     isLive()
       ? http.request<void>('POST', '/billing/cancel')
-      : Promise.reject(new ApiError('NOT_YET_IMPLEMENTED', 'Cancellation ships in Phase 2')),
+      // Same as initiateCheckout above — mock mode, not an unshipped feature (F-0075).
+      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Cancellation is not available in mock mode')),
 };
 
 // ---------------------------------------------------------------------------
