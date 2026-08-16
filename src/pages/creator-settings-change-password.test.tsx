@@ -103,7 +103,7 @@ describe('CreatorSettingsPage — Change Password (CR-87 / F-0108)', () => {
   });
 
   it('submits the entered passwords to api.auth.changePassword and confirms success', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderSettings();
     await openPasswordDialog(user);
     await fillPasswordForm(user);
@@ -133,7 +133,7 @@ describe('CreatorSettingsPage — Change Password (CR-87 / F-0108)', () => {
     // CR-87/Priya review blocker 2: this clause had no test — the guard worked but was
     // unprotected. Empty current-password specifically, since that's the field most likely to
     // be skipped by a password-manager autofill mismatch.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderSettings();
     await openPasswordDialog(user);
     await fillPasswordForm(user, { current: '' });
@@ -145,7 +145,7 @@ describe('CreatorSettingsPage — Change Password (CR-87 / F-0108)', () => {
   });
 
   it('rejects mismatched new/confirm passwords client-side without calling the API', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderSettings();
     await openPasswordDialog(user);
     await fillPasswordForm(user, { next: 'newpass456', confirm: 'different789' });
@@ -157,7 +157,7 @@ describe('CreatorSettingsPage — Change Password (CR-87 / F-0108)', () => {
   });
 
   it('rejects a too-short new password client-side without calling the API', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderSettings();
     await openPasswordDialog(user);
     await fillPasswordForm(user, { next: 'short', confirm: 'short' });
@@ -170,7 +170,7 @@ describe('CreatorSettingsPage — Change Password (CR-87 / F-0108)', () => {
 
   it('surfaces the server error message on a rejected current password, and keeps the dialog open', async () => {
     changePassword.mockRejectedValue(new Error('Current password is incorrect'));
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderSettings();
     await openPasswordDialog(user);
     await fillPasswordForm(user);

@@ -30,7 +30,7 @@ describe('CollaborationReviewsPanel (creator)', () => {
   });
 
   it('disables submit until stars selected, then accepts mock submit', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderCreatorPanel();
 
     await waitFor(() => {
@@ -51,7 +51,7 @@ describe('CollaborationReviewsPanel (creator)', () => {
   });
 
   it('switches to Reviews about you tab and shows demo received reviews', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderCreatorPanel();
 
     await user.click(screen.getByRole('tab', { name: /Reviews about you/i }));

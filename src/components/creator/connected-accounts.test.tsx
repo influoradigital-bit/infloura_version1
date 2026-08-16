@@ -116,7 +116,7 @@ describe('ConnectedAccounts — disconnect (CR-102 / F-0115)', () => {
 
   it('shows a confirmation dialog before disconnecting — a click alone does not call the API', async () => {
     mockedHook.mockReturnValue(baseResult({ scopes: ['instagram_basic'] }));
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<ConnectedAccounts />);
 
     await user.click(screen.getByRole('button', { name: /disconnect instagram/i }));
@@ -132,7 +132,7 @@ describe('ConnectedAccounts — disconnect (CR-102 / F-0115)', () => {
   // claim so a regression back to a fabricated consequence fails red, not just a vibe check.
   it('the confirmation copy makes only the claim the code actually backs — syncing stops, not brand visibility', async () => {
     mockedHook.mockReturnValue(baseResult({ scopes: ['instagram_basic'] }));
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<ConnectedAccounts />);
 
     await user.click(screen.getByRole('button', { name: /disconnect instagram/i }));
@@ -149,7 +149,7 @@ describe('ConnectedAccounts — disconnect (CR-102 / F-0115)', () => {
   it('calls api.metaOAuth.disconnect and refreshes status on confirm', async () => {
     const refresh = vi.fn().mockResolvedValue(undefined);
     mockedHook.mockReturnValue({ ...baseResult({ scopes: ['instagram_basic'] }), refresh });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<ConnectedAccounts />);
 
     await user.click(screen.getByRole('button', { name: /disconnect instagram/i }));
@@ -165,7 +165,7 @@ describe('ConnectedAccounts — disconnect (CR-102 / F-0115)', () => {
   it('a failed disconnect shows an error toast and keeps the dialog open for retry', async () => {
     metaDisconnect.mockRejectedValue(new Error('network down'));
     mockedHook.mockReturnValue(baseResult({ scopes: ['instagram_basic'] }));
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<ConnectedAccounts />);
 
     await user.click(screen.getByRole('button', { name: /disconnect instagram/i }));

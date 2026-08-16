@@ -28,7 +28,14 @@ export default defineConfig({
       '**/*.live.test.ts',
       '**/*.live.test.tsx',
     ],
-    testTimeout: 15_000,
+    // F-0217: raised from 15s. A page test that awaits several elements in sequence now has up
+    // to 5s per wait (src/test/setup.ts), so 15s could be exhausted by three slow waits on a
+    // loaded machine and reported as a timeout rather than the contention it was. The ceiling
+    // only costs time on tests that are already failing; it never turns a red test green.
+    testTimeout: 30_000,
+    // Default is 10s. `beforeEach` in the heavier page suites does the initial render + fetch
+    // stubbing, and a hook timeout under load aborts the file rather than one test.
+    hookTimeout: 30_000,
     env: {
       VITE_API_MODE: 'mock',
     },

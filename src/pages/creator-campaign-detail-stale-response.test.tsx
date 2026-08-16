@@ -88,7 +88,7 @@ describe('CreatorCampaignDetailPage — stale-response race (CR-11 static-sweep 
   });
 
   it('a slow campaign-A response landing after navigating to campaign B does not overwrite B', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
 
     // camp_1's request never resolves during this test until we manually resolve it, late.
     let resolveCamp1: (value: unknown) => void;

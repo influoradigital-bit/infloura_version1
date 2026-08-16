@@ -69,7 +69,7 @@ function renderList() {
 }
 
 async function openMenuFor(cardTitle: string) {
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   const titleEl = await screen.findByText(cardTitle);
   // The card is the closest ancestor that also contains the "..." trigger button.
   const card = titleEl.closest('.group') as HTMLElement;

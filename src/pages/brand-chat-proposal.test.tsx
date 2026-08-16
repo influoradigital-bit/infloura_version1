@@ -145,7 +145,7 @@ describe('BrandChatPage — deal-room proposal', () => {
   });
 
   it('sends the proposal as a counter with the collected terms', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderChat();
 
     await openAndCompleteWizard(user);
@@ -173,7 +173,7 @@ describe('BrandChatPage — deal-room proposal', () => {
     dealsCounter.mockRejectedValue(
       new ApiError('DEAL_NOT_NEGOTIABLE', 'This deal cannot be countered in its current state', 409),
     );
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderChat();
 
     await openAndCompleteWizard(user);
@@ -246,7 +246,7 @@ describe('BrandChatPage — responding to a proposal', () => {
   });
 
   it('accepts the creator\'s offer as the brand', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderChat();
 
     await user.click(await screen.findByRole('button', { name: /^Accept$/i }));
@@ -268,7 +268,7 @@ describe('BrandChatPage — responding to a proposal', () => {
     dealsAccept.mockRejectedValue(
       new ApiError('DEAL_NOT_ACCEPTABLE', 'This deal cannot be accepted in its current state', 409),
     );
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderChat();
 
     await user.click(await screen.findByRole('button', { name: /^Accept$/i }));
@@ -400,7 +400,7 @@ describe('BrandChatPage — responding to a proposal', () => {
   });
 
   it('opens the proposal wizard when Counter is clicked', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderChat();
 
     await user.click(await screen.findByRole('button', { name: /^Counter$/i }));

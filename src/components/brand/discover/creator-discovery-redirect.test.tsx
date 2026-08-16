@@ -86,6 +86,11 @@ function renderDiscovery() {
 }
 
 async function openModalAndPickCampaign(user: ReturnType<typeof userEvent.setup>) {
+  // F-0217: the creator grid appears only after a 300ms debounce, the mocked search, and a
+  // render of the full result grid. Waiting for all three inside one findBy budget is what made
+  // this the suite's most load-sensitive assertion. Wait for the fetch first, so each step gets
+  // its own budget and a failure says which stage actually stalled.
+  await waitFor(() => expect(creatorsSearch).toHaveBeenCalled());
   await user.click(await screen.findByRole('button', { name: /^Invite$/i }));
   const dialog = await screen.findByRole('dialog');
   await user.click(within(dialog).getByRole('combobox'));
@@ -110,7 +115,7 @@ describe('CreatorDiscovery — redirect to the conversation it just opened', () 
   });
 
   it('sends a priced offer, then redirects to THAT creator’s deal room', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderDiscovery();
     const dialog = await openModalAndPickCampaign(user);
     await user.click(within(dialog).getByRole('button', { name: /Next: Review/i }));
@@ -128,7 +133,7 @@ describe('CreatorDiscovery — redirect to the conversation it just opened', () 
   });
 
   it('sends an unpriced invite, then redirects to THAT creator’s deal room', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderDiscovery();
     const dialog = await openModalAndPickCampaign(user);
 

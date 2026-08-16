@@ -325,7 +325,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should list ESCALATED as a selectable status filter option', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       mockUseFlagQueue.mockReturnValue(MOCK_LOADED_STATE);
 
       render(<FlagQueue />);
@@ -368,7 +368,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should call setFilters when search input changes', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const mockSetFilters = vi.fn();
       mockUseFlagQueue.mockReturnValue({
         ...MOCK_LOADED_STATE,
@@ -392,7 +392,7 @@ describe('FlagQueue Component', () => {
 
   describe('Sortable Columns', () => {
     it('should call setSort when clicking sortable column header', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const mockSetSort = vi.fn();
       mockUseFlagQueue.mockReturnValue({
         ...MOCK_LOADED_STATE,
@@ -414,7 +414,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should toggle sort direction when clicking same column twice', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const mockSetSort = vi.fn();
       mockUseFlagQueue.mockReturnValue({
         ...MOCK_LOADED_STATE,
@@ -446,7 +446,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should open detail drawer when clicking a flag row', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       render(<FlagQueue />);
 
@@ -462,7 +462,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should show content preview in drawer', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       render(<FlagQueue />);
 
@@ -479,7 +479,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should show reviewed metadata when available', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       render(<FlagQueue />);
 
@@ -501,7 +501,7 @@ describe('FlagQueue Component', () => {
 
   describe('Moderation Action Flow (P2 CRITICAL)', () => {
     it('should show all action buttons for PENDING or REVIEWED flags', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       mockUseFlagQueue.mockReturnValue(MOCK_LOADED_STATE);
 
       render(<FlagQueue />);
@@ -520,7 +520,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should NOT show action buttons for ACTIONED flags', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       mockUseFlagQueue.mockReturnValue(MOCK_LOADED_STATE);
 
       render(<FlagQueue />);
@@ -541,7 +541,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should open reason dialog, accept reason, and call moderationApi.actionFlag for REMOVE', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       mockUseFlagQueue.mockReturnValue(MOCK_LOADED_STATE);
 
       render(<FlagQueue />);
@@ -595,7 +595,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should open reason dialog and call moderationApi.actionFlag for REJECT (dismiss)', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       mockUseFlagQueue.mockReturnValue(MOCK_LOADED_STATE);
 
       render(<FlagQueue />);
@@ -638,7 +638,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should open reason dialog and call moderationApi.actionFlag for ESCALATE, and never allow submission without a reason', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       mockUseFlagQueue.mockReturnValue(MOCK_LOADED_STATE);
 
       render(<FlagQueue />);
@@ -690,7 +690,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should disable action button when reason is empty', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       mockUseFlagQueue.mockReturnValue(MOCK_LOADED_STATE);
 
       render(<FlagQueue />);
@@ -774,7 +774,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should make flag rows keyboard-navigable with Enter key', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       render(<FlagQueue />);
 
@@ -794,7 +794,7 @@ describe('FlagQueue Component', () => {
     });
 
     it('should make flag rows keyboard-navigable with Space key', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       render(<FlagQueue />);
 

@@ -63,7 +63,7 @@ describe('CreatorLayout — mobile hamburger menu accessible name (F-0167)', () 
   });
 
   it('accessible name and aria-expanded flip to the open state on click', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderShell();
 
     // Hold a stable reference to the button itself, not a role query — once the mobile nav
@@ -78,7 +78,7 @@ describe('CreatorLayout — mobile hamburger menu accessible name (F-0167)', () 
   });
 
   it('closing the sheet (Escape) reverts the accessible name and aria-expanded', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderShell();
 
     // The hamburger itself is the only way to OPEN the sheet; once open, Radix's overlay sets

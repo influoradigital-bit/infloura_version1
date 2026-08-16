@@ -95,7 +95,7 @@ describe('CreatorLayout — mobile avatar menu accessible name (F-0169)', () => 
     vi.resetModules();
     renderShell(() => Promise.resolve(null));
     const { CreatorLayout: FreshLayout } = await import('./creator-layout');
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
 
     render(
       <MemoryRouter initialEntries={['/creator/dashboard']}>

@@ -83,7 +83,7 @@ describe('FundEscrowButton', () => {
       }) as never,
     );
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<FundEscrowButton campaignId="camp_1" displayAmount={5000} />);
 
     const button = screen.getByRole('button');
@@ -120,7 +120,7 @@ describe('FundEscrowButton', () => {
       status: 'FUNDED',
     });
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<FundEscrowButton campaignId="camp_1" displayAmount={5000} />);
 
     await user.click(screen.getByRole('button'));
@@ -139,7 +139,7 @@ describe('FundEscrowButton', () => {
       status: 'PENDING',
     });
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<FundEscrowButton campaignId="camp_1" displayAmount={5000} />);
 
     await user.click(screen.getByRole('button'));
@@ -172,7 +172,7 @@ describe('FundEscrowButton', () => {
       status: 'PENDING',
     });
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<FundEscrowButton campaignId="camp_1" displayAmount={5000} />);
 
     await user.click(screen.getByRole('button'));
@@ -196,7 +196,7 @@ describe('FundEscrowButton', () => {
   it('shows an error and an accessible alert when the 402 has no server shortfall (no re-estimate, no top-up)', async () => {
     fundEscrowMock.mockRejectedValueOnce(new ApiError('INSUFFICIENT_FUNDS', 'Insufficient funds', 402, undefined));
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<FundEscrowButton campaignId="camp_1" displayAmount={5000} />);
 
     await user.click(screen.getByRole('button'));
@@ -221,7 +221,7 @@ describe('FundEscrowButton', () => {
     });
 
     const onFunded = vi.fn();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<FundEscrowButton campaignId="camp_1" displayAmount={5000} onFunded={onFunded} />);
 
     // Not on render — human click required before anything happens.
@@ -245,7 +245,7 @@ describe('FundEscrowButton', () => {
     getEscrowStatusMock.mockResolvedValue({ status: 'FUNDED' } as never);
 
     const onFunded = vi.fn();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<FundEscrowButton campaignId="camp_1" displayAmount={5000} onFunded={onFunded} />);
 
     await user.click(screen.getByRole('button'));
@@ -272,7 +272,7 @@ describe('FundEscrowButton', () => {
     });
 
     const onFunded = vi.fn();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<FundEscrowButton campaignId="camp_1" displayAmount={5000} onFunded={onFunded} />);
 
     await user.click(screen.getByRole('button'));

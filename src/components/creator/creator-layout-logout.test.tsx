@@ -88,7 +88,7 @@ describe('CreatorLayout — sidebar logout (CR-90 / F-0109)', () => {
   });
 
   it('calls the server logout endpoint before clearing local session state', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderShell();
 
     await logOutViaSidebar(user);
@@ -107,7 +107,7 @@ describe('CreatorLayout — sidebar logout (CR-90 / F-0109)', () => {
   it('still clears local session and navigates away even when the server call fails', async () => {
     authLogout.mockRejectedValueOnce(new Error('network down'));
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderShell();
 
     await logOutViaSidebar(user);

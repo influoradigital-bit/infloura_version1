@@ -157,7 +157,7 @@ describe('ErrorBoundary — CR-11 crash reporting', () => {
   });
 
   it('"Try again" still works after a report failure', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     reportMock.mockRejectedValueOnce(new Error('network down'));
 
     render(

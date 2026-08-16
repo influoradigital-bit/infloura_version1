@@ -109,7 +109,7 @@ beforeEach(() => {
 
 describe('campaign detail — contract controls (live mode)', () => {
   it('deep-links a contracted deal to that exact contract, not the contracts list', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     dealsList.mockResolvedValue([
       deal({ status: 'CONTRACTED', contractId: 'CTR_9', contractStatus: 'PENDING_SIGNATURES' }),
     ]);
@@ -130,7 +130,7 @@ describe('campaign detail — contract controls (live mode)', () => {
   });
 
   it('offers Generate contract only at TERMS_AGREED with no contract, and POSTs the deal id', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     contractsGenerate.mockResolvedValue({ id: 'CTR_new' });
     dealsList.mockResolvedValue([deal({ id: 'deal-7', status: 'TERMS_AGREED' })]);
 
@@ -159,7 +159,7 @@ describe('campaign detail — contract controls (live mode)', () => {
   });
 
   it('says "No contract yet" rather than offering a control the server would reject', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     // IN_PROGRESS with no contract: generating one is not the right next step here.
     dealsList.mockResolvedValue([deal({ status: 'IN_PROGRESS' })]);
 
@@ -176,7 +176,7 @@ describe('campaign detail — contract controls (live mode)', () => {
   });
 
   it('surfaces a 403 in the operator’s own words instead of a generic failure', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { ApiError } = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
     // ApiError is (code, message, status) — api.ts:186. Getting this order wrong makes the
     // 403 branch silently untaken, which is exactly what this test exists to catch.

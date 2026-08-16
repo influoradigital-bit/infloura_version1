@@ -182,7 +182,7 @@ describe('CreatorChatPage — foreground resync (CR-93 / F-0110 — creator half
     renderRoom();
     await screen.findByText('Hey, excited to work on this!');
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     await user.click(screen.getByText('Nykaa Fashion'));
 
     // Deal 2's fetch is still in flight — deal 1's message must NOT still be on screen.

@@ -160,7 +160,7 @@ describe('AdminLayout Component', () => {
     });
 
     it('should open mobile nav when menu button clicked', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       renderLayout();
 
       const menuButton = screen.getByRole('button', { name: /Open navigation/i });
@@ -171,7 +171,7 @@ describe('AdminLayout Component', () => {
     });
 
     it('should close mobile nav when close button clicked', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       renderLayout();
 
       // Open nav
@@ -193,7 +193,7 @@ describe('AdminLayout Component', () => {
     });
 
     it('should close mobile nav when overlay is clicked', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       renderLayout();
 
       // Open nav
@@ -211,7 +211,7 @@ describe('AdminLayout Component', () => {
     });
 
     it('should close mobile nav when any nav link is clicked', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       renderLayout();
 
       // Open nav
@@ -235,7 +235,7 @@ describe('AdminLayout Component', () => {
 
   describe('Mobile Nav Keyboard Accessibility (Cycle 3 Fix)', () => {
     it('should close mobile nav when Escape key is pressed', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       renderLayout();
 
       // Open nav
@@ -254,7 +254,7 @@ describe('AdminLayout Component', () => {
     });
 
     it('should move focus to close button when mobile nav opens', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       renderLayout();
 
       const menuButton = screen.getByRole('button', { name: /Open navigation/i });
@@ -270,7 +270,7 @@ describe('AdminLayout Component', () => {
     });
 
     it('should return focus to menu trigger when mobile nav closes', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       renderLayout();
 
       const menuButton = screen.getByRole('button', { name: /Open navigation/i });
@@ -298,7 +298,7 @@ describe('AdminLayout Component', () => {
     });
 
     it('should return focus to menu trigger when Escape closes nav', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       renderLayout();
 
       const menuButton = screen.getByRole('button', { name: /Open navigation/i });
@@ -314,7 +314,7 @@ describe('AdminLayout Component', () => {
     });
 
     it('should make overlay button keyboard-operable (not just pointer)', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       renderLayout();
 
       // Open nav

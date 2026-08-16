@@ -84,7 +84,7 @@ describe('DealRoomDashboard — View Profile navigates to the real counterparty 
   });
 
   it('navigates to the deal\'s real counterpartyId, never the hardcoded creator-1 fixture', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderDashboard();
 
     await user.click(await screen.findByText('Rhea Kapoor'));

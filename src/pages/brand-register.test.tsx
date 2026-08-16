@@ -85,7 +85,7 @@ describe('BrandRegisterPage — email OTP gate', () => {
 
   it('registers directly when the server does not require OTP', async () => {
     publicConfig.mockResolvedValue({ requireEmailOtp: false });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderPage();
     await waitFor(() => expect(publicConfig).toHaveBeenCalled());
 
@@ -99,7 +99,7 @@ describe('BrandRegisterPage — email OTP gate', () => {
 
   it('sends and verifies an OTP before registering when the server requires it', async () => {
     publicConfig.mockResolvedValue({ requireEmailOtp: true });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderPage();
     await waitFor(() => expect(publicConfig).toHaveBeenCalled());
 
@@ -124,7 +124,7 @@ describe('BrandRegisterPage — email OTP gate', () => {
     publicConfig.mockResolvedValue({ requireEmailOtp: true });
     const { ApiError } = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
     brandRegister.mockRejectedValue(new ApiError('EMAIL_TAKEN', 'That email is already registered', 409));
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderPage();
     await waitFor(() => expect(publicConfig).toHaveBeenCalled());
 

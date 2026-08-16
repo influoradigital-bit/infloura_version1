@@ -124,7 +124,7 @@ describe('BrandCampaignDetailPage — header Edit gated by ACTIVE status', () =>
     renderPage();
 
     await screen.findByText('Diwali Skincare Reels');
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     // Open the "..." header action menu (separate from the Edit button).
     const moreButtons = screen.getAllByRole('button', { name: '' });
     await user.click(moreButtons[moreButtons.length - 1]);

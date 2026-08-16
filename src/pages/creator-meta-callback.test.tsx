@@ -236,7 +236,7 @@ describe('CreatorMetaCallbackPage', () => {
   );
 
   it('CR-66: "Try Again" re-runs the OAuth flow instead of just navigating to Settings', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     setCallbackUrl('?code=abc123&state=xyz789');
     metaCallback.mockRejectedValue(new Error('boom'));
     metaAuthorize.mockResolvedValue({ authorizationUrl: 'https://meta.example/oauth', state: 's' });
@@ -263,7 +263,7 @@ describe('CreatorMetaCallbackPage', () => {
     // state), before the first connect attempt even fails. A naive retry that just calls
     // authorize() again has nothing left in storage for the callback's *next* mount to consume
     // — this test proves handleRetry re-writes it first.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     setCallbackUrl('?code=abc123&state=xyz789');
     consumeConnectReturnTo.mockReturnValue('/creator/chat?deal=deal_1&tab=deliverables');
     metaCallback.mockRejectedValue(new Error('boom'));

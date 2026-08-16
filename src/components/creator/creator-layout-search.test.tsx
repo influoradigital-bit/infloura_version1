@@ -75,7 +75,7 @@ describe('CreatorLayout — header search buttons (CR-122 / CR-124)', () => {
   });
 
   it('CR-124: mobile search icon button navigates to /creator/deals on click', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderShell();
 
     // The mobile button is `lg:hidden`; jsdom has no viewport-based CSS evaluation, so both
@@ -88,7 +88,7 @@ describe('CreatorLayout — header search buttons (CR-122 / CR-124)', () => {
   });
 
   it('CR-122: desktop search bar is a real, keyboard-reachable button that navigates to /creator/deals', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderShell();
 
     const desktopSearchButton = screen.getByRole('button', { name: /search collaborations\.\.\./i });

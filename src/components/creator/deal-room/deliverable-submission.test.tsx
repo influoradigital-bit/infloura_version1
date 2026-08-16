@@ -49,7 +49,7 @@ async function fillForm(user: ReturnType<typeof userEvent.setup>) {
 
 describe('DeliverableSubmission — CR-53 retry-only-submit after successful upload', () => {
   it('keeps the file/caption and offers "Retry Submit" when the error is tagged uploaded:true', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const uploadedError = Object.assign(new Error('submit failed'), { uploaded: true });
     const onSubmit = vi.fn().mockRejectedValue(uploadedError);
 
@@ -85,7 +85,7 @@ describe('DeliverableSubmission — CR-53 retry-only-submit after successful upl
   });
 
   it('shows the generic error (no "Retry Submit" label) when the error is not tagged uploaded', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const plainError = new Error('network down');
     const onSubmit = vi.fn().mockRejectedValue(plainError);
 
@@ -108,7 +108,7 @@ describe('DeliverableSubmission — CR-53 retry-only-submit after successful upl
   });
 
   it('clears the retry-only state once a new file is picked', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const uploadedError = Object.assign(new Error('submit failed'), { uploaded: true });
     const onSubmit = vi.fn().mockRejectedValue(uploadedError);
 
