@@ -5,6 +5,10 @@ origin failures: F-0270, F-0274, F-0276 (class: dead-control) — recurred x3, b
 scripts/promote.py --recurrence.
 Also closes F-0289 (dead-control-repair): the live instances this gate first reported are
 now fixed, so it exits 0 rather than merely detecting them.
+Also closes F-0310 (gate-accepts-noop-handler): this gate used to accept
+`onClick={e => e.preventDefault()}` as wiring and the bare substring "disabled" — which
+`aria-disabled` contains — so a still-clickable control read as honestly disabled. It now
+requires a REAL disabled attribute and rejects the known no-op handler shapes.
 
 A control that renders enabled and does nothing is worse than a missing one: the user
 believes the product supports the action, clicks, and gets silence. This class produced a
@@ -24,7 +28,7 @@ import os
 import re
 import sys
 
-ALLOW = ("onclick", "aschild", 'type="submit"', "type='submit'", "disabled",
+ALLOW = ("onclick", "aschild", 'type="submit"', "type='submit'",
          "form=", "onmousedown", "onpointerdown", "onkeydown",
          # A wrapper that spreads its props forwards whatever handler the caller passed
          # (MagneticButton, the ui/ primitives). Flagging these produced 4 of the first
@@ -38,10 +42,31 @@ ALLOW = ("onclick", "aschild", 'type="submit"', "type='submit'", "disabled",
 # reader to ignore it. See F-0289.
 TRIGGER_ASCHILD = re.compile(r"asChild\s*>\s*$")
 
+# A handler that does nothing is the same lie as no handler — and the first version of this
+# gate accepted it, because it only asked whether the substring "onclick" appeared. That is
+# how `onClick={(e) => e.preventDefault()}` on a paperclip button passed while the control
+# was still, in every sense the user experiences, dead. The declared blind spot in this
+# gate's own verdict turned out to be live in the same run that declared it.
+# A REAL `disabled` attribute — not `aria-disabled`. These are not interchangeable: `disabled`
+# makes the browser refuse activation (mouse and keyboard); `aria-disabled` only announces the
+# state to assistive tech and leaves the control fully clickable. The first version of this gate
+# accepted the bare substring "disabled", so `aria-disabled="true"` alone satisfied it — which is
+# how a paperclip that was still clickable, and relied on a no-op handler to swallow the click,
+# read as an honestly-disabled control.
+REAL_DISABLED = re.compile(r"(?<!-)\bdisabled\b")
+
+NOOP_HANDLER = re.compile(
+    r"on(?:Click|MouseDown|PointerDown|KeyDown)\s*=\s*\{\s*\(?\s*[\w]*\s*\)?\s*=>\s*"
+    r"(?:\{\s*\}|(?:e|ev|event)\.(?:preventDefault|stopPropagation)\s*\(\s*\)\s*|void\s+0|undefined|null)\s*\}",
+    re.IGNORECASE,
+)
+
 NOT_CHECKED = (
-    "NOT CHECKED: whether an onClick that EXISTS actually does anything (a no-op handler "
-    "passes), controls that are not <Button> (raw <button>, DropdownMenuItem, Card onClick), "
-    "whether `asChild` children are themselves wired, and runtime behaviour"
+    "NOT CHECKED: whether a handler that is not one of the recognised no-op shapes actually "
+    "does anything — a body that calls a function which itself returns early still passes; "
+    "controls that are not <Button> (raw <button>, DropdownMenuItem, Card onClick); whether "
+    "`asChild` children are themselves wired; whether a disabled control's stated reason is "
+    "true or its tooltip reachable; and runtime behaviour"
 )
 
 
@@ -95,6 +120,13 @@ def main() -> int:
             scanned += 1
             for line_no, tag in opening_tags(src):
                 low = tag.lower()
+                # A real `disabled` is an inert state and always acceptable.
+                if REAL_DISABLED.search(tag):
+                    continue
+                # Otherwise a handler that provably does nothing is not wiring.
+                if NOOP_HANDLER.search(tag):
+                    findings.append(f"{path.replace(os.sep, '/')}:{line_no} (no-op handler)")
+                    continue
                 if not any(a in low for a in ALLOW):
                     findings.append(f"{path.replace(os.sep, '/')}:{line_no}")
 

@@ -17,6 +17,10 @@
 > did nothing is now wired or honestly disabled; `gates/F-0270-no-dead-controls.py` exits 0 over 298
 > files. Read that section for the part that matters — **23 of the gate's own 39 first-run findings
 > were false positives**, and fixing the gate mattered more than fixing the buttons.
+> **Then it happened again (`F-0310`):** the gate accepted `onClick={e => e.preventDefault()}` as
+> wiring, and accepted `aria-disabled` as `disabled` because it tested a bare substring. Three
+> still-clickable controls shipped through it as "honestly disabled" — the exact blind spot this
+> task's own verdict had declared. Caught by a human reading the diff, not by any check.
 >
 > **MEDIUM — task `T-BRANDMED-0817`, verdict `proved` (oracle).** The thirteen MEDIUM clusters below
 > were prose, not records, so none had an exit test. They are now `F-0253`…`F-0265`, **all closed
@@ -439,10 +443,47 @@ would have killed the `:active` animation the demo exists to show.
 Opened: **`F-0301`** — a parity gap running opposite to `F-0242`. The brand's deal-room overflow
 became a real dispute entry point; a creator still has to leave the deal room entirely to escalate.
 
+### The blind spot this gate declared, and then shipped — `F-0310`
+
+The verdict above listed *"a no-op `onClick` still passes this gate"* as a known blind spot. It was
+not hypothetical. It was live in the same run that declared it, in three places.
+
+The paperclip in `brand-chat.tsx` was reported as "disabled with a reason". The code was:
+
+```jsx
+className="h-10 w-10 shrink-0 opacity-50"
+aria-disabled="true"
+onClick={(e) => e.preventDefault()}
+```
+
+No `disabled` attribute. The control was fully clickable; a no-op handler swallowed the click, and
+`opacity-50` made it *look* inert. The agent that wrote it was not careless — it faithfully copied
+the pre-existing `D-12` pattern in `brand-messages.tsx`. **Two independent gate bugs let it through:**
+
+1. `onClick` was accepted on presence alone, so a handler that provably does nothing counted as
+   wiring.
+2. `disabled` was tested as a bare substring — and **`aria-disabled` contains it**. So
+   `aria-disabled="true"` alone satisfied the gate, despite `aria-disabled` being an announcement to
+   assistive tech that leaves the control fully operable. The two attributes are not interchangeable
+   and the gate treated them as one.
+
+Both are fixed. The gate now requires a real `disabled` (`(?<!-)\bdisabled\b`) and rejects the known
+no-op shapes (`() => {}`, `e.preventDefault()`, `e.stopPropagation()`, `void 0`, `undefined`,
+`null`). Re-running it immediately surfaced a third instance nobody had reported — the emoji button
+at `brand-messages.tsx:1050` — which is now genuinely disabled.
+
+The gate's `NOT CHECKED` line was also corrected: it still advertised "a no-op handler passes" after
+that stopped being true. A gate that misstates its own coverage is the same defect class as a UI that
+misstates what it did.
+
+**What this cost:** three controls shipped through a green gate, a verdict of `proved`, a commit, and
+a push. What caught it was a human re-reading one line of the diff — not any automated check.
+
 ### What this gate does NOT prove
 
-- **A no-op `onClick` passes it.** The "never fake a handler" rule is prose followed by the people
-  writing fixes, not something the gate enforces.
+- ~~**A no-op `onClick` passes it.**~~ **Closed by F-0310** — the gate now rejects the known no-op
+  shapes and requires a real `disabled` rather than `aria-disabled`. A handler that calls a function
+  which itself returns early still passes, so this is narrowed, not eliminated.
 - **Only `<Button>` is in scope.** Raw `<button>`, `DropdownMenuItem`, and Card-level `onClick` are
   invisible to it.
 - **`asChild` is now trusted, not followed.** A trigger whose own handler is missing would pass.
@@ -637,7 +678,8 @@ F-0283, F-0289; **F-0283 open and unresolved***
 F-0249, F-0250 **and F-0248** all closed by gate; opened F-0252, F-0279, F-0282*
 *· dead controls `T-F0289-DEADCTL` — verdict `proved` (oracle, admissible); F-0270, F-0274, F-0276,
 F-0289 closed by `gates/F-0270-no-dead-controls.py`, which exits 0 over 298 files after 23 of its
-own first-run false positives were fixed; opened F-0301*
+own first-run false positives were fixed; opened F-0301. **F-0310** closed against the same gate
+after it was found accepting a no-op `onClick` and treating `aria-disabled` as `disabled`*
 *· MEDIUM remediation `T-BRANDMED-0817` — verdict `proved` (oracle, admissible); F-0253…F-0265 and
 F-0292…F-0296 all closed by gate, 18/18, each falsified against the pre-fix tree **and** a
 constructed wrong fix; two rounds of fresh-context review by priya (`believed`, registry-capped);

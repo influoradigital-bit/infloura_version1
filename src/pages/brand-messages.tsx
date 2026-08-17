@@ -1046,14 +1046,16 @@ export default function BrandMessagesPage() {
                     <div className="absolute bottom-2 right-2 flex items-center gap-1">
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          {/* D-12: no emoji picker exists yet to open. */}
+                          {/* D-12: no emoji picker exists yet to open. F-0289: genuinely
+                              `disabled` — `aria-disabled` alone leaves the control clickable
+                              and needed a no-op handler to swallow the click. */}
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 opacity-50"
+                            className="h-7 w-7"
+                            disabled
                             aria-disabled="true"
                             aria-label="Emoji picker — not available yet"
-                            onClick={(e) => e.preventDefault()}
                           >
                             <Smile className="h-4 w-4" />
                           </Button>

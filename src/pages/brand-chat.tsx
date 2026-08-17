@@ -2539,23 +2539,34 @@ export default function BrandChatPage() {
           {/* Message Input */}
           <div className="border-t border-border p-4">
             <div className="max-w-3xl mx-auto flex items-end gap-2">
-              {/* F-0289: no multipart endpoint or client method exists for deal-room message
-                  attachments yet (same gap `messages` in lib/api.ts has for brand-messages.tsx's
-                  composer) — disabled + honest tooltip rather than a silent no-op button. */}
+              {/* F-0289: deal-room message attachments do not exist — `messages.send` posts only
+                  { content, kind } (api.ts:1881-1884) and DealMessage has no attachment field
+                  (api.ts:1848-1858), with nothing wiring the generic /uploads endpoint into a deal
+                  message.
+
+                  Genuinely `disabled`, inside a focusable span. An earlier pass used the older
+                  opacity-50 + aria-disabled + onClick={e => e.preventDefault()} shape copied from
+                  brand-messages.tsx: that leaves the control enabled as far as the browser is
+                  concerned and relies on JS to swallow a legitimate activation, and — because a
+                  no-op handler is still an `onClick` — it satisfied the dead-control gate for the
+                  wrong reason. The span keeps the tooltip reachable, since a truly disabled element
+                  fires no pointer events. */}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-10 w-10 shrink-0 opacity-50"
-                    aria-disabled="true"
-                    aria-label="Attach file — not available yet"
-                    onClick={(e) => e.preventDefault()}
-                  >
-                    <Paperclip className="h-5 w-5" />
-                  </Button>
+                  <span tabIndex={0} className="inline-flex shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 shrink-0"
+                      disabled
+                      aria-disabled="true"
+                      aria-label="Attach a file"
+                    >
+                      <Paperclip className="h-5 w-5" />
+                    </Button>
+                  </span>
                 </TooltipTrigger>
-                <TooltipContent>File attachments aren't available yet</TooltipContent>
+                <TooltipContent>File attachments aren&apos;t available yet.</TooltipContent>
               </Tooltip>
               <Textarea
                 placeholder="Type a message..."

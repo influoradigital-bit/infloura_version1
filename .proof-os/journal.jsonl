@@ -2190,3 +2190,14 @@
 {"ts": "2026-08-17T22:19:52", "who": "aditya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0304 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0304-blog-frontmatter.py"}
 {"ts": "2026-08-17T22:19:52", "who": "aditya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0308"}
 {"ts": "2026-08-17T22:19:52", "who": "aditya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0308 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0308-blog-prerendered.sh"}
+{"ts": "2026-08-17T22:22:41", "who": "aditya", "what": "read", "file": "tasks/T-BLOG-SEO-0817/*", "task": "T-BLOG-SEO-0817", "stage": "cleanup", "gate_result": "scanned 4 file(s) for failure markers before archive"}
+{"ts": "2026-08-17T22:22:41", "who": "aditya", "what": "delete", "file": "tasks/T-BLOG-SEO-0817/*", "task": "T-BLOG-SEO-0817", "stage": "cleanup", "gate_result": "archived \u2192 _archive/T-BLOG-SEO-0817, purge 2026-09-16"}
+{"ts": "2026-08-17T22:41:56", "who": "priya", "what": "verdict", "file": "influora-api/src/main/java/com/influora/service/ApplicationHistoryService.java", "task": "T-APPHIST-FIX-0817", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-17T22:41:56", "who": "kavya", "what": "ledger-add", "file": "src/components/creator/ApplicationHistoryTimeline.test.tsx:206", "task": "", "stage": "intake", "gate_result": "F-0309"}
+{"ts": "2026-08-17T22:43:15", "who": "ananya", "what": "read", "file": "src/lib/api.ts", "task": "T-F0289-NOOP", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T22:43:15", "who": "ananya", "what": "fix", "file": "src/pages/brand-chat.tsx", "task": "T-F0289-NOOP", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T22:43:16", "who": "ananya", "what": "fix", "file": "src/pages/brand-messages.tsx", "task": "T-F0289-NOOP", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T22:43:16", "who": "ananya", "what": "fix", "file": ".proof-os/gates/F-0270-no-dead-controls.py", "task": "T-F0289-NOOP", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T22:43:17", "who": "human:swapnil", "what": "ledger-add", "file": ".proof-os/gates/F-0270-no-dead-controls.py:29", "task": "", "stage": "intake", "gate_result": "F-0310"}
+{"ts": "2026-08-17T22:43:41", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0310"}
+{"ts": "2026-08-17T22:43:41", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0310 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0270-no-dead-controls.py"}
