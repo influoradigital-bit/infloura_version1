@@ -17,6 +17,14 @@
 > did nothing is now wired or honestly disabled; `gates/F-0270-no-dead-controls.py` exits 0 over 298
 > files. Read that section for the part that matters — **23 of the gate's own 39 first-run findings
 > were false positives**, and fixing the gate mattered more than fixing the buttons.
+>
+> **MEDIUM — task `T-BRANDMED-0817`, verdict `proved` (oracle).** The thirteen MEDIUM clusters below
+> were prose, not records, so none had an exit test. They are now `F-0253`…`F-0265`, **all closed
+> against per-record gates**, each verified by the dispatcher to exit 1 against the pre-fix tree
+> *and* against a constructed wrong fix. Two rounds of fresh-context review by `priya` opened five
+> more (`F-0292`…`F-0296`), including **one fix that was actively wrong on the legal surface** and
+> **one gate that greened its own defect class**. See
+> **[MEDIUM remediation](#medium-remediation--t-brandmed-0817)**. Shipped in `6643cb9` and `f4f4ed6`.
 
 **Question asked:** how does the brand flow actually work for the person using it — do they get
 confused, does it work properly?
@@ -225,7 +233,12 @@ bug, not a money bug, but that is a lead, not a proof.
   do not currently return. It is honestly hidden in live mode rather than falsely absent — but it
   warns nobody today.
 
-## Notable MEDIUM (not ledgered individually)
+## Notable MEDIUM
+
+*Written up as prose because nothing here had a ledger record — which meant nothing here had an exit
+test. **All thirteen are now ledgered `F-0253`…`F-0265` and closed against gates**; see
+[MEDIUM remediation](#medium-remediation--t-brandmed-0817). The list below is preserved unedited as
+the record of what was found, so the line numbers are still the pre-fix ones.*
 
 - **Signature canvas is decorative** — strokes are drawn to a canvas that is never read; only the typed
   name is submitted, under *"legally bound … under the IT Act 2000."*
@@ -437,6 +450,110 @@ became a real dispute entry point; a creator still has to leave the deal room en
 - **"Disabled with a reason" is honest, not necessarily right.** File attachments and creator-side
   escalation are gaps a human may want *built* rather than explained.
 
+## MEDIUM remediation — `T-BRANDMED-0817`
+
+**Scored result (validate.py):** `VALID · 23 rows · alignment 56.5% (capped) · proved 13.0%
+(3/23 scored) · believed 20 · capped 18`.
+
+**Do not read 56.5% as a quality figure.** Eighteen of those rows are gate rows whose evidence *is* a
+deterministic script, and they still cap at `believed` because `ananya` and `vikram` carry
+`may_claim: believed` in the registry — a producer cannot self-certify green behind any oracle. Only
+`meera`'s three rows (`tsc`, `mvn`, `vitest`) render `proved`. `priya`'s sign-off caps at `believed`
+too: a model review is not a deterministic check, and this is the OS refusing to let a person's
+approval render as proof.
+
+Each of the thirteen was re-anchored against live source before any fix — the audit's line numbers
+were read at `358b49e` and had drifted, though every one of the thirteen defects was still real.
+
+| gate | closes | what it asserts |
+|---|---|---|
+| `F-0253-signature-canvas-submitted.sh` | F-0253 | the signature control submits what the copy promises — canvas removed, typed name is the only claim |
+| `F-0254-demo-hint-guarded.sh` | F-0254 | the demo OTP hint renders only when `isApiLive()` is false · 2 specs |
+| `F-0255-consent-links-live.sh` | F-0255 | Terms/Privacy are real focusable links to routes `App.tsx` actually serves · 2 specs |
+| `F-0256-no-mock-campaign-seed.sh` | F-0256 | the invite selector never offers a campaign the server does not have · disabled while in flight |
+| `F-0257-invite-creator-handoff.sh` | F-0257 | the dialog no longer promises a handoff the destination does not consume |
+| `F-0258-no-client-invented-fees.sh` | F-0258 | no client-invented split renders as money; the real fee endpoint is wired |
+| `F-0259-discover-loading-empty.sh` | F-0259 | real loading state, real empty state, and an untouched price filter cannot hide unpriced creators |
+| `F-0260-absent-metric-not-zero.sh` | F-0260 | an absent metric renders absent, never as a measured `0` |
+| `F-0261-command-bar-chord-and-shortcuts.sh` | F-0261 | the chord closes as well as opens · no shortcut is advertised without a handler · 8 destinations verified against the router |
+| `F-0262-settings-persistence-copy.sh` | F-0262 | the disclaimer names only the two controls that genuinely do not persist |
+| `F-0263-no-negative-sla.sh` | F-0263 | a past deadline renders overdue, not negative hours · 3 specs |
+| `F-0264-no-dead-money-controls.sh` | F-0264, **F-0296** | each named control is *unconditionally* disabled and carries a readable reason · wires in its own suite |
+| `F-0265-brand-palette-tokens.sh` | F-0265 | no raw hex in the two files; CTAs on `bg-primary`, dark-mode safe |
+| `F-0292-signature-name-persisted.sh` | F-0292 | the **server** chain — DTO field, entity columns, service threading, controller reads `body.name()`, migration · runs the Java suites |
+| `F-0293-consent-link-preserves-form.sh` | F-0293 | following Terms cannot discard the in-progress registration |
+| `F-0294-server-fee-copy-rendered.sh` | F-0294 | the server's `copy` field reaches the screen; no client sentence stands in for it |
+| `F-0295-absent-audience-surfaces.sh` | F-0295 | an empty audience array renders an absent state, not an empty box |
+
+### The ratio held a third time
+
+Every one of the thirteen fixes passed `tsc` and its own new spec. A fresh-context `priya` found
+**five defects**, one of them a fix that made the original problem *worse*:
+
+- **F-0253 was fixed backwards (`F-0292`).** The producer deleted the decorative canvas and then
+  sharpened the copy to *"By typing your full name … you agree to be legally bound … under the IT Act
+  2000."* But `record ContractSignRequest(String role)` had no `name` field — Jackson dropped it,
+  `ContractController#sign` read only `body.role()`, `recordBrandSignature()` wrote a timestamp, and
+  `Contract` had no column for it. The fix narrowed a two-part overclaim to a one-part overclaim and
+  then made the surviving half *more specific about a value the server discards.* Fixed for real in
+  `f4f4ed6`: the name now travels, lands in `brand_signer_name`/`creator_signer_name`, and comes back
+  on the response. The creator path was threaded too — it had ignored the body entirely.
+- **F-0255 introduced a new defect (`F-0293`).** Plain `<a href="/terms">` with no `target` is a full
+  document load in this SPA, and the links sit in the step-2 block — reading the Terms discarded the
+  whole registration. The fix had copied the identical shape from `creator-register.tsx:280`.
+- **F-0258 fetched the server's authoritative copy and ignored it (`F-0294`)**, substituting its own
+  *"charged on real spend"* — a claim `BrandPlatformFeeService` does not make — and branching on a
+  `source` value the service never constructs.
+- **F-0260 left two more absent-metric surfaces (`F-0295`)** — `ageGroups` and `topCities` — three
+  lines from the one it fixed.
+
+### The finding that matters most — `F-0296`
+
+The second review found **no product defects** and instead demonstrated, by construction, that a gate
+was worthless. Priya set `String signerName = null;` in `ContractController#sign` — record F-0292
+verbatim, with the DTO, entity, migration and service threading all still in place — and
+`F-0292-signature-name-persisted.sh` printed **`VERDICT: aligned (proved)`, exit 0**. Its only
+controller leg checked that the string `"BRAND"` still appeared.
+
+The same class had already appeared once in this batch: `F-0264`'s first gate grepped a ±10-line
+window for the bare token `disabled`, and the pre-fix button was *already* `disabled={loading}` — so
+a fix that kept the conditional and added a tooltip would have gone green while the control stayed
+clickable.
+
+**A gate that only fails against the pre-fix code is half a gate.** Both were hardened until a
+*constructed wrong fix* fails them, and both now run the passing suite that already existed and that
+neither had been invoking. The dispatcher re-ran Priya's injection against the hardened gate and
+observed exit 1 directly, restoring the file byte-identically afterwards.
+
+`promote.py --recurrence` now reports **`false-green-gate-blind-spot` at ×2 with no gate of its own**
+— the one open process item from this task. Both instances were caught by a reviewer and repaired by
+hand; nothing in the repo would catch a third.
+
+### What the gates do NOT prove
+
+- **Nothing was rendered.** All seventeen are static checks plus vitest; no browser, no live backend,
+  and there is still no brand E2E anywhere in this repo.
+- **The migration has never been applied.** No MySQL here, so Flyway never ran `V20260817130000`; the
+  dialect verdict is read off the SQL against `V10`'s DDL, and the Java suites mock the repository.
+- **`F-0295` only exercises the absent path.** A fix that printed "Not available" unconditionally
+  would pass both the gate and the spec.
+- **Two controls in `F-0264`'s class were out of scope** — deal-room "Continue Chat" and the message
+  attach button. `deal-room-dashboard.tsx` was carrying the in-flight `F-0239` work, so it was left
+  alone. Exact fixes are recorded in the ledger: `onClick={() => setActiveTab('messages')}` for the
+  first, disable-with-reason for the second.
+- **Nothing renders the new signer names.** `brandSignerName`/`creatorSignerName` come back on the
+  response and no frontend surface reads them.
+- **`eslint` and `build.node.sh` remain unavailable, not green** (`F-0229`), declared as skips.
+
+### A note on the commits
+
+`ContractService.java`, `ContractServiceTest.java` and `EscrowServiceTest.java` carried both this
+task's F-0292 change and a concurrent session's in-flight ApplicationHistory work, whose supporting
+classes are still untracked. `f4f4ed6` therefore contains a **filtered** version of those three —
+HEAD plus only the F-0292 hunks — built and verified out of tree, then staged as blobs so the other
+session's working copies were never written to. The hunk filter was wrong twice and the *compiler*
+caught both times; neither would have been visible to review by eye.
+
 ## Why the audit's findings score nothing (and the review's now do)
 
 `independence.py` measures kavya at a **0.0% catch rate (0 of 21 discoverable failures flagged
@@ -501,6 +618,16 @@ fixes made in response. Backup of the pre-change registry: `.proof-os/registry.p
   captured, stored or returned anywhere in the platform, while both parties e-sign under a statutory
   binding notice. Fixing it is a product decision, not a code change.
 
+### Added after MEDIUM remediation
+
+- **A gate greened its own defect class, twice** (`F-0296`). Assume it is true of gates in this
+  document that were never tested against a constructed wrong fix — which is most of them.
+- **`tsc` was tree-wide clean at the close of this task** (0 errors) and the full suite passed
+  (100 files / 632 tests), but the concurrent session broke and then fixed `mvn` test-compile
+  underneath this run. Both readings are recorded; the final one is exit 0.
+- **The repo moved four commits under this task.** One intermediate reading in this session was
+  wrong because of it. Line numbers cited in the MEDIUM remediation section were true at `6643cb9`.
+
 ---
 *proof-os 0.4.2 · audit `T-BRANDUX-0817` — verdict `echo` (gated, admissible) · ledger F-0235…F-0250*
 *· CRITICAL remediation `T-CRIT9-0817` — verdict `believed` (priya, fresh-context, gated);
@@ -511,3 +638,8 @@ F-0249, F-0250 **and F-0248** all closed by gate; opened F-0252, F-0279, F-0282*
 *· dead controls `T-F0289-DEADCTL` — verdict `proved` (oracle, admissible); F-0270, F-0274, F-0276,
 F-0289 closed by `gates/F-0270-no-dead-controls.py`, which exits 0 over 298 files after 23 of its
 own first-run false positives were fixed; opened F-0301*
+*· MEDIUM remediation `T-BRANDMED-0817` — verdict `proved` (oracle, admissible); F-0253…F-0265 and
+F-0292…F-0296 all closed by gate, 18/18, each falsified against the pre-fix tree **and** a
+constructed wrong fix; two rounds of fresh-context review by priya (`believed`, registry-capped);
+shipped in `6643cb9` + `f4f4ed6`; **`false-green-gate-blind-spot` open at recurrence ×2 with no
+gate***
