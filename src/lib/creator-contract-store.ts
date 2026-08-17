@@ -103,7 +103,16 @@ export function dealHasContract(
   return ['contracted', 'in_progress', 'review', 'completed'].includes(dealStatus ?? '');
 }
 
-/** After creator signs, escrow funds and contract becomes active. */
+/**
+ * The CONTRACT status after the creator signs: 'active' means both signatures are in
+ * (`Contract#advanceIfFullySigned`), and nothing more.
+ *
+ * F-0226 — this used to read "escrow funds and contract becomes active", which was the same
+ * false premise the creator-facing copy carried. Signing reaches `CollaborationStatus.CONTRACTED`
+ * (`CollaborationLifecycleService#onContractFullySigned`); escrow funding is a separate, later,
+ * brand-initiated action, and only `#onEscrowFunded` reaches IN_PROGRESS — which is what gates
+ * the creator's submit control. A contract status of 'active' says nothing about money.
+ */
 export function statusAfterCreatorSign(): DealContractStatus {
   return 'active';
 }

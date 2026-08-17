@@ -127,7 +127,12 @@ export function CreatorDealContractTab({
       const result = await signContract(contractId, 'creator', trimmedName);
       if (result.success) {
         onStatusChange(statusAfterCreatorSign());
-        toast({ title: 'Contract signed', description: 'Escrow is funded. You can start deliverables.' });
+        // F-0226: signing reaches CONTRACTED only; IN_PROGRESS comes from CollaborationLifecycleService.onEscrowFunded
+        // when the brand funds a milestone — a separate action. Submit control is gated on in_progress.
+        toast({
+          title: 'Contract signed',
+          description: 'Waiting for the brand to fund escrow. You’ll be notified when you can start work.',
+        });
         setSignerName('');
       }
     } catch (err) {
@@ -151,7 +156,7 @@ export function CreatorDealContractTab({
               <div>
                 <p className="font-medium text-sm">Your turn to sign</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {brandName} has signed. Review the PDF, then sign to start deliverables.
+                  {brandName} has signed. Review the PDF, then sign to proceed.
                 </p>
               </div>
             </CardContent>

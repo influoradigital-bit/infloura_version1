@@ -49,7 +49,8 @@ export function CreatorContractPanel({
     if (status === 'generated') return 'Awaiting Brand Signature';
     if (status === 'brand_signed') return 'Brand Signed - Your Turn to Sign';
     if (status === 'creator_signed') return 'Both Signed - Active';
-    if (status === 'active') return 'Contract Active & Funded';
+    // F-0226: contract ACTIVE means both signed, not that escrow is funded (separate step).
+    if (status === 'active') return 'Both Signed - Awaiting Escrow';
     return 'Unknown Status';
   };
 
@@ -97,9 +98,11 @@ export function CreatorContractPanel({
       if (result.success) {
         const next = statusAfterCreatorSign();
         onStatusChange(next);
+        // F-0226: signing reaches CONTRACTED only; IN_PROGRESS comes from CollaborationLifecycleService.onEscrowFunded
+        // when the brand funds a milestone — a separate action. Submit control is gated on in_progress.
         toast({
           title: 'Contract signed',
-          description: 'Escrow is funded. You can start on deliverables.',
+          description: 'Waiting for the brand to fund escrow. You’ll be notified when you can start work.',
         });
         setSignerName('');
         onOpenChange(false);
@@ -145,7 +148,7 @@ export function CreatorContractPanel({
               )}
               {status === 'active' && (
                 <p className="text-sm text-blue-700 mt-1">
-                  Both parties have signed. Escrow is funded and you can start working on deliverables.
+                  Both parties have signed. Waiting for the brand to fund escrow before you can start work.
                 </p>
               )}
             </div>

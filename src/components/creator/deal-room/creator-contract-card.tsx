@@ -47,7 +47,8 @@ export function CreatorContractCard({
       case 'creator_signed':
         return 'Both Signed';
       case 'active':
-        return 'Active & Funded';
+        // F-0226: contract ACTIVE means both signed, not that escrow is funded (separate step).
+        return 'Both Signed';
       default:
         return 'Unknown';
     }
@@ -159,22 +160,15 @@ export function CreatorContractCard({
           </div>
         </div>
 
-        {/* Escrow Status */}
-        {status === 'active' && (
-          <div className="p-3 bg-stage-approved border border-stage-approved-border rounded-lg flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-stage-approved-fg flex-shrink-0" />
-            <div>
-              <p className="font-semibold text-sm text-green-900">
-                Escrow Funded
-              </p>
-              <p className="text-xs text-stage-approved-fg">
-                {meta?.amount != null && Number.isFinite(meta.amount)
-                  ? `${formatINR(meta.amount)} secured in escrow`
-                  : 'Escrow amount not yet available'}
-              </p>
-            </div>
-          </div>
-        )}
+        {/* F-0226: an "Escrow Status" block stood here and asserted, on status === 'active'
+            alone, that the money was already held. Contract ACTIVE means both parties signed
+            and nothing more — the collaboration reaches CONTRACTED there, and only
+            CollaborationLifecycleService.onEscrowFunded (brand funds a milestone, a separate
+            and later action) reaches IN_PROGRESS, which is what gates the creator's submit
+            control. This card receives no escrow state at all, so the block asserted
+            something it could not know and told creators to start work that was still
+            blocked. Do not reinstate it without real escrow data on the event.
+            Gate: .proof-os/gates/F-0226-no-false-escrow-copy.sh */}
 
         {/* Status-specific Message */}
         {status === 'brand_signed' && (
