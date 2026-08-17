@@ -4,6 +4,11 @@ import com.influora.common.ApiException;
 import com.influora.common.JsonLists;
 import com.influora.common.PageMeta;
 import com.influora.common.Ulids;
+import com.influora.repository.DealMessageRepository;
+import com.influora.domain.enums.DealSenderType;
+import com.influora.domain.enums.DealMessageKind;
+import com.influora.domain.entity.DealMessage;
+import com.influora.common.TextSanitizer;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
@@ -57,6 +62,8 @@ public class CreatorCampaignService {
     private final CreatorContextService creatorContext;
     private final BrandContextService brandContext;
     private final ApplicationEventPublisher eventPublisher;
+    /** F-0290 — the deal-room timeline an application must appear on. */
+    private final DealMessageRepository dealMessageRepository;
     /** F-0225 — the shared "may this pair start again?" decision. See the service's javadoc. */
     private final CollaborationReviveService collaborationReviveService;
 
@@ -67,7 +74,8 @@ public class CreatorCampaignService {
             CreatorContextService creatorContext,
             BrandContextService brandContext,
             ApplicationEventPublisher eventPublisher,
-            CollaborationReviveService collaborationReviveService) {
+            CollaborationReviveService collaborationReviveService,
+            DealMessageRepository dealMessageRepository) {
         this.campaignRepository = campaignRepository;
         this.collaborationRepository = collaborationRepository;
         this.workspaceRepository = workspaceRepository;
@@ -75,6 +83,7 @@ public class CreatorCampaignService {
         this.brandContext = brandContext;
         this.eventPublisher = eventPublisher;
         this.collaborationReviveService = collaborationReviveService;
+        this.dealMessageRepository = dealMessageRepository;
     }
 
     public record PagedCreatorCampaigns(List<CreatorCampaignListItem> items, PageMeta meta) {}
@@ -196,6 +205,7 @@ public class CreatorCampaignService {
                         "ALREADY_APPLIED",
                         "You have already applied to this campaign");
         if (prior != null) {
+            recordApplicationOnTimeline(prior, req != null ? req.message() : null);
             try {
                 notifyApplicationCreated(campaign, creator, prior);
             } catch (RuntimeException e) {
@@ -225,6 +235,7 @@ public class CreatorCampaignService {
         // W3-1 — #9 "creator applies to campaign" (07-NOTIFICATION-SYSTEM-SPEC.md §3.2). Notifies
         // the brand a new application arrived. Best-effort — a lookup failure here must never fail
         // the application itself, which has already fully succeeded above.
+        recordApplicationOnTimeline(collaboration, req != null ? req.message() : null);
         try {
             notifyApplicationCreated(campaign, creator, collaboration);
         } catch (RuntimeException e) {
@@ -237,6 +248,57 @@ public class CreatorCampaignService {
 
         return new ApplyResponse(
                 collaboration.getId(), collaboration.getStatus().name(), collaboration.getAppliedAt());
+    }
+
+    /**
+     * F-0290 — record the application as a visible event in the deal room.
+     *
+     * <p>Applying created a {@code Collaboration} and nothing else: no {@code DealMessage} row at
+     * all. Both parties then opened a deal room with an empty thread — the creator had no record
+     * of what they had asked for or when, and the brand saw a deal appear with no request behind
+     * it. Worse, when the brand later accepted, {@code DealService#doAccept} appended "Brand
+     * accepted the proposal" — a line referring to a proposal card that had never existed.
+     *
+     * <p>Two rows, deliberately, because they are two different things: a {@code system} row is
+     * the EVENT (an application happened, at this moment, and it survives a re-application), and
+     * the creator's optional note is a {@code text} row genuinely authored BY the creator, so it
+     * renders on their side of the thread and the brand can reply to it in place. Folding the note
+     * into the system line would attribute the creator's words to the platform.
+     *
+     * <p>Best-effort: a failure here must not roll back an application that already succeeded,
+     * for the same reason the notification below is best-effort. An application with no timeline
+     * is the bug being fixed; an application that 500s because its timeline could not be written
+     * is worse.
+     */
+    private void recordApplicationOnTimeline(Collaboration collaboration, String message) {
+        try {
+            dealMessageRepository.save(
+                    DealMessage.create(
+                            Ulids.newUlid(),
+                            collaboration.getId(),
+                            DealMessageKind.system,
+                            "system",
+                            DealSenderType.system,
+                            "Creator applied to this campaign",
+                            null));
+            if (message != null && !message.isBlank()) {
+                dealMessageRepository.save(
+                        DealMessage.create(
+                                Ulids.newUlid(),
+                                collaboration.getId(),
+                                DealMessageKind.text,
+                                collaboration.getCreatorId(),
+                                DealSenderType.creator,
+                                TextSanitizer.sanitizePlainText(message),
+                                null));
+            }
+        } catch (RuntimeException e) {
+            log.error(
+                    "Could not write the application timeline for collaboration {} — the application"
+                            + " itself already succeeded",
+                    collaboration.getId(),
+                    e);
+        }
     }
 
     private void notifyApplicationCreated(

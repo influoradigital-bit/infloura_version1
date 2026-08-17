@@ -68,6 +68,7 @@ class CreatorCampaignServiceTest {
     @Mock private com.influora.repository.ContractRepository contractRepository;
     @Mock private com.influora.repository.EscrowHoldRepository escrowHoldRepository;
     @Mock private com.influora.repository.ShipmentRepository shipmentRepository;
+    @Mock private com.influora.repository.DealMessageRepository dealMessageRepository;
 
     private CreatorCampaignService service;
 
@@ -84,7 +85,8 @@ class CreatorCampaignServiceTest {
                         creatorContext,
                         brandContext,
                         eventPublisher,
-                        reviveService);
+                        reviveService,
+                        dealMessageRepository);
         CreatorProfile creator = CreatorProfile.newForUser("profile1", CREATOR_USER_ID, "Test Creator");
         when(creatorContext.requireCreatorProfile(principal)).thenReturn(creator);
     }
@@ -122,6 +124,85 @@ class CreatorCampaignServiceTest {
 
         assertEquals("APPLIED", response.status());
         verify(collaborationRepository, org.mockito.Mockito.times(1)).save(any(Collaboration.class));
+    }
+
+    @Test
+    @DisplayName("F-0290: applying writes the event AND the creator's note onto the deal timeline")
+    void testApplyRecordsTimeline() {
+        Campaign campaign = activeCampaign();
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(java.util.Optional.of(campaign));
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(java.util.Optional.empty());
+        when(collaborationRepository.save(any(Collaboration.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.apply(principal, CAMPAIGN_ID, new ApplyRequest("I would love this brief"));
+
+        org.mockito.ArgumentCaptor<com.influora.domain.entity.DealMessage> saved =
+                org.mockito.ArgumentCaptor.forClass(com.influora.domain.entity.DealMessage.class);
+        verify(dealMessageRepository, org.mockito.Mockito.times(2)).save(saved.capture());
+
+        var rows = saved.getAllValues();
+        // The EVENT — so the room is never empty and the brand can see a request arrived.
+        assertEquals(com.influora.domain.enums.DealMessageKind.system, rows.get(0).getKind());
+        assertEquals(com.influora.domain.enums.DealSenderType.system, rows.get(0).getSenderType());
+        // The creator's own words, attributed to the CREATOR — not folded into the system line,
+        // so it renders on their side of the thread and the brand can reply to it.
+        assertEquals(com.influora.domain.enums.DealMessageKind.text, rows.get(1).getKind());
+        assertEquals(com.influora.domain.enums.DealSenderType.creator, rows.get(1).getSenderType());
+        assertEquals(CREATOR_USER_ID, rows.get(1).getSenderId());
+        assertEquals("I would love this brief", rows.get(1).getContent());
+    }
+
+    @Test
+    @DisplayName("F-0290: an application with no note still records the event, and invents no message")
+    void testApplyWithoutNoteRecordsEventOnly() {
+        Campaign campaign = activeCampaign();
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(java.util.Optional.of(campaign));
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(java.util.Optional.empty());
+        when(collaborationRepository.save(any(Collaboration.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.apply(principal, CAMPAIGN_ID, new ApplyRequest(null));
+
+        // Exactly one row: the event. Fabricating a creator "message" they never wrote would be
+        // the same class of defect as the escrow copy F-0226 removed.
+        verify(dealMessageRepository, org.mockito.Mockito.times(1))
+                .save(any(com.influora.domain.entity.DealMessage.class));
+    }
+
+    @Test
+    @DisplayName("F-0290: the application's note is sanitised on the timeline, not just on the row")
+    void testApplyTimelineNoteIsSanitised() {
+        Campaign campaign = activeCampaign();
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(java.util.Optional.of(campaign));
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(java.util.Optional.empty());
+        when(collaborationRepository.save(any(Collaboration.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.apply(principal, CAMPAIGN_ID, new ApplyRequest("<script>alert(1)</script>hello"));
+
+        org.mockito.ArgumentCaptor<com.influora.domain.entity.DealMessage> saved =
+                org.mockito.ArgumentCaptor.forClass(com.influora.domain.entity.DealMessage.class);
+        verify(dealMessageRepository, org.mockito.Mockito.times(2)).save(saved.capture());
+        assertEquals("hello", saved.getAllValues().get(1).getContent());
+    }
+
+    @Test
+    @DisplayName("F-0290: a timeline write failure never rolls back an application that succeeded")
+    void testApplySurvivesTimelineFailure() {
+        Campaign campaign = activeCampaign();
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(java.util.Optional.of(campaign));
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(java.util.Optional.empty());
+        when(collaborationRepository.save(any(Collaboration.class))).thenAnswer(inv -> inv.getArgument(0));
+        doThrow(new RuntimeException("timeline down"))
+                .when(dealMessageRepository)
+                .save(any(com.influora.domain.entity.DealMessage.class));
+
+        // An application with no timeline is the bug being fixed; an application that 500s because
+        // its timeline could not be written is worse.
+        ApplyResponse response = service.apply(principal, CAMPAIGN_ID, new ApplyRequest("hi"));
+        assertEquals("APPLIED", response.status());
     }
 
     @Test
