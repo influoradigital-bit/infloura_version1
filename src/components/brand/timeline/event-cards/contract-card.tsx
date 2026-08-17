@@ -107,7 +107,11 @@ export function ContractEventCard({
             View Contract
           </Button>
           {status === 'generated' && (
-            <Button size="sm" className="flex-1 gap-1">
+            // F-0289: the real, working sign flow (name input -> signContract -> status update)
+            // already lives in ContractPanel below — it just wasn't reachable from this button.
+            // Opening the same panel "View Contract" already opens wires Sign to that real
+            // action instead of leaving it a no-op primary button.
+            <Button size="sm" className="flex-1 gap-1" onClick={() => setPanelOpen(true)}>
               <PenTool className="h-3 w-3" />
               Sign
             </Button>

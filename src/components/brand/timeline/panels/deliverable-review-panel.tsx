@@ -9,11 +9,17 @@ import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { TimelineEvent } from '@/lib/types';
 import { deliverables as deliverablesApi, ApiError } from '@/lib/api';
 import {
   Play, MessageSquare, CheckCircle2, AlertCircle, Upload,
-  FileIcon, X,
+  FileIcon, X, Download,
 } from 'lucide-react';
 
 /** Emitted after a brand approves or requests revision on a deliverable, so the
@@ -392,9 +398,37 @@ export function DeliverableReviewPanel({
             )}
 
             {status === 'approved' && (
-              <Button variant="outline" className="w-full">
-                Download Approved Version
-              </Button>
+              meta?.submittedUrl ? (
+                // F-0289: `submittedUrl` is the real R2 link to the approved file — the same
+                // URL the video player above renders from. Opening it is the same pattern
+                // deal-contract-tab.tsx uses for its own PDF download (window.open on a real
+                // presigned URL rather than fabricating a client-side file).
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => window.open(meta.submittedUrl, '_blank', 'noopener,noreferrer')}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Approved Version
+                </Button>
+              ) : (
+                // No file URL on this event — there is nothing to download. Disabled with a
+                // stated reason instead of a button that opens nothing (mirrors the Export /
+                // Form 16A pattern in src/pages/brand-wallet.tsx).
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span tabIndex={0} className="inline-flex w-full">
+                        <Button variant="outline" className="w-full" disabled aria-disabled="true">
+                          <Download className="h-4 w-4 mr-2" />
+                          Download Approved Version
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>No file is attached to this deliverable yet.</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )
             )}
           </div>
         </div>

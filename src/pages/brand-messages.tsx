@@ -925,7 +925,25 @@ export default function BrandMessagesPage() {
                                   </p>
                                 </div>
                               </div>
-                              <Button variant="outline" size="sm" className="w-full">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full"
+                                onClick={() => {
+                                  // F-0289: this demo-mode card carries no live contract id in
+                                  // its metadata today (no fixture sets one), but the real
+                                  // /brand/contracts route already deep-links via ?contract=
+                                  // (contracts-and-deliverables.tsx) — pass it through when a
+                                  // future card does, and land on the real contracts list
+                                  // otherwise, rather than doing nothing.
+                                  const contractId = message.metadata?.contractId;
+                                  navigate(
+                                    typeof contractId === 'string' && contractId
+                                      ? `/brand/contracts?contract=${encodeURIComponent(contractId)}`
+                                      : '/brand/contracts',
+                                  );
+                                }}
+                              >
                                 View Contract
                               </Button>
                             </div>

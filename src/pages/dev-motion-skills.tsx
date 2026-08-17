@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { CanvasFallback } from '@/components/3d';
@@ -36,6 +36,12 @@ const demoCards = [
 /** Dev-only page to verify Framer Motion + 3D skills — not linked in production nav */
 export default function DevMotionSkillsPage() {
   useSmoothScroll(true);
+  // F-0289 — this card exists to verify the Button component's built-in `active:scale-[0.97]`
+  // press animation (buttonVariants in ui/button.tsx). A `disabled` button never receives
+  // pointer events, so disabling it would kill the exact interaction it's here to demo. Wired
+  // to a real, visible counter (via CountUp, matching the other two demo stats on this page)
+  // instead of a no-op, so the click genuinely does something rather than silently nothing.
+  const [pressCount, setPressCount] = useState(0);
 
   if (!import.meta.env.DEV) {
     return (
@@ -121,8 +127,11 @@ export default function DevMotionSkillsPage() {
             </Card>
             <Card>
               <CardContent className="pt-6">
-                <p className="text-sm text-muted-foreground">Emil button</p>
-                <Button className="mt-2">Press me — scale 0.97</Button>
+                <p className="text-sm text-muted-foreground">Emil button — presses</p>
+                <CountUp value={pressCount} formatFn={(n) => Math.round(n).toString()} className="text-2xl font-bold" />
+                <Button className="mt-2" onClick={() => setPressCount((n) => n + 1)}>
+                  Press me — scale 0.97
+                </Button>
               </CardContent>
             </Card>
           </div>

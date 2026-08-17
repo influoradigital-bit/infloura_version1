@@ -3,6 +3,8 @@
 
 origin failures: F-0270, F-0274, F-0276 (class: dead-control) — recurred x3, blocked by
 scripts/promote.py --recurrence.
+Also closes F-0289 (dead-control-repair): the live instances this gate first reported are
+now fixed, so it exits 0 rather than merely detecting them.
 
 A control that renders enabled and does nothing is worse than a missing one: the user
 believes the product supports the action, clicks, and gets silence. This class produced a
@@ -23,7 +25,18 @@ import re
 import sys
 
 ALLOW = ("onclick", "aschild", 'type="submit"', "type='submit'", "disabled",
-         "form=", "onmousedown", "onpointerdown", "onkeydown")
+         "form=", "onmousedown", "onpointerdown", "onkeydown",
+         # A wrapper that spreads its props forwards whatever handler the caller passed
+         # (MagneticButton, the ui/ primitives). Flagging these produced 4 of the first
+         # run's 39 hits and none was a dead control.
+         "{...props}", "{...rest}", "{...buttonprops}")
+
+# A <Button> nested directly inside a Radix `asChild` trigger IS wired: the trigger clones
+# the child and injects its own handler, so the child carries no onClick by design. The
+# first version of this gate inspected only the Button's own tag and therefore reported 21
+# correctly-wired controls out of 39 — a false-positive rate that would have trained every
+# reader to ignore it. See F-0289.
+TRIGGER_ASCHILD = re.compile(r"asChild\s*>\s*$")
 
 NOT_CHECKED = (
     "NOT CHECKED: whether an onClick that EXISTS actually does anything (a no-op handler "
@@ -33,9 +46,15 @@ NOT_CHECKED = (
 
 
 def opening_tags(src: str):
-    """Yield (line_no, tag_text) for each <Button ...> opening tag, spanning lines."""
+    """Yield (line_no, tag_text) for each <Button ...> opening tag, spanning lines.
+
+    A Button whose immediately-preceding markup is an `asChild` trigger is skipped: the
+    trigger injects the handler, so the child is wired even with a bare tag.
+    """
     for m in re.finditer(r"<Button\b", src):
         i, depth, j = m.start(), 0, m.start()
+        if TRIGGER_ASCHILD.search(src[:i]):
+            continue
         while j < len(src):
             c = src[j]
             if c == "{":

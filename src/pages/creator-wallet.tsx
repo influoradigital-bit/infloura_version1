@@ -338,6 +338,11 @@ export default function CreatorWalletPage() {
   const [addingMethod, setAddingMethod] = React.useState(false);
   const [addMethodError, setAddMethodError] = React.useState<string | null>(null);
   const [settingPrimaryId, setSettingPrimaryId] = React.useState<string | null>(null);
+  // F-0289 — mock mode's Payout Settings cards are static demo data (no facade call, so the
+  // Withdraw dialog never shows a fabricated destination for real money — see the
+  // "never a hardcoded VPA" comment below). "Set Primary" still has to be a real, visible
+  // action rather than a dead button, so it flips this local flag instead of hitting the API.
+  const [mockPrimaryMethod, setMockPrimaryMethod] = React.useState<'upi' | 'bank'>('upi');
 
   // Wallet balance + transactions — DISPLAY-only live data behind isApiLive(),
   // mock as fallback. Does not touch the withdraw mutation (see notes above).
@@ -896,8 +901,10 @@ export default function CreatorWalletPage() {
           <div className="space-y-4">
             {!liveApi ? (
               <>
-                {/* Mock mode — static demo cards, no facade call. */}
-                <Card className="border-violet-200 bg-violet-50">
+                {/* Mock mode — static demo cards, no facade call. "Set Primary" toggles
+                    mockPrimaryMethod for real (see comment on that state above) rather than
+                    doing nothing. */}
+                <Card className={mockPrimaryMethod === 'upi' ? 'border-violet-200 bg-violet-50' : undefined}>
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -909,11 +916,17 @@ export default function CreatorWalletPage() {
                           <p className="text-sm text-muted-foreground">priya@okaxis</p>
                         </div>
                       </div>
-                      <Badge>Primary</Badge>
+                      {mockPrimaryMethod === 'upi' ? (
+                        <Badge>Primary</Badge>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => setMockPrimaryMethod('upi')}>
+                          Set Primary
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
-                <Card>
+                <Card className={mockPrimaryMethod === 'bank' ? 'border-violet-200 bg-violet-50' : undefined}>
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -925,7 +938,13 @@ export default function CreatorWalletPage() {
                           <p className="text-sm text-muted-foreground">HDFC ****4532</p>
                         </div>
                       </div>
-                      <Button variant="outline" size="sm">Set Primary</Button>
+                      {mockPrimaryMethod === 'bank' ? (
+                        <Badge>Primary</Badge>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => setMockPrimaryMethod('bank')}>
+                          Set Primary
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

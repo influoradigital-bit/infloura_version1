@@ -65,7 +65,9 @@ interface Contract {
   creatorName: string;
   creatorHandle: string;
   creatorImage: string;
-  status: 'draft' | 'pending_review' | 'pending_signature' | 'signed' | 'expired' | 'disputed';
+  // F-0267: 'pending_review' removed — mapApiContractStatus can never emit it (see B37
+  // mapping below) and, after this fix, nothing in this file gates on or produces it either.
+  status: 'draft' | 'pending_signature' | 'signed' | 'expired' | 'disputed';
   brandSigned: boolean;
   creatorSigned: boolean;
   signedDate?: string;
@@ -279,7 +281,11 @@ const mockContracts: Contract[] = [
     creatorName: 'Priya Sharma',
     creatorHandle: '@priyatechreview',
     creatorImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-    status: 'pending_review',
+    // F-0269: was 'pending_review', a status no live control gates on any more after
+    // F-0267 — unsignable in demo mode. 'draft' matches the real brand-first lifecycle
+    // (unsigned, not yet sent) and is now a reachable Sign-Contract state (see the gate
+    // in the Contract tab below).
+    status: 'draft',
     brandSigned: false,
     creatorSigned: false,
     expiryDate: '2024-07-31',
@@ -333,7 +339,7 @@ interface ApiContractRow {
   /**
    * Raw backend ContractStatus (src/lib/types.ts) — DRAFT/PENDING_SIGNATURES/
    * ACTIVE/COMPLETED/TERMINATED/DISPUTED. NOT the same vocabulary as this
-   * page's UI-only Contract['status'] (draft/pending_review/pending_signature/
+   * page's UI-only Contract['status'] (draft/pending_signature/
    * signed/expired/disputed). Must go through mapApiContractStatus() before
    * use — see B37.
    */
@@ -542,7 +548,7 @@ function withDeliverableStatus(
 
 const statusConfig = {
   draft: { label: 'Draft', color: 'border bg-stage-draft text-stage-draft-fg border-stage-draft-border', icon: PenTool },
-  pending_review: { label: 'Pending Review', color: 'border bg-stage-review text-stage-review-fg border-stage-review-border', icon: Eye },
+  // F-0267: 'pending_review' entry removed with the type member — see Contract['status'].
   pending_signature: { label: 'Awaiting Signature', color: 'border bg-stage-contracted text-stage-contracted-fg border-stage-contracted-border', icon: FileSignature },
   signed: { label: 'Active', color: 'border bg-stage-approved text-stage-approved-fg border-stage-approved-border', icon: CheckCircle2 },
   expired: { label: 'Expired', color: 'border bg-stage-expired text-stage-expired-fg border-stage-expired-border', icon: AlertCircle },
@@ -868,7 +874,8 @@ export function ContractsAndDeliverables() {
               <option value="all">All Status</option>
               <option value="signed">Active</option>
               <option value="pending_signature">Awaiting Signature</option>
-              <option value="pending_review">Pending Review</option>
+              {/* F-0267: 'pending_review' option removed — no live or demo record can ever
+                  carry that status any more (see Contract['status']), so it could never match. */}
               <option value="draft">Draft</option>
             </select>
           </div>
@@ -1231,7 +1238,16 @@ export function ContractsAndDeliverables() {
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="font-semibold">Contract Terms</h3>
-                        {selectedContract.status === 'pending_review' && (
+                        {/* F-0267: was gated on 'pending_review', a status mapApiContractStatus
+                            can never emit — the badge was dead in both live and demo mode. There
+                            is no live signal for "unresolved comments" (clauses/comments aren't
+                            returned by the live contracts endpoints yet, per the empty-state note
+                            below), so this now reads the actual clause comment data instead of a
+                            phantom status: true whenever any clause has an unresolved comment,
+                            honestly false (hidden) in live mode until that data exists. */}
+                        {selectedContract.clauses.some((clause) =>
+                          clause.comments.some((comment) => !comment.resolved),
+                        ) && (
                           <Badge variant="outline" className="bg-amber-500/10 text-amber-400">
                             Comments need resolution before signing
                           </Badge>
@@ -1291,17 +1307,27 @@ export function ContractsAndDeliverables() {
                         </Card>
                       )}
 
-                      {/* F-0248: this used to gate on 'pending_review', a UI-only status
-                          literal `mapApiContractStatus` can never emit (see B37 mapping
-                          above) — so the Sign button, dialog, signature canvas and legal
-                          notice were unreachable dead code in live mode. The backend
-                          status while a contract is executable-but-not-fully-signed is
-                          `pending_signature`; `brandSigned` (sourced directly from
-                          `rec.brandSignedAt` in adaptContractRecord, independent of the
-                          status string) distinguishes "brand still needs to sign" from
-                          "brand already signed, waiting on the creator" (handled by the
-                          card just above this button). */}
-                      {selectedContract.status === 'pending_signature' && !selectedContract.brandSigned && (
+                      {/* F-0248 (first fix, incomplete) gated this on 'pending_signature' only.
+                          F-0267: that missed the common brand-first path — Contract.builder()
+                          defaults a freshly-generated contract to DRAFT
+                          (influora-api Contract.java:232) and it only advances to
+                          PENDING_SIGNATURES once *someone* signs (advanceIfFullySigned,
+                          Contract.java:189-195, called from both recordBrandSignature and
+                          recordCreatorSignature). So a brand opening a contract it just
+                          generated saw 'draft' and had no Sign button at all. Verified against
+                          ContractService#recordSignature / #doRecordSignature
+                          (ContractService.java:526-678) and ContractController#sign
+                          (ContractController.java:78-113): neither has any status guard — a
+                          DRAFT contract is fully signable server-side, so gating the button out
+                          for DRAFT was a frontend-only restriction with no backend basis. The
+                          gate now covers both statuses a not-yet-brand-signed contract can be
+                          in; `brandSigned` (sourced from `rec.brandSignedAt`, independent of the
+                          status string) still distinguishes "brand still needs to sign" from
+                          "brand already signed, waiting on the creator" (handled by the card
+                          just above this button). */}
+                      {(selectedContract.status === 'draft' ||
+                        selectedContract.status === 'pending_signature') &&
+                        !selectedContract.brandSigned && (
                         <Button className="w-full" onClick={() => setShowSignDialog(true)}>
                           <Pen className="w-4 h-4 mr-2" />
                           Sign Contract
@@ -1328,12 +1354,25 @@ export function ContractsAndDeliverables() {
                                 {deliverable.thumbnailUrl ? (
                                   <div className="relative w-full sm:w-32 h-40 sm:h-24 rounded-lg overflow-hidden bg-muted flex-shrink-0">
                                     <img src={deliverable.thumbnailUrl} alt={deliverable.title} className="w-full h-full object-cover" />
-                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                                      <Button size="sm" variant="secondary" className="gap-1">
-                                        <Play className="w-3 h-3" />
-                                        Preview
-                                      </Button>
-                                    </div>
+                                    {/* F-0289: this Preview button had no handler — hovering a
+                                        thumbnail promised a preview and clicking did nothing. It
+                                        now opens the real submitted post, using the same asChild
+                                        anchor pattern as "View Post" below, and renders only when
+                                        there is something to open. */}
+                                    {deliverable.submittedUrl && (
+                                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                                        <Button size="sm" variant="secondary" className="gap-1" asChild>
+                                          <a
+                                            href={deliverable.submittedUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                          >
+                                            <Play className="w-3 h-3" />
+                                            Preview
+                                          </a>
+                                        </Button>
+                                      </div>
+                                    )}
                                   </div>
                                 ) : (
                                   <div className={`w-full sm:w-32 h-40 sm:h-24 rounded-lg ${platformIcons[deliverable.platform]} flex items-center justify-center flex-shrink-0`}>

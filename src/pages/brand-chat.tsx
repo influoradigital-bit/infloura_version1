@@ -57,6 +57,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ProposalForm, type ProposalFormData } from '@/components/brand/deal-room/proposal-form';
 import { ShipmentForm, type ShipmentData } from '@/components/brand/deal-room/shipment-form';
 import { ShipmentCard, type ShipmentStatus } from '@/components/shared/shipment-card';
@@ -2379,9 +2380,18 @@ export default function BrandChatPage() {
 
                 // Deliverable Card
                 if (event.type === 'deliverable') {
-                  const isApproved = event.data?.status === 'approved';
-                  const isPending = event.data?.status === 'pending_review';
-                  
+                  // F-0289: Approve/Request Changes below must actually move this card's
+                  // state, not just the separate panel's copy of the same item — both read
+                  // the same `deliverableStatuses` map (keyed by event.data.id, the same id
+                  // `getDeliverablesForDeal` uses to build the panel's rows), same override
+                  // pattern as `demoProposalStatuses` above for proposal cards.
+                  const deliverableId = event.data?.id;
+                  const currentStatus =
+                    (deliverableId && deliverableStatuses[deliverableId]) || event.data?.status;
+                  const isApproved = currentStatus === 'approved';
+                  const isPending = currentStatus === 'pending_review';
+                  const isRevisionRequested = currentStatus === 'revision';
+
                   return (
                     <div key={event.id} className="flex justify-start">
                       <div className="flex gap-2 max-w-[80%]">
@@ -2415,6 +2425,9 @@ export default function BrandChatPage() {
                                   {isPending && (
                                     <Badge className="bg-stage-negotiating text-stage-negotiating-fg text-xs shrink-0">Pending Review</Badge>
                                   )}
+                                  {isRevisionRequested && (
+                                    <Badge variant="outline" className="text-xs shrink-0">Revision Requested</Badge>
+                                  )}
                                 </div>
                                 <p className="text-xs text-muted-foreground mt-0.5">
                                   Submitted {formatTime(event.data?.submittedAt || event.timestamp)}
@@ -2422,13 +2435,22 @@ export default function BrandChatPage() {
                               </div>
                             </div>
                             
-                            {isPending && (
+                            {isPending && deliverableId && (
                               <div className="flex gap-2 mt-3">
-                                <Button size="sm" className="h-8 text-xs bg-stage-approved-fg hover:opacity-90 text-white">
+                                <Button
+                                  size="sm"
+                                  className="h-8 text-xs bg-stage-approved-fg hover:opacity-90 text-white"
+                                  onClick={() => handleApproveDeliverable(deliverableId)}
+                                >
                                   <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
                                   Approve
                                 </Button>
-                                <Button size="sm" variant="outline" className="h-8 text-xs">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 text-xs"
+                                  onClick={() => handleRequestRevision(deliverableId)}
+                                >
                                   <Pen className="h-3.5 w-3.5 mr-1" />
                                   Request Changes
                                 </Button>
@@ -2517,9 +2539,24 @@ export default function BrandChatPage() {
           {/* Message Input */}
           <div className="border-t border-border p-4">
             <div className="max-w-3xl mx-auto flex items-end gap-2">
-              <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0">
-                <Paperclip className="h-5 w-5" />
-              </Button>
+              {/* F-0289: no multipart endpoint or client method exists for deal-room message
+                  attachments yet (same gap `messages` in lib/api.ts has for brand-messages.tsx's
+                  composer) — disabled + honest tooltip rather than a silent no-op button. */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 shrink-0 opacity-50"
+                    aria-disabled="true"
+                    aria-label="Attach file — not available yet"
+                    onClick={(e) => e.preventDefault()}
+                  >
+                    <Paperclip className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>File attachments aren't available yet</TooltipContent>
+              </Tooltip>
               <Textarea
                 placeholder="Type a message..."
                 value={message}

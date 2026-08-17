@@ -8,10 +8,15 @@
 > repair uncovered are in **[Remediation](#remediation--t-crit9-0817)** below. The audit body is
 > preserved unedited as the record of what was found.
 >
-> **HIGH — separate run, task `T-BRANDHIGH-0817`.** Six of seven (`F-0244`…`F-0247`, `F-0249`,
-> `F-0250`) are **closed against gates**; `F-0248` is **still open** and its first fix was
-> rejected on review. `VALID · 7 rows · alignment 78.6% · proved 71.4% (6/7 scored)`. Two fixes
-> passed `tsc` and their own specs and were still wrong — see **[HIGH remediation](#high-remediation-2026-08-17)**.
+> **HIGH — separate run, task `T-BRANDHIGH-0817`.** **All seven (`F-0244`…`F-0250`) are now
+> closed against gates**, `F-0248` last after its first fix was rejected on review.
+> `VALID · 7 rows · alignment 92.9% · proved 85.7% (6/7 scored)`. Two fixes passed `tsc` and
+> their own specs and were still wrong — see **[HIGH remediation](#high-remediation-2026-08-17)**.
+>
+> **Dead controls — task `T-F0289-DEADCTL`, verdict `proved` (oracle).** Every enabled button that
+> did nothing is now wired or honestly disabled; `gates/F-0270-no-dead-controls.py` exits 0 over 298
+> files. Read that section for the part that matters — **23 of the gate's own 39 first-run findings
+> were false positives**, and fixing the gate mattered more than fixing the buttons.
 
 **Question asked:** how does the brand flow actually work for the person using it — do they get
 confused, does it work properly?
@@ -101,7 +106,7 @@ that closed each and for the two whose fixes are incomplete.
 | **F-0245** | `dashboard-page.tsx:108` | loading == error == empty (point 4 above). | **closed** · gate |
 | **F-0246** | `dashboard-page.tsx:107` | placeholder identity in every live session (point 5 above). | **closed** · gate · root cause `F-0282` |
 | **F-0247** | `FundEscrowButton.tsx:324` | *"₹X secured. Released only on your approval."* renders during `initiating`, `awaiting_payment` (Razorpay modal open, nothing paid) and `verifying` — contradicting the component's own header contract that success is confirmed by server status `FUNDED`. | **closed** · gate |
-| **F-0248** | `contracts-and-deliverables.tsx:1253` | The Sign button renders only for `status === 'pending_review'`, a value `mapApiContractStatus` **can never produce**. On the Contracts page in live mode there is no way to sign a contract; the whole sign dialog, canvas and legal notice is dead code. | **OPEN** · first fix rejected · `F-0267` |
+| **F-0248** | `contracts-and-deliverables.tsx:1253` | The Sign button renders only for `status === 'pending_review'`, a value `mapApiContractStatus` **can never produce**. On the Contracts page in live mode there is no way to sign a contract; the whole sign dialog, canvas and legal notice is dead code. | **closed** · gate · first fix rejected as `F-0267` |
 | **F-0249** | `brand-settings.tsx:132` | If `GET /workspaces/me` fails, the mock seed (`Tech Brands Co.` / `admin@techbrands.in`) stays in the fields and **Save stays enabled** — one click PATCHes fabricated values over the real workspace name and billing email. | **closed** · gate |
 | **F-0250** | `creator-contract-mappers.ts:38` | `PENDING_SIGNATURES` maps unconditionally to `brand_signed`, but the backend reaches that state after **one** signature by *either* party, unordered. A creator-first signature makes the deal room tell the brand *"Sent to creator for signature"* and hide the Sign control — neither party can proceed. | **closed** · gate · first fix rejected as `F-0268` |
 
@@ -129,7 +134,9 @@ believed 1 · capped 0`. Six gates on disk under `.proof-os/gates/`; each re-run
 | `F-0247-premature-success-copy.sh` | F-0247 | positive guard on `status === 'funded'` · the old negative guard has not returned · 6 specs |
 | `F-0249-stale-seed-overwrites-real-data.sh` | F-0249 | seed is live-mode-gated · Save gated on a successful load · 2 specs |
 | `F-0250-F-0268-pending-signature-deadlock.sh` | F-0250, F-0268 | mapper names no party · **both** parties' Sign gates accept the ambiguous member · 3 suites |
-| `F-0248-unreachable-primary-action.sh` | — | **exits 1.** Written, not promoted. |
+| `F-0248-unreachable-primary-action.sh` | F-0248, F-0267, F-0269 | no live `pending_review` reference · Sign gate is `(draft \|\| pending_signature) && !brandSigned` · mapper cannot emit the dead literal · 11 specs |
+
+**Scored after the F-0248 repair:** `VALID · 7 rows · alignment 92.9% · proved 85.7% (6/7 scored)`.
 
 ### The ratio, again — and it held
 
@@ -203,9 +210,20 @@ bug, not a money bug, but that is a lead, not a proof.
   concurrent session editing `contracts-and-deliverables.tsx` (F-0253 canvas removal) and
   `brand-settings.tsx`. On this tree a clean typecheck is a snapshot, not a state. The gate scripts
   are the durable artifact.
-- **F-0248 was held open deliberately**, not missed: another session is editing the same file toward
-  the same ticket (`.f0248-backup.tsx` at repo root), and two writers on one file is how edits get
-  silently reverted here.
+- **F-0248 was held, then closed once the other session's writes stopped** — `.f0248-backup.tsx`
+  remains at the repo root as that session's artefact. The decisive fact came from the Java, not
+  from the frontend: **`DRAFT` is signable.** No status guard exists in
+  `ContractService#recordSignature` (`:526-574`), `#doRecordSignature` (`:628-678` — it checks only
+  prior-signature idempotency and collaboration cancellation), or `ContractController#sign`
+  (`:78-113`). The first repair's `pending_signature` restriction was **frontend-invented with no
+  backend basis**, which is why reading the server was the step that closed this and reasoning from
+  the component was the step that got it wrong twice.
+- **Whether a DRAFT signature is SEMANTICALLY intended is not settled** — only that the server
+  permits it. Those are different claims and the gate proves the second, not the first.
+- **The "unresolved comments" warning is no longer dead but is still unproven**: it was regated from
+  the unreachable `pending_review` literal onto real clause-comment data, which the *live* endpoints
+  do not currently return. It is honestly hidden in live mode rather than falsely absent — but it
+  warns nobody today.
 
 ## Notable MEDIUM (not ledgered individually)
 
@@ -352,6 +370,73 @@ whether they are per-campaign or per-platform, and whether signed contracts get 
 - **`closed_by: human:swapnil` is a tool label, not human approval.** `promote.py` requires a
   signer. No person reviewed these closures; treat them as machine-closed.
 
+## Dead controls — `T-F0289-DEADCTL`, verdict `proved` (oracle)
+
+The audit listed a dozen buttons that render enabled and do nothing. Three sessions turned that
+into ledger records (`F-0270`, `F-0274`, `F-0276`) until `promote.py --recurrence` **blocked** on
+the class recurring ×3 with no gate. This task wrote the gate, then cleared what it found.
+
+`done_when`: every flagged site is wired to a real handler, or rendered `disabled` with a stated
+reason, or excluded as a documented false positive; the gate then exits 0 and `tsc` stays clean.
+**Result: gate exits 0 over 298 files, `tsc` 0, deal-room suites 22/22.**
+
+### The gate was wrong before the code was
+
+First run flagged **39** sites. **23 were the gate's own false positives:**
+
+- **21** were a `<Button>` nested inside an `asChild` trigger — `DropdownMenuTrigger`,
+  `PopoverTrigger`, `SheetTrigger`, `DialogTrigger`, `AlertDialogTrigger`, `CollapsibleTrigger`.
+  Radix clones the child and injects the handler, so a bare tag there is *correct* code. The gate
+  inspected only the Button's own tag. It was flagging, among others, the dispute dropdown added
+  the day before for `F-0242`.
+- **2 + 2** were prop-forwarding wrappers spreading `{...props}` (`MagneticButton`) and the `ui/`
+  primitives `calendar.tsx` / `input-group.tsx`.
+
+A 59% false-positive rate is not a cosmetic problem. A gate that wrong gets ignored, and the ledger
+then reports the class as covered while nobody reads the output — which is the same overclaim
+FLOW law 5 exists to prevent, aimed at a gate instead of a verdict. Both causes were fixed before a
+single control was touched: the gate now skips a Button preceded by an `asChild` trigger, and
+treats a props spread as wiring.
+
+### The 16 real ones
+
+Each was resolved under a strict two-outcome rule — **wire it to a real action, or render it
+`disabled` with a stated reason.** Adding a no-op handler was explicitly forbidden: it satisfies the
+gate while preserving the lie.
+
+| control | outcome |
+|---|---|
+| "Continue Chat" (`deal-room-dashboard.tsx`) | wired → `/brand/chat?deal=<id>`, param verified against `searchParams.get('deal')` |
+| Timeline **Sign** (`contract-card.tsx`) | wired → the working sign panel already in the same card. This was the *default* branch a brand sees, since status falls back to `generated` |
+| Accept / Counter / Reject (`proposal-card.tsx`) | wired → real `dealsApi.accept/reject/counter`. Counter grew an inline amount form, because the endpoint needs an amount the card never had |
+| "Download Approved Version" | wired → the real R2 `submittedUrl` when present, disabled with a reason when not |
+| "View Contract" (`brand-messages.tsx`) | wired → the real `?contract=` deep link |
+| Deliverable **Preview** (`contracts-and-deliverables.tsx`) | wired → `submittedUrl` via the file's own `asChild` anchor pattern; renders only when there is something to open |
+| "Set Primary" (`creator-wallet.tsx`) | live path was **already correct**; only the mock-mode demo cards were dead |
+| Both chat paperclips (brand + creator) | **disabled with reason** — `messages.send` accepts only `{content, kind}` and `DealMessage` has no attachment field, so the capability does not exist |
+| Creator deal-room overflow menu | **disabled with reason** — it opened no menu at all |
+| Dev motion playground button | wired to a real press counter |
+
+Two findings worth keeping. **Creator-wallet's "Set Primary" was never broken in live mode** — the
+agent traced it to `wallet.setPrimaryPayoutMethod` and correctly refused to point the mock-mode
+demo cards at the live payout facade, since this codebase deliberately never fabricates a real-money
+destination. And the **dev playground button could not be disabled at all**: `disabled:pointer-events-none`
+would have killed the `:active` animation the demo exists to show.
+
+Opened: **`F-0301`** — a parity gap running opposite to `F-0242`. The brand's deal-room overflow
+became a real dispute entry point; a creator still has to leave the deal room entirely to escalate.
+
+### What this gate does NOT prove
+
+- **A no-op `onClick` passes it.** The "never fake a handler" rule is prose followed by the people
+  writing fixes, not something the gate enforces.
+- **Only `<Button>` is in scope.** Raw `<button>`, `DropdownMenuItem`, and Card-level `onClick` are
+  invisible to it.
+- **`asChild` is now trusted, not followed.** A trigger whose own handler is missing would pass.
+- **Nothing was clicked.** A control that is wired but throws at runtime still passes.
+- **"Disabled with a reason" is honest, not necessarily right.** File attachments and creator-side
+  escalation are gaps a human may want *built* rather than explained.
+
 ## Why the audit's findings score nothing (and the review's now do)
 
 `independence.py` measures kavya at a **0.0% catch rate (0 of 21 discoverable failures flagged
@@ -422,4 +507,7 @@ fixes made in response. Backup of the pre-change registry: `.proof-os/registry.p
 F-0235…F-0243 closed by gate, 9/9 verified fail-on-baseline; opened F-0251, F-0266, F-0272, F-0273,
 F-0283, F-0289; **F-0283 open and unresolved***
 *· HIGH remediation `T-BRANDHIGH-0817` — verdict `proved` (oracle, admissible); F-0244…F-0247,
-F-0249, F-0250 closed by gate; **F-0248 open**; opened F-0252, F-0267, F-0269, F-0279, F-0282*
+F-0249, F-0250 **and F-0248** all closed by gate; opened F-0252, F-0279, F-0282*
+*· dead controls `T-F0289-DEADCTL` — verdict `proved` (oracle, admissible); F-0270, F-0274, F-0276,
+F-0289 closed by `gates/F-0270-no-dead-controls.py`, which exits 0 over 298 files after 23 of its
+own first-run false positives were fixed; opened F-0301*

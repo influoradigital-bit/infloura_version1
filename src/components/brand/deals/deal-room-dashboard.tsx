@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Dialog,
   DialogContent,
@@ -778,7 +779,11 @@ export function DealRoomDashboard() {
                             <FileText className="h-4 w-4 mr-2" />
                             Send Proposal
                           </Button>
-                          <Button variant="outline" className="flex-1">
+                          <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => navigate(`/brand/chat?deal=${selectedDeal.id}`)}
+                          >
                             <MessageCircle className="h-4 w-4 mr-2" />
                             Continue Chat
                           </Button>
@@ -867,9 +872,23 @@ export function DealRoomDashboard() {
                         <p className="text-xs text-destructive-foreground mb-2">{messagesError}</p>
                       )}
                       <div className="flex gap-2">
-                        <Button variant="outline" size="icon">
-                          <Paperclip className="h-4 w-4" />
-                        </Button>
+                        {/* F-0289: POST /deals/:dealId/messages (messages.send, src/lib/api.ts)
+                            takes only { content, kind } — no attachment field, and DealMessage
+                            has no attachment field to render one back. The generic /uploads
+                            endpoint exists but nothing wires its output into a deal message, so
+                            this can't actually attach a file to the thread. Disabled with a
+                            reason instead of a fake control — same pattern as the Export button
+                            in src/pages/brand-wallet.tsx. */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span tabIndex={0} className="inline-flex">
+                              <Button variant="outline" size="icon" disabled aria-disabled="true">
+                                <Paperclip className="h-4 w-4" />
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>File attachments aren&apos;t available yet — coming soon.</TooltipContent>
+                        </Tooltip>
                         <Input
                           placeholder="Type your message..."
                           value={messageInput}
