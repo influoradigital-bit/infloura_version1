@@ -5,10 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { FundEscrowButton } from '@/components/feature/meera/FundEscrowButton';
+import type { ContractMilestone } from '@/lib/api';
 import { formatINR } from '@/lib/utils';
 import type { DealContractStatus } from './deal-contract-tab';
 
-interface PaymentMilestone {
+interface PaymentMilestoneRow {
   id: string;
   label: string;
   amount: number;
@@ -21,6 +23,49 @@ interface DealPaymentsTabProps {
   contractStatus: DealContractStatus | null;
   deliverablesDone: number;
   deliverablesTotal: number;
+  /**
+   * F-0222 — the REAL escrow state, from `DealDtos.DealResponse.escrowFunded`.
+   *
+   * This panel used to derive "Escrow active" from `contractStatus` alone, which says only
+   * that both parties signed. Signing does not move money: `CollaborationLifecycleService`
+   * advances CONTRACTED on full signature and IN_PROGRESS only once `EscrowService` actually
+   * funds. So a signed-but-unfunded deal rendered "Escrow active — ₹X is secured" over an
+   * empty hold. Left optional so the creator room (which does not carry this field) keeps its
+   * previous behaviour rather than silently reading `false` as "definitely not funded".
+   */
+  escrowFunded?: boolean;
+  /**
+   * F-0222 — supplying these turns on the funding control. The creator room mounts this same
+   * component and passes neither, so it never renders a brand-only money action.
+   *
+   * `campaignId` is required by `POST /wallet/escrow/fund`; `milestones` come from
+   * `GET /contracts/:id`. Funding WITHOUT a milestoneId is a different, deliberate backend
+   * path — campaign-level pool funding, which leaves `collaboration_id` null and therefore
+   * never advances the deal (EscrowService.initiateFund, the `milestoneForCollaborationBinding
+   * == null` branch). That pool path is what /brand/wallet offers, and it is why funding there
+   * could never unblock a signed deal. This control exists to fund a MILESTONE.
+   */
+  campaignId?: string;
+  milestones?: ContractMilestone[];
+  onFunded?: () => void;
+}
+
+/** Both signatures are in. Mirrors `creator-deal-contract-tab.tsx`'s `fullySigned`. */
+function isFullySigned(status: DealContractStatus | null): boolean {
+  return status === 'creator_signed' || status === 'active';
+}
+
+/**
+ * The milestone a fund click should target: the first one still PENDING that carries a real
+ * server id. FUNDED/RELEASED/REFUNDED/FROZEN are not re-fundable (`MilestoneStatus`), and a
+ * milestone with no id was never persisted, so there is nothing for the server to resolve.
+ */
+function nextFundableMilestone(milestones: ContractMilestone[]): ContractMilestone | null {
+  return (
+    milestones.find(
+      (m) => !!m.id && (m.status ?? 'PENDING').toUpperCase() === 'PENDING',
+    ) ?? null
+  );
 }
 
 export function DealPaymentsTab({
@@ -28,34 +73,64 @@ export function DealPaymentsTab({
   contractStatus,
   deliverablesDone,
   deliverablesTotal,
+  escrowFunded,
+  campaignId,
+  milestones,
+  onFunded,
 }: DealPaymentsTabProps) {
-  const escrowLocked =
-    contractStatus === 'active' || contractStatus === 'creator_signed';
+  const fullySigned = isFullySigned(contractStatus);
+  // When the caller knows the real escrow state, it wins. Otherwise fall back to the old
+  // signature-derived guess so the creator room's behaviour is unchanged by this fix.
+  const escrowLocked = escrowFunded ?? fullySigned;
+
+  const realMilestones = milestones ?? [];
+  const hasRealMilestones = realMilestones.length > 0;
+  const fundable = nextFundableMilestone(realMilestones);
+  const canFund = !!campaignId && fullySigned && !!fundable;
+
   const perDeliverable =
     deliverablesTotal > 0 ? Math.round(dealValue / deliverablesTotal) : dealValue;
 
-  const milestones: PaymentMilestone[] = [
-    {
-      id: 'escrow',
-      label: 'Escrow funded',
-      amount: dealValue,
-      status: escrowLocked ? 'locked' : 'pending',
-    },
-    ...Array.from({ length: deliverablesTotal }, (_, i) => ({
-      id: `del-${i + 1}`,
-      label: `Deliverable ${i + 1} payout`,
-      amount: perDeliverable,
-      status: (i < deliverablesDone ? 'released' : escrowLocked ? 'locked' : 'pending') as
-        | 'pending'
-        | 'locked'
-        | 'released',
-      date: i < deliverablesDone ? new Date().toLocaleDateString('en-IN') : undefined,
-    })),
-  ];
+  // Real contract milestones when we have them — ids, amounts and statuses straight from
+  // `payment_milestones`. The derived list below is the pre-contract placeholder and is only
+  // reached when no contract has been generated yet.
+  const rows: PaymentMilestoneRow[] = hasRealMilestones
+    ? realMilestones.map((m, i) => {
+        const raw = (m.status ?? 'PENDING').toUpperCase();
+        return {
+          id: m.id ?? `ms-${i + 1}`,
+          label: m.description || `Milestone ${m.sequenceNo ?? i + 1}`,
+          amount: m.amount,
+          status:
+            raw === 'RELEASED' ? 'released' : raw === 'FUNDED' ? 'locked' : 'pending',
+        };
+      })
+    : [
+        {
+          id: 'escrow',
+          label: 'Escrow funded',
+          amount: dealValue,
+          status: escrowLocked ? 'locked' : 'pending',
+        },
+        ...Array.from({ length: deliverablesTotal }, (_, i) => ({
+          id: `del-${i + 1}`,
+          label: `Deliverable ${i + 1} payout`,
+          amount: perDeliverable,
+          status: (i < deliverablesDone ? 'released' : escrowLocked ? 'locked' : 'pending') as
+            | 'pending'
+            | 'locked'
+            | 'released',
+          date: i < deliverablesDone ? new Date().toLocaleDateString('en-IN') : undefined,
+        })),
+      ];
 
-  const releasedTotal = milestones
+  const releasedTotal = rows
     .filter((m) => m.status === 'released')
     .reduce((s, m) => s + m.amount, 0);
+  const lockedTotal = rows
+    .filter((m) => m.status === 'locked')
+    .reduce((s, m) => s + m.amount, 0);
+  const inEscrow = hasRealMilestones ? lockedTotal : escrowLocked ? dealValue - releasedTotal : 0;
 
   return (
     <ScrollArea className="h-full">
@@ -69,16 +144,49 @@ export function DealPaymentsTab({
             )}
             <div>
               <p className="font-medium text-sm">
-                {escrowLocked ? 'Escrow active' : 'Escrow not funded yet'}
+                {escrowLocked
+                  ? 'Escrow active'
+                  : fullySigned
+                    ? 'Contract signed — escrow not funded yet'
+                    : 'Escrow not funded yet'}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
                 {escrowLocked
-                  ? `${formatINR(dealValue)} is secured until deliverables are approved.`
-                  : 'Fund escrow after both parties sign the contract.'}
+                  ? `${formatINR(inEscrow)} is secured until deliverables are approved.`
+                  : fullySigned
+                    ? 'Both parties have signed. Fund the milestone below to start the work — the creator cannot submit deliverables until escrow is funded.'
+                    : 'Fund escrow after both parties sign the contract.'}
               </p>
             </div>
           </CardContent>
         </Card>
+
+        {/* F-0222 — the deal room's only path to a milestone-scoped fund. Before this, step 3
+            of the progress bar ("Fund escrow") opened this panel and offered no control at
+            all, so the sole reachable funding action in the product was the campaign-level
+            pool on /brand/wallet, which never binds a collaboration and therefore never
+            advances CONTRACTED -> IN_PROGRESS. */}
+        {canFund && (
+          <Card className="border-primary/30">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Fund this milestone</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                {fundable?.description || `Milestone ${fundable?.sequenceNo ?? 1}`} —{' '}
+                {formatINR(fundable?.amount ?? 0)} moves from your wallet into escrow. The
+                amount is re-derived server-side.
+              </p>
+              <FundEscrowButton
+                key={fundable?.id}
+                campaignId={campaignId as string}
+                milestoneId={fundable?.id}
+                displayAmount={fundable?.amount}
+                onFunded={onFunded}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <Card>
@@ -88,9 +196,7 @@ export function DealPaymentsTab({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">
-                {formatINR(escrowLocked ? dealValue - releasedTotal : 0)}
-              </p>
+              <p className="text-2xl font-bold">{formatINR(inEscrow)}</p>
             </CardContent>
           </Card>
           <Card>
@@ -108,7 +214,7 @@ export function DealPaymentsTab({
         <div>
           <h3 className="font-semibold text-sm mb-3">Payment milestones</h3>
           <div className="space-y-2">
-            {milestones.map((m) => (
+            {rows.map((m) => (
               <div
                 key={m.id}
                 className="flex items-center justify-between p-3 rounded-lg border bg-card"
@@ -141,10 +247,16 @@ export function DealPaymentsTab({
               </div>
             ))}
           </div>
+          {!hasRealMilestones && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Estimated from the deal value — real milestones appear once the contract is
+              generated.
+            </p>
+          )}
         </div>
 
         <Button variant="outline" className="w-full" asChild>
-          <Link to="/brand/wallet">View wallet & transactions</Link>
+          <Link to="/brand/wallet">View wallet &amp; transactions</Link>
         </Button>
       </div>
     </ScrollArea>

@@ -137,6 +137,12 @@ interface ChatDealRoom {
   creatorName: string;
   creatorHandle: string;
   creatorAvatar: string;
+  /**
+   * F-0222 — `DealDtos.DealResponse.campaignId`, previously dropped by `mapDealToChatRoom`
+   * even though the backend has always sent it. `POST /wallet/escrow/fund` requires it, so
+   * without this field the deal room could not offer a funding control at all.
+   */
+  campaignId: string;
   campaignName: string;
   dealStatus: keyof typeof dealStatusConfig;
   dealValue: number;
@@ -210,6 +216,7 @@ function mapDealToChatRoom(deal: Deal): ChatDealRoom | null {
     creatorName: deal.counterpartyName,
     creatorHandle: deal.counterpartyHandle || '',
     creatorAvatar: deal.counterpartyAvatar || '',
+    campaignId: deal.campaignId,
     campaignName: deal.campaignName,
     dealStatus,
     dealValue: deal.dealValue,
@@ -238,6 +245,7 @@ const mockDealRooms: ChatDealRoom[] = [
     creatorName: 'Priya Sharma',
     creatorHandle: '@priyasharma',
     creatorAvatar: '',
+    campaignId: 'camp-mock-1',
     campaignName: 'Summer Fashion Campaign',
     dealStatus: 'in_progress',
     dealValue: 50000,
@@ -257,6 +265,7 @@ const mockDealRooms: ChatDealRoom[] = [
     creatorName: 'Arjun Kapoor',
     creatorHandle: '@arjunkapoor',
     creatorAvatar: '',
+    campaignId: 'camp-mock-2',
     campaignName: 'Tech Review Campaign',
     dealStatus: 'negotiating',
     dealValue: 75000,
@@ -276,6 +285,7 @@ const mockDealRooms: ChatDealRoom[] = [
     creatorName: 'Sneha Reddy',
     creatorHandle: '@snehareddy',
     creatorAvatar: '',
+    campaignId: 'camp-mock-3',
     campaignName: 'Wellness Series',
     dealStatus: 'contracted',
     dealValue: 85000,
@@ -295,6 +305,7 @@ const mockDealRooms: ChatDealRoom[] = [
     creatorName: 'Rahul Verma',
     creatorHandle: '@rahulverma',
     creatorAvatar: '',
+    campaignId: 'camp-mock-4',
     campaignName: 'Product Launch',
     dealStatus: 'review',
     dealValue: 45000,
@@ -2483,6 +2494,19 @@ export default function BrandChatPage() {
                     contractStatus={contractStatus ?? null}
                     deliverablesDone={selectedDeal.deliverablesDone}
                     deliverablesTotal={selectedDeal.deliverablesTotal}
+                    // F-0222 — the real escrow state and the real milestone rows. `escrowFunded`
+                    // comes straight off the deal (DealDtos.java:38-40); `liveContract.milestones`
+                    // is the server's `payment_milestones` join, which carries the ids
+                    // `POST /wallet/escrow/fund` needs. Only passed in live mode: the mock store
+                    // has no contract record, and handing the panel a `campaignId` with no real
+                    // milestone would render a fund button that cannot resolve server-side.
+                    escrowFunded={liveApiMode ? selectedDeal.escrowFunded : undefined}
+                    campaignId={liveApiMode ? selectedDeal.campaignId : undefined}
+                    milestones={liveApiMode ? liveContract?.milestones : undefined}
+                    onFunded={() => {
+                      void fetchLiveContract();
+                      void refreshDeal(selectedDeal.id);
+                    }}
                   />
                 )}
               </div>
