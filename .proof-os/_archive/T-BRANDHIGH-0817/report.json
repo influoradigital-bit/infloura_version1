@@ -1,0 +1,88 @@
+{
+ "rows": [
+  {
+   "subject": "src/hooks/brand/useWorkspaceVerification.ts",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0244-owner-self-lockout.sh",
+    "result": "gate exit 0 \u00b7 Tests 5 passed (5)",
+    "where": "src/hooks/brand/useWorkspaceVerification.ts:89"
+   }
+  },
+  {
+   "subject": "src/components/feature/meera/FundEscrowButton.tsx",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0247-premature-success-copy.sh",
+    "result": "gate exit 0 \u00b7 Tests 6 passed (6)",
+    "where": "src/components/feature/meera/FundEscrowButton.tsx:345"
+   }
+  },
+  {
+   "subject": "src/pages/brand-settings.tsx",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0249-stale-seed-overwrites-real-data.sh",
+    "result": "gate exit 0 \u00b7 Tests 2 passed (2)",
+    "where": "src/pages/brand-settings.tsx:119"
+   }
+  },
+  {
+   "subject": "src/components/brand/dashboard/dashboard-page.tsx",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0245-F-0246-dashboard-states-and-identity.sh",
+    "result": "gate exit 0 \u00b7 Tests 5 passed (5)",
+    "where": "src/components/brand/dashboard/dashboard-page.tsx:278"
+   }
+  },
+  {
+   "subject": "src/lib/creator-contract-mappers.ts",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0250-F-0268-pending-signature-deadlock.sh",
+    "result": "gate exit 0 \u00b7 Tests 19 passed (19)",
+    "where": "src/lib/creator-contract-mappers.ts:66"
+   }
+  },
+  {
+   "subject": "src/components/brand/contracts/contracts-and-deliverables.tsx",
+   "owner": "meera",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0248-unreachable-primary-action.sh",
+    "result": "gate exit 1 \u00b7 leg 1 failed",
+    "where": "src/components/brand/contracts/contracts-and-deliverables.tsx:1226"
+   }
+  },
+  {
+   "subject": "wiki/errors/BRAND-FRONTEND-UX-AUDIT-0817.md",
+   "owner": "priya",
+   "status": "partial",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "fresh-context review dispatched with artifact paths and done_when only",
+    "result": "2 PASS, 1 PASS-WITH-CONCERN, 2 FAIL; 3 new defects recorded",
+    "where": "src/components/brand/contracts/contracts-and-deliverables.tsx:1296"
+   }
+  }
+ ]
+}

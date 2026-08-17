@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   Home,
   Megaphone,
@@ -25,6 +26,7 @@ import {
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
 import { useAuthStore, useUIStore } from '@/lib/store';
 import { useNotifications } from '@/hooks/useNotifications';
 import { Button } from '@/components/ui/button';
@@ -148,6 +150,20 @@ export function BrandLayout({ children }: BrandLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
+  // F-0246 — nothing in the brand login flow writes `useAuthStore().user` (only the creator
+  // flow calls `login()`/`setUser()`), so `user` above is always `null` in a live brand
+  // session. Rather than fall back to a fabricated placeholder ("Brand Account" /
+  // "brand@company.com" — a plausible-looking identity belonging to nobody), fall back to the
+  // real workspace record. Same queryKey/staleTime as useWorkspaceVerification.ts's `me` query
+  // (mounted app-wide via WorkspaceVerificationBanner below) so this shares that cache entry
+  // instead of firing a second `GET /workspaces/me`.
+  const workspaceMe = useQuery({
+    queryKey: ['workspace', 'me'],
+    queryFn: () => api.workspaces.getMe(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const accountDisplayName = user?.displayName || workspaceMe.data?.name;
+  const accountDisplayEmail = user?.email || workspaceMe.data?.email || undefined;
   const { notifications, unreadCount, loading, error, refresh: refreshNotifications, markRead, markAllRead } = useNotifications('brand');
   const { mobileMenuOpen, toggleMobileMenu, setMobileMenuOpen, closeMobileMenu } = useUIStore();
   const [showLogoutDialog, setShowLogoutDialog] = React.useState(false);
@@ -297,12 +313,12 @@ export function BrandLayout({ children }: BrandLayoutProps) {
                   <Avatar className="h-7 w-7">
                     <AvatarImage src="" />
                     <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                      {getInitials(user?.displayName)}
+                      {getInitials(accountDisplayName)}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 text-left min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">
-                      {user?.displayName || 'Brand Account'}
+                      {accountDisplayName || 'Workspace'}
                     </p>
                   </div>
                   <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -310,7 +326,7 @@ export function BrandLayout({ children }: BrandLayoutProps) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" side="top" className="w-52">
                 <DropdownMenuLabel className="font-medium text-xs text-muted-foreground">
-                  {user?.email || 'brand@company.com'}
+                  {accountDisplayEmail || 'No email on file'}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => handleNavigate('/brand/settings')}>
@@ -482,14 +498,14 @@ export function BrandLayout({ children }: BrandLayoutProps) {
                   >
                     <Avatar className="h-7 w-7">
                       <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                      {getInitials(user?.displayName)}
+                      {getInitials(accountDisplayName)}
                     </AvatarFallback>
                     </Avatar>
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuLabel className="text-xs text-muted-foreground">
-                    {user?.email || 'brand@company.com'}
+                    {accountDisplayEmail || 'No email on file'}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => handleNavigate('/brand/settings')}>

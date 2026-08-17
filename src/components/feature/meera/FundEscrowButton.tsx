@@ -95,9 +95,19 @@ function getButtonIcon(status: EscrowFundStatus) {
   }
 }
 
-/** Status-specific helper copy shown under the button. */
+/**
+ * Status-specific helper copy shown under the button.
+ *
+ * [F-0247] None of these strings may assert that money is secured, held, or
+ * escrowed — that assertion is only true once the server confirms status
+ * FUNDED, which is rendered separately below (gated on `status === 'funded'`).
+ * Every in-flight phase gets its own honest, non-committal copy instead of
+ * falling through to a generic "amount secured" message.
+ */
 function getStatusHelperText(status: EscrowFundStatus): string | null {
   switch (status) {
+    case 'initiating':
+      return 'Contacting the server to start funding — nothing has been charged yet.';
     case 'insufficient_funds':
       return 'Your wallet balance is short — adding the difference before funding.';
     case 'topping_up':
@@ -105,6 +115,10 @@ function getStatusHelperText(status: EscrowFundStatus): string | null {
       return 'Add the shortfall to your wallet, then funding continues automatically.';
     case 'confirming_topup':
       return 'Confirming your payment — this can take a few seconds.';
+    case 'awaiting_payment':
+      return 'Complete payment in the Razorpay window — funds are not secured yet.';
+    case 'verifying':
+      return 'Verifying your payment with the server before marking escrow as secured.';
     default:
       return null;
   }
@@ -320,8 +334,15 @@ export function FundEscrowButton({
         </p>
       )}
 
-      {/* Server-confirmed amount display */}
-      {serverAmount && status !== 'idle' && !helperText && (
+      {/*
+        [F-0247] Server-confirmed amount display. This is the ONLY place this
+        component may claim money is secured/held/escrowed, and it is
+        deliberately gated on `status === 'funded'` — the server-confirmed
+        FUNDED state per the header contract — rather than on "not idle" or
+        "no helper text", which previously let initiating/awaiting_payment/
+        verifying (zero rupees moved) reach this copy.
+      */}
+      {status === 'funded' && serverAmount && (
         <p className="text-center text-xs text-meera-text-muted">
           {formatINR(serverAmount)} secured. Released only on your approval.
         </p>

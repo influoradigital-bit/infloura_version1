@@ -582,7 +582,10 @@ export interface TimelineEventMetadata {
   
   // For 'contract' tag:
   contractId?: string;
-  contractStatus?: 'generated' | 'brand_signed' | 'creator_signed' | 'active';
+  // Kept in sync with DealContractStatus (src/components/brand/deal-room/deal-contract-tab.tsx)
+  // — not imported directly to avoid a component -> lib -> component cycle. 'pending_signature'
+  // (F-0250 follow-up): PENDING_SIGNATURES from EITHER party, signer unknown.
+  contractStatus?: 'generated' | 'pending_signature' | 'brand_signed' | 'creator_signed' | 'active';
   
   // For 'deliverable' tag:
   deliverableId?: string;

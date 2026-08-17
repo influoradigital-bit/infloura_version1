@@ -47,6 +47,9 @@ export function CreatorContractPanel({
 
   const creatorSigningStatus = () => {
     if (status === 'generated') return 'Awaiting Brand Signature';
+    // 'pending_signature' (F-0250 follow-up): one party has signed, which one is unknown — do
+    // not claim it was the brand.
+    if (status === 'pending_signature') return 'Signature Pending - Your Turn to Sign';
     if (status === 'brand_signed') return 'Brand Signed - Your Turn to Sign';
     if (status === 'creator_signed') return 'Both Signed - Active';
     // F-0226: contract ACTIVE means both signed, not that escrow is funded (separate step).
@@ -54,7 +57,9 @@ export function CreatorContractPanel({
     return 'Unknown Status';
   };
 
-  const shouldShowSignButton = status === 'brand_signed';
+  // 'pending_signature': signer unknown, so the creator's Sign control must stay reachable —
+  // otherwise a brand-first PENDING_SIGNATURES deadlocks the creator (F-0250 follow-up).
+  const shouldShowSignButton = status === 'brand_signed' || status === 'pending_signature';
 
   const handleDownloadPDF = () => {
     if (!hasAmount) {
@@ -143,7 +148,9 @@ export function CreatorContractPanel({
               </p>
               {shouldShowSignButton && (
                 <p className="text-sm text-amber-700 mt-1">
-                  The brand has signed the contract. Please review carefully and sign below to proceed.
+                  {status === 'brand_signed'
+                    ? 'The brand has signed the contract. Please review carefully and sign below to proceed.'
+                    : 'Please review the contract carefully and sign below to proceed.'}
                 </p>
               )}
               {status === 'active' && (

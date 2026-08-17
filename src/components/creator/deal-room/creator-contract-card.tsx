@@ -27,6 +27,9 @@ export function CreatorContractCard({
     switch (status) {
       case 'generated':
         return 'bg-stage-outreach text-blue-800';
+      // 'pending_signature' (F-0250 follow-up): one party has signed, which one is unknown.
+      case 'pending_signature':
+        return 'bg-amber-100 text-amber-800';
       case 'brand_signed':
         return 'bg-amber-100 text-amber-800';
       case 'creator_signed':
@@ -42,6 +45,10 @@ export function CreatorContractCard({
     switch (status) {
       case 'generated':
         return 'Awaiting Brand Signature';
+      // 'pending_signature': do not name a party as having signed — the coarse mapper cannot
+      // tell which one did (F-0250 follow-up).
+      case 'pending_signature':
+        return 'Signature Pending - Your Turn to Sign';
       case 'brand_signed':
         return 'Your Turn to Sign';
       case 'creator_signed':
@@ -57,6 +64,8 @@ export function CreatorContractCard({
   const getStatusIcon = () => {
     switch (status) {
       case 'generated':
+        return <AlertCircle className="h-4 w-4" />;
+      case 'pending_signature':
         return <AlertCircle className="h-4 w-4" />;
       case 'brand_signed':
         return <AlertCircle className="h-4 w-4" />;
@@ -171,10 +180,14 @@ export function CreatorContractCard({
             Gate: .proof-os/gates/F-0226-no-false-escrow-copy.sh */}
 
         {/* Status-specific Message */}
-        {status === 'brand_signed' && (
+        {/* 'pending_signature' (F-0250 follow-up): signer unknown, so this must not claim the
+            brand specifically has signed. */}
+        {(status === 'brand_signed' || status === 'pending_signature') && (
           <div className="p-3 bg-amber-50 border border-stage-negotiating-border rounded-lg">
             <p className="text-sm text-amber-900">
-              The brand has signed the contract. Please review the terms carefully and sign to proceed.
+              {status === 'brand_signed'
+                ? 'The brand has signed the contract. Please review the terms carefully and sign to proceed.'
+                : 'Please review the contract terms carefully and sign to proceed.'}
             </p>
           </div>
         )}
@@ -191,7 +204,7 @@ export function CreatorContractCard({
               <ChevronRight className="h-4 w-4" />
             </span>
           </Button>
-          {status === 'brand_signed' && onSignClick && (
+          {(status === 'brand_signed' || status === 'pending_signature') && onSignClick && (
             <Button 
               className="flex-1 bg-emerald-600 hover:bg-emerald-700"
               onClick={onSignClick}

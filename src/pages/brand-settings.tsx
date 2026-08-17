@@ -75,11 +75,17 @@ export default function BrandSettingsPage() {
   const { logout: clearAuthStore } = useAuthStore();
   const liveApi = isApiLive();
   const [activeTab, setActiveTab] = React.useState('general');
+  // F-0249 — these four fields must never start as the mock seed in live mode. If GET
+  // /workspaces/me fails, a stale seed sitting in these inputs with an enabled Save button
+  // would let one click PATCH fabricated values over the brand's real name/billing email.
+  // Mock mode keeps the seed (the "local defaults are the whole story" contract used
+  // throughout this file); live mode starts these four fields honestly empty until the
+  // server responds — see workspaceInfoLoaded below, which gates the Save control on it.
   const [settings, setSettings] = React.useState({
-    workspaceName: 'Tech Brands Co.',
-    email: 'admin@techbrands.in',
-    phone: '+91 98765 43210',
-    website: 'www.techbrands.in',
+    workspaceName: liveApi ? '' : 'Tech Brands Co.',
+    email: liveApi ? '' : 'admin@techbrands.in',
+    phone: liveApi ? '' : '+91 98765 43210',
+    website: liveApi ? '' : 'www.techbrands.in',
     emailNotifications: true,
     pushNotifications: true,
     weeklyDigest: false,
@@ -90,11 +96,16 @@ export default function BrandSettingsPage() {
   const [emailPrefSaving, setEmailPrefSaving] = React.useState(false);
   const [emailPrefError, setEmailPrefError] = React.useState<string | null>(null);
 
-  // Granular category toggles (campaignAlerts/bidNotifications/weeklyDigest) still have no
-  // backend emitter reading them — they stay UI-only local state, disabled, with an honest
-  // caption. Per Priya's UI Honesty rule this is the "Disabled + captioned" bucket, not "Wired".
-  const SETTINGS_PERSISTENCE_UNAVAILABLE =
-    "Settings sync isn't available yet — changes apply to this session only.";
+  // F-0262 — this used to be one blanket disclaimer ("Settings sync isn't available yet —
+  // changes apply to this session only") rendered under a disabled "Save Preferences" button
+  // for the WHOLE notifications card. That was true when this comment was first written, but
+  // campaignAlerts/bidNotifications got real backend emitters on 2026-07-30 (see the UPDATE
+  // comment on the effect below) and now PATCH the server the instant their switch is flipped
+  // — same as emailNotifications always has. Only Push Notifications and Weekly Digest are
+  // still genuinely session-only (no backend to hit at all, both switches stay `disabled`), so
+  // the caption below names those two specifically instead of claiming nothing on this screen
+  // persists.
+  const PUSH_AND_DIGEST_UNAVAILABLE = "Not available yet — this toggle has no effect.";
 
   // UPDATE (2026-07-18): GET/PATCH /workspaces/me now exist (WorkspaceController, L-9) and
   // cover name/email(-> billing_email)/phone/websiteUrl for this "Workspace Information" card.
@@ -106,8 +117,14 @@ export default function BrandSettingsPage() {
   const [workspaceInfoLoadError, setWorkspaceInfoLoadError] = React.useState<string | null>(null);
   const [workspaceInfoSaving, setWorkspaceInfoSaving] = React.useState(false);
   const [workspaceInfoSaveError, setWorkspaceInfoSaveError] = React.useState<string | null>(null);
+  // F-0249 — true once we hold an authoritative snapshot of the four fields above: either a
+  // real GET /workspaces/me response (live mode) or immediately in mock mode, where the local
+  // seed is never sent to a real server so it IS the authoritative value. Save stays disabled
+  // (below) until this is true, so a load failure can never leave a submittable mock seed.
+  const [workspaceInfoLoaded, setWorkspaceInfoLoaded] = React.useState(!liveApi);
 
-  React.useEffect(() => {
+  // F-0249 — extracted from the effect so a failed load can be retried from the UI.
+  const loadWorkspaceInfo = React.useCallback(() => {
     if (!liveApi) return; // mock mode: local defaults are the whole story
     let cancelled = false;
     setWorkspaceInfoLoading(true);
@@ -120,14 +137,14 @@ export default function BrandSettingsPage() {
           ...prev,
           workspaceName: ws.name,
           // Live-mode hydration: a null field means the workspace genuinely has no
-          // value on file — fall back to '' (honest empty), NOT prev.* which is the
-          // mock seed (admin@techbrands.in / +91 98765 43210 / www.techbrands.in).
-          // Keeping the seed leaked those placeholders into the live form and into the
-          // "You" member row (which renders `settings.email || 'No email on file'`).
+          // value on file — fall back to '' (honest empty), NOT prev.* which could be the
+          // mock seed (admin@techbrands.in / +91 98765 43210 / www.techbrands.in) or a
+          // stale value left over from a previous failed load.
           email: ws.email ?? '',
           phone: ws.phone ?? '',
           website: ws.websiteUrl ?? '',
         }));
+        setWorkspaceInfoLoaded(true);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -142,7 +159,16 @@ export default function BrandSettingsPage() {
     };
   }, [liveApi]);
 
+  React.useEffect(() => loadWorkspaceInfo(), [loadWorkspaceInfo]);
+
   const handleSaveWorkspaceInfo = async () => {
+    // F-0249 — defense in depth behind the disabled Save button below: refuse to PATCH
+    // whenever we don't hold an authoritative snapshot of these fields (still loading, load
+    // failed and never succeeded since, or a save is already in flight). The button's
+    // disabled state is the primary guard; this exists so the handler stays safe on its own.
+    if (workspaceInfoLoading || workspaceInfoSaving || (liveApi && (!workspaceInfoLoaded || workspaceInfoLoadError))) {
+      return;
+    }
     if (!settings.workspaceName.trim()) {
       setWorkspaceInfoSaveError('Workspace name is required.');
       return;
@@ -150,6 +176,13 @@ export default function BrandSettingsPage() {
     setWorkspaceInfoSaving(true);
     setWorkspaceInfoSaveError(null);
     try {
+      // F-0249 — deliberately a full-object PATCH, not a dirty-fields-only diff:
+      // WorkspaceMeUpdatePayload is documented as full-replace server-side (an omitted field
+      // is CLEARED, not left alone), so partial submission would risk wiping fields the user
+      // never touched. That's safe here because by the time Save is enabled, every one of
+      // these four fields is guaranteed to be either the server's own loaded value or
+      // something the user typed after that load — never the mock seed and never an
+      // unloaded/stale value (see workspaceInfoLoaded and the guard above).
       const updated = await api.workspaces.updateMe({
         name: settings.workspaceName,
         email: settings.email,
@@ -453,7 +486,12 @@ export default function BrandSettingsPage() {
                 <p className="text-xs text-muted-foreground mb-4">Loading workspace information…</p>
               )}
               {workspaceInfoLoadError && (
-                <p className="text-xs text-destructive-foreground mb-4">{workspaceInfoLoadError}</p>
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <p className="text-xs text-destructive-foreground">{workspaceInfoLoadError}</p>
+                  <Button type="button" variant="outline" size="sm" onClick={loadWorkspaceInfo}>
+                    Retry
+                  </Button>
+                </div>
               )}
               <div className="space-y-4">
                 <div>
@@ -506,7 +544,18 @@ export default function BrandSettingsPage() {
                 </div>
                 <Button
                   onClick={handleSaveWorkspaceInfo}
-                  disabled={workspaceInfoLoading || workspaceInfoSaving}
+                  disabled={
+                    workspaceInfoLoading ||
+                    workspaceInfoSaving ||
+                    (liveApi && (!workspaceInfoLoaded || !!workspaceInfoLoadError))
+                  }
+                  title={
+                    liveApi && workspaceInfoLoadError
+                      ? 'Workspace information failed to load — retry above before saving.'
+                      : liveApi && !workspaceInfoLoaded
+                        ? 'Waiting for workspace information to load…'
+                        : undefined
+                  }
                   className="gap-2"
                 >
                   <Save className="h-4 w-4" />
@@ -671,11 +720,15 @@ export default function BrandSettingsPage() {
                   turned off individually — only the Email Notifications switch above affects them.
                 </p>
 
-                <Button disabled title={SETTINGS_PERSISTENCE_UNAVAILABLE} className="w-full gap-2">
-                  <Save className="h-4 w-4" />
-                  Save Preferences
-                </Button>
-                <p className="text-xs text-muted-foreground text-center">{SETTINGS_PERSISTENCE_UNAVAILABLE}</p>
+                {/* F-0262 — no "Save Preferences" button here anymore: Email Notifications,
+                    Campaign Alerts, and Bid Notifications above already PATCH the server the
+                    instant their switch is flipped, so there is nothing left to batch-save.
+                    Only the two disabled switches above (Push Notifications, Weekly Digest)
+                    are still genuinely unavailable — this note names those, not the whole card. */}
+                <p className="text-xs text-muted-foreground text-center">
+                  Email Notifications, Campaign Alerts, and Bid Notifications save immediately
+                  when you flip them. Push Notifications and Weekly Digest above: {PUSH_AND_DIGEST_UNAVAILABLE}
+                </p>
               </div>
             </Card>
           </TabsContent>

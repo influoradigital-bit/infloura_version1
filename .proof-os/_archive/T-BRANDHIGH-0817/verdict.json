@@ -1,0 +1,25 @@
+{
+ "verdict": "proved",
+ "oracle": "script",
+ "isolation": "oracle",
+ "done_when": "each of F-0244..F-0250 is fixed at source AND ships a vitest spec that fails on the pre-fix code and passes on the post-fix code; npx vitest run on those specs is green; npx tsc --noEmit is 0 errors; priya returns a fresh-context verdict on the diff",
+ "not_checked": [
+  "whether any fix behaves correctly against a running backend - every gate is source plus vitest, nothing was rendered or exercised live",
+  "whether the server accepts a signature from whichever party clicks first, now that both Sign controls are offered",
+  "whether the fail-open canVerify is safe for a genuine non-admin whose role query rejects - the verification-submit endpoint's authorization guard was not traced",
+  "whether a brand user's personal name is recoverable at all - F-0246 was closed by binding to the WORKSPACE identity; persistBrandSession still drops displayName",
+  "npx tsc --noEmit was green at the final check but was observed broken three times mid-run by a concurrent session; a clean typecheck on this tree is a snapshot, not a state"
+ ],
+ "skipped": [
+  {
+   "step": "F-0248 promotion",
+   "reason": "held open at the user's instruction because a concurrent session is editing contracts-and-deliverables.tsx toward the same ticket; its gate exits 1 and the DRAFT-unsignable gap is recorded as F-0267"
+  }
+ ],
+ "evidence": {
+  "oracle": "script",
+  "command": "for g in F-0244-owner-self-lockout F-0245-F-0246-dashboard-states-and-identity F-0247-premature-success-copy F-0249-stale-seed-overwrites-real-data F-0250-F-0268-pending-signature-deadlock; do bash .proof-os/gates/$g.sh; done",
+  "result": "5 gates exit 0; the sixth (F-0248-unreachable-primary-action.sh) exits 1 and is declared in skipped",
+  "where": ".proof-os/gates/F-0250-F-0268-pending-signature-deadlock.sh:1"
+ }
+}

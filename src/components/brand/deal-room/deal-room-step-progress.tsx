@@ -13,7 +13,14 @@ const phases: { id: DealPhase; label: string }[] = [
 
 export function getDealPhase(dealStatus: string, contractStatus?: string): DealPhase {
   if (dealStatus === 'negotiating') return 'negotiate';
-  if (dealStatus === 'contracted' || contractStatus === 'generated' || contractStatus === 'brand_signed') {
+  // 'pending_signature' (F-0250 follow-up): one signature exists, party unknown — still the
+  // "contract" phase, not a fall-through back to "negotiate".
+  if (
+    dealStatus === 'contracted' ||
+    contractStatus === 'generated' ||
+    contractStatus === 'pending_signature' ||
+    contractStatus === 'brand_signed'
+  ) {
     return 'contract';
   }
   if (contractStatus === 'creator_signed' && dealStatus !== 'in_progress') return 'escrow';

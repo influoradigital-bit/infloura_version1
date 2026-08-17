@@ -49,13 +49,18 @@ export function CreatorDealContractTab({
   const [signerName, setSignerName] = React.useState('');
   const [isFetchingPdf, setIsFetchingPdf] = React.useState(false);
   const { toast } = useToast();
-  const canSign = status === 'brand_signed';
+  // 'pending_signature' (F-0250 follow-up): the coarse mapper cannot tell which party signed
+  // first on PENDING_SIGNATURES. Keeping canSign true here means the creator's Sign control
+  // stays reachable on the (common) brand-first path instead of deadlocking behind a permanent
+  // "awaiting brand" state — see mapDealApiContractStatus's doc comment.
+  const canSign = status === 'brand_signed' || status === 'pending_signature';
   // FE-3 honest states, derived from the real brandSignedAt/creatorSignedAt
   // timestamps (via mapApiContractToDealStatus): 'generated' = neither party
   // has signed yet (DRAFT) — the creator's turn hasn't come, so this reads
   // as "awaiting brand" too. 'creator_signed' means BOTH parties have
   // already signed (escrow just isn't funded yet) — that's "fully signed",
-  // not "awaiting brand".
+  // not "awaiting brand". 'pending_signature' must NOT be treated as "awaiting brand" — that
+  // would assert the brand hasn't signed when they may have (see canSign above).
   const awaitingBrandSignature = status === 'generated';
   const fullySigned = status === 'creator_signed' || status === 'active';
   // C16: prefer the real contract total; fall back to the deal's dealValue,
@@ -156,7 +161,9 @@ export function CreatorDealContractTab({
               <div>
                 <p className="font-medium text-sm">Your turn to sign</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {brandName} has signed. Review the PDF, then sign to proceed.
+                  {status === 'brand_signed'
+                    ? `${brandName} has signed. Review the PDF, then sign to proceed.`
+                    : 'Review the PDF, then sign to proceed.'}
                 </p>
               </div>
             </CardContent>

@@ -90,3 +90,28 @@ describe('CreatorContractCard — F-0226: never claims escrow is funded', () => 
     expect(screen.getByText('Both Signed')).toBeInTheDocument();
   });
 });
+
+/**
+ * F-0250 follow-up — 'pending_signature' (signer unknown) must keep the creator's Sign
+ * control reachable here too, since this card is a real, live consumer of
+ * `mapDealApiContractStatus`'s output (creator-chat.tsx `enrichContractEvent` writes the
+ * coarse status straight into `event.metadata.contractStatus`, which this card reads).
+ */
+describe('CreatorContractCard — pending_signature keeps the Sign control reachable', () => {
+  it('shows the Sign button on pending_signature', () => {
+    const event = makeEvent({ contractStatus: 'pending_signature', amount: 75000 });
+    render(<CreatorContractCard event={event} onViewClick={vi.fn()} onSignClick={vi.fn()} />);
+
+    expect(screen.getByText('Sign Now')).toBeInTheDocument();
+  });
+
+  it('does not claim the brand specifically has signed on pending_signature', () => {
+    const event = makeEvent({ contractStatus: 'pending_signature', amount: 75000 });
+    render(<CreatorContractCard event={event} onViewClick={vi.fn()} onSignClick={vi.fn()} />);
+
+    expect(
+      screen.queryByText(/the brand has signed the contract\. please review the terms/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Signature Pending - Your Turn to Sign')).toBeInTheDocument();
+  });
+});

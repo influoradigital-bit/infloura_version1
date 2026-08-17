@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { Skeleton } from '@/components/ui/skeleton';
 import { TrendSparkNudgeCard } from '@/components/trendspark/TrendSparkNudgeCard';
 
 // ---------------------------------------------------------------------------
@@ -102,19 +103,35 @@ const getPriorityBadge = (priority: ActionItem['priority']) => {
   }
 };
 
+/** F-0245 — every data-backed region on this page tracks its own three-way status so a
+ * still-loading or failed fetch can never render as the same screen as a genuinely-empty
+ * one. `'loading'` is the initial value for all three; nothing here defaults straight to
+ * `'ready'`. */
+type LoadStatus = 'loading' | 'error' | 'ready';
+
 export function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const [actionItems, setActionItems] = React.useState<ActionItem[]>([]);
   const [wallet, setWallet] = React.useState<WalletSummaryState>(EMPTY_WALLET);
   const [pipeline, setPipeline] = React.useState<Array<{ stage: string; count: number }>>([]);
+  const [actionsStatus, setActionsStatus] = React.useState<LoadStatus>('loading');
+  const [walletStatus, setWalletStatus] = React.useState<LoadStatus>('loading');
+  const [pipelineStatus, setPipelineStatus] = React.useState<LoadStatus>('loading');
 
   // Load each of the three data sources independently — `Promise.allSettled` (not
   // `Promise.all`) so that one endpoint rejecting (e.g. a brand-new workspace's
   // `GET /wallet` 404ing) can't discard the other two calls that DID succeed. Each
   // rejected source falls back to a real empty/zero state, never a fabricated one.
-  React.useEffect(() => {
+  //
+  // F-0245 — extracted into a callback (mirrors brand-settings.tsx's `loadWorkspaceInfo`)
+  // so each card's Retry button can re-run it, and re-armed to 'loading' on every call so a
+  // retry doesn't leave the previous error/empty screen up while the new request is in flight.
+  const loadDashboard = React.useCallback(() => {
     let cancelled = false;
+    setActionsStatus('loading');
+    setWalletStatus('loading');
+    setPipelineStatus('loading');
     (async () => {
       const [actionsResult, walletResult, pipelineResult] = await Promise.allSettled([
         api.dashboard.actions('brand'),
@@ -128,12 +145,20 @@ export function DashboardPage() {
       // render a proper empty state below. Requiring non-empty treated that correct empty
       // response the same as "API call didn't return usable data," so it silently kept the
       // mock/demo rows forever instead of ever showing the account's real (empty) state.
+      // F-0245 — status is set from the settle outcome itself, independent of the data
+      // fallback above: a rejected source still gets its real empty state (never a fabricated
+      // one, per the comments above) AND is flagged 'error' so the UI shows a retry affordance
+      // instead of silently rendering that empty state as if it were a confirmed real zero.
       if (actionsResult.status === 'fulfilled' && Array.isArray(actionsResult.value)) {
         setActionItems(
           actionsResult.value.map((a) => ({ ...a, deadline: new Date(a.deadline) })) as ActionItem[],
         );
+        setActionsStatus('ready');
       } else if (actionsResult.status === 'rejected') {
         setActionItems([]);
+        setActionsStatus('error');
+      } else {
+        setActionsStatus('ready');
       }
 
       if (walletResult.status === 'fulfilled' && walletResult.value) {
@@ -145,14 +170,22 @@ export function DashboardPage() {
           // health computation below would treat as a "critical, out of runway" wallet.
           runwayDays: walletResult.value.runwayDays ?? null,
         });
+        setWalletStatus('ready');
       } else if (walletResult.status === 'rejected') {
         setWallet(EMPTY_WALLET);
+        setWalletStatus('error');
+      } else {
+        setWalletStatus('ready');
       }
 
       if (pipelineResult.status === 'fulfilled' && Array.isArray(pipelineResult.value)) {
         setPipeline(pipelineResult.value);
+        setPipelineStatus('ready');
       } else if (pipelineResult.status === 'rejected') {
         setPipeline([]);
+        setPipelineStatus('error');
+      } else {
+        setPipelineStatus('ready');
       }
 
       const failures = [actionsResult, walletResult, pipelineResult].filter(
@@ -174,6 +207,8 @@ export function DashboardPage() {
       cancelled = true;
     };
   }, []);
+
+  React.useEffect(() => loadDashboard(), [loadDashboard]);
 
   const greeting = React.useMemo(() => {
     const hour = new Date().getHours();
@@ -200,9 +235,15 @@ export function DashboardPage() {
             {greeting}, {user?.firstName || 'there'}
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            {urgentCount > 0
-              ? `${urgentCount} urgent action${urgentCount > 1 ? 's' : ''} need your attention`
-              : 'You\'re all caught up.'}
+            {/* F-0245 — never assert "caught up" (a real-zero claim) while the fetch that would
+                confirm it is still loading or has failed. */}
+            {actionsStatus === 'loading'
+              ? 'Loading your latest activity…'
+              : actionsStatus === 'error'
+                ? 'Some figures may be out of date.'
+                : urgentCount > 0
+                  ? `${urgentCount} urgent action${urgentCount > 1 ? 's' : ''} need your attention`
+                  : 'You\'re all caught up.'}
           </p>
         </div>
         <Button onClick={() => navigate('/brand/campaigns/new')} size="lg" className="gap-2">
@@ -219,11 +260,28 @@ export function DashboardPage() {
               <Timer className="h-5 w-5 text-orange-500" />
               Requires Your Action
             </CardTitle>
-            <Badge variant="secondary">{actionItems.length} pending</Badge>
+            <Badge variant="secondary">
+              {actionsStatus === 'ready' ? `${actionItems.length} pending` : '—'}
+            </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {actionItems.map((item) => {
+          {actionsStatus === 'loading' && (
+            <div className="space-y-3" role="status" aria-label="Loading pending actions">
+              <Skeleton className="h-16 w-full rounded-lg" />
+              <Skeleton className="h-16 w-full rounded-lg" />
+              <Skeleton className="h-16 w-full rounded-lg" />
+            </div>
+          )}
+
+          {actionsStatus === 'error' && (
+            <DashboardCardError
+              message="Couldn’t load your pending actions."
+              onRetry={loadDashboard}
+            />
+          )}
+
+          {actionsStatus === 'ready' && actionItems.map((item) => {
             const Icon = getActionIcon(item.type);
             const timeLeft = getTimeRemaining(item.deadline);
             const isOverdue = item.deadline.getTime() < Date.now();
@@ -268,7 +326,7 @@ export function DashboardPage() {
             );
           })}
 
-          {actionItems.length === 0 && (
+          {actionsStatus === 'ready' && actionItems.length === 0 && (
             <div className="text-center py-12">
               <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15">
                 <CheckCircle2 className="h-6 w-6 text-success" />
@@ -282,29 +340,118 @@ export function DashboardPage() {
 
       {/* SECONDARY ROW: pipeline + wallet — single line, dense */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <PipelineCard
-          pipeline={pipeline}
-          total={pipelineTotal}
-          onClickStage={(stage) =>
-            navigate(`/brand/campaigns?status=${stage.toLowerCase().replace(' ', '-')}`)
-          }
-          onViewAll={() => navigate('/brand/campaigns')}
-        />
+        {pipelineStatus === 'loading' && <PipelineCardSkeleton />}
+        {pipelineStatus === 'error' && (
+          <PipelineCardShell>
+            <DashboardCardError message="Couldn’t load your pipeline." onRetry={loadDashboard} />
+          </PipelineCardShell>
+        )}
+        {pipelineStatus === 'ready' && (
+          <PipelineCard
+            pipeline={pipeline}
+            total={pipelineTotal}
+            onClickStage={(stage) =>
+              navigate(`/brand/campaigns?status=${stage.toLowerCase().replace(' ', '-')}`)
+            }
+            onViewAll={() => navigate('/brand/campaigns')}
+          />
+        )}
 
-        <WalletCard
-          balance={wallet.availableBalance}
-          escrow={wallet.escrowLocked}
-          runwayDays={wallet.runwayDays}
-          health={walletHealth}
-          healthLabel={walletHealthBadge}
-          onManage={() => navigate('/brand/wallet')}
-        />
+        {walletStatus === 'loading' && <WalletCardSkeleton />}
+        {walletStatus === 'error' && (
+          <WalletCardShell>
+            <DashboardCardError message="Couldn’t load your wallet." onRetry={loadDashboard} />
+          </WalletCardShell>
+        )}
+        {walletStatus === 'ready' && (
+          <WalletCard
+            balance={wallet.availableBalance}
+            escrow={wallet.escrowLocked}
+            runwayDays={wallet.runwayDays}
+            health={walletHealth}
+            healthLabel={walletHealthBadge}
+            onManage={() => navigate('/brand/wallet')}
+          />
+        )}
       </div>
 
       {/* Trend-Spark soft nudge (T7) — renders nothing while loading/on error/204/dismissed,
           so it never leaves a gap when there's nothing to suggest. */}
       <TrendSparkNudgeCard />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// F-0245 — shared loading/error primitives for the dashboard's data-backed cards.
+// `text-destructive-foreground` (not `text-destructive`) per this theme's pale-bg/strong-fg
+// palette — `text-destructive` renders effectively invisible here.
+// ---------------------------------------------------------------------------
+
+function DashboardCardError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-8 text-center" role="alert">
+      <AlertTriangle className="h-5 w-5 text-destructive-foreground" />
+      <p className="text-sm text-destructive-foreground">{message}</p>
+      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+/** Card chrome only — used to host loading/error content in place of PipelineCard so the
+ * header (title + "View all") never renders live pipeline data before it's confirmed loaded. */
+function PipelineCardShell({ children }: { children: React.ReactNode }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-medium">Pipeline</CardTitle>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
+
+function PipelineCardSkeleton() {
+  return (
+    <PipelineCardShell>
+      <div role="status" aria-label="Loading pipeline">
+        <Skeleton className="h-6 w-full rounded-lg mb-3" />
+        <div className="grid grid-cols-3 gap-1.5">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-full" />
+        </div>
+      </div>
+    </PipelineCardShell>
+  );
+}
+
+/** Same shell-only pattern as PipelineCardShell, for the Wallet card. */
+function WalletCardShell({ children }: { children: React.ReactNode }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-medium flex items-center gap-2">
+          <Wallet className="h-4 w-4" />
+          Wallet
+        </CardTitle>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
+
+function WalletCardSkeleton() {
+  return (
+    <WalletCardShell>
+      <div className="space-y-3" role="status" aria-label="Loading wallet">
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-1.5 w-full" />
+        <Skeleton className="h-8 w-full" />
+      </div>
+    </WalletCardShell>
   );
 }
 
@@ -359,6 +506,13 @@ function PipelineCard({ pipeline, total, onClickStage, onViewAll }: PipelineCard
         </div>
       </CardHeader>
       <CardContent>
+        {/* F-0245 — this component only ever renders once pipelineStatus === 'ready', so an
+            empty array here is a confirmed real empty pipeline, not a loading/error gap. */}
+        {pipeline.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-6">
+            No deals in your pipeline yet.
+          </p>
+        )}
         <div className="flex h-6 rounded-lg overflow-hidden mb-3">
           {pipeline.map((stage) => (
             <button
