@@ -2564,11 +2564,30 @@ export const deliverables = {
         )
       : mockOr({ deliverableId: id, status: 'SUBMITTED' as DeliverableStatus }),
 
-  /** POST /deliverables/:id/approve  (brand) */
+  /**
+   * POST /deliverables/:id/approve  (brand)
+   *
+   * F-0223 — approving is what pays the creator, and this used to return only the deliverable's
+   * new status. `BrandDeliverableService#approve` attempts an escrow release for the linked
+   * milestone, and eight conditions inside `EscrowService#tryReleaseOnApproval` end in a silent
+   * skip — an unfunded milestone, an unmet release condition, a dispute freeze. All of them
+   * returned APPROVED, so the brand read "Approved" over a payment that never happened.
+   *
+   * `paymentReleased` false always carries a `paymentHeldReason` code. Callers MUST branch on it:
+   * reporting an approval as a payment when escrow held is the defect this field exists to end.
+   */
   approve: (id: string) =>
     isLive()
-      ? http.request<{ status: DeliverableStatus }>('POST', `/deliverables/${id}/approve`)
-      : mockOr({ status: 'APPROVED' as DeliverableStatus }),
+      ? http.request<{
+          status: DeliverableStatus;
+          paymentReleased: boolean;
+          paymentHeldReason: string | null;
+        }>('POST', `/deliverables/${id}/approve`)
+      : mockOr({
+          status: 'APPROVED' as DeliverableStatus,
+          paymentReleased: true,
+          paymentHeldReason: null,
+        }),
 
   /** POST /deliverables/:id/revise  (brand) */
   requestRevision: (id: string, feedback: string) =>

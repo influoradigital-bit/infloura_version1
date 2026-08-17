@@ -13,7 +13,27 @@ public final class BrandDeliverableDtos {
     public record ReviseRequest(String feedback) {}
 
     /** Approve / revise response — mirrors {@code api.ts} {@code { status }} contract. */
-    public record ReviewResponse(DeliverableStatus status) {}
+    /**
+     * F-0223 — {@code paymentReleased} and {@code paymentHeldReason} exist because approving a
+     * deliverable is the act that pays the creator, and this response used to carry only the
+     * deliverable's new status. Approval succeeded identically whether escrow released or was
+     * silently skipped (unfunded milestone, unmet release condition, dispute freeze — eight
+     * conditions in all), so the brand was told "Approved" over a payment that never happened
+     * and the creator was left waiting with nothing to look at.
+     *
+     * <p>{@code paymentHeldReason} is null when {@code paymentReleased} is true, and otherwise
+     * carries the server-side reason code so the UI can say WHICH held it. Only meaningful on
+     * the approve path — {@code revise} and {@code reject} never release, and report false with
+     * a {@code NOT_APPLICABLE} reason rather than pretending the question does not apply.
+     */
+    public record ReviewResponse(
+            DeliverableStatus status, boolean paymentReleased, String paymentHeldReason) {
+
+        /** Revise/reject: no release is attempted, so neither field carries a claim about money. */
+        public static ReviewResponse withoutRelease(DeliverableStatus status) {
+            return new ReviewResponse(status, false, "NOT_APPLICABLE");
+        }
+    }
 
     /** File in a deliverable detail response — presigned URLs already resolved. */
     public record DeliverableFileDetail(

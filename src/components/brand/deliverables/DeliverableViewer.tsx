@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { paymentHeldMessage } from '@/lib/escrow-release-reason';
 import { useDeliverableDetail } from '@/hooks/brand/useDeliverableDetail';
 import { useDeliverableSafetyReview } from '@/hooks/brand/useDeliverableSafetyReview';
 import { DeliverableSafetyReviewCard } from './DeliverableSafetyReviewCard';
@@ -244,7 +245,22 @@ export function DeliverableViewer({
     if (!deliverable) return;
     setIsApproving(true);
     try {
-      await api.deliverables.approve(deliverable.id);
+      const result = await api.deliverables.approve(deliverable.id);
+      // F-0223 — approving is what pays the creator, and the release can be skipped server-side
+      // without throwing (unfunded milestone, unmet release condition, dispute freeze). Saying
+      // "Approved" over a payment that never happened is the whole defect.
+      if (result.paymentReleased) {
+        toast({
+          title: 'Deliverable approved',
+          description: 'Payment has been released to the creator.',
+        });
+      } else {
+        toast({
+          title: 'Approved — but payment was NOT released',
+          description: paymentHeldMessage(result.paymentHeldReason),
+          variant: 'destructive',
+        });
+      }
       onActionComplete?.();
       onOpenChange(false);
     } catch (err) {

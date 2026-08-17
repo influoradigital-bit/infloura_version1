@@ -75,6 +75,14 @@ class BrandDeliverableServiceTest {
 
     private void stubActiveCollaboration() {
         when(collaborationRepository.findById(COLLAB_ID)).thenReturn(java.util.Optional.of(activeCollaboration()));
+        // F-0223 — tryReleaseOnApproval returns a ReleaseOutcome, not a boolean, so an unstubbed
+        // mock hands back null and approve() NPEs. Default to a real release for the tests whose
+        // subject is the status transition; the two that assert on payment stub it explicitly and
+        // override this. Deliberately NOT made null-tolerant in production code: a null outcome
+        // there would be a genuine bug, and swallowing it would be the F-0223 defect again.
+        org.mockito.Mockito.lenient()
+                .when(escrowService.tryReleaseOnApproval(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(com.influora.service.EscrowService.ReleaseOutcome.RELEASED);
     }
 
     private static Deliverable submittedDeliverable() {
@@ -151,7 +159,8 @@ class BrandDeliverableServiceTest {
         when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
                 .thenReturn(java.util.Optional.of(deliverable));
         stubActiveCollaboration();
-        when(escrowService.tryReleaseOnApproval(WORKSPACE_ID, milestoneId)).thenReturn(true);
+        when(escrowService.tryReleaseOnApproval(WORKSPACE_ID, milestoneId))
+                .thenReturn(com.influora.service.EscrowService.ReleaseOutcome.RELEASED);
 
         ReviewResponse response = service.approve(principal, DELIVERABLE_ID);
 
@@ -167,7 +176,8 @@ class BrandDeliverableServiceTest {
         when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
                 .thenReturn(java.util.Optional.of(deliverable));
         stubActiveCollaboration();
-        when(escrowService.tryReleaseOnApproval(WORKSPACE_ID, null)).thenReturn(false);
+        when(escrowService.tryReleaseOnApproval(WORKSPACE_ID, null))
+                .thenReturn(new com.influora.service.EscrowService.ReleaseOutcome(false, "NO_MILESTONE"));
 
         ReviewResponse response = service.approve(principal, DELIVERABLE_ID);
 

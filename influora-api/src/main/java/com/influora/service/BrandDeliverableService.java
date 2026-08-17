@@ -113,8 +113,9 @@ public class BrandDeliverableService {
         // milestone (B5 release_condition gate applies inside EscrowService). Same transaction as
         // the status flip above: a genuine failure here (not a "not eligible yet" no-op) rolls the
         // whole approval back rather than leaving an approved-but-inconsistent state.
+        EscrowService.ReleaseOutcome release;
         try {
-            escrowService.tryReleaseOnApproval(workspace.getId(), deliverable.getMilestoneId());
+            release = escrowService.tryReleaseOnApproval(workspace.getId(), deliverable.getMilestoneId());
         } catch (ApiException e) {
             log.error(
                     "Escrow release attempt failed for deliverable {} (milestone {}) during approval —"
@@ -125,7 +126,19 @@ public class BrandDeliverableService {
             throw e;
         }
 
-        return new ReviewResponse(DeliverableStatus.APPROVED);
+        // F-0223 — the release outcome travels with the approval. Eight conditions inside
+        // tryReleaseOnApproval end in "held", and every one of them used to be reported to the
+        // brand as a plain success while the creator was paid nothing.
+        if (!release.released()) {
+            log.warn(
+                    "Deliverable {} approved but escrow was NOT released (milestone {}, reason {}) —"
+                            + " the creator has not been paid for this approval",
+                    deliverableId,
+                    deliverable.getMilestoneId(),
+                    release.heldReason());
+        }
+        return new ReviewResponse(
+                DeliverableStatus.APPROVED, release.released(), release.heldReason());
     }
 
     @Transactional
@@ -163,7 +176,7 @@ public class BrandDeliverableService {
                 null,
                 sanitizedFeedback,
                 null);
-        return new ReviewResponse(DeliverableStatus.REVISION_REQUESTED);
+        return ReviewResponse.withoutRelease(DeliverableStatus.REVISION_REQUESTED);
     }
 
     /**
@@ -196,7 +209,7 @@ public class BrandDeliverableService {
         // (B6: rejection is a final brand decision on that slot, not an indefinite block — see
         // CollaborationLifecycleService's DELIVERABLE_RESOLVED javadoc).
         collaborationLifecycleService.onDeliverableReviewed(deliverable.getCollaborationId());
-        return new ReviewResponse(DeliverableStatus.REJECTED);
+        return ReviewResponse.withoutRelease(DeliverableStatus.REJECTED);
     }
 
     /**

@@ -259,7 +259,8 @@ class EscrowReleaseGateIntegrationTest extends AbstractIntegrationTest {
 
         boolean released =
                 assertDoesNotThrow(
-                        () -> escrowService.tryReleaseOnApproval(fx.workspaceId(), milestone.getId()));
+                                () -> escrowService.tryReleaseOnApproval(fx.workspaceId(), milestone.getId()))
+                        .released();
 
         assertFalse(released);
 

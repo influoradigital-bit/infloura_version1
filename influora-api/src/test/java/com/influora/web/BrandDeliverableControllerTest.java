@@ -48,7 +48,7 @@ class BrandDeliverableControllerTest {
     @DisplayName("POST /deliverables/{id}/approve delegates to service")
     void testApprove() {
         when(brandDeliverableService.approve(eq(principal), eq(DELIVERABLE_ID)))
-                .thenReturn(new ReviewResponse(DeliverableStatus.APPROVED));
+                .thenReturn(new ReviewResponse(DeliverableStatus.APPROVED, true, null));
 
         ResponseEntity<ApiResponse<ReviewResponse>> response =
                 controller.approve(principal, DELIVERABLE_ID);
@@ -63,7 +63,7 @@ class BrandDeliverableControllerTest {
     void testRevise() {
         ReviseRequest body = new ReviseRequest("Please fix the intro");
         when(brandDeliverableService.requestRevision(eq(principal), eq(DELIVERABLE_ID), eq(body)))
-                .thenReturn(new ReviewResponse(DeliverableStatus.REVISION_REQUESTED));
+                .thenReturn(ReviewResponse.withoutRelease(DeliverableStatus.REVISION_REQUESTED));
 
         ResponseEntity<ApiResponse<ReviewResponse>> response =
                 controller.revise(principal, DELIVERABLE_ID, body);

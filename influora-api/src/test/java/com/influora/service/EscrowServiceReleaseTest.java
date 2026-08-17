@@ -454,7 +454,7 @@ class EscrowServiceReleaseTest {
     when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(COLLABORATION_ID))
         .thenReturn(List.of(deliverableWithStatus(DeliverableStatus.APPROVED)));
 
-    boolean released = service.tryReleaseOnApproval(WORKSPACE_ID, MILESTONE_ID);
+    boolean released = service.tryReleaseOnApproval(WORKSPACE_ID, MILESTONE_ID).released();
 
     assertFalse(released);
     verify(ledgerService, never())
@@ -506,7 +506,7 @@ class EscrowServiceReleaseTest {
             new WalletLedgerService.LedgerPostingResult(
                 ledgerTxn("release-debit"), ledgerTxn("release-credit")));
 
-    boolean released = service.tryReleaseOnApproval(WORKSPACE_ID, MILESTONE_ID);
+    boolean released = service.tryReleaseOnApproval(WORKSPACE_ID, MILESTONE_ID).released();
 
     assertTrue(released);
     assertEquals(MilestoneStatus.RELEASED, milestone.getStatus());
@@ -516,7 +516,7 @@ class EscrowServiceReleaseTest {
   @Test
   @DisplayName("tryReleaseOnApproval: no-op (false, no exception) when the deliverable has no linked milestone")
   void testTryReleaseOnApprovalNoMilestone() {
-    boolean released = service.tryReleaseOnApproval(WORKSPACE_ID, null);
+    boolean released = service.tryReleaseOnApproval(WORKSPACE_ID, null).released();
 
     assertFalse(released);
     verify(milestoneRepository, never()).findById(any());

@@ -628,20 +628,27 @@ public class EscrowService {
      * failure (an unexpected wallet/ledger error) propagates so the whole {@code approve()}
      * transaction rolls back rather than silently leaving an approved-but-partially-released state.
      *
-     * @return {@code true} if a release actually happened (or had already happened — idempotent)
+     * @return the outcome — {@link ReleaseOutcome#released()} true if a release actually happened
+     *     (or had already happened — idempotent), otherwise a non-null {@code heldReason} naming
+     *     why it did not
      */
     @Transactional
-    public boolean tryReleaseOnApproval(String workspaceId, String milestoneId) {
+    public ReleaseOutcome tryReleaseOnApproval(String workspaceId, String milestoneId) {
         if (milestoneId == null || milestoneId.isBlank()) {
-            return false;
+            return ReleaseOutcome.held("NO_MILESTONE");
         }
         var maybeMilestone = milestoneRepository.findById(milestoneId);
-        if (maybeMilestone.isEmpty() || maybeMilestone.get().getEscrowHoldId() == null) {
-            return false; // no milestone, or not funded yet — nothing to release
+        if (maybeMilestone.isEmpty()) {
+            return ReleaseOutcome.held("MILESTONE_NOT_FOUND");
+        }
+        if (maybeMilestone.get().getEscrowHoldId() == null) {
+            // F-0222's exact signature: the campaign-level pool path never stamps the hold onto
+            // the milestone, so an approval here moves no money and used to say nothing.
+            return ReleaseOutcome.held("MILESTONE_NOT_FUNDED");
         }
         try {
             releaseInternal(workspaceId, milestoneId);
-            return true;
+            return ReleaseOutcome.RELEASED;
         } catch (ApiException e) {
             if (isExpectedReleaseSkip(e.getCode())) {
                 log.info(
@@ -650,9 +657,27 @@ public class EscrowService {
                         milestoneId,
                         workspaceId,
                         e.getCode());
-                return false;
+                return ReleaseOutcome.held(e.getCode());
             }
             throw e;
+        }
+    }
+
+    /**
+     * F-0223 — why an approval did or did not move money.
+     *
+     * <p>This used to be a bare {@code boolean} that {@code BrandDeliverableService#approve}
+     * discarded, so approving a deliverable returned {@code APPROVED} whether the creator had
+     * just been paid or not. Eight distinct conditions land in the "held" branch — an unfunded
+     * milestone, a release condition not yet met, a dispute freeze — and every one of them was
+     * indistinguishable from success at the API and in the UI. The reason travels with the
+     * result now so the caller can say which happened.
+     */
+    public record ReleaseOutcome(boolean released, String heldReason) {
+        public static final ReleaseOutcome RELEASED = new ReleaseOutcome(true, null);
+
+        static ReleaseOutcome held(String reason) {
+            return new ReleaseOutcome(false, reason);
         }
     }
 

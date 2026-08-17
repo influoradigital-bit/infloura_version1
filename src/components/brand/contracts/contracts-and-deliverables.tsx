@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { api, isApiLive, ApiError, type ContractApiRecord, type Deal } from '@/lib/api';
+import { api, isApiLive, ApiError, type ContractApiRecord, type ContractMilestone, type Deal } from '@/lib/api';
+import { paymentHeldMessage } from '@/lib/escrow-release-reason';
 import { useToast } from '@/hooks/use-toast';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -73,6 +74,14 @@ interface Contract {
   currency: string;
   deliverables: ContractDeliverable[];
   clauses: ContractClause[];
+  /**
+   * F-0236: real payment milestones from the backend contract record
+   * (`ContractApiRecord.milestones`, `payment_milestones` table). Empty in
+   * demo mode's mock fixtures below (no live milestones back them) and
+   * empty in live mode until the contract carries at least one. Source for
+   * both the Escrow Status tile (derived below) and the Payments tab.
+   */
+  milestones: ContractMilestone[];
   escrowLocked: boolean;
   escrowAmount: number;
   createdAt: string;
@@ -128,6 +137,7 @@ const mockContracts: Contract[] = [
     currency: 'INR',
     escrowLocked: true,
     escrowAmount: 45000,
+    milestones: [],
     createdAt: '2024-01-10',
     hash: 'a1b2c3d4e5f6g7h8i9j0',
     clauses: [
@@ -221,6 +231,7 @@ const mockContracts: Contract[] = [
     currency: 'INR',
     escrowLocked: true,
     escrowAmount: 35000,
+    milestones: [],
     createdAt: '2024-01-18',
     clauses: [
       {
@@ -276,6 +287,7 @@ const mockContracts: Contract[] = [
     currency: 'INR',
     escrowLocked: false,
     escrowAmount: 0,
+    milestones: [],
     createdAt: '2024-01-20',
     clauses: [
       {
@@ -338,6 +350,8 @@ interface ApiContractRow {
   hash?: string;
   /** C-2 (BrandF.md §62): the real deal/collaboration id — see Contract['collaborationId']. */
   collaborationId?: string;
+  /** F-0236: real payment milestones — see Contract['milestones']. */
+  milestones?: ContractMilestone[];
 }
 
 /**
@@ -399,6 +413,9 @@ function mergeContractRow(row: ApiContractRow, fallback?: Contract): Contract {
     currency: row.currency ?? fallback?.currency ?? 'INR',
     deliverables: fallback?.deliverables ?? [],
     clauses: fallback?.clauses ?? [],
+    // F-0236: milestones now come straight off the real record (adaptContractRecord),
+    // carried over from prior real state as a fallback — never from mockContracts.
+    milestones: row.milestones ?? fallback?.milestones ?? [],
     escrowLocked: row.escrowLocked ?? fallback?.escrowLocked ?? false,
     escrowAmount: row.escrowAmount ?? fallback?.escrowAmount ?? 0,
     createdAt: row.createdAt ?? fallback?.createdAt ?? '',
@@ -419,11 +436,47 @@ function mergeContractRow(row: ApiContractRow, fallback?: Contract): Contract {
  * and creator identity are resolved from the matching Deal (joined by
  * `deal.contractId === record.id`) when available.
  */
+/**
+ * F-0236: derive the real escrow state from the contract's own milestones —
+ * the backend record has no top-level escrowLocked/escrowAmount field, only
+ * per-milestone status (`payment_milestones.status`: PENDING/FUNDED/RELEASED/
+ * REFUNDED/FROZEN, per DealPaymentsTab's nextFundableMilestone comment).
+ * "Locked" means at least one milestone currently holds funded-but-unreleased
+ * money; the amount is the sum actually held right now — FUNDED only, since
+ * RELEASED money has already left escrow and PENDING money was never funded.
+ */
+function deriveEscrowFromMilestones(milestones: ContractMilestone[]): { locked: boolean; amount: number } {
+  const funded = milestones.filter((m) => (m.status ?? '').toUpperCase() === 'FUNDED');
+  return {
+    locked: funded.length > 0,
+    amount: funded.reduce((sum, m) => sum + m.amount, 0),
+  };
+}
+
+/**
+ * Adapt the real backend `ContractApiRecord` into this page's `ApiContractRow`.
+ * The `/contracts` endpoint is collaboration-scoped: it returns `totalAmount`,
+ * `brandSignedAt`/`creatorSignedAt`, `milestones`, `expirationDate` — but NO
+ * campaign or creator identity, and none of the field names line up with the
+ * row shape this page was written against. Before this adapter the fetch did a
+ * blind `as unknown as ApiContractRow[]` cast, so `value`/`campaignName`/dates
+ * were all `undefined` and the row rendered "Untitled Campaign / ₹0 / Invalid
+ * Date". Money/date/signature fields now come straight off the record; campaign
+ * and creator identity are resolved from the matching Deal (joined by
+ * `deal.contractId === record.id`) when available.
+ *
+ * F-0236: `escrowLocked`/`escrowAmount` used to be left unset here entirely
+ * (falling through to mergeContractRow's `false`/`0` default), so every live
+ * contract read "Not Locked" regardless of real state. Both are now derived
+ * from `rec.milestones` via `deriveEscrowFromMilestones`.
+ */
 function adaptContractRecord(rec: ContractApiRecord, deal?: Deal): ApiContractRow {
   // The date a fully-executed contract was "signed": prefer the creator's
   // signature (the last of the two under the current flow), fall back to the
   // brand's, then the effective date. Null when unsigned.
   const signedAt = rec.creatorSignedAt ?? rec.brandSignedAt ?? rec.effectiveDate ?? undefined;
+  const milestones = rec.milestones ?? [];
+  const escrow = deriveEscrowFromMilestones(milestones);
   return {
     id: rec.id,
     campaignId: deal?.campaignId,
@@ -441,6 +494,9 @@ function adaptContractRecord(rec: ContractApiRecord, deal?: Deal): ApiContractRo
     currency: rec.currency,
     createdAt: rec.createdAt,
     collaborationId: rec.collaborationId,
+    milestones,
+    escrowLocked: escrow.locked,
+    escrowAmount: escrow.amount,
   };
 }
 
@@ -650,7 +706,21 @@ export function ContractsAndDeliverables() {
     if (liveApi) {
       setIsApproving(true);
       try {
-        await api.deliverables.approve(selectedDeliverable.id);
+        const result = await api.deliverables.approve(selectedDeliverable.id);
+        // F-0223 — the release can be skipped server-side without throwing, so a successful
+        // approve is NOT proof the creator was paid. Say which happened.
+        if (result.paymentReleased) {
+          toast({
+            title: 'Deliverable approved',
+            description: 'Payment has been released to the creator.',
+          });
+        } else {
+          toast({
+            title: 'Approved — but payment was NOT released',
+            description: paymentHeldMessage(result.paymentHeldReason),
+            variant: 'destructive',
+          });
+        }
       } catch (err) {
         toast({
           title: 'Could not approve deliverable',
@@ -1063,7 +1133,14 @@ export function ContractsAndDeliverables() {
                         <Shield className="w-5 h-5 text-green-500" />
                         <div className="flex-1">
                           <p className="text-sm font-medium text-green-400">Contract Fully Executed</p>
-                          <p className="text-xs text-muted-foreground">Signed on {formatDateSafe(selectedContract.signedDate)} | Hash: {selectedContract.hash}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Signed on {formatDateSafe(selectedContract.signedDate)}
+                            {/* F-0236: adaptContractRecord never populates `hash` (the backend
+                                record has no such field, only `pdfR2Key`) — showing it
+                                unconditionally printed "Hash: undefined" for every live
+                                contract. Only mock-mode fixtures carry a hash. */}
+                            {selectedContract.hash ? ` | Hash: ${selectedContract.hash}` : ''}
+                          </p>
                         </div>
                         <div className="flex gap-2">
                           <div className="flex items-center gap-1 text-xs">
@@ -1354,70 +1431,191 @@ export function ContractsAndDeliverables() {
                   </TabsContent>
 
                   {/* Payments Tab */}
+                  {/*
+                    F-0236: this tab used to render a hardcoded "50% upon signing —
+                    Paid / 50% upon completion — In Escrow" schedule plus a fake
+                    "Jan 10/15, 2024" transaction history for every contract,
+                    regardless of real state, with no isApiLive() guard — a brand
+                    on a real contract was told half their money had already been
+                    released. Live mode now renders the contract's real
+                    `ContractApiRecord.milestones` (id/description/amount/status
+                    straight off `payment_milestones`, the same source
+                    deal-payments-tab.tsx uses) instead. There is no per-contract
+                    transaction/audit-log endpoint (`GET /wallet/escrow` is
+                    brand-wide and not filterable by contract, and milestones carry
+                    no funded/released timestamp) — that section honestly says so
+                    rather than inventing dates.
+                  */}
                   <TabsContent value="payments" className="p-6">
                     <div className="space-y-4">
-                      <Card className="p-4 border-border">
-                        <h3 className="font-semibold mb-4">Payment Schedule</h3>
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
-                                <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      {liveApi ? (
+                        selectedContract.milestones.length === 0 ? (
+                          <Card className="p-4 border-border">
+                            <p className="text-sm text-muted-foreground">
+                              Payment milestone detail isn&apos;t available for this contract yet.
+                            </p>
+                          </Card>
+                        ) : (
+                          <>
+                            <Card className="p-4 border-border">
+                              <h3 className="font-semibold mb-4">Payment Schedule</h3>
+                              <div className="space-y-3">
+                                {selectedContract.milestones.map((milestone, index) => {
+                                  const rawStatus = (milestone.status ?? 'PENDING').toUpperCase();
+                                  const isReleased = rawStatus === 'RELEASED';
+                                  const isFunded = rawStatus === 'FUNDED';
+                                  const isRefunded = rawStatus === 'REFUNDED';
+                                  const isFrozen = rawStatus === 'FROZEN';
+                                  const label =
+                                    milestone.description || `Milestone ${milestone.sequenceNo ?? index + 1}`;
+                                  const subtext = isReleased
+                                    ? 'Released to creator'
+                                    : isFunded
+                                      ? 'Held in escrow'
+                                      : isRefunded
+                                        ? 'Refunded to brand'
+                                        : isFrozen
+                                          ? 'Frozen — under dispute'
+                                          : 'Not yet funded';
+                                  const statusLabel = isReleased
+                                    ? 'Paid'
+                                    : isFunded
+                                      ? 'In Escrow'
+                                      : isRefunded
+                                        ? 'Refunded'
+                                        : isFrozen
+                                          ? 'Frozen'
+                                          : 'Pending';
+                                  return (
+                                    <div
+                                      key={milestone.id ?? `ms-${index}`}
+                                      className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <div
+                                          className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                            isReleased
+                                              ? 'bg-green-500/20'
+                                              : isFunded
+                                                ? 'bg-amber-500/20'
+                                                : 'bg-muted-foreground/10'
+                                          }`}
+                                        >
+                                          {isReleased ? (
+                                            <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                          ) : isFunded ? (
+                                            <Lock className="w-4 h-4 text-amber-500" />
+                                          ) : (
+                                            <Clock className="w-4 h-4 text-muted-foreground" />
+                                          )}
+                                        </div>
+                                        <div>
+                                          <p className="font-medium text-sm">{label}</p>
+                                          <p className="text-xs text-muted-foreground">{subtext}</p>
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <p
+                                          className={`font-semibold ${
+                                            isReleased ? 'text-green-500' : !isFunded ? 'text-muted-foreground' : ''
+                                          }`}
+                                        >
+                                          {formatCurrency(milestone.amount, selectedContract.currency)}
+                                        </p>
+                                        <p
+                                          className={`text-xs ${
+                                            isReleased
+                                              ? 'text-green-500'
+                                              : isFunded
+                                                ? 'text-amber-500'
+                                                : 'text-muted-foreground'
+                                          }`}
+                                        >
+                                          {statusLabel}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
-                              <div>
-                                <p className="font-medium text-sm">50% Upon Signing</p>
-                                <p className="text-xs text-muted-foreground">Released when contract is signed</p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-semibold text-green-500">{formatCurrency(selectedContract.value / 2, selectedContract.currency)}</p>
-                              <p className="text-xs text-green-500">Paid</p>
-                            </div>
-                          </div>
+                            </Card>
 
-                          <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
-                                <Lock className="w-4 h-4 text-amber-500" />
+                            <Card className="p-4 border-border">
+                              <h3 className="font-semibold mb-4">Transaction History</h3>
+                              <p className="text-sm text-muted-foreground">
+                                Transaction-level history isn&apos;t available from the API for this
+                                contract yet — the payment schedule above reflects each milestone&apos;s
+                                current status.
+                              </p>
+                            </Card>
+                          </>
+                        )
+                      ) : (
+                        <>
+                          <Card className="p-4 border-border">
+                            <h3 className="font-semibold mb-4">Payment Schedule</h3>
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
+                                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-sm">50% Upon Signing</p>
+                                    <p className="text-xs text-muted-foreground">Released when contract is signed</p>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-semibold text-green-500">{formatCurrency(selectedContract.value / 2, selectedContract.currency)}</p>
+                                  <p className="text-xs text-green-500">Paid</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="font-medium text-sm">50% Upon Completion</p>
-                                <p className="text-xs text-muted-foreground">Released when all deliverables approved</p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-semibold">{formatCurrency(selectedContract.value / 2, selectedContract.currency)}</p>
-                              <p className="text-xs text-amber-500">In Escrow</p>
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
 
-                      <Card className="p-4 border-border">
-                        <h3 className="font-semibold mb-4">Transaction History</h3>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between py-2 border-b border-border">
-                            <div className="flex items-center gap-3">
-                              <DollarSign className="w-4 h-4 text-muted-foreground" />
-                              <div>
-                                <p className="text-sm">Escrow Funded</p>
-                                <p className="text-xs text-muted-foreground">Jan 10, 2024</p>
+                              <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
+                                    <Lock className="w-4 h-4 text-amber-500" />
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-sm">50% Upon Completion</p>
+                                    <p className="text-xs text-muted-foreground">Released when all deliverables approved</p>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-semibold">{formatCurrency(selectedContract.value / 2, selectedContract.currency)}</p>
+                                  <p className="text-xs text-amber-500">In Escrow</p>
+                                </div>
                               </div>
                             </div>
-                            <p className="font-medium">{formatCurrency(selectedContract.value, selectedContract.currency)}</p>
-                          </div>
-                          <div className="flex items-center justify-between py-2 border-b border-border">
-                            <div className="flex items-center gap-3">
-                              <Send className="w-4 h-4 text-green-500" />
-                              <div>
-                                <p className="text-sm">First Payment Released</p>
-                                <p className="text-xs text-muted-foreground">Jan 15, 2024</p>
+                          </Card>
+
+                          <Card className="p-4 border-border">
+                            <h3 className="font-semibold mb-4">Transaction History</h3>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between py-2 border-b border-border">
+                                <div className="flex items-center gap-3">
+                                  <DollarSign className="w-4 h-4 text-muted-foreground" />
+                                  <div>
+                                    <p className="text-sm">Escrow Funded</p>
+                                    <p className="text-xs text-muted-foreground">Jan 10, 2024</p>
+                                  </div>
+                                </div>
+                                <p className="font-medium">{formatCurrency(selectedContract.value, selectedContract.currency)}</p>
+                              </div>
+                              <div className="flex items-center justify-between py-2 border-b border-border">
+                                <div className="flex items-center gap-3">
+                                  <Send className="w-4 h-4 text-green-500" />
+                                  <div>
+                                    <p className="text-sm">First Payment Released</p>
+                                    <p className="text-xs text-muted-foreground">Jan 15, 2024</p>
+                                  </div>
+                                </div>
+                                <p className="font-medium text-green-500">-{formatCurrency(selectedContract.value / 2, selectedContract.currency)}</p>
                               </div>
                             </div>
-                            <p className="font-medium text-green-500">-{formatCurrency(selectedContract.value / 2, selectedContract.currency)}</p>
-                          </div>
-                        </div>
-                      </Card>
+                          </Card>
+                        </>
+                      )}
                     </div>
                   </TabsContent>
                 </Tabs>
