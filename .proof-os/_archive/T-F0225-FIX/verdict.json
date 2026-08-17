@@ -1,0 +1,36 @@
+{
+  "verdict": "proved",
+  "oracle": "script",
+  "isolation": "oracle",
+  "done_when": "a creator who withdrew can re-apply to the same campaign and a brand can re-invite, with the CANCELLED collaboration revived in place instead of 409 ALREADY_APPLIED/COLLABORATION_EXISTS; the revived row carries a fresh applied_at, the correct source, and no stale agreed terms; non-CANCELLED duplicates still 409; gates/build.mvn.sh and gates/build.sh exit 0; and priya, given only the changed files and this done_when, approves",
+  "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0225-cancelled-collaboration-revives.sh; (cd influora-api && bash gates/build.mvn.sh); bash gates/build.sh",
+    "result": "F-0225 gate exit 0 (dialect + canReject invariant + six suites, teeth confirmed on all three legs); build.mvn.sh exit 0; build.sh exit 0; priya APPROVED on round three having executed the migration against a real MySQL 8.0.40",
+    "where": ".proof-os/gates/F-0225-cancelled-collaboration-revives.sh:1"
+  },
+  "not_checked": [
+    "NOTHING IN THIS REPO EVER EXECUTES A MIGRATION. pom.xml has flyway-core/flyway-mysql but no flyway-maven-plugin, so .github/workflows/flyway-validate.yml sets SPRING_FLYWAY_* vars nothing reads, and the Testcontainers path skips without Docker. The gate scans grammar only. The single real execution this migration has had was priya's manual run into a throwaway schema — it wants one more against a staging copy before deploy",
+    "PRIYA'S APPROVAL DOES NOT SCORE. registry.json grants her may_claim 'echo', so min(fresh-context, echo) = echo and her row is excluded. The 80% covers five gate-backed rows. Her verdict is the most informative artifact in this task and it is worth nothing to the number: three of the four blockers she found were invisible to every gate here, because build.mvn.sh exits 0 on a migration that cannot execute",
+    "the revive path at runtime — no live run of withdraw-then-re-apply against a real database; every proof is a Mockito test plus a compile",
+    "the DealMessage history a revived deal room inherits: the prior 'Creator rejected:' system message stays as the last entry with no re-application marker, and no test asserts how that reads to either party",
+    "concurrent revive-vs-revive: it relies on the same UNIQUE constraint the insert path does, not on a row lock. DealService#doReject takes a PESSIMISTIC_WRITE lock before writing CANCELLED; the revive read does not take one",
+    "ConfirmLaunchExecutor:466 keeps its own status-blind existsBy check. Ruled deliberate — it is a skip-filter over Meera's bulk candidate pool, not a duplicate-409 precondition, and routing it here would make an AI auto-launch resurrect a deal the brand withdrew from. The javadoc now says so; the behaviour is unchanged and unruled",
+    "utm_campaigns and coupon_codes survive a revive. Keyed on (campaign, creator) rather than collaboration, which is the same identity the revived row is, so no money path re-arms — but no test holds that",
+    "the 3 PayoutRepositoryCreatorScopingTest failures (F-0230) are pre-existing and untouched here, verified by re-running on a git-stashed clean tree"
+  ],
+  "skipped": [
+    {
+      "step": "extending the revive to ConfirmLaunchExecutor",
+      "reason": "its guard is a skip-filter, not a duplicate-409; changing it would alter AI auto-launch behaviour and needs a product ruling rather than a refactor. Recorded in the service javadoc instead of folded in silently"
+    },
+    {
+      "step": "a live end-to-end run of withdraw-then-re-apply",
+      "reason": "needs a running stack against a real database; Docker is down on this host and the VPS carries placeholder payment keys. Recorded as not-checked rather than assumed"
+    },
+    {
+      "step": "gates/frontend.sh",
+      "reason": "no frontend file changed in this task; build.sh already ran tsc, eslint and the full vitest suite"
+    }
+  ]
+}

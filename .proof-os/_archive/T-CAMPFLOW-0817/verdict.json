@@ -1,0 +1,36 @@
+{
+  "verdict": "proved",
+  "oracle": "script",
+  "isolation": "oracle",
+  "done_when": "each available oracle ran, findings are classed into ledger records with missed_by, and the blind spots are named",
+  "evidence": {
+    "oracle": "script",
+    "command": "bash gates/build.sh; bash gates/security.sh; bash gates/frontend.sh; python gates/graph_source.py; (cd influora-api && bash gates/build.mvn.sh); python scripts/ledger.py add x5",
+    "result": "5 oracles ran (build aligned, security aligned, graph aligned, mvn aligned, frontend broken); F-0222..F-0226 opened with missed_by; blind spots enumerated in not_checked",
+    "where": ".proof-os/rc/build.mvn.rc:1"
+  },
+  "not_checked": [
+    "EVERY campaign-flow finding in this report is an echo: all ten were read in this same conversation (shared-context), none was re-derived by a fresh-context checker, and none is scored — the 66.7% covers only the six gate-backed rows and says nothing about whether the campaign flow works",
+    "no oracle in this repo executes the campaign lifecycle: build.sh, build.mvn.sh and security.sh prove the code compiles, types, lints, bundles, passes unit tests and leaks no secrets — a permanently frozen escrow hold passes all six",
+    "whether a funded EscrowHold actually carries a collaborationId at runtime — inferred from initiateFund's control flow, never observed against a real row in the live database",
+    "whether the live VPS reproduces the frozen-hold path — Razorpay keys are placeholders on that host, so the funding leg may fail before ever reaching this code",
+    "kavya's eslint ruleset — eslint exceeded the 300s budget in gates/frontend.sh and is unavailable (F-0025), so the frontend gate's only real findings are raw hex colours",
+    "every Java test — gates/build.mvn.sh runs with -DskipTests, so no backend test regression can be caught in this mode",
+    "whether creator-applications.tsx rows render at all — no test covers that page or CreatorApplicationCard, and the failure could not be reproduced statically",
+    "runtime behaviour, live data, and every flow step past the point where a browser is required"
+  ],
+  "skipped": [
+    {
+      "step": "fresh-context checker dispatch for the flow findings",
+      "reason": "FLOW law 4 routes AUDIT to oracles with no agents, and this session carries a standing instruction not to dispatch subagents unrequested; the consequence is recorded honestly as shared-context, which scores nothing"
+    },
+    {
+      "step": "gates/e2e.sh",
+      "reason": "not in the resolved oracle set for this scope and no live URL was supplied"
+    },
+    {
+      "step": "gates/build.go.sh",
+      "reason": "resolve.py reported no Go toolchain on this host"
+    }
+  ]
+}

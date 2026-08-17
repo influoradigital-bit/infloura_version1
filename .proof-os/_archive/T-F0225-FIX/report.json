@@ -1,0 +1,76 @@
+{
+  "rows": [
+    {
+      "subject": "influora-api/src/main/java/com/influora/service/CollaborationReviveService.java",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "bash .proof-os/gates/F-0225-cancelled-collaboration-revives.sh",
+        "result": "exit 0 - migration dialect clean, canReject() invariant clean, suites green; teeth confirmed on all three legs by reverted probes",
+        "where": "influora-api/src/main/java/com/influora/service/CollaborationReviveService.java:149"
+      }
+    },
+    {
+      "subject": "influora-api/pom.xml",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "cd influora-api && bash gates/build.mvn.sh",
+        "result": "VERDICT: aligned (proved) - the module compiles",
+        "where": "influora-api/pom.xml:1"
+      }
+    },
+    {
+      "subject": "package.json",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm",
+        "command": "bash gates/build.sh",
+        "result": "VERDICT: aligned (proved) - tsc, eslint, npm run build, npm test all exit 0",
+        "where": "package.json:1"
+      }
+    },
+    {
+      "subject": "influora-api/src/test/java/com/influora/service/CollaborationReviveServiceTest.java",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "cd influora-api && mvn -q -o test -Dtest='CollaborationReviveServiceTest,CollaborationReviveTest,CreatorCampaignServiceTest,CreatorDiscoveryServiceTest,DealServiceTest,ContractServiceDeliverableMaterializationTest'",
+        "result": "all six suites pass; the three encumbrance refusals (contract, escrow, shipment) each assert save() is never called",
+        "where": "influora-api/src/test/java/com/influora/service/CollaborationReviveServiceTest.java:141"
+      }
+    },
+    {
+      "subject": "influora-api/src/main/resources/db/migration/V20260817120000__collaborations_applied_at.sql",
+      "owner": "priya",
+      "status": "aligned",
+      "isolation": "fresh-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "priya dispatched three times with the changed file paths and the done_when only; she executed the migration against a real MySQL 8.0.40 into a throwaway schema seeded from the live collaborations DDL",
+        "result": "APPROVED on round three. Rounds one and two were NOT APPROVED: round one caught Postgres grammar that would abort Flyway on boot, round two caught the backfill firing ON UPDATE CURRENT_TIMESTAMP and irreversibly rewriting updated_at on every row",
+        "where": "influora-api/src/main/resources/db/migration/V20260817120000__collaborations_applied_at.sql:44"
+      }
+    },
+    {
+      "subject": "influora-api/src/test/java/com/influora/repository/PayoutRepositoryCreatorScopingTest.java",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "cd influora-api && mvn -o test (full suite), then again with all F-0225 work git-stashed",
+        "result": "3 failures on both the changed tree and a clean tree - pre-existing at HEAD, not caused by this change; recorded as F-0230",
+        "where": "influora-api/src/test/java/com/influora/repository/PayoutRepositoryCreatorScopingTest.java:101"
+      }
+    }
+  ]
+}

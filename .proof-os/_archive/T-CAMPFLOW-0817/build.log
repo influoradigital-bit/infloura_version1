@@ -1,0 +1,6 @@
+· tsc --noEmit
+· eslint (project config)
+· npm run build
+· npm test
+VERDICT: aligned (proved)
+NOT CHECKED: anything deployed (no health URL given); runtime behaviour, data correctness, mocked responses, security, accessibility, and whether an ENOENT naming a non-module path was code or environment

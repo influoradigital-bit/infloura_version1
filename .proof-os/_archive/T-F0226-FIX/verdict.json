@@ -1,0 +1,35 @@
+{
+  "verdict": "proved",
+  "oracle": "script",
+  "isolation": "oracle",
+  "done_when": "src/components/creator/deal-room/creator-deal-contract-tab.tsx no longer tells the creator that escrow is funded or that deliverables can start when they sign, and states only what signing actually did; gates/build.sh exits 0; and priya, given only the changed files and this done_when, approves",
+  "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0226-no-false-escrow-copy.sh; bash gates/build.sh",
+    "result": "F-0226 gate exit 0 (content scan clean + card suite 5/5, teeth confirmed by a reverted-string probe); build.sh exit 0 with tsc, eslint, build and 510/510 tests; priya returned APPROVED from a fresh context having traced the replacement copy to NotificationListener.java:175-186",
+    "where": ".proof-os/gates/F-0226-no-false-escrow-copy.sh:1"
+  },
+  "not_checked": [
+    "PRIYA'S APPROVAL DOES NOT SCORE. registry.json grants her may_claim 'echo', so min(fresh-context, echo) = echo and her row is excluded from the denominator. The 100% covers three gate-backed rows only. Her APPROVED is real and independent; it is not green, and only a human editing the registry can change that",
+    "THE PRODUCER'S OWN REPORT WAS WRONG. arjun returned 'REMEDIATION COMPLETE' with a full change table on code containing an unterminated string literal; tsc reported TS1002 and build.sh exited 1. Recorded as F-0228. Nothing in this task's dispatch required a producer to build before declaring done, and nothing does yet",
+    "whether the REPLACEMENT copy is true at runtime — the gate proves the false claim is absent, not that what replaced it is accurate. The 'you'll be notified' promise rests on NotificationListener.on(EscrowFundedEvent), which was read but never executed here",
+    "src/lib/creator-contract-store.ts — its stale JSDoc was corrected AFTER priya's review returned, so it carries the build gate but no independent review, and the F-0226 gate scans components only, not lib",
+    "brand-side surfaces, and any escrow claim built at runtime or served by the API rather than written in these files",
+    "whether removing the card's escrow block leaves a visual gap — no screenshot or browser run was taken",
+    "the registry itself: validate.py reports ananya over-granted ('believed' against a shared-context row). gates/registry_render.py was not run and the registry was not re-derived"
+  ],
+  "skipped": [
+    {
+      "step": "live browser verification of the signed-but-unfunded state",
+      "reason": "needs a signed contract with an unfunded milestone on a Razorpay-backed host; placeholder keys make that unreachable today, so it is recorded rather than assumed"
+    },
+    {
+      "step": "gates/frontend.sh",
+      "reason": "its eslint leg exceeds the 300s budget on this host (F-0025); build.sh already ran eslint under the project config and this change touches no styling"
+    },
+    {
+      "step": "gates/build.mvn.sh",
+      "reason": "no Java file was touched — the change is entirely creator-side frontend copy"
+    }
+  ]
+}

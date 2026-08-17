@@ -1,0 +1,59 @@
+· tsc --noEmit
+src/components/creator/deal-room/creator-contract-panel.tsx(105,67): error TS1005: ',' expected.
+src/components/creator/deal-room/creator-contract-panel.tsx(105,70): error TS1005: ',' expected.
+src/components/creator/deal-room/creator-contract-panel.tsx(105,73): error TS1005: ',' expected.
+src/components/creator/deal-room/creator-contract-panel.tsx(105,82): error TS1005: ',' expected.
+src/components/creator/deal-room/creator-contract-panel.tsx(105,87): error TS1005: ',' expected.
+src/components/creator/deal-room/creator-contract-panel.tsx(105,91): error TS1005: ',' expected.
+src/components/creator/deal-room/creator-contract-panel.tsx(105,95): error TS1005: ',' expected.
+src/components/creator/deal-room/creator-contract-panel.tsx(105,101): error TS1005: ',' expected.
+src/components/creator/deal-room/creator-contract-panel.tsx(105,105): error TS1005: ',' expected.
+src/components/creator/deal-room/creator-contract-panel.tsx(105,106): error TS1003: Identifier expected.
+src/components/creator/deal-room/creator-contract-panel.tsx(105,108): error TS1002: Unterminated string literal.
+src/components/creator/deal-room/creator-contract-panel.tsx(106,9): error TS1005: ':' expected.
+· eslint (project config)
+(node:29628) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/eslint.config.js?mtime=1785755847741 is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\Sage world\Downloads\New Influora Ai\New Influora\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\dashboard\KpiCard.tsx
+  128:14  warning  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\dashboard\KpiCard.tsx:128:14
+  126 |           <span className="text-sm font-medium text-muted-foreground">{title}</span>
+  127 |           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+> 128 |             <Icon className="size-4.5" aria-hidden="true" />
+      |              ^^^^ This component is created during render
+  129 |           </span>
+  130 |         </div>
+  131 |
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\dashboard\KpiCard.tsx:86:16
+· npm run build
+file: [36mC:/Users/Sage world/Downloads/New Influora Ai/New Influora/src/components/creator/deal-room/creator-deal-contract-tab.tsx:132:98[31m
+[33m
+[33mExpected "}" but found "ll"[33m
+130|          // F-0226: signing reaches CONTRACTED only; IN_PROGRESS comes from EscrowService.onEscrowFunded
+131|          // when the brand funds a milestone — a separate action. Submit control is gated on in_progress.
+132|          toast({ title: 'Contract signed', description: 'Waiting for the brand to fund escrow. You'll be notified when you can start work.' });
+   |                                                                                                    ^
+133|          setSignerName('');
+134|        }
+[31m
+    at failureErrorWithLog (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\esbuild\lib\main.js:1467:15)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\esbuild\lib\main.js:736:50
+    at responseCallbacks.<computed> (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\esbuild\lib\main.js:603:9)
+    at handleIncomingPacket (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\esbuild\lib\main.js:658:12)
+    at Socket.readFromStdout (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\esbuild\lib\main.js:581:7)
+    at Socket.emit (node:events:518:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)[39m
+· npm test
+  tests could not run — unavailable
+VERDICT: broken (real findings above)
+NOT CHECKED: tests (could not run); anything deployed (no health URL given); runtime behaviour, data correctness, mocked responses, security, accessibility, and whether an ENOENT naming a non-module path was code or environment

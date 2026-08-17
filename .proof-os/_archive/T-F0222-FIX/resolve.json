@@ -1,0 +1,38 @@
+{
+ "text": "fix F-0222 escrow hold unbound",
+ "verb": "FIX",
+ "resolution": "proved",
+ "verbs_matched": [
+  "FIX"
+ ],
+ "modifiers": {},
+ "target": {
+  "kind": "ledger",
+  "id": "F-0222",
+  "resolution": "proved",
+  "note": "escrow-hold-unbound",
+  "status": "open"
+ },
+ "scope": [
+  "src/components/brand/deal-room/deal-payments-tab.tsx",
+  "src/pages/brand-chat.tsx"
+ ],
+ "scope_from": "ledger.where",
+ "owner": "ananya",
+ "reviewer": "kavya",
+ "oracles": [],
+ "oracle_first": false,
+ "exit_gate": null,
+ "done_when": "the brand deal room's Payments panel exposes a milestone-scoped Fund Escrow control that passes the contract's milestoneId; gates/build.sh and gates/build.mvn.sh exit 0; and priya, given only the changed files and this done_when, confirms the defect is solved",
+ "ask": null,
+ "refused": null,
+ "prior_failures": [
+  "F-0099",
+  "F-0130",
+  "F-0131",
+  "F-0222"
+ ],
+ "dispatch": "produce",
+ "oracles_skipped_no_toolchain": [],
+ "graph_nodes": 928
+}

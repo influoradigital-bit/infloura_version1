@@ -1,0 +1,64 @@
+{
+  "rows": [
+    {
+      "subject": "src/components/creator/deal-room/creator-deal-contract-tab.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "bash .proof-os/gates/F-0226-no-false-escrow-copy.sh",
+        "result": "exit 0 - content scan finds no escrow-funded claim on any creator contract surface; teeth confirmed, the gate rejects a tree carrying the original toast string (probe reverted)",
+        "where": "src/components/creator/deal-room/creator-deal-contract-tab.tsx:134"
+      }
+    },
+    {
+      "subject": "src/components/creator/deal-room/creator-contract-card.test.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "node_modules/.bin/vitest run src/components/creator/deal-room/creator-contract-card.test.tsx",
+        "result": "5/5 pass - two stale P-3 assertions on the deleted escrow block removed, two F-0226 absence assertions added; P-3's own subject still covered",
+        "where": "src/components/creator/deal-room/creator-contract-card.test.tsx:75"
+      }
+    },
+    {
+      "subject": "package.json",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm",
+        "command": "bash gates/build.sh",
+        "result": "VERDICT: aligned (proved) - tsc --noEmit, eslint, npm run build, npm test all exit 0; suite 76 files / 510 tests green",
+        "where": "package.json:1"
+      }
+    },
+    {
+      "subject": "src/components/creator/deal-room/creator-contract-panel.tsx",
+      "owner": "priya",
+      "status": "aligned",
+      "isolation": "fresh-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "priya dispatched with the four changed file paths and the done_when only",
+        "result": "APPROVED - traced the replacement copy's notification promise to NotificationListener.java:175-186 rather than accepting the diff's own comment, and confirmed onContractFullySigned reaches CONTRACTED only",
+        "where": "src/components/creator/deal-room/creator-contract-panel.tsx:105"
+      }
+    },
+    {
+      "subject": "src/lib/creator-contract-store.ts",
+      "owner": "ananya",
+      "status": "partial",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "rewrote the statusAfterCreatorSign JSDoc that still asserted signing funds escrow",
+        "result": "changed after priya's review returned, so it carries the build gate but no independent review; the stale-comment class is real here (F-0075/F-0150) and this fix is not covered by the F-0226 gate, which scans components only",
+        "where": "src/lib/creator-contract-store.ts:106"
+      }
+    }
+  ]
+}

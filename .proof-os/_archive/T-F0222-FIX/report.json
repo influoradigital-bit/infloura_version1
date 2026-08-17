@@ -1,0 +1,64 @@
+{
+  "rows": [
+    {
+      "subject": "src/components/brand/deal-room/deal-payments-tab.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "bash .proof-os/gates/F-0222-milestone-scoped-escrow-fund.sh",
+        "result": "exit 0 - 10/10 tests pass; fund control passes a server milestoneId, creator mount renders none",
+        "where": "src/components/brand/deal-room/deal-payments-tab.tsx:180"
+      }
+    },
+    {
+      "subject": "src/components/brand/deal-room/deal-payments-tab.f0222.test.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "remove milestoneId prop from deal-payments-tab.tsx, then vitest run the suite, then restore",
+        "result": "exit 0 - 10/10 green on the current tree; teeth confirmed, the suite rejects a tree with the milestoneId prop removed (probe reverted, F-0029 class)",
+        "where": "src/components/brand/deal-room/deal-payments-tab.f0222.test.tsx:78"
+      }
+    },
+    {
+      "subject": "src/pages/brand-chat.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm",
+        "command": "bash gates/build.sh",
+        "result": "VERDICT: aligned (proved) - tsc --noEmit, eslint, npm run build, npm test all exit 0 after the campaignId threading",
+        "where": "src/pages/brand-chat.tsx:2505"
+      }
+    },
+    {
+      "subject": "influora-api/pom.xml",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "cd influora-api && bash gates/build.mvn.sh",
+        "result": "VERDICT: aligned (proved) - the module compiles; rc exit=0 pid=833 observed=exit. Backend deliberately unchanged.",
+        "where": "influora-api/pom.xml:1"
+      }
+    },
+    {
+      "subject": "src/components/feature/meera/FundEscrowButton.tsx",
+      "owner": "priya",
+      "status": "aligned",
+      "isolation": "fresh-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "priya dispatched with the two changed file paths and the done_when only; she re-ran both gates herself (new pids 575, 2032)",
+        "result": "SOLVED - traced milestoneId through useEscrowFund to meera-api.ts:571-574 (not api.ts), and confirmed EscrowService.java:353-358 gates on signature timestamps not ContractStatus.ACTIVE, so no fund/ACTIVE deadlock",
+        "where": "src/components/feature/meera/FundEscrowButton.tsx:158"
+      }
+    }
+  ]
+}

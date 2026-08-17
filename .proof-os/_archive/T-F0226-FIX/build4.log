@@ -1,0 +1,7 @@
+· tsc --noEmit
+· eslint (project config)
+· npm run build
+· npm test
+  tests could not run — unavailable
+VERDICT: partial — some oracles could not run (believed, not proved)
+NOT CHECKED: tests (could not run); anything deployed (no health URL given); runtime behaviour, data correctness, mocked responses, security, accessibility, and whether an ENOENT naming a non-module path was code or environment

@@ -1,0 +1,196 @@
+{
+  "rows": [
+    {
+      "subject": "package.json",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm",
+        "command": "bash gates/build.sh",
+        "result": "VERDICT: aligned (proved) - tsc --noEmit, eslint, npm run build, npm test all exit 0",
+        "where": "package.json:1"
+      }
+    },
+    {
+      "subject": "influora-api/pom.xml",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "cd influora-api && bash gates/build.mvn.sh",
+        "result": "VERDICT: aligned (proved) - the module compiles (mvn -q -o compile, exit 0; rc exit=0 observed=exit)",
+        "where": "influora-api/pom.xml:1"
+      }
+    },
+    {
+      "subject": "package-lock.json",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm-audit",
+        "command": "bash gates/security.sh",
+        "result": "VERDICT: aligned (proved) - npm audit --audit-level=high clean; gitleaks 237 commits, no leaks found",
+        "where": "package-lock.json:1"
+      }
+    },
+    {
+      "subject": ".proof-os/graph.json",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "regex",
+        "command": "python gates/graph_source.py",
+        "result": "exit 0 - engine scan.py-regex, 2657 edges, oracle_strength 100.0% deterministic",
+        "where": ".proof-os/graph.json:1"
+      }
+    },
+    {
+      "subject": "src/components/3d/CanvasFallback.tsx",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "bash gates/frontend.sh",
+        "result": "VERDICT: broken - raw hex colours outside tokens; eslint exceeded 300s and is unavailable (F-0025)",
+        "where": "src/components/3d/CanvasFallback.tsx:11"
+      }
+    },
+    {
+      "subject": "src/lib/api.ts",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "regex",
+        "command": "grep -rn 'releasePayout' src/ | grep -v 'lib/api.ts'",
+        "result": "0 matches - POST /wallet/escrow/release is declared and called by nothing in the app",
+        "where": "src/lib/api.ts:3055"
+      }
+    },
+    {
+      "subject": "src/pages/brand-wallet.tsx",
+      "owner": "kabir",
+      "status": "broken",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read FundEscrowButton mount site",
+        "result": "campaignId passed, milestoneId prop omitted - the app's only escrow funding UI funds campaign-level",
+        "where": "src/pages/brand-wallet.tsx:1310"
+      }
+    },
+    {
+      "subject": "influora-api/src/main/java/com/influora/service/EscrowService.java",
+      "owner": "kabir",
+      "status": "broken",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read initiateFund + applyFunding + notifyEscrowFunded",
+        "result": "collaborationId bound only when milestoneId supplied; notifyEscrowFunded returns early on null, so onEscrowFunded never advances CONTRACTED to IN_PROGRESS",
+        "where": "influora-api/src/main/java/com/influora/service/EscrowService.java:206"
+      }
+    },
+    {
+      "subject": "influora-api/src/main/java/com/influora/service/BrandDeliverableService.java",
+      "owner": "kabir",
+      "status": "broken",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read approve + EscrowService.tryReleaseOnApproval",
+        "result": "7 skip codes return false with log.info only; approval returns APPROVED with no signal that no money moved and no UI retry path",
+        "where": "influora-api/src/main/java/com/influora/service/BrandDeliverableService.java:117"
+      }
+    },
+    {
+      "subject": "src/pages/creator-chat.tsx",
+      "owner": "kabir",
+      "status": "broken",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read Submit Deliverable gate + showBareInviteResponse gate",
+        "result": "submit gated on status==='in_progress' which contract signing never reaches; bare-invite Accept card gated on events.length===0 so one chat message removes it",
+        "where": "src/pages/creator-chat.tsx:1921"
+      }
+    },
+    {
+      "subject": "influora-api/src/main/java/com/influora/service/CreatorCampaignService.java",
+      "owner": "kabir",
+      "status": "broken",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read apply() duplicate guard",
+        "result": "existsByCampaignIdAndCreatorId is status-blind; a CANCELLED row makes re-apply 409 ALREADY_APPLIED forever",
+        "where": "influora-api/src/main/java/com/influora/service/CreatorCampaignService.java:176"
+      }
+    },
+    {
+      "subject": "influora-api/src/main/java/com/influora/service/CreatorDiscoveryService.java",
+      "owner": "kabir",
+      "status": "broken",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read invite() duplicate guard and message handling",
+        "result": "same status-blind guard returns COLLABORATION_EXISTS; invite persists no proposal message so the creator room opens with no offer and no history",
+        "where": "influora-api/src/main/java/com/influora/service/CreatorDiscoveryService.java:448"
+      }
+    },
+    {
+      "subject": "src/components/creator/deal-room/creator-deal-contract-tab.tsx",
+      "owner": "kabir",
+      "status": "broken",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read handleSign success toast",
+        "result": "toasts 'Escrow is funded. You can start deliverables.' on creator signature; signing reaches CONTRACTED only and funds nothing",
+        "where": "src/components/creator/deal-room/creator-deal-contract-tab.tsx:130"
+      }
+    },
+    {
+      "subject": "src/components/brand/deal-room/deal-payments-tab.tsx",
+      "owner": "kabir",
+      "status": "broken",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read payments panel controls",
+        "result": "deal-room step 3 'Fund escrow' opens this panel; it has no fund and no release control, only a link out",
+        "where": "src/components/brand/deal-room/deal-payments-tab.tsx:146"
+      }
+    },
+    {
+      "subject": "src/components/brand/deal-room/deal-deliverables-tab.tsx",
+      "owner": "kabir",
+      "status": "broken",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read component and its creator-side mount",
+        "result": "brand read-only panel reused verbatim on the creator side; no submit control and brand-voice copy shown to the creator",
+        "where": "src/components/brand/deal-room/deal-deliverables-tab.tsx:48"
+      }
+    },
+    {
+      "subject": "src/pages/creator-applications.tsx",
+      "owner": "kabir",
+      "status": "partial",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read counts/filtered derivation and StaggerContainer entrance",
+        "result": "counts and list derive from one array so the filter is sound; row render is the suspect and no test covers this page or its card",
+        "where": "src/pages/creator-applications.tsx:72"
+      }
+    }
+  ]
+}

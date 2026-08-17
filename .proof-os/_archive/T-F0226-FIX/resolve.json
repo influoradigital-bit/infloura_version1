@@ -1,0 +1,34 @@
+{
+ "text": "fix F-0226 false success copy",
+ "verb": "FIX",
+ "resolution": "proved",
+ "verbs_matched": [
+  "FIX"
+ ],
+ "modifiers": {},
+ "target": {
+  "kind": "ledger",
+  "id": "F-0226",
+  "resolution": "proved",
+  "note": "false-success-copy",
+  "status": "open"
+ },
+ "scope": [
+  "src/components/creator/deal-room/creator-deal-contract-tab.tsx"
+ ],
+ "scope_from": "ledger.where",
+ "owner": "ananya",
+ "reviewer": "kavya",
+ "oracles": [],
+ "oracle_first": false,
+ "exit_gate": null,
+ "done_when": "src/components/creator/deal-room/creator-deal-contract-tab.tsx no longer tells the creator that escrow is funded or that deliverables can start when they sign, and states only what signing actually did; gates/build.sh exits 0; and priya, given only the changed files and this done_when, approves",
+ "ask": null,
+ "refused": null,
+ "prior_failures": [
+  "F-0226"
+ ],
+ "dispatch": "produce",
+ "oracles_skipped_no_toolchain": [],
+ "graph_nodes": 928
+}

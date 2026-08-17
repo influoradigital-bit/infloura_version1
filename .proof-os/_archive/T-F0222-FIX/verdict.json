@@ -1,0 +1,36 @@
+{
+  "verdict": "proved",
+  "oracle": "script",
+  "isolation": "oracle",
+  "done_when": "the brand deal room's Payments panel exposes a milestone-scoped Fund Escrow control that passes the contract's milestoneId; gates/build.sh and gates/build.mvn.sh exit 0; and priya, given only the changed files and this done_when, confirms the defect is solved",
+  "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0222-milestone-scoped-escrow-fund.sh; bash gates/build.sh; (cd influora-api && bash gates/build.mvn.sh)",
+    "result": "F-0222 gate exit 0 (10/10, teeth confirmed by a reverted-prop probe); build.sh exit 0; build.mvn.sh exit 0 (rc exit=0 pid=833 observed=exit); priya returned SOLVED from a fresh context having re-run both gates on new pids",
+    "where": ".proof-os/gates/F-0222-milestone-scoped-escrow-fund.sh:1"
+  },
+  "not_checked": [
+    "PRIYA'S CONFIRMATION DOES NOT SCORE. registry.json grants priya may_claim 'echo', and effective_ceiling is min(isolation, may_claim) — so even a properly isolated fresh-context verdict from her is excluded from the denominator. The 100% covers only the four gate-backed rows. Her SOLVED is real and independent; it is not green, and no arrangement of this task could have made it green without a human changing the registry",
+    "whether a hold created through this control actually lands with a non-null collaboration_id in the database — that is the defect's real definition and only a live run against a real Razorpay-backed environment can show it. Every proof here is a component test plus a compile",
+    "whether the deal ACTUALLY advances CONTRACTED -> IN_PROGRESS and the creator's Submit Deliverable button then appears — the whole point of the fix, and nothing in this task exercised it end to end",
+    "brand-chat.tsx's own wiring of campaignId/milestones/escrowFunded into the panel: covered by tsc and eslint, but no test asserts the props arrive with real values",
+    "the live VPS, where Razorpay keys are placeholders — the funding leg may still fail there for a reason unrelated to this fix",
+    "F-0227 (opened this run): /brand/wallet's campaign-pool card can still mint an unbound hold for a campaign whose deal is already signed. F-0222 closed the DETECTION of the class via the deal-room gate; that remaining live site is untouched",
+    "every Java test — build.mvn.sh runs -DskipTests. The backend was deliberately not modified, so this is a smaller gap than usual, but it is still a gap",
+    "the cosmetic edge priya flagged: all milestones RELEASED with escrowFunded still true renders 'Escrow active — ₹0 is secured'"
+  ],
+  "skipped": [
+    {
+      "step": "live browser verification of the funding flow",
+      "reason": "requires a real Razorpay-backed environment and a signed contract with an unfunded milestone; the placeholder keys on the VPS make this unreachable today, so it is recorded as not-checked rather than quietly assumed"
+    },
+    {
+      "step": "gates/frontend.sh",
+      "reason": "its eslint leg exceeds the 300s budget on this host (F-0025) and its only other findings are raw hex colours, none of which this change touches; build.sh already ran eslint under the project config"
+    },
+    {
+      "step": "a repair fix for F-0227",
+      "reason": "out of the approved done_when, which scoped this task to the deal-room control; recorded in the ledger instead of silently folded in"
+    }
+  ]
+}
