@@ -57,14 +57,14 @@
         "TECH-STACK.md",
         "wiki/tech/**"
       ],
-      "may_claim": "echo",
+      "may_claim": "believed",
       "gates": [],
       "caps": {
         "retries": 1,
         "then": "escalate:swapnil"
       },
       "note": "sign-off; overridden only by swapnil | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice — it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
-      "isolation": "shared-context"
+      "isolation": "fresh-context"
     },
     "rohan": {
       "kind": "governor",

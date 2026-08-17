@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import type { Platform, ContentType, CampaignStatus, TargetAudience } from '@/lib/types';
+import type { Platform, ContentType, CampaignStatus, CampaignType, TargetAudience } from '@/lib/types';
 import { useCampaignStore } from '@/lib/store';
 import { api, ApiError, type CreatorSuggestionItem } from '@/lib/api';
 import { isWorkspaceNotVerified, isCampaignActiveNotEditable } from '@/lib/api-errors';
@@ -82,6 +82,15 @@ const contentTypeOptions: { value: ContentType; label: string; icon: React.Compo
 
 export interface CampaignFormData {
   title: string;
+  /**
+   * F-0240: the campaign type chosen on the brand-new-campaign.tsx picker (Open/Direct — Hype has
+   * its own dedicated flow and never reaches this form). Undefined on an edit (campaignType is
+   * immutable post-creation per CampaignService.update, so it's never sent back) and undefined when
+   * this form is somehow reached without going through the picker or a template — in that case the
+   * backend's own null-campaignType default (CampaignService.create:159-160) applies, same as before
+   * this fix.
+   */
+  campaignType?: CampaignType;
   description: string;
   objectives: string[];
   platforms: Platform[];
@@ -455,6 +464,9 @@ export function CampaignForm({
       title: formData.title.trim(),
       description: formData.description,
       objectives: formData.objectives,
+      // F-0240: campaignType is immutable after creation (not part of CampaignPatchRequest on the
+      // backend), so only send it on create — never on an edit's PATCH.
+      campaignType: isEditing ? undefined : formData.campaignType,
       status,
       budget: {
         min: formData.budgetMin,

@@ -16,11 +16,16 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 /**
- * B-5: optional business-verification (KYC) prompt shown at first campaign creation.
+ * B-5: business-verification (KYC) prompt shown at first campaign creation.
  *
- * CTO ruling 2026-07-11: KYC is OPTIONAL — this is a soft, dismissible prompt. It never
- * blocks campaign creation/publish. Collects GSTIN/PAN + documents and submits via
- * `api.onboarding.submitBrandKyc`. Dismissal is remembered in localStorage so it is
+ * CTO ruling 2026-07-11: KYC is a soft, dismissible prompt — never forced. Since then
+ * `CampaignValidator.validateStatusForWorkspace` (influora-api) has started enforcing it
+ * server-side: it never blocks saving/editing a DRAFT, but a workspace must be VERIFIED
+ * before a campaign can go ACTIVE (403 WORKSPACE_NOT_VERIFIED otherwise — see
+ * VerificationRequiredBox.tsx / WorkspaceVerificationBanner.tsx). So "optional" only holds
+ * for drafting; publishing a live campaign does require it. Collects GSTIN/PAN + documents
+ * and submits via `api.onboarding.submitBrandKyc` (same `POST /onboarding/brand/kyc` the
+ * settings/verification page posts to). Dismissal is remembered in localStorage so it is
  * not nagging.
  *
  * OB-1 (BrandF.md §105/§91) — the read endpoint referenced by the old "Follow-up" note above
@@ -169,7 +174,7 @@ export function BrandKycPrompt() {
       setDone(true);
     } catch {
       setError(
-        'Could not submit verification right now. This step is optional — you can try again or skip for now.',
+        'Could not submit verification right now. You can try again, or skip and keep working on a draft — but you’ll need to verify before you can publish a live campaign.',
       );
     } finally {
       setSubmitting(false);
@@ -188,11 +193,12 @@ export function BrandKycPrompt() {
               <div>
                 <h3 className="text-sm font-semibold">
                   Verify your business{' '}
-                  <span className="font-normal text-muted-foreground">· optional</span>
+                  <span className="font-normal text-muted-foreground">· required to publish</span>
                 </h3>
                 <p className="mt-0.5 text-sm text-muted-foreground">
-                  Add your GSTIN &amp; PAN to build creator trust and speed up payouts. You can do
-                  this anytime — it won't block your campaign.
+                  Add your GSTIN &amp; PAN to build creator trust and speed up payouts. You can
+                  skip this and keep working on a draft — but you'll need to verify before you can
+                  publish a live campaign.
                 </p>
               </div>
               <Button

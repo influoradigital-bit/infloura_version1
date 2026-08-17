@@ -143,7 +143,16 @@ export default function BrandNewCampaignPage() {
   };
 
   if (selectedType || templateInitialValues) {
-    return <CampaignForm initialValues={templateInitialValues ?? undefined} />;
+    // F-0240: the type the brand picked on this page (Open/Direct) must reach CampaignForm, or a
+    // Direct Deal silently gets created as a public OPEN campaign — see CampaignFormData.campaignType
+    // and the CAMPAIGN_TYPE_TO_API translation table in src/lib/api.ts. Template-applied campaigns
+    // never went through `choose()`, so selectedType is null in that branch and the template's own
+    // values (if any) are used as-is.
+    return (
+      <CampaignForm
+        initialValues={templateInitialValues ?? (selectedType ? { campaignType: selectedType } : undefined)}
+      />
+    );
   }
 
   return (

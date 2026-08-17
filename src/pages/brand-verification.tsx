@@ -63,7 +63,7 @@ export default function BrandVerificationPage() {
             <StatusMessage
               icon={<Clock className="h-6 w-6 text-primary" aria-hidden="true" />}
               title="Verification in review"
-              body="We’ll email you when it’s approved. Your drafts publish as soon as it clears."
+              body="We’ll email you when it’s approved. Once it clears, you can publish your drafts live — approval doesn’t publish them for you."
             />
           ) : !canVerify ? (
             <StatusMessage

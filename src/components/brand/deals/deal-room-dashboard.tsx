@@ -250,6 +250,11 @@ export function DealRoomDashboard() {
   const [dealsError, setDealsError] = React.useState<string | null>(null);
   const [actionLoading, setActionLoading] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
+  // F-0239 — honest post-action feedback for live mode. Never set except right
+  // after a real request the caller awaited actually succeeded; unlike the old
+  // contract-generation dialog this makes no claim about escrow or a contract,
+  // because neither request is ever made from this component.
+  const [actionMessage, setActionMessage] = React.useState<string | null>(null);
   const [liveMessages, setLiveMessages] = React.useState<DealMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = React.useState(false);
   const [messagesError, setMessagesError] = React.useState<string | null>(null);
@@ -353,11 +358,18 @@ export function DealRoomDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDeal?.id, loadDeals, loadMessages]);
 
-  const runContractAnimation = React.useCallback(() => {
+  // F-0239 — this is a MOCK-ONLY demo animation. It used to also fire after the
+  // real dealsApi.accept() in live mode and claim escrow was locked and a
+  // contract was generated — no such requests are made anywhere in this
+  // component (real contract creation is POST /contracts, wired from
+  // src/pages/brand-chat.tsx, not from here), so that claim was fabricated.
+  // Only the mock-mode branch of handleAcceptProposal calls this now. Kept
+  // dismissable (see the Dialog below) even though nothing here can fail.
+  const runDemoContractAnimation = React.useCallback(() => {
     setShowContractGeneratingDialog(true);
     setContractGenerationStep(0);
 
-    // Simulate contract generation steps
+    // Simulate contract generation steps (mock mode only — see comment above)
     const steps = [
       { delay: 800, step: 1 },   // Locking escrow
       { delay: 1200, step: 2 },  // Generating contract
@@ -416,13 +428,18 @@ export function DealRoomDashboard() {
     if (isApiLive()) {
       setActionLoading(true);
       setActionError(null);
+      setActionMessage(null);
       try {
         await dealsApi.accept(selectedDeal.id, 'brand');
         // CR-98/F-0112: loadDeals() alone left the message timeline stale after the brand's
         // OWN accept action on this page — worse than the counterparty-blackout bug on the
         // chat pages, since even the actor saw a card that never settled.
         await Promise.all([loadDeals(), loadMessages(selectedDeal.id)]);
-        runContractAnimation();
+        // F-0239 — this is the full extent of what actually happened: the deal
+        // was accepted. No escrow request and no contract request were made,
+        // so no dialog claiming either is shown. Creating the contract is a
+        // separate, real action (POST /contracts) elsewhere in the product.
+        setActionMessage('Proposal accepted.');
       } catch {
         setActionError('Could not accept the proposal. Try again.');
       } finally {
@@ -431,7 +448,7 @@ export function DealRoomDashboard() {
       return;
     }
 
-    runContractAnimation();
+    runDemoContractAnimation();
   };
 
   const handleSendCounter = async () => {
@@ -440,6 +457,7 @@ export function DealRoomDashboard() {
     if (isApiLive()) {
       setActionLoading(true);
       setActionError(null);
+      setActionMessage(null);
       try {
         await dealsApi.counter(
           selectedDeal.id,
@@ -470,6 +488,7 @@ export function DealRoomDashboard() {
     if (isApiLive()) {
       setActionLoading(true);
       setActionError(null);
+      setActionMessage(null);
       try {
         await dealsApi.reject(selectedDeal.id, rejectReason || undefined, 'brand');
         // CR-98/F-0112: same stale-timeline gap as accept on this page.
@@ -564,6 +583,13 @@ export function DealRoomDashboard() {
                       key={deal.id}
                       onClick={() => {
                         setSelectedDeal(deal);
+                        // F-0239 follow-up: clear the action banners on deal switch.
+                        // They are cleared at the top of accept/counter/reject but not
+                        // here, so "Proposal accepted." stayed rendered under the NEXT
+                        // deal the brand clicked — a success claim attached to the
+                        // wrong deal, which is the failure class F-0239 was opened for.
+                        setActionMessage(null);
+                        setActionError(null);
                         // Keep the URL shareable/bookmarkable without adding a
                         // history entry per click.
                         navigate(`/brand/deals/${deal.id}`, { replace: true });
@@ -715,6 +741,9 @@ export function DealRoomDashboard() {
 
                     {isApiLive() && actionError && (
                       <p className="text-sm text-destructive-foreground mb-3">{actionError}</p>
+                    )}
+                    {isApiLive() && !actionError && actionMessage && (
+                      <p className="text-sm text-stage-approved-fg mb-3">{actionMessage}</p>
                     )}
 
                     <div className="flex gap-3">
@@ -1093,9 +1122,11 @@ export function DealRoomDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Contract Generation Dialog */}
-      <Dialog open={showContractGeneratingDialog} onOpenChange={() => {}}>
-        <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
+      {/* Contract Generation Dialog — F-0239: mock/demo mode only (see
+          runDemoContractAnimation above). Dismissable: nothing here is a real
+          request, so there is nothing a Close/Escape could strand mid-flight. */}
+      <Dialog open={showContractGeneratingDialog} onOpenChange={setShowContractGeneratingDialog}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-center">Generating Contract</DialogTitle>
             <DialogDescription className="text-center">

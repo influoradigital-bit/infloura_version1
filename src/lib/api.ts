@@ -2375,11 +2375,32 @@ export const contracts = {
       ? http.request<ContractApiRecord[]>('GET', '/contracts', { role, query: { dealId } })
       : mockOr<ContractApiRecord[]>([]),
 
-  /** GET /contracts/:id — full contract incl. milestones + signature timestamps. */
+  /**
+   * GET /contracts/:id — full contract incl. milestones + signature timestamps.
+   *
+   * F-0272: the mock branch used to resolve `null`. Once DealContractTab started gating
+   * its Sign control on a real fetched record (F-0237), that null disabled signing in
+   * EVERY demo walkthrough and rendered an error where the contract should be. A demo
+   * fixture is the honest fix: the panel's live-mode guarantee is unchanged, and the
+   * offline demo gets a contract that actually exists. Milestone amounts mirror the
+   * generate() fixture below so the two demo paths agree.
+   */
   get: (role: Role, id: string) =>
     isLive()
       ? http.request<ContractApiRecord>('GET', `/contracts/${id}`, { role })
-      : mockOr<ContractApiRecord | null>(null),
+      : mockOr<ContractApiRecord | null>({
+          id,
+          collaborationId: 'deal_1',
+          status: 'PENDING_SIGNATURES',
+          totalAmount: 50000,
+          currency: 'INR',
+          brandSignedAt: null,
+          creatorSignedAt: null,
+          milestones: [
+            { sequenceNo: 1, description: 'On signing', amount: 25000, status: 'PENDING' },
+            { sequenceNo: 2, description: 'On deliverable approval', amount: 25000, status: 'PENDING' },
+          ],
+        }),
 
   /**
    * POST /contracts — brand generates a contract for a collaboration
@@ -4564,6 +4585,35 @@ export interface CreatorApplicationsPage {
   meta: { page: number; limit: number; total: number; hasMore: boolean };
 }
 
+export type CreatorApplicationHistoryActorType = 'CREATOR' | 'BRAND' | 'SYSTEM';
+
+/**
+ * One row returned by `GET /creator/applications/:dealId/history` — the full chronological
+ * journey of a single application (application → deal room → contract → escrow → deliver →
+ * pay), not just its current status. Server-ordered, oldest-first.
+ *
+ * `eventType`/`eventStatus` are typed as `string` rather than a closed union deliberately:
+ * the backend enum is being implemented in parallel and this client must not silently drop
+ * or mis-render an event whose exact wire value doesn't match a guess made ahead of the real
+ * contract — the UI has an explicit prettifying fallback for unrecognized values instead.
+ */
+export interface CreatorApplicationHistoryEvent {
+  historyId: string;
+  campaignId: string;
+  applicationId: string;
+  dealRoomId?: string | null;
+  eventType: string;
+  eventStatus: string;
+  actorType: CreatorApplicationHistoryActorType;
+  actorId: string;
+  description: string;
+  createdAt: string;
+  metadata?: Record<string, unknown>;
+  reason?: string;
+  targetRoute?: string;
+  targetId?: string;
+}
+
 export const creatorApplications = {
   /**
    * GET /creator/applications (CreatorApplicationController.java:31) — data=CreatorApplicationListItem[],
@@ -4587,6 +4637,21 @@ export const creatorApplications = {
       },
     };
   },
+
+  /**
+   * GET /creator/applications/:dealId/history — the full chronological event log for one
+   * application (My Applications journey timeline). `dealId` is the same `Collaboration` id
+   * every other creator-applications/deal-room call already uses (see `CreatorApplicationRow.dealId`).
+   * Server returns events oldest-first; this client makes no assumption about ordering beyond
+   * passing the array through untouched — callers must not reorder/sort by anything other than
+   * what the server sent, and must never fabricate events client-side from `status`.
+   */
+  history: (dealId: string) =>
+    isLive()
+      ? http.request<CreatorApplicationHistoryEvent[]>('GET', `/creator/applications/${dealId}/history`, {
+          role: 'creator',
+        })
+      : mockOr<CreatorApplicationHistoryEvent[]>([]),
 };
 
 /**
@@ -5091,15 +5156,35 @@ export const brandDisputes = {
    * (DisputeListItemResponse) matches BrandDisputeRow field-for-field, so no client-side
    * mapping is needed. Mock: demo rows.
    *
-   * Opening a dispute is intentionally NOT wired here: this page is read-only by design
-   * (see its header comment) — disputes are opened from the deal room via the shared
-   * POST /deals/:dealId/disputes ("either party may open", DealController.java:167), and
-   * BrandDisputeController exposes no separate open/raise-dispute endpoint of its own.
+   * BrandDisputeController exposes no separate open/raise-dispute endpoint of its own —
+   * opening goes through the shared POST /deals/:dealId/disputes below.
    */
   list: (): Promise<BrandDisputeRow[]> =>
     isLive()
       ? http.request<BrandDisputeRow[]>('GET', '/brand/disputes/list', { role: 'brand' })
       : mockOr(mockDisputeRows('brand')),
+
+  /**
+   * POST /deals/:dealId/disputes (DealController.java:186) — the SAME shared endpoint
+   * `creatorDisputes.open` uses. It must be duplicated rather than reused because the
+   * `role` option selects which session's JWT is attached (getToken(role), separate
+   * per-role token storage): calling the creator variant from the brand app would send
+   * an empty creator token slot (401) or, worse, a coexisting creator identity.
+   *
+   * Brands are explicitly supported server-side — DisputeService#openDispute calls
+   * requireBrandOrCreator(principal) and records DisputeOpenerType.BRAND
+   * (DisputeService.java:107-131). Two documented 409s the caller must surface:
+   * NO_FUNDED_ESCROW (no funded, unreleased escrow to dispute) and DISPUTE_ALREADY_OPEN.
+   *
+   * F-0242: this was missing entirely, so brand-disputes.tsx told the brand to open a
+   * dispute from the deal room while no such control could exist.
+   */
+  open: (dealId: string, reason: string) =>
+    isLive()
+      ? http.request<{ id: string }>('POST', `/deals/${dealId}/disputes`, {
+          role: 'brand', body: { reason },
+        })
+      : mockOr<{ id: string }>({ id: 'dsp_new' }),
 };
 
 // ---------------------------------------------------------------------------

@@ -42,6 +42,7 @@ import {
   type ContractApiRecord,
   type ContractStatus,
   type ShipmentApiStatus,
+  type ShipmentApiRecord,
 } from '@/lib/api';
 // CR-24 — the one switch over CollaborationStatus. CR-34 — and the one mirror of
 // Collaboration.canAccept(), which this file used to duplicate. See lib/deal-stage.ts.
@@ -61,6 +62,21 @@ import { ShipmentForm, type ShipmentData } from '@/components/brand/deal-room/sh
 import { ShipmentCard, type ShipmentStatus } from '@/components/shared/shipment-card';
 import type { ShippingAddressData } from '@/components/creator/deal-room/shipping-address-form';
 import { Truck, MapPin } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import {
   Sheet,
   SheetContent,
@@ -635,6 +651,23 @@ function describeAcceptError(err: unknown): { message: string; stale: boolean } 
   };
 }
 
+/**
+ * F-0235 — demo-only stand-in address for the mock-mode shipping flow. Never read in live
+ * mode: live mode's `shippingAddress` comes exclusively from the real
+ * `GET /deals/:id/shipment` record (see `fetchLiveShipment` below), so no fabricated PII
+ * ever reaches `ShipmentForm` or `api.shipments.markShipped`.
+ */
+const MOCK_SHIPPING_ADDRESS: ShippingAddressData = {
+  fullName: 'Priya Sharma',
+  phone: '9876543210',
+  addressLine1: '402, Sea View Apartments, Carter Road',
+  addressLine2: 'Bandra West',
+  city: 'Mumbai',
+  state: 'Maharashtra',
+  pincode: '400050',
+  landmark: 'Opposite Joggers Park',
+};
+
 export default function BrandChatPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const creatorIdFromUrl = searchParams.get('creator');
@@ -661,6 +694,13 @@ export default function BrandChatPage() {
   const [contractStatusByDeal, setContractStatusByDeal] =
     React.useState<Record<string, DealContractStatus>>(INITIAL_CONTRACT_STATUS);
   const [showProposalForm, setShowProposalForm] = React.useState(false);
+  // F-0242: the brand's dispute-open control. brand-disputes.tsx tells the brand to open
+  // disputes "in the relevant deal room" — until now no such control existed anywhere, so
+  // only the creator could escalate a deal with money on hold.
+  const [showDisputeDialog, setShowDisputeDialog] = React.useState(false);
+  const [disputeReason, setDisputeReason] = React.useState('');
+  const [disputeSubmitting, setDisputeSubmitting] = React.useState(false);
+  const [disputeError, setDisputeError] = React.useState<string | null>(null);
   const [isSubmittingProposal, setIsSubmittingProposal] = React.useState(false);
   const [isAcceptingProposal, setIsAcceptingProposal] = React.useState(false);
   const [proposalFeedback, setProposalFeedback] = React.useState<ProposalFeedback | null>(null);
@@ -972,21 +1012,84 @@ export default function BrandChatPage() {
 
   const openContractTab = () => openTool('contract');
 
-  // Phase 5: Shipping flow state (brand side)
-  // Demo: creator has provided an address; brand needs to ship.
-  const [shippingAddress] = React.useState<ShippingAddressData | null>({
-    fullName: 'Priya Sharma',
-    phone: '9876543210',
-    addressLine1: '402, Sea View Apartments, Carter Road',
-    addressLine2: 'Bandra West',
-    city: 'Mumbai',
-    state: 'Maharashtra',
-    pincode: '400050',
-    landmark: 'Opposite Joggers Park',
-  });
+  // Phase 5: Shipping flow state (brand side).
+  // F-0235 — live mode must never show a fabricated address. `shippingAddress` and
+  // `shipment` are derived from the real `GET /deals/:id/shipment` record (Priya's
+  // design 2026-07-24, wiki/decisions/shipment-backend-design-2026-07-24.md), mirroring
+  // creator-chat.tsx's fetchLiveShipment/shippingAddress sync. Mock mode keeps the old
+  // scripted demo address (MOCK_SHIPPING_ADDRESS) so the click-through demo still works
+  // offline; live mode seeds null and only ever gets a value from a real record.
+  const [liveShipment, setLiveShipment] = React.useState<ShipmentApiRecord | null>(null);
+  const [shippingAddress, setShippingAddress] = React.useState<ShippingAddressData | null>(
+    isApiLive() ? null : MOCK_SHIPPING_ADDRESS,
+  );
   const [shipment, setShipment] = React.useState<(ShipmentData & { status: ShipmentStatus }) | null>(null);
   const [showShipmentForm, setShowShipmentForm] = React.useState(false);
   const [isSubmittingShipment, setIsSubmittingShipment] = React.useState(false);
+
+  // F-0235 — GET /deals/:id/shipment, live mode only. Re-fetched whenever the selected
+  // deal changes so the ship control always reflects THIS deal's real record, not a
+  // stale one left over from a previously selected room.
+  const fetchLiveShipment = React.useCallback(async () => {
+    if (!isApiLive() || !selectedDeal) {
+      setLiveShipment(null);
+      return;
+    }
+    try {
+      const record = await api.shipments.get('brand', selectedDeal.id);
+      setLiveShipment(record);
+    } catch (err) {
+      console.error('Failed to load shipment status', err);
+      setLiveShipment(null);
+    }
+  }, [selectedDeal?.id]);
+
+  React.useEffect(() => {
+    void fetchLiveShipment();
+  }, [fetchLiveShipment]);
+
+  // Reflect the real record into the shippingAddress/shipment state the render tree
+  // already reads. AWAITING_ADDRESS (no row yet, or the creator hasn't submitted an
+  // address) — and the no-record case — keep shippingAddress null, so the "Ship
+  // Product" control is gated on a real address actually being on file, never on a
+  // truthy placeholder.
+  React.useEffect(() => {
+    if (!isApiLive()) return;
+    if (!liveShipment || liveShipment.status === 'AWAITING_ADDRESS') {
+      setShippingAddress(null);
+      setShipment(null);
+      return;
+    }
+    setShippingAddress({
+      fullName: liveShipment.recipientName ?? '',
+      phone: liveShipment.phone ?? '',
+      addressLine1: liveShipment.addressLine1 ?? '',
+      addressLine2: liveShipment.addressLine2 ?? '',
+      city: liveShipment.city ?? '',
+      state: liveShipment.state ?? '',
+      pincode: liveShipment.pincode ?? '',
+    });
+    // Once the record shows the product already shipped, reflect that in `shipment`
+    // too — otherwise a page reload after a real markShipped call would forget it and
+    // re-offer "Ship Product" on an already-shipped deal.
+    if (
+      liveShipment.status === 'SHIPPED' ||
+      liveShipment.status === 'RECEIVED' ||
+      liveShipment.status === 'DAMAGED'
+    ) {
+      setShipment({
+        items: [{ name: liveShipment.productName || 'Product', quantity: 1 }],
+        courier: liveShipment.carrier || '',
+        trackingNumber: liveShipment.trackingNumber || '',
+        trackingUrl: liveShipment.trackingUrl || undefined,
+        estimatedDelivery: liveShipment.estimatedDelivery || '',
+        notes: liveShipment.conditionNote || undefined,
+        status: mapShipmentApiStatusToUiStatus(liveShipment.status),
+      });
+    } else {
+      setShipment(null);
+    }
+  }, [liveShipment]);
 
   // Wired to POST /deals/:id/shipment (brand-only, DealController.java:199 markShipped).
   // Mock mode keeps the old client-only simulation so the demo flow still works offline.
@@ -1021,6 +1124,9 @@ export default function BrandChatPage() {
           estimatedDelivery: record.estimatedDelivery ?? data.estimatedDelivery,
           status: mapShipmentApiStatusToUiStatus(record.status),
         });
+        // F-0235 — keep the single source of truth in sync too, so a later re-render of the
+        // liveShipment-driven effect never has stale data to fall back to.
+        setLiveShipment(record);
       } else {
         await new Promise((r) => setTimeout(r, 800));
         setShipment({ ...data, status: 'created' });
@@ -1037,6 +1143,39 @@ export default function BrandChatPage() {
       setIsSubmittingShipment(false);
     }
   };
+
+  /**
+   * F-0242 — open a dispute on the selected deal.
+   *
+   * Uses `api.brandDisputes.open`, NOT `creatorDisputes.open`: the client's `role` option
+   * selects which session's JWT is attached, so the creator variant would send an empty
+   * (401) or wrong-actor token from the brand app.
+   *
+   * The server rejects two cases with 409 and both are surfaced verbatim rather than as a
+   * generic failure — NO_FUNDED_ESCROW (nothing on hold to dispute) and DISPUTE_ALREADY_OPEN
+   * (DisputeService.java:113-128).
+   */
+  const handleOpenDispute = async () => {
+    if (!selectedDeal || disputeReason.trim().length < 10) return;
+    setDisputeSubmitting(true);
+    setDisputeError(null);
+    try {
+      await api.brandDisputes.open(selectedDeal.id, disputeReason.trim());
+      setShowDisputeDialog(false);
+      setDisputeReason('');
+      toast({
+        title: 'Dispute opened',
+        description: 'An admin will review this deal. Escrow stays frozen until it is resolved.',
+      });
+    } catch (err) {
+      setDisputeError(
+        err instanceof ApiError ? err.message : 'Could not open the dispute. Try again.',
+      );
+    } finally {
+      setDisputeSubmitting(false);
+    }
+  };
+
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -1899,9 +2038,41 @@ export default function BrandChatPage() {
                     <span className="hidden sm:inline">Send Proposal</span>
                   </Button>
                   )}
-                  <Button variant="ghost" size="icon" className="h-9 w-9">
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
+                  {/* F-0242: this overflow button previously had no handler at all. It is now
+                      the brand's dispute entry point — the one brand-disputes.tsx has always
+                      pointed at. Gated on escrowFunded because the server rejects a dispute
+                      with no funded, unreleased escrow (NO_FUNDED_ESCROW), and a control that
+                      can only fail is worse than no control. */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9"
+                        aria-label="Deal options"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-64">
+                      {selectedDeal.escrowFunded ? (
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setDisputeError(null);
+                            setShowDisputeDialog(true);
+                          }}
+                          className="text-destructive-foreground focus:text-destructive-foreground"
+                        >
+                          Report a problem with this deal
+                        </DropdownMenuItem>
+                      ) : (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          A dispute can only be raised once escrow is funded — there is no money
+                          on hold for this deal yet.
+                        </div>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
             </div>
@@ -2523,6 +2694,54 @@ export default function BrandChatPage() {
       )}
 
       {/* Proposal Form Modal */}
+      {/* F-0242 — dispute dialog. Mirrors creator-disputes.tsx: a free-text reason with a
+          10-character floor, the submit disabled until it is met, and the server's own 409
+          message shown inline rather than a generic retry prompt. */}
+      <Dialog open={showDisputeDialog} onOpenChange={setShowDisputeDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Report a problem with this deal</DialogTitle>
+            <DialogDescription>
+              This opens a formal dispute. The escrow held for this deal is frozen while an
+              admin reviews it, and {selectedDeal?.creatorName ?? 'the creator'} is notified.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="brand-dispute-reason">What went wrong?</Label>
+            <Textarea
+              id="brand-dispute-reason"
+              value={disputeReason}
+              onChange={(e) => setDisputeReason(e.target.value)}
+              placeholder="Describe the problem — what was agreed, what was delivered, and what you want resolved."
+              rows={5}
+            />
+            <p className="text-xs text-muted-foreground">
+              {disputeReason.trim().length < 10
+                ? 'Please add at least 10 characters so the reviewer has something to act on.'
+                : 'An admin reads this directly.'}
+            </p>
+            {disputeError && (
+              <p className="text-sm text-destructive-foreground">{disputeError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDisputeDialog(false)}
+              disabled={disputeSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void handleOpenDispute()}
+              disabled={disputeSubmitting || disputeReason.trim().length < 10}
+            >
+              {disputeSubmitting ? 'Opening…' : 'Open dispute'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {showProposalForm && selectedDeal && (
         <ProposalForm
           creatorName={selectedDeal.creatorName}

@@ -16,9 +16,12 @@ interface VerificationRequiredBoxProps {
 
 /**
  * Persistent inline block shown when publishing an ACTIVE campaign is refused because the
- * workspace isn't verified (403 WORKSPACE_NOT_VERIFIED). Replaces the old disappearing toast:
- * it stays on screen, explains the gate, reassures that the draft is safe, and offers a way
- * forward — verify, or keep it as a draft. The raw code is shown only as a quiet support ref.
+ * workspace isn't verified (403 WORKSPACE_NOT_VERIFIED). The create/update call throws before
+ * anything is persisted, so nothing has actually been saved yet at this point — the box makes
+ * that explicit and leads with "Save as draft instead" (an update/create re-submit as DRAFT) as
+ * the unmissable way to not lose the work, alongside "Start verification". Replaces the old
+ * disappearing toast: it stays on screen instead of vanishing. The raw code is shown only as a
+ * quiet support ref.
  */
 export function VerificationRequiredBox({
   canVerify,
@@ -34,18 +37,11 @@ export function VerificationRequiredBox({
       <div className="flex-1">
         <p className="text-sm font-semibold">Your workspace needs to be verified to publish</p>
         <p className="mt-1 text-sm opacity-90">
-          Good news — this campaign is saved as a draft, so nothing is lost. Verify your workspace
-          and publish it in one step once you’re approved.
+          This campaign hasn’t been saved yet — publishing needs a verified workspace. Save it as
+          a draft now so your work isn’t lost, then verify to publish it.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {canVerify ? (
-            <Button asChild size="sm">
-              <Link to={VERIFY_HREF}>Start verification</Link>
-            </Button>
-          ) : (
-            <span className="text-xs font-medium opacity-80">Ask a workspace admin to verify</span>
-          )}
-          <Button size="sm" variant="outline" onClick={onSaveDraft} disabled={savingDraft}>
+          <Button size="sm" onClick={onSaveDraft} disabled={savingDraft}>
             {savingDraft ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
@@ -55,6 +51,13 @@ export function VerificationRequiredBox({
               'Save as draft instead'
             )}
           </Button>
+          {canVerify ? (
+            <Button asChild size="sm" variant="outline">
+              <Link to={VERIFY_HREF}>Start verification</Link>
+            </Button>
+          ) : (
+            <span className="text-xs font-medium opacity-80">Ask a workspace admin to verify</span>
+          )}
           <span className="ml-auto font-mono text-[11px] opacity-60">ref: WORKSPACE_NOT_VERIFIED</span>
         </div>
       </div>

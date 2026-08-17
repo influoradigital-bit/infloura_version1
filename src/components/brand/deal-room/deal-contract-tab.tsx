@@ -7,11 +7,24 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { downloadContractPDF, signContract } from '@/lib/contract-generator';
-import { api, ApiError, isApiLive } from '@/lib/api';
+import { api, ApiError, isApiLive, type ContractApiRecord } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatINR } from '@/lib/utils';
 
-export type DealContractStatus = 'generated' | 'brand_signed' | 'creator_signed' | 'active';
+// 'pending_signature' (F-0250 follow-up): the backend's PENDING_SIGNATURES is reached by
+// EITHER party signing first, with no ordering enforced. The coarse mapper
+// (mapDealApiContractStatus, src/lib/creator-contract-mappers.ts) is never given
+// brandSignedAt/creatorSignedAt, so it cannot resolve which party signed — this member means
+// "exactly one signature exists, which party is unknown." Every consumer must keep BOTH
+// parties' Sign controls reachable in this state and must never label a specific party as
+// having signed. mapApiContractToDealStatus (the timestamp-driven mapper) never returns this
+// value — it always resolves the exact party once the full contract record loads.
+export type DealContractStatus =
+  | 'generated'
+  | 'pending_signature'
+  | 'brand_signed'
+  | 'creator_signed'
+  | 'active';
 
 interface DealContractTabProps {
   dealId: string;
@@ -44,7 +57,49 @@ export function DealContractTab({
   const { toast } = useToast();
   const liveApi = isApiLive();
 
+  // F-0237: the parent (brand-chat.tsx) fetches the real contract but only
+  // passes down dealId/contractId/status — never the fetched record — so
+  // this panel used to render a hardcoded 5-item clause list under "Terms
+  // (read-only)" with the Sign button directly beneath it, regardless of
+  // what the contract actually said. Fetch the real record here (GET
+  // /contracts/:id, same call brand-chat.tsx's fetchLiveContract makes) so
+  // the terms/milestones shown and the Sign gate are both backed by the
+  // actual contract. In mock mode `api.contracts.get` resolves `null`
+  // (src/lib/api.ts mockOr) — that correctly renders as "unavailable" below
+  // rather than inventing clause text.
+  const [contractRecord, setContractRecord] = React.useState<ContractApiRecord | null>(null);
+  const [contractLoading, setContractLoading] = React.useState(true);
+  const [contractError, setContractError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setContractLoading(true);
+    setContractError(null);
+    api.contracts
+      .get('brand', contractId)
+      .then((record) => {
+        if (cancelled) return;
+        setContractRecord(record);
+        if (!record) setContractError('Contract terms are not available yet.');
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setContractRecord(null);
+        setContractError(err instanceof ApiError ? err.message : 'Could not load contract terms.');
+      })
+      .finally(() => {
+        if (!cancelled) setContractLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [contractId]);
+
   const stepDone = (key: string) => {
+    // 'pending_signature': one party has signed but which one is unknown, so only the
+    // unambiguous "Generated" step can be marked done — marking "Brand signed" done here would
+    // assert a signature that may not exist.
+    if (status === 'pending_signature') return key === 'generated';
     const order = ['generated', 'brand_signed', 'creator_signed', 'active'];
     return order.indexOf(status) >= order.indexOf(key);
   };
@@ -53,10 +108,38 @@ export function DealContractTab({
   // /contracts/:id/pdf-download-url) instead of the client-side HTML print.
   // 404 CONTRACT_PDF_NOT_READY is legitimate until both parties have signed.
   const handleDownloadPDF = async () => {
-    // Shared by the mock-mode branch below AND the live-mode fallback (F-CONTRACT-DL):
-    // if the presigned URL never becomes available (e.g. R2 unconfigured, leaving
-    // pdfR2Key null forever), this is what we fall back to generating locally.
-    const contractData = {
+    if (liveApi) {
+      setIsFetchingPdf(true);
+      try {
+        // `downloadUrl`, not `url` — see api.ts. Throwing on an empty value ensures
+        // a missing URL is treated as a failure below, not a silent no-op.
+        const { downloadUrl } = await api.contracts.pdfDownloadUrl('brand', contractId);
+        if (!downloadUrl) throw new Error('No download URL returned');
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+      } catch (err) {
+        // F-0238: previously fell back to `downloadContractPDF` built from
+        // invented values (fake brand name, fake deliverables, a fake
+        // now+14-day deadline) and toasted "Opened a local copy" — handing
+        // the brand a fabricated document that looked like the real
+        // contract. A failed fetch must surface as a failure instead.
+        toast({
+          title: 'Could not download the contract PDF',
+          description:
+            err instanceof ApiError
+              ? err.message
+              : 'The PDF is not ready yet. It becomes available once both parties have signed.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsFetchingPdf(false);
+      }
+      return;
+    }
+
+    // Demo mode only (mock API — no server-backed contract exists at all).
+    // Built solely from this panel's own display props, not invented
+    // financial/legal terms.
+    const demoContractData = {
       contractId,
       brandName: 'Your Brand',
       creatorName,
@@ -73,31 +156,7 @@ export function DealContractTab({
       customClauses: [],
       createdAt: new Date(),
     };
-
-    if (liveApi) {
-      setIsFetchingPdf(true);
-      try {
-        // `downloadUrl`, not `url` — see api.ts. Throwing on an empty value is what makes the
-        // F-CONTRACT-DL fallback below actually reachable; window.open(undefined) never threw.
-        const { downloadUrl } = await api.contracts.pdfDownloadUrl('brand', contractId);
-        if (!downloadUrl) throw new Error('No download URL returned');
-        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
-      } catch {
-        // F-CONTRACT-DL: don't strand the user if the server-side PDF never
-        // becomes available — fall back to the client-side printable copy
-        // instead of a dead-end "not ready" toast.
-        downloadContractPDF(contractData, `${contractId}.pdf`);
-        toast({
-          title: 'Opened a local copy',
-          description: 'Opened a local copy to review/print.',
-        });
-      } finally {
-        setIsFetchingPdf(false);
-      }
-      return;
-    }
-
-    downloadContractPDF(contractData, `${contractId}.pdf`);
+    downloadContractPDF(demoContractData, `${contractId}.pdf`);
     toast({ title: 'PDF downloaded', description: 'Review the contract before signing.' });
   };
 
@@ -127,7 +186,10 @@ export function DealContractTab({
   };
 
   const waitingOnCreator = status === 'brand_signed';
-  const canBrandSign = status === 'generated';
+  // 'pending_signature': signer unknown, so the brand's Sign control must stay reachable —
+  // otherwise a creator-first PENDING_SIGNATURES deadlocks the brand exactly like the old
+  // unconditional 'brand_signed' guess deadlocked them (F-0250 follow-up).
+  const canBrandSign = status === 'generated' || status === 'pending_signature';
   const isActive = status === 'active' || status === 'creator_signed';
 
   return (
@@ -213,16 +275,47 @@ export function DealContractTab({
             </div>
 
             <div>
-              <p className="text-xs text-muted-foreground mb-2">Terms (read-only)</p>
-              <div className="bg-muted/50 p-3 rounded-md text-xs space-y-2 max-h-48 overflow-y-auto">
-                <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                  <li>Creator delivers agreed content by campaign deadline.</li>
-                  <li>Brand retains usage rights for 6 months from approval.</li>
-                  <li>Up to 2 revision rounds per deliverable.</li>
-                  <li>Payment released from escrow after deliverable approval.</li>
-                  <li>Disputes resolved via Influora platform arbitration.</li>
-                </ol>
-              </div>
+              {/* F-0283: this is the PAYMENT SCHEDULE, and calling it "Terms" was the last
+                  remnant of the fiction F-0237 removed. The platform does not capture, store
+                  or return contract terms at all — ContractGenerateRequest takes only
+                  {collaborationId, milestones}, and the Contract column named `terms` holds a
+                  SHA-256 tamper hash, not terms. Labelling a milestone list "Terms" above a
+                  signature control implies the brand has read something that does not exist. */}
+              <p className="text-xs text-muted-foreground mb-2">
+                Payment schedule (from contract, read-only)
+              </p>
+              {contractLoading ? (
+                <div className="bg-muted/50 p-3 rounded-md text-xs text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading contract terms…
+                </div>
+              ) : !contractRecord ? (
+                <div className="bg-destructive/10 border border-destructive/30 p-3 rounded-md text-xs text-destructive-foreground">
+                  {contractError ?? 'Contract terms are not available yet.'} Signing is disabled
+                  until the real terms load.
+                </div>
+              ) : (
+                <div className="bg-muted/50 p-3 rounded-md text-xs space-y-2 max-h-48 overflow-y-auto">
+                  {contractRecord.milestones.length === 0 ? (
+                    <p className="text-muted-foreground">No milestones on this contract.</p>
+                  ) : (
+                    <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                      {contractRecord.milestones
+                        .slice()
+                        .sort((a, b) => a.sequenceNo - b.sequenceNo)
+                        .map((m) => (
+                          <li key={m.id ?? m.sequenceNo}>
+                            {m.description} — {formatINR(m.amount)}
+                            {m.dueDate ? ` (due ${m.dueDate})` : ''}
+                          </li>
+                        ))}
+                    </ol>
+                  )}
+                  <p className="text-muted-foreground pt-1 border-t border-border/50">
+                    Total: {formatINR(contractRecord.totalAmount)} {contractRecord.currency}
+                  </p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -274,7 +367,10 @@ export function DealContractTab({
             <Button
               className="flex-1 gap-2"
               onClick={handleSign}
-              disabled={isSigning || !signerName.trim()}
+              // F-0237: never let Sign go active over terms that did not come
+              // from the fetched contract (still loading, or the fetch
+              // failed/returned nothing).
+              disabled={isSigning || !signerName.trim() || !contractRecord}
             >
               {isSigning ? (
                 <>

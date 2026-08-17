@@ -1783,3 +1783,264 @@
 {"ts": "2026-08-17T19:37:11", "who": "meera", "what": "verdict", "file": ".proof-os/gates/F-0223-approval-reports-release.sh", "task": "T-F0223-FIX", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
 {"ts": "2026-08-17T19:37:11", "who": "vikram", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0223"}
 {"ts": "2026-08-17T19:37:11", "who": "vikram", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0223 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0223-approval-reports-release.sh"}
+{"ts": "2026-08-17T19:40:25", "who": "ananya", "what": "ledger-add", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx:1461", "task": "", "stage": "intake", "gate_result": "F-0251"}
+{"ts": "2026-08-17T19:47:18", "who": "ananya", "what": "fix", "file": "src/components/feature/meera/FundEscrowButton.tsx", "task": "T-BRANDHIGH-0817", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-17T19:47:18", "who": "ananya", "what": "create", "file": "src/components/feature/meera/__tests__/FundEscrowButton.test.tsx", "task": "T-BRANDHIGH-0817", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-17T19:47:18", "who": "ananya", "what": "claim", "file": "influora-api/src/main/java/com/influora/service/DealService.java", "task": "T-BRANDHIGH-0817", "stage": "lookup", "gate_result": "believed"}
+{"ts": "2026-08-17T19:47:38", "who": "ananya", "what": "fix", "file": "src/hooks/brand/useWorkspaceVerification.ts", "task": "T-BRANDHIGH-0817", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-17T19:47:38", "who": "ananya", "what": "fix", "file": "src/pages/brand-settings.tsx", "task": "T-BRANDHIGH-0817", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-17T19:47:38", "who": "ananya", "what": "create", "file": "src/hooks/brand/__tests__/useWorkspaceVerification.test.ts", "task": "T-BRANDHIGH-0817", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-17T19:47:38", "who": "ananya", "what": "create", "file": "src/pages/__tests__/brand-settings.test.tsx", "task": "T-BRANDHIGH-0817", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-17T19:49:33", "who": "ananya", "what": "fix", "file": "src/lib/creator-contract-mappers.ts", "task": "T-BRANDHIGH-0817", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-17T19:49:33", "who": "ananya", "what": "create", "file": "src/lib/__tests__/creator-contract-mappers.test.ts", "task": "T-BRANDHIGH-0817", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-17T19:49:34", "who": "ananya", "what": "read", "file": "influora-api/src/main/java/com/influora/domain/entity/Contract.java", "task": "T-BRANDHIGH-0817", "stage": "lookup", "gate_result": "read"}
+{"ts": "2026-08-17T19:49:34", "who": "ananya", "what": "ledger-add", "file": "src/lib/types.ts:42", "task": "", "stage": "intake", "gate_result": "F-0252"}
+{"ts": "2026-08-17T19:54:22", "who": "priya", "what": "verdict", "file": "wiki/errors/BRAND-FRONTEND-UX-AUDIT-0817.md", "task": "T-BRANDHIGH-0817", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-17T19:54:22", "who": "meera", "what": "verdict", "file": "src/lib/creator-contract-mappers.ts", "task": "T-BRANDHIGH-0817", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-17T19:54:31", "who": "ananya", "what": "ledger-add", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx:863", "task": "", "stage": "intake", "gate_result": "F-0253"}
+{"ts": "2026-08-17T19:54:31", "who": "ananya", "what": "ledger-add", "file": "src/components/brand/onboarding/onboarding-steps.tsx:633", "task": "", "stage": "intake", "gate_result": "F-0254"}
+{"ts": "2026-08-17T19:54:31", "who": "ananya", "what": "ledger-add", "file": "src/pages/brand-register.tsx:386", "task": "", "stage": "intake", "gate_result": "F-0255"}
+{"ts": "2026-08-17T19:54:31", "who": "ananya", "what": "ledger-add", "file": "src/components/brand/discover/creator-discovery.tsx:337", "task": "", "stage": "intake", "gate_result": "F-0256"}
+{"ts": "2026-08-17T19:54:31", "who": "ananya", "what": "ledger-add", "file": "src/components/brand/discover/creator-discovery.tsx:1482", "task": "", "stage": "intake", "gate_result": "F-0257"}
+{"ts": "2026-08-17T19:54:31", "who": "ananya", "what": "ledger-add", "file": "src/pages/brand-campaign-detail.tsx:2014", "task": "", "stage": "intake", "gate_result": "F-0258"}
+{"ts": "2026-08-17T19:54:31", "who": "ananya", "what": "ledger-add", "file": "src/components/brand/discover/creator-discovery.tsx", "task": "", "stage": "intake", "gate_result": "F-0259"}
+{"ts": "2026-08-17T19:54:31", "who": "ananya", "what": "ledger-add", "file": "src/pages/brand-creator-profile.tsx:658", "task": "", "stage": "intake", "gate_result": "F-0260"}
+{"ts": "2026-08-17T19:54:31", "who": "ananya", "what": "ledger-add", "file": "src/components/brand/command-bar.tsx:102", "task": "", "stage": "intake", "gate_result": "F-0261"}
+{"ts": "2026-08-17T19:54:31", "who": "ananya", "what": "ledger-add", "file": "src/pages/brand-settings.tsx:103", "task": "", "stage": "intake", "gate_result": "F-0262"}
+{"ts": "2026-08-17T19:54:31", "who": "ananya", "what": "ledger-add", "file": "src/pages/brand-pipeline.tsx:138", "task": "", "stage": "intake", "gate_result": "F-0263"}
+{"ts": "2026-08-17T19:54:31", "who": "ananya", "what": "ledger-add", "file": "src/pages/brand-wallet.tsx:714", "task": "", "stage": "intake", "gate_result": "F-0264"}
+{"ts": "2026-08-17T19:54:32", "who": "ananya", "what": "ledger-add", "file": "src/pages/features/hype.tsx:94", "task": "", "stage": "intake", "gate_result": "F-0265"}
+{"ts": "2026-08-17T19:55:25", "who": "ananya", "what": "read", "file": "src/lib/api.ts", "task": "T-CRIT9-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:55:25", "who": "ananya", "what": "wire", "file": "src/lib/api.ts", "task": "T-CRIT9-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T19:55:25", "who": "ananya", "what": "wire", "file": "src/pages/brand-chat.tsx", "task": "T-CRIT9-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T19:55:25", "who": "ananya", "what": "fix", "file": "src/components/brand/campaigns/brand-kyc-prompt.tsx", "task": "T-CRIT9-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T19:57:50", "who": "ananya", "what": "read", "file": "src/components/brand/onboarding/onboarding-steps.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:57:50", "who": "ananya", "what": "read", "file": "src/pages/brand-register.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:57:50", "who": "ananya", "what": "read", "file": "src/components/shared/email-otp-gate.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:57:50", "who": "ananya", "what": "read", "file": "src/components/brand/campaigns/brand-kyc-prompt.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:57:50", "who": "ananya", "what": "read", "file": "src/App.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:57:50", "who": "ananya", "what": "read", "file": "src/pages/creator-register.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:57:50", "who": "ananya", "what": "read", "file": "src/lib/api.ts", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:57:50", "who": "ananya", "what": "read", "file": "src/components/shared/demo-access-panel.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:57:51", "who": "ananya", "what": "read", "file": ".proof-os/gates/F-0223-approval-reports-release.sh", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:58:04", "who": "ananya", "what": "read", "file": "src/components/brand/discover/creator-discovery.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:58:04", "who": "ananya", "what": "read", "file": "src/pages/brand-new-campaign.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:58:04", "who": "ananya", "what": "read", "file": ".proof-os/gates/F-0223-approval-reports-release.sh", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:58:34", "who": "ananya", "what": "read", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:58:34", "who": "ananya", "what": "read", "file": "src/pages/features/hype.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:58:34", "who": "ananya", "what": "read", "file": "src/lib/api.ts", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:58:34", "who": "ananya", "what": "read", "file": "src/app/globals.css", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:58:34", "who": "ananya", "what": "read", "file": ".proof-os/gates/F-0223-approval-reports-release.sh", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:59:06", "who": "ananya", "what": "edit", "file": "src/components/brand/onboarding/onboarding-steps.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T19:59:30", "who": "ananya", "what": "edit", "file": "src/pages/brand-register.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T19:59:35", "who": "ananya", "what": "read", "file": "src/pages/brand-campaign-detail.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:59:35", "who": "ananya", "what": "read", "file": "src/lib/api.ts", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:59:35", "who": "ananya", "what": "read", "file": "src/lib/meera-api.ts", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:59:35", "who": "ananya", "what": "read", "file": "influora-api/src/main/java/com/influora/web/BrandPlatformFeeController.java", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:59:35", "who": "ananya", "what": "read", "file": "influora-api/src/main/java/com/influora/web/dto/brandplatformfee/BrandPlatformFeeDtos.java", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:59:35", "who": "ananya", "what": "read", "file": "docs/docs/features/platform-fees.md", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:59:36", "who": "ananya", "what": "read", "file": "influora-api/src/main/java/com/influora/web/BrandInvoicingController.java", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T19:59:42", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0253-signature-canvas-submitted.sh", "task": "T-BRANDMED-0817", "stage": "gate", "gate_result": ""}
+{"ts": "2026-08-17T19:59:43", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0265-brand-palette-tokens.sh", "task": "T-BRANDMED-0817", "stage": "gate", "gate_result": ""}
+{"ts": "2026-08-17T20:00:17", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0235"}
+{"ts": "2026-08-17T20:00:17", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0235 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0235-no-fabricated-pii-live.sh"}
+{"ts": "2026-08-17T20:00:18", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0236"}
+{"ts": "2026-08-17T20:00:18", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0236 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0236-no-mock-money-in-live.sh"}
+{"ts": "2026-08-17T20:00:18", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0237"}
+{"ts": "2026-08-17T20:00:18", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0237 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0237-sign-over-real-terms.sh"}
+{"ts": "2026-08-17T20:00:18", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0238"}
+{"ts": "2026-08-17T20:00:18", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0238 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0238-no-fabricated-contract-pdf.sh"}
+{"ts": "2026-08-17T20:00:18", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0239"}
+{"ts": "2026-08-17T20:00:18", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0239 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0239-no-fake-money-progress.sh"}
+{"ts": "2026-08-17T20:00:18", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0240"}
+{"ts": "2026-08-17T20:00:18", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0240 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0240-campaign-type-reaches-payload.sh"}
+{"ts": "2026-08-17T20:00:19", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0241"}
+{"ts": "2026-08-17T20:00:19", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0241 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0241-no-false-draft-reassurance.sh"}
+{"ts": "2026-08-17T20:00:19", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0242"}
+{"ts": "2026-08-17T20:00:19", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0242 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0242-brand-can-open-dispute.sh"}
+{"ts": "2026-08-17T20:00:19", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0243"}
+{"ts": "2026-08-17T20:00:19", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0243 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0243-verification-copy-agrees.sh"}
+{"ts": "2026-08-17T20:00:20", "who": "ananya", "what": "read", "file": "src/pages/brand-creator-profile.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:00:49", "who": "priya", "what": "review", "file": "src/pages/brand-chat.tsx", "task": "T-CRIT9-0817", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-17T20:00:49", "who": "priya", "what": "review", "file": "src/components/brand/deal-room/deal-contract-tab.tsx", "task": "T-CRIT9-0817", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-17T20:00:49", "who": "priya", "what": "review", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx", "task": "T-CRIT9-0817", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-17T20:00:49", "who": "priya", "what": "review", "file": "src/components/brand/deals/deal-room-dashboard.tsx", "task": "T-CRIT9-0817", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-17T20:00:49", "who": "priya", "what": "review", "file": "src/components/brand/campaigns/campaign-form.tsx", "task": "T-CRIT9-0817", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-17T20:00:49", "who": "priya", "what": "review", "file": "src/components/brand/VerificationRequiredBox.tsx", "task": "T-CRIT9-0817", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-17T20:00:56", "who": "ananya", "what": "edit", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:00:56", "who": "ananya", "what": "edit", "file": "src/pages/features/hype.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:01:00", "who": "ananya", "what": "read", "file": "src/components/brand/command-bar.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:00", "who": "ananya", "what": "read", "file": "src/pages/brand-pipeline.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:01", "who": "ananya", "what": "read", "file": "src/pages/brand-settings.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:01", "who": "ananya", "what": "read", "file": "src/components/brand/brand-layout.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:01", "who": "ananya", "what": "read", "file": "src/App.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:01", "who": "ananya", "what": "read", "file": "src/components/ui/command.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:02", "who": "ananya", "what": "read", "file": "src/lib/brand-pipeline-stage.ts", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:02", "who": "ananya", "what": "read", "file": ".proof-os/gates/F-0223-approval-reports-release.sh", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:05", "who": "human:swapnil", "what": "ledger-add", "file": ".proof-os/gates/F-0238-no-fabricated-contract-pdf.sh", "task": "", "stage": "intake", "gate_result": "F-0266"}
+{"ts": "2026-08-17T20:01:26", "who": "ananya", "what": "read", "file": "src/components/brand/discover/creator-discovery.test.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:26", "who": "ananya", "what": "read", "file": "src/components/brand/discover/creator-discovery-redirect.test.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:26", "who": "ananya", "what": "read", "file": "src/lib/api.ts", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:26", "who": "ananya", "what": "read", "file": "src/lib/types.ts", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:26", "who": "ananya", "what": "read", "file": "src/test/setup.ts", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:26", "who": "ananya", "what": "read", "file": "vitest.config.ts", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:01:27", "who": "ananya", "what": "edit", "file": "src/components/brand/onboarding/__tests__/onboarding-steps.demo-hint.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:01:27", "who": "ananya", "what": "edit", "file": "src/pages/__tests__/brand-register.consent-links.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:01:48", "who": "ananya", "what": "edit", "file": "src/components/brand/contracts/__tests__/contracts-and-deliverables.signature.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:02:31", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0258-no-client-invented-fees.sh", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:02:32", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0260-absent-metric-not-zero.sh", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:02:32", "who": "ananya", "what": "read", "file": "src/pages/brand-wallet.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:02:33", "who": "ananya", "what": "read", "file": ".proof-os/gates/F-0223-approval-reports-release.sh", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:02:33", "who": "ananya", "what": "read", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:02:34", "who": "ananya", "what": "read", "file": "src/components/brand/deliverables/DeliverableViewer.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:02:34", "who": "ananya", "what": "read", "file": "src/components/brand/deals/deal-room-dashboard.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:02:35", "who": "ananya", "what": "read", "file": "src/lib/api.ts", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:02:35", "who": "ananya", "what": "read", "file": "src/lib/meera-api.ts", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:02:35", "who": "ananya", "what": "read", "file": "influora-api/src/main/java/com/influora/web/WalletController.java", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:03:21", "who": "ananya", "what": "edit", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:03:47", "who": "ananya", "what": "edit", "file": "src/pages/brand-wallet.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:04:32", "who": "ananya", "what": "edit", "file": "src/pages/features/hype.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:04:50", "who": "ananya", "what": "edit", "file": "src/pages/brand-campaign-detail.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:04:50", "who": "ananya", "what": "edit", "file": "src/pages/brand-creator-profile.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:05:12", "who": "ananya", "what": "edit", "file": "src/components/brand/command-bar.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:05:55", "who": "ananya", "what": "edit", "file": "src/pages/brand-settings.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:06:03", "who": "priya", "what": "ledger-add", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx:1296", "task": "", "stage": "intake", "gate_result": "F-0267"}
+{"ts": "2026-08-17T20:06:04", "who": "priya", "what": "ledger-add", "file": "src/lib/creator-contract-mappers.ts:65", "task": "", "stage": "intake", "gate_result": "F-0268"}
+{"ts": "2026-08-17T20:06:04", "who": "priya", "what": "ledger-add", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx:282", "task": "", "stage": "intake", "gate_result": "F-0269"}
+{"ts": "2026-08-17T20:06:08", "who": "ananya", "what": "edit", "file": "src/pages/__tests__/brand-wallet.dead-controls.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:06:40", "who": "ananya", "what": "edit", "file": "src/pages/__tests__/brand-campaign-detail.fee-block.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:06:40", "who": "ananya", "what": "edit", "file": "src/pages/__tests__/brand-creator-profile.absent-metrics.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:06:53", "who": "ananya", "what": "edit", "file": "src/pages/brand-pipeline.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:07:53", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0260-absent-metric-not-zero.sh", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:09:47", "who": "ananya", "what": "edit", "file": "src/components/brand/discover/creator-discovery.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:09:48", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0256-no-mock-campaign-seed.sh", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:09:48", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0257-invite-creator-handoff.sh", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:09:48", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0259-discover-loading-empty.sh", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:09:48", "who": "ananya", "what": "edit", "file": "src/components/brand/discover/__tests__/creator-discovery-invite-campaigns.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:09:48", "who": "ananya", "what": "edit", "file": "src/components/brand/discover/__tests__/creator-discovery-invite-handoff.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:09:48", "who": "ananya", "what": "edit", "file": "src/components/brand/discover/__tests__/creator-discovery-loading-empty.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:11:17", "who": "kavya", "what": "read", "file": "src/App.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:17", "who": "kavya", "what": "read", "file": "src/components/creator/creator-layout.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:18", "who": "kavya", "what": "read", "file": "src/pages/creator-login.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:18", "who": "kavya", "what": "read", "file": "src/pages/creator-onboarding.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:18", "who": "kavya", "what": "read", "file": "src/pages/creator-dashboard.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:18", "who": "kavya", "what": "read", "file": "src/pages/creator-deals.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:19", "who": "kavya", "what": "read", "file": "src/components/brand/dashboard/dashboard-page.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:19", "who": "kavya", "what": "read", "file": "src/components/brand/campaigns/campaign-form.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:19", "who": "kavya", "what": "read", "file": "src/components/brand/timeline/event-cards/contract-card.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:19", "who": "kavya", "what": "read", "file": "src/components/brand/timeline/event-cards/proposal-card.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:20", "who": "kavya", "what": "read", "file": "src/components/brand/timeline/panels/deliverable-review-panel.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:20", "who": "kavya", "what": "read", "file": "src/components/brand/deals/deal-room-dashboard.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:20", "who": "kavya", "what": "read", "file": "src/pages/creator-chat.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:20", "who": "kavya", "what": "read", "file": "src/pages/brand-chat.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:21", "who": "kavya", "what": "read", "file": "src/pages/creator-wallet.tsx", "task": "T-FLOWUX-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:11:31", "who": "kavya", "what": "ledger-add", "file": "src/components/brand/timeline/event-cards/contract-card.tsx:110", "task": "", "stage": "intake", "gate_result": "F-0270"}
+{"ts": "2026-08-17T20:11:35", "who": "priya", "what": "ledger-add", "file": "src/components/brand/deal-room/deal-contract-tab.tsx:258", "task": "", "stage": "intake", "gate_result": "F-0271"}
+{"ts": "2026-08-17T20:11:35", "who": "priya", "what": "ledger-add", "file": "src/components/brand/deal-room/deal-contract-tab.tsx:345", "task": "", "stage": "intake", "gate_result": "F-0272"}
+{"ts": "2026-08-17T20:11:35", "who": "priya", "what": "ledger-add", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx:449", "task": "", "stage": "intake", "gate_result": "F-0273"}
+{"ts": "2026-08-17T20:11:44", "who": "kavya", "what": "ledger-add", "file": "src/pages/creator-chat.tsx:2559,src/pages/brand-chat.tsx:2520", "task": "", "stage": "intake", "gate_result": "F-0274"}
+{"ts": "2026-08-17T20:11:45", "who": "kavya", "what": "ledger-add", "file": "src/pages/creator-login.tsx:64,src/pages/creator-onboarding.tsx:231", "task": "", "stage": "intake", "gate_result": "F-0275"}
+{"ts": "2026-08-17T20:11:59", "who": "kavya", "what": "ledger-add", "file": "src/components/brand/deals/deal-room-dashboard.tsx:774,src/components/brand/timeline/panels/deliverable-review-panel.tsx:395,src/pages/brand-messages.tsx:928", "task": "", "stage": "intake", "gate_result": "F-0276"}
+{"ts": "2026-08-17T20:12:00", "who": "kavya", "what": "ledger-add", "file": "src/components/brand/timeline/event-cards/proposal-card.tsx:87", "task": "", "stage": "intake", "gate_result": "F-0277"}
+{"ts": "2026-08-17T20:12:00", "who": "kavya", "what": "ledger-add", "file": "src/components/brand/dashboard/dashboard-page.tsx:240,306", "task": "", "stage": "intake", "gate_result": "F-0278"}
+{"ts": "2026-08-17T20:12:00", "who": "arjun", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0244"}
+{"ts": "2026-08-17T20:12:00", "who": "arjun", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0244 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0244-owner-self-lockout.sh"}
+{"ts": "2026-08-17T20:12:01", "who": "arjun", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0247"}
+{"ts": "2026-08-17T20:12:01", "who": "arjun", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0247 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0247-premature-success-copy.sh"}
+{"ts": "2026-08-17T20:12:01", "who": "arjun", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0249"}
+{"ts": "2026-08-17T20:12:01", "who": "arjun", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0249 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0249-stale-seed-overwrites-real-data.sh"}
+{"ts": "2026-08-17T20:12:01", "who": "priya", "what": "ledger-add", "file": "src/hooks/brand/useWorkspaceVerification.ts:88", "task": "", "stage": "intake", "gate_result": "F-0279"}
+{"ts": "2026-08-17T20:12:17", "who": "kavya", "what": "ledger-add", "file": "src/components/brand/campaigns/campaign-form.tsx:1436", "task": "", "stage": "intake", "gate_result": "F-0280"}
+{"ts": "2026-08-17T20:12:17", "who": "kavya", "what": "ledger-add", "file": "src/pages/creator-wallet.tsx:643,650,654", "task": "", "stage": "intake", "gate_result": "F-0281"}
+{"ts": "2026-08-17T20:12:20", "who": "ananya", "what": "fix", "file": "src/components/brand/contracts/contracts-and-deliverables.tsx", "task": "T-CRIT9-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:12:21", "who": "ananya", "what": "fix", "file": "src/components/brand/deals/deal-room-dashboard.tsx", "task": "T-CRIT9-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:14:23", "who": "human:swapnil", "what": "read", "file": "tasks/T-CRIT9-0817/*", "task": "T-CRIT9-0817", "stage": "cleanup", "gate_result": "scanned 4 file(s) for failure markers before archive"}
+{"ts": "2026-08-17T20:14:23", "who": "human:swapnil", "what": "delete", "file": "tasks/T-CRIT9-0817/*", "task": "T-CRIT9-0817", "stage": "cleanup", "gate_result": "archived \u2192 _archive/T-CRIT9-0817, purge 2026-09-16"}
+{"ts": "2026-08-17T20:14:52", "who": "vikram", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0227"}
+{"ts": "2026-08-17T20:14:52", "who": "vikram", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0227 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0227-no-pool-fund-over-signed-deal.sh"}
+{"ts": "2026-08-17T20:14:54", "who": "kavya", "what": "review", "file": "src/App.tsx", "task": "T-FLOWUX-0817", "stage": "judgment", "gate_result": "echo", "isolation": "shared-context"}
+{"ts": "2026-08-17T20:14:55", "who": "kavya", "what": "review", "file": "src/components/brand/dashboard/dashboard-page.tsx", "task": "T-FLOWUX-0817", "stage": "judgment", "gate_result": "echo", "isolation": "shared-context"}
+{"ts": "2026-08-17T20:14:55", "who": "kavya", "what": "review", "file": "src/components/brand/campaigns/campaign-form.tsx", "task": "T-FLOWUX-0817", "stage": "judgment", "gate_result": "echo", "isolation": "shared-context"}
+{"ts": "2026-08-17T20:14:55", "who": "kavya", "what": "review", "file": "src/components/brand/timeline/event-cards/contract-card.tsx", "task": "T-FLOWUX-0817", "stage": "judgment", "gate_result": "echo", "isolation": "shared-context"}
+{"ts": "2026-08-17T20:14:56", "who": "kavya", "what": "review", "file": "src/pages/creator-login.tsx", "task": "T-FLOWUX-0817", "stage": "judgment", "gate_result": "echo", "isolation": "shared-context"}
+{"ts": "2026-08-17T20:14:56", "who": "meera", "what": "verdict", "file": ".proof-os/tasks/T-FLOWUX-0817/dead-controls.log", "task": "T-FLOWUX-0817", "stage": "judgment", "gate_result": "believed", "isolation": "oracle"}
+{"ts": "2026-08-17T20:20:37", "who": "ananya", "what": "fix", "file": "src/components/brand/dashboard/dashboard-page.tsx", "task": "T-BRANDHIGH-0817", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-17T20:20:37", "who": "ananya", "what": "fix", "file": "src/components/brand/brand-layout.tsx", "task": "T-BRANDHIGH-0817", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-17T20:20:37", "who": "arjun", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0245"}
+{"ts": "2026-08-17T20:20:37", "who": "arjun", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0245 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0245-F-0246-dashboard-states-and-identity.sh"}
+{"ts": "2026-08-17T20:20:38", "who": "arjun", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0246"}
+{"ts": "2026-08-17T20:20:38", "who": "arjun", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0246 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0245-F-0246-dashboard-states-and-identity.sh"}
+{"ts": "2026-08-17T20:20:39", "who": "ananya", "what": "ledger-add", "file": "src/lib/auth-session.ts:32", "task": "", "stage": "intake", "gate_result": "F-0282"}
+{"ts": "2026-08-17T20:22:00", "who": "human:swapnil", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/ContractService.java:284", "task": "", "stage": "intake", "gate_result": "F-0283"}
+{"ts": "2026-08-17T20:22:59", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0261-command-bar-chord-and-shortcuts.sh", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:22:59", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0262-settings-persistence-copy.sh", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:22:59", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0263-no-negative-sla.sh", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:22:59", "who": "ananya", "what": "edit", "file": "src/components/brand/__tests__/command-bar.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:22:59", "who": "ananya", "what": "edit", "file": "src/pages/__tests__/brand-settings.disclaimer.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:22:59", "who": "ananya", "what": "edit", "file": "src/pages/__tests__/brand-pipeline.sla.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:23:10", "who": "kavya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/domain/entity/Collaboration.java:57", "task": "", "stage": "intake", "gate_result": "F-0284"}
+{"ts": "2026-08-17T20:23:11", "who": "kavya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/DealService.java", "task": "", "stage": "intake", "gate_result": "F-0285"}
+{"ts": "2026-08-17T20:23:11", "who": "kavya", "what": "ledger-add", "file": "src/pages/creator-applications.tsx:196,src/components/creator/CreatorApplicationCard.tsx:48", "task": "", "stage": "intake", "gate_result": "F-0286"}
+{"ts": "2026-08-17T20:23:24", "who": "kavya", "what": "ledger-add", "file": "src/lib/application-status.ts:5", "task": "", "stage": "intake", "gate_result": "F-0287"}
+{"ts": "2026-08-17T20:23:24", "who": "kavya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/DealService.java:401,693", "task": "", "stage": "intake", "gate_result": "F-0288"}
+{"ts": "2026-08-17T20:24:00", "who": "ananya", "what": "fix", "file": "src/lib/api.ts", "task": "T-F0237-REPAIR", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:24:00", "who": "ananya", "what": "fix", "file": "src/components/brand/deal-room/deal-contract-tab.tsx", "task": "T-F0237-REPAIR", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:24:24", "who": "kavya", "what": "audit", "file": ".proof-os/tasks/T-APPHIST-0817/report.json", "task": "T-APPHIST-0817", "stage": "judgment", "gate_result": "echo", "isolation": "shared-context"}
+{"ts": "2026-08-17T20:26:05", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0270"}
+{"ts": "2026-08-17T20:26:05", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0270 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0270-no-dead-controls.py"}
+{"ts": "2026-08-17T20:26:06", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0274"}
+{"ts": "2026-08-17T20:26:06", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0274 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0270-no-dead-controls.py"}
+{"ts": "2026-08-17T20:26:06", "who": "human:swapnil", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0276"}
+{"ts": "2026-08-17T20:26:06", "who": "human:swapnil", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0276 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0270-no-dead-controls.py"}
+{"ts": "2026-08-17T20:26:07", "who": "human:swapnil", "what": "ledger-add", "file": "src/pages/brand-chat.tsx:2520,src/pages/creator-chat.tsx:2559,src/components/brand/timeline/event-cards/contract-card.tsx:110,src/components/brand/deals/deal-room-dashboard.tsx:781,src/components/brand/timeline/panels/deliverable-review-panel.tsx:395,src/pages/brand-messages.tsx:928", "task": "", "stage": "intake", "gate_result": "F-0289"}
+{"ts": "2026-08-17T20:27:49", "who": "priya", "what": "verdict", "file": "wiki/errors/BRAND-FRONTEND-UX-AUDIT-0817.md", "task": "T-BRANDMED-0817", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-17T20:27:49", "who": "arjun", "what": "verdict", "file": ".proof-os/gates/F-0253-signature-canvas-submitted.sh", "task": "T-BRANDMED-0817", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-17T20:28:25", "who": "ananya", "what": "fix", "file": "src/lib/creator-contract-mappers.ts", "task": "T-BRANDHIGH-0817", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-17T20:28:25", "who": "arjun", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0250"}
+{"ts": "2026-08-17T20:28:25", "who": "arjun", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0250 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0250-F-0268-pending-signature-deadlock.sh"}
+{"ts": "2026-08-17T20:28:25", "who": "arjun", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0268"}
+{"ts": "2026-08-17T20:28:25", "who": "arjun", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0268 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0250-F-0268-pending-signature-deadlock.sh"}
+{"ts": "2026-08-17T20:29:47", "who": "vikram", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/CreatorCampaignService.java:190", "task": "", "stage": "intake", "gate_result": "F-0290"}
+{"ts": "2026-08-17T20:29:47", "who": "vikram", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/CreatorDiscoveryService.java:459", "task": "", "stage": "intake", "gate_result": "F-0291"}
+{"ts": "2026-08-17T20:30:50", "who": "arjun", "what": "read", "file": "tasks/T-BRANDHIGH-0817/*", "task": "T-BRANDHIGH-0817", "stage": "cleanup", "gate_result": "scanned 2 file(s) for failure markers before archive"}
+{"ts": "2026-08-17T20:30:50", "who": "arjun", "what": "delete", "file": "tasks/T-BRANDHIGH-0817/*", "task": "T-BRANDHIGH-0817", "stage": "cleanup", "gate_result": "archived \u2192 _archive/T-BRANDHIGH-0817, purge 2026-09-16"}
+{"ts": "2026-08-17T20:32:39", "who": "vikram", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0290"}
+{"ts": "2026-08-17T20:32:39", "who": "vikram", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0290 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0290-application-has-a-timeline.sh"}
+{"ts": "2026-08-17T20:45:38", "who": "ananya", "what": "edit", "file": "src/components/creator/ApplicationHistoryTimeline.tsx", "task": "T-APPHIST-FIX-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:45:38", "who": "ananya", "what": "edit", "file": "src/components/creator/ApplicationHistoryTimeline.test.tsx", "task": "T-APPHIST-FIX-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:45:39", "who": "ananya", "what": "edit", "file": "src/lib/api.ts", "task": "T-APPHIST-FIX-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:45:39", "who": "ananya", "what": "edit", "file": "src/components/creator/CreatorApplicationCard.tsx", "task": "T-APPHIST-FIX-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:45:57", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/dto/money/MoneyDtos.java:276", "task": "", "stage": "intake", "gate_result": "F-0292"}
+{"ts": "2026-08-17T20:45:58", "who": "priya", "what": "ledger-add", "file": "src/pages/brand-register.tsx:386", "task": "", "stage": "intake", "gate_result": "F-0293"}
+{"ts": "2026-08-17T20:45:58", "who": "priya", "what": "ledger-add", "file": "src/pages/brand-campaign-detail.tsx:2044", "task": "", "stage": "intake", "gate_result": "F-0294"}
+{"ts": "2026-08-17T20:45:58", "who": "priya", "what": "ledger-add", "file": "src/pages/brand-creator-profile.tsx:823", "task": "", "stage": "intake", "gate_result": "F-0295"}
+{"ts": "2026-08-17T20:45:58", "who": "priya", "what": "ledger-add", "file": ".proof-os/gates/F-0264-no-dead-money-controls.sh:54", "task": "", "stage": "intake", "gate_result": "F-0296"}
+{"ts": "2026-08-17T20:48:08", "who": "ananya", "what": "read", "file": "influora-api/src/main/java/com/influora/service/BrandPlatformFeeService.java", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:48:08", "who": "ananya", "what": "read", "file": "influora-api/src/main/java/com/influora/web/dto/brandplatformfee/BrandPlatformFeeDtos.java", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:48:08", "who": "ananya", "what": "read", "file": ".proof-os/gates/F-0264-no-dead-money-controls.sh", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:48:08", "who": "ananya", "what": "read", "file": "src/pages/brand-campaign-detail.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:48:17", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/web/dto/money/MoneyDtos.java", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:48:17", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/web/ContractController.java", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:48:17", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/domain/entity/Contract.java", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:48:17", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/service/ContractService.java", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:48:17", "who": "vikram", "what": "read", "file": "influora-api/src/main/resources/db/migration/V20260817120000__collaborations_applied_at.sql", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:48:17", "who": "vikram", "what": "read", "file": "influora-api/src/main/resources/db/migration/V20260809120000__brand_kyc_prompt_dismissed.sql", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:48:17", "who": "vikram", "what": "read", "file": "influora-api/src/main/resources/db/migration/V20260728120000__backfill_escrow_hold_collaboration_id.sql", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:48:17", "who": "vikram", "what": "read", "file": ".proof-os/gates/F-0223-approval-reports-release.sh", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:49:33", "who": "arjun", "what": "update", "file": "wiki/errors/BRAND-FRONTEND-UX-AUDIT-0817.md", "task": "T-BRANDHIGH-0817", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-17T20:50:16", "who": "ananya", "what": "read", "file": "src/pages/brand-register.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:50:17", "who": "ananya", "what": "read", "file": "src/pages/creator-register.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:50:18", "who": "ananya", "what": "read", "file": "src/pages/brand-creator-profile.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:50:18", "who": "human:swapnil", "what": "update", "file": "wiki/errors/BRAND-FRONTEND-UX-AUDIT-0817.md", "task": "T-F0237-REPAIR", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:50:20", "who": "ananya", "what": "read", "file": ".proof-os/gates/F-0223-approval-reports-release.sh", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:50:21", "who": "ananya", "what": "read", "file": "src/pages/__tests__/brand-creator-profile.absent-metrics.test.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:50:22", "who": "ananya", "what": "read", "file": "src/pages/__tests__/brand-register.consent-links.test.tsx", "task": "T-BRANDMED-0817", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-17T20:51:27", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0294-server-fee-copy-rendered.sh", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:52:08", "who": "ananya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0224"}
+{"ts": "2026-08-17T20:52:08", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0224 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0224-release-has-a-caller.sh"}
+{"ts": "2026-08-17T20:52:17", "who": "ananya", "what": "edit", "file": "src/pages/brand-campaign-detail.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:52:50", "who": "ananya", "what": "edit", "file": "src/pages/__tests__/brand-campaign-detail.fee-block.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:53:03", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0293-consent-link-preserves-form.sh", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:53:04", "who": "ananya", "what": "edit", "file": ".proof-os/gates/F-0295-absent-audience-surfaces.sh", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:53:04", "who": "ananya", "what": "edit", "file": "src/pages/__tests__/consent-link-preserves-form.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-17T20:53:04", "who": "ananya", "what": "edit", "file": "src/pages/__tests__/brand-creator-profile.absent-audience.test.tsx", "task": "T-BRANDMED-0817", "stage": "produce", "gate_result": ""}

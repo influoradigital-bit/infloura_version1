@@ -16,14 +16,14 @@ const CONFIG: Record<
     tone: 'border-amber-400/60 bg-amber-50 text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/40 dark:text-amber-100',
     icon: AlertTriangle,
     title: 'Verify your workspace to launch campaigns.',
-    sub: 'You can build and save drafts now — they go live the moment you’re verified.',
+    sub: 'You can build and save drafts now — you’ll need to verify before you can publish them live.',
     cta: 'Start verification',
   },
   PENDING: {
     tone: 'border-blue-400/50 bg-blue-50 text-blue-900 dark:border-blue-400/30 dark:bg-blue-950/40 dark:text-blue-100',
     icon: Clock,
     title: 'Verification in review.',
-    sub: 'We’ll email you when it’s approved. Your drafts publish as soon as it clears.',
+    sub: 'We’ll email you when it’s approved — then you can publish your drafts live.',
     cta: 'View status',
   },
   REJECTED: {

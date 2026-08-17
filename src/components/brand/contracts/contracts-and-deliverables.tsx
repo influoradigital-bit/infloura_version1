@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, isApiLive, ApiError, type ContractApiRecord, type ContractMilestone, type Deal } from '@/lib/api';
 import { paymentHeldMessage } from '@/lib/escrow-release-reason';
@@ -363,7 +363,7 @@ interface ApiContractRow {
  * inside the list `.map()`, crashing the whole page. Any status not
  * recognized here safely falls through to 'draft' rather than throwing.
  */
-function mapApiContractStatus(status: string | undefined): Contract['status'] | undefined {
+export function mapApiContractStatus(status: string | undefined): Contract['status'] | undefined {
   switch (status) {
     case 'DRAFT':
       return 'draft';
@@ -446,10 +446,18 @@ function mergeContractRow(row: ApiContractRow, fallback?: Contract): Contract {
  * RELEASED money has already left escrow and PENDING money was never funded.
  */
 function deriveEscrowFromMilestones(milestones: ContractMilestone[]): { locked: boolean; amount: number } {
-  const funded = milestones.filter((m) => (m.status ?? '').toUpperCase() === 'FUNDED');
+  // F-0273: FROZEN counts as locked. A FROZEN milestone is money the platform is still
+  // holding — it is frozen BY a dispute, not released. Counting only FUNDED told a brand
+  // in an active dispute that their escrow was "Not Locked", which is the same false money
+  // statement F-0236 was opened for, in the one situation where the truth matters most.
+  // RELEASED and REFUNDED are correctly excluded: that money has left escrow.
+  const held = milestones.filter((m) => {
+    const s = (m.status ?? '').toUpperCase();
+    return s === 'FUNDED' || s === 'FROZEN';
+  });
   return {
-    locked: funded.length > 0,
-    amount: funded.reduce((sum, m) => sum + m.amount, 0),
+    locked: held.length > 0,
+    amount: held.reduce((sum, m) => sum + m.amount, 0),
   };
 }
 
@@ -602,10 +610,6 @@ export function ContractsAndDeliverables() {
   const [isRequestingRevision, setIsRequestingRevision] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
   const [isFetchingPdf, setIsFetchingPdf] = useState(false);
-
-  // Canvas for signature
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
 
   const selectedContract = contracts.find((c) => c.id === selectedContractId) ?? null;
 
@@ -836,46 +840,6 @@ export function ContractsAndDeliverables() {
     } finally {
       setIsFetchingPdf(false);
     }
-  };
-
-  // Canvas drawing functions
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    setIsDrawing(true);
-    const rect = canvas.getBoundingClientRect();
-    ctx.beginPath();
-    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    const rect = canvas.getBoundingClientRect();
-    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-    ctx.strokeStyle = '#3b82f6';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const clearSignature = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setSignatureText('');
   };
 
   const formatCurrency = (amount: number, currency: string = 'INR') => {
@@ -1327,7 +1291,17 @@ export function ContractsAndDeliverables() {
                         </Card>
                       )}
 
-                      {selectedContract.status === 'pending_review' && (
+                      {/* F-0248: this used to gate on 'pending_review', a UI-only status
+                          literal `mapApiContractStatus` can never emit (see B37 mapping
+                          above) — so the Sign button, dialog, signature canvas and legal
+                          notice were unreachable dead code in live mode. The backend
+                          status while a contract is executable-but-not-fully-signed is
+                          `pending_signature`; `brandSigned` (sourced directly from
+                          `rec.brandSignedAt` in adaptContractRecord, independent of the
+                          status string) distinguishes "brand still needs to sign" from
+                          "brand already signed, waiting on the creator" (handled by the
+                          card just above this button). */}
+                      {selectedContract.status === 'pending_signature' && !selectedContract.brandSigned && (
                         <Button className="w-full" onClick={() => setShowSignDialog(true)}>
                           <Pen className="w-4 h-4 mr-2" />
                           Sign Contract
@@ -1658,28 +1632,13 @@ export function ContractsAndDeliverables() {
               <p className="text-sm">{selectedContract?.deliverables.length} deliverables | {selectedContract && formatCurrency(selectedContract.value, selectedContract.currency)} | Due {selectedContract && formatDateSafe(selectedContract.expiryDate)}</p>
             </Card>
 
-            {/* Signature Pad */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Draw Your Signature</label>
-              <div className="border border-border rounded-lg p-2 bg-white">
-                <canvas
-                  ref={canvasRef}
-                  width={400}
-                  height={150}
-                  className="w-full cursor-crosshair"
-                  onMouseDown={startDrawing}
-                  onMouseMove={draw}
-                  onMouseUp={stopDrawing}
-                  onMouseLeave={stopDrawing}
-                />
-              </div>
-              <div className="flex justify-between">
-                <Button variant="ghost" size="sm" onClick={clearSignature}>Clear</Button>
-                <p className="text-xs text-muted-foreground">Or type your name below</p>
-              </div>
-            </div>
-
-            {/* Type Name */}
+            {/* F-0253: this used to also offer a hand-drawn signature-pad canvas above this
+                field. Its strokes were painted to a 2d context that nothing ever read —
+                api.contracts.sign('brand', id, { name, agreedAt }) (src/lib/api.ts:2410) has no
+                image/bitmap field, so the drawn mark was discarded and only this typed name ever
+                reached the backend. Rather than fabricate a bitmap upload the API can't accept,
+                the canvas is removed and the legal copy below now describes only what is
+                actually submitted. */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Type Full Name</label>
               <input
@@ -1692,7 +1651,8 @@ export function ContractsAndDeliverables() {
             </div>
 
             <p className="text-xs text-muted-foreground">
-              By signing, you agree to be legally bound by the terms of this contract under the IT Act 2000.
+              By typing your full name and clicking &quot;Sign Contract&quot;, you agree to be
+              legally bound by the terms of this contract under the IT Act 2000.
             </p>
           </div>
 
