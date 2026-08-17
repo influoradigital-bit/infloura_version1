@@ -76,6 +76,7 @@ class CreatorDiscoveryServiceTest {
     @Mock private com.influora.repository.ContractRepository contractRepository;
     @Mock private com.influora.repository.EscrowHoldRepository escrowHoldRepository;
     @Mock private com.influora.repository.ShipmentRepository shipmentRepository;
+    @Mock private com.influora.repository.DealMessageRepository dealMessageRepository;
     @Mock private AuthPrincipal principal;
 
     private CreatorDiscoveryService service;
@@ -102,7 +103,8 @@ class CreatorDiscoveryServiceTest {
                                 collaborationRepository,
                                 contractRepository,
                                 escrowHoldRepository,
-                                shipmentRepository));
+                                shipmentRepository),
+                        dealMessageRepository);
     }
 
     private Workspace stubWorkspace() {
@@ -148,6 +150,54 @@ class CreatorDiscoveryServiceTest {
 
         when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.empty());
+    }
+
+    @Test
+    @DisplayName("F-0291: inviting writes the event AND the brand's note onto the deal timeline")
+    void testInviteRecordsTimeline() {
+        stubHappyPathLookups();
+        when(principal.getUserId()).thenReturn("01HBRANDUSER123456789");
+        when(collaborationRepository.save(any(Collaboration.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.invite(principal, CREATOR_PROFILE_ID, CAMPAIGN_ID, "We would love to work with you");
+
+        org.mockito.ArgumentCaptor<com.influora.domain.entity.DealMessage> saved =
+                org.mockito.ArgumentCaptor.forClass(com.influora.domain.entity.DealMessage.class);
+        verify(dealMessageRepository, org.mockito.Mockito.times(2)).save(saved.capture());
+        var rows = saved.getAllValues();
+        // The EVENT — without it the invited creator opens an empty room.
+        assertEquals(com.influora.domain.enums.DealMessageKind.system, rows.get(0).getKind());
+        // The brand's own words, attributed to the BRAND so they sit on the brand's side.
+        assertEquals(com.influora.domain.enums.DealMessageKind.text, rows.get(1).getKind());
+        assertEquals(com.influora.domain.enums.DealSenderType.brand, rows.get(1).getSenderType());
+        assertEquals("We would love to work with you", rows.get(1).getContent());
+    }
+
+    @Test
+    @DisplayName("F-0291: an invite with no note records the event and invents no brand message")
+    void testInviteWithoutNoteRecordsEventOnly() {
+        stubHappyPathLookups();
+        when(principal.getUserId()).thenReturn("01HBRANDUSER123456789");
+        when(collaborationRepository.save(any(Collaboration.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.invite(principal, CREATOR_PROFILE_ID, CAMPAIGN_ID, null);
+
+        verify(dealMessageRepository, org.mockito.Mockito.times(1))
+                .save(any(com.influora.domain.entity.DealMessage.class));
+    }
+
+    @Test
+    @DisplayName("F-0291: a timeline failure never rolls back an invitation that succeeded")
+    void testInviteSurvivesTimelineFailure() {
+        stubHappyPathLookups();
+        when(principal.getUserId()).thenReturn("01HBRANDUSER123456789");
+        when(collaborationRepository.save(any(Collaboration.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("timeline down"))
+                .when(dealMessageRepository)
+                .save(any(com.influora.domain.entity.DealMessage.class));
+
+        var response = service.invite(principal, CREATOR_PROFILE_ID, CAMPAIGN_ID, "hi");
+        assertEquals("INVITED", response.status());
     }
 
     @Test

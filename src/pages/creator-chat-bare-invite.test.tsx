@@ -267,3 +267,85 @@ describe('CreatorChatPage — bare-invite Accept/Decline fallback', () => {
     expect(screen.queryByRole('button', { name: /^Accept$/ })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * F-0291 — the gate that keeps this card alive once an invite HAS messages.
+ *
+ * The original gate was `events.length === 0`, which was correct only by accident: a bare invite
+ * happened to produce zero messages because `CreatorDiscoveryService#invite` persisted none. That
+ * is now fixed — an invitation writes a system row plus the brand's note — so the emptiness gate
+ * would have silently retired this card and left an invited creator with NO way to accept, which
+ * is strictly worse than the empty room it replaced.
+ *
+ * The card is now keyed off "no priced proposal card exists", which is what it was always for.
+ * These two tests are the pair that has to hold: it SURVIVES ordinary messages, and it STANDS
+ * DOWN when a real proposal card arrives with its own Accept controls.
+ */
+describe('CreatorChatPage — F-0291: the invite card survives a non-empty room', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    messagesStream.mockImplementation(
+      (_role: string, _dealId: string, handlers: DealMessageStreamHandlers) => {
+        void handlers;
+        return { close: vi.fn() };
+      },
+    );
+    dealsList.mockResolvedValue([INVITED_DEAL]);
+    dealsGet.mockResolvedValue(INVITED_DEAL);
+    dealsAccept.mockResolvedValue({ id: 'deal_bare' });
+    dealsReject.mockResolvedValue({ id: 'deal_bare' });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('still offers Accept when the invite wrote its own timeline rows', async () => {
+    // Exactly what CreatorDiscoveryService#invite now persists: a system event + the brand note.
+    messagesList.mockResolvedValue([
+      {
+        id: 'm_sys',
+        dealId: 'deal_bare',
+        kind: 'system',
+        senderType: 'system',
+        senderId: 'system',
+        content: 'Brand invited this creator to the campaign',
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'm_note',
+        dealId: 'deal_bare',
+        kind: 'text',
+        senderType: 'brand',
+        senderId: 'brand_1',
+        content: 'We would love to work with you',
+        createdAt: new Date().toISOString(),
+      },
+    ] as unknown as DealMessage[]);
+
+    renderRoom();
+
+    // The whole point: a non-empty room must NOT cost the creator their Accept control.
+    const acceptButton = await screen.findByRole('button', { name: /^Accept$/ });
+    await userEvent.click(acceptButton);
+    await waitFor(() => expect(dealsAccept).toHaveBeenCalledWith('deal_bare', 'creator'));
+  });
+
+  it('stands down once a real proposal card exists, so Accept is not offered twice', async () => {
+    messagesList.mockResolvedValue([
+      {
+        id: 'm_prop',
+        dealId: 'deal_bare',
+        kind: 'proposal',
+        senderType: 'brand',
+        senderId: 'brand_1',
+        content: 'Our offer',
+        metadata: { amount: 7000, status: 'pending' },
+        createdAt: new Date().toISOString(),
+      },
+    ] as unknown as DealMessage[]);
+
+    renderRoom();
+
+    await waitFor(() =>
+      expect(screen.queryByText('Campaign Invite')).not.toBeInTheDocument(),
+    );
+  });
+});

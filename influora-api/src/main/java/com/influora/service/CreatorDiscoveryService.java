@@ -5,6 +5,11 @@ import com.influora.common.CreatorScoreMath;
 import com.influora.common.JsonLists;
 import com.influora.common.PageMeta;
 import com.influora.common.Ulids;
+import com.influora.repository.DealMessageRepository;
+import com.influora.domain.enums.DealSenderType;
+import com.influora.domain.enums.DealMessageKind;
+import com.influora.domain.entity.DealMessage;
+import com.influora.common.TextSanitizer;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
@@ -70,6 +75,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CreatorDiscoveryService {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(CreatorDiscoveryService.class);
+
     private static final Map<String, String> FEATURED_TITLES =
             Map.of(
                     "top_fitness", "Top Fitness Creators",
@@ -100,6 +108,8 @@ public class CreatorDiscoveryService {
     private final PortfolioService portfolioService;
     /** F-0225 — shared revive decision; see CollaborationReviveService. */
     private final CollaborationReviveService collaborationReviveService;
+    /** F-0291 — the deal-room conversation an invitation must appear in. */
+    private final DealMessageRepository dealMessageRepository;
 
     public CreatorDiscoveryService(
             BrandContextService brandContext,
@@ -112,7 +122,8 @@ public class CreatorDiscoveryService {
             CreatorScoreRepository creatorScoreRepository,
             ReviewRepository reviewRepository,
             PortfolioService portfolioService,
-            CollaborationReviveService collaborationReviveService) {
+            CollaborationReviveService collaborationReviveService,
+            DealMessageRepository dealMessageRepository) {
         this.brandContext = brandContext;
         this.creatorProfileRepository = creatorProfileRepository;
         this.platformStatRepository = platformStatRepository;
@@ -124,6 +135,7 @@ public class CreatorDiscoveryService {
         this.reviewRepository = reviewRepository;
         this.portfolioService = portfolioService;
         this.collaborationReviveService = collaborationReviveService;
+        this.dealMessageRepository = dealMessageRepository;
     }
 
     public record PagedCreators(List<CreatorResponse> items, PageMeta meta) {}
@@ -467,6 +479,7 @@ public class CreatorDiscoveryService {
                         "COLLABORATION_EXISTS",
                         "This creator has already been invited to this campaign");
         if (prior != null) {
+            recordInviteOnTimeline(prior, principal.getUserId(), message);
             return new InviteResponse(prior.getId(), prior.getStatus().name(), prior.getAppliedAt());
         }
         Collaboration collaboration =
@@ -484,10 +497,72 @@ public class CreatorDiscoveryService {
                     "This creator has already been invited to this campaign",
                     HttpStatus.CONFLICT);
         }
+        recordInviteOnTimeline(collaboration, principal.getUserId(), message);
         return new InviteResponse(
                 collaboration.getId(),
                 collaboration.getStatus().name(),
                 collaboration.getAppliedAt());
+    }
+
+
+    /**
+     * F-0291 — record the invitation as a visible event in the deal room.
+     *
+     * <p>{@code invite()} created a {@code Collaboration} and nothing else, so an invited creator
+     * opened a deal room with an empty thread: no terms, no note, no record that a brand had
+     * reached out at all. The brand's message was written to {@code Collaboration.notes} and
+     * rendered nowhere.
+     *
+     * <p><b>Which timeline this writes to, and why.</b> This repo now has two history mechanisms
+     * and they have distinct jobs (CTO ruling): {@code ApplicationHistoryService} owns the
+     * structured, typed AUDIT timeline behind {@code GET /creator/applications/:id/history} — what
+     * happened, when, by whom, with a target route. {@code DealMessage} owns the deal-room
+     * CONVERSATION — what the parties can read and reply to in the thread. An invitation arriving
+     * is a conversational event the creator must be able to answer, so it belongs here. Do not
+     * duplicate it into the audit timeline: one event, one owner, or the two drift — which is
+     * CR-05/CR-13/CR-24 in this codebase, three times over.
+     *
+     * <p>Two rows, matching the application path ({@code CreatorCampaignService}): a {@code system}
+     * row for the event, and the brand's optional note as a {@code text} row authored BY the brand
+     * so it sits on their side of the thread. No note means no fabricated message.
+     *
+     * <p>⚠️ This write is what retires {@code creator-chat.tsx}'s {@code events.length === 0}
+     * gate. That gate was the ONLY thing rendering the creator's Accept control on a bare invite,
+     * so this backend change and the frontend one that keys the card off "no proposal card exists"
+     * instead MUST ship together — landing this alone removes the creator's only way to accept.
+     *
+     * <p>Best-effort: an invitation with no timeline is the bug; an invitation that 500s because
+     * its timeline could not be written is worse.
+     */
+    private void recordInviteOnTimeline(Collaboration collaboration, String brandUserId, String message) {
+        try {
+            dealMessageRepository.save(
+                    DealMessage.create(
+                            Ulids.newUlid(),
+                            collaboration.getId(),
+                            DealMessageKind.system,
+                            "system",
+                            DealSenderType.system,
+                            "Brand invited this creator to the campaign",
+                            null));
+            if (message != null && !message.isBlank()) {
+                dealMessageRepository.save(
+                        DealMessage.create(
+                                Ulids.newUlid(),
+                                collaboration.getId(),
+                                DealMessageKind.text,
+                                brandUserId,
+                                DealSenderType.brand,
+                                TextSanitizer.sanitizePlainText(message),
+                                null));
+            }
+        } catch (RuntimeException e) {
+            log.error(
+                    "Could not write the invite timeline for collaboration {} — the invitation itself"
+                            + " already succeeded",
+                    collaboration.getId(),
+                    e);
+        }
     }
 
     private CreatorResponse toResponseForWorkspace(Workspace workspace, CreatorProfile profile) {

@@ -25,6 +25,9 @@ import {
 } from 'lucide-react';
 
 import { cn, formatINR } from '@/lib/utils';
+// F-0289: TooltipProvider is supplied by CreatorLayout (creator-layout.tsx:198), which wraps
+// this page, so only the primitives are imported here.
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   api,
   isApiLive,
@@ -1757,8 +1760,21 @@ export default function CreatorChatPage() {
    * This card is BRAND-invite-only, so it is additionally scoped to the one
    * status a bare invite actually produces: `INVITED`.
    */
+  // F-0291 — keyed off "no priced proposal card exists", NOT off an empty room.
+  //
+  // `events.length === 0` was the original gate, and it was only ever correct by accident: a bare
+  // invite happened to produce zero messages because `invite()` persisted none. That is now fixed
+  // (the invitation writes a system row, plus the brand's note), which would have silently
+  // retired this card and left an invited creator with NO way to accept — strictly worse than the
+  // empty room it replaced.
+  //
+  // What the card actually exists for is unchanged: a deal the server will accept
+  // (`canRespondToProposal`) that has no priced proposal card to carry the Accept/Decline buttons.
+  // So ask that question directly. A room with a real `type === 'proposal'` card renders its own
+  // controls a few hundred lines below, and showing both would offer the same action twice.
+  const hasProposalCard = events.some((e) => e.type === 'proposal');
   const showBareInviteResponse =
-    events.length === 0 &&
+    !hasProposalCard &&
     canRespondToProposal &&
     selectedDeal.collaborationStatus === 'INVITED';
   /**
@@ -1931,9 +1947,30 @@ export default function CreatorChatPage() {
                 <span className="hidden sm:inline">Submit Deliverable</span>
               </Button>
             )}
-            <Button variant="ghost" size="icon" className="h-9 w-9">
-              <MoreVertical className="h-4 w-4" />
-            </Button>
+            {/* F-0289: this overflow trigger opened no menu — it promised "more options"
+                and did nothing on click. There is no creator-side deal-room action behind
+                it today (the brand's equivalent became the dispute entry point; the
+                creator's dispute flow lives on /creator/disputes). Disabled with a stated
+                reason rather than left as a fake affordance. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0} className="inline-flex">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9"
+                    disabled
+                    aria-disabled="true"
+                    aria-label="Deal options"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                No deal options here yet — manage disputes from Disputes in the sidebar.
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
@@ -2556,9 +2593,27 @@ export default function CreatorChatPage() {
         {/* Message Input */}
         <div className="p-4 border-t">
           <div className="flex items-end gap-2 max-w-3xl mx-auto">
-            <Button variant="ghost" size="icon" className="shrink-0">
-              <Paperclip className="h-5 w-5" />
-            </Button>
+            {/* F-0289: attach had no handler. `messages.send` accepts only { content, kind }
+                and DealMessage carries no attachment field, so the capability does not exist
+                on either side of a deal conversation — the brand composer was disabled for
+                the same reason. Honest disabled state, not a silent click. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0} className="inline-flex shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0"
+                    disabled
+                    aria-disabled="true"
+                    aria-label="Attach a file"
+                  >
+                    <Paperclip className="h-5 w-5" />
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>File attachments aren&apos;t available yet.</TooltipContent>
+            </Tooltip>
             <Textarea
               placeholder="Type a message..."
               value={message}
