@@ -21,8 +21,18 @@ public interface PayoutRepository extends JpaRepository<Payout, String> {
      * <p>Ordered newest-first because this feeds a reverse-chronological history list; {@code
      * createdAt} is the request time, which is the order a creator experienced these in, whereas
      * {@code confirmedAt} is null until settlement and would sort unsettled rows unpredictably.
+     *
+     * <p><b>Do not put an {@code @Query} on this method.</b> It carried one until F-0234:
+     * {@code "select p from Payout p order by p.createdAt desc"} — no {@code where} clause. An
+     * explicit {@code @Query} REPLACES derivation from the method name outright, so
+     * {@code creatorUserId} was accepted and silently ignored, and {@code GET /wallet/payouts}
+     * returned every creator's payouts to any authenticated creator. The three javadoc paragraphs
+     * above, and {@code WalletService#getPayoutsForCreator}'s own comment, all described a scoping
+     * predicate that was not in the executed SQL. Leaving the method name to derive the query is
+     * what makes the tenancy guarantee structural: the name IS the where clause, and it cannot
+     * drift from a hand-written string. {@code PayoutRepositoryCreatorScopingTest} executes real
+     * SQL against H2 precisely so this class of defect cannot be green again.
      */
-    @org.springframework.data.jpa.repository.Query("select p from Payout p order by p.createdAt desc")
     Page<Payout> findByCreatorUserIdOrderByCreatedAtDesc(String creatorUserId, Pageable pageable);
 
     Optional<Payout> findByRazorpayPayoutId(String razorpayPayoutId);
