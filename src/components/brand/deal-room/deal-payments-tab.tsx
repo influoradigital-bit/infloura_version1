@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { Link } from 'react-router-dom';
 import { IndianRupee, Lock, Shield, Unlock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { FundEscrowButton } from '@/components/feature/meera/FundEscrowButton';
+import { api, ApiError } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 import type { ContractMilestone } from '@/lib/api';
 import { formatINR } from '@/lib/utils';
 import type { DealContractStatus } from './deal-contract-tab';
@@ -87,6 +90,39 @@ export function DealPaymentsTab({
   const hasRealMilestones = realMilestones.length > 0;
   const fundable = nextFundableMilestone(realMilestones);
   const canFund = !!campaignId && fullySigned && !!fundable;
+
+  // F-0224 — manual release. `POST /wallet/escrow/release` existed with ZERO callers anywhere in
+  // the app: auto-release on approval (BrandDeliverableService) was the only path money could
+  // take, and when it skipped (F-0223's eight conditions) nothing in the product could retry it.
+  // The money sat in escrow with no screen able to move it.
+  //
+  // Deliberately NOT gated on the server's release preconditions. Those live in
+  // EscrowService#releaseInternal (dispute freeze, release_condition, funded state), and
+  // re-deriving them here is the CR-27 trap — a UI guess about server state that drifts from it.
+  // The button is offered for any FUNDED milestone and the server's refusal is surfaced verbatim,
+  // which is both honest and more useful than a hidden control.
+  const [releasingId, setReleasingId] = React.useState<string | null>(null);
+  const { toast } = useToast();
+
+  const handleRelease = async (milestoneId: string) => {
+    setReleasingId(milestoneId);
+    try {
+      await api.payments.releasePayout(milestoneId);
+      toast({
+        title: 'Payment released',
+        description: 'The funds are on their way to the creator.',
+      });
+      onFunded?.();
+    } catch (err) {
+      toast({
+        title: 'Could not release payment',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setReleasingId(null);
+    }
+  };
 
   const perDeliverable =
     deliverablesTotal > 0 ? Math.round(dealValue / deliverablesTotal) : dealValue;
@@ -230,6 +266,19 @@ export function DealPaymentsTab({
                   <span className="text-sm">{m.label}</span>
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* F-0224 — brand-only (campaignId is the same brand-mount discriminator the
+                      fund control uses; the creator room passes neither prop). Only on a real
+                      server milestone: the derived placeholder rows have no id to release. */}
+                  {!!campaignId && hasRealMilestones && m.status === 'locked' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={releasingId === m.id}
+                      onClick={() => void handleRelease(m.id)}
+                    >
+                      {releasingId === m.id ? 'Releasing…' : 'Release'}
+                    </Button>
+                  )}
                   <span className="text-sm font-medium">{formatINR(m.amount)}</span>
                   <Badge
                     variant="outline"

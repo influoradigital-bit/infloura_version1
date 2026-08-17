@@ -27,13 +27,25 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 
 import type { ContractMilestone } from '@/lib/api';
 import { DealPaymentsTab } from './deal-payments-tab';
 
 const fundProps = vi.fn();
+const releasePayout = vi.fn();
+const toastFn = vi.fn();
+
+vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: toastFn }) }));
+vi.mock('@/lib/api', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+  return {
+    ...actual,
+    api: { ...actual.api, payments: { releasePayout: (...a: unknown[]) => releasePayout(...a) } },
+  };
+});
 
 vi.mock('@/components/feature/meera/FundEscrowButton', () => ({
   FundEscrowButton: (props: Record<string, unknown>) => {
@@ -67,6 +79,8 @@ const MS = (over: Partial<ContractMilestone> = {}): ContractMilestone => ({
 
 beforeEach(() => {
   fundProps.mockClear();
+  releasePayout.mockClear();
+  toastFn.mockClear();
 });
 
 describe('F-0222 — the brand deal room funds a MILESTONE, never a bare campaign', () => {
@@ -158,5 +172,73 @@ describe('F-0222 — the panel states escrow honestly', () => {
     renderPanel({ escrowFunded: undefined, contractStatus: 'active' });
 
     expect(screen.getByText('Escrow active')).toBeTruthy();
+  });
+});
+
+/**
+ * F-0224 (orphan-money-endpoint). `POST /wallet/escrow/release` shipped with ZERO callers
+ * anywhere in the app. Auto-release on approval was the only path money could take, and when it
+ * skipped — F-0223 documents eight conditions that do exactly that, silently — nothing in the
+ * product could retry it. The money sat in escrow with no screen able to move it.
+ *
+ * The control is deliberately NOT gated on the server's release preconditions (dispute freeze,
+ * release_condition, funded state). Re-deriving those in the UI is the CR-27 trap; the server
+ * refuses and its message is surfaced verbatim.
+ */
+describe('F-0224 — the brand can release a funded milestone', () => {
+  const funded = (over: Partial<ContractMilestone> = {}): ContractMilestone =>
+    MS({ id: 'ms_f', status: 'FUNDED', ...over });
+
+  it('calls the release endpoint with that milestone id', async () => {
+    releasePayout.mockResolvedValueOnce({ escrowHoldId: 'esc_1', status: 'RELEASED' });
+    renderPanel({ campaignId: 'camp_1', escrowFunded: true, milestones: [funded()] });
+
+    await userEvent.click(screen.getByRole('button', { name: /release/i }));
+
+    expect(releasePayout).toHaveBeenCalledWith('ms_f');
+  });
+
+  it('surfaces the server refusal verbatim rather than a generic failure', async () => {
+    const { ApiError } = await import('@/lib/api');
+    releasePayout.mockRejectedValueOnce(
+      new ApiError('RELEASE_CONDITION_NOT_MET', 'Deliverable 1 is not approved yet', 409),
+    );
+    renderPanel({ campaignId: 'camp_1', escrowFunded: true, milestones: [funded()] });
+
+    await userEvent.click(screen.getByRole('button', { name: /release/i }));
+
+    await waitFor(() =>
+      expect(toastFn).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'Deliverable 1 is not approved yet' }),
+      ),
+    );
+  });
+
+  it('offers nothing to release on a milestone that is still PENDING', () => {
+    renderPanel({ campaignId: 'camp_1', milestones: [MS({ status: 'PENDING' })] });
+
+    expect(screen.queryByRole('button', { name: /^release$/i })).toBeNull();
+  });
+
+  it('offers nothing to release on one already RELEASED', () => {
+    renderPanel({ campaignId: 'camp_1', escrowFunded: true, milestones: [MS({ status: 'RELEASED' })] });
+
+    expect(screen.queryByRole('button', { name: /^release$/i })).toBeNull();
+  });
+
+  it('never shows a release control on the creator mount', () => {
+    // Same discriminator as the fund control: creator-chat.tsx passes no campaignId.
+    renderPanel({ campaignId: undefined, milestones: undefined, escrowFunded: undefined });
+
+    expect(screen.queryByRole('button', { name: /^release$/i })).toBeNull();
+    expect(releasePayout).not.toHaveBeenCalled();
+  });
+
+  it('does not offer release against a derived placeholder row, which has no server id', () => {
+    // No `milestones` prop -> the panel derives placeholder rows from dealValue. Releasing one
+    // would send a fabricated id like "del-1" to the money endpoint.
+    renderPanel({ campaignId: 'camp_1', escrowFunded: true, milestones: [] });
+
+    expect(screen.queryByRole('button', { name: /^release$/i })).toBeNull();
   });
 });
