@@ -1,0 +1,5 @@
+· leg 1: an overdue-aware formatter is defined and used at all three render sites
+  formatOverdueHours not found — no overdue-aware formatting introduced
+  formatOverdueHours referenced only 0 time(s) — expected the definition plus a call
+  at each of the card banner, list SLA column, and timeline badge render sites
+VERDICT: broken — no overdue-aware rendering wired into brand-pipeline.tsx (F-0263)

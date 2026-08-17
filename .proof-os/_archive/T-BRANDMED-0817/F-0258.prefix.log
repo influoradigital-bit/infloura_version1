@@ -1,0 +1,7 @@
+· content scan: src/pages/brand-campaign-detail.tsx for the fabricated fee-split multipliers
+1917:                            { label: 'Creator Payouts', value: formatCurrency((campaign.budget?.spent ?? 0) * 0.82), highlight: false },
+1919:                            { label: 'GST (18% on fee)', value: formatCurrency((campaign.budget?.spent ?? 0) * 0.018), highlight: false },
+2014:                        { label: 'Creator Pay (est.)', value: formatCurrency(campaign.budget.max * 0.82) },
+2016:                        { label: 'GST (18% on fee)', value: formatCurrency(campaign.budget.max * 0.018) },
+2017:                        { label: 'Contingency', value: formatCurrency(campaign.budget.max * 0.062) },
+VERDICT: broken — client-invented fee-split multipliers still present in src/pages/brand-campaign-detail.tsx (F-0258)

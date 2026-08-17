@@ -277,8 +277,12 @@ export default function CreatorRegisterPage() {
             }}
           />
           <label htmlFor="terms" className="cursor-pointer text-xs leading-tight text-muted-foreground">
-            I agree to the <a href="/terms" className="text-primary hover:underline">Terms of Service</a> and{' '}
-            <a href="/privacy" className="text-primary hover:underline">Privacy Policy</a>
+            {/* F-0293 — a same-document navigation here would unmount this form and discard
+                name/email/password/confirmPassword, all live useState. target="_blank" opens
+                Terms/Privacy in a new tab so following the link cannot lose the in-progress
+                registration. */}
+            I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Terms of Service</a> and{' '}
+            <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Privacy Policy</a>
           </label>
         </div>
         <FieldError message={errors.acceptTerms} />

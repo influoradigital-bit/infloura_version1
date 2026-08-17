@@ -1,0 +1,9 @@
+· no raw hex color literal in src/pages/features/hype.tsx or src/components/brand/contracts/contracts-and-deliverables.tsx
+  clean — no raw hex literals in either file
+· hype.tsx primary CTA uses the committed brand-violet token pair
+  clean — both 'Launch a Hype Campaign' CTAs use bg-primary
+VERDICT: aligned (proved) — hype.tsx and contracts-and-deliverables.tsx carry no raw hex
+         and the primary CTA uses the committed brand-violet token pair
+NOT CHECKED: raw-hex usage anywhere else in the codebase (gates/frontend.sh's own head -10
+             truncation bug is unfixed and out of scope for this record); actual rendered
+             contrast in a browser, only the token pair's documented ratios.

@@ -1,0 +1,9 @@
+· Export (near src/pages/brand-wallet.tsx:724): disabled + reason, not a silent live control
+  'disabled' is conditional, not unconditional: disabled={loading}
+VERDICT: broken — Export's disabled state depends on a variable (F-0296 hardening of
+         F-0264); the control becomes a live, silent no-op again as soon as that
+         condition changes — disabled must not depend on component state
+· Download Form 16A (near src/pages/brand-wallet.tsx:1081): disabled + reason, not a silent live control
+  clean — disabled, with a readable reason
+· Download GST Summary (near src/pages/brand-wallet.tsx:1113): disabled + reason, not a silent live control
+  clean — disabled, with a readable reason

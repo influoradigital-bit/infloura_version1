@@ -1,0 +1,4 @@
+· request DTO: ContractSignRequest carries the signer name
+  276:    public record ContractSignRequest(String role) {}
+VERDICT: broken — ContractSignRequest still has no name field; the typed signer name the
+         UI calls the binding act has nowhere to land server-side (F-0292)

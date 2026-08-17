@@ -1,0 +1,9 @@
+· leg 1: an overdue-aware formatter is defined and used at all three render sites
+  clean — formatOverdueHours defined and used at all three sites
+· vitest run src/pages/__tests__/brand-pipeline.sla.test.tsx
+[2m      Tests [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+VERDICT: aligned (proved) — a past-deadline deal renders an overdue state, not a negative
+         hour count
+NOT CHECKED: daysRemaining (a separate, also-unfloored field, out of this ticket's scope);
+             whether the server's nextDeadline itself is ever wrong; list/timeline view
+             switching in the live test (only the default board view is asserted).

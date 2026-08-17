@@ -1,0 +1,11 @@
+· source: no decorative signature canvas left in src/components/brand/contracts/contracts-and-deliverables.tsx
+  clean — no <canvas> signature pad, no orphaned drawing handlers
+· copy: legal notice does not tell the brand to draw a binding mark
+  clean — no 'draw your signature' framing
+· vitest run src/components/brand/contracts/__tests__/contracts-and-deliverables.signature.test.tsx
+[2m      Tests [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+VERDICT: aligned (proved) — the signature control submits exactly what the copy promises,
+         and no drawn mark is discarded
+NOT CHECKED: whether a future backend signature-image field should exist at all — that's a
+             product/legal call, not this gate's; and whether contracts signed before this
+             fix (with a discarded drawing) need any remediation.

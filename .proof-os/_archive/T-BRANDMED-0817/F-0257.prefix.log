@@ -1,0 +1,5 @@
+· invite→create-campaign promise matches what the destination actually consumes
+  src/components/brand/discover/creator-discovery.tsx still promises pre-selection; src/pages/brand-new-campaign.tsx reads no creator id from the URL
+VERDICT: broken — the invite dialog promises the creator will be pre-selected on
+         /brand/campaigns/new, but the destination never reads a creator id off the
+         navigation, so the creator is silently dropped (F-0257)

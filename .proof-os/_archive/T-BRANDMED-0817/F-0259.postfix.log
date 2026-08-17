@@ -1,0 +1,14 @@
+· distinct loading and empty markers exist in the source
+  clean — discover-loading and discover-empty both present
+· the price-range filter does not fire at its untouched default
+  clean — a touched-guard exists for the price filter
+· vitest run src/components/brand/discover/__tests__/creator-discovery-loading-empty.test.tsx
+[2m      Tests [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+VERDICT: aligned (proved) — Discover has a real loading state, a real empty state, and the
+         default rate filter no longer silently excludes unpriced creators
+NOT CHECKED: server-side pagination/filtering (still client-side over one page — a bigger
+             rework than this MEDIUM ticket); an error state distinct from empty (the
+             existing toast-on-failure path is unchanged and untested here); whether the
+             follower/engagement range sliders have the same untouched-default bug class
+             (checked by hand during LOOKUP — their floors are both 0, so ?? 0 never drops
+             below them; only price's non-zero floor did).

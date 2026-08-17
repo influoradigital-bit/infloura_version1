@@ -1,0 +1,10 @@
+· static: demo-hint copy in src/components/brand/onboarding/onboarding-steps.tsx is gated behind isApiLive()
+  clean — isApiLive() guard found within 6 lines above the demo-hint copy
+· static: isApiLive is imported from @/lib/api in src/components/brand/onboarding/onboarding-steps.tsx
+  clean — isApiLive imported
+· vitest run src/components/brand/onboarding/__tests__/onboarding-steps.demo-hint.test.tsx
+[2m      Tests [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+VERDICT: aligned (proved) — the demo OTP hint only renders when the app is not live
+NOT CHECKED: whether VITE_API_MODE=live is actually set in the real production build
+             pipeline (this gate only proves the component branches correctly on
+             isApiLive()'s return value, not that the env var is wired at deploy time).

@@ -306,6 +306,16 @@ const PlatformIcon = ({ platform }: { platform: string }) => {
 const isAtRisk = (collab: Collaboration) =>
   collab.slaHoursRemaining != null && collab.slaHoursRemaining < 12;
 
+// PL-6 (F-0263): `hoursUntil` has no floor, so a deal whose deadline has already passed
+// produces a negative `slaHoursRemaining`. Every render site below used to print that number
+// verbatim ("SLA at risk: -37h remaining"), which reads as a countdown still ticking rather
+// than an overdue deal — a negative number is type-correct (`number | undefined`), so nothing
+// caught it statically. `hoursUntil` itself is left signed (other call sites may reasonably
+// want the signed value); this only changes how a negative reading is DISPLAYED.
+function formatOverdueHours(hoursRemaining: number): string {
+  return hoursRemaining < 0 ? `overdue by ${Math.abs(hoursRemaining)}h` : `${hoursRemaining}h`;
+}
+
 // Module-scope so it keeps a stable component identity and never remounts on a
 // BrandPipelinePage re-render (F-0050). Reads module-level stages/isAtRisk/
 // formatINR/PlatformIcon; takes the row data and an onOpen handler as props.
@@ -335,7 +345,11 @@ function CollaborationCard({ collab, onOpen }: { collab: Collaboration; onOpen: 
       {atRiskStatus && (
         <div className="flex items-center gap-1 text-stage-disputed-fg text-xs font-medium mb-2 bg-red-100 rounded px-2 py-1">
           <AlertTriangle className="h-3 w-3" />
-          <span>SLA at risk: {collab.slaHoursRemaining}h remaining</span>
+          <span>
+            {collab.slaHoursRemaining! < 0
+              ? `SLA ${formatOverdueHours(collab.slaHoursRemaining!)}`
+              : `SLA at risk: ${formatOverdueHours(collab.slaHoursRemaining!)} remaining`}
+          </span>
         </div>
       )}
 
@@ -568,7 +582,7 @@ export default function BrandPipelinePage() {
                       atRiskStatus ? 'text-stage-disputed-fg' : 'text-muted-foreground'
                     )}>
                       {atRiskStatus && <AlertTriangle className="h-3 w-3" />}
-                      {collab.slaHoursRemaining}h
+                      {formatOverdueHours(collab.slaHoursRemaining)}
                     </span>
                   )}
                 </td>
@@ -624,7 +638,9 @@ export default function BrandPipelinePage() {
                 {atRiskStatus && (
                   <Badge variant="destructive" className="text-xs">
                     <AlertTriangle className="h-3 w-3 mr-1" />
-                    {collab.slaHoursRemaining}h left
+                    {collab.slaHoursRemaining! < 0
+                      ? formatOverdueHours(collab.slaHoursRemaining!)
+                      : `${formatOverdueHours(collab.slaHoursRemaining!)} left`}
                   </Badge>
                 )}
                 <Badge variant="outline">{stage?.label}</Badge>

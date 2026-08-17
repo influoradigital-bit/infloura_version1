@@ -1,0 +1,47 @@
+· checking src/pages/brand-campaign-detail.tsx for server-copy rendering (F-0294)
+  clean — platformFee.copy reaches JSX, the invented sentence is gone, and the dead
+  per-plan-rate branch is gone
+· vitest run src/pages/__tests__/brand-campaign-detail.fee-block.test.tsx (budget 120s)
+                    [36m/>[39m
+                    [36m<div[39m
+                      [33mclass[39m=[32m"h-2 w-2 rounded-full transition-all bg-muted"[39m
+                      [33mdata-slot[39m=[32m"tooltip-trigger"[39m
+                      [33mdata-state[39m=[32m"closed"[39m
+                    [36m/>[39m
+                  [36m</div>[39m
+                [36m</div>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"text-xs text-muted-foreground mt-0.5 hidden sm:block"[39m
+                [36m>[39m
+                  [0mAug 1, 2026[0m
+                  [0m — [0m
+                  [0mSep 1, 2026[0m
+                  [0m · [0m
+                  [0m0[0m
+                  [0m bids received[0m
+                [36m</p>[39m
+              [36m</div>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"flex items-center gap-2 shrink-0"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33mclass[39m=[32m"items-center justify-center whitespace-nowrap text-sm font-medium transition-[transform,box-shadow,opacity,border-color,background-color,color] duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground border bg-background shadow-xs hover:bg-accent hover:text-accent-for...
+[90m [2m❯[22m Proxy.waitForWrapper ../../../../../../../../Downloads/New Influora Ai/New Influora/node_modules/@testing-library/dom/dist/wait-for.js:[2m163:27[22m[39m
+[36m [2m❯[22m src/pages/__tests__/brand-campaign-detail.fee-block.test.tsx:[2m124:11[22m[39m
+    [90m122| [39m
+    [90m123| [39m    // F-0294 — the server's real `copy` field must reach the screen v…
+    [90m124| [39m    await waitFor(() => expect(screen.getByText(serverCopy)).toBeInThe…
+    [90m   | [39m          [31m^[39m
+    [90m125| [39m    // ...and the client-invented substitute sentence ("on real spend"…
+    [90m126| [39m    [90m// for it — the server copy makes no such claim.[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m2 passed[39m[22m[90m (3)[39m
+[2m   Start at [22m 21:53:10
+[2m   Duration [22m 13.82s[2m (transform 1.04s, setup 369ms, collect 3.15s, tests 5.70s, environment 1.43s, prepare 154ms)[22m
+VERDICT: broken — src/pages/__tests__/brand-campaign-detail.fee-block.test.tsx does not pass; the rendered-text contract this gate claims to
+         prove (server copy actually on screen, invented sentence actually absent, dead
+         branch actually absent) is not actually verified (F-0294)

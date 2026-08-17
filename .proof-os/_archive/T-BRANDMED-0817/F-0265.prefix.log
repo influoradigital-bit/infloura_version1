@@ -1,0 +1,5 @@
+· no raw hex color literal in src/pages/features/hype.tsx or src/components/brand/contracts/contracts-and-deliverables.tsx
+src/pages/features/hype.tsx:94:                <Button size="lg" className="bg-[#0e7490] text-white hover:bg-[#0b5d73]" asChild>
+src/pages/features/hype.tsx:219:              <Button size="lg" className="bg-[#0e7490] text-white hover:bg-[#0b5d73]" asChild>
+src/components/brand/contracts/contracts-and-deliverables.tsx:863:    ctx.strokeStyle = '#3b82f6';
+VERDICT: broken — raw hex color literal(s) remain off the design-token system (F-0265)

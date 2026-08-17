@@ -1,0 +1,50 @@
+F-0294 pre-fix evidence — OLD (pre-hardening) gate run against a plausible wrong fix
+Wrong fix applied (scratch copy only): src/pages/brand-campaign-detail.tsx
+  changed:  {platformFee.copy ? (
+  to:       {false && platformFee.copy ? (
+The literal token {platformFee.copy} still appears in the file (inside the now-dead branch),
+so the OLD gate's static grep for JSX usage is satisfied, but the branch never renders.
+Run in scratch tree: C:/Users/SAGEWO~1/AppData/Local/Temp/claude/C--Users-Sage-world-Downloads-New-Influora-Ai-New-Influora/5104fb0a-a208-49db-9a43-41d7d3f06c46/scratchpad/repro
+Gate: OLD .proof-os/gates/F-0294-server-fee-copy-rendered.sh (unhardened, no vitest leg)
+============================================================
+· checking src/pages/brand-campaign-detail.tsx for server-copy rendering (F-0294)
+  clean — platformFee.copy reaches JSX, the invented sentence is gone, and the dead
+  per-plan-rate branch is gone
+VERDICT: aligned (proved) — the fee block renders the server's real disclosure copy
+         instead of a client-invented substitute (F-0294)
+NOT CHECKED: this is a static source-shape check, not a render — it does not confirm
+             platformFee.copy is non-empty at runtime for the current backend response,
+             or that no CSS hides the rendered node; the fee-block vitest suite covers
+             the actual rendered-text case. It also cannot see whether a future second
+             source value would need new UI text — only that today's code does not
+             fabricate one.
+============================================================
+OBSERVED EXIT CODE: 0 (VERDICT: aligned (proved)) — static grep passes.
+
+Corroboration — the SAME wrong fix run against the existing
+src/pages/__tests__/brand-campaign-detail.fee-block.test.tsx vitest suite (which the OLD gate
+never invoked) DOES catch it:
+------------------------------------------------------------
+              [36m>[39m
+                [36m<button[39m
+                  [33mclass[39m=[32m"items-center justify-center whitespace-nowrap text-sm font-medium transition-[transform,box-shadow,opacity,border-color,background-color,color] duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground border bg-background shadow-xs hover:bg-accent hover:text-accent-for...
+[90m [2m❯[22m Proxy.waitForWrapper ../../../../../../../../Downloads/New Influora Ai/New Influora/node_modules/@testing-library/dom/dist/wait-for.js:[2m163:27[22m[39m
+[36m [2m❯[22m src/pages/__tests__/brand-campaign-detail.fee-block.test.tsx:[2m124:11[22m[39m
+    [90m122| [39m
+    [90m123| [39m    // F-0294 — the server's real `copy` field must reach the screen v…
+    [90m124| [39m    await waitFor(() => expect(screen.getByText(serverCopy)).toBeInThe…
+    [90m   | [39m          [31m^[39m
+    [90m125| [39m    // ...and the client-invented substitute sentence ("on real spend"…
+    [90m126| [39m    [90m// for it — the server copy makes no such claim.[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m2 passed[39m[22m[90m (3)[39m
+[2m   Start at [22m 21:51:24
+[2m   Duration [22m 13.62s[2m (transform 1.00s, setup 299ms, collect 3.31s, tests 5.64s, environment 940ms, prepare 125ms)[22m
+
+------------------------------------------------------------
+OBSERVED vitest EXIT CODE: 1 (1 failed | 2 passed) — the exact assertion the wrong fix breaks
+(getByText(serverCopy)) fires. This is the suite the hardened gate now wires in.

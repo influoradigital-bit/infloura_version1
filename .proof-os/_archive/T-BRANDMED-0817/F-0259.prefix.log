@@ -1,0 +1,3 @@
+· distinct loading and empty markers exist in the source
+VERDICT: broken — no loading-state marker found; an in-flight search renders nothing
+         distinguishable from a zero-result search (F-0259)

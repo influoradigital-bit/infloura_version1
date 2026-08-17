@@ -1,0 +1,13 @@
+· leg 1: the blanket 'changes apply to this session only' claim is gone
+  clean — blanket disclaimer no longer present in rendered/live code
+· leg 2: the three live-writing handlers are still wired (copy fixed, not persistence regressed)
+  clean — all three persisted switches still call their live handlers
+· leg 3: Push Notifications / Weekly Digest still carry their own honest 'not available' caption
+  clean — the two genuinely-unwired controls still say so individually
+· vitest run src/pages/__tests__/brand-settings.disclaimer.test.tsx
+[2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+VERDICT: aligned (proved) — the disclaimer no longer claims persisted toggles are ephemeral,
+         and the genuinely-unwired controls still disclose that individually
+NOT CHECKED: General/Billing/Security tabs' own copy; whether setPreference's server-side
+             write is actually durable (only that the client believes and states it is);
+             wording quality beyond 'does not claim ephemerality for a persisted control'.

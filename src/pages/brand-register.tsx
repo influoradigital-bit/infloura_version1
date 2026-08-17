@@ -383,9 +383,14 @@ export default function BrandRegisterPage() {
                     />
                     <span className="text-sm text-muted-foreground">
                       I agree to the{' '}
-                      <button type="button" className="text-primary hover:underline">Terms of Service</button>
+                      {/* F-0293 — a same-document navigation here would unmount this form and
+                          discard every field on the page (companyName/industry/teamSize/email/
+                          password/confirmPassword are all live useState). target="_blank" opens
+                          Terms/Privacy in a new tab so following the link cannot lose the
+                          in-progress registration. */}
+                      <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Terms of Service</a>
                       {' '}and{' '}
-                      <button type="button" className="text-primary hover:underline">Privacy Policy</button>
+                      <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Privacy Policy</a>
                     </span>
                   </label>
                   <FieldError message={errors.agreeToTerms} />

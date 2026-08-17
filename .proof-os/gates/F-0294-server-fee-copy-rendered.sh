@@ -55,7 +55,7 @@ fi
 # 3. The unreachable per-plan-rate branch must be gone. BrandPlatformFeeService (LOOKUP,
 #    T-BRANDMED-0817) only ever constructs SOURCE_GLOBAL_DEFAULT — no second source value is
 #    ever produced — so a ternary implying a per-plan rate exists is dead code that misleads.
-if grep -q "your plan" "$PAGE"; then
+if grep -qE "plan.s current rate" "$PAGE"; then
   echo "  a \"your plan's current rate\" branch is still present — that value is unreachable"
   echo "  (BrandPlatformFeeService only ever returns SOURCE_GLOBAL_DEFAULT)"
   echo "VERDICT: broken — dead branch implies per-plan fee rates that do not exist (F-0294)"
@@ -68,12 +68,47 @@ fi
 
 echo "  clean — platformFee.copy reaches JSX, the invented sentence is gone, and the dead"
 echo "  per-plan-rate branch is gone"
+
+# T-BRANDMED-0817 (F-0296 batch rule) — this gate's own NOT CHECKED line used to CITE
+# brand-campaign-detail.fee-block.test.tsx as the reason a static grep is an acceptable
+# stand-in for a real render, without ever running it. The suite exists, is F-0294-aware
+# (asserts the server copy renders verbatim, the invented sentence is absent, and the dead
+# source-branch text is absent — see the suite's own comments), and passes 3/3. A gate must run
+# the relevant suite that already exists, not point at it.
+SUITE=src/pages/__tests__/brand-campaign-detail.fee-block.test.tsx
+if [ ! -f "$SUITE" ]; then
+  echo "· $SUITE missing — unavailable"
+  echo "VERDICT: unavailable — the vitest leg this gate wires in does not exist"
+  exit 2
+fi
+command -v node >/dev/null 2>&1 || { echo "· node not on PATH — unavailable"; exit 2; }
+[ -f node_modules/.bin/vitest ] || { echo "· vitest not installed (--no-install) — unavailable"; exit 2; }
+
+BUDGET="${PROOF_F0294_VITEST_TIMEOUT:-120}"
+if command -v timeout >/dev/null 2>&1; then TO="timeout -k 10 $BUDGET"; else TO=""; fi
+
+echo "· vitest run $SUITE (budget ${BUDGET}s)"
+out=$($TO node_modules/.bin/vitest run "$SUITE" 2>&1); rc=$?
+if [ $rc -eq 124 ] || [ $rc -eq 137 ]; then
+  echo "  suite exceeded ${BUDGET}s — unavailable, NOT a finding"
+  exit 2
+fi
+if [ $rc -ne 0 ]; then
+  printf '%s\n' "$out" | tail -40
+  echo "VERDICT: broken — $SUITE does not pass; the rendered-text contract this gate claims to"
+  echo "         prove (server copy actually on screen, invented sentence actually absent, dead"
+  echo "         branch actually absent) is not actually verified (F-0294)"
+  exit 1
+fi
+printf '%s\n' "$out" | tail -10
+echo "  vitest suite passed"
+
 echo "VERDICT: aligned (proved) — the fee block renders the server's real disclosure copy"
-echo "         instead of a client-invented substitute (F-0294)"
-echo "NOT CHECKED: this is a static source-shape check, not a render — it does not confirm"
-echo "             platformFee.copy is non-empty at runtime for the current backend response,"
-echo "             or that no CSS hides the rendered node; the fee-block vitest suite covers"
-echo "             the actual rendered-text case. It also cannot see whether a future second"
-echo "             `source` value would need new UI text — only that today's code does not"
-echo "             fabricate one."
+echo "         instead of a client-invented substitute (F-0294), and"
+echo "         brand-campaign-detail.fee-block.test.tsx passes against the real rendered DOM"
+echo "NOT CHECKED: whether platformFee.copy is non-empty at runtime against the CURRENTLY"
+echo "             DEPLOYED backend response (the vitest leg mocks api.wallet.brandPlatformFee,"
+echo "             it does not hit a live server); whether any CSS hides the rendered node; and"
+echo "             whether a future second source value would need new UI text — only that"
+echo "             today's code does not fabricate one."
 exit 0

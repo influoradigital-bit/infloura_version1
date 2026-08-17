@@ -1,0 +1,6 @@
+· source check: buildLiveCreatorView must not hardcode avgLikes/avgComments/avgViews to 0
+327:      avgLikes: 0, // TODO(vikram): DTO has no per-post average likes
+328:      avgComments: 0, // TODO(vikram): DTO has no per-post average comments
+329:      avgViews: 0, // TODO(vikram): DTO has no per-post average views
+VERDICT: broken — a live creator's avgLikes/avgComments/avgViews is still hardcoded to a fabricated
+         0 instead of an absent/null value (F-0260)

@@ -1,0 +1,7 @@
+· leg 1: the blanket 'changes apply to this session only' claim is gone
+103:    "Settings sync isn't available yet — changes apply to this session only.";
+  still present — three of the toggles on this screen PATCH the server immediately,
+  so this sentence is still lying to the brand about persistence
+· leg 2: the three live-writing handlers are still wired (copy fixed, not persistence regressed)
+· leg 3: Push Notifications / Weekly Digest still carry their own honest 'not available' caption
+VERDICT: broken — disclaimer copy still misrepresents which controls persist (F-0262)

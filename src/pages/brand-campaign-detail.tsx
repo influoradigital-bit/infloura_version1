@@ -554,6 +554,14 @@ export default function BrandCampaignDetailPage() {
   const [liveCampaign, setLiveCampaign] = React.useState<ApiCampaign | null>(null);
   const [liveDeals, setLiveDeals] = React.useState<Deal[]>([]);
   const [liveAnalytics, setLiveAnalytics] = React.useState<CampaignAnalytics | null>(null);
+  // F-0258 — the ONLY real fee schedule this app exposes to a brand: GET /brand/platform-fee
+  // (BrandPlatformFeeController.java:29, wired at api.wallet.brandPlatformFee). It returns a
+  // single feeBps/feePercent for the platform's cut at publish — never a Creator Pay/GST/
+  // Contingency split, which no endpoint anywhere computes. `null` until it resolves (or on a
+  // fetch failure, or in mock mode) — every render below must treat that as "rate unknown", not 0.
+  const [platformFee, setPlatformFee] = React.useState<
+    { feeBps: number; feePercent: number; source: string; copy: string } | null
+  >(null);
   const [, setIsLoading] = React.useState(liveApi);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [notFound, setNotFound] = React.useState(false);
@@ -600,10 +608,13 @@ export default function BrandCampaignDetailPage() {
     setNotFound(false);
     (async () => {
       try {
-        const [campaignRow, dealRows, analyticsRow] = await Promise.all([
+        const [campaignRow, dealRows, analyticsRow, feeRow] = await Promise.all([
           api.campaigns.get(id),
           api.deals.list('brand', 'all'),
           api.campaigns.analytics(id).catch(() => null),
+          // F-0258 — real fee schedule; a failed/unavailable fetch leaves `platformFee` null
+          // rather than blocking the rest of the page.
+          api.wallet.brandPlatformFee().catch(() => null),
         ]);
         if (cancelled) return;
         if (!campaignRow) {
@@ -613,6 +624,7 @@ export default function BrandCampaignDetailPage() {
         }
         setLiveDeals(dealRows);
         setLiveAnalytics(analyticsRow);
+        setPlatformFee(feeRow);
       } catch (e) {
         if (cancelled) return;
         if (e instanceof ApiError && e.status === 404) {
@@ -1912,11 +1924,12 @@ export default function BrandCampaignDetailPage() {
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="px-4 pb-4 space-y-2">
+                          {/* F-0258 — this campaign's real per-creator payout / platform-fee /
+                              GST split is never computed anywhere (no invoice-level rollup
+                              endpoint exists yet); Total Campaign Spend is the only figure
+                              actually known here, so that's the only money line shown. */}
                           {[
                             { label: 'Total Campaign Spend', value: formatCurrency(campaign.budget?.spent ?? 0), highlight: false },
-                            { label: 'Creator Payouts', value: formatCurrency((campaign.budget?.spent ?? 0) * 0.82), highlight: false },
-                            { label: 'Platform Fee (10%)', value: formatCurrency((campaign.budget?.spent ?? 0) * 0.10), highlight: false },
-                            { label: 'GST (18% on fee)', value: formatCurrency((campaign.budget?.spent ?? 0) * 0.018), highlight: false },
                             { label: 'Estimated ROI', value: `${mockCompleted.analytics.roi}x`, highlight: true },
                           ].map((row) => (
                             <div key={row.label} className={cn('flex items-center justify-between text-sm py-1', row.highlight && 'border-t border-border mt-2 pt-3 font-bold text-green-400')}>
@@ -2000,32 +2013,46 @@ export default function BrandCampaignDetailPage() {
                 </CardContent>
               </Card>
 
-              {/* Budget breakdown */}
+              {/* Budget breakdown — F-0258. No endpoint anywhere computes a per-campaign
+                  Creator Pay / GST / Contingency split, so nothing here invents one. The only
+                  server-real number is the platform's take rate (GET /brand/platform-fee); when
+                  it's loaded, it's shown as a clearly-labeled estimate against the max budget —
+                  never under a Lock icon, since nothing is escrowed or apportioned at this
+                  stage. */}
               <Card>
                 <CardHeader className="pb-2 pt-4 px-4">
                   <CardTitle className="text-sm flex items-center gap-2">
-                    <Lock className="h-3.5 w-3.5 text-primary" />Budget Breakdown
+                    <DollarSign className="h-3.5 w-3.5 text-primary" />Budget
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="px-4 pb-4 space-y-2 text-sm">
                   {campaign.budget ? (
                     <>
-                      {[
-                        { label: 'Creator Pay (est.)', value: formatCurrency(campaign.budget.max * 0.82) },
-                        { label: 'Platform Fee (10%)', value: formatCurrency(campaign.budget.max * 0.10) },
-                        { label: 'GST (18% on fee)', value: formatCurrency(campaign.budget.max * 0.018) },
-                        { label: 'Contingency', value: formatCurrency(campaign.budget.max * 0.062) },
-                      ].map((row) => (
-                        <div key={row.label} className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">{row.label}</span>
-                          <span className="font-medium">{row.value}</span>
-                        </div>
-                      ))}
-                      <Separator className="my-1" />
                       <div className="flex items-center justify-between text-sm font-bold">
                         <span>Total Budget</span>
                         <span className="text-primary">{formatCurrency(campaign.budget.max)}</span>
                       </div>
+                      {platformFee ? (
+                        <>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">Platform Fee ({platformFee.feePercent}%, est.)</span>
+                            <span className="font-medium">
+                              {formatCurrency(campaign.budget.max * (platformFee.feePercent / 100))}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground pt-1">
+                            Estimate only, not a quote — computed against the max budget at
+                            the current platform rate.
+                          </p>
+                          {platformFee.copy ? (
+                            <p className="text-[11px] text-muted-foreground">{platformFee.copy}</p>
+                          ) : null}
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Fee breakdown isn&apos;t available yet.
+                        </p>
+                      )}
                     </>
                   ) : (
                     <p className="text-xs text-muted-foreground">

@@ -1,0 +1,44 @@
+· buildLiveCreatorView still exists and maps audience demographics
+· vitest run src/pages/__tests__/brand-creator-profile.absent-audience.test.tsx (behavioral: empty ageGroups/topCities must render an absent state)
+[32m- Expected:[39m 
+/not available/i
+
+[31m+ Received:[39m 
+"Age Distribution"
+
+[36m [2m❯[22m src/pages/__tests__/brand-creator-profile.absent-audience.test.tsx:[2m104:34[22m[39m
+    [90m102| [39m    const ageCard = screen.getByText('Age Distribution').closest('div'…
+    [90m103| [39m    [34mexpect[39m(ageCard)[33m.[39mnot[33m.[39m[34mtoBeNull[39m()[33m;[39m
+    [90m104| [39m    [34mexpect[39m(ageCard[33m?.[39mtextContent)[33m.[39m[34mtoMatch[39m([36m/not available/i[39m)[33m;[39m
+    [90m   | [39m                                 [31m^[39m
+    [90m105| [39m  })[33m;[39m
+    [90m106| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/pages/__tests__/brand-creator-profile.absent-audience.test.tsx[2m > [22mF-0295 — empty ageGroups/topCities never renders as a silent empty box[2m > [22mTop Cities shows an explicit absent state, not an empty box, for a live creator with no city data
+[31m[1mAssertionError[22m: expected 'Top Cities' to match /not available/i[39m
+
+[32m- Expected:[39m 
+/not available/i
+
+[31m+ Received:[39m 
+"Top Cities"
+
+[36m [2m❯[22m src/pages/__tests__/brand-creator-profile.absent-audience.test.tsx:[2m118:37[22m[39m
+    [90m116| [39m    [35mconst[39m citiesCard [33m=[39m screen[33m.[39m[34mgetByText[39m([32m'Top Cities'[39m)[33m.[39m[34mclosest[39m([32m'div'[39m)[33m;[39m
+    [90m117| [39m    [34mexpect[39m(citiesCard)[33m.[39mnot[33m.[39m[34mtoBeNull[39m()[33m;[39m
+    [90m118| [39m    [34mexpect[39m(citiesCard[33m?.[39mtextContent)[33m.[39m[34mtoMatch[39m([36m/not available/i[39m)[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m119| [39m  })[33m;[39m
+    [90m120| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[90m (2)[39m
+[2m   Start at [22m 20:53:20
+[2m   Duration [22m 8.74s[2m (transform 517ms, setup 376ms, collect 1.04s, tests 264ms, environment 1.24s, prepare 506ms)[22m
+VERDICT: broken — Age Distribution / Top Cities render as empty boxes for a live creator
+         with no audience-demographics data, instead of an explicit absent state (F-0295)

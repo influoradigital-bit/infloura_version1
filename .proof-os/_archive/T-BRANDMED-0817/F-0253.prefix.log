@@ -1,0 +1,4 @@
+· source: no decorative signature canvas left in src/components/brand/contracts/contracts-and-deliverables.tsx
+1675:                <canvas
+VERDICT: broken — a <canvas> signature pad is still rendered whose strokes are never
+         read into the submit payload (F-0253)

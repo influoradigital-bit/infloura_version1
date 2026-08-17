@@ -1,0 +1,17 @@
+· static: real Terms/Privacy content exists in this repo (checked, not assumed)
+  confirmed — src/content/legal/{terms-of-service,privacy-policy}.md exist and
+  App.tsx routes /terms and /privacy through LegalPage
+· static: no dead <button type="button"> for Terms of Service / Privacy Policy in src/pages/brand-register.tsx
+  clean — no dead button wraps the consent link copy
+· static: Terms/Privacy controls carry real hrefs to routes App.tsx serves
+  clean — href="/terms" and href="/privacy" both present
+· vitest run src/pages/__tests__/brand-register.consent-links.test.tsx
+[2m      Tests [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+VERDICT: aligned (proved) — Terms of Service and Privacy Policy are real, focusable links
+         to the routes this repo actually serves, not dead buttons
+NOT CHECKED: whether /terms and /privacy render acceptable legal text — LegalPage marks
+             both noindex as v0 drafts pending legal counsel review (see App.tsx comment
+             near the route registration); this gate proves the control is reachable, not
+             that its destination is publication-ready. Also not checked: opening the link
+             in a NEW tab losing the in-progress registration form state, if that's the
+             chosen UX — only a live run shows that.

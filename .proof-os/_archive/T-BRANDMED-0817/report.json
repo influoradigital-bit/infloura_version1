@@ -1,0 +1,280 @@
+{
+ "rows": [
+  {
+   "subject": "F-0253 \u00b7 src/components/brand/contracts/contracts-and-deliverables.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0253-signature-canvas-submitted.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0253-signature-canvas-submitted.sh"
+   }
+  },
+  {
+   "subject": "F-0254 \u00b7 src/components/brand/onboarding/onboarding-steps.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0254-demo-hint-guarded.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0254-demo-hint-guarded.sh"
+   }
+  },
+  {
+   "subject": "F-0255 \u00b7 src/pages/brand-register.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0255-consent-links-live.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0255-consent-links-live.sh"
+   }
+  },
+  {
+   "subject": "F-0256 \u00b7 src/components/brand/discover/creator-discovery.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0256-no-mock-campaign-seed.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0256-no-mock-campaign-seed.sh"
+   }
+  },
+  {
+   "subject": "F-0257 \u00b7 src/components/brand/discover/creator-discovery.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0257-invite-creator-handoff.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0257-invite-creator-handoff.sh"
+   }
+  },
+  {
+   "subject": "F-0258 \u00b7 src/pages/brand-campaign-detail.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0258-no-client-invented-fees.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0258-no-client-invented-fees.sh"
+   }
+  },
+  {
+   "subject": "F-0259 \u00b7 src/components/brand/discover/creator-discovery.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0259-discover-loading-empty.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0259-discover-loading-empty.sh"
+   }
+  },
+  {
+   "subject": "F-0260 \u00b7 src/pages/brand-creator-profile.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0260-absent-metric-not-zero.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0260-absent-metric-not-zero.sh"
+   }
+  },
+  {
+   "subject": "F-0261 \u00b7 src/components/brand/command-bar.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0261-command-bar-chord-and-shortcuts.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0261-command-bar-chord-and-shortcuts.sh"
+   }
+  },
+  {
+   "subject": "F-0262 \u00b7 src/pages/brand-settings.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0262-settings-persistence-copy.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0262-settings-persistence-copy.sh"
+   }
+  },
+  {
+   "subject": "F-0263 \u00b7 src/pages/brand-pipeline.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0263-no-negative-sla.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0263-no-negative-sla.sh"
+   }
+  },
+  {
+   "subject": "F-0264 \u00b7 src/pages/brand-wallet.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0264-no-dead-money-controls.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0264-no-dead-money-controls.sh"
+   }
+  },
+  {
+   "subject": "F-0265 \u00b7 src/pages/features/hype.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0265-brand-palette-tokens.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0265-brand-palette-tokens.sh"
+   }
+  },
+  {
+   "subject": "F-0292 \u00b7 influora-api/src/main/java/com/influora/web/ContractController.java",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0292-signature-name-persisted.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0292-signature-name-persisted.sh"
+   }
+  },
+  {
+   "subject": "F-0293 \u00b7 src/pages/creator-register.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0293-consent-link-preserves-form.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0293-consent-link-preserves-form.sh"
+   }
+  },
+  {
+   "subject": "F-0294 \u00b7 src/pages/brand-campaign-detail.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0294-server-fee-copy-rendered.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0294-server-fee-copy-rendered.sh"
+   }
+  },
+  {
+   "subject": "F-0295 \u00b7 src/pages/brand-creator-profile.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0295-absent-audience-surfaces.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0295-absent-audience-surfaces.sh"
+   }
+  },
+  {
+   "subject": "F-0296 \u00b7 .proof-os/gates/F-0264-no-dead-money-controls.sh",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0264-no-dead-money-controls.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix source and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0264-no-dead-money-controls.sh"
+   }
+  },
+  {
+   "subject": "typecheck \u00b7 whole project",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "npx tsc --noEmit",
+    "result": "0 errors",
+    "where": "tsconfig.json"
+   }
+  },
+  {
+   "subject": "backend test-compile \u00b7 influora-api",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -o -DskipTests test-compile",
+    "result": "exit 0",
+    "where": "influora-api/pom.xml"
+   }
+  },
+  {
+   "subject": "frontend suite \u00b7 vitest",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "node",
+    "command": "npx vitest run",
+    "result": "100 files passed, 632 tests passed, 0 failed",
+    "where": "package.json"
+   }
+  },
+  {
+   "subject": "checker round 1 \u00b7 F-0253\u2026F-0265",
+   "owner": "priya",
+   "status": "partial",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "fresh-context checker, artifact paths + done_when only",
+    "result": "5 defects found; 1 wrong-fix (F-0253), 1 weak gate (F-0264), 3 residual",
+    "where": "wiki/errors/BRAND-FRONTEND-UX-AUDIT-0817.md"
+   }
+  },
+  {
+   "subject": "checker round 2 \u00b7 F-0292\u2026F-0296",
+   "owner": "priya",
+   "status": "partial",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "fresh-context checker, artifact paths + done_when only",
+    "result": "0 product defects; 1 gate hole demonstrated by construction (F-0292 gate greened a nulled signerName)",
+    "where": ".proof-os/gates/F-0292-signature-name-persisted.sh"
+   }
+  }
+ ]
+}

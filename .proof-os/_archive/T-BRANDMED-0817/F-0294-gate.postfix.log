@@ -1,0 +1,23 @@
+· checking src/pages/brand-campaign-detail.tsx for server-copy rendering (F-0294)
+  clean — platformFee.copy reaches JSX, the invented sentence is gone, and the dead
+  per-plan-rate branch is gone
+· vitest run src/pages/__tests__/brand-campaign-detail.fee-block.test.tsx (budget 120s)
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mC:/Users/Sage world/Downloads/New Influora Ai/New Influora[39m
+
+ [32m✓[39m src/pages/__tests__/brand-campaign-detail.fee-block.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 782[2mms[22m[39m
+   [33m[2m✓[22m[39m campaign detail — budget/fee block (live mode)[2m > [22mnever renders the invented Creator Pay / GST / Contingency split, and shows the real fee rate [33m 443[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m   Start at [22m 21:53:33
+[2m   Duration [22m 7.93s[2m (transform 824ms, setup 314ms, collect 2.85s, tests 782ms, environment 842ms, prepare 164ms)[22m
+  vitest suite passed
+VERDICT: aligned (proved) — the fee block renders the server's real disclosure copy
+         instead of a client-invented substitute (F-0294), and
+         brand-campaign-detail.fee-block.test.tsx passes against the real rendered DOM
+NOT CHECKED: whether platformFee.copy is non-empty at runtime against the CURRENTLY
+             DEPLOYED backend response (the vitest leg mocks api.wallet.brandPlatformFee,
+             it does not hit a live server); whether any CSS hides the rendered node; and
+             whether a future second source value would need new UI text — only that
+             today's code does not fabricate one.

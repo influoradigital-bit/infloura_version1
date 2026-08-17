@@ -1,0 +1,21 @@
+· request DTO: ContractSignRequest carries the signer name
+  clean — 296:    public record ContractSignRequest(String role, String name, Instant agreedAt) {}
+· entity: Contract persists brand + creator signer name as distinct columns
+  clean — brand_signer_name / creator_signer_name columns mapped
+· entity: recordBrandSignature/recordCreatorSignature actually accept and write the name
+  clean — both record*Signature methods take a name argument
+· service: the sign flow actually threads a caller-supplied name into the entity write
+  clean — ContractService passes a name through to both record*Signature calls
+· controller: sign() still server-derives role and is not broken by the new field
+  clean — server-derived role default still present
+· read model: signer names come back on the contract response
+  clean — ContractResponse carries brandSignerName / creatorSignerName
+· migration: a MySQL-grammar migration adds the signer-name columns
+  clean — influora-api/src/main/resources/db/migration/V20260817130000__contract_signer_names.sql adds both columns in MySQL grammar
+VERDICT: aligned (proved) — the typed signer name the UI calls the binding act now has a
+         field to travel in, a column to land in, and a place to be read back from
+NOT CHECKED: that a live signature round-trip actually persists and displays the real name
+             (only a running DB + live E2E proves that); whether the frontend is updated to
+             RENDER brandSignerName/creatorSignerName anywhere (frontend is another
+             producer's surface); and that the backend actually COMPILES/boots against
+             the new migration (checked separately by the build step, not this gate).

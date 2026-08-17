@@ -1,0 +1,4 @@
+· mock campaign seed is gated behind isApiLive() (not used as an unconditional initial state)
+413:  const [inviteCampaigns, setInviteCampaigns] = React.useState(mockCampaigns);
+VERDICT: broken — inviteCampaigns still seeds from the fabricated mock list unconditionally;
+         a brand in live mode can select a campaign that does not exist (F-0256)

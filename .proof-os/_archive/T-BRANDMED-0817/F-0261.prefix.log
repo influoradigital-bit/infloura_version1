@@ -1,0 +1,17 @@
+· leg 1: command-bar's own keydown handler stops propagation before brand-layout's window listener can run
+  keydown handler does not stop propagation — brand-layout's window-level listener
+  (unconditional setCommandBarOpen(true)) still runs right after it and re-opens the bar
+· leg 2: no advertised-but-unimplemented keyboard shortcut, and Cmd+W is never wired
+  Cmd+W is still advertised or implemented — that chord closes the browser tab
+  a quickAction still carries a 'shortcut' hint rendered via CommandShortcut with no
+  keydown handler behind it anywhere in the file
+· leg 3: all 8 previously-missing destinations present in command-bar.tsx AND real in src/App.tsx
+  /brand/messages (messages) — missing from command-bar.tsx navItems
+  /brand/pipeline (pipeline) — missing from command-bar.tsx navItems
+  /brand/reviews (reviews) — missing from command-bar.tsx navItems
+  /brand/analytics (analytics) — missing from command-bar.tsx navItems
+  /brand/meera (meera) — missing from command-bar.tsx navItems
+  /brand/disputes (disputes) — missing from command-bar.tsx navItems
+  /brand/notifications (notifications) — missing from command-bar.tsx navItems
+  /brand/help (help) — missing from command-bar.tsx navItems
+VERDICT: broken — command bar chord/shortcuts/destinations not fixed (F-0261)

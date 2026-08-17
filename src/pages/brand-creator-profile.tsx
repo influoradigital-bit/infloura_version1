@@ -81,9 +81,14 @@ interface CreatorDisplayModel {
   stats: {
     totalFollowers: number;
     avgEngagement: number;
-    avgLikes: number;
-    avgComments: number;
-    avgViews: number;
+    /**
+     * F-0260 — DiscoveryDtos.CreatorPublicProfileResponse has no per-post average likes/
+     * comments/views field. `null` in live mode, rendered as an explicit "—" instead of a
+     * fabricated "0 Avg Likes" presented as a measured fact (same rule as `rating` below).
+     */
+    avgLikes: number | null;
+    avgComments: number | null;
+    avgViews: number | null;
     completedCampaigns: number;
     /**
      * PR-1 (BrandF.md §87) — real avg of brand→creator star reviews from
@@ -100,9 +105,24 @@ interface CreatorDisplayModel {
   };
   platforms: CreatorPlatformView[];
   audience: {
-    ageGroups: { range: string; percentage: number }[];
-    gender: { female: number; male: number; other: number };
-    topCities: { city: string; percentage: number }[];
+    /**
+     * F-0295 — no backend audience-demographics endpoint exists at all (same DTO gap as
+     * `gender` below), so this was previously hardcoded to `[]` in live mode and rendered as a
+     * silent empty box under "Age Distribution" with no absent-state message. `null` (not an
+     * empty array) when unknown, matching the `gender`/`authenticity` pattern in this same type.
+     */
+    ageGroups: { range: string; percentage: number }[] | null;
+    /**
+     * F-0260 — no backend audience-demographics endpoint exists at all, so this was previously
+     * hardcoded to `{ female: 0, male: 0, other: 0 }` in live mode, rendering as a measured
+     * "Female 0% Male 0%" for every creator. `null` (not an all-zero split) when unknown.
+     */
+    gender: { female: number; male: number; other: number } | null;
+    /**
+     * F-0295 — same gap as `ageGroups` above: hardcoded to `[]` in live mode, rendering as a
+     * silent empty box under "Top Cities". `null` when unknown.
+     */
+    topCities: { city: string; percentage: number }[] | null;
     interests: string[];
     /**
      * BR-18 — real `100 - fakeFollowerScore` from `creator.scores.authenticity`
@@ -324,9 +344,11 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
     stats: {
       totalFollowers: row.totalFollowers,
       avgEngagement: row.engagementRate,
-      avgLikes: 0, // TODO(vikram): DTO has no per-post average likes
-      avgComments: 0, // TODO(vikram): DTO has no per-post average comments
-      avgViews: 0, // TODO(vikram): DTO has no per-post average views
+      // F-0260 — was hardcoded to 0, rendering as a fabricated "0 Avg Likes"/"0 Avg Views" for
+      // every creator. `null`: DTO has no per-post average likes/comments/views field.
+      avgLikes: null,
+      avgComments: null,
+      avgViews: null,
       // PR-1 fix (BrandF.md §87) — real count from GET /creators/profile/:usernameOrId.
       // The old GET /creators/:id (CreatorResponse) had no such field at all, so this was
       // hardcoded to 0 and rendered as a fabricated "0 campaigns" for every creator.
@@ -348,10 +370,15 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
       color: PLATFORM_COLOR[p.platform] ?? '#6B7280',
     })),
     audience: {
-      // TODO(vikram): DTO has no audience-demographics fields/endpoint
-      ageGroups: [],
-      gender: { female: 0, male: 0, other: 0 },
-      topCities: [],
+      // F-0295 — was hardcoded to `[]`, rendering as a silent empty box under "Age Distribution"
+      // for every creator. `null`: DTO has no audience-demographics fields/endpoint.
+      ageGroups: null,
+      // F-0260 — was hardcoded to an all-zero split, rendering as a fabricated "Female 0% Male
+      // 0%" for every creator. `null`: no audience-demographics endpoint exists.
+      gender: null,
+      // F-0295 — was hardcoded to `[]`, rendering as a silent empty box under "Top Cities".
+      // `null`: DTO has no audience-demographics fields/endpoint.
+      topCities: null,
       interests: [],
       // BR-18 fix: was hardcoded to 0, which rendered as "0% — Excellent authenticity" — live
       // misleading UI. `row.scores.authenticity` is the real `100 - fakeFollowerScore` value;
@@ -655,8 +682,18 @@ export default function BrandCreatorProfilePage() {
           {[
             { label: 'Followers', value: formatNumber(creator.stats.totalFollowers), icon: Users },
             { label: 'Engagement', value: `${creator.stats.avgEngagement}%`, icon: TrendingUp },
-            { label: 'Avg Likes', value: formatNumber(creator.stats.avgLikes), icon: Heart },
-            { label: 'Avg Views', value: formatNumber(creator.stats.avgViews), icon: Eye },
+            {
+              // F-0260 — `null` means the DTO has no per-post average; render an explicit
+              // not-available state instead of a fabricated "0" (same rule as Rating below).
+              label: 'Avg Likes',
+              value: creator.stats.avgLikes != null ? formatNumber(creator.stats.avgLikes) : '—',
+              icon: Heart,
+            },
+            {
+              label: 'Avg Views',
+              value: creator.stats.avgViews != null ? formatNumber(creator.stats.avgViews) : '—',
+              icon: Eye,
+            },
             { label: 'Campaigns', value: creator.stats.completedCampaigns.toString(), icon: Briefcase },
             {
               label: 'Rating',
@@ -792,65 +829,85 @@ export default function BrandCreatorProfilePage() {
           {/* Audience Tab */}
           <TabsContent value="audience" className="space-y-6">
             <div className="grid gap-6 md:grid-cols-2">
-              {/* Age Distribution */}
+              {/* Age Distribution — F-0295. `null`/empty means no audience-demographics endpoint
+                  exists for this creator; must render an explicit not-available state rather
+                  than a silent empty box (same rule as Gender Split / Audience Authenticity). */}
               <div className="rounded-lg border p-5">
                 <h3 className="mb-4 font-medium">Age Distribution</h3>
-                <div className="space-y-3">
-                  {creator.audience.ageGroups.map((group) => (
-                    <div key={group.range} className="space-y-1.5">
-                      <div className="flex justify-between text-sm">
-                        <span>{group.range}</span>
-                        <span className="text-muted-foreground">{group.percentage}%</span>
+                {!creator.audience.ageGroups || creator.audience.ageGroups.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Not available</p>
+                ) : (
+                  <div className="space-y-3">
+                    {creator.audience.ageGroups.map((group) => (
+                      <div key={group.range} className="space-y-1.5">
+                        <div className="flex justify-between text-sm">
+                          <span>{group.range}</span>
+                          <span className="text-muted-foreground">{group.percentage}%</span>
+                        </div>
+                        <Progress value={group.percentage} className="h-2" />
                       </div>
-                      <Progress value={group.percentage} className="h-2" />
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {/* Gender */}
+              {/* Gender — F-0260. `null` means no audience-demographics endpoint exists for this
+                  creator; must render an explicit not-available state rather than a fabricated
+                  "Female 0% Male 0%" (same rule as Audience Authenticity below). */}
               <div className="rounded-lg border p-5">
                 <h3 className="mb-4 font-medium">Gender Split</h3>
-                <div className="flex h-4 overflow-hidden rounded-full">
-                  <div
-                    className="bg-pink-500 w-[var(--gender-female-w)]"
-                    ref={cssVars({ '--gender-female-w': `${creator.audience.gender.female}%` })}
-                  />
-                  <div
-                    className="bg-blue-500 w-[var(--gender-male-w)]"
-                    ref={cssVars({ '--gender-male-w': `${creator.audience.gender.male}%` })}
-                  />
-                  <div
-                    className="bg-purple-500 w-[var(--gender-other-w)]"
-                    ref={cssVars({ '--gender-other-w': `${creator.audience.gender.other}%` })}
-                  />
-                </div>
-                <div className="mt-3 flex gap-4 text-sm">
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full bg-pink-500" />
-                    Female {creator.audience.gender.female}%
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
-                    Male {creator.audience.gender.male}%
-                  </span>
-                </div>
+                {creator.audience.gender == null ? (
+                  <p className="text-sm text-muted-foreground">Not available</p>
+                ) : (
+                  <>
+                    <div className="flex h-4 overflow-hidden rounded-full">
+                      <div
+                        className="bg-pink-500 w-[var(--gender-female-w)]"
+                        ref={cssVars({ '--gender-female-w': `${creator.audience.gender.female}%` })}
+                      />
+                      <div
+                        className="bg-blue-500 w-[var(--gender-male-w)]"
+                        ref={cssVars({ '--gender-male-w': `${creator.audience.gender.male}%` })}
+                      />
+                      <div
+                        className="bg-purple-500 w-[var(--gender-other-w)]"
+                        ref={cssVars({ '--gender-other-w': `${creator.audience.gender.other}%` })}
+                      />
+                    </div>
+                    <div className="mt-3 flex gap-4 text-sm">
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-pink-500" />
+                        Female {creator.audience.gender.female}%
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+                        Male {creator.audience.gender.male}%
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
 
-              {/* Top Cities */}
+              {/* Top Cities — F-0295. `null`/empty means no audience-demographics endpoint exists
+                  for this creator; must render an explicit not-available state rather than a
+                  silent empty box (same rule as Gender Split / Audience Authenticity). */}
               <div className="rounded-lg border p-5">
                 <h3 className="mb-4 font-medium">Top Cities</h3>
-                <div className="space-y-3">
-                  {creator.audience.topCities.map((city, i) => (
-                    <div key={city.city} className="flex items-center gap-3">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                        {i + 1}
-                      </span>
-                      <span className="flex-1">{city.city}</span>
-                      <span className="text-muted-foreground">{city.percentage}%</span>
-                    </div>
-                  ))}
-                </div>
+                {!creator.audience.topCities || creator.audience.topCities.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Not available</p>
+                ) : (
+                  <div className="space-y-3">
+                    {creator.audience.topCities.map((city, i) => (
+                      <div key={city.city} className="flex items-center gap-3">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                          {i + 1}
+                        </span>
+                        <span className="flex-1">{city.city}</span>
+                        <span className="text-muted-foreground">{city.percentage}%</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Authenticity — BR-18. `null` means this creator hasn't been scored yet (the

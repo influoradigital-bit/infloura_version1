@@ -1,0 +1,9 @@
+· static: real Terms/Privacy content exists in this repo (checked, not assumed)
+  confirmed — src/content/legal/{terms-of-service,privacy-policy}.md exist and
+  App.tsx routes /terms and /privacy through LegalPage
+· static: no dead <button type="button"> for Terms of Service / Privacy Policy in src/pages/brand-register.tsx
+90:      errs.agreeToTerms = 'You must agree to the Terms of Service to continue';
+386:                      <button type="button" className="text-primary hover:underline">Terms of Service</button>
+388:                      <button type="button" className="text-primary hover:underline">Privacy Policy</button>
+VERDICT: broken — brand-register.tsx still renders Terms of Service / Privacy Policy as a
+         dead <button type="button"> with no onClick and no href (F-0255)

@@ -1,0 +1,17 @@
+· request DTO: ContractSignRequest carries the signer name
+  clean — 296:    public record ContractSignRequest(String role, String name, Instant agreedAt) {}
+· entity: Contract persists brand + creator signer name as distinct columns
+  clean — brand_signer_name / creator_signer_name columns mapped
+· entity: recordBrandSignature/recordCreatorSignature actually accept and write the name
+  clean — both record*Signature methods take a name argument
+· service: the sign flow actually threads a caller-supplied name into the entity write
+  clean — ContractService passes a name through to both record*Signature calls
+· controller: sign() still server-derives role and is not broken by the new field
+  clean — server-derived role default still present
+· controller: sign() actually reads body.name() (not a stubbed/null substitute) and
+  threads that value into BOTH signature calls
+  sign() never calls body.name() anywhere in its body
+VERDICT: broken — ContractController#sign() does not read body.name(); a stub such as
+         'String signerName = null;' satisfies every other leg of this gate (DTO field,
+         entity columns, service threading, response and migration are all still in
+         place) while silently discarding the typed name a second time — F-0292 verbatim

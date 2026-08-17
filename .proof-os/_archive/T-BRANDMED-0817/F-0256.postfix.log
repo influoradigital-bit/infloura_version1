@@ -1,0 +1,10 @@
+· mock campaign seed is gated behind isApiLive() (not used as an unconditional initial state)
+  clean — mock seed only reachable in mock mode
+· a loading flag exists and can gate the selector before the real list resolves
+  clean — campaignsLoading present
+· vitest run src/components/brand/discover/__tests__/creator-discovery-invite-campaigns.test.tsx
+[2m      Tests [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+VERDICT: aligned (proved) — the invite selector never offers a campaign the server doesn't have
+NOT CHECKED: server-side validation of campaignId on submit (defense in depth if this ever
+             regresses); whether GET /campaigns itself can silently omit a real campaign
+             (a backend concern, not this component's).

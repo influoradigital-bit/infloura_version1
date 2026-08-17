@@ -41,7 +41,7 @@ import {
   formatFileSize,
   type UploadResult,
 } from '@/lib/upload';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, isApiLive } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 
 // ===========================
@@ -626,13 +626,15 @@ export function AccountSetupStep({
             )}
           </Button>
 
-          {/* Demo hint */}
-          <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
-            <Info className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <p className="text-xs text-muted-foreground">
-              Demo mode: use code <span className="font-mono font-semibold text-foreground">123456</span> to verify
-            </p>
-          </div>
+          {/* Demo hint — only in mock builds; a live server does not accept this code (F-0254) */}
+          {!isApiLive() && (
+            <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+              <Info className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <p className="text-xs text-muted-foreground">
+                Demo mode: use code <span className="font-mono font-semibold text-foreground">123456</span> to verify
+              </p>
+            </div>
+          )}
         </div>
       </div>
     );

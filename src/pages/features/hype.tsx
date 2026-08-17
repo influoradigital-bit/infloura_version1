@@ -91,7 +91,7 @@ export default function HypeFeaturePage() {
                 automatically.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
-                <Button size="lg" className="bg-[#0e7490] text-white hover:bg-[#0b5d73]" asChild>
+                <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90" asChild>
                   <Link to="/brand/register">
                     Launch a Hype Campaign <Zap className="ml-1.5 h-4 w-4" aria-hidden="true" />
                   </Link>
@@ -216,7 +216,7 @@ export default function HypeFeaturePage() {
               Each accepted slot funds automatically in escrow the moment a creator taps accept.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Button size="lg" className="bg-[#0e7490] text-white hover:bg-[#0b5d73]" asChild>
+              <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90" asChild>
                 <Link to="/brand/register">
                   Launch a Hype Campaign <Zap className="ml-1.5 h-4 w-4" aria-hidden="true" />
                 </Link>

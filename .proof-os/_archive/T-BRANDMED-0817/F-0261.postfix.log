@@ -1,0 +1,14 @@
+· leg 1: command-bar's own keydown handler stops propagation before brand-layout's window listener can run
+  clean — propagation is stopped inside the chord handler
+· leg 2: no advertised-but-unimplemented keyboard shortcut, and Cmd+W is never wired
+  clean — no dangling shortcut hint, Cmd+W not wired
+· leg 3: all 8 previously-missing destinations present in command-bar.tsx AND real in src/App.tsx
+  clean — all 8 destinations present and route-verified
+· vitest run src/components/brand/__tests__/command-bar.test.tsx
+[2m      Tests [22m [1m[32m6 passed[39m[22m[90m (6)[39m
+VERDICT: aligned (proved) — the chord opens and closes the bar, no dead shortcut is
+         advertised, and the 8 added destinations are real routes
+NOT CHECKED: brand-layout.tsx's own listener still unconditionally forces true (it is out
+             of scope for this task) — this gate only proves command-bar.tsx's own listener
+             no longer loses the race to it; a live click-through of every new destination;
+             mobile/touch command-bar entry points.

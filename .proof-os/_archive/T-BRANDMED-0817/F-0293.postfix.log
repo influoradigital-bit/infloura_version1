@@ -1,0 +1,11 @@
+· brand-register.tsx: Terms/Privacy links are not same-document navigations
+  clean — both links carry target="_blank"
+· creator-register.tsx: Terms/Privacy links are not same-document navigations
+  clean — both links carry target="_blank"
+· vitest run src/pages/__tests__/consent-link-preserves-form.test.tsx
+[2m      Tests [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+VERDICT: aligned (proved) — Terms/Privacy links no longer discard in-progress registration state
+NOT CHECKED: real browser navigation behavior (jsdom never actually navigates on <a> click, so
+             this gate proves via target/rel + a live-typed-field snapshot, not an actual click-
+             through); an in-app modal or client-route fix would need this gate's assertions
+             adjusted since it would no longer carry target="_blank".

@@ -410,7 +410,15 @@ export function CreatorDiscovery() {
   const [apiLoadingMore, setApiLoadingMore] = React.useState(false);
   const [apiPage, setApiPage] = React.useState(1);
   const [apiHasMore, setApiHasMore] = React.useState(false);
-  const [inviteCampaigns, setInviteCampaigns] = React.useState(mockCampaigns);
+  // F-0256 — the mock fixture used to seed this as unconditional initial state, so in live mode
+  // a brand could pick one of three fabricated campaigns (fake ids `c1`/`c2`/`c3`) before
+  // `GET /campaigns` had a chance to resolve, and submit an invite/offer against a campaignId
+  // that does not exist server-side. The fixture is now only reachable in mock mode — live mode
+  // starts empty and `campaignsLoading` (below) gates the selector until the real list lands.
+  const [inviteCampaigns, setInviteCampaigns] = React.useState<{ id: string; name: string; status: string }[]>(
+    liveApi ? [] : mockCampaigns,
+  );
+  const [campaignsLoading, setCampaignsLoading] = React.useState(liveApi);
   const DISCOVER_PAGE_SIZE = 20;
 
   // Search and filter state
@@ -668,6 +676,7 @@ export function CreatorDiscovery() {
 
   React.useEffect(() => {
     if (!liveApi) return;
+    setCampaignsLoading(true);
     api.campaigns
       .list({ limit: 50 })
       .then(({ campaigns: rows }) =>
@@ -675,7 +684,8 @@ export function CreatorDiscovery() {
           rows.map((c) => ({ id: c.id, name: c.title, status: c.status })),
         ),
       )
-      .catch(() => setInviteCampaigns([]));
+      .catch(() => setInviteCampaigns([]))
+      .finally(() => setCampaignsLoading(false));
   }, [liveApi]);
 
   // D-14 — GET /creators/featured (CreatorController.featured), a backend-complete endpoint with
@@ -759,10 +769,17 @@ export function CreatorDiscovery() {
       (c) => c.totalFollowers >= followerRange[0] && c.totalFollowers <= followerRange[1]
     );
 
-    // Price range filter
-    result = result.filter(
-      (c) => (c.averageRate ?? 0) >= priceRange[0] && (c.averageRate ?? 0) <= priceRange[1]
-    );
+    // Price range filter — F-0259: this used to run unconditionally at its untouched default
+    // (5000–200000). `(c.averageRate ?? 0)` maps "no rate set yet" to 0, which sits below the
+    // 5000 floor, so every unpriced creator was silently excluded even though the brand never
+    // touched this slider. Only enforce the range once the brand has actually moved it; a
+    // creator with no rate is a legitimate match at the untouched default.
+    const priceFilterTouched = priceRange[0] > 5000 || priceRange[1] < 200000;
+    if (priceFilterTouched) {
+      result = result.filter(
+        (c) => c.averageRate != null && c.averageRate >= priceRange[0] && c.averageRate <= priceRange[1]
+      );
+    }
 
     // Engagement range filter
     result = result.filter(
@@ -818,6 +835,12 @@ export function CreatorDiscovery() {
     (followerRange[0] > 0 || followerRange[1] < 10000000 ? 1 : 0) +
     (priceRange[0] > 5000 || priceRange[1] < 200000 ? 1 : 0) +
     (engagementRange[0] > 0 || engagementRange[1] < 15 ? 1 : 0);
+
+  // F-0259 — the first live search (nothing fetched yet) is the only state that should render
+  // the loading skeleton. `apiLoadingMore` (the "Load more" pagination spinner) and mock mode
+  // are both deliberately excluded: mock mode has no network round trip to wait on, and a
+  // load-more in flight already has a full page of real results on screen.
+  const isInitialLoading = liveApi && apiLoading && apiCreators.length === 0;
 
   return (
     <TooltipProvider>
@@ -1193,12 +1216,51 @@ export function CreatorDiscovery() {
         {/* Results Count */}
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {filteredCreators.length} creators
+            {isInitialLoading ? 'Loading creators…' : `Showing ${filteredCreators.length} creators`}
           </p>
         </div>
 
-        {/* Creator Grid/List */}
-        {viewMode === 'grid' ? (
+        {/* Creator Grid/List — F-0259: three mutually-exclusive states, distinguishable from
+            each other. A blank grid used to mean both "still loading" and "zero results" —
+            nothing told the brand which one they were looking at. An API failure is already
+            handled separately (see fetchCreators' catch → toast + apiCreators cleared to []),
+            so it lands in the empty branch below with a toast still visible, rather than a
+            fourth silent state. */}
+        {isInitialLoading ? (
+          <div
+            data-testid="discover-loading"
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            aria-busy="true"
+            aria-live="polite"
+          >
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Card key={i} className="overflow-hidden">
+                <div className="h-24 animate-pulse bg-muted" />
+                <CardContent className="space-y-3 pt-10">
+                  <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+                  <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+                  <div className="h-3 w-full animate-pulse rounded bg-muted" />
+                  <div className="h-16 w-full animate-pulse rounded bg-muted" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : filteredCreators.length === 0 ? (
+          <div
+            data-testid="discover-empty"
+            className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-16 text-center"
+          >
+            <p className="text-sm font-medium">No creators match your filters</p>
+            <p className="text-sm text-muted-foreground">
+              Try widening your search or clearing a few filters.
+            </p>
+            {activeFilterCount > 0 && (
+              <Button variant="outline" size="sm" onClick={clearFilters}>
+                Clear all filters
+              </Button>
+            )}
+          </div>
+        ) : viewMode === 'grid' ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredCreators.map((creator) => (
               <Card key={creator.id} className="group overflow-hidden transition-all hover:shadow-lg">
@@ -1464,8 +1526,12 @@ export function CreatorDiscovery() {
                         }
                       }}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose a campaign" />
+                      {/* F-0256 — disabled while campaignsLoading so the brand cannot pick a
+                          campaign (real or otherwise) before GET /campaigns has resolved. */}
+                      <SelectTrigger disabled={campaignsLoading}>
+                        <SelectValue
+                          placeholder={campaignsLoading ? 'Loading campaigns…' : 'Choose a campaign'}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {inviteCampaigns.filter(c => c.status === 'ACTIVE').map((campaign) => (
@@ -1487,8 +1553,17 @@ export function CreatorDiscovery() {
                   </div>
                   {createNewCampaign && (
                     <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                      {/* F-0257 — this copy used to claim the creator would already be chosen
+                          for the brand on arrival. That landing page
+                          (src/pages/brand-new-campaign.tsx, owned by another producer, out of
+                          scope here) never reads a creator id off the URL, so the claim was
+                          never true and the creator was silently dropped. Say what actually
+                          happens instead of a handoff this component can't deliver; `navigate`
+                          still sends `?creator=` (see handleInvite) so whoever fixes the
+                          destination has it ready to read. */}
                       <p className="text-sm text-muted-foreground">
-                        You will be redirected to create a new campaign with {inviteCreator?.displayName} pre-selected.
+                        You&apos;ll be redirected to create a new campaign. {inviteCreator?.displayName} won&apos;t
+                        be added automatically — invite them from Discover again once the campaign is live.
                       </p>
                     </div>
                   )}
@@ -1698,7 +1773,11 @@ export function CreatorDiscovery() {
               </Button>
               <Button 
                 onClick={handleInvite} 
-                disabled={(!selectedCampaign && !createNewCampaign) || isSubmitting}
+                disabled={
+                  (!selectedCampaign && !createNewCampaign) ||
+                  isSubmitting ||
+                  (proposalStep === 'campaign' && campaignsLoading)
+                }
               >
                 {isSubmitting ? 'Sending...' : 
                  createNewCampaign ? 'Create Campaign' : 

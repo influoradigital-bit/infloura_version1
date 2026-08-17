@@ -1,0 +1,9 @@
+· static: demo-hint copy in src/components/brand/onboarding/onboarding-steps.tsx is gated behind isApiLive()
+          </Button>
+
+          {/* Demo hint */}
+          <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+            <Info className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <p className="text-xs text-muted-foreground">
+              Demo mode: use code <span className="font-mono font-semibold text-foreground">123456</span> to verify
+VERDICT: broken — demo hint at src/components/brand/onboarding/onboarding-steps.tsx:633 has no isApiLive() guard in scope (F-0254)

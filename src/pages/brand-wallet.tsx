@@ -709,10 +709,24 @@ export default function BrandWalletPage() {
             )}
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="gap-2" disabled={loading}>
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
+            {/* F-0264: no transaction-export endpoint exists anywhere in src/lib/api.ts,
+                src/lib/meera-api.ts, or the backend WalletController — this used to render as
+                a live, clickable button with no handler behind it. Disabled permanently (not
+                just while `loading`) with a reason a screen reader / hover can reach, instead
+                of pretending the feature exists. The Tooltip is attached to the wrapping
+                `span`, not the `Button` itself, because `disabled` sets pointer-events:none on
+                the button and would otherwise swallow the hover before Radix ever sees it. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0} className="inline-flex">
+                  <Button variant="outline" className="gap-2" disabled aria-disabled="true">
+                    <Download className="h-4 w-4" />
+                    Export
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>Transaction export isn&apos;t available yet — coming soon.</TooltipContent>
+            </Tooltip>
             <Dialog open={isAddFundsOpen} onOpenChange={handleAddFundsDialogChange}>
               <DialogTrigger asChild>
                 <Button className="gap-2">
@@ -1049,13 +1063,28 @@ export default function BrandWalletPage() {
               <CardDescription>Total TDS Deducted (This FY)</CardDescription>
               <CardTitle className="text-xl flex items-center gap-2">
                 {formatCurrency(wallet.totalTDSDeducted)}
+                {/* F-0264: no Form 16A (TDS certificate) generation endpoint exists on the
+                    backend — WalletController has no such route, and no InvoiceService/
+                    GstSplitUtil path produces one either. Disabled + reason instead of a
+                    silent no-op on a tax-compliance control; see the Export button above for
+                    why the Tooltip wraps a `span` rather than sitting on the disabled Button
+                    directly. */}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-6 w-6">
-                      <FileText className="h-4 w-4" />
-                    </Button>
+                    <span tabIndex={0} className="inline-flex">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        disabled
+                        aria-disabled="true"
+                        aria-label="Download Form 16A — not available yet"
+                      >
+                        <FileText className="h-4 w-4" />
+                      </Button>
+                    </span>
                   </TooltipTrigger>
-                  <TooltipContent>Download Form 16A</TooltipContent>
+                  <TooltipContent>Form 16A isn&apos;t available yet — coming soon.</TooltipContent>
                 </Tooltip>
               </CardTitle>
             </CardHeader>
@@ -1070,13 +1099,24 @@ export default function BrandWalletPage() {
               <CardDescription>Total GST Paid (This FY)</CardDescription>
               <CardTitle className="text-xl flex items-center gap-2">
                 {formatCurrency(wallet.totalGSTPaid)}
+                {/* F-0264: no GST-summary generation endpoint exists on the backend either —
+                    same gap as Form 16A above. Disabled + reason, not a silent no-op. */}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-6 w-6">
-                      <Download className="h-4 w-4" />
-                    </Button>
+                    <span tabIndex={0} className="inline-flex">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        disabled
+                        aria-disabled="true"
+                        aria-label="Download GST Summary — not available yet"
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </span>
                   </TooltipTrigger>
-                  <TooltipContent>Download GST Summary</TooltipContent>
+                  <TooltipContent>GST summary isn&apos;t available yet — coming soon.</TooltipContent>
                 </Tooltip>
               </CardTitle>
             </CardHeader>

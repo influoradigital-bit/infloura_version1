@@ -1,0 +1,18 @@
+· Export (near src/pages/brand-wallet.tsx:724): disabled + reason, not a silent live control
+  clean — disabled, with a readable reason
+· Download Form 16A (near src/pages/brand-wallet.tsx:1081): disabled + reason, not a silent live control
+  clean — disabled, with a readable reason
+· Download GST Summary (near src/pages/brand-wallet.tsx:1113): disabled + reason, not a silent live control
+  clean — disabled, with a readable reason
+VERDICT: aligned (proved) — Export, Form 16A and GST Summary are disabled and each
+         carries a reason the brand can actually read
+NOT CHECKED: the deal-room 'attach' (Paperclip) control and 'Continue Chat' button
+             (src/components/brand/deals/deal-room-dashboard.tsx) — same defect class,
+             different file, out of this gate's scope (F-0264 handoff); the deliverable
+             'Preview' control actually lives in
+             src/components/brand/contracts/contracts-and-deliverables.tsx:1326, not
+             under src/components/brand/deliverables/ as assigned, and that file has an
+             in-flight concurrent edit — also handoff, not covered here. Screen-reader
+             behavior of the Tooltip-on-disabled-button pattern (pointer-events-none can
+             suppress hover on the inner element) is asserted by source shape, not by an
+             actual assistive-tech run.

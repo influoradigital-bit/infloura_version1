@@ -1,0 +1,8 @@
+· Export (near src/pages/brand-wallet.tsx:729): disabled + reason, not a silent live control
+  no human-readable reason found near the control
+VERDICT: broken — Export is disabled but gives the brand no reason why (F-0264);
+         a silently-disabled control on a tax/money surface still reads as broken
+· Download Form 16A (near src/pages/brand-wallet.tsx:1090): disabled + reason, not a silent live control
+  clean — disabled, with a readable reason
+· Download GST Summary (near src/pages/brand-wallet.tsx:1122): disabled + reason, not a silent live control
+  clean — disabled, with a readable reason

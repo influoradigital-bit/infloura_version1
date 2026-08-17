@@ -1,0 +1,7 @@
+· invite→create-campaign promise matches what the destination actually consumes
+  clean — no pre-selection promise is made; nothing to drop
+· vitest run src/components/brand/discover/__tests__/creator-discovery-invite-handoff.test.tsx
+[2m      Tests [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+VERDICT: aligned (proved) — the invite dialog no longer promises a handoff the destination doesn't consume
+NOT CHECKED: whether brand-new-campaign.tsx SHOULD read the creator id and pre-select it —
+             that is a real gap, tracked as NOT FIXED, and belongs to whoever owns that file.

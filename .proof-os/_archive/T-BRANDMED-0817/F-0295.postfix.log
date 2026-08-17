@@ -1,0 +1,9 @@
+· buildLiveCreatorView still exists and maps audience demographics
+· vitest run src/pages/__tests__/brand-creator-profile.absent-audience.test.tsx (behavioral: empty ageGroups/topCities must render an absent state)
+[2m      Tests [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+VERDICT: aligned (proved) — an empty audience array renders an explicit absent state, matching
+         the gender-split / authenticity pattern already in this file
+NOT CHECKED: whether a real (non-empty) ageGroups/topCities payload from a future backend
+             endpoint renders correctly — only the absent-state path is exercised here; and
+             whether other still-empty CreatorDisplayModel fields (portfolio, rates,
+             pastBrands, reviews) need the same treatment — out of scope for F-0295.
