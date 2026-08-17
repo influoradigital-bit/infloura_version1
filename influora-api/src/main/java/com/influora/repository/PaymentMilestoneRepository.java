@@ -57,6 +57,27 @@ public interface PaymentMilestoneRepository extends JpaRepository<PaymentMilesto
             @Param("workspaceId") String workspaceId, @Param("status") MilestoneStatus status);
 
     /**
+     * F-0227 — does this campaign already have a milestone waiting to be funded?
+     *
+     * <p>Campaign-level (pool) escrow funding predates the contract/milestone model and binds no
+     * collaboration: {@code EscrowService#initiateFund} sets {@code collaborationId} only in the
+     * {@code milestoneId != null} branch. Once a contract on this campaign has materialised
+     * milestones, a pool fund is money that can never reach them — it does not mark any milestone
+     * funded, so {@code onEscrowFunded} never fires and the signed deal stays at CONTRACTED with
+     * the brand debited. That was F-0222's whole failure chain, reached from the wallet instead
+     * of the deal room.
+     *
+     * <p>PENDING specifically, not "any milestone": a campaign whose milestones are already
+     * FUNDED/RELEASED has nothing left for a pool fund to strand, and refusing there would block
+     * a brand topping up a campaign whose current deals are settled.
+     */
+    @Query(
+            "SELECT COUNT(m) > 0 FROM PaymentMilestone m WHERE m.status = :status "
+                    + "AND m.collaborationId IN (SELECT c.id FROM Collaboration c WHERE c.campaignId = :campaignId)")
+    boolean existsByCampaignIdAndStatus(
+            @Param("campaignId") String campaignId, @Param("status") MilestoneStatus status);
+
+    /**
      * Sum of milestone amounts in a given status across every collaboration owned by a creator.
      * Powers the creator wallet summary's {@code pendingPayouts} (FUNDED, not-yet-released).
      */

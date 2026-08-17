@@ -26,6 +26,7 @@ import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.DeliverableType;
 import com.influora.domain.enums.EscrowStatus;
+import com.influora.domain.enums.MilestoneStatus;
 import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.ReleaseCondition;
 import com.influora.domain.enums.UserType;
@@ -561,6 +562,65 @@ class EscrowServiceTest {
         when(ledgerService.post(
                         any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new WalletLedgerService.LedgerPostingResult(debitLeg, creditLeg));
+    }
+
+    @Test
+    @DisplayName(
+            "F-0227: campaign-level pool funding is REFUSED once the campaign has a PENDING"
+                    + " milestone — the money could never reach it")
+    void initiateFundRefusesPoolFundWhenCampaignHasPendingMilestone() {
+        // A pool fund binds no collaboration (initiateFund only sets collaborationId in the
+        // milestoneId branch), so on a campaign with signed deals it debits the brand, marks no
+        // milestone funded, never fires onEscrowFunded, and leaves the deal stuck at CONTRACTED.
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.existsByCampaignIdAndStatus(CAMPAIGN_ID, MilestoneStatus.PENDING))
+                .thenReturn(true);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.initiateFund(
+                                        principal,
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        null,
+                                        BigDecimal.valueOf(50000),
+                                        "INR",
+                                        FUND_IDEMPOTENCY_KEY));
+
+        assertEquals("CAMPAIGN_HAS_UNFUNDED_MILESTONES", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        // Refused BEFORE any money moves: no hold minted, no wallet read.
+        verify(escrowHoldRepository, never()).save(any(EscrowHold.class));
+    }
+
+    @Test
+    @DisplayName(
+            "F-0227: a pool fund is still allowed on a campaign with no PENDING milestone —"
+                    + " the guard must not block pre-contract pool funding")
+    void initiateFundAllowsPoolFundWhenNoPendingMilestone() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.existsByCampaignIdAndStatus(CAMPAIGN_ID, MilestoneStatus.PENDING))
+                .thenReturn(false);
+        when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(walletWithBalance(BigDecimal.valueOf(1000)));
+
+        // Reaches the balance check rather than the F-0227 refusal — that is the proof the guard
+        // did not fire. A pool fund before any contract exists stays legal.
+        InsufficientFundsException ex =
+                assertThrows(
+                        InsufficientFundsException.class,
+                        () ->
+                                service.initiateFund(
+                                        principal,
+                                        WORKSPACE_ID,
+                                        CAMPAIGN_ID,
+                                        null,
+                                        BigDecimal.valueOf(50000),
+                                        "INR",
+                                        FUND_IDEMPOTENCY_KEY));
+        assertEquals("INSUFFICIENT_FUNDS", ex.getCode());
     }
 
     @Test

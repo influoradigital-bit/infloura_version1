@@ -17,6 +17,7 @@ import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.DisputeStatus;
 import com.influora.domain.enums.EscrowStatus;
+import com.influora.domain.enums.MilestoneStatus;
 import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.ReleaseCondition;
 import com.influora.domain.enums.TxnReferenceType;
@@ -206,6 +207,22 @@ public class EscrowService {
         PaymentMilestone milestoneForCollaborationBinding = null;
         if (milestoneId != null && !milestoneId.isBlank()) {
             milestoneForCollaborationBinding = assertContractActiveForMilestone(milestoneId, workspaceId);
+        } else if (milestoneRepository.existsByCampaignIdAndStatus(campaignId, MilestoneStatus.PENDING)) {
+            // [F-0227] Campaign-level pool funding binds no collaboration — see the hold-building
+            // block below. That is harmless before any contract exists, and destructive after: the
+            // money leaves the wallet, no milestone is marked funded, onEscrowFunded never fires,
+            // and a signed deal sits at CONTRACTED with the creator unable to submit. This is
+            // F-0222's failure chain reached from /brand/wallet instead of the deal room, and
+            // closing F-0222 with a deal-room control did not close THIS entry point.
+            //
+            // Refused rather than silently redirected: the caller asked to fund a campaign pool and
+            // there is no honest way to guess which of its milestones they meant.
+            throw new ApiException(
+                    "CAMPAIGN_HAS_UNFUNDED_MILESTONES",
+                    "This campaign has signed deals waiting on escrow. Fund those from the deal room's"
+                            + " Payments panel so the money reaches the creator's milestone — a"
+                            + " campaign-level top-up cannot be released to them.",
+                    HttpStatus.CONFLICT);
         }
 
         var existing = escrowHoldRepository.findByIdempotencyKey(idempotencyKey);
