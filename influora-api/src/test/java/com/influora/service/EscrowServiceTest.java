@@ -757,7 +757,7 @@ class EscrowServiceTest {
                         .workspaceId(WORKSPACE_ID)
                         .totalAmount(BigDecimal.valueOf(5000))
                         .build();
-        halfSigned.recordBrandSignature();
+        halfSigned.recordBrandSignature("Test Brand Owner");
         when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(halfSigned));
 
         ApiException ex =
@@ -794,8 +794,8 @@ class EscrowServiceTest {
                         .workspaceId(WORKSPACE_ID)
                         .totalAmount(requiredAmount)
                         .build();
-        fullySigned.recordBrandSignature();
-        fullySigned.recordCreatorSignature();
+        fullySigned.recordBrandSignature("Test Brand Owner");
+        fullySigned.recordCreatorSignature("Test Creator");
         when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(fullySigned));
         // [CR-22a] assertContractActiveForMilestone now also locks + status-checks the
         // collaboration behind the milestone — must resolve to a non-CANCELLED row.
@@ -846,8 +846,8 @@ class EscrowServiceTest {
                         .workspaceId(WORKSPACE_ID)
                         .totalAmount(requiredAmount)
                         .build();
-        fullySigned.recordBrandSignature();
-        fullySigned.recordCreatorSignature();
+        fullySigned.recordBrandSignature("Test Brand Owner");
+        fullySigned.recordCreatorSignature("Test Creator");
         when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(fullySigned));
         Collaboration cancelled =
                 Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");

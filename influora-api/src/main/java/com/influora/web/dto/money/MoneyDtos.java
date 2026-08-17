@@ -205,6 +205,12 @@ public final class MoneyDtos {
     // Contracts + milestones
     // ---------------------------------------------------------------------
 
+    /**
+     * [F-0292] {@code brandSignerName}/{@code creatorSignerName} surface the typed full name
+     * each party signed with, so the UI can show who actually signed instead of only a
+     * timestamp -- the name is the value the e-sign copy calls legally binding, and previously
+     * had no read path back to the client at all.
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ContractResponse(
             String id,
@@ -216,7 +222,9 @@ public final class MoneyDtos {
             String currency,
             String pdfR2Key,
             Instant brandSignedAt,
+            String brandSignerName,
             Instant creatorSignedAt,
+            String creatorSignerName,
             LocalDate effectiveDate,
             LocalDate expirationDate,
             List<MilestoneDto> milestones,
@@ -264,7 +272,7 @@ public final class MoneyDtos {
     public record ContractPdfDownloadResponse(String downloadUrl, Instant expiresAt) {}
 
     /**
-     * `role` is now OPTIONAL (brand-feature-audit.md #2 fix). The FE's real call path
+     * `role` is OPTIONAL (brand-feature-audit.md #2 fix). The FE's real call path
      * (`api.ts:1466` -> `signContract` -> {@code POST /contracts/:id/sign}) sends only
      * {@code {name, agreedAt}} -- no `role` -- for a brand principal self-signing their own
      * contract. Requiring `role` here 400'd every brand signature. {@link
@@ -272,8 +280,20 @@ public final class MoneyDtos {
      * authenticated principal's own userType and only falls back to this field for the
      * (currently FE-unused) elevated-member relay path documented on {@link
      * com.influora.service.ContractService#recordSignature}.
+     *
+     * <p><b>[F-0292, signature-name-discarded-server-side]</b> {@code name} and {@code
+     * agreedAt} were previously accepted from the wire and silently dropped -- this record had
+     * no fields for them, so Jackson discarded both. The brand (and creator) e-sign UI gates its
+     * Sign button on a non-empty typed full name and tells the user that typing it and clicking
+     * "Sign Contract" is the legally binding act under the IT Act 2000
+     * ({@code contracts-and-deliverables.tsx}); the value that copy names as binding must
+     * actually be kept. {@code name} is now read and persisted (see {@link
+     * com.influora.domain.entity.Contract#recordBrandSignature(String)}). {@code agreedAt} is
+     * accepted for completeness but is NOT trusted as authoritative -- the server still stamps
+     * its own {@code Instant.now()} for {@code brand_signed_at}/{@code creator_signed_at}; a
+     * client clock is not evidence of when a signature actually happened.
      */
-    public record ContractSignRequest(String role) {}
+    public record ContractSignRequest(String role, String name, Instant agreedAt) {}
 
     // ---------------------------------------------------------------------
     // Payouts (Razorpay)

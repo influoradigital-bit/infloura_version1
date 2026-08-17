@@ -525,7 +525,11 @@ public class ContractService {
      */
     @Transactional
     public ContractResponse recordSignature(
-            AuthPrincipal principal, String workspaceId, String contractId, String role) {
+            AuthPrincipal principal,
+            String workspaceId,
+            String contractId,
+            String role,
+            String signerName) {
         WorkspaceMember member = brandContext.requireMember(principal, workspaceId);
         Contract contract = requireContract(contractId, workspaceId);
 
@@ -554,7 +558,10 @@ public class ContractService {
         String signKey = "contract-sign:" + contractId + ":" + (isBrand ? "BRAND" : "CREATOR");
         try {
             return idempotencyService.executeOnce(
-                    signKey, workspaceId, "contract.sign", () -> doRecordSignature(contract, isBrand));
+                    signKey,
+                    workspaceId,
+                    "contract.sign",
+                    () -> doRecordSignature(contract, isBrand, signerName, principal.getUserId()));
         } catch (IdempotencyService.AlreadyInProgressException
                 | IdempotencyService.AlreadyCompletedException raced) {
             // Lost the race to a concurrent same-role sign of the same contract -- re-read and
@@ -568,12 +575,14 @@ public class ContractService {
 
     /**
      * Creator-authenticated signature — records the CREATOR role only, scoped via {@link
-     * #requireContractForCreator}. The request body is ignored (creators cannot self-attribute as
-     * BRAND). Idempotency and PDF delivery reuse the same {@link #doRecordSignature} path as the
-     * brand relay flow.
+     * #requireContractForCreator}. The role in the request body is ignored (creators cannot
+     * self-attribute as BRAND) but {@code signerName} (F-0292) is still the creator's own typed
+     * full name and is persisted. Idempotency and PDF delivery reuse the same {@link
+     * #doRecordSignature} path as the brand relay flow.
      */
     @Transactional
-    public ContractResponse recordSignatureForCreator(AuthPrincipal principal, String contractId) {
+    public ContractResponse recordSignatureForCreator(
+            AuthPrincipal principal, String contractId, String signerName) {
         creatorContext.requireCreator(principal);
         Contract contract = requireContractForCreator(contractId, principal.getUserId());
 
@@ -583,7 +592,7 @@ public class ContractService {
                     signKey,
                     contract.getWorkspaceId(),
                     "contract.sign",
-                    () -> doRecordSignature(contract, false));
+                    () -> doRecordSignature(contract, false, signerName, principal.getUserId()));
         } catch (IdempotencyService.AlreadyInProgressException
                 | IdempotencyService.AlreadyCompletedException raced) {
             Contract refreshed = requireContractForCreator(contractId, principal.getUserId());
@@ -616,7 +625,8 @@ public class ContractService {
      * from here (a contract implies at least {@code CONTRACT_PENDING}, which is past the CR-22a
      * cut line).
      */
-    private ContractResponse doRecordSignature(Contract contract, boolean isBrand) {
+    private ContractResponse doRecordSignature(
+            Contract contract, boolean isBrand, String signerName, String actorId) {
         boolean alreadySignedByThisRole =
                 isBrand ? contract.getBrandSignedAt() != null : contract.getCreatorSignedAt() != null;
         if (alreadySignedByThisRole) {
@@ -645,9 +655,9 @@ public class ContractService {
         }
 
         if (isBrand) {
-            contract.recordBrandSignature();
+            contract.recordBrandSignature(signerName);
         } else {
-            contract.recordCreatorSignature();
+            contract.recordCreatorSignature(signerName);
         }
         contractRepository.save(contract);
 
@@ -976,7 +986,9 @@ public class ContractService {
                 contract.getCurrency(),
                 contract.getPdfR2Key(),
                 contract.getBrandSignedAt(),
+                contract.getBrandSignerName(),
                 contract.getCreatorSignedAt(),
+                contract.getCreatorSignerName(),
                 contract.getEffectiveDate(),
                 contract.getExpirationDate(),
                 milestoneDtos,

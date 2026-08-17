@@ -34,8 +34,8 @@ class ContractPdfServiceTest {
                         .effectiveDate(LocalDate.of(2026, 7, 1))
                         .expirationDate(LocalDate.of(2026, 8, 1))
                         .build();
-        contract.recordBrandSignature();
-        contract.recordCreatorSignature();
+        contract.recordBrandSignature("Test Brand Owner");
+        contract.recordCreatorSignature("Test Creator");
 
         Campaign campaign =
                 Campaign.builder()

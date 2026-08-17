@@ -574,7 +574,7 @@ class ContractServiceTest {
                         ApiException.class,
                         () ->
                                 service.recordSignature(
-                                        principal, OTHER_WORKSPACE_ID, CONTRACT_ID, "BRAND"));
+                                        principal, OTHER_WORKSPACE_ID, CONTRACT_ID, "BRAND", "Test Signer"));
 
         assertEquals("CONTRACT_NOT_FOUND", ex.getCode());
         assertEquals(404, ex.getStatus().value());
@@ -594,13 +594,51 @@ class ContractServiceTest {
         mockIdempotencyExecuteOnce();
 
         ContractResponse response =
-                service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "BRAND");
+                service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "BRAND", "Test Brand Owner");
 
         assertNotNull(response.brandSignedAt());
         assertEquals(null, response.creatorSignedAt());
+        // [F-0292, signature-name-discarded-server-side] the typed signer name from the request
+        // must survive onto the persisted entity, not just the timestamp.
+        assertEquals("Test Brand Owner", response.brandSignerName());
+        assertEquals("Test Brand Owner", contract.getBrandSignerName());
         verify(contractRepository, times(1)).save(contract);
         verifyNoInteractions(contractPdfService);
         verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /**
+     * [F-0292, signature-name-discarded-server-side] The brand e-sign UI
+     * (contracts-and-deliverables.tsx) tells the user typing their full name and clicking "Sign
+     * Contract" is the legally binding act under the IT Act 2000, and sends {@code {name,
+     * agreedAt}} on the wire. This proves that name actually reaches the persisted {@link
+     * Contract} entity via {@link ContractService#recordSignature} -- not merely the response DTO
+     * (a mocked repository would let a response-only fix through undetected) -- by asserting
+     * directly on the entity object passed to {@code contractRepository.save}.
+     */
+    @Test
+    @DisplayName(
+            "F-0292: the signer's typed full name survives from the sign request onto the"
+                    + " persisted Contract entity, not just the response")
+    void testSignerNameSurvivesToPersistedEntity() {
+        Contract contract = unsignedContract();
+        assertEquals(null, contract.getBrandSignerName());
+        when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(contract));
+        when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
+        mockIdempotencyExecuteOnce();
+
+        service.recordSignature(
+                principal, WORKSPACE_ID, CONTRACT_ID, "BRAND", "Priya Sharma, Founder");
+
+        ArgumentCaptor<Contract> saved = ArgumentCaptor.forClass(Contract.class);
+        verify(contractRepository, times(1)).save(saved.capture());
+        assertEquals("Priya Sharma, Founder", saved.getValue().getBrandSignerName());
+        // The server's own clock stamps brandSignedAt, never a client-supplied timestamp.
+        assertNotNull(saved.getValue().getBrandSignedAt());
     }
 
     /**
@@ -626,7 +664,7 @@ class ContractServiceTest {
         ApiException ex =
                 assertThrows(
                         ApiException.class,
-                        () -> service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "BRAND"));
+                        () -> service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "BRAND", "Test Brand Owner"));
 
         assertEquals("COLLABORATION_CANCELLED", ex.getCode());
         assertEquals(409, ex.getStatus().value());
@@ -640,7 +678,7 @@ class ContractServiceTest {
                     + " no-op -- does NOT re-touch the entity, save, or re-fire PDF/email delivery")
     void testRetriedBrandSignatureIsNoOp() {
         Contract contract = unsignedContract();
-        contract.recordBrandSignature(); // simulate the first, already-succeeded call
+        contract.recordBrandSignature("Test Brand Owner"); // simulate the first, already-succeeded call
         when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
@@ -648,7 +686,7 @@ class ContractServiceTest {
         mockIdempotencyExecuteOnce();
 
         ContractResponse response =
-                service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "BRAND");
+                service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "BRAND", "Test Brand Owner");
 
         assertNotNull(response.brandSignedAt());
         // The guard short-circuits BEFORE contractRepository.save -- never re-persisted.
@@ -662,7 +700,7 @@ class ContractServiceTest {
                     + " now CREATOR signs) generates and delivers the PDF exactly once")
     void testSecondRoleCompletesSignatureAndFiresPdfOnce() {
         Contract contract = unsignedContract();
-        contract.recordBrandSignature(); // brand already signed in a prior call
+        contract.recordBrandSignature("Test Brand Owner"); // brand already signed in a prior call
         when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(contract));
         PaymentMilestone milestone =
@@ -689,7 +727,7 @@ class ContractServiceTest {
         mockIdempotencyExecuteOnce();
 
         ContractResponse response =
-                service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "CREATOR");
+                service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Test Creator");
 
         assertNotNull(response.brandSignedAt());
         assertNotNull(response.creatorSignedAt());
@@ -704,8 +742,8 @@ class ContractServiceTest {
                     + " idempotent no-op -- PDF/email delivery is never re-fired a second time")
     void testRetriedSignatureAfterFullyExecutedIsNoOp() {
         Contract contract = unsignedContract();
-        contract.recordBrandSignature();
-        contract.recordCreatorSignature();
+        contract.recordBrandSignature("Test Brand Owner");
+        contract.recordCreatorSignature("Test Creator");
         when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
@@ -713,7 +751,7 @@ class ContractServiceTest {
         mockIdempotencyExecuteOnce();
 
         ContractResponse response =
-                service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "CREATOR");
+                service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Test Creator");
 
         assertEquals(ContractStatus.ACTIVE, response.status());
         verify(contractRepository, never()).save(any());
@@ -730,7 +768,7 @@ class ContractServiceTest {
         ApiException ex =
                 assertThrows(
                         ApiException.class,
-                        () -> service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "MANAGER"));
+                        () -> service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "MANAGER", "Test Signer"));
 
         assertEquals("INVALID_SIGNER_ROLE", ex.getCode());
         assertEquals(400, ex.getStatus().value());
@@ -745,7 +783,7 @@ class ContractServiceTest {
         ApiException ex =
                 assertThrows(
                         ApiException.class,
-                        () -> service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "BRAND"));
+                        () -> service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "BRAND", "Test Brand Owner"));
 
         assertEquals("CONTRACT_NOT_FOUND", ex.getCode());
         assertEquals(404, ex.getStatus().value());
@@ -813,7 +851,7 @@ class ContractServiceTest {
     void testCreatorSignsOwnContractAndPromptsEscrow() {
         when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
         Contract contract = unsignedContract();
-        contract.recordBrandSignature();
+        contract.recordBrandSignature("Test Brand Owner");
         when(contractRepository.findByIdAndCreatorId(CONTRACT_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
@@ -832,10 +870,13 @@ class ContractServiceTest {
                 .thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
 
-        ContractResponse response = service.recordSignatureForCreator(principal, CONTRACT_ID);
+        ContractResponse response = service.recordSignatureForCreator(principal, CONTRACT_ID, "Test Creator");
 
         assertNotNull(response.creatorSignedAt());
         assertEquals(ContractStatus.ACTIVE, response.status());
+        // [F-0292] the creator's typed name is persisted too, not just the brand's.
+        assertEquals("Test Creator", response.creatorSignerName());
+        assertEquals("Test Creator", contract.getCreatorSignerName());
         verify(contractRepository, times(1)).save(contract);
         verify(escrowHoldRepository)
                 .hasEscrowForCollaboration(eq(COLLABORATION_ID), any());
@@ -857,7 +898,7 @@ class ContractServiceTest {
     void testCreatorSignSuppressesPromptForMilestoneLinkedFundedHold() {
         when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
         Contract contract = unsignedContract();
-        contract.recordBrandSignature();
+        contract.recordBrandSignature("Test Brand Owner");
         when(contractRepository.findByIdAndCreatorId(CONTRACT_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
@@ -870,7 +911,7 @@ class ContractServiceTest {
                 .thenReturn(true);
         mockIdempotencyExecuteOnce();
 
-        ContractResponse response = service.recordSignatureForCreator(principal, CONTRACT_ID);
+        ContractResponse response = service.recordSignatureForCreator(principal, CONTRACT_ID, "Test Creator");
 
         assertNotNull(response.creatorSignedAt());
         // The notification (owner lookup) path is never reached -- escrow is already funded.
@@ -886,14 +927,14 @@ class ContractServiceTest {
     void testRetriedCreatorSignatureForCreatorIsNoOp() {
         when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
         Contract contract = unsignedContract();
-        contract.recordCreatorSignature();
+        contract.recordCreatorSignature("Test Creator");
         when(contractRepository.findByIdAndCreatorId(CONTRACT_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
                 .thenReturn(List.of());
         mockIdempotencyExecuteOnce();
 
-        ContractResponse response = service.recordSignatureForCreator(principal, CONTRACT_ID);
+        ContractResponse response = service.recordSignatureForCreator(principal, CONTRACT_ID, "Test Creator");
 
         assertNotNull(response.creatorSignedAt());
         verify(contractRepository, never()).save(any());
@@ -912,7 +953,7 @@ class ContractServiceTest {
         ApiException ex =
                 assertThrows(
                         ApiException.class,
-                        () -> service.recordSignatureForCreator(principal, CONTRACT_ID));
+                        () -> service.recordSignatureForCreator(principal, CONTRACT_ID, "Test Creator"));
 
         assertEquals("CONTRACT_NOT_FOUND", ex.getCode());
         assertEquals(404, ex.getStatus().value());
@@ -997,7 +1038,7 @@ class ContractServiceTest {
     void testDualSignaturePublishesEscrowFundingPrompt() {
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         Contract contract = unsignedContract();
-        contract.recordBrandSignature();
+        contract.recordBrandSignature("Test Brand Owner");
         when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
@@ -1018,7 +1059,7 @@ class ContractServiceTest {
                 .thenReturn(Optional.of(owner));
         mockIdempotencyExecuteOnce();
 
-        service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "CREATOR");
+        service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Test Creator");
 
         verify(eventPublisher).publishEvent(any(ContractReadyForEscrowEvent.class));
     }

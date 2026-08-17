@@ -80,8 +80,13 @@ public class ContractController {
             @AuthenticationPrincipal AuthPrincipal principal,
             @PathVariable String contractId,
             @Valid @RequestBody(required = false) ContractSignRequest body) {
+        // [F-0292] The typed full name the e-sign UI calls the legally binding act
+        // (contracts-and-deliverables.tsx) -- carried on the request body as `name`, previously
+        // dropped because ContractSignRequest had no field for it.
+        String signerName = body != null ? body.name() : null;
         if (principal.getUserType() == UserType.CREATOR) {
-            return ApiResponse.ok(contractService.recordSignatureForCreator(principal, contractId));
+            return ApiResponse.ok(
+                    contractService.recordSignatureForCreator(principal, contractId, signerName));
         }
         var workspace = brandContext.requireBrandWorkspace(principal);
         // [Fix: brand-feature-audit.md #2] Server-derive the signer role from the authenticated
@@ -103,7 +108,8 @@ public class ContractController {
                 ? body.role()
                 : "BRAND";
         return ApiResponse.ok(
-                contractService.recordSignature(principal, workspace.getId(), contractId, role));
+                contractService.recordSignature(
+                        principal, workspace.getId(), contractId, role, signerName));
     }
 
     /**

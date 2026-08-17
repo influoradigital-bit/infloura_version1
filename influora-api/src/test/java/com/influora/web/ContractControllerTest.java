@@ -1,6 +1,7 @@
 package com.influora.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -59,7 +60,7 @@ class ContractControllerTest {
     private ContractResponse fakeResponse(ContractStatus status) {
         return new ContractResponse(
                 CONTRACT_ID, "collab-1", WORKSPACE_ID, 1, status,
-                null, "INR", null, null, null, null, null, null, null, null);
+                null, "INR", null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test
@@ -68,18 +69,20 @@ class ContractControllerTest {
         Workspace workspace = mock(Workspace.class);
         when(workspace.getId()).thenReturn(WORKSPACE_ID);
         when(brandContext.requireBrandWorkspace(BRAND_PRINCIPAL)).thenReturn(workspace);
-        when(contractService.recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "BRAND"))
+        when(contractService.recordSignature(
+                        BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "BRAND", "Priya Brand Owner"))
                 .thenReturn(fakeResponse(ContractStatus.PENDING_SIGNATURES));
 
-        // The real FE payload: ContractSignRequest only has a `role` field, and the FE never
-        // populates it (api.ts:1466 sends `{name, agreedAt}` -- fields this DTO doesn't even
-        // declare, discarded by Jackson) -- so `body.role()` is null exactly like production.
-        ContractSignRequest body = new ContractSignRequest(null);
+        // The real FE payload: `{name, agreedAt}`, never `role` (api.ts:1466 -> signContract ->
+        // POST /contracts/:id/sign) -- so `body.role()` is null exactly like production, but
+        // `body.name()` (F-0292) IS the typed signer name and must reach the service call.
+        ContractSignRequest body = new ContractSignRequest(null, "Priya Brand Owner", null);
 
         var response = controller.sign(BRAND_PRINCIPAL, CONTRACT_ID, body);
 
         assertEquals(ContractStatus.PENDING_SIGNATURES, response.data().status());
-        verify(contractService).recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "BRAND");
+        verify(contractService)
+                .recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "BRAND", "Priya Brand Owner");
     }
 
     @Test
@@ -88,13 +91,13 @@ class ContractControllerTest {
         Workspace workspace = mock(Workspace.class);
         when(workspace.getId()).thenReturn(WORKSPACE_ID);
         when(brandContext.requireBrandWorkspace(BRAND_PRINCIPAL)).thenReturn(workspace);
-        when(contractService.recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "BRAND"))
+        when(contractService.recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "BRAND", null))
                 .thenReturn(fakeResponse(ContractStatus.PENDING_SIGNATURES));
 
         var response = controller.sign(BRAND_PRINCIPAL, CONTRACT_ID, null);
 
         assertEquals(ContractStatus.PENDING_SIGNATURES, response.data().status());
-        verify(contractService).recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "BRAND");
+        verify(contractService).recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "BRAND", null);
     }
 
     @Test
@@ -103,28 +106,35 @@ class ContractControllerTest {
         Workspace workspace = mock(Workspace.class);
         when(workspace.getId()).thenReturn(WORKSPACE_ID);
         when(brandContext.requireBrandWorkspace(BRAND_PRINCIPAL)).thenReturn(workspace);
-        when(contractService.recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "CREATOR"))
+        when(contractService.recordSignature(
+                        BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Real Creator Name"))
                 .thenReturn(fakeResponse(ContractStatus.ACTIVE));
 
-        ContractSignRequest body = new ContractSignRequest("CREATOR");
+        ContractSignRequest body = new ContractSignRequest("CREATOR", "Real Creator Name", null);
 
         var response = controller.sign(BRAND_PRINCIPAL, CONTRACT_ID, body);
 
         assertEquals(ContractStatus.ACTIVE, response.data().status());
-        verify(contractService).recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "CREATOR");
+        verify(contractService)
+                .recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Real Creator Name");
     }
 
     @Test
-    @DisplayName("creator sign is unaffected -- still routes to recordSignatureForCreator, body ignored")
+    @DisplayName("creator sign is unaffected -- still routes to recordSignatureForCreator, name now passed through")
     void creatorSign_stillRoutesToRecordSignatureForCreator() {
-        when(contractService.recordSignatureForCreator(CREATOR_PRINCIPAL, CONTRACT_ID))
+        when(contractService.recordSignatureForCreator(CREATOR_PRINCIPAL, CONTRACT_ID, "Real Creator Name"))
                 .thenReturn(fakeResponse(ContractStatus.ACTIVE));
 
-        var response = controller.sign(CREATOR_PRINCIPAL, CONTRACT_ID, new ContractSignRequest(null));
+        var response =
+                controller.sign(
+                        CREATOR_PRINCIPAL,
+                        CONTRACT_ID,
+                        new ContractSignRequest(null, "Real Creator Name", null));
 
         assertEquals(ContractStatus.ACTIVE, response.data().status());
-        verify(contractService).recordSignatureForCreator(CREATOR_PRINCIPAL, CONTRACT_ID);
-        verify(contractService, never()).recordSignature(eq(CREATOR_PRINCIPAL), eq(WORKSPACE_ID), eq(CONTRACT_ID), eq("CREATOR"));
+        verify(contractService).recordSignatureForCreator(CREATOR_PRINCIPAL, CONTRACT_ID, "Real Creator Name");
+        verify(contractService, never())
+                .recordSignature(eq(CREATOR_PRINCIPAL), eq(WORKSPACE_ID), eq(CONTRACT_ID), eq("CREATOR"), anyString());
         verify(brandContext, never()).requireBrandWorkspace(CREATOR_PRINCIPAL);
     }
 }

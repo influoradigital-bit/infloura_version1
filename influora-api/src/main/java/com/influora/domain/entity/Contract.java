@@ -51,8 +51,20 @@ public class Contract {
     @Column(name = "brand_signed_at")
     private Instant brandSignedAt;
 
+    // [F-0292, signature-name-discarded-server-side] The typed full name each party signed
+    // with -- the e-sign UI (contracts-and-deliverables.tsx) tells the user typing this name
+    // and clicking "Sign Contract" is the legally binding act under the IT Act 2000, but the
+    // server previously had nowhere to keep it (ContractSignRequest had no `name` field), so it
+    // was discarded on every signature. Nullable: pre-existing signed contracts have no name on
+    // file and must not be fabricated one.
+    @Column(name = "brand_signer_name", length = 255)
+    private String brandSignerName;
+
     @Column(name = "creator_signed_at")
     private Instant creatorSignedAt;
+
+    @Column(name = "creator_signer_name", length = 255)
+    private String creatorSignerName;
 
     @Column(name = "effective_date")
     private LocalDate effectiveDate;
@@ -113,8 +125,16 @@ public class Contract {
         return brandSignedAt;
     }
 
+    public String getBrandSignerName() {
+        return brandSignerName;
+    }
+
     public Instant getCreatorSignedAt() {
         return creatorSignedAt;
+    }
+
+    public String getCreatorSignerName() {
+        return creatorSignerName;
     }
 
     public LocalDate getEffectiveDate() {
@@ -133,14 +153,35 @@ public class Contract {
         return updatedAt;
     }
 
-    public void recordBrandSignature() {
+    /**
+     * @param signerName the typed full name the brand signed with (F-0292). {@code
+     *     brandSignedAt} is always stamped with the server's own {@code Instant.now()} --
+     *     never a client-supplied timestamp, which is not evidence of when a signature actually
+     *     happened. {@code signerName} is only written when non-blank, so a caller that cannot
+     *     supply one (defensive callers, not any real path today) does not clobber a
+     *     previously-recorded name with null.
+     */
+    public void recordBrandSignature(String signerName) {
         this.brandSignedAt = Instant.now();
+        if (signerName != null && !signerName.isBlank()) {
+            this.brandSignerName = signerName;
+        }
         advanceIfFullySigned();
         touch();
     }
 
-    public void recordCreatorSignature() {
+    /**
+     * @param signerName the typed full name recorded for the creator's signature (F-0292) --
+     *     either the creator's own typed name (creator-authenticated sign) or the name supplied
+     *     by an elevated brand member relaying the creator's out-of-band assent (see {@link
+     *     com.influora.service.ContractService#recordSignature}). Same non-blank write guard as
+     *     {@link #recordBrandSignature(String)}.
+     */
+    public void recordCreatorSignature(String signerName) {
         this.creatorSignedAt = Instant.now();
+        if (signerName != null && !signerName.isBlank()) {
+            this.creatorSignerName = signerName;
+        }
         advanceIfFullySigned();
         touch();
     }
