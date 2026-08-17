@@ -24,7 +24,10 @@ public final class CreatorApplicationMapper {
                 campaign != null ? campaign.getTitle() : null,
                 workspace != null ? workspace.getName() : null,
                 workspace != null ? workspace.getLogoUrl() : null,
-                collaboration.getCreatedAt(),
+                // F-0225 — `appliedAt`, not `createdAt`: after a withdraw-then-re-apply the row is
+                // revived rather than recreated, so `createdAt` is the date of the attempt the
+                // creator already withdrew. This field is the creator-facing "Applied" date.
+                collaboration.getAppliedAt(),
                 collaboration.getStatus().name(),
                 statusLabel(collaboration.getStatus()),
                 collaboration.getAgreedRate(),

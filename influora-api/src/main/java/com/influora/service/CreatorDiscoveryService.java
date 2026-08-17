@@ -14,6 +14,7 @@ import com.influora.domain.entity.PlatformStat;
 import com.influora.domain.entity.Review;
 import com.influora.domain.entity.SavedCreator;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ReviewerType;
 import com.influora.repository.CampaignRepository;
@@ -97,6 +98,8 @@ public class CreatorDiscoveryService {
     private final CreatorScoreRepository creatorScoreRepository;
     private final ReviewRepository reviewRepository;
     private final PortfolioService portfolioService;
+    /** F-0225 — shared revive decision; see CollaborationReviveService. */
+    private final CollaborationReviveService collaborationReviveService;
 
     public CreatorDiscoveryService(
             BrandContextService brandContext,
@@ -108,7 +111,8 @@ public class CreatorDiscoveryService {
             FeaturedCreatorRepository featuredCreatorRepository,
             CreatorScoreRepository creatorScoreRepository,
             ReviewRepository reviewRepository,
-            PortfolioService portfolioService) {
+            PortfolioService portfolioService,
+            CollaborationReviveService collaborationReviveService) {
         this.brandContext = brandContext;
         this.creatorProfileRepository = creatorProfileRepository;
         this.platformStatRepository = platformStatRepository;
@@ -119,6 +123,7 @@ public class CreatorDiscoveryService {
         this.creatorScoreRepository = creatorScoreRepository;
         this.reviewRepository = reviewRepository;
         this.portfolioService = portfolioService;
+        this.collaborationReviveService = collaborationReviveService;
     }
 
     public record PagedCreators(List<CreatorResponse> items, PageMeta meta) {}
@@ -445,12 +450,24 @@ public class CreatorDiscoveryService {
                                                 "CAMPAIGN_NOT_FOUND",
                                                 "Campaign not found",
                                                 HttpStatus.NOT_FOUND));
-        if (collaborationRepository.existsByCampaignIdAndCreatorId(
-                campaign.getId(), profile.getUserId())) {
-            throw new ApiException(
-                    "COLLABORATION_EXISTS",
-                    "This creator has already been invited to this campaign",
-                    HttpStatus.CONFLICT);
+        // F-0225 — brand mirror of the creator-side apply guard. This was status-blind, so once a
+        // collaboration with this creator had been withdrawn (CANCELLED, row retained) the brand
+        // could never invite them to this campaign again — the "already on this campaign" toast
+        // fired against a deal both sides had abandoned. UNIQUE(campaign_id, creator_id) rules out
+        // simply inserting a second row, so the existing one is revived. See Collaboration#revive
+        // for why CANCELLED is the only status this is safe for.
+        Collaboration prior =
+                collaborationReviveService.reviveOrRefuse(
+                        campaign.getId(),
+                        profile.getUserId(),
+                        CollaborationStatus.INVITED,
+                        CollaborationSource.INVITATION,
+                        message,
+                        campaign.getCurrency(),
+                        "COLLABORATION_EXISTS",
+                        "This creator has already been invited to this campaign");
+        if (prior != null) {
+            return new InviteResponse(prior.getId(), prior.getStatus().name(), prior.getAppliedAt());
         }
         Collaboration collaboration =
                 Collaboration.invite(
@@ -470,7 +487,7 @@ public class CreatorDiscoveryService {
         return new InviteResponse(
                 collaboration.getId(),
                 collaboration.getStatus().name(),
-                collaboration.getCreatedAt());
+                collaboration.getAppliedAt());
     }
 
     private CreatorResponse toResponseForWorkspace(Workspace workspace, CreatorProfile profile) {

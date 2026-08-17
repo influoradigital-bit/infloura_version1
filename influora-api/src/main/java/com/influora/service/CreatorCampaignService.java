@@ -9,6 +9,8 @@ import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CampaignStatus;
+import com.influora.domain.enums.CollaborationSource;
+import com.influora.domain.enums.CollaborationStatus;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CampaignSpecs;
 import com.influora.repository.CollaborationRepository;
@@ -55,6 +57,8 @@ public class CreatorCampaignService {
     private final CreatorContextService creatorContext;
     private final BrandContextService brandContext;
     private final ApplicationEventPublisher eventPublisher;
+    /** F-0225 — the shared "may this pair start again?" decision. See the service's javadoc. */
+    private final CollaborationReviveService collaborationReviveService;
 
     public CreatorCampaignService(
             CampaignRepository campaignRepository,
@@ -62,13 +66,15 @@ public class CreatorCampaignService {
             WorkspaceRepository workspaceRepository,
             CreatorContextService creatorContext,
             BrandContextService brandContext,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            CollaborationReviveService collaborationReviveService) {
         this.campaignRepository = campaignRepository;
         this.collaborationRepository = collaborationRepository;
         this.workspaceRepository = workspaceRepository;
         this.creatorContext = creatorContext;
         this.brandContext = brandContext;
         this.eventPublisher = eventPublisher;
+        this.collaborationReviveService = collaborationReviveService;
     }
 
     public record PagedCreatorCampaigns(List<CreatorCampaignListItem> items, PageMeta meta) {}
@@ -171,10 +177,35 @@ public class CreatorCampaignService {
                     "The application deadline for this campaign has passed",
                     HttpStatus.CONFLICT);
         }
-        if (collaborationRepository.existsByCampaignIdAndCreatorId(
-                campaign.getId(), creator.getUserId())) {
-            throw new ApiException(
-                    "ALREADY_APPLIED", "You have already applied to this campaign", HttpStatus.CONFLICT);
+        // F-0225 — this used to be a status-blind `existsBy...` check, so a WITHDRAWN application
+        // (which leaves the row behind as CANCELLED rather than deleting it) blocked the creator
+        // from ever applying to this campaign again. Relaxing the check alone would not have
+        // worked either: UNIQUE(campaign_id, creator_id) means the insert below has no second row
+        // to take. The existing row is revived instead. The decision lives in
+        // CollaborationReviveService because three other call sites share it — including WHY a
+        // CANCELLED row still has to be checked for attached contracts/escrow/shipments rather
+        // than trusting canReject() to imply their absence.
+        Collaboration prior =
+                collaborationReviveService.reviveOrRefuse(
+                        campaign.getId(),
+                        creator.getUserId(),
+                        CollaborationStatus.APPLIED,
+                        CollaborationSource.APPLICATION,
+                        req != null ? req.message() : null,
+                        campaign.getCurrency(),
+                        "ALREADY_APPLIED",
+                        "You have already applied to this campaign");
+        if (prior != null) {
+            try {
+                notifyApplicationCreated(campaign, creator, prior);
+            } catch (RuntimeException e) {
+                log.error(
+                        "ApplicationCreatedEvent notification failed for revived collaboration {} —"
+                                + " the re-application itself already succeeded",
+                        prior.getId(),
+                        e);
+            }
+            return new ApplyResponse(prior.getId(), prior.getStatus().name(), prior.getAppliedAt());
         }
 
         Collaboration collaboration =
@@ -205,7 +236,7 @@ public class CreatorCampaignService {
         }
 
         return new ApplyResponse(
-                collaboration.getId(), collaboration.getStatus().name(), collaboration.getCreatedAt());
+                collaboration.getId(), collaboration.getStatus().name(), collaboration.getAppliedAt());
     }
 
     private void notifyApplicationCreated(

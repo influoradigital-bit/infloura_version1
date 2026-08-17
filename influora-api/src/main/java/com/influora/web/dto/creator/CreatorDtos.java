@@ -60,5 +60,12 @@ public final class CreatorDtos {
 
     public record InviteRequest(@NotBlank String campaignId, String message) {}
 
-    public record InviteResponse(String collaborationId, String status, Instant createdAt) {}
+    /**
+     * F-0225 — the last field is {@code appliedAt}, not {@code createdAt}. A re-invite revives the
+     * existing collaboration rather than inserting one, so the row's {@code created_at} is the
+     * date of the engagement that was already withdrawn; {@code applied_at} is when THIS invitation
+     * started. Named to match {@code CreatorCampaignDtos.ApplyResponse.appliedAt}, which the
+     * creator side has always used.
+     */
+    public record InviteResponse(String collaborationId, String status, Instant appliedAt) {}
 }

@@ -14,6 +14,7 @@ import com.influora.domain.entity.DealMessage;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
+import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.DealMessageKind;
@@ -82,6 +83,8 @@ public class DealService {
     private static final int MESSAGE_PAGE_SIZE = 50;
 
     private final CollaborationRepository collaborationRepository;
+    /** F-0225 — shared revive decision; see CollaborationReviveService. */
+    private final CollaborationReviveService collaborationReviveService;
     private final DealMessageRepository dealMessageRepository;
     private final CampaignRepository campaignRepository;
     private final CreatorProfileRepository creatorProfileRepository;
@@ -108,8 +111,10 @@ public class DealService {
             BrandContextService brandContext,
             IdempotencyService idempotencyService,
             ApplicationEventPublisher eventPublisher,
-            DealMessageStreamRegistry messageStreamRegistry) {
+            DealMessageStreamRegistry messageStreamRegistry,
+            CollaborationReviveService collaborationReviveService) {
         this.collaborationRepository = collaborationRepository;
+        this.collaborationReviveService = collaborationReviveService;
         this.dealMessageRepository = dealMessageRepository;
         this.campaignRepository = campaignRepository;
         this.creatorProfileRepository = creatorProfileRepository;
@@ -202,33 +207,54 @@ public class DealService {
         CreatorProfile creator = requireOfferableProfile(body.creatorId());
         validateProposalAmount(campaign, body.amount());
 
-        if (collaborationRepository.existsByCampaignIdAndCreatorId(
-                campaign.getId(), creator.getUserId())) {
-            throw new ApiException(
-                    "COLLABORATION_EXISTS",
-                    "A deal already exists for this campaign and creator",
-                    HttpStatus.CONFLICT);
-        }
-
-        Collaboration collaboration =
-                Collaboration.propose(
-                        Ulids.newUlid(),
+        // F-0225 — was a status-blind existsBy..., so a withdrawn deal blocked the brand from ever
+        // re-offering on this campaign. Shares the decision with apply/invite rather than keeping a
+        // fourth copy of it: the CANCELLED-but-encumbered case is far too dangerous to duplicate.
+        // Revives to IN_NEGOTIATION/INVITATION, matching Collaboration.propose's own status/source
+        // pair below, then applies this path's own terms (amount, usage rights) via the existing
+        // updateAgreedRate/setUsageRights calls.
+        Collaboration revived =
+                collaborationReviveService.reviveOrRefuse(
                         campaign.getId(),
                         creator.getUserId(),
-                        body.amount(),
+                        CollaborationStatus.IN_NEGOTIATION,
+                        CollaborationSource.INVITATION,
+                        body.message(),
                         campaign.getCurrency(),
-                        body.message());
-        // A7-U1 — persist the submitted usage-rights terms instead of silently dropping them.
-        if (body.usageRights() != null && !body.usageRights().isBlank()) {
-            collaboration.setUsageRights(TextSanitizer.sanitizePlainText(body.usageRights()));
-        }
-        try {
+                        "COLLABORATION_EXISTS",
+                        "A deal already exists for this campaign and creator");
+        Collaboration collaboration;
+        if (revived != null) {
+            // revive() cleared the withdrawn attempt's rate and usage rights; this proposal's own
+            // terms go on now. Sanitised here for the same reason the insert branch sanitises —
+            // setUsageRights does not do it itself.
+            collaboration = revived;
+            collaboration.updateAgreedRate(body.amount());
+            if (body.usageRights() != null && !body.usageRights().isBlank()) {
+                collaboration.setUsageRights(TextSanitizer.sanitizePlainText(body.usageRights()));
+            }
             collaborationRepository.save(collaboration);
-        } catch (DataIntegrityViolationException ex) {
-            throw new ApiException(
-                    "COLLABORATION_EXISTS",
-                    "A deal already exists for this campaign and creator",
-                    HttpStatus.CONFLICT);
+        } else {
+            collaboration =
+                    Collaboration.propose(
+                            Ulids.newUlid(),
+                            campaign.getId(),
+                            creator.getUserId(),
+                            body.amount(),
+                            campaign.getCurrency(),
+                            body.message());
+            // A7-U1 — persist the submitted usage-rights terms instead of silently dropping them.
+            if (body.usageRights() != null && !body.usageRights().isBlank()) {
+                collaboration.setUsageRights(TextSanitizer.sanitizePlainText(body.usageRights()));
+            }
+            try {
+                collaborationRepository.save(collaboration);
+            } catch (DataIntegrityViolationException ex) {
+                throw new ApiException(
+                        "COLLABORATION_EXISTS",
+                        "A deal already exists for this campaign and creator",
+                        HttpStatus.CONFLICT);
+            }
         }
 
         persistProposalMessage(

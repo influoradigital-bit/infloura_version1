@@ -76,7 +76,10 @@ public class CreatorApplicationService {
         }
 
         List<Collaboration> sorted =
-                all.stream().sorted(Comparator.comparing(Collaboration::getCreatedAt).reversed()).toList();
+                // F-0225 — sort on appliedAt, matching the date this list actually displays. A
+                // revived (withdraw-then-re-apply) row otherwise sorts by the abandoned attempt's
+                // date and sinks to the bottom of the creator's list.
+                all.stream().sorted(Comparator.comparing(Collaboration::getAppliedAt).reversed()).toList();
 
         int safePage = Math.max(1, page);
         int safeLimit = Math.min(Math.max(1, limit), MAX_LIMIT);

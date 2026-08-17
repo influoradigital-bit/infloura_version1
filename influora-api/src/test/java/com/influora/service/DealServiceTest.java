@@ -89,6 +89,8 @@ class DealServiceTest {
     @Mock private AuthPrincipal creatorPrincipal;
     @Mock private AuthPrincipal brandPrincipal;
 
+    @Mock private com.influora.repository.ShipmentRepository shipmentRepository;
+
     private DealService service;
 
     @BeforeEach
@@ -107,7 +109,14 @@ class DealServiceTest {
                         brandContext,
                         idempotencyService,
                         eventPublisher,
-                        messageStreamRegistry);
+                        messageStreamRegistry,
+                        // F-0225 — real revive service, mocked repositories (contract/escrow are
+                        // already mocked on this harness; shipment is new).
+                        new CollaborationReviveService(
+                                collaborationRepository,
+                                contractRepository,
+                                escrowHoldRepository,
+                                shipmentRepository));
     }
 
     private static Collaboration invitedDeal() {

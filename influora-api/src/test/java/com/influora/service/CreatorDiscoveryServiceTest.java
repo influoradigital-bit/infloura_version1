@@ -72,6 +72,10 @@ class CreatorDiscoveryServiceTest {
     @Mock private CreatorScoreRepository creatorScoreRepository;
     @Mock private ReviewRepository reviewRepository;
     @Mock private PortfolioService portfolioService;
+    // F-0225 — real revive service, mocked repositories. See CreatorCampaignServiceTest.
+    @Mock private com.influora.repository.ContractRepository contractRepository;
+    @Mock private com.influora.repository.EscrowHoldRepository escrowHoldRepository;
+    @Mock private com.influora.repository.ShipmentRepository shipmentRepository;
     @Mock private AuthPrincipal principal;
 
     private CreatorDiscoveryService service;
@@ -93,7 +97,12 @@ class CreatorDiscoveryServiceTest {
                         featuredCreatorRepository,
                         creatorScoreRepository,
                         reviewRepository,
-                        portfolioService);
+                        portfolioService,
+                        new CollaborationReviveService(
+                                collaborationRepository,
+                                contractRepository,
+                                escrowHoldRepository,
+                                shipmentRepository));
     }
 
     private Workspace stubWorkspace() {
@@ -137,8 +146,8 @@ class CreatorDiscoveryServiceTest {
         when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(campaign));
 
-        when(collaborationRepository.existsByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
-                .thenReturn(false);
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.empty());
     }
 
     @Test
@@ -155,8 +164,9 @@ class CreatorDiscoveryServiceTest {
         when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(campaign));
 
-        when(collaborationRepository.existsByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
-                .thenReturn(true);
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(
+                        Collaboration.invite("collab_prior", CAMPAIGN_ID, CREATOR_USER_ID, null, "INR")));
 
         ApiException ex =
                 assertThrows(
@@ -166,6 +176,31 @@ class CreatorDiscoveryServiceTest {
         assertEquals("COLLABORATION_EXISTS", ex.getCode());
         assertEquals(409, ex.getStatus().value());
         verify(collaborationRepository, org.mockito.Mockito.never()).save(any(Collaboration.class));
+    }
+
+    @Test
+    @DisplayName("invite: F-0225 -- a WITHDRAWN prior collaboration revives instead of 409-ing")
+    void testInviteRevivesCancelledCollaboration() {
+        stubHappyPathLookups();
+        Collaboration withdrawn =
+                Collaboration.apply("collab_prior", CAMPAIGN_ID, CREATOR_USER_ID, "old note", "INR");
+        withdrawn.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(withdrawn));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        var response = service.invite(principal, CREATOR_PROFILE_ID, CAMPAIGN_ID, "come back?");
+
+        // The defect was the "already on this campaign" 409 firing on an abandoned deal.
+        assertEquals("INVITED", response.status());
+
+        org.mockito.ArgumentCaptor<Collaboration> saved =
+                org.mockito.ArgumentCaptor.forClass(Collaboration.class);
+        verify(collaborationRepository).save(saved.capture());
+        assertEquals(
+                com.influora.domain.enums.CollaborationSource.INVITATION, saved.getValue().getSource());
+        assertEquals("come back?", saved.getValue().getNotes());
     }
 
     @Test

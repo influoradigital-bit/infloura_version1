@@ -62,11 +62,20 @@ class CreatorCampaignServiceTest {
     @Mock private AuthPrincipal principal;
     @Mock private BrandContextService brandContext;
     @Mock private ApplicationEventPublisher eventPublisher;
+    // F-0225 — the revive decision is exercised for real here, with only its repositories mocked.
+    // Mocking CollaborationReviveService itself would stub out the exact logic these tests exist
+    // to hold (revive-vs-409, and the encumbrance refusal).
+    @Mock private com.influora.repository.ContractRepository contractRepository;
+    @Mock private com.influora.repository.EscrowHoldRepository escrowHoldRepository;
+    @Mock private com.influora.repository.ShipmentRepository shipmentRepository;
 
     private CreatorCampaignService service;
 
     @BeforeEach
     void setUp() {
+        CollaborationReviveService reviveService =
+                new CollaborationReviveService(
+                        collaborationRepository, contractRepository, escrowHoldRepository, shipmentRepository);
         service =
                 new CreatorCampaignService(
                         campaignRepository,
@@ -74,7 +83,8 @@ class CreatorCampaignServiceTest {
                         workspaceRepository,
                         creatorContext,
                         brandContext,
-                        eventPublisher);
+                        eventPublisher,
+                        reviveService);
         CreatorProfile creator = CreatorProfile.newForUser("profile1", CREATOR_USER_ID, "Test Creator");
         when(creatorContext.requireCreatorProfile(principal)).thenReturn(creator);
     }
@@ -103,8 +113,8 @@ class CreatorCampaignServiceTest {
     void testApplyHappyPath() {
         Campaign campaign = activeCampaign();
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(java.util.Optional.of(campaign));
-        when(collaborationRepository.existsByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
-                .thenReturn(false);
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(java.util.Optional.empty());
         when(collaborationRepository.save(any(Collaboration.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
@@ -119,8 +129,8 @@ class CreatorCampaignServiceTest {
     void testApplyStripsXssMessage() {
         Campaign campaign = activeCampaign();
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(java.util.Optional.of(campaign));
-        when(collaborationRepository.existsByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
-                .thenReturn(false);
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(java.util.Optional.empty());
         when(collaborationRepository.save(any(Collaboration.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
@@ -136,12 +146,15 @@ class CreatorCampaignServiceTest {
     }
 
     @Test
-    @DisplayName("apply: sequential duplicate (existsBy... true) -> 409 ALREADY_APPLIED, never saves")
+    @DisplayName("apply: duplicate against a LIVE prior application -> 409 ALREADY_APPLIED, never saves")
     void testApplySequentialDuplicateRejected() {
         Campaign campaign = activeCampaign();
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(java.util.Optional.of(campaign));
-        when(collaborationRepository.existsByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
-                .thenReturn(true);
+        // F-0225 — a prior row only blocks re-application while it is still LIVE. CANCELLED is the
+        // one status that revives instead; every other status must still 409, which is this test.
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(java.util.Optional.of(
+                        Collaboration.apply("collab_prior", CAMPAIGN_ID, CREATOR_USER_ID, null, "INR")));
 
         ApiException ex =
                 assertThrows(
@@ -153,14 +166,45 @@ class CreatorCampaignServiceTest {
     }
 
     @Test
+    @DisplayName("apply: F-0225 -- a WITHDRAWN prior application revives instead of 409-ing")
+    void testApplyRevivesCancelledApplication() {
+        Campaign campaign = activeCampaign();
+        Collaboration withdrawn =
+                Collaboration.propose(
+                        "collab_prior", CAMPAIGN_ID, CREATOR_USER_ID, new java.math.BigDecimal("50000"), "INR", "old");
+        withdrawn.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(java.util.Optional.of(campaign));
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(java.util.Optional.of(withdrawn));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        ApplyResponse response = service.apply(principal, CAMPAIGN_ID, new ApplyRequest("second time"));
+
+        // The defect was a permanent 409 here. The row is reused, so the id is the SAME row --
+        // UNIQUE(campaign_id, creator_id) leaves no second one to create.
+        assertEquals("APPLIED", response.status());
+        assertEquals("collab_prior", response.collaborationId());
+
+        org.mockito.ArgumentCaptor<Collaboration> saved =
+                org.mockito.ArgumentCaptor.forClass(Collaboration.class);
+        verify(collaborationRepository).save(saved.capture());
+        assertEquals(
+                com.influora.domain.enums.CollaborationSource.APPLICATION, saved.getValue().getSource());
+        // The withdrawn negotiation's price must not price the new application.
+        assertNull(saved.getValue().getAgreedRate());
+        assertEquals("second time", saved.getValue().getNotes());
+    }
+
+    @Test
     @DisplayName(
             "apply: concurrent race -- existsBy... says false (loser) but save() hits the DB unique"
                     + " constraint -> must surface the same friendly 409, never a raw 500")
     void testApplyConcurrentRaceLoserGetsFriendly409() {
         Campaign campaign = activeCampaign();
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(java.util.Optional.of(campaign));
-        when(collaborationRepository.existsByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
-                .thenReturn(false);
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(java.util.Optional.empty());
         doThrow(new DataIntegrityViolationException("Duplicate entry for key 'uq_campaign_creator'"))
                 .when(collaborationRepository)
                 .save(any(Collaboration.class));
@@ -260,6 +304,8 @@ class CreatorCampaignServiceTest {
                         .createdBy("brand_user_1")
                         .build();
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(java.util.Optional.of(privateCampaign));
+        // requireVisibleCampaign's invite-only gate — still existsBy..., and it 404s before the
+        // F-0225 duplicate/revive lookup is ever reached.
         when(collaborationRepository.existsByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
                 .thenReturn(false);
 

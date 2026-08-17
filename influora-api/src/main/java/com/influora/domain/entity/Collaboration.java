@@ -56,6 +56,19 @@ public class Collaboration {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /**
+     * F-0225 — when the CURRENT application/invitation started, as opposed to when the row was
+     * created ({@link #createdAt}, which is {@code updatable = false} and stays the row's birth).
+     *
+     * These differ only after {@link #revive}: withdrawing sets {@code CANCELLED}, the row
+     * survives (UNIQUE(campaign_id, creator_id) forbids a second one), and re-applying revives
+     * this one. {@code CreatorApplicationMapper} maps the creator-facing "Applied" date and the
+     * "My applications" sort from THIS field, so a revived application reads as applied today
+     * rather than on the date of the attempt the creator already withdrew.
+     */
+    @Column(name = "applied_at", nullable = false)
+    private Instant appliedAt;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -73,6 +86,7 @@ public class Collaboration {
         c.notes = TextSanitizer.sanitizePlainText(message);
         Instant now = Instant.now();
         c.createdAt = now;
+        c.appliedAt = now;
         c.updatedAt = now;
         return c;
     }
@@ -95,6 +109,7 @@ public class Collaboration {
         c.notes = TextSanitizer.sanitizePlainText(message);
         Instant now = Instant.now();
         c.createdAt = now;
+        c.appliedAt = now;
         c.updatedAt = now;
         return c;
     }
@@ -121,6 +136,11 @@ public class Collaboration {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    /** F-0225 — when the CURRENT application/invitation started. See the field's javadoc. */
+    public Instant getAppliedAt() {
+        return appliedAt;
     }
 
     public CollaborationSource getSource() {
@@ -159,6 +179,48 @@ public class Collaboration {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * F-0225 — restart a withdrawn collaboration as a fresh application/invitation, in place.
+     *
+     * <p><b>Why in place, and not a new row.</b> {@code UNIQUE(campaign_id, creator_id)} (V6)
+     * permits exactly one collaboration per pair, and withdrawing does not delete the row — it
+     * sets {@code CANCELLED}. So a re-application has no second row available to it: reviving
+     * this one is the only shape that does not require dropping a constraint or deleting a row
+     * the counterparty has already seen. The {@code DealMessage} history stays attached by
+     * design; the prior "rejected" system message remains true and visible.
+     *
+     * <p><b>Why this is safe.</b> {@code CANCELLED} is only ever written by {@code
+     * DealService#doReject}, which is gated on {@link #canReject()} — an allowlist over
+     * pre-contract states only ({@code INVITED}/{@code APPLIED}/{@code SHORTLISTED}/{@code
+     * IN_NEGOTIATION}/{@code TERMS_AGREED}), with {@code CONTRACT_PENDING} as the documented cut
+     * line precisely because it is the first status carrying a durable artifact. A {@code
+     * CANCELLED} collaboration therefore has no {@code Contract}, {@code EscrowHold}, {@code
+     * PaymentMilestone}, {@code Deliverable} or {@code Dispute} behind it, and reviving it
+     * cannot resurrect money or obligations.
+     *
+     * <p>⚠️ <b>That safety is inherited from {@code canReject()}, not enforced here.</b> Widening
+     * {@code canReject()} to admit a post-contract status would make this method able to revive a
+     * deal with a signed contract behind it. The callers additionally refuse to revive anything
+     * that is not {@code CANCELLED}; if {@code canReject()} ever changes, this is the second
+     * place that has to change with it.
+     *
+     * <p>Everything that described the ABANDONED attempt is cleared — negotiated rate and usage
+     * rights above all, since carrying an old agreed number into a fresh application would let a
+     * withdrawn negotiation silently set the terms of the next one. {@code createdAt} is left
+     * alone ({@code updatable = false}); {@code appliedAt} is what moves.
+     */
+    public void revive(CollaborationStatus newStatus, CollaborationSource newSource, String message, String newCurrency) {
+        this.status = newStatus;
+        this.source = newSource;
+        this.notes = TextSanitizer.sanitizePlainText(message);
+        this.agreedRate = null;
+        this.usageRights = null;
+        this.currency = newCurrency != null ? newCurrency : "INR";
+        Instant now = Instant.now();
+        this.appliedAt = now;
+        this.updatedAt = now;
+    }
+
     /** Brand-initiated proposal with explicit terms (Task #9 POST /deals). */
     public static Collaboration propose(
             String id,
@@ -178,6 +240,7 @@ public class Collaboration {
         c.notes = TextSanitizer.sanitizePlainText(message);
         Instant now = Instant.now();
         c.createdAt = now;
+        c.appliedAt = now;
         c.updatedAt = now;
         return c;
     }

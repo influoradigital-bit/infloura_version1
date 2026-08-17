@@ -98,6 +98,8 @@ class ContractServiceDeliverableMaterializationTest {
     @Mock private AuthPrincipal brandPrincipal;
     @Mock private WorkspaceMember workspaceMember;
 
+    @Mock private com.influora.repository.ShipmentRepository shipmentRepository;
+
     private DealService dealService;
     private ContractService contractService;
 
@@ -117,7 +119,14 @@ class ContractServiceDeliverableMaterializationTest {
                         brandContext,
                         idempotencyService,
                         eventPublisher,
-                        messageStreamRegistry);
+                        messageStreamRegistry,
+                        // F-0225 — this suite never exercises the revive path; wired only to satisfy
+                        // the constructor, with the same repositories the harness already mocks.
+                        new CollaborationReviveService(
+                                collaborationRepository,
+                                contractRepository,
+                                escrowHoldRepository,
+                                shipmentRepository));
 
         contractService =
                 new ContractService(
@@ -183,8 +192,10 @@ class ContractServiceDeliverableMaterializationTest {
         when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
                 .thenReturn(Optional.of(creatorProfile));
 
-        when(collaborationRepository.existsByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
-                .thenReturn(false);
+        // F-0225 — createProposal's duplicate guard moved to CollaborationReviveService, which
+        // resolves the prior row rather than asking whether one exists. Empty = no prior deal.
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.empty());
 
         ArgumentCaptor<Collaboration> collaborationCaptor = ArgumentCaptor.forClass(Collaboration.class);
         when(collaborationRepository.save(collaborationCaptor.capture()))
