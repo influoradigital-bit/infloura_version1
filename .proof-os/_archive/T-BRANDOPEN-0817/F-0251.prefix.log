@@ -1,0 +1,25 @@
+· ContractApiRecord still carries no escrow/hash/funded-released-timestamp field (sanity —
+  confirms the 'no real data exists yet' premise this gate is built on hasn't changed
+  under us; src/lib/api.ts is read-only to this record's owner)
+  noted
+· Payments tab: exactly ONE render path — no liveApi-gated branch left
+· the Payments tab still branches on liveApi — a demo-mode-only path can still exist and
+  drift from what live mode actually proves; F-0251 lived exactly in that unguarded branch
+· no fabricated 50/50 split anywhere in the Payments tab (either mode)
+· found '50% Upon Signing' in the Payments tab — a fabricated fixed split (F-0251)
+· found '50% Upon Completion' in the Payments tab — a fabricated fixed split (F-0251)
+· found 'value / 2' in the Payments tab — a fabricated fixed split (F-0251)
+· no invented transaction dates anywhere in the Payments tab
+· found 'Jan 10, 2024' in the Payments tab — an invented settlement date/event (F-0251)
+· found 'Jan 15, 2024' in the Payments tab — an invented settlement date/event (F-0251)
+· found 'Escrow Funded' in the Payments tab — an invented settlement date/event (F-0251)
+· found 'First Payment Released' in the Payments tab — an invented settlement date/event (F-0251)
+· an honest fallback exists for 'no milestone-level data' — real escrow fields, not silence
+· the no-milestone fallback does not reference escrowLocked — it cannot be reflecting the
+  contract's own real state
+· the no-milestone fallback does not reference escrowFrozen — a disputed contract with no
+  milestone breakdown would fall back to a state that hides the freeze (see F-0273)
+VERDICT: broken — the Payments tab does not truthfully reflect available data in both
+         modes (F-0251)
+NOT CHECKED: runtime behaviour beyond what the suite below exercises; whether a future
+             per-contract transaction/audit-log endpoint has since shipped server-side

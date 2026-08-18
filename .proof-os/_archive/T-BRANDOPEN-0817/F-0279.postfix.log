@@ -1,0 +1,27 @@
+· hook: WorkspaceVerification still exposes roleError + retryRole (F-0244 surface intact)
+  clean — roleError / retryRole both still on WorkspaceVerification
+· hook: retryRole is a stable reference (useCallback), not a fresh closure literal
+  clean — retryRole is bound via useCallback and returned by reference
+· consumer (src/pages/brand-verification.tsx): destructures roleError AND retryRole
+  clean —
+    
+    export default function BrandVerificationPage() {
+      const queryClient = useQueryClient();
+      const { status, isLoading, isVerified, canVerify, roleError, retryRole } =
+        useWorkspaceVerification();
+· consumer: roleError actually gates a rendered branch (not just destructured and unused)
+  clean — roleError drives a conditional branch
+· consumer: retryRole is actually invoked from an event handler, not merely named
+  clean — retryRole is wired to a real call site (1 match(es))
+· vitest run src/pages/__tests__/brand-verification.retry.test.tsx (budget 180s)
+  suite green — src/pages/__tests__/brand-verification.retry.test.tsx
+VERDICT: aligned (proved) — retryRole is memoised with useCallback in the hook, and
+         brand-verification.tsx destructures roleError/retryRole, branches real UI on
+         roleError, and actually calls retryRole from a click handler; src/pages/__tests__/brand-verification.retry.test.tsx passes
+NOT CHECKED: whether campaign-form.tsx / VerificationRequiredBox.tsx or
+             WorkspaceVerificationBanner.tsx also consume roleError/retryRole (they were
+             left on canVerify-only fail-open behaviour — canVerify is derived to fail
+             open whenever roleError is true, so their existing behaviour is still
+             correct, just without the extra retry affordance); a live role-fetch failure
+             actually recovering against a real backend (only a running API proves that,
+             this gate mocks the query client).

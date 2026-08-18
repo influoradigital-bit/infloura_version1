@@ -26,19 +26,27 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 SVC=influora-api/src/main/java/com/influora/service/CreatorCampaignService.java
 [ -f "$SVC" ] || { echo "· $SVC missing — unavailable"; exit 2; }
+SVC_CODE=$(code_view "$SVC") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· apply() still records the application on the timeline"
-if ! grep -q "recordApplicationOnTimeline" "$SVC"; then
+if ! grep -q "recordApplicationOnTimeline" "$SVC_CODE"; then
   echo "VERDICT: broken — apply() no longer writes a deal-room timeline, so an application is"
   echo "         invisible to both parties again (F-0290)"
   exit 1
 fi
 # Both paths: a fresh insert AND a revived (F-0225) row. A re-application is still an application.
-calls=$(grep -c "recordApplicationOnTimeline(" "$SVC")
+calls=$(grep -c "recordApplicationOnTimeline(" "$SVC_CODE")
 if [ "$calls" -lt 3 ]; then
   echo "  found $calls reference(s) — expected the definition plus BOTH call sites"
   echo "VERDICT: broken — one of apply()'s two paths (fresh insert / revived row) no longer"

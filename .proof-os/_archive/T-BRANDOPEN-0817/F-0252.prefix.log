@@ -1,0 +1,35 @@
+=== F-0252 prefix proof 1: current unfixed real tree ===
+· deriving backend member set from influora-api/src/main/java/com/influora/domain/enums/ContractStatus.java
+  backend members: ACTIVE CANCELLED COMPLETED DRAFT PENDING_SIGNATURES
+· deriving frontend member set from src/lib/types.ts
+  frontend members: ACTIVE COMPLETED DISPUTED DRAFT PENDING_SIGNATURES TERMINATED
+· diffing the two member sets
+  FE-only (invented — no backend state can ever produce these):
+    - DISPUTED
+    - TERMINATED
+  BE-only (omitted from FE — a real backend value that will not typecheck):
+    - CANCELLED
+VERDICT: broken — src/lib/types.ts ContractStatus and influora-api ContractStatus.java
+         member sets diverge (F-0252)
+NOT CHECKED: whether any TypeScript switch/branch typed on ContractStatus still compiles
+             (that is tsc's job, run separately, not this gate's); whether every call
+             site that consumed an invented member was updated to something meaningful
+             instead of just type-erased; runtime behavior against a live backend
+EXIT=1
+
+=== F-0252 prefix proof 2: constructed wrong-fix (scratch copy, superset union) ===
+· deriving backend member set from influora-api/src/main/java/com/influora/domain/enums/ContractStatus.java
+  backend members: ACTIVE CANCELLED COMPLETED DRAFT PENDING_SIGNATURES
+· deriving frontend member set from src/lib/types.ts
+  frontend members: ACTIVE CANCELLED COMPLETED DISPUTED DRAFT PENDING_SIGNATURES TERMINATED
+· diffing the two member sets
+  FE-only (invented — no backend state can ever produce these):
+    - DISPUTED
+    - TERMINATED
+VERDICT: broken — src/lib/types.ts ContractStatus and influora-api ContractStatus.java
+         member sets diverge (F-0252)
+NOT CHECKED: whether any TypeScript switch/branch typed on ContractStatus still compiles
+             (that is tsc's job, run separately, not this gate's); whether every call
+             site that consumed an invented member was updated to something meaningful
+             instead of just type-erased; runtime behavior against a live backend
+EXIT=1

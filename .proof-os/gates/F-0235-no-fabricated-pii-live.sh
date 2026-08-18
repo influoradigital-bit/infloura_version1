@@ -4,27 +4,35 @@
 # address sat in useState with no isApiLive() guard and was POSTed to the live shipment endpoint.
 # LAW: exit 1 = real finding. exit 2 = cannot run. exit 0 = proved.
 set -u
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "${1:-.}" 2>/dev/null || { echo "· not a directory: ${1:-.} — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 F=src/pages/brand-chat.tsx
 [ -f "$F" ] || { echo "· $F missing — unavailable"; exit 2; }
+F_CODE=$(code_view "$F") || { echo "$(code_why) - unavailable"; exit 2; }
 fail=0
 
 # 1. The literal must not sit in live-reachable state. It may exist ONLY as a module-level
 #    constant whose name marks it mock-only.
-if grep -nE "useState.*(Sea View|Carter Road|9876543210)" "$F" >/dev/null 2>&1; then
+if grep -nE "useState.*(Sea View|Carter Road|9876543210)" "$F_CODE" >/dev/null 2>&1; then
   echo "· fabricated address is back in component state (live-reachable):"
-  grep -nE "useState.*(Sea View|Carter Road|9876543210)" "$F" | head -5
+  grep -nE "useState.*(Sea View|Carter Road|9876543210)" "$F_CODE" | head -5
   fail=1
 fi
 # 2. If the literal exists at all, it must be under a MOCK_-prefixed binding.
-if grep -nE "(Sea View|Carter Road)" "$F" >/dev/null 2>&1; then
-  if ! grep -nE "MOCK_SHIPPING_ADDRESS" "$F" >/dev/null 2>&1; then
+if grep -nE "(Sea View|Carter Road)" "$F_CODE" >/dev/null 2>&1; then
+  if ! grep -nE "MOCK_SHIPPING_ADDRESS" "$F_CODE" >/dev/null 2>&1; then
     echo "· address literal present but no MOCK_-prefixed binding guards it"
     fail=1
   fi
 fi
 # 3. A live shipment fetch must exist — the real source the address now comes from.
-if ! grep -nE "api\.shipments\.get|fetchLiveShipment" "$F" >/dev/null 2>&1; then
+if ! grep -nE "api\.shipments\.get|fetchLiveShipment" "$F_CODE" >/dev/null 2>&1; then
   echo "· no live shipment fetch found — the address has no real data source"
   fail=1
 fi

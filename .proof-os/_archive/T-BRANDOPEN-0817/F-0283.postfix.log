@@ -1,0 +1,40 @@
+· request DTO: ContractGenerateRequest can carry terms text
+  clean — ContractGenerateRequest carries terms
+· entity: Contract persists real terms text in a column distinct from the tamper hash
+  clean — terms_text column mapped, pre-existing tamper-hash terms column untouched
+· response DTO: ContractResponse can return terms text
+  clean — ContractResponse carries terms
+· service (WRITE-THREAD): generate() actually reads req.terms() into the entity write —
+  not just declared on the DTO and dropped (the exact shape of wrong fix F-0292's first
+  gate missed)
+  clean — req.terms() is threaded into Contract.builder().termsText(...) in generate()
+· service (READ-MODEL): toResponse() actually reads the persisted terms back out —
+  not just declared on the response record and left null on every path
+  clean — toResponse() passes contract.getTermsText() into ContractResponse
+· migration: a MySQL-grammar migration adds the terms_text column
+  clean — influora-api/src/main/resources/db/migration/V20260817140000__contract_terms_text.sql adds terms_text in MySQL grammar
+· immutability (1/2): Contract exposes no public post-construction mutator for terms text
+  clean — no setTermsText/updateTermsText mutator outside Contract.Builder
+· immutability (2/2): ContractController exposes no HTTP surface for editing contract terms
+  clean — ContractController has no terms-editing surface
+· mvn -o test ContractServiceTest (budget 280s)
+  suite green — ContractServiceTest
+VERDICT: aligned (proved) — supplied terms now have a DTO field to arrive in, a real column
+         (distinct from the pre-existing tamper hash) to persist in, generate() actually
+         threads req.terms() into that column, toResponse() actually reads it back out, a
+         MySQL-grammar migration adds the column, Contract exposes no post-construction
+         terms mutator, ContractController exposes no terms-editing HTTP surface, and
+         ContractServiceTest (including the signature-does-not-alter-terms and
+         no-public-mutator immutability tests) passes
+NOT CHECKED: that a live generate+fetch round-trip actually persists and returns real terms
+             against a running MySQL (test-compile/mvn -o test never opens a live DB
+             connection here — Mockito mocks the repository layer); whether any FE surface
+             actually lets a brand TYPE terms before generating a contract (no such input
+             exists yet — out of this record's scope, see PRODUCT DECISION NEEDED); whether
+             ContractController's @Valid bean validation on the new terms field behaves as
+             intended against a live HTTP request (only unit-level DTO/service checks ran);
+             a determined wrong fix could still rename its mutator to dodge the
+             setTermsText/updateTermsText grep (static-shape check, not a formal proof) or
+             mutate termsText via raw reflection/JPA field access bypassing the Builder
+             entirely — this gate proves no ORDINARY code path exposes that door, not that
+             no possible Java code could reach the field.

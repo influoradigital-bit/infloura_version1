@@ -22,17 +22,26 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 HYPE=src/pages/features/hype.tsx
+HYPE_CODE=$(code_view "$HYPE") || { echo "$(code_why) - unavailable"; exit 2; }
 CONTRACTS=src/components/brand/contracts/contracts-and-deliverables.tsx
+CONTRACTS_CODE=$(code_view "$CONTRACTS") || { echo "$(code_why) - unavailable"; exit 2; }
 for f in "$HYPE" "$CONTRACTS"; do
   [ -f "$f" ] || { echo "· $f missing — unavailable"; exit 2; }
 done
 
 echo "· no raw hex color literal in $HYPE or $CONTRACTS"
 # Matches bg-[#xxxxxx], text-[#xxxxxx], border-[#xxxxxx], strokeStyle = '#xxxxxx', etc.
-HEX_HITS=$(grep -nE "#[0-9a-fA-F]{3,6}" "$HYPE" "$CONTRACTS" || true)
+HEX_HITS=$(grep -nE "#[0-9a-fA-F]{3,6}" "$HYPE_CODE" "$CONTRACTS_CODE" || true)
 if [ -n "$HEX_HITS" ]; then
   printf '%s\n' "$HEX_HITS"
   echo "VERDICT: broken — raw hex color literal(s) remain off the design-token system (F-0265)"
@@ -41,7 +50,7 @@ fi
 echo "  clean — no raw hex literals in either file"
 
 echo "· hype.tsx primary CTA uses the committed brand-violet token pair"
-CTA_LINES=$(grep -nE 'Launch a Hype Campaign' "$HYPE" | cut -d: -f1)
+CTA_LINES=$(grep -nE 'Launch a Hype Campaign' "$HYPE_CODE" | cut -d: -f1)
 if [ -z "$CTA_LINES" ]; then
   echo "VERDICT: broken — could not locate the 'Launch a Hype Campaign' CTA at all (F-0265)"
   exit 1
@@ -50,7 +59,7 @@ missing=0
 for ln in $CTA_LINES; do
   # The <Button ...> opening tag is a few lines above the link text; scan a small window.
   start=$((ln - 4)); [ $start -lt 1 ] && start=1
-  window=$(sed -n "${start},${ln}p" "$HYPE")
+  window=$(sed -n "${start},${ln}p" "$HYPE_CODE")
   if ! printf '%s' "$window" | grep -qE 'bg-primary\b'; then
     echo "  CTA near line $ln does not use bg-primary:"
     printf '%s\n' "$window"

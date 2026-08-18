@@ -390,7 +390,6 @@ export default function BrandWalletPage() {
   const [transactions, setTransactions] = React.useState<Transaction[]>(
     isApiLive() ? [] : mockTransactions,
   );
-  const [loading, setLoading] = React.useState(isApiLive());
   const [loadError, setLoadError] = React.useState<string | null>(null);
 
   // H-20 applies equally here: live mode starts empty and fetches GET /wallet/escrow; mock mode
@@ -406,7 +405,6 @@ export default function BrandWalletPage() {
 
   const loadWallet = React.useCallback(async () => {
     if (!isApiLive()) return;
-    setLoading(true);
     setLoadError(null);
     try {
       const [summary, txRows] = await Promise.all([
@@ -418,7 +416,6 @@ export default function BrandWalletPage() {
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Could not load wallet data.');
     } finally {
-      setLoading(false);
     }
   }, []);
 

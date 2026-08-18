@@ -29,18 +29,29 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 MAP=src/lib/creator-contract-mappers.ts
+MAP_CODE=$(code_view "$MAP") || { echo "$(code_why) - unavailable"; exit 2; }
 BRAND=src/components/brand/deal-room/deal-contract-tab.tsx
+BRAND_CODE=$(code_view "$BRAND") || { echo "$(code_why) - unavailable"; exit 2; }
 CRTAB=src/components/creator/deal-room/creator-deal-contract-tab.tsx
+CRTAB_CODE=$(code_view "$CRTAB") || { echo "$(code_why) - unavailable"; exit 2; }
 CRPANEL=src/components/creator/deal-room/creator-contract-panel.tsx
+CRPANEL_CODE=$(code_view "$CRPANEL") || { echo "$(code_why) - unavailable"; exit 2; }
 for f in "$MAP" "$BRAND" "$CRTAB" "$CRPANEL"; do
   [ -f "$f" ] || { echo "· $f missing — unavailable"; exit 2; }
 done
 
 echo "· the coarse mapper does not name a signing party"
-line=$(sed -n "/case 'PENDING_SIGNATURES':/,/case /p" "$MAP" | grep -E "return .*escrowFunded|return '" | head -1)
+line=$(sed -n "/case 'PENDING_SIGNATURES':/,/case /p" "$MAP_CODE" | grep -E "return .*escrowFunded|return '" | head -1)
 case "$line" in
   *brand_signed*|*creator_signed*)
     echo "  $line"
@@ -58,9 +69,9 @@ echo "  clean — returns the party-agnostic member"
 
 echo "· both parties' Sign controls accept the ambiguous state"
 fail=0
-grep -qE "canBrandSign =.*pending_signature" "$BRAND"   || { echo "  brand canBrandSign does not accept it"; fail=1; }
-grep -qE "canSign =.*pending_signature" "$CRTAB"        || { echo "  creator canSign does not accept it"; fail=1; }
-grep -qE "shouldShowSignButton =.*pending_signature" "$CRPANEL" || { echo "  creator panel Sign does not accept it"; fail=1; }
+grep -qE "canBrandSign =.*pending_signature" "$BRAND_CODE"   || { echo "  brand canBrandSign does not accept it"; fail=1; }
+grep -qE "canSign =.*pending_signature" "$CRTAB_CODE"        || { echo "  creator canSign does not accept it"; fail=1; }
+grep -qE "shouldShowSignButton =.*pending_signature" "$CRPANEL_CODE" || { echo "  creator panel Sign does not accept it"; fail=1; }
 if [ $fail -eq 1 ]; then
   echo "VERDICT: broken — a party's Sign control is hidden while signatures are pending"
   echo "         (F-0250/F-0268); that party cannot proceed"

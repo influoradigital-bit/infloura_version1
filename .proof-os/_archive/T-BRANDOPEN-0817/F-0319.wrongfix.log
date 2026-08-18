@@ -1,0 +1,51 @@
+=== F-0319 wrongfix: repaired promoted gate vs the REINTRODUCED F-0273 defect ===
+date: 2026-08-18T09:06:08Z
+injection: deriveEscrowFromMilestones filter -> "return s === 'FUNDED';" (F-0273 verbatim)
+file sha256 (injected): f722b556a12a994d209264a898dc508bacb6fc965b47f5b052b2fedca3ee921d *src/components/brand/contracts/contracts-and-deliverables.tsx
+
+· self-check: these assertions reject a known-bad derivation (F-0273 verbatim)
+  good — the known-bad derivation is rejected, so a green below means something
+· backend enum: MilestoneStatus/EscrowStatus still declare PENDING/FUNDED/RELEASED/REFUNDED/FROZEN
+  clean
+· deriveEscrowFromMilestones, EXECUTED over all five milestone states
+  x purely FROZEN (the F-0273 defect)
+      want locked=true amount=30000 frozen=true
+      got  locked=false amount=0 frozen=false
+  x two FROZEN milestones total together
+      want locked=true amount=30000 frozen=true
+      got  locked=false amount=0 frozen=false
+  x mixed FUNDED + FROZEN totals both, and flags frozen
+      want locked=true amount=60000 frozen=true
+      got  locked=true amount=30000 frozen=false
+  x lower-case frozen still counts
+      want locked=true amount=30000 frozen=true
+      got  locked=false amount=0 frozen=false
+  4/10 derivation cases wrong
+VERDICT: broken — deriveEscrowFromMilestones does not total held money correctly; frozen
+         escrow is misreported to the brand (F-0273)
+NOT CHECKED: the rendered Escrow Status tile and Payments rows — the vitest leg below was
+             not reached, because the derivation that feeds them is already wrong
+EXIT=1
+
+=== EXTRA: over-broad wrong fix (count every non-PENDING status) ===
+file sha256 (injected): 57dfb0c0fb2f1cc59ff552c772e348f9b439f9ca7f6232d8b4e5d4c989f4ec1e *src/components/brand/contracts/contracts-and-deliverables.tsx
+· self-check: these assertions reject a known-bad derivation (F-0273 verbatim)
+  good — the known-bad derivation is rejected, so a green below means something
+· backend enum: MilestoneStatus/EscrowStatus still declare PENDING/FUNDED/RELEASED/REFUNDED/FROZEN
+  clean
+· deriveEscrowFromMilestones, EXECUTED over all five milestone states
+  x RELEASED has left escrow
+      want locked=false amount=0 frozen=false
+      got  locked=true amount=30000 frozen=false
+  x REFUNDED has left escrow
+      want locked=false amount=0 frozen=false
+      got  locked=true amount=30000 frozen=false
+  x absent status is not held money
+      want locked=false amount=0 frozen=false
+      got  locked=true amount=30000 frozen=false
+  3/10 derivation cases wrong
+VERDICT: broken — deriveEscrowFromMilestones does not total held money correctly; frozen
+         escrow is misreported to the brand (F-0273)
+NOT CHECKED: the rendered Escrow Status tile and Payments rows — the vitest leg below was
+             not reached, because the derivation that feeds them is already wrong
+EXIT=1

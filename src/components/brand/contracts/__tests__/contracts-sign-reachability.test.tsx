@@ -2,7 +2,8 @@
  * F-0248 / F-0267 / F-0269 — unreachable-primary-action, brand-first path.
  * ----------------------------------------------------------------------------
  * `mapApiContractStatus` translates the real backend `ContractStatus`
- * (DRAFT/PENDING_SIGNATURES/ACTIVE/COMPLETED/TERMINATED/DISPUTED) into this
+ * (DRAFT/PENDING_SIGNATURES/ACTIVE/COMPLETED/CANCELLED — F-0252 corrected this
+ * list; 'TERMINATED'/'DISPUTED' were never real backend values) into this
  * page's UI-only `Contract['status']` vocabulary. It can NEVER produce
  * 'pending_review' — that literal does not appear on the right-hand side of
  * any case in its switch.
@@ -61,14 +62,17 @@ import { mapApiContractStatus } from '../contracts-and-deliverables';
  * influora-api ContractStatus.java). `mapApiContractStatus`'s own switch is
  * exhaustive over exactly these plus `undefined`, with a `default: 'draft'`
  * catch-all for anything unrecognized.
+ *
+ * F-0252 — was ['DRAFT','PENDING_SIGNATURES','ACTIVE','COMPLETED','TERMINATED','DISPUTED'];
+ * 'TERMINATED'/'DISPUTED' were FE-only inventions no backend state could ever produce, and
+ * 'CANCELLED' — the real terminal status the backend does emit — was missing.
  */
 const REAL_BACKEND_STATUSES = [
   'DRAFT',
   'PENDING_SIGNATURES',
   'ACTIVE',
   'COMPLETED',
-  'TERMINATED',
-  'DISPUTED',
+  'CANCELLED',
 ] as const;
 
 /** Every UI-only status literal the mapper can actually hand back to the page. */
@@ -131,10 +135,15 @@ function extractButtonGatedStatusLiterals(src: string): string[] {
 }
 
 describe('F-0248 — every status gate is reachable', () => {
-  it('mapper output set is the 5 non-draft-collapsed UI statuses (sanity)', () => {
-    expect(mapperOutputSet()).toEqual(
-      new Set(['draft', 'pending_signature', 'signed', 'expired', 'disputed']),
-    );
+  it('mapper output set is the 4 non-draft-collapsed UI statuses reachable from a real backend value (sanity)', () => {
+    // F-0252 — 'disputed' dropped: it was only ever produced by the dead 'DISPUTED' case,
+    // which no real backend ContractStatus value could trigger.
+    // F-0321 — 'disputed' is now removed from Contract['status'] entirely (an unreachable
+    // literal is dead config, not display coverage), and 'expired' is renamed to 'cancelled' —
+    // the only real backend value that reaches this entry, CANCELLED, is a party cancelling the
+    // contract, not a date passing (see contracts-and-deliverables.tsx's mapApiContractStatus
+    // doc and src/pages/__tests__/contract-status-label-agreement.test.ts).
+    expect(mapperOutputSet()).toEqual(new Set(['draft', 'pending_signature', 'signed', 'cancelled']));
   });
 
   it('every status literal the component gates a Button control on is a value the mapper can emit', () => {
@@ -304,8 +313,14 @@ describe('F-0267 — every mapped status is reachable or explained for an unsign
     { backendStatus: 'DRAFT', uiStatus: 'draft' },
     { backendStatus: 'PENDING_SIGNATURES', uiStatus: 'pending_signature' },
     { backendStatus: 'ACTIVE', uiStatus: 'signed', expectedExplanationLabel: 'Active' },
-    { backendStatus: 'TERMINATED', uiStatus: 'expired', expectedExplanationLabel: 'Expired' },
-    { backendStatus: 'DISPUTED', uiStatus: 'disputed', expectedExplanationLabel: 'Disputed' },
+    // F-0252 — was 'TERMINATED' (never a real backend value); 'CANCELLED' is the real
+    // terminal ContractStatus. The dead 'DISPUTED' case (backend has no contract-level
+    // disputed status) is removed rather than replaced — there is no real backend value
+    // left that maps to 'disputed'.
+    // F-0321 — was uiStatus 'expired' / label 'Expired'; renamed to 'cancelled' / 'Cancelled'
+    // so this file agrees with brand-campaign-detail.tsx's "Contract cancelled" for the same
+    // backend value instead of contradicting it.
+    { backendStatus: 'CANCELLED', uiStatus: 'cancelled', expectedExplanationLabel: 'Cancelled' },
   ];
 
   for (const { backendStatus, uiStatus, expectedExplanationLabel } of cases) {

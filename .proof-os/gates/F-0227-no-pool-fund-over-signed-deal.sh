@@ -21,13 +21,21 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 ESCROW=influora-api/src/main/java/com/influora/service/EscrowService.java
 [ -f "$ESCROW" ] || { echo "· $ESCROW missing — unavailable"; exit 2; }
+ESCROW_CODE=$(code_view "$ESCROW") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· guard present on the money path (initiateFund, not the UI)"
-if ! grep -q "CAMPAIGN_HAS_UNFUNDED_MILESTONES" "$ESCROW"; then
+if ! grep -q "CAMPAIGN_HAS_UNFUNDED_MILESTONES" "$ESCROW_CODE"; then
   echo "VERDICT: broken — initiateFund no longer refuses a pool fund over a campaign with pending"
   echo "         milestones; the wallet can strand money on a signed deal again (F-0227)"
   exit 1

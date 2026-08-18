@@ -24,32 +24,40 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 FILE=src/pages/brand-settings.tsx
 [ -f "$FILE" ] || { echo "· $FILE missing — unavailable"; exit 2; }
+FILE_CODE=$(code_view "$FILE") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· the mock seed is gated on mock mode, not unconditional"
-if grep -qE "workspaceName: *'Tech Brands Co\.'" "$FILE"; then
-  grep -nE "workspaceName: *'Tech Brands Co\.'" "$FILE"
+if grep -qE "workspaceName: *'Tech Brands Co\.'" "$FILE_CODE"; then
+  grep -nE "workspaceName: *'Tech Brands Co\.'" "$FILE_CODE"
   echo "VERDICT: broken — the workspace form is seeded with mock values unconditionally"
   echo "         again (F-0249); a failed load leaves them submittable"
   exit 1
 fi
-if ! grep -qE "liveApi \? '' : 'Tech Brands Co\.'" "$FILE"; then
+if ! grep -qE "liveApi \? '' : 'Tech Brands Co\.'" "$FILE_CODE"; then
   echo "VERDICT: broken — the live-mode seed guard is gone (F-0249)"
   exit 1
 fi
 echo "  clean — live mode starts empty"
 
 echo "· Save is gated on a successful load"
-if ! grep -q "workspaceInfoLoaded" "$FILE"; then
+if ! grep -q "workspaceInfoLoaded" "$FILE_CODE"; then
   echo "VERDICT: broken — the workspaceInfoLoaded flag is gone (F-0249); Save can no longer"
   echo "         tell 'loaded and unchanged' from 'never loaded'"
   exit 1
 fi
-if ! grep -qE "liveApi && \(!workspaceInfoLoaded \|\| workspaceInfoLoadError\)" "$FILE"; then
-  grep -nE "workspaceInfoLoaded" "$FILE"
+if ! grep -qE "liveApi && \(!workspaceInfoLoaded \|\| workspaceInfoLoadError\)" "$FILE_CODE"; then
+  grep -nE "workspaceInfoLoaded" "$FILE_CODE"
   echo "VERDICT: broken — Save is no longer disabled on an unloaded or errored workspace"
   echo "         (F-0249); a read failure can once more become a destructive write"
   exit 1

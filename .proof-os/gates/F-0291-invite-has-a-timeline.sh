@@ -20,14 +20,23 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 SVC=influora-api/src/main/java/com/influora/service/CreatorDiscoveryService.java
+SVC_CODE=$(code_view "$SVC") || { echo "$(code_why) - unavailable"; exit 2; }
 ROOM=src/pages/creator-chat.tsx
+ROOM_CODE=$(code_view "$ROOM") || { echo "$(code_why) - unavailable"; exit 2; }
 for f in "$SVC" "$ROOM"; do [ -f "$f" ] || { echo "· $f missing — unavailable"; exit 2; }; done
 
 echo "· backend: invite() records a timeline on both paths"
-calls=$(grep -c "recordInviteOnTimeline(" "$SVC")
+calls=$(grep -c "recordInviteOnTimeline(" "$SVC_CODE")
 if [ "$calls" -lt 3 ]; then
   echo "  found $calls reference(s) — expected the definition plus BOTH call sites"
   echo "VERDICT: broken — an invitation no longer leaves a record, so the creator's room is empty again (F-0291)"
@@ -39,7 +48,7 @@ echo "· frontend: the invite card is NOT gated on an empty room"
 # Scoped to showBareInviteResponse's own assignment. `events.length === 0` legitimately survives
 # elsewhere in this file — the "No messages yet" empty state is exactly that question, and a
 # whole-file grep flags it as a false positive (it did, on the first run of this gate).
-card_gate=$(awk '/const showBareInviteResponse =/,/;/' "$ROOM")
+card_gate=$(awk '/const showBareInviteResponse =/,/;/' "$ROOM_CODE")
 if printf '%s' "$card_gate" | grep -q "events.length === 0"; then
   printf '%s
 ' "$card_gate"

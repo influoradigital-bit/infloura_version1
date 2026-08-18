@@ -20,10 +20,18 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 ENTITY=influora-api/src/main/java/com/influora/domain/entity/Collaboration.java
 [ -f "$ENTITY" ] || { echo "· $ENTITY missing — unavailable"; exit 2; }
+ENTITY_CODE=$(code_view "$ENTITY") || { echo "$(code_why) - unavailable"; exit 2; }
 
 # ---- 0. migration dialect -------------------------------------------------------------------
 # This project is MySQL 8.0 (application.yml -> jdbc:mysql, MySQLDialect; docker-compose ->
@@ -52,7 +60,7 @@ fi
 
 echo "· invariant: canReject() admits no post-contract status"
 # The body of canReject(), from its signature to the closing brace.
-body=$(awk '/public boolean canReject\(\)/,/^    \}/' "$ENTITY")
+body=$(awk '/public boolean canReject\(\)/,/^    \}/' "$ENTITY_CODE")
 [ -n "$body" ] || { echo "· could not locate canReject() — unavailable"; exit 2; }
 
 forbidden=$(printf '%s\n' "$body" | grep -oE "CONTRACT_PENDING|CONTRACTED|IN_PROGRESS|REVIEW_PENDING|REVISION_REQUESTED|COMPLETED" || true)

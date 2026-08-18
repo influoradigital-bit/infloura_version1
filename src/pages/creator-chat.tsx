@@ -55,8 +55,15 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import { CounterProposalForm, type CounterProposalFormData } from '@/components/creator/deal-room/counter-proposal-form';
 import { CreatorContractPanel } from '@/components/creator/deal-room/creator-contract-panel';
@@ -1086,6 +1093,14 @@ export default function CreatorChatPage() {
   const [showCounterForm, setShowCounterForm] = React.useState(false);
   const [isSubmittingCounter, setIsSubmittingCounter] = React.useState(false);
   const [showDeliverableDialog, setShowDeliverableDialog] = React.useState(false);
+  // F-0301: the creator's dispute-open control — the mirror of F-0242's brand fix. Backend
+  // allows either party to open a dispute (DealController.java:130); until now only the brand
+  // had a working entry point, the creator's overflow trigger was permanently disabled (F-0289)
+  // on the mistaken premise that no creator-side action existed.
+  const [showDisputeDialog, setShowDisputeDialog] = React.useState(false);
+  const [disputeReason, setDisputeReason] = React.useState('');
+  const [disputeSubmitting, setDisputeSubmitting] = React.useState(false);
+  const [disputeError, setDisputeError] = React.useState<string | null>(null);
   const [counterAmount, setCounterAmount] = React.useState('');
   const [counterMessage, setCounterMessage] = React.useState('');
   const [showRevisionHandler, setShowRevisionHandler] = React.useState(false);
@@ -1276,6 +1291,39 @@ export default function CreatorChatPage() {
       });
     } finally {
       setIsConfirmingReceipt(false);
+    }
+  };
+
+  /**
+   * F-0301 — open a dispute on the selected deal. Mirrors brand-chat.tsx's handleOpenDispute
+   * (F-0242) exactly: same 10-character floor, same 409s surfaced verbatim.
+   *
+   * Uses `api.creatorDisputes.open`, NOT `brandDisputes.open`: the client's `role` option
+   * selects which session's JWT is attached, so the brand variant would send an empty (401)
+   * or wrong-actor token from the creator app.
+   *
+   * The server rejects two cases with 409 and both are surfaced verbatim rather than as a
+   * generic failure — NO_FUNDED_ESCROW (nothing on hold to dispute) and DISPUTE_ALREADY_OPEN
+   * (DisputeService.java:113-128).
+   */
+  const handleOpenDispute = async () => {
+    if (!selectedDeal || disputeReason.trim().length < 10) return;
+    setDisputeSubmitting(true);
+    setDisputeError(null);
+    try {
+      await api.creatorDisputes.open(selectedDeal.id, disputeReason.trim());
+      setShowDisputeDialog(false);
+      setDisputeReason('');
+      toast({
+        title: 'Dispute opened',
+        description: 'An admin will review this deal. Escrow stays frozen until it is resolved.',
+      });
+    } catch (err) {
+      setDisputeError(
+        err instanceof ApiError ? err.message : 'Could not open the dispute. Try again.',
+      );
+    } finally {
+      setDisputeSubmitting(false);
     }
   };
 
@@ -1947,30 +1995,42 @@ export default function CreatorChatPage() {
                 <span className="hidden sm:inline">Submit Deliverable</span>
               </Button>
             )}
-            {/* F-0289: this overflow trigger opened no menu — it promised "more options"
-                and did nothing on click. There is no creator-side deal-room action behind
-                it today (the brand's equivalent became the dispute entry point; the
-                creator's dispute flow lives on /creator/disputes). Disabled with a stated
-                reason rather than left as a fake affordance. */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span tabIndex={0} className="inline-flex">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9"
-                    disabled
-                    aria-disabled="true"
-                    aria-label="Deal options"
+            {/* F-0301: this overflow trigger was permanently disabled (F-0289) on the premise
+                that no creator-side deal-room action existed. It did — the brand's equivalent
+                (F-0242) is the mirror of this one, and api.creatorDisputes.open already existed
+                unused. Now the creator's dispute entry point, gated on escrowFunded exactly
+                like the brand side: the server rejects a dispute with no funded, unreleased
+                escrow (NO_FUNDED_ESCROW), and a control that can only fail is worse than none. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9"
+                  aria-label="Deal options"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                {selectedDeal.escrowFunded ? (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setDisputeError(null);
+                      setShowDisputeDialog(true);
+                    }}
+                    className="text-destructive-foreground focus:text-destructive-foreground"
                   >
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                No deal options here yet — manage disputes from Disputes in the sidebar.
-              </TooltipContent>
-            </Tooltip>
+                    Report a problem with this deal
+                  </DropdownMenuItem>
+                ) : (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    A dispute can only be raised once escrow is funded — there is no money
+                    on hold for this deal yet.
+                  </div>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -2816,6 +2876,54 @@ export default function CreatorChatPage() {
         onSubmit={handleSubmitDeliverableForm}
         isSubmitting={isSubmittingDeliverable}
       />
+
+      {/* F-0301 — dispute dialog. Mirrors brand-chat.tsx (F-0242): a free-text reason with a
+          10-character floor, the submit disabled until it is met, and the server's own 409
+          message shown inline rather than a generic retry prompt. */}
+      <Dialog open={showDisputeDialog} onOpenChange={setShowDisputeDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Report a problem with this deal</DialogTitle>
+            <DialogDescription>
+              This opens a formal dispute. The escrow held for this deal is frozen while an
+              admin reviews it, and {selectedDeal?.brandName ?? 'the brand'} is notified.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="creator-dispute-reason">What went wrong?</Label>
+            <Textarea
+              id="creator-dispute-reason"
+              value={disputeReason}
+              onChange={(e) => setDisputeReason(e.target.value)}
+              placeholder="Describe the problem — what was agreed, what was delivered, and what you want resolved."
+              rows={5}
+            />
+            <p className="text-xs text-muted-foreground">
+              {disputeReason.trim().length < 10
+                ? 'Please add at least 10 characters so the reviewer has something to act on.'
+                : 'An admin reads this directly.'}
+            </p>
+            {disputeError && (
+              <p className="text-sm text-destructive-foreground">{disputeError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDisputeDialog(false)}
+              disabled={disputeSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void handleOpenDispute()}
+              disabled={disputeSubmitting || disputeReason.trim().length < 10}
+            >
+              {disputeSubmitting ? 'Opening…' : 'Open dispute'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Revision Handler Modal */}
       {showRevisionHandler && (

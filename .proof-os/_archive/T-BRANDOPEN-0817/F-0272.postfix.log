@@ -1,0 +1,18 @@
+· component: still fetches contractRecord and renders/gates on it
+  clean — contractRecord is fetched, rendered and gates Sign
+· api.ts: isolating contracts.get() body
+  isolated 20 lines
+· api.ts: contracts.get() still branches on isLive(), live branch calls the real endpoint
+  clean — isLive() gates http.request (live) ahead of mockOr (mock), in that order
+· api.ts: mock branch resolves a real fixture, not null
+  clean — mock branch resolves a fixture with milestones
+NOT CHECKED (interim): none — all static legs passed
+· node_modules/.bin/vitest run src/components/brand/deal-room/__tests__/demo-sign-flow-alive.test.tsx (budget 180s)
+  suite green — demo-sign-flow-alive.test.tsx
+VERDICT: aligned (proved) — contracts.get() in mock mode resolves a real fixture with
+         milestones, reachable only behind the same isLive() guard every other api.ts mock
+         uses, the live branch still calls the real GET /contracts/:id endpoint ahead of
+         that guard, DealContractTab still gates Sign on the fetched record, and
+         demo-sign-flow-alive.test.tsx passes for both the demo and live directions
+NOT CHECKED: whether the rendered fixture matches any real backend contract, live UI
+             rendering in a browser, or the sign-and-send network round trip

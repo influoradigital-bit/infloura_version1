@@ -217,6 +217,12 @@ export function DashboardPage() {
     return 'Good evening';
   }, []);
 
+  // F-0320 — mirrors creator-dashboard.tsx's greeting: `user.firstName` is never actually
+  // populated (neither buildBrandUser nor buildCreatorUser sets it — the backend TokenPair only
+  // carries `displayName`), so `user?.firstName || 'there'` alone rendered the placeholder for
+  // every real session too. Deriving the first word of `displayName` is what actually reaches a
+  // real name; `firstName` stays in the chain only in case some future auth path does set it.
+  const brandDisplayName = user?.displayName?.split(/\s+/)[0] || user?.firstName || 'there';
   const urgentCount = actionItems.filter((a) => a.priority === 'urgent').length;
   // F-0103: `runwayDays === null` (dormant/unknown/pre-load/404'd wallet) must resolve to
   // 'healthy', not fall through to 'critical' the way `0` would. The rule lives in the shared,
@@ -232,7 +238,7 @@ export function DashboardPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">
-            {greeting}, {user?.firstName || 'there'}
+            {greeting}, {brandDisplayName}
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {/* F-0245 — never assert "caught up" (a real-zero claim) while the fetch that would

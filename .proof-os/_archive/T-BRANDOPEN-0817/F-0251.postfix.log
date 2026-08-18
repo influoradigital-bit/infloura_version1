@@ -1,0 +1,24 @@
+· ContractApiRecord still carries no escrow/hash/funded-released-timestamp field (sanity —
+  confirms the 'no real data exists yet' premise this gate is built on hasn't changed
+  under us; src/lib/api.ts is read-only to this record's owner)
+  noted
+· Payments tab: exactly ONE render path — no liveApi-gated branch left
+  clean — no liveApi reference inside the Payments tab block
+· no fabricated 50/50 split anywhere in the Payments tab (either mode)
+  clean — no hardcoded 50% split, no value/2 arithmetic
+· no invented transaction dates anywhere in the Payments tab
+  clean — no fabricated transaction history strings
+· an honest fallback exists for 'no milestone-level data' — real escrow fields, not silence
+  clean — fallback is built from the contract's own real escrow fields
+· vitest: contracts-and-deliverables.payments-truthful.test.tsx (real suite, not a stub)
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m4 passed[39m[22m[90m (4)[39m
+  suite green
+VERDICT: aligned (proved) — the Payments tab has one render path (no liveApi branch), never
+         a fabricated 50/50 split or invented transaction dates in either live or demo mode,
+         falls back to the contract's own real escrowLocked/escrowAmount/escrowFrozen fields
+         with an honest 'not available' note when no milestone breakdown exists, and the
+         F-0251 vitest suite passes.
+NOT CHECKED: whether a per-contract transaction/audit-log endpoint is added server-side in
+             the future (this gate would need updating to consume it); live rendering
+             against a real backend (only a running backend + E2E proves that).

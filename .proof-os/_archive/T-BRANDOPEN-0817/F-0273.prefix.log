@@ -1,0 +1,18 @@
+· backend enum: MilestoneStatus/EscrowStatus are exactly PENDING/FUNDED/RELEASED/REFUNDED/FROZEN
+  clean — both enums carry all 5 states this gate totals over
+· deriveEscrowFromMilestones: totals held-money over FUNDED and FROZEN, never RELEASED/REFUNDED
+· deriveEscrowFromMilestones counts RELEASED — that money has left escrow and is not held
+· deriveEscrowFromMilestones counts REFUNDED — that money has left escrow and is not held
+· Contract type: escrowFrozen exists as its own field (not derived ad hoc at render time)
+· Contract['escrowFrozen'] not found as a typed field
+· Escrow Status tile: FROZEN renders its own label/state, distinct from the green Locked badge
+· the Escrow Status tile does not branch on escrowFrozen at all — a FROZEN milestone
+  is indistinguishable from ordinary funded escrow in this tile (F-0273)
+· could not find an 'escrowFrozen ? (' ternary in the tile — cannot confirm FROZEN has its
+  own render branch (as opposed to being folded into the escrowLocked branch)
+· Payments tab per-milestone row: a FROZEN milestone does not share isFunded's styling
+  clean — isFrozen is derived per-row alongside isFunded/isReleased/isRefunded
+VERDICT: broken — frozen escrow does not read as frozen, either in the derivation or in
+         what is actually rendered to the brand (F-0273)
+NOT CHECKED: runtime behaviour beyond what the suite below exercises; whether the backend
+             enum itself is complete (only checked against what's declared today)

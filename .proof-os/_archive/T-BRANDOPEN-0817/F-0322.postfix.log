@@ -1,0 +1,17 @@
+· DTO: ContractGenerateRequest#terms carries a numeric @Size(max=...) cap
+  clean — terms field capped at 16383 characters:             @Size(max = 16383) String terms,
+· migrations: terms_text's declared SQL type sets the real byte ceiling
+  clean — V20260817140000__contract_terms_text.sql declares terms_text as TEXT (utf8mb4 -> 65535 byte ceiling)
+· agreement: worst-case 4-byte utf8mb4 content of 16383 chars must fit in 65535 bytes
+  clean — 16383 * 4 = 65532 <= 65535
+· immutability: Contract#termsText is mapped updatable = false, matching the createdAt idiom
+  clean —     @Column(name = "terms_text", columnDefinition = "text", updatable = false)
+VERDICT: aligned (proved) — ContractGenerateRequest#terms's character cap (16383) and
+         terms_text's declared SQL type (TEXT, from V20260817140000__contract_terms_text.sql) agree even for
+         worst-case 4-byte utf8mb4 content, and Contract#termsText carries
+         updatable = false so no update path can silently rewrite signed terms.
+NOT CHECKED: that this actually boots and inserts against a live MySQL 8 with real utf8mb4
+             emoji content at exactly the cap (no live DB in this gate); whether any other
+             caller builds a detached Contract via a second Builder call site that could
+             still attempt to write terms_text on save (grep-shaped, not exhaustive);
+             frontend character/byte counters, which are another producer's surface.

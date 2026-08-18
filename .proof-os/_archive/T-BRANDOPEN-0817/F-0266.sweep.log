@@ -1,0 +1,142 @@
+F-0266 sweep — how many gates could not tell code from a comment
+dev, 2026-08-18, task T-BRANDOPEN-0817
+
+METHOD. Reading 122 gates and judging them would produce an opinion. Instead each
+gate was run three times against the same source tree and its EXIT CODE compared:
+
+  BASELINE   a pristine copy of src/ + influora-api/src (+ configs), 17MB, 1612 files
+  MUTANT A   the same tree, except every source file a gate reads has that gate's
+             OWN TEXT appended to it as a `//` comment block. This is the F-0266
+             shape made mechanical: "the fix documented itself, quoting the rule".
+             A gate whose verdict changes has read a comment as code.
+  MUTANT B   the same tree with ALL comments removed from every .ts/.tsx/.js/.jsx/
+             .java file. A gate whose verdict changes was RELYING on comment text
+             to pass — the mirror disease, a false GREEN.
+
+A HARNESS BUG WORTH RECORDING, because the first run of this sweep was wrong.
+44 of the 97 shell gates resolve their project root as
+`ROOT=$(cd "$(dirname "$0")/../..")` and IGNORE the project-dir argument entirely.
+Run from .proof-os/gates they read the REAL repo no matter what tree you hand them,
+so the first sweep silently measured the unmutated repo for those 44 and reported
+5 affected gates. Fixed by copying the gates dir INTO each sweep tree
+(<tree>/.proof-os/gates/) so both root conventions land on the tree under test.
+The corrected sweep found 12. Anyone re-running this must do the same, and it is
+its own small finding: those 44 gates cannot be pointed at a worktree.
+
+STATIC PASS (all 122 files under .proof-os/gates/)
+  122  gate files scanned          (97 .sh, 25 .py/.mjs)
+   51  grep source text and did NOT strip comments   -> structurally exposed
+    1  already stripped comments (F-0238, partially — see below)
+   37  name a source path but never grep it (they run vitest instead)
+   36  touch no source path at all (npm audit, gitleaks, eslint, doc checks)
+
+EMPIRICAL PASS (the 52 gates that grep source text, corrected harness)
+  MUTANT A — verdict changed by a COMMENT: 12 gates
+      F-0235-no-fabricated-pii-live.sh              0 -> 1
+      F-0239-no-fake-money-progress.sh              0 -> 1
+      F-0241-no-false-draft-reassurance.sh          0 -> 1
+      F-0242-brand-can-open-dispute.sh              0 -> 1
+      F-0243-verification-copy-agrees.sh            0 -> 1
+      F-0247-premature-success-copy.sh              2 -> 1
+      F-0248-unreachable-primary-action.sh          2 -> 1
+      F-0253-signature-canvas-submitted.sh          2 -> 1
+      F-0256-no-mock-campaign-seed.sh               2 -> 1
+      F-0258-no-client-invented-fees.sh             2 -> 1
+      F-0265-brand-palette-tokens.sh                0 -> 1
+      F-0294-server-fee-copy-rendered.sh            2 -> 1
+    plus F-0238 itself, reproduced separately at exit 1 (F-0266.prefix.log).
+
+  MUTANT B — verdict changed by REMOVING comments: 0 gates
+    No gate in this tree currently passes because of comment text. The false-GREEN
+    direction is possible (F-0224 below is the shape) but not presently realised.
+
+  12 is a LOWER BOUND, not a census. Mutant A can only fire when a gate's pattern
+  survives being pasted into a comment; a pattern written as an escaped ERE
+  (`@Column\(name = "terms_text"\)`) does not match its own source text, so a gate
+  can be fully exposed and show no flip. That is why the fix was applied to the
+  structural population (51), not only to the 12 that happened to trigger.
+
+WHAT WAS FIXED
+  gates/_strip_comments.py  pre-existing tokenizer, kept. One REAL BUG found and
+        fixed while wiring it up: it wrote its output with `sys.stdout.write`,
+        which on this Windows host encodes cp1252, so every source file containing
+        `₹` (the money screens) or `→` (the admin audit panels) crashed it with
+        UnicodeEncodeError and the calling gate reported UNAVAILABLE. Honest, but
+        it silently excluded the money surfaces from comment-aware checking. Now
+        writes UTF-8 bytes to sys.stdout.buffer.
+  gates/_code.sh            NEW shared helper, the house `_rc.sh` convention.
+        code_ready / code_view / code_of / code_grep_r / code_why.
+        code_view returns a PATH to a comment-blanked copy with newlines preserved,
+        so it is a drop-in for "$F" in grep/sed/awk AND `grep -n` still reports the
+        original line numbers. If the stripper cannot run it reports UNAVAILABLE
+        and never falls back to grepping raw bytes — a silent fallback would restore
+        the defect invisibly.
+
+  50 gates now source it:
+     48 by mechanical patch (SELF before the cd, source + code_ready after it,
+        VAR_CODE=$(code_view "$VAR"), and "$VAR" -> "$VAR_CODE" ONLY on lines whose
+        command is grep/sed/awk/wc/head/tail/nl — never in prose or NOT-CHECKED text)
+      1 F-0238 migrated off its private inline stripper onto the shared one
+      1 F-0050 hand-patched: it carried the SAME naive `^\s*(//|\*|\{/\*)` filter
+        that F-0238 had, applied to only one of its three checks
+      1 F-0224 hand-patched: `grep -rn "releasePayout" src/` over a whole directory,
+        REQUIRING a hit. One comment anywhere under src/ saying "the releasePayout
+        call was removed here" proved the escrow-release endpoint still had a way
+        out of the product. A false green over money movement. Now code_grep_r,
+        which pre-filters with a raw grep (correctness is unaffected — a raw grep can
+        only over-select) and tokenizes only the candidates: 200s+ -> 11.5s.
+
+  NOT AFFECTED, checked and dismissed with a reason:
+     F-0207 greps package.json — JSON has no comments.
+     brand_pipeline_static_components.sh, fund_escrow_onfunded.sh — they grep the
+     OUTPUT of eslint / vitest, not source text.
+
+PROOF, both directions
+  F-0238, hardened, run against three trees:
+      comment-only occurrence (correct tree)  exit 0   (was 1)
+      real reintroduction IN CODE             exit 1   (still catches it)
+      the real repo                           exit 0
+  Whole population, corrected harness, after the fix:
+      BASELINE vs BASELINE-after-patch : 0 verdicts changed out of 52
+      BASELINE-after-patch vs MUTANT A : 0 flips remaining (was 12)
+
+WHAT THIS SWEEP STILL CANNOT SEE
+  - Template literals and regex literals containing `/` are tokenized loosely
+    (documented in _strip_comments.py). A forbidden string inside a `${...}`
+    interpolation that itself contains a string may be mis-scoped.
+  - A string that is real code but DEAD code still counts as present. The helper
+    tells comment from code, not reachable from unreachable.
+  - The 37 gates that run vitest instead of grepping are untouched by this and are
+    a different trust question entirely.
+  - Mutant A under-detects (see above). 12 is what fired, 51 is what is exposed.
+
+================================================================================
+ADDENDUM — what the mechanical pass missed, found by auditing its own output
+================================================================================
+The 48-gate mechanical patch swaps "$VAR" -> "$VAR_CODE" on reader lines. It cannot
+see a read that goes through a LOOP variable. Scanning the patched gates for
+`for x in "$A" "$B"; do ... grep "$x"` found 7 loops, of which 5 are harmless
+existence checks (`[ -f "$f" ]`) and 2 were real residual raw reads:
+
+  F-0243-verification-copy-agrees.sh:32   for f in "$K" "$B"; grep -qE "...publishes? automatically" "$f"
+  F-0273-frozen-escrow-reads-frozen.sh:43 for enum_file in "$ENUM_MS" "$ENUM_ES"; grep -q "$s" "$enum_file"
+
+Both hand-fixed. This is worth recording as its own hazard: a PARTIALLY converted
+gate is worse than an unconverted one, because it now carries the F-0266 preamble
+and reads as hardened. Any future mechanical pass over these gates must audit its
+own output for loop-variable reads, not just count swaps.
+
+FALSE-GREEN CONTROL (the mirror disease, proved on a converted gate)
+  F-0243 requires the copy "required to publish" to exist in brand-kyc-prompt.tsx.
+      clean tree                                             exit 0
+      copy deleted from CODE                                 exit 1
+      copy deleted from CODE, restated in a COMMENT          exit 1   <- the point
+      restored                                               exit 0
+  Before the fix the third row would have been exit 0: a gate certifying copy that
+  had been deleted, because someone described it in a comment.
+
+FALSE-RED CONTROL (a converted gate still catches real code)
+  F-0235 forbids a fabricated address in live component state.
+      clean tree                                             exit 0
+      `useState("Sea View, Carter Road")` added as CODE      exit 1
+      the same text added as a `//` comment                  exit 0

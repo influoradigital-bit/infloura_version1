@@ -16,11 +16,19 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266, the MIRROR shape. This gate REQUIRES a string to be present, over a whole
+# directory. `grep -rn` counted a comment as a caller — so the single sentence
+# "// the releasePayout call was removed here" anywhere under src/ was enough to prove
+# the escrow-release endpoint still has a way out of the product. A false GREEN over
+# money movement. code_grep_r searches the CODE of each file and keeps line numbers.
+. "$SELF/_code.sh" 2>/dev/null || { echo "· gates/_code.sh unreadable — unavailable"; exit 2; }
+code_ready || { echo "· $(code_why) — unavailable"; exit 2; }
 
 echo "· releasePayout has a real caller outside its own declaration"
-callers=$(grep -rn "releasePayout" src/ --include='*.tsx' --include='*.ts' 2>/dev/null \
-          | grep -v "src/lib/api.ts" | grep -v "\.test\." || true)
+callers=$(code_grep_r "releasePayout" src "(src/lib/api\.ts|\.test\.)"); crc=$?
+[ $crc -eq 2 ] && { echo "· $(code_why) — unavailable"; exit 2; }
 if [ -z "$callers" ]; then
   echo "VERDICT: broken — POST /wallet/escrow/release is orphaned again; funds stuck in escrow"
   echo "         have no path out of the product (F-0224)"

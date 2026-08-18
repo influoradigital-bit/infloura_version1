@@ -39,7 +39,6 @@ import {
   ExternalLink,
   ThumbsUp,
   RotateCcw,
-  DollarSign,
   Sparkles,
   AlertTriangle,
   CheckCheck,
@@ -67,7 +66,10 @@ interface Contract {
   creatorImage: string;
   // F-0267: 'pending_review' removed — mapApiContractStatus can never emit it (see B37
   // mapping below) and, after this fix, nothing in this file gates on or produces it either.
-  status: 'draft' | 'pending_signature' | 'signed' | 'expired' | 'disputed';
+  // F-0321: 'expired' renamed to 'cancelled' (backend CANCELLED is a party cancelling the
+  // contract, not a date passing — see mapApiContractStatus) and 'disputed' removed — nothing
+  // maps to it any more, and an unreachable status literal is dead config, not display coverage.
+  status: 'draft' | 'pending_signature' | 'signed' | 'cancelled';
   brandSigned: boolean;
   creatorSigned: boolean;
   signedDate?: string;
@@ -86,6 +88,14 @@ interface Contract {
   milestones: ContractMilestone[];
   escrowLocked: boolean;
   escrowAmount: number;
+  /**
+   * F-0273: true when at least one held milestone is FROZEN (money the platform is
+   * holding under an active dispute, NOT releasable) rather than ordinary FUNDED
+   * (releasable) escrow. `escrowLocked` alone cannot make this distinction — it is
+   * true for both — so the Escrow Status tile reads this separately to avoid telling
+   * the brand frozen money is the same "Locked" state as normal funded escrow.
+   */
+  escrowFrozen: boolean;
   createdAt: string;
   hash?: string;
   /**
@@ -139,6 +149,7 @@ const mockContracts: Contract[] = [
     currency: 'INR',
     escrowLocked: true,
     escrowAmount: 45000,
+    escrowFrozen: false,
     milestones: [],
     createdAt: '2024-01-10',
     hash: 'a1b2c3d4e5f6g7h8i9j0',
@@ -233,6 +244,7 @@ const mockContracts: Contract[] = [
     currency: 'INR',
     escrowLocked: true,
     escrowAmount: 35000,
+    escrowFrozen: false,
     milestones: [],
     createdAt: '2024-01-18',
     clauses: [
@@ -293,6 +305,7 @@ const mockContracts: Contract[] = [
     currency: 'INR',
     escrowLocked: false,
     escrowAmount: 0,
+    escrowFrozen: false,
     milestones: [],
     createdAt: '2024-01-20',
     clauses: [
@@ -338,10 +351,10 @@ interface ApiContractRow {
   creatorImage?: string;
   /**
    * Raw backend ContractStatus (src/lib/types.ts) — DRAFT/PENDING_SIGNATURES/
-   * ACTIVE/COMPLETED/TERMINATED/DISPUTED. NOT the same vocabulary as this
-   * page's UI-only Contract['status'] (draft/pending_signature/
-   * signed/expired/disputed). Must go through mapApiContractStatus() before
-   * use — see B37.
+   * ACTIVE/COMPLETED/CANCELLED (F-0252: 'TERMINATED'/'DISPUTED' were never real
+   * backend values). NOT the same vocabulary as this page's UI-only
+   * Contract['status'] (draft/pending_signature/signed/cancelled). Must
+   * go through mapApiContractStatus() before use — see B37.
    */
   status?: string;
   brandSigned?: boolean;
@@ -352,6 +365,8 @@ interface ApiContractRow {
   currency?: string;
   escrowLocked?: boolean;
   escrowAmount?: number;
+  /** F-0273: see Contract['escrowFrozen']. */
+  escrowFrozen?: boolean;
   createdAt?: string;
   hash?: string;
   /** C-2 (BrandF.md §62): the real deal/collaboration id — see Contract['collaborationId']. */
@@ -362,12 +377,25 @@ interface ApiContractRow {
 
 /**
  * Translate the real backend ContractStatus (DRAFT/PENDING_SIGNATURES/ACTIVE/
- * COMPLETED/TERMINATED/DISPUTED) into this page's UI-only Contract['status']
+ * COMPLETED/CANCELLED) into this page's UI-only Contract['status']
  * vocabulary. B37: GET /contracts returns the former; this page's statusConfig
  * map is keyed on the latter, so unmapped live rows (e.g. 'ACTIVE') looked up
  * as `statusConfig[row.status]` were `undefined`, and `.icon` on that threw
  * inside the list `.map()`, crashing the whole page. Any status not
  * recognized here safely falls through to 'draft' rather than throwing.
+ *
+ * F-0252 — this switch previously matched 'TERMINATED'/'DISPUTED', neither a real backend
+ * ContractStatus (see influora-api ContractStatus.java); both branches were dead code no live
+ * row could ever reach, and 'CANCELLED' — the terminal status the backend actually sends — fell
+ * through to the misleading 'draft' default instead. F-0252 first mapped 'CANCELLED' to
+ * 'expired' — the same UI treatment the dead 'TERMINATED' case used to give a no-longer-active
+ * contract — but that put this file at odds with brand-campaign-detail.tsx's
+ * contractStatusLabel, which called the identical backend value "Contract cancelled": a
+ * contract a party cancelled is not one whose expiration date passed. F-0321 renames the UI
+ * status itself to 'cancelled' so the two surfaces can no longer drift onto different words for
+ * the same fact. The 'disputed' UI status this switch used to be documented as "left in for
+ * display purposes" is removed outright (not just left unreachable) — see Contract['status'];
+ * the backend has no contract-level disputed status (disputes are tracked separately).
  */
 export function mapApiContractStatus(status: string | undefined): Contract['status'] | undefined {
   switch (status) {
@@ -379,15 +407,24 @@ export function mapApiContractStatus(status: string | undefined): Contract['stat
       return 'signed';
     case 'COMPLETED':
       return 'signed';
-    case 'TERMINATED':
-      return 'expired';
-    case 'DISPUTED':
-      return 'disputed';
+    case 'CANCELLED':
+      return 'cancelled';
     case undefined:
       return undefined;
     default:
       return 'draft';
   }
+}
+
+/**
+ * F-0321 — the full backend-status → rendered-badge-label pipeline, exposed so a cross-surface
+ * agreement test (see brand-campaign-detail.tsx's contractStatusLabel and
+ * src/pages/__tests__/contract-status-label-agreement.test.ts) can derive this file's REAL
+ * label for a given backend ContractStatus, rather than re-deriving or grepping for one literal.
+ */
+export function contractStatusBadgeLabel(backendStatus: string | undefined): string {
+  const uiStatus = mapApiContractStatus(backendStatus) ?? 'draft';
+  return getStatusConfig(uiStatus).label;
 }
 
 /**
@@ -424,6 +461,7 @@ function mergeContractRow(row: ApiContractRow, fallback?: Contract): Contract {
     milestones: row.milestones ?? fallback?.milestones ?? [],
     escrowLocked: row.escrowLocked ?? fallback?.escrowLocked ?? false,
     escrowAmount: row.escrowAmount ?? fallback?.escrowAmount ?? 0,
+    escrowFrozen: row.escrowFrozen ?? fallback?.escrowFrozen ?? false,
     createdAt: row.createdAt ?? fallback?.createdAt ?? '',
     hash: row.hash ?? fallback?.hash,
     collaborationId: row.collaborationId ?? fallback?.collaborationId ?? '',
@@ -448,22 +486,38 @@ function mergeContractRow(row: ApiContractRow, fallback?: Contract): Contract {
  * per-milestone status (`payment_milestones.status`: PENDING/FUNDED/RELEASED/
  * REFUNDED/FROZEN, per DealPaymentsTab's nextFundableMilestone comment).
  * "Locked" means at least one milestone currently holds funded-but-unreleased
- * money; the amount is the sum actually held right now — FUNDED only, since
- * RELEASED money has already left escrow and PENDING money was never funded.
+ * money; the amount is the sum actually held right now — FUNDED and FROZEN
+ * both count, since RELEASED money has already left escrow and PENDING money
+ * was never funded.
+ *
+ * F-0273: FUNDED and FROZEN are NOT the same fact for the brand, even though
+ * both count as "money currently held". FUNDED escrow is ordinary, releasable
+ * money. FROZEN escrow is money the platform is holding BECAUSE of an active
+ * dispute — held, and explicitly NOT releasable until the dispute resolves.
+ * Collapsing both into a single `locked` boolean (the original F-0236 fix)
+ * fixed the false "Not Locked" reading but re-created the same class of false
+ * money statement one level up: a brand in an active dispute saw the exact
+ * same green "Locked" tile as a brand with ordinary funded escrow. `frozen`
+ * lets the caller render the frozen case distinctly instead of reusing the
+ * "Locked" label. `frozen` is true whenever ANY held milestone is FROZEN —
+ * this is a caution flag, not a full accounting of a mixed FUNDED+FROZEN
+ * contract (rare: one milestone frozen under dispute while another remains
+ * ordinary funded escrow), matching how `locked`/`amount` already collapse
+ * per-milestone detail into one summary and leaving the true per-milestone
+ * breakdown to the Payments tab, which reads each milestone's own status.
  */
-function deriveEscrowFromMilestones(milestones: ContractMilestone[]): { locked: boolean; amount: number } {
-  // F-0273: FROZEN counts as locked. A FROZEN milestone is money the platform is still
-  // holding — it is frozen BY a dispute, not released. Counting only FUNDED told a brand
-  // in an active dispute that their escrow was "Not Locked", which is the same false money
-  // statement F-0236 was opened for, in the one situation where the truth matters most.
-  // RELEASED and REFUNDED are correctly excluded: that money has left escrow.
+function deriveEscrowFromMilestones(
+  milestones: ContractMilestone[],
+): { locked: boolean; amount: number; frozen: boolean } {
   const held = milestones.filter((m) => {
     const s = (m.status ?? '').toUpperCase();
     return s === 'FUNDED' || s === 'FROZEN';
   });
+  const frozen = held.some((m) => (m.status ?? '').toUpperCase() === 'FROZEN');
   return {
     locked: held.length > 0,
     amount: held.reduce((sum, m) => sum + m.amount, 0),
+    frozen,
   };
 }
 
@@ -482,7 +536,9 @@ function deriveEscrowFromMilestones(milestones: ContractMilestone[]): { locked: 
  * F-0236: `escrowLocked`/`escrowAmount` used to be left unset here entirely
  * (falling through to mergeContractRow's `false`/`0` default), so every live
  * contract read "Not Locked" regardless of real state. Both are now derived
- * from `rec.milestones` via `deriveEscrowFromMilestones`.
+ * from `rec.milestones` via `deriveEscrowFromMilestones`, along with
+ * `escrowFrozen` (F-0273) so a dispute-frozen hold is never rendered as
+ * ordinary funded escrow.
  */
 function adaptContractRecord(rec: ContractApiRecord, deal?: Deal): ApiContractRow {
   // The date a fully-executed contract was "signed": prefer the creator's
@@ -511,6 +567,7 @@ function adaptContractRecord(rec: ContractApiRecord, deal?: Deal): ApiContractRo
     milestones,
     escrowLocked: escrow.locked,
     escrowAmount: escrow.amount,
+    escrowFrozen: escrow.frozen,
   };
 }
 
@@ -551,8 +608,11 @@ const statusConfig = {
   // F-0267: 'pending_review' entry removed with the type member — see Contract['status'].
   pending_signature: { label: 'Awaiting Signature', color: 'border bg-stage-contracted text-stage-contracted-fg border-stage-contracted-border', icon: FileSignature },
   signed: { label: 'Active', color: 'border bg-stage-approved text-stage-approved-fg border-stage-approved-border', icon: CheckCircle2 },
-  expired: { label: 'Expired', color: 'border bg-stage-expired text-stage-expired-fg border-stage-expired-border', icon: AlertCircle },
-  disputed: { label: 'Disputed', color: 'border bg-stage-disputed text-stage-disputed-fg border-stage-disputed-border', icon: AlertTriangle },
+  // F-0321: was 'expired' / label 'Expired' — the only real backend value that ever reaches
+  // this entry is CANCELLED (see mapApiContractStatus), which is a party cancelling the
+  // contract, not a date passing. Reusing the 'bg-stage-expired' color tokens is fine (visual
+  // styling only, not a text claim); the label is what a brand reads.
+  cancelled: { label: 'Cancelled', color: 'border bg-stage-expired text-stage-expired-fg border-stage-expired-border', icon: AlertCircle },
 };
 
 // B37 safety net: `contract.status` should always be a mapped, known key
@@ -1073,7 +1133,24 @@ export function ContractsAndDeliverables() {
                     <div className="bg-card rounded-lg p-3 border border-border">
                       <p className="text-xs text-muted-foreground">Escrow Status</p>
                       <div className="flex items-center gap-2 mt-1">
-                        {selectedContract.escrowLocked ? (
+                        {/*
+                          F-0273: FROZEN is checked before the generic `escrowLocked` branch —
+                          FROZEN money IS locked (deriveEscrowFromMilestones counts it), but it
+                          is held under an active dispute, not ordinary releasable escrow. Reusing
+                          the green "Locked" label here told a brand in a dispute their money was
+                          the same normal funded state as any other contract. This third state
+                          uses the `stage-disputed` tokens (styling only — F-0321 removed the
+                          contract-status-level 'disputed' UI status itself, since nothing can
+                          produce it; this escrow-frozen indicator is a separate, still-real fact
+                          about a milestone), deliberately NOT the green/amber pair used for the
+                          other two states, so it reads as a different fact.
+                        */}
+                        {selectedContract.escrowFrozen ? (
+                          <>
+                            <AlertTriangle className="w-4 h-4 text-stage-disputed-fg" />
+                            <span className="text-sm font-semibold text-stage-disputed-fg">Frozen</span>
+                          </>
+                        ) : selectedContract.escrowLocked ? (
                           <>
                             <Lock className="w-4 h-4 text-green-500" />
                             <span className="text-sm font-semibold text-green-500">Locked</span>
@@ -1085,6 +1162,11 @@ export function ContractsAndDeliverables() {
                           </>
                         )}
                       </div>
+                      {selectedContract.escrowFrozen && (
+                        <p className="text-xs text-stage-disputed-fg mt-1">
+                          Held — not releasable while disputed
+                        </p>
+                      )}
                     </div>
                     <div className="bg-card rounded-lg p-3 border border-border">
                       <p className="text-xs text-muted-foreground">Deliverables</p>
@@ -1458,174 +1540,191 @@ export function ContractsAndDeliverables() {
                     brand-wide and not filterable by contract, and milestones carry
                     no funded/released timestamp) — that section honestly says so
                     rather than inventing dates.
+
+                    F-0251: the demo-mode branch below this one used to be exempt from the
+                    F-0236 fix entirely — it stayed on the same hardcoded "50% Upon Signing —
+                    Paid / 50% Upon Completion — In Escrow" schedule and fake "Jan 10, 2024" /
+                    "Jan 15, 2024" transaction history for EVERY demo contract regardless of
+                    its own state, so contract-3 (draft, unsigned, escrowLocked: false,
+                    escrowAmount: 0 — no money has ever moved) was told it was half paid. This
+                    tab no longer branches on liveApi at all: whether `selectedContract` came
+                    from a live `ContractApiRecord` or the demo fixtures, both carry the same
+                    real `milestones`/`escrowLocked`/`escrowAmount`/`escrowFrozen` fields (the
+                    same fields the Escrow Status tile above already reads without a liveApi
+                    branch), so one honest render path covers both. When no milestone breakdown
+                    exists, it falls back to that same escrow summary — never a fabricated
+                    schedule or invented dates — and says plainly that milestone/transaction
+                    detail isn't available.
                   */}
                   <TabsContent value="payments" className="p-6">
                     <div className="space-y-4">
-                      {liveApi ? (
-                        selectedContract.milestones.length === 0 ? (
+                      {selectedContract.milestones.length === 0 ? (
+                        <>
                           <Card className="p-4 border-border">
-                            <p className="text-sm text-muted-foreground">
-                              Payment milestone detail isn&apos;t available for this contract yet.
+                            <h3 className="font-semibold mb-4">Payment Schedule</h3>
+                            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                    selectedContract.escrowFrozen
+                                      ? 'bg-stage-disputed'
+                                      : selectedContract.escrowLocked
+                                        ? 'bg-amber-500/20'
+                                        : 'bg-muted-foreground/10'
+                                  }`}
+                                >
+                                  {selectedContract.escrowFrozen ? (
+                                    <AlertTriangle className="w-4 h-4 text-stage-disputed-fg" />
+                                  ) : selectedContract.escrowLocked ? (
+                                    <Lock className="w-4 h-4 text-amber-500" />
+                                  ) : (
+                                    <Clock className="w-4 h-4 text-muted-foreground" />
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="font-medium text-sm">
+                                    {selectedContract.escrowFrozen
+                                      ? 'Escrow held — frozen'
+                                      : selectedContract.escrowLocked
+                                        ? 'Escrow held'
+                                        : 'No escrow held'}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {selectedContract.escrowFrozen
+                                      ? 'Frozen — under dispute, not releasable'
+                                      : selectedContract.escrowLocked
+                                        ? 'Held in escrow'
+                                        : 'Nothing is currently funded for this contract'}
+                                  </p>
+                                </div>
+                              </div>
+                              <p
+                                className={`font-semibold ${
+                                  selectedContract.escrowFrozen
+                                    ? 'text-stage-disputed-fg'
+                                    : selectedContract.escrowLocked
+                                      ? ''
+                                      : 'text-muted-foreground'
+                                }`}
+                              >
+                                {formatCurrency(selectedContract.escrowAmount, selectedContract.currency)}
+                              </p>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-3">
+                              Milestone-level payment detail isn&apos;t available for this contract yet.
                             </p>
                           </Card>
-                        ) : (
-                          <>
-                            <Card className="p-4 border-border">
-                              <h3 className="font-semibold mb-4">Payment Schedule</h3>
-                              <div className="space-y-3">
-                                {selectedContract.milestones.map((milestone, index) => {
-                                  const rawStatus = (milestone.status ?? 'PENDING').toUpperCase();
-                                  const isReleased = rawStatus === 'RELEASED';
-                                  const isFunded = rawStatus === 'FUNDED';
-                                  const isRefunded = rawStatus === 'REFUNDED';
-                                  const isFrozen = rawStatus === 'FROZEN';
-                                  const label =
-                                    milestone.description || `Milestone ${milestone.sequenceNo ?? index + 1}`;
-                                  const subtext = isReleased
-                                    ? 'Released to creator'
-                                    : isFunded
-                                      ? 'Held in escrow'
-                                      : isRefunded
-                                        ? 'Refunded to brand'
-                                        : isFrozen
-                                          ? 'Frozen — under dispute'
-                                          : 'Not yet funded';
-                                  const statusLabel = isReleased
-                                    ? 'Paid'
-                                    : isFunded
-                                      ? 'In Escrow'
-                                      : isRefunded
-                                        ? 'Refunded'
-                                        : isFrozen
-                                          ? 'Frozen'
-                                          : 'Pending';
-                                  return (
-                                    <div
-                                      key={milestone.id ?? `ms-${index}`}
-                                      className="flex items-center justify-between p-3 bg-muted rounded-lg"
-                                    >
-                                      <div className="flex items-center gap-3">
-                                        <div
-                                          className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                            isReleased
-                                              ? 'bg-green-500/20'
-                                              : isFunded
-                                                ? 'bg-amber-500/20'
-                                                : 'bg-muted-foreground/10'
-                                          }`}
-                                        >
-                                          {isReleased ? (
-                                            <CheckCircle2 className="w-4 h-4 text-green-500" />
-                                          ) : isFunded ? (
-                                            <Lock className="w-4 h-4 text-amber-500" />
-                                          ) : (
-                                            <Clock className="w-4 h-4 text-muted-foreground" />
-                                          )}
-                                        </div>
-                                        <div>
-                                          <p className="font-medium text-sm">{label}</p>
-                                          <p className="text-xs text-muted-foreground">{subtext}</p>
-                                        </div>
-                                      </div>
-                                      <div className="text-right">
-                                        <p
-                                          className={`font-semibold ${
-                                            isReleased ? 'text-green-500' : !isFunded ? 'text-muted-foreground' : ''
-                                          }`}
-                                        >
-                                          {formatCurrency(milestone.amount, selectedContract.currency)}
-                                        </p>
-                                        <p
-                                          className={`text-xs ${
-                                            isReleased
-                                              ? 'text-green-500'
-                                              : isFunded
-                                                ? 'text-amber-500'
-                                                : 'text-muted-foreground'
-                                          }`}
-                                        >
-                                          {statusLabel}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </Card>
-
-                            <Card className="p-4 border-border">
-                              <h3 className="font-semibold mb-4">Transaction History</h3>
-                              <p className="text-sm text-muted-foreground">
-                                Transaction-level history isn&apos;t available from the API for this
-                                contract yet — the payment schedule above reflects each milestone&apos;s
-                                current status.
-                              </p>
-                            </Card>
-                          </>
-                        )
+                          <Card className="p-4 border-border">
+                            <h3 className="font-semibold mb-4">Transaction History</h3>
+                            <p className="text-sm text-muted-foreground">
+                              Transaction-level history isn&apos;t available for this contract.
+                            </p>
+                          </Card>
+                        </>
                       ) : (
                         <>
                           <Card className="p-4 border-border">
                             <h3 className="font-semibold mb-4">Payment Schedule</h3>
                             <div className="space-y-3">
-                              <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
-                                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                              {selectedContract.milestones.map((milestone, index) => {
+                                const rawStatus = (milestone.status ?? 'PENDING').toUpperCase();
+                                const isReleased = rawStatus === 'RELEASED';
+                                const isFunded = rawStatus === 'FUNDED';
+                                const isRefunded = rawStatus === 'REFUNDED';
+                                const isFrozen = rawStatus === 'FROZEN';
+                                const label =
+                                  milestone.description || `Milestone ${milestone.sequenceNo ?? index + 1}`;
+                                const subtext = isReleased
+                                  ? 'Released to creator'
+                                  : isFunded
+                                    ? 'Held in escrow'
+                                    : isRefunded
+                                      ? 'Refunded to brand'
+                                      : isFrozen
+                                        ? 'Frozen — under dispute'
+                                        : 'Not yet funded';
+                                const statusLabel = isReleased
+                                  ? 'Paid'
+                                  : isFunded
+                                    ? 'In Escrow'
+                                    : isRefunded
+                                      ? 'Refunded'
+                                      : isFrozen
+                                        ? 'Frozen'
+                                        : 'Pending';
+                                return (
+                                  <div
+                                    key={milestone.id ?? `ms-${index}`}
+                                    className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <div
+                                        className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                          isReleased
+                                            ? 'bg-green-500/20'
+                                            : isFrozen
+                                              ? 'bg-stage-disputed'
+                                              : isFunded
+                                                ? 'bg-amber-500/20'
+                                                : 'bg-muted-foreground/10'
+                                        }`}
+                                      >
+                                        {isReleased ? (
+                                          <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                        ) : isFrozen ? (
+                                          <AlertTriangle className="w-4 h-4 text-stage-disputed-fg" />
+                                        ) : isFunded ? (
+                                          <Lock className="w-4 h-4 text-amber-500" />
+                                        ) : (
+                                          <Clock className="w-4 h-4 text-muted-foreground" />
+                                        )}
+                                      </div>
+                                      <div>
+                                        <p className="font-medium text-sm">{label}</p>
+                                        <p className="text-xs text-muted-foreground">{subtext}</p>
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <p
+                                        className={`font-semibold ${
+                                          isReleased
+                                            ? 'text-green-500'
+                                            : isFrozen
+                                              ? 'text-stage-disputed-fg'
+                                              : !isFunded
+                                                ? 'text-muted-foreground'
+                                                : ''
+                                        }`}
+                                      >
+                                        {formatCurrency(milestone.amount, selectedContract.currency)}
+                                      </p>
+                                      <p
+                                        className={`text-xs ${
+                                          isReleased
+                                            ? 'text-green-500'
+                                            : isFrozen
+                                              ? 'text-stage-disputed-fg'
+                                              : isFunded
+                                                ? 'text-amber-500'
+                                                : 'text-muted-foreground'
+                                        }`}
+                                      >
+                                        {statusLabel}
+                                      </p>
+                                    </div>
                                   </div>
-                                  <div>
-                                    <p className="font-medium text-sm">50% Upon Signing</p>
-                                    <p className="text-xs text-muted-foreground">Released when contract is signed</p>
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <p className="font-semibold text-green-500">{formatCurrency(selectedContract.value / 2, selectedContract.currency)}</p>
-                                  <p className="text-xs text-green-500">Paid</p>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
-                                    <Lock className="w-4 h-4 text-amber-500" />
-                                  </div>
-                                  <div>
-                                    <p className="font-medium text-sm">50% Upon Completion</p>
-                                    <p className="text-xs text-muted-foreground">Released when all deliverables approved</p>
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <p className="font-semibold">{formatCurrency(selectedContract.value / 2, selectedContract.currency)}</p>
-                                  <p className="text-xs text-amber-500">In Escrow</p>
-                                </div>
-                              </div>
+                                );
+                              })}
                             </div>
                           </Card>
 
                           <Card className="p-4 border-border">
                             <h3 className="font-semibold mb-4">Transaction History</h3>
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between py-2 border-b border-border">
-                                <div className="flex items-center gap-3">
-                                  <DollarSign className="w-4 h-4 text-muted-foreground" />
-                                  <div>
-                                    <p className="text-sm">Escrow Funded</p>
-                                    <p className="text-xs text-muted-foreground">Jan 10, 2024</p>
-                                  </div>
-                                </div>
-                                <p className="font-medium">{formatCurrency(selectedContract.value, selectedContract.currency)}</p>
-                              </div>
-                              <div className="flex items-center justify-between py-2 border-b border-border">
-                                <div className="flex items-center gap-3">
-                                  <Send className="w-4 h-4 text-green-500" />
-                                  <div>
-                                    <p className="text-sm">First Payment Released</p>
-                                    <p className="text-xs text-muted-foreground">Jan 15, 2024</p>
-                                  </div>
-                                </div>
-                                <p className="font-medium text-green-500">-{formatCurrency(selectedContract.value / 2, selectedContract.currency)}</p>
-                              </div>
-                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Transaction-level history isn&apos;t available from the API for this
+                              contract yet — the payment schedule above reflects each milestone&apos;s
+                              current status.
+                            </p>
                           </Card>
                         </>
                       )}

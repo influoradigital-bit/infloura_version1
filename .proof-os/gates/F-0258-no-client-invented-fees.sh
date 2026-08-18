@@ -18,16 +18,24 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 FILE=src/pages/brand-campaign-detail.tsx
 [ -f "$FILE" ] || { echo "· $FILE missing — unavailable"; exit 2; }
+FILE_CODE=$(code_view "$FILE") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· content scan: $FILE for the fabricated fee-split multipliers"
 # Deliberately narrow to the arbitrary constants (0.82 Creator Pay, 0.018 GST, 0.062
 # Contingency) that have no server-side basis at all — not 0.10/0.15, which are legitimate
 # real platform-fee rates once sourced from the server response rather than hardcoded.
-hits=$(grep -nE '\* ?0\.82\b|\* ?0\.018\b|\* ?0\.062\b' "$FILE" 2>/dev/null | grep -vE ':[0-9]+:[[:space:]]*(//|\*|/\*|\{/\*)')
+hits=$(grep -nE '\* ?0\.82\b|\* ?0\.018\b|\* ?0\.062\b' "$FILE_CODE" 2>/dev/null | grep -vE ':[0-9]+:[[:space:]]*(//|\*|/\*|\{/\*)')
 if [ -n "$hits" ]; then
   echo "$hits"
   echo "VERDICT: broken — client-invented fee-split multipliers still present in $FILE (F-0258)"
@@ -36,7 +44,7 @@ fi
 echo "  no fabricated multiplier found"
 
 echo "· wiring check: $FILE calls the real brand platform-fee endpoint"
-if ! grep -q "brandPlatformFee" "$FILE"; then
+if ! grep -q "brandPlatformFee" "$FILE_CODE"; then
   echo "VERDICT: broken — no call to the real GET /brand/platform-fee source (api.wallet.brandPlatformFee);"
   echo "         the fee block is either still invented or silently deleted with nothing real in its place (F-0258)"
   exit 1
@@ -44,12 +52,12 @@ fi
 echo "  clean — brandPlatformFee is wired"
 
 echo "· content scan: Budget Breakdown card no longer sits under a Lock (implies escrowed/apportioned money)"
-lock_near_budget=$(grep -n "Budget Breakdown" "$FILE" | head -1)
+lock_near_budget=$(grep -n "Budget Breakdown" "$FILE_CODE" | head -1)
 if [ -n "$lock_near_budget" ]; then
   ln=$(echo "$lock_near_budget" | cut -d: -f1)
   start=$((ln - 3))
   [ "$start" -lt 1 ] && start=1
-  context=$(sed -n "${start},${ln}p" "$FILE")
+  context=$(sed -n "${start},${ln}p" "$FILE_CODE")
   if echo "$context" | grep -q "Lock"; then
     echo "$context"
     echo "VERDICT: broken — Budget Breakdown card still uses the Lock icon, implying the money is already"

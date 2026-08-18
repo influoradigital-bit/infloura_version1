@@ -1,0 +1,25 @@
+=== F-0301 gate run 1: against current UNFIXED real tree ===
+· api layer: a creator-side dispute-open client call actually exists
+  clean — creatorDisputes.open(dealId, reason) found in src/lib/api.ts
+· page: the 'Deal options' trigger is no longer hard-disabled
+                  reason rather than left as a fake affordance. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0} className="inline-flex">
+                  <Button
+VERDICT: broken — the 'Deal options' trigger around src/pages/creator-chat.tsx:1964 is still
+         unconditionally disabled (bare 'disabled' + aria-disabled="true", no gating
+         condition) — the F-0289 disabled-with-reason state was never replaced (F-0301)
+EXIT: 1
+
+=== F-0301 gate run 2: against constructed WRONG FIX (scratch copy, real tree untouched) ===
+Wrong fix: Deal options trigger is a real DropdownMenu, gated on escrowFunded (no
+unconditional disabled), but the DropdownMenuItem has no onClick / no handler at all.
+· api layer: a creator-side dispute-open client call actually exists
+  clean — creatorDisputes.open(dealId, reason) found in src/lib/api.ts
+· page: the 'Deal options' trigger is no longer hard-disabled
+  clean — no unconditional disabled/aria-disabled pair around the Deal options trigger
+· page: a real handler function calls creatorDisputes.open in its body
+VERDICT: broken — no 'const handleOpenDispute = async () => { ... }' handler found in
+         src/pages/creator-chat.tsx; a dispute action needs a real function body, not an inline no-op (F-0301)
+EXIT: 1

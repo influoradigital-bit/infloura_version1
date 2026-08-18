@@ -1,0 +1,8 @@
+· DTO: ContractGenerateRequest#terms carries a numeric @Size(max=...) cap
+  clean — terms field capped at 20000 characters:             @Size(max = 20000) String terms,
+· migrations: terms_text's declared SQL type sets the real byte ceiling
+  clean — V20260817140000__contract_terms_text.sql declares terms_text as TEXT (utf8mb4 -> 65535 byte ceiling)
+· agreement: worst-case 4-byte utf8mb4 content of 20000 chars must fit in 65535 bytes
+  20000 chars * 4 bytes/char = 80000 bytes > 65535 byte column ceiling
+VERDICT: broken — bean validation accepts input the column cannot store; heavy-emoji terms
+         text within the DTO's own declared cap still 500s the insert (F-0322)

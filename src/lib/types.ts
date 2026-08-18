@@ -39,7 +39,11 @@ export type CollaborationStatus =
 
 export type ProposalStatus = 'DRAFT' | 'SENT' | 'VIEWED' | 'COUNTERED' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
 
-export type ContractStatus = 'DRAFT' | 'PENDING_SIGNATURES' | 'ACTIVE' | 'COMPLETED' | 'TERMINATED' | 'DISPUTED';
+// F-0252: mirrors backend ContractStatus.java exactly (5 values) — TERMINATED and DISPUTED were
+// FE-only inventions no backend state could ever produce (every branch gated on them was dead
+// code), and CANCELLED — the real terminal state the backend does emit — was missing entirely,
+// so a live CANCELLED contract did not typecheck. Do not add FE-only phantom states here.
+export type ContractStatus = 'DRAFT' | 'PENDING_SIGNATURES' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
 
 /** Mirrors backend DeliverableStatus.java exactly (10 values) — do not add FE-only phantom states. */
 export type DeliverableStatus =

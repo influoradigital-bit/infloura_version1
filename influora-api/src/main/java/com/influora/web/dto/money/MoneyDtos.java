@@ -11,6 +11,7 @@ import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -210,6 +211,11 @@ public final class MoneyDtos {
      * each party signed with, so the UI can show who actually signed instead of only a
      * timestamp -- the name is the value the e-sign copy calls legally binding, and previously
      * had no read path back to the client at all.
+     *
+     * <p><b>[F-0283, contract-terms-never-persisted]</b> {@code terms} is the free-text terms
+     * captured (if any) at {@code ContractService#generate} time -- see {@link
+     * ContractGenerateRequest#terms}. {@code null}/omitted (via {@code @JsonInclude.NON_NULL})
+     * when no terms were supplied; never fabricated at this layer.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ContractResponse(
@@ -227,6 +233,7 @@ public final class MoneyDtos {
             String creatorSignerName,
             LocalDate effectiveDate,
             LocalDate expirationDate,
+            String terms,
             List<MilestoneDto> milestones,
             Instant createdAt,
             Instant updatedAt) {}
@@ -260,8 +267,51 @@ public final class MoneyDtos {
             @NotNull @DecimalMin("0.01") BigDecimal amount,
             LocalDate dueDate) {}
 
+    /**
+     * [F-0283, contract-terms-never-persisted] {@code terms} is the free-text terms of the
+     * agreement the two parties are agreeing to when they e-sign under the statutory binding
+     * notice ("legally bound ... under the IT Act 2000", {@code contracts-and-deliverables.tsx}).
+     * Before this fix nothing in this DTO, {@link com.influora.domain.entity.Contract}, or
+     * {@link ContractResponse} captured, persisted or returned that text at all -- the {@code
+     * terms} column on {@code contracts} held only a SHA-256 tamper hash of this very request
+     * ({@code ContractService#sha256TamperHash}), not terms.
+     *
+     * <p>Optional and nullable by design. No default clause set has been authored or approved
+     * for this platform (see {@code wiki/errors/BRAND-FRONTEND-UX-AUDIT-0817.md} -- {@code
+     * F-0237} was exactly a fabricated 5-item clause list shipped as though someone had). A
+     * caller that supplies text gets it persisted and echoed back verbatim; a caller that
+     * supplies nothing gets a contract whose terms are honestly absent -- never a filler value
+     * invented at this layer. What a contract's terms should say, who authors them, and whether
+     * they are per-campaign or per-platform remains an open product/legal decision.
+     *
+     * <p>The 2-arg constructor below exists only so every pre-existing caller that built this
+     * record positionally before {@code terms} existed keeps compiling unchanged.
+     */
+    /**
+     * [F-0322, validation-cap-exceeds-column-bytes] {@code max = 16383} is a BYTE-derived cap,
+     * not a round number: {@code contracts.terms_text} is MySQL {@code TEXT} -- 65,535 BYTES
+     * (V20260817140000__contract_terms_text.sql) -- on a {@code utf8mb4} schema (up to 4
+     * bytes/char), while {@code @Size} counts CHARACTERS. The previous cap of 20000 characters
+     * allowed up to 80,000 bytes of 4-byte content (heavy emoji; unreachable with Latin or
+     * Devanagari, which run 1-3 bytes/char) through bean validation straight into a column that
+     * can only hold 65,535 -- contract generation 500'd on insert. 16383 = floor(65535 / 4), so
+     * even worst-case 4-byte-per-character content at this cap is 65,532 bytes, inside the
+     * column. The column itself is intentionally left at TEXT: widening it to MEDIUMTEXT would
+     * require also changing {@link com.influora.domain.entity.Contract#getTermsText()}'s
+     * {@code columnDefinition} to match (this project runs {@code ddl-auto=validate}, which
+     * checks the entity mapping against the live schema at boot), for a limit contract terms
+     * text realistically never needs -- lowering the cap to genuinely fit the existing column is
+     * the smaller, safer fix.
+     */
     public record ContractGenerateRequest(
-            @NotBlank String collaborationId, @Valid List<MilestoneWriteRequest> milestones) {}
+            @NotBlank String collaborationId,
+            @Size(max = 16383) String terms,
+            @Valid List<MilestoneWriteRequest> milestones) {
+
+        public ContractGenerateRequest(String collaborationId, List<MilestoneWriteRequest> milestones) {
+            this(collaborationId, null, milestones);
+        }
+    }
 
     /**
      * Presigned, time-limited GET link for downloading the generated contract PDF. Requested

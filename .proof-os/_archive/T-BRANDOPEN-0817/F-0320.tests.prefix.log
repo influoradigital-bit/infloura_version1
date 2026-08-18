@@ -1,0 +1,1228 @@
+▲ [WARNING] Duplicate key "baseUrl" in object literal [duplicate-object-key]
+
+    ../../tsconfig.json:21:4:
+      21 │     "baseUrl": ".",
+         ╵     ~~~~~~~~~
+
+  The original key "baseUrl" is here:
+
+    ../../tsconfig.json:20:4:
+      20 │     "baseUrl": ".",
+         ╵     ~~~~~~~~~
+
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mC:/Users/Sage world/Downloads/New Influora Ai/New Influora[39m
+
+ [31m❯[39m src/pages/__tests__/brand-auth-identity.test.tsx [2m([22m[2m3 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[33m 1864[2mms[22m[39m
+[31m   [31m×[31m BrandLoginPage — F-0320 populates the shared auth store[2m > [22ma real backend displayName reaches useAuthStore().user after login, not a null/placeholder identity[39m[33m 515[2mms[22m[39m
+[31m     → useAuthStore().user is still null after a successful brand login: expected null not to be null[39m
+[31m   [31m×[31m BrandLoginPage — F-0320 populates the shared auth store[2m > [22man absent backend displayName falls back to an honest empty string, never a fabricated placeholder[39m[32m 278[2mms[22m[39m
+[31m     → expected undefined to be '' // Object.is equality[39m
+[31m   [31m×[31m BrandRegisterPage — F-0320 populates the shared auth store[2m > [22ma real backend displayName reaches useAuthStore().user after registration[39m[33m 1069[2mms[22m[39m
+[31m     → useAuthStore().user is still null after a successful brand registration: expected null not to be null[39m
+ [31m❯[39m src/components/brand/dashboard/__tests__/dashboard-page-greeting.test.tsx [2m([22m[2m3 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 10127[2mms[22m[39m
+[31m   [31m×[31m DashboardPage greeting — F-0320 renders the real signed-in person[2m > [22mgreets by the real backend displayName when the store has one (live brand session)[39m[33m 5082[2mms[22m[39m
+[31m     → Unable to find role="heading" and name `/Priya/i`
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div>[31m
+    [36m<div[31m
+      [33mclass[31m=[32m"p-6 space-y-6 max-w-5xl mx-auto"[31m
+    [36m>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[31m
+      [36m>[31m
+        [36m<div>[31m
+          [36m<h1[31m
+            [33mclass[31m=[32m"text-2xl font-semibold"[31m
+          [36m>[31m
+            [0mGood afternoon[0m
+            [0m, [0m
+            [0mthere[0m
+          [36m</h1>[31m
+          [36m<p[31m
+            [33mclass[31m=[32m"text-muted-foreground mt-1 text-sm"[31m
+          [36m>[31m
+            [0mYou're all caught up.[0m
+          [36m</p>[31m
+        [36m</div>[31m
+        [36m<button[31m
+          [33mclass[31m=[32m"inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-[transform,box-shadow,opacity,border-color,background-color,color] duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground bg-primary text-primary-foreground hover:bg-primary/90 h-10 rounded-md px-6 has-[>svg]:px-4 gap-2"[31m
+          [33mdata-slot[31m=[32m"button"[31m
+        [36m>[31m
+          [36m<svg[31m
+            [33maria-hidden[31m=[32m"true"[31m
+            [33mclass[31m=[32m"lucide lucide-target h-4 w-4"[31m
+            [33mfill[31m=[32m"none"[31m
+            [33mheight[31m=[32m"24"[31m
+            [33mstroke[31m=[32m"currentColor"[31m
+            [33mstroke-linecap[31m=[32m"round"[31m
+            [33mstroke-linejoin[31m=[32m"round"[31m
+            [33mstroke-width[31m=[32m"2"[31m
+            [33mviewBox[31m=[32m"0 0 24 24"[31m
+            [33mwidth[31m=[32m"24"[31m
+            [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+          [36m>[31m
+            [36m<circle[31m
+              [33mcx[31m=[32m"12"[31m
+              [33mcy[31m=[32m"12"[31m
+              [33mr[31m=[32m"10"[31m
+            [36m/>[31m
+            [36m<circle[31m
+              [33mcx[31m=[32m"12"[31m
+              [33mcy[31m=[32m"12"[31m
+              [33mr[31m=[32m"6"[31m
+            [36m/>[31m
+            [36m<circle[31m
+              [33mcx[31m=[32m"12"[31m
+              [33mcy[31m=[32m"12"[31m
+              [33mr[31m=[32m"2"[31m
+            [36m/>[31m
+          [36m</svg>[31m
+          [0mNew Campaign[0m
+        [36m</button>[31m
+      [36m</div>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm"[31m
+        [33mdata-slot[31m=[32m"card"[31m
+      [36m>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-3"[31m
+          [33mdata-slot[31m=[32m"card-header"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"flex items-center justify-between"[31m
+          [36m>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"text-lg font-medium flex items-center gap-2"[31m
+              [33mdata-slot[31m=[32m"card-title"[31m
+            [36m>[31m
+              [36m<svg[31m
+                [33maria-hidden[31m=[32m"true"[31m
+                [33mclass[31m=[32m"lucide lucide-timer h-5 w-5 text-orange-500"[31m
+                [33mfill[31m=[32m"none"[31m
+                [33mheight[31m=[32m"24"[31m
+                [33mstroke[31m=[32m"currentColor"[31m
+                [33mstroke-linecap[31m=[32m"round"[31m
+                [33mstroke-linejoin[31m=[32m"round"[31m
+                [33mstroke-width[31m=[32m"2"[31m
+                [33mviewBox[31m=[32m"0 0 24 24"[31m
+                [33mwidth[31m=[32m"24"[31m
+                [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+              [36m>[31m
+                [36m<line[31m
+                  [33mx1[31m=[32m"10"[31m
+                  [33mx2[31m=[32m"14"[31m
+                  [33my1[31m=[32m"2"[31m
+                  [33my2[31m=[32m"2"[31m
+                [36m/>[31m
+                [36m<line[31m
+                  [33mx1[31m=[32m"12"[31m
+                  [33mx2[31m=[32m"15"[31m
+                  [33my1[31m=[32m"14"[31m
+                  [33my2[31m=[32m"11"[31m
+                [36m/>[31m
+                [36m<circle[31m
+                  [33mcx[31m=[32m"12"[31m
+                  [33mcy[31m=[32m"14"[31m
+                  [33mr[31m=[32m"8"[31m
+                [36m/>[31m
+              [36m</svg>[31m
+              [0mRequires Your Action[0m
+            [36m</div>[31m
+            [36m<span[31m
+              [33mclass[31m=[32m"inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground transition-[color,box-shadow] overflow-hidden border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90"[31m
+              [33mdata-slot[31m=[32m"badge"[31m
+            [36m>[31m
+              [0m0 pending[0m
+            [36m</span>[31m
+          [36m</div>[31m
+        [36m</div>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"px-6 space-y-3"[31m
+          [33mdata-slot[31m=[32m"card-content"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"text-center py-12"[31m
+          [36m>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15"[31m
+            [36m>[31m
+              [36m<svg[31m
+                [33maria-hidden[31m=[32m"true"[31m
+                [33mclass[31m=[32m"lucide lucide-circle-check h-6 w-6 text-success"[31m
+                [33mfill[31m=[32m"none"[31m
+                [33mheight[31m=[32m"24"[31m
+                [33mstroke[31m=[32m"currentColor"[31m
+                [33mstroke-linecap[31m=[32m"round"[31m
+                [33mstroke-linejoin[31m=[32m"round"[31m
+                [33mstroke-width[31m=[32m"2"[31m
+                [33mviewBox[31m=[32m"0 0 24 24"[31m
+                [33mwidth[31m=[32m"24"[31m
+                [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+              [36m>[31m
+                [36m<circle...
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div>[31m
+    [36m<div[31m
+      [33mclass[31m=[32m"p-6 space-y-6 max-w-5xl mx-auto"[31m
+    [36m>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[31m
+      [36m>[31m
+        [36m<div>[31m
+          [36m<h1[31m
+            [33mclass[31m=[32m"text-2xl font-semibold"[31m
+          [36m>[31m
+            [0mGood afternoon[0m
+            [0m, [0m
+            [0mthere[0m
+          [36m</h1>[31m
+          [36m<p[31m
+            [33mclass[31m=[32m"text-muted-foreground mt-1 text-sm"[31m
+          [36m>[31m
+            [0mYou're all caught up.[0m
+          [36m</p>[31m
+        [36m</div>[31m
+        [36m<button[31m
+          [33mclass[31m=[32m"inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-[transform,box-shadow,opacity,border-color,background-color,color] duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground bg-primary text-primary-foreground hover:bg-primary/90 h-10 rounded-md px-6 has-[>svg]:px-4 gap-2"[31m
+          [33mdata-slot[31m=[32m"button"[31m
+        [36m>[31m
+          [36m<svg[31m
+            [33maria-hidden[31m=[32m"true"[31m
+            [33mclass[31m=[32m"lucide lucide-target h-4 w-4"[31m
+            [33mfill[31m=[32m"none"[31m
+            [33mheight[31m=[32m"24"[31m
+            [33mstroke[31m=[32m"currentColor"[31m
+            [33mstroke-linecap[31m=[32m"round"[31m
+            [33mstroke-linejoin[31m=[32m"round"[31m
+            [33mstroke-width[31m=[32m"2"[31m
+            [33mviewBox[31m=[32m"0 0 24 24"[31m
+            [33mwidth[31m=[32m"24"[31m
+            [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+          [36m>[31m
+            [36m<circle[31m
+              [33mcx[31m=[32m"12"[31m
+              [33mcy[31m=[32m"12"[31m
+              [33mr[31m=[32m"10"[31m
+            [36m/>[31m
+            [36m<circle[31m
+              [33mcx[31m=[32m"12"[31m
+              [33mcy[31m=[32m"12"[31m
+              [33mr[31m=[32m"6"[31m
+            [36m/>[31m
+            [36m<circle[31m
+              [33mcx[31m=[32m"12"[31m
+              [33mcy[31m=[32m"12"[31m
+              [33mr[31m=[32m"2"[31m
+            [36m/>[31m
+          [36m</svg>[31m
+          [0mNew Campaign[0m
+        [36m</button>[31m
+      [36m</div>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm"[31m
+        [33mdata-slot[31m=[32m"card"[31m
+      [36m>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-3"[31m
+          [33mdata-slot[31m=[32m"card-header"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"flex items-center justify-between"[31m
+          [36m>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"text-lg font-medium flex items-center gap-2"[31m
+              [33mdata-slot[31m=[32m"card-title"[31m
+            [36m>[31m
+              [36m<svg[31m
+                [33maria-hidden[31m=[32m"true"[31m
+                [33mclass[31m=[32m"lucide lucide-timer h-5 w-5 text-orange-500"[31m
+                [33mfill[31m=[32m"none"[31m
+                [33mheight[31m=[32m"24"[31m
+                [33mstroke[31m=[32m"currentColor"[31m
+                [33mstroke-linecap[31m=[32m"round"[31m
+                [33mstroke-linejoin[31m=[32m"round"[31m
+                [33mstroke-width[31m=[32m"2"[31m
+                [33mviewBox[31m=[32m"0 0 24 24"[31m
+                [33mwidth[31m=[32m"24"[31m
+                [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+              [36m>[31m
+                [36m<line[31m
+                  [33mx1[31m=[32m"10"[31m
+                  [33mx2[31m=[32m"14"[31m
+                  [33my1[31m=[32m"2"[31m
+                  [33my2[31m=[32m"2"[31m
+                [36m/>[31m
+                [36m<line[31m
+                  [33mx1[31m=[32m"12"[31m
+                  [33mx2[31m=[32m"15"[31m
+                  [33my1[31m=[32m"14"[31m
+                  [33my2[31m=[32m"11"[31m
+                [36m/>[31m
+                [36m<circle[31m
+                  [33mcx[31m=[32m"12"[31m
+                  [33mcy[31m=[32m"14"[31m
+                  [33mr[31m=[32m"8"[31m
+                [36m/>[31m
+              [36m</svg>[31m
+              [0mRequires Your Action[0m
+            [36m</div>[31m
+            [36m<span[31m
+              [33mclass[31m=[32m"inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground transition-[color,box-shadow] overflow-hidden border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90"[31m
+              [33mdata-slot[31m=[32m"badge"[31m
+            [36m>[31m
+              [0m0 pending[0m
+            [36m</span>[31m
+          [36m</div>[31m
+        [36m</div>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"px-6 space-y-3"[31m
+          [33mdata-slot[31m=[32m"card-content"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"text-center py-12"[31m
+          [36m>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15"[31m
+            [36m>[31m
+              [36m<svg[31m
+                [33maria-hidden[31m=[32m"true"[31m
+                [33mclass[31m=[32m"lucide lucide-circle-check h-6 w-6 text-success"[31m
+                [33mfill[31m=[32m"none"[31m
+                [33mheight[31m=[32m"24"[31m
+                [33mstroke[31m=[32m"currentColor"[31m
+                [33mstroke-linecap[31m=[32m"round"[31m
+                [33mstroke-linejoin[31m=[32m"round"[31m
+                [33mstroke-width[31m=[32m"2"[31m
+                [33mviewBox[31m=[32m"0 0 24 24"[31m
+                [33mwidth[31m=[32m"24"[31m
+                [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+              [36m>[31m
+                [36m<circle...[39m
+[31m   [31m×[31m DashboardPage greeting — F-0320 renders the real signed-in person[2m > [22ma single-word displayName renders as-is (no name to split further)[39m[33m 5018[2mms[22m[39m
+[31m     → Unable to find role="heading" and name `/Glownaturals/i`
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div>[31m
+    [36m<div[31m
+      [33mclass[31m=[32m"p-6 space-y-6 max-w-5xl mx-auto"[31m
+    [36m>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[31m
+      [36m>[31m
+        [36m<div>[31m
+          [36m<h1[31m
+            [33mclass[31m=[32m"text-2xl font-semibold"[31m
+          [36m>[31m
+            [0mGood afternoon[0m
+            [0m, [0m
+            [0mthere[0m
+          [36m</h1>[31m
+          [36m<p[31m
+            [33mclass[31m=[32m"text-muted-foreground mt-1 text-sm"[31m
+          [36m>[31m
+            [0mYou're all caught up.[0m
+          [36m</p>[31m
+        [36m</div>[31m
+        [36m<button[31m
+          [33mclass[31m=[32m"inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-[transform,box-shadow,opacity,border-color,background-color,color] duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground bg-primary text-primary-foreground hover:bg-primary/90 h-10 rounded-md px-6 has-[>svg]:px-4 gap-2"[31m
+          [33mdata-slot[31m=[32m"button"[31m
+        [36m>[31m
+          [36m<svg[31m
+            [33maria-hidden[31m=[32m"true"[31m
+            [33mclass[31m=[32m"lucide lucide-target h-4 w-4"[31m
+            [33mfill[31m=[32m"none"[31m
+            [33mheight[31m=[32m"24"[31m
+            [33mstroke[31m=[32m"currentColor"[31m
+            [33mstroke-linecap[31m=[32m"round"[31m
+            [33mstroke-linejoin[31m=[32m"round"[31m
+            [33mstroke-width[31m=[32m"2"[31m
+            [33mviewBox[31m=[32m"0 0 24 24"[31m
+            [33mwidth[31m=[32m"24"[31m
+            [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+          [36m>[31m
+            [36m<circle[31m
+              [33mcx[31m=[32m"12"[31m
+              [33mcy[31m=[32m"12"[31m
+              [33mr[31m=[32m"10"[31m
+            [36m/>[31m
+            [36m<circle[31m
+              [33mcx[31m=[32m"12"[31m
+              [33mcy[31m=[32m"12"[31m
+              [33mr[31m=[32m"6"[31m
+            [36m/>[31m
+            [36m<circle[31m
+              [33mcx[31m=[32m"12"[31m
+              [33mcy[31m=[32m"12"[31m
+              [33mr[31m=[32m"2"[31m
+            [36m/>[31m
+          [36m</svg>[31m
+          [0mNew Campaign[0m
+        [36m</button>[31m
+      [36m</div>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm"[31m
+        [33mdata-slot[31m=[32m"card"[31m
+      [36m>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-3"[31m
+          [33mdata-slot[31m=[32m"card-header"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"flex items-center justify-between"[31m
+          [36m>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"text-lg font-medium flex items-center gap-2"[31m
+              [33mdata-slot[31m=[32m"card-title"[31m
+            [36m>[31m
+              [36m<svg[31m
+                [33maria-hidden[31m=[32m"true"[31m
+                [33mclass[31m=[32m"lucide lucide-timer h-5 w-5 text-orange-500"[31m
+                [33mfill[31m=[32m"none"[31m
+                [33mheight[31m=[32m"24"[31m
+                [33mstroke[31m=[32m"currentColor"[31m
+                [33mstroke-linecap[31m=[32m"round"[31m
+                [33mstroke-linejoin[31m=[32m"round"[31m
+                [33mstroke-width[31m=[32m"2"[31m
+                [33mviewBox[31m=[32m"0 0 24 24"[31m
+                [33mwidth[31m=[32m"24"[31m
+                [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+              [36m>[31m
+                [36m<line[31m
+                  [33mx1[31m=[32m"10"[31m
+                  [33mx2[31m=[32m"14"[31m
+                  [33my1[31m=[32m"2"[31m
+                  [33my2[31m=[32m"2"[31m
+                [36m/>[31m
+                [36m<line[31m
+                  [33mx1[31m=[32m"12"[31m
+                  [33mx2[31m=[32m"15"[31m
+                  [33my1[31m=[32m"14"[31m
+                  [33my2[31m=[32m"11"[31m
+                [36m/>[31m
+                [36m<circle[31m
+                  [33mcx[31m=[32m"12"[31m
+                  [33mcy[31m=[32m"14"[31m
+                  [33mr[31m=[32m"8"[31m
+                [36m/>[31m
+              [36m</svg>[31m
+              [0mRequires Your Action[0m
+            [36m</div>[31m
+            [36m<span[31m
+              [33mclass[31m=[32m"inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground transition-[color,box-shadow] overflow-hidden border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90"[31m
+              [33mdata-slot[31m=[32m"badge"[31m
+            [36m>[31m
+              [0m0 pending[0m
+            [36m</span>[31m
+          [36m</div>[31m
+        [36m</div>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"px-6 space-y-3"[31m
+          [33mdata-slot[31m=[32m"card-content"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"text-center py-12"[31m
+          [36m>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15"[31m
+            [36m>[31m
+              [36m<svg[31m
+                [33maria-hidden[31m=[32m"true"[31m
+                [33mclass[31m=[32m"lucide lucide-circle-check h-6 w-6 text-success"[31m
+                [33mfill[31m=[32m"none"[31m
+                [33mheight[31m=[32m"24"[31m
+                [33mstroke[31m=[32m"currentColor"[31m
+                [33mstroke-linecap[31m=[32m"round"[31m
+                [33mstroke-linejoin[31m=[32m"round"[31m
+                [33mstroke-width[31m=[32m"2"[31m
+                [33mviewBox[31m=[32m"0 0 24 24"[31m
+                [33mwidth[31m=[32m"24"[31m
+                [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+              [36m>[31m
+                [36m<circle...
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div>[31m
+    [36m<div[31m
+      [33mclass[31m=[32m"p-6 space-y-6 max-w-5xl mx-auto"[31m
+    [36m>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[31m
+      [36m>[31m
+        [36m<div>[31m
+          [36m<h1[31m
+            [33mclass[31m=[32m"text-2xl font-semibold"[31m
+          [36m>[31m
+            [0mGood afternoon[0m
+            [0m, [0m
+            [0mthere[0m
+          [36m</h1>[31m
+          [36m<p[31m
+            [33mclass[31m=[32m"text-muted-foreground mt-1 text-sm"[31m
+          [36m>[31m
+            [0mYou're all caught up.[0m
+          [36m</p>[31m
+        [36m</div>[31m
+        [36m<button[31m
+          [33mclass[31m=[32m"inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-[transform,box-shadow,opacity,border-color,background-color,color] duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground bg-primary text-primary-foreground hover:bg-primary/90 h-10 rounded-md px-6 has-[>svg]:px-4 gap-2"[31m
+          [33mdata-slot[31m=[32m"button"[31m
+        [36m>[31m
+          [36m<svg[31m
+            [33maria-hidden[31m=[32m"true"[31m
+            [33mclass[31m=[32m"lucide lucide-target h-4 w-4"[31m
+            [33mfill[31m=[32m"none"[31m
+            [33mheight[31m=[32m"24"[31m
+            [33mstroke[31m=[32m"currentColor"[31m
+            [33mstroke-linecap[31m=[32m"round"[31m
+            [33mstroke-linejoin[31m=[32m"round"[31m
+            [33mstroke-width[31m=[32m"2"[31m
+            [33mviewBox[31m=[32m"0 0 24 24"[31m
+            [33mwidth[31m=[32m"24"[31m
+            [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+          [36m>[31m
+            [36m<circle[31m
+              [33mcx[31m=[32m"12"[31m
+              [33mcy[31m=[32m"12"[31m
+              [33mr[31m=[32m"10"[31m
+            [36m/>[31m
+            [36m<circle[31m
+              [33mcx[31m=[32m"12"[31m
+              [33mcy[31m=[32m"12"[31m
+              [33mr[31m=[32m"6"[31m
+            [36m/>[31m
+            [36m<circle[31m
+              [33mcx[31m=[32m"12"[31m
+              [33mcy[31m=[32m"12"[31m
+              [33mr[31m=[32m"2"[31m
+            [36m/>[31m
+          [36m</svg>[31m
+          [0mNew Campaign[0m
+        [36m</button>[31m
+      [36m</div>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm"[31m
+        [33mdata-slot[31m=[32m"card"[31m
+      [36m>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-3"[31m
+          [33mdata-slot[31m=[32m"card-header"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"flex items-center justify-between"[31m
+          [36m>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"text-lg font-medium flex items-center gap-2"[31m
+              [33mdata-slot[31m=[32m"card-title"[31m
+            [36m>[31m
+              [36m<svg[31m
+                [33maria-hidden[31m=[32m"true"[31m
+                [33mclass[31m=[32m"lucide lucide-timer h-5 w-5 text-orange-500"[31m
+                [33mfill[31m=[32m"none"[31m
+                [33mheight[31m=[32m"24"[31m
+                [33mstroke[31m=[32m"currentColor"[31m
+                [33mstroke-linecap[31m=[32m"round"[31m
+                [33mstroke-linejoin[31m=[32m"round"[31m
+                [33mstroke-width[31m=[32m"2"[31m
+                [33mviewBox[31m=[32m"0 0 24 24"[31m
+                [33mwidth[31m=[32m"24"[31m
+                [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+              [36m>[31m
+                [36m<line[31m
+                  [33mx1[31m=[32m"10"[31m
+                  [33mx2[31m=[32m"14"[31m
+                  [33my1[31m=[32m"2"[31m
+                  [33my2[31m=[32m"2"[31m
+                [36m/>[31m
+                [36m<line[31m
+                  [33mx1[31m=[32m"12"[31m
+                  [33mx2[31m=[32m"15"[31m
+                  [33my1[31m=[32m"14"[31m
+                  [33my2[31m=[32m"11"[31m
+                [36m/>[31m
+                [36m<circle[31m
+                  [33mcx[31m=[32m"12"[31m
+                  [33mcy[31m=[32m"14"[31m
+                  [33mr[31m=[32m"8"[31m
+                [36m/>[31m
+              [36m</svg>[31m
+              [0mRequires Your Action[0m
+            [36m</div>[31m
+            [36m<span[31m
+              [33mclass[31m=[32m"inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground transition-[color,box-shadow] overflow-hidden border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90"[31m
+              [33mdata-slot[31m=[32m"badge"[31m
+            [36m>[31m
+              [0m0 pending[0m
+            [36m</span>[31m
+          [36m</div>[31m
+        [36m</div>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"px-6 space-y-3"[31m
+          [33mdata-slot[31m=[32m"card-content"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"text-center py-12"[31m
+          [36m>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15"[31m
+            [36m>[31m
+              [36m<svg[31m
+                [33maria-hidden[31m=[32m"true"[31m
+                [33mclass[31m=[32m"lucide lucide-circle-check h-6 w-6 text-success"[31m
+                [33mfill[31m=[32m"none"[31m
+                [33mheight[31m=[32m"24"[31m
+                [33mstroke[31m=[32m"currentColor"[31m
+                [33mstroke-linecap[31m=[32m"round"[31m
+                [33mstroke-linejoin[31m=[32m"round"[31m
+                [33mstroke-width[31m=[32m"2"[31m
+                [33mviewBox[31m=[32m"0 0 24 24"[31m
+                [33mwidth[31m=[32m"24"[31m
+                [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+              [36m>[31m
+                [36m<circle...[39m
+   [32m✓[39m DashboardPage greeting — F-0320 renders the real signed-in person[2m > [22mfalls back to the honest neutral "there" only when the store genuinely has no user — never a fabricated name[32m 25[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 5 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/pages/__tests__/brand-auth-identity.test.tsx[2m > [22mBrandLoginPage — F-0320 populates the shared auth store[2m > [22ma real backend displayName reaches useAuthStore().user after login, not a null/placeholder identity
+[31m[1mAssertionError[22m: useAuthStore().user is still null after a successful brand login: expected null not to be null[39m
+[36m [2m❯[22m src/pages/__tests__/brand-auth-identity.test.tsx:[2m92:95[22m[39m
+    [90m 90| [39m
+    [90m 91| [39m    [35mconst[39m storeUser [33m=[39m useAuthStore[33m.[39m[34mgetState[39m()[33m.[39muser[33m;[39m
+    [90m 92| [39m    expect(storeUser, 'useAuthStore().user is still null after a succe…
+    [90m   | [39m                                                                                              [31m^[39m
+    [90m 93| [39m    [34mexpect[39m(storeUser[33m?.[39mdisplayName)[33m.[39m[34mtoBe[39m([32m'Priya Sharma'[39m)[33m;[39m
+    [90m 94| [39m    [34mexpect[39m(storeUser[33m?.[39memail)[33m.[39m[34mtoBe[39m([32m'ops@realbrand.com'[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/pages/__tests__/brand-auth-identity.test.tsx[2m > [22mBrandLoginPage — F-0320 populates the shared auth store[2m > [22man absent backend displayName falls back to an honest empty string, never a fabricated placeholder
+[31m[1mAssertionError[22m: expected undefined to be '' // Object.is equality[39m
+
+[32m- Expected:[39m 
+""
+
+[31m+ Received:[39m 
+undefined
+
+[36m [2m❯[22m src/pages/__tests__/brand-auth-identity.test.tsx:[2m117:36[22m[39m
+    [90m115| [39m
+    [90m116| [39m    [35mconst[39m storeUser [33m=[39m useAuthStore[33m.[39m[34mgetState[39m()[33m.[39muser[33m;[39m
+    [90m117| [39m    [34mexpect[39m(storeUser[33m?.[39mdisplayName)[33m.[39m[34mtoBe[39m([32m''[39m)[33m;[39m
+    [90m   | [39m                                   [31m^[39m
+    [90m118| [39m    [34mexpect[39m(storeUser[33m?.[39mdisplayName)[33m.[39mnot[33m.[39m[34mtoMatch[39m([36m/Brand Account/i[39m)[33m;[39m
+    [90m119| [39m  })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/pages/__tests__/brand-auth-identity.test.tsx[2m > [22mBrandRegisterPage — F-0320 populates the shared auth store[2m > [22ma real backend displayName reaches useAuthStore().user after registration
+[31m[1mAssertionError[22m: useAuthStore().user is still null after a successful brand registration: expected null not to be null[39m
+[36m [2m❯[22m src/pages/__tests__/brand-auth-identity.test.tsx:[2m155:102[22m[39m
+    [90m153| [39m
+    [90m154| [39m    [35mconst[39m storeUser [33m=[39m useAuthStore[33m.[39m[34mgetState[39m()[33m.[39muser[33m;[39m
+    [90m155| [39m    expect(storeUser, 'useAuthStore().user is still null after a succe…
+    [90m   | [39m                                                                                                     [31m^[39m
+    [90m156| [39m    [34mexpect[39m(storeUser[33m?.[39mdisplayName)[33m.[39m[34mtoBe[39m([32m'Rahul Mehta'[39m)[33m;[39m
+    [90m157| [39m    [34mexpect[39m(storeUser[33m?.[39memail)[33m.[39m[34mtoBe[39m([32m'rahul@auditbrand.com'[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/brand/dashboard/__tests__/dashboard-page-greeting.test.tsx[2m > [22mDashboardPage greeting — F-0320 renders the real signed-in person[2m > [22mgreets by the real backend displayName when the store has one (live brand session)
+[31m[1mTestingLibraryElementError[22m[39m: Unable to find role="heading" and name `/Priya/i`
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"p-6 space-y-6 max-w-5xl mx-auto"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<h1[39m
+            [33mclass[39m=[32m"text-2xl font-semibold"[39m
+          [36m>[39m
+            [0mGood afternoon[0m
+            [0m, [0m
+            [0mthere[0m
+          [36m</h1>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-muted-foreground mt-1 text-sm"[39m
+          [36m>[39m
+            [0mYou're all caught up.[0m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-[transform,box-shadow,opacity,border-color,background-color,color] duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground bg-primary text-primary-foreground hover:bg-primary/90 h-10 rounded-md px-6 has-[>svg]:px-4 gap-2"[39m
+          [33mdata-slot[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"lucide lucide-target h-4 w-4"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"24"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"2"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"24"[39m
+            [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+          [36m>[39m
+            [36m<circle[39m
+              [33mcx[39m=[32m"12"[39m
+              [33mcy[39m=[32m"12"[39m
+              [33mr[39m=[32m"10"[39m
+            [36m/>[39m
+            [36m<circle[39m
+              [33mcx[39m=[32m"12"[39m
+              [33mcy[39m=[32m"12"[39m
+              [33mr[39m=[32m"6"[39m
+            [36m/>[39m
+            [36m<circle[39m
+              [33mcx[39m=[32m"12"[39m
+              [33mcy[39m=[32m"12"[39m
+              [33mr[39m=[32m"2"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [0mNew Campaign[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm"[39m
+        [33mdata-slot[39m=[32m"card"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-3"[39m
+          [33mdata-slot[39m=[32m"card-header"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex items-center justify-between"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"text-lg font-medium flex items-center gap-2"[39m
+              [33mdata-slot[39m=[32m"card-title"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-timer h-5 w-5 text-orange-500"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<line[39m
+                  [33mx1[39m=[32m"10"[39m
+                  [33mx2[39m=[32m"14"[39m
+                  [33my1[39m=[32m"2"[39m
+                  [33my2[39m=[32m"2"[39m
+                [36m/>[39m
+                [36m<line[39m
+                  [33mx1[39m=[32m"12"[39m
+                  [33mx2[39m=[32m"15"[39m
+                  [33my1[39m=[32m"14"[39m
+                  [33my2[39m=[32m"11"[39m
+                [36m/>[39m
+                [36m<circle[39m
+                  [33mcx[39m=[32m"12"[39m
+                  [33mcy[39m=[32m"14"[39m
+                  [33mr[39m=[32m"8"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+              [0mRequires Your Action[0m
+            [36m</div>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground transition-[color,box-shadow] overflow-hidden border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90"[39m
+              [33mdata-slot[39m=[32m"badge"[39m
+            [36m>[39m
+              [0m0 pending[0m
+            [36m</span>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"px-6 space-y-3"[39m
+          [33mdata-slot[39m=[32m"card-content"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"text-center py-12"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-circle-check h-6 w-6 text-success"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<circle...
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"p-6 space-y-6 max-w-5xl mx-auto"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<h1[39m
+            [33mclass[39m=[32m"text-2xl font-semibold"[39m
+          [36m>[39m
+            [0mGood afternoon[0m
+            [0m, [0m
+            [0mthere[0m
+          [36m</h1>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-muted-foreground mt-1 text-sm"[39m
+          [36m>[39m
+            [0mYou're all caught up.[0m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-[transform,box-shadow,opacity,border-color,background-color,color] duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground bg-primary text-primary-foreground hover:bg-primary/90 h-10 rounded-md px-6 has-[>svg]:px-4 gap-2"[39m
+          [33mdata-slot[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"lucide lucide-target h-4 w-4"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"24"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"2"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"24"[39m
+            [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+          [36m>[39m
+            [36m<circle[39m
+              [33mcx[39m=[32m"12"[39m
+              [33mcy[39m=[32m"12"[39m
+              [33mr[39m=[32m"10"[39m
+            [36m/>[39m
+            [36m<circle[39m
+              [33mcx[39m=[32m"12"[39m
+              [33mcy[39m=[32m"12"[39m
+              [33mr[39m=[32m"6"[39m
+            [36m/>[39m
+            [36m<circle[39m
+              [33mcx[39m=[32m"12"[39m
+              [33mcy[39m=[32m"12"[39m
+              [33mr[39m=[32m"2"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [0mNew Campaign[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm"[39m
+        [33mdata-slot[39m=[32m"card"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-3"[39m
+          [33mdata-slot[39m=[32m"card-header"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex items-center justify-between"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"text-lg font-medium flex items-center gap-2"[39m
+              [33mdata-slot[39m=[32m"card-title"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-timer h-5 w-5 text-orange-500"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<line[39m
+                  [33mx1[39m=[32m"10"[39m
+                  [33mx2[39m=[32m"14"[39m
+                  [33my1[39m=[32m"2"[39m
+                  [33my2[39m=[32m"2"[39m
+                [36m/>[39m
+                [36m<line[39m
+                  [33mx1[39m=[32m"12"[39m
+                  [33mx2[39m=[32m"15"[39m
+                  [33my1[39m=[32m"14"[39m
+                  [33my2[39m=[32m"11"[39m
+                [36m/>[39m
+                [36m<circle[39m
+                  [33mcx[39m=[32m"12"[39m
+                  [33mcy[39m=[32m"14"[39m
+                  [33mr[39m=[32m"8"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+              [0mRequires Your Action[0m
+            [36m</div>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground transition-[color,box-shadow] overflow-hidden border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90"[39m
+              [33mdata-slot[39m=[32m"badge"[39m
+            [36m>[39m
+              [0m0 pending[0m
+            [36m</span>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"px-6 space-y-3"[39m
+          [33mdata-slot[39m=[32m"card-content"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"text-center py-12"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-circle-check h-6 w-6 text-success"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<circle...
+[90m [2m❯[22m waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:[2m163:27[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m86:33[22m[39m
+[36m [2m❯[22m src/components/brand/dashboard/__tests__/dashboard-page-greeting.test.tsx:[2m88:34[22m[39m
+    [90m 86| [39m    [34mrenderDashboard[39m()[33m;[39m
+    [90m 87| [39m
+    [90m 88| [39m    const heading = await screen.findByRole('heading', { name: /Priya/…
+    [90m   | [39m                                 [31m^[39m
+    [90m 89| [39m    [34mexpect[39m(heading)[33m.[39m[34mtoBeInTheDocument[39m()[33m;[39m
+    [90m 90| [39m    // The literal defect this closes: "Good morning, there" rendering…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/brand/dashboard/__tests__/dashboard-page-greeting.test.tsx[2m > [22mDashboardPage greeting — F-0320 renders the real signed-in person[2m > [22ma single-word displayName renders as-is (no name to split further)
+[31m[1mTestingLibraryElementError[22m[39m: Unable to find role="heading" and name `/Glownaturals/i`
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"p-6 space-y-6 max-w-5xl mx-auto"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<h1[39m
+            [33mclass[39m=[32m"text-2xl font-semibold"[39m
+          [36m>[39m
+            [0mGood afternoon[0m
+            [0m, [0m
+            [0mthere[0m
+          [36m</h1>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-muted-foreground mt-1 text-sm"[39m
+          [36m>[39m
+            [0mYou're all caught up.[0m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-[transform,box-shadow,opacity,border-color,background-color,color] duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground bg-primary text-primary-foreground hover:bg-primary/90 h-10 rounded-md px-6 has-[>svg]:px-4 gap-2"[39m
+          [33mdata-slot[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"lucide lucide-target h-4 w-4"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"24"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"2"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"24"[39m
+            [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+          [36m>[39m
+            [36m<circle[39m
+              [33mcx[39m=[32m"12"[39m
+              [33mcy[39m=[32m"12"[39m
+              [33mr[39m=[32m"10"[39m
+            [36m/>[39m
+            [36m<circle[39m
+              [33mcx[39m=[32m"12"[39m
+              [33mcy[39m=[32m"12"[39m
+              [33mr[39m=[32m"6"[39m
+            [36m/>[39m
+            [36m<circle[39m
+              [33mcx[39m=[32m"12"[39m
+              [33mcy[39m=[32m"12"[39m
+              [33mr[39m=[32m"2"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [0mNew Campaign[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm"[39m
+        [33mdata-slot[39m=[32m"card"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-3"[39m
+          [33mdata-slot[39m=[32m"card-header"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex items-center justify-between"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"text-lg font-medium flex items-center gap-2"[39m
+              [33mdata-slot[39m=[32m"card-title"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-timer h-5 w-5 text-orange-500"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<line[39m
+                  [33mx1[39m=[32m"10"[39m
+                  [33mx2[39m=[32m"14"[39m
+                  [33my1[39m=[32m"2"[39m
+                  [33my2[39m=[32m"2"[39m
+                [36m/>[39m
+                [36m<line[39m
+                  [33mx1[39m=[32m"12"[39m
+                  [33mx2[39m=[32m"15"[39m
+                  [33my1[39m=[32m"14"[39m
+                  [33my2[39m=[32m"11"[39m
+                [36m/>[39m
+                [36m<circle[39m
+                  [33mcx[39m=[32m"12"[39m
+                  [33mcy[39m=[32m"14"[39m
+                  [33mr[39m=[32m"8"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+              [0mRequires Your Action[0m
+            [36m</div>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground transition-[color,box-shadow] overflow-hidden border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90"[39m
+              [33mdata-slot[39m=[32m"badge"[39m
+            [36m>[39m
+              [0m0 pending[0m
+            [36m</span>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"px-6 space-y-3"[39m
+          [33mdata-slot[39m=[32m"card-content"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"text-center py-12"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-circle-check h-6 w-6 text-success"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<circle...
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"p-6 space-y-6 max-w-5xl mx-auto"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<h1[39m
+            [33mclass[39m=[32m"text-2xl font-semibold"[39m
+          [36m>[39m
+            [0mGood afternoon[0m
+            [0m, [0m
+            [0mthere[0m
+          [36m</h1>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-muted-foreground mt-1 text-sm"[39m
+          [36m>[39m
+            [0mYou're all caught up.[0m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-[transform,box-shadow,opacity,border-color,background-color,color] duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground bg-primary text-primary-foreground hover:bg-primary/90 h-10 rounded-md px-6 has-[>svg]:px-4 gap-2"[39m
+          [33mdata-slot[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"lucide lucide-target h-4 w-4"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"24"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"2"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"24"[39m
+            [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+          [36m>[39m
+            [36m<circle[39m
+              [33mcx[39m=[32m"12"[39m
+              [33mcy[39m=[32m"12"[39m
+              [33mr[39m=[32m"10"[39m
+            [36m/>[39m
+            [36m<circle[39m
+              [33mcx[39m=[32m"12"[39m
+              [33mcy[39m=[32m"12"[39m
+              [33mr[39m=[32m"6"[39m
+            [36m/>[39m
+            [36m<circle[39m
+              [33mcx[39m=[32m"12"[39m
+              [33mcy[39m=[32m"12"[39m
+              [33mr[39m=[32m"2"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [0mNew Campaign[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm"[39m
+        [33mdata-slot[39m=[32m"card"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-3"[39m
+          [33mdata-slot[39m=[32m"card-header"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex items-center justify-between"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"text-lg font-medium flex items-center gap-2"[39m
+              [33mdata-slot[39m=[32m"card-title"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-timer h-5 w-5 text-orange-500"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<line[39m
+                  [33mx1[39m=[32m"10"[39m
+                  [33mx2[39m=[32m"14"[39m
+                  [33my1[39m=[32m"2"[39m
+                  [33my2[39m=[32m"2"[39m
+                [36m/>[39m
+                [36m<line[39m
+                  [33mx1[39m=[32m"12"[39m
+                  [33mx2[39m=[32m"15"[39m
+                  [33my1[39m=[32m"14"[39m
+                  [33my2[39m=[32m"11"[39m
+                [36m/>[39m
+                [36m<circle[39m
+                  [33mcx[39m=[32m"12"[39m
+                  [33mcy[39m=[32m"14"[39m
+                  [33mr[39m=[32m"8"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+              [0mRequires Your Action[0m
+            [36m</div>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground transition-[color,box-shadow] overflow-hidden border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90"[39m
+              [33mdata-slot[39m=[32m"badge"[39m
+            [36m>[39m
+              [0m0 pending[0m
+            [36m</span>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"px-6 space-y-3"[39m
+          [33mdata-slot[39m=[32m"card-content"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"text-center py-12"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-circle-check h-6 w-6 text-success"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<circle...
+[90m [2m❯[22m waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:[2m163:27[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m86:33[22m[39m
+[36m [2m❯[22m src/components/brand/dashboard/__tests__/dashboard-page-greeting.test.tsx:[2m99:25[22m[39m
+    [90m 97| [39m    [34mrenderDashboard[39m()[33m;[39m
+    [90m 98| [39m
+    [90m 99| [39m    expect(await screen.findByRole('heading', { name: /Glownaturals/i …
+    [90m   | [39m                        [31m^[39m
+    [90m100| [39m  })[33m;[39m
+    [90m101| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[31m5 failed[39m[22m[2m | [22m[1m[32m1 passed[39m[22m[90m (6)[39m
+[2m   Start at [22m 14:40:32
+[2m   Duration [22m 15.81s[2m (transform 701ms, setup 594ms, collect 1.46s, tests 11.99s, environment 2.60s, prepare 413ms)[22m
+

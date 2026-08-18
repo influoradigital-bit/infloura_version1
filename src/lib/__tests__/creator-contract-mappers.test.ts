@@ -90,8 +90,11 @@ describe('mapDealApiContractStatus (F-0250 — coarse status, signer unknown)', 
     expect(mapDealApiContractStatus(undefined, false)).toBeUndefined();
   });
 
-  it('returns undefined for an unrecognized/terminated status rather than guessing', () => {
-    expect(mapDealApiContractStatus('TERMINATED', false)).toBeUndefined();
+  it('returns undefined for an unrecognized/terminal status rather than guessing', () => {
+    // F-0252: 'TERMINATED' was never a real ContractStatus member (the backend enum has no such
+    // value); CANCELLED is the real terminal state this function's switch has no case for, so it
+    // still falls through to the same `default: return undefined` this test is pinning.
+    expect(mapDealApiContractStatus('CANCELLED', false)).toBeUndefined();
   });
 });
 

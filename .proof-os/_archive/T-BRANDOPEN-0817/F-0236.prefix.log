@@ -1,0 +1,67 @@
+=== F-0236 old leg-2 vs the reintroduced F-0236 defect ===
+date: 2026-08-18T09:22:59Z
+injection: adaptContractRecord no longer calls deriveEscrowFromMilestones; escrowLocked/Amount/Frozen hardcoded false/0/false
+file sha256 (injected): bf264a535cbe58522341f48f8fdd297470ffdb9d289fb1e270f3331781ad21cc *src/components/brand/contracts/contracts-and-deliverables.tsx
+
+--- the OLD gate's leg 2, run in isolation (leg 1 already false-reds on the real tree, see F-0319.regression.log) ---
+leg 2 result: PASS (grep found the identifier) -- the adapter no longer calls it; only the DEFINITION matched
+
+--- and the whole old gate ---
+
+--- REPAIRED gate vs the reintroduced F-0236 defect ---
+· the contracts list is seeded empty in live mode, so no fixture contract can reach the tab
+    652:  const [contracts, setContracts] = useState<Contract[]>(liveApi ? [] : mockContracts);
+  clean
+· note: adaptContractRecord no longer calls deriveEscrowFromMilestones. That is not this
+  gate's verdict — the render suites below decide — but the escrow figures are now coming
+  from somewhere else and this gate's comments are stale.
+· vitest: payments-truthful — live mode with no milestone data fabricates nothing
+  [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+  [2m      Tests [22m [1m[32m4 passed[39m[22m[90m (4)[39m
+  suite green
+· vitest: frozen-escrow — live milestones drive the escrow figures, not a constant
+                              [0mC[0m
+                            [36m</span>[39m
+                          [36m</span>[39m
+                          [36m<div[39m
+                            [33mclass[39m=[32m"flex-1 min-w-0"[39m
+                          [36m>[39m
+                            [36m<h3[39m
+                              [33mclass[39m=[32m"font-medium text-sm truncate"[39m
+                            [36m>[39m
+                              [0mCreator[0m
+                            [36m</h3>[39m
+                            [36m<p[39m
+                              [33mclass[39m=[32m"text-xs text-muted-foreground truncate"[39m
+                            [36m>[39m
+                              [0mUntitled Campaign[0m
+                            [36m</p>[39m
+                            [36m<div[39m
+                              [33mclass[39m=[32m"flex items-center gap-2 mt-2"[39m
+                            [36m>[39m
+                              [36m<span[39m
+                                [33mclass[39m=[32m"inline-flex items-center justify-center rounded-md font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-foreground transition-[color,box-shadow] overflow-hidden [a&]:hover:bg-accent [a&]:hover:text-accent-foreground text-[10px] px-1.5 py-0 border bg-stage-approved text-stage-approved-fg border-stage-approved-border"[39m
+                                [33mdata-slot[39m=[32m"badge"[39m
+                            ...
+[90m [2m❯[22m waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:[2m163:27[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m86:33[22m[39m
+[36m [2m❯[22m src/components/brand/contracts/__tests__/contracts-and-deliverables.frozen-escrow.test.tsx:[2m141:38[22m[39m
+    [90m139| [39m    )[33m;[39m
+    [90m140| [39m
+    [90m141| [39m    [35mconst[39m lockedLabel [33m=[39m [35mawait[39m screen[33m.[39m[34mfindByText[39m([32m'Locked'[39m)[33m;[39m
+    [90m   | [39m                                     [31m^[39m
+    [90m142| [39m    [34mexpect[39m(lockedLabel[33m.[39mclassName)[33m.[39m[34mtoMatch[39m([36m/text-green-500/[39m)[33m;[39m
+    [90m143| [39m    [34mexpect[39m(screen[33m.[39m[34mqueryByText[39m([32m'Frozen'[39m))[33m.[39m[34mtoBeNull[39m()[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m2 passed[39m[22m[90m (4)[39m
+[2m   Start at [22m 14:53:24
+[2m   Duration [22m 15.77s[2m (transform 511ms, setup 260ms, collect 1.04s, tests 10.40s, environment 856ms, prepare 143ms)[22m
+VERDICT: broken — the Payments tab is not telling the brand the truth about its own money
+         in live mode: either invented schedule/dates are back, or the escrow figures are
+         no longer coming from the real record (F-0236)
+NOT CHECKED: live rendering against a running backend
+EXIT=1

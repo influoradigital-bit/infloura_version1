@@ -14,6 +14,8 @@ import { Eye, EyeOff, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { InfluoraLogo } from '@/components/shared/influora-logo';
 import { EmailOtpGate } from '@/components/shared/email-otp-gate';
 import { api, ApiError } from '@/lib/api';
+import { getBrandDisplayName, buildBrandUser } from '@/lib/auth-session';
+import { useAuthStore } from '@/lib/store';
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
@@ -22,6 +24,7 @@ function FieldError({ message }: { message?: string }) {
 
 export default function BrandRegisterPage() {
   const navigate = useNavigate();
+  const { login } = useAuthStore();
   const [step, setStep] = useState(1);
 
   // Step 1 fields
@@ -112,7 +115,7 @@ export default function BrandRegisterPage() {
         : ['Brand', 'User'];
       const lastName = rest.length > 0 ? rest.join(' ') : 'User';
 
-      await api.auth.brandRegister({
+      const result = await api.auth.brandRegister({
         email,
         password,
         firstName: firstName.charAt(0).toUpperCase() + firstName.slice(1),
@@ -122,6 +125,11 @@ export default function BrandRegisterPage() {
         companySize: teamSize || '1-5',
         acceptedTerms: agreeToTerms,
       });
+
+      // F-0320 — mirrors brand-login.tsx: populate the shared auth store from the identity
+      // persistBrandSession (F-0282, called inside api.ts's mapBrandAuth) already wrote to
+      // localStorage, rather than leaving `user` null through onboarding and beyond.
+      login(buildBrandUser({ id: result.userId, email, displayName: getBrandDisplayName() }));
 
       navigate('/brand/onboarding');
     } catch (err) {

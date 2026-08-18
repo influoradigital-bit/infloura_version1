@@ -21,28 +21,37 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 ESCROW=influora-api/src/main/java/com/influora/service/EscrowService.java
+ESCROW_CODE=$(code_view "$ESCROW") || { echo "$(code_why) - unavailable"; exit 2; }
 DTO=influora-api/src/main/java/com/influora/web/dto/deliverable/BrandDeliverableDtos.java
+DTO_CODE=$(code_view "$DTO") || { echo "$(code_why) - unavailable"; exit 2; }
 for f in "$ESCROW" "$DTO"; do
   [ -f "$f" ] || { echo "· $f missing — unavailable"; exit 2; }
 done
 
 echo "· outcome type: tryReleaseOnApproval returns a reason, not a bare boolean"
-if grep -qE "boolean +tryReleaseOnApproval" "$ESCROW"; then
-  grep -nE "boolean +tryReleaseOnApproval" "$ESCROW"
+if grep -qE "boolean +tryReleaseOnApproval" "$ESCROW_CODE"; then
+  grep -nE "boolean +tryReleaseOnApproval" "$ESCROW_CODE"
   echo "VERDICT: broken — tryReleaseOnApproval is a bare boolean again; the skip reason is lost"
   echo "         before it can reach the brand (F-0223)"
   exit 1
 fi
-grep -q "ReleaseOutcome" "$ESCROW" || {
+grep -q "ReleaseOutcome" "$ESCROW_CODE" || {
   echo "  ReleaseOutcome not found in EscrowService"
   echo "VERDICT: broken — the release outcome type is gone (F-0223)"; exit 1; }
 echo "  clean — ReleaseOutcome carries heldReason"
 
 echo "· wire format: ReviewResponse still reports paymentReleased"
-if ! grep -q "paymentReleased" "$DTO"; then
+if ! grep -q "paymentReleased" "$DTO_CODE"; then
   echo "VERDICT: broken — ReviewResponse no longer reports whether the approval paid the creator"
   echo "         (F-0223); the API is back to APPROVED-means-nothing"
   exit 1

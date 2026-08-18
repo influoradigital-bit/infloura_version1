@@ -1,0 +1,22 @@
+=== F-0283 pre-fix run #1: unfixed real tree ===
+· request DTO: ContractGenerateRequest can carry terms text
+    public record ContractGenerateRequest(
+            @NotBlank String collaborationId, @Valid List<MilestoneWriteRequest> milestones) {}
+VERDICT: broken — ContractGenerateRequest still has no terms field; there is nowhere for
+         the agreed terms to enter the system (F-0283)
+EXIT_CODE=1
+
+=== F-0283 pre-fix run #2: constructed wrong-fix (scratch copy, terms field added but dropped in service write-thread) ===
+· request DTO: ContractGenerateRequest can carry terms text
+  clean — ContractGenerateRequest carries terms
+· entity: Contract persists real terms text in a column distinct from the tamper hash
+  clean — terms_text column mapped, pre-existing tamper-hash terms column untouched
+· response DTO: ContractResponse can return terms text
+  clean — ContractResponse carries terms
+· service (WRITE-THREAD): generate() actually reads req.terms() into the entity write —
+  not just declared on the DTO and dropped (the exact shape of wrong fix F-0292's first
+  gate missed)
+VERDICT: broken — generate() does not pass req.terms() into a .termsText(...) builder call;
+         a caller-supplied terms value has nowhere real to land in the persisted entity
+         even if the DTO field exists (F-0283)
+EXIT_CODE=1

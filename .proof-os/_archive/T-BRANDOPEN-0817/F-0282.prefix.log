@@ -1,0 +1,25 @@
+=== F-0282 prefix proof 1: current unfixed real tree ===
+· BrandSession interface declares a displayName field
+  export interface BrandSession {
+  token: string;
+  userId: string;
+  email: string;
+  workspaceId?: string;
+  onboardingComplete: boolean;
+}
+VERDICT: broken — BrandSession has no displayName field; there is nowhere for the
+         persisted identity to live in the return value (F-0282)
+EXIT=1
+
+=== F-0282 prefix proof 2: constructed wrong-fix (scratch copy, shape-right value-always-empty) ===
+· BrandSession interface declares a displayName field
+  clean — BrandSession declares displayName
+· persistBrandSession() body located
+· persistBrandSession() actually reads data.user.displayName into a traceable local
+  no statement of the form '<ident> = ...data.user.displayName...;' found in the
+  function body
+VERDICT: broken — persistBrandSession() never reads data.user.displayName into a local
+         variable; a wrong fix that declares a same-named 'displayName' variable without
+         sourcing it from the login payload (shape right, value always empty) is exactly
+         what this leg is built to catch (F-0282)
+EXIT=1

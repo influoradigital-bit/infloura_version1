@@ -1,0 +1,14 @@
+· client type: ContractApiRecord can carry real terms text
+  clean — ContractApiRecord.terms exists
+· panel: renders a genuine Terms section, not just the payment-schedule/milestone list
+  clean — panel reads contractRecord.terms
+· panel: absent terms are stated plainly, never papered over with invented content
+  clean — an honest absent-terms message is present
+· regression guard: the F-0237 fabricated clause list has not reappeared outside a demo path
+  clean — no un-gated fabricated clause text
+· regression guard: no new hardcoded default clause list has been invented in its place
+  clean — no invented default clause list
+· npx tsc --noEmit (budget 180s) — the new terms field must not break the build
+src/components/brand/deal-room/deal-contract-tab.tsx(316,24): error TS18047: 'contractRecord' is possibly 'null'.
+VERDICT: broken — tsc --noEmit fails; the client-side terms plumbing does not typecheck
+         (F-0271)

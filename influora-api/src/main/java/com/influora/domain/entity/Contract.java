@@ -48,6 +48,23 @@ public class Contract {
     @Column(name = "terms", columnDefinition = "json")
     private String termsJson;
 
+    // [F-0283, contract-terms-never-persisted] The free-text contract terms as supplied by the
+    // caller at generation time (ContractGenerateRequest#terms). Deliberately a SEPARATE column
+    // from `termsJson` above -- `termsJson` holds a SHA-256 tamper hash of the generate request
+    // (ContractService#sha256TamperHash), not terms, and that pre-existing feature is untouched
+    // by this fix. Nullable: terms are optional and, when not supplied, must read back as
+    // honestly absent rather than a fabricated value.
+    //
+    // [immutability-enforcement-gap, same review as F-0318/F-0322] updatable = false, matching
+    // the idiom already used on `created_at` below. Without it, Hibernate emits terms_text in
+    // every UPDATE, so any future write path -- a merge of a detached instance built without
+    // this builder, a second Contract.builder() call site, an @Query update -- would silently
+    // rewrite clauses both parties e-signed under the IT Act 2000 binding notice, with no
+    // mutator method for anyone to even notice was missing. This was previously enforced only
+    // by the ABSENCE of a setter, which is a convention, not a constraint.
+    @Column(name = "terms_text", columnDefinition = "text", updatable = false)
+    private String termsText;
+
     @Column(name = "brand_signed_at")
     private Instant brandSignedAt;
 
@@ -119,6 +136,11 @@ public class Contract {
 
     public String getTermsJson() {
         return termsJson;
+    }
+
+    /** [F-0283] The free-text contract terms captured at generation time, or {@code null} if none were supplied. */
+    public String getTermsText() {
+        return termsText;
     }
 
     public Instant getBrandSignedAt() {
@@ -252,6 +274,12 @@ public class Contract {
 
         public Builder termsJson(String termsJson) {
             c.termsJson = termsJson;
+            return this;
+        }
+
+        /** [F-0283] The free-text contract terms as supplied by the caller, or {@code null} when none were supplied. */
+        public Builder termsText(String termsText) {
+            c.termsText = termsText;
             return this;
         }
 

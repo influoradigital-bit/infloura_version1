@@ -19,14 +19,22 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 REPO=influora-api/src/main/java/com/influora/repository/PayoutRepository.java
 [ -f "$REPO" ] || { echo "· $REPO missing — unavailable"; exit 2; }
+REPO_CODE=$(code_view "$REPO") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· annotation: no @Query on findByCreatorUserIdOrderByCreatedAtDesc"
 # The 6 lines above the method signature — an @Query would sit immediately before it.
-ann=$(grep -B6 "Page<Payout> findByCreatorUserIdOrderByCreatedAtDesc" "$REPO" \
+ann=$(grep -B6 "Page<Payout> findByCreatorUserIdOrderByCreatedAtDesc" "$REPO_CODE" \
       | grep -E "^[[:space:]]*@(org\.springframework\.data\.jpa\.repository\.)?Query" || true)
 if [ -n "$ann" ]; then
   printf '%s\n' "$ann"

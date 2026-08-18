@@ -15,12 +15,23 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 DTO=influora-api/src/main/java/com/influora/web/dto/money/MoneyDtos.java
+DTO_CODE=$(code_view "$DTO") || { echo "$(code_why) - unavailable"; exit 2; }
 ENTITY=influora-api/src/main/java/com/influora/domain/entity/Contract.java
+ENTITY_CODE=$(code_view "$ENTITY") || { echo "$(code_why) - unavailable"; exit 2; }
 SERVICE=influora-api/src/main/java/com/influora/service/ContractService.java
+SERVICE_CODE=$(code_view "$SERVICE") || { echo "$(code_why) - unavailable"; exit 2; }
 CONTROLLER=influora-api/src/main/java/com/influora/web/ContractController.java
+CONTROLLER_CODE=$(code_view "$CONTROLLER") || { echo "$(code_why) - unavailable"; exit 2; }
 MIGRATIONS=influora-api/src/main/resources/db/migration
 
 for f in "$DTO" "$ENTITY" "$SERVICE" "$CONTROLLER"; do
@@ -29,7 +40,7 @@ done
 [ -d "$MIGRATIONS" ] || { echo "· $MIGRATIONS missing — unavailable"; exit 2; }
 
 echo "· request DTO: ContractSignRequest carries the signer name"
-sign_req_line=$(grep -n "record ContractSignRequest" "$DTO")
+sign_req_line=$(grep -n "record ContractSignRequest" "$DTO_CODE")
 if [ -z "$sign_req_line" ]; then
   echo "VERDICT: broken — ContractSignRequest record not found (F-0292)"
   exit 1
@@ -43,43 +54,43 @@ fi
 echo "  clean — $sign_req_line"
 
 echo "· entity: Contract persists brand + creator signer name as distinct columns"
-if ! grep -qE "brandSignerName" "$ENTITY"; then
+if ! grep -qE "brandSignerName" "$ENTITY_CODE"; then
   echo "VERDICT: broken — Contract entity has no brandSignerName field (F-0292)"
   exit 1
 fi
-if ! grep -qE "creatorSignerName" "$ENTITY"; then
+if ! grep -qE "creatorSignerName" "$ENTITY_CODE"; then
   echo "VERDICT: broken — Contract entity has no creatorSignerName field (F-0292)"
   exit 1
 fi
-if ! grep -qE '@Column\(name = "brand_signer_name"' "$ENTITY"; then
+if ! grep -qE '@Column\(name = "brand_signer_name"' "$ENTITY_CODE"; then
   echo "VERDICT: broken — brandSignerName is not mapped to a persisted column (F-0292)"
   exit 1
 fi
-if ! grep -qE '@Column\(name = "creator_signer_name"' "$ENTITY"; then
+if ! grep -qE '@Column\(name = "creator_signer_name"' "$ENTITY_CODE"; then
   echo "VERDICT: broken — creatorSignerName is not mapped to a persisted column (F-0292)"
   exit 1
 fi
 echo "  clean — brand_signer_name / creator_signer_name columns mapped"
 
 echo "· entity: recordBrandSignature/recordCreatorSignature actually accept and write the name"
-if ! grep -qE "void recordBrandSignature\([^)]*String[^)]*\)" "$ENTITY"; then
+if ! grep -qE "void recordBrandSignature\([^)]*String[^)]*\)" "$ENTITY_CODE"; then
   echo "VERDICT: broken — recordBrandSignature still takes no name parameter; a signer name"
   echo "         passed in from the request has nothing to call it with (F-0292)"
   exit 1
 fi
-if ! grep -qE "void recordCreatorSignature\([^)]*String[^)]*\)" "$ENTITY"; then
+if ! grep -qE "void recordCreatorSignature\([^)]*String[^)]*\)" "$ENTITY_CODE"; then
   echo "VERDICT: broken — recordCreatorSignature still takes no name parameter (F-0292)"
   exit 1
 fi
 echo "  clean — both record*Signature methods take a name argument"
 
 echo "· service: the sign flow actually threads a caller-supplied name into the entity write"
-if ! grep -qE "\.recordBrandSignature\([a-zA-Z]" "$SERVICE"; then
+if ! grep -qE "\.recordBrandSignature\([a-zA-Z]" "$SERVICE_CODE"; then
   echo "VERDICT: broken — ContractService still calls recordBrandSignature() with no argument;"
   echo "         the entity has a name column no code path ever writes (F-0292)"
   exit 1
 fi
-if ! grep -qE "\.recordCreatorSignature\([a-zA-Z]" "$SERVICE"; then
+if ! grep -qE "\.recordCreatorSignature\([a-zA-Z]" "$SERVICE_CODE"; then
   echo "VERDICT: broken — ContractService still calls recordCreatorSignature() with no argument"
   echo "         (F-0292)"
   exit 1
@@ -87,7 +98,7 @@ fi
 echo "  clean — ContractService passes a name through to both record*Signature calls"
 
 echo "· controller: sign() still server-derives role and is not broken by the new field"
-if ! grep -qE '"BRAND"' "$CONTROLLER"; then
+if ! grep -qE '"BRAND"' "$CONTROLLER_CODE"; then
   echo "VERDICT: broken — ContractController#sign no longer server-derives the BRAND role from"
   echo "         the authenticated principal (F-0292 fix must not regress this)"
   exit 1
@@ -101,7 +112,7 @@ echo "  clean — server-derived role default still present"
 # not just the string "BRAND" surviving nearby.
 echo "· controller: sign() actually reads body.name() (not a stubbed/null substitute) and"
 echo "  threads that value into BOTH signature calls"
-sign_method=$(awk '/public ApiResponse<ContractResponse> sign\(/,/^    \}$/' "$CONTROLLER")
+sign_method=$(awk '/public ApiResponse<ContractResponse> sign\(/,/^    \}$/' "$CONTROLLER_CODE")
 if [ -z "$sign_method" ]; then
   echo "  could not locate ContractController#sign() method body — unavailable"
   exit 2
@@ -145,12 +156,12 @@ fi
 echo "  clean — '$name_var' is threaded into both recordSignatureForCreator(...) and recordSignature(...)"
 
 echo "· read model: signer names come back on the contract response"
-if ! grep -qE "brandSignerName" "$DTO"; then
+if ! grep -qE "brandSignerName" "$DTO_CODE"; then
   echo "VERDICT: broken — ContractResponse does not carry brandSignerName; the UI has no way to"
   echo "         show who signed (F-0292)"
   exit 1
 fi
-if ! grep -qE "creatorSignerName" "$DTO"; then
+if ! grep -qE "creatorSignerName" "$DTO_CODE"; then
   echo "VERDICT: broken — ContractResponse does not carry creatorSignerName (F-0292)"
   exit 1
 fi

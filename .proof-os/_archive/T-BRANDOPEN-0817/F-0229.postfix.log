@@ -1,0 +1,77 @@
+F-0229 postfix — .proof-os/gates/build.sh
+dev, 2026-08-18, task T-BRANDOPEN-0817
+
+WHAT CHANGED
+  1. env_issue no longer gets to overrule a runner that reported. New rule:
+     if the test output carries the runner's own tally (`Test Files`/`Tests `/
+     `Suites:`/`N passed|failed`), the runner RAN, so a non-zero exit is a finding
+     about the code and no environment heuristic may reclassify it. env_issue is
+     consulted only when there is no summary at all.
+  2. The bare token `network` is gone from env_issue even in that branch.
+     npm's real registry failures already match registry.npmjs / ETIMEDOUT /
+     ENOTFOUND; `network` only ever matched test output.
+  3. Per-leg budgets, each named in its message. tsc/build keep PROOF_GATE_TIMEOUT
+     (300s, measured headroom ~5x). The test leg gets PROOF_GATE_TEST_TIMEOUT,
+     default 600s — ~6x the measured 99s solo, NOT the 900s an earlier edit set on
+     evidence that does not reproduce.
+  4. The test leg is SERIALISED (gates/_lock.sh, mkdir-atomic, dead holders reaped
+     by pid). Two agents queue instead of starving each other. The lock wait has
+     its OWN ceiling (PROOF_GATE_LOCK_WAIT, 900s) and is not charged against the
+     leg budget. Failing to get the lock is unavailable, never a pass.
+  5. Per-leg verdict table on every exit path, so one unavailable leg no longer
+     erases the two that proved.
+  6. rc/liveness wired (F-0026): $SELF resolved before the cd, rc_init after it,
+     _rc.sh located in the project gates dir or the synced plugin, no-op if absent.
+
+OBSERVED — the gate now reaches a real verdict
+  $ bash .proof-os/gates/build.sh "<project>"
+    exit 1, wall 206s
+    · tsc --noEmit (budget 300s)
+    · npm run build (budget 300s)
+    · npm test (budget 600s)
+      Test Files  1 failed | 106 passed (107)
+      Tests       2 failed | 666 passed (668)
+    VERDICT: broken (real findings above)
+      LEG tsc: proved
+      LEG build: proved
+      LEG tests: BROKEN (the suite ran and reported failures)
+    .proof-os/rc/build.rc -> exit=1 pid=1648 ended=2026-08-18T07:20:41Z observed=exit
+
+  This is the first verdict this gate has produced about this project's tests.
+  It is RED, and it is correct: two tests genuinely fail.
+
+OBSERVED — a genuine timeout is still unavailable, never a pass
+  $ PROOF_GATE_TIMEOUT=1 PROOF_GATE_TEST_TIMEOUT=5 bash .proof-os/gates/build.sh "<project>"
+    exit 2, wall 70s
+      tsc exceeded 1s — unavailable (F-0025)
+      build exceeded 1s — unavailable (F-0025)
+      tests exceeded 5s — unavailable (F-0025)
+    VERDICT: partial — some oracles could not run (believed, not proved)
+      LEG tsc: unavailable (exceeded its own 1s budget)
+      LEG build: unavailable (exceeded its own 1s budget)
+      LEG tests: unavailable (exceeded its own 5s budget)
+
+  Note the shape being asserted: the SAME tree that returns exit 1 with a real
+  budget returns exit 2 — not 0 — when the budget is taken away. Starving the gate
+  cannot manufacture a pass.
+
+OBSERVED — lock starvation is unavailable, never a pass
+  A second process held the npm-test lock for 150s.
+  $ PROOF_GATE_TIMEOUT=1 PROOF_GATE_LOCK_WAIT=10 bash .proof-os/gates/build.sh "<project>"
+    exit 2, wall 76s
+    · lock 'npm-test' still held by pid 1707 after 10s — the test leg never started;
+      unavailable, NOT a finding
+      LEG tests: unavailable (waited 10s for the npm-test lock and never got it)
+    .proof-os/rc/build.rc -> exit=2 pid=1720 ended=2026-08-18T07:31:31Z observed=exit
+
+OBSERVED — the lock queues rather than starving (gates/_lock.sh direct)
+    holder acquires, rc=0
+    waiter, 4s budget   -> rc=1 waited=7s  "lock 'smoke' still held by pid 613"
+    waiter, 40s budget  -> rc=0 waited=3s  (acquired once the holder released)
+    holder killed -9 without unlocking, next runner -> rc=0 waited=0s (dead holder reaped)
+
+STILL A FINDING, NOT FIXED BY ME (product code, out of my ownership)
+  src/components/brand/deal-room/__tests__/demo-sign-flow-alive.test.tsx
+  2 failing cases, "F-0272 control — live mode with a failing/absent contract stays
+  honest": `findByText(/contract terms are not available yet/i)` never resolves.
+  This is what the gate had been hiding.

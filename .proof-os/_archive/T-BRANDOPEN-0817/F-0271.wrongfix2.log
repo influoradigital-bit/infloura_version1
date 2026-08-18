@@ -1,0 +1,78 @@
+· client type: ContractApiRecord can carry real terms text
+  clean — ContractApiRecord.terms exists
+· panel: renders a genuine Terms section, not just the payment-schedule/milestone list
+  clean — panel reads contractRecord.terms
+· panel: absent terms are stated plainly, never papered over with invented content
+  clean — an honest absent-terms message is present
+· regression guard: the F-0237 fabricated clause list has not reappeared outside a demo path
+  clean — no un-gated fabricated clause text
+· regression guard: no new hardcoded default clause list has been invented in its place
+  clean — no invented default clause list
+· npx tsc --noEmit (budget 180s) — the new terms field must not break the build
+  clean — tsc --noEmit: 0 errors
+· node_modules/.bin/vitest run src/components/brand/deal-room/__tests__/signed-terms-rendered.test.tsx (budget 180s) — proves the terms text is
+  ACTUALLY rendered when present, and the honest 'no terms on file' copy is ACTUALLY
+  rendered when absent, not merely referenced somewhere in the file
+                    [36m</span>[39m
+                  [36m</div>[39m
+                  [36m<p[39m
+                    [33mclass[39m=[32m"text-[10px] sm:text-xs text-center text-muted-foreground"[39m
+                  [36m>[39m
+                    [0mCreator signed[0m
+                  [36m</p>[39m
+                [36m</div>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"flex-1 h-0.5 mt-5 min-w-[8px] bg-muted"[39m
+                [36m/>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"flex flex-col items-center flex-1 min-w-0"[39m
+                [36m>[39m
+                  [36m<div[39m
+                    [33mclass[39m=[32m"w-10 h-10 rounded-full flex items-center justify-center mb-2 bg-muted text-muted-foreground"[39m
+                  [36m>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"text-sm font-semibold"[39m
+                    [36m>[39m
+                      [0m4[0m
+                    [36m</span>[39m
+                  [36m</div>[39m
+                  [36m<p[39m
+                    [33mclass[39m=[32m"text-[10px] sm:text-xs text-center text-muted-foreground"[39m
+                  [36m>[39m
+                    [0mActive[0m
+                  [36m</p>[39m
+                [36m</div>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"bg-border shrink-0 data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-px"[39m
+              [33mdata-orientation[39m=[32m"horizontal"[39m
+              [33mdata-slot[39m=[32m"separator"[39m
+              [33mrole[39m=[32m"none"[39m
+            [36m/>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm border-primary/20"[39m
+              [33mdata-slot[39m=[32m"card"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"@container/card...
+[90m [2m❯[22m waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:[2m163:27[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m86:33[22m[39m
+[36m [2m❯[22m src/components/brand/deal-room/__tests__/signed-terms-rendered.test.tsx:[2m107:25[22m[39m
+    [90m105| [39m
+    [90m106| [39m    // Honest "no terms on file" — a real record loaded fine, it simpl…
+    [90m107| [39m    expect(await screen.findByText(/no terms are on file for this cont…
+    [90m   | [39m                        [31m^[39m
+    [90m108| [39m    // Never the generic "unavailable" copy (that's for a MISSING reco…
+    [90m109| [39m    expect(screen.queryByText(/contract terms are not available yet/i)…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m1 passed[39m[22m[90m (2)[39m
+[2m   Start at [22m 13:48:15
+[2m   Duration [22m 11.48s[2m (transform 568ms, setup 393ms, collect 65ms, tests 6.05s, environment 1.41s, prepare 247ms)[22m
+VERDICT: broken — signed-terms-rendered.test.tsx does not pass; the panel's grep-visible
+         wiring does not actually render real terms / the honest absent-terms message
+         (F-0271)

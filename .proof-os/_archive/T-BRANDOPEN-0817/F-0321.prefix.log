@@ -1,0 +1,3 @@
+· sanity: contracts-and-deliverables.tsx exports a badge-label helper the agreement test can call
+VERDICT: broken — contractStatusBadgeLabel is not exported from contracts-and-deliverables.tsx;
+         the cross-surface agreement test has no real production code path to call (F-0321)

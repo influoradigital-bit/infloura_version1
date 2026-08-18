@@ -1,0 +1,21 @@
+· client type: ContractApiRecord can carry real terms text
+  clean — ContractApiRecord.terms exists
+· panel: renders a genuine Terms section, not just the payment-schedule/milestone list
+  clean — panel reads contractRecord.terms
+· panel: absent terms are stated plainly, never papered over with invented content
+  clean — an honest absent-terms message is present
+· regression guard: the F-0237 fabricated clause list has not reappeared outside a demo path
+  clean — no un-gated fabricated clause text
+· regression guard: no new hardcoded default clause list has been invented in its place
+  clean — no invented default clause list
+· npx tsc --noEmit (budget 180s) — the new terms field must not break the build
+  clean — tsc --noEmit: 0 errors
+VERDICT: aligned (proved) — ContractApiRecord carries real terms text sourced from the
+         server, the panel reads and renders it when present, states plainly when absent
+         rather than inventing filler, the F-0237 fabricated clause text is not reachable
+         un-gated, no new hardcoded clause list was introduced, and tsc --noEmit is clean
+NOT CHECKED: live rendering in a real browser against a real signed contract; whether any
+             FE surface lets a brand TYPE terms before generating a contract (none exists —
+             out of scope, see PRODUCT DECISION NEEDED); visual/CSS correctness of the new
+             section; whether creator-side surfaces (out of this record's file scope) have
+             an equivalent gap.

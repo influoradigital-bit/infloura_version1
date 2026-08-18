@@ -1,0 +1,75 @@
+· ContractApiRecord still carries no escrow/hash/funded-released-timestamp field (sanity —
+  confirms the 'no real data exists yet' premise this gate is built on hasn't changed
+  under us; src/lib/api.ts is read-only to this record's owner)
+  noted
+· Payments tab: exactly ONE render path — no liveApi-gated branch left
+  clean — no liveApi reference inside the Payments tab block
+· no fabricated 50/50 split anywhere in the Payments tab (either mode)
+  clean — no hardcoded 50% split, no value/2 arithmetic
+· no invented transaction dates anywhere in the Payments tab
+  clean — no fabricated transaction history strings
+· an honest fallback exists for 'no milestone-level data' — real escrow fields, not silence
+  clean — fallback is built from the contract's own real escrow fields
+· vitest: contracts-and-deliverables.payments-truthful.test.tsx (real suite, not a stub)
+        [33mheight[31m=[32m"24"[31m
+        [33mstroke[31m=[32m"currentColor"[31m
+        [33mstroke-linecap[31m=[32m"round"[31m
+        [33mstroke-linejoin[31m=[32m"round"[31m
+        [33mstroke-width[31m=[32m"2"[31m
+        [33mviewBox[31m=[32m"0 0 24 24"[31m
+        [33mwidth[31m=[32m"24"[31m
+        [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+      [36m>[31m
+        [36m<rect[31m
+          [33mheight[31m=[32m"11"[31m
+          [33mrx[31m=[32m"2"[31m
+          [33mry[31m=[32m"2"[31m
+          [33mwidth[31m=[32m"18"[31m
+          [33mx[31m=[32m"3"[31m
+          [33my[31m=[32m"11"[31m
+        [36m/>[31m
+        [36m<path[31m
+          [33md[31m=[32m"M7 11V7a5 5 0 0 1 10 0v4"[31m
+        [36m/>[31m
+      [36m</svg>[31m
+    [36m</div>[31m
+    [36m<div>[31m
+      [36m<p[31m
+        [33mclass[31m=[32m"font-medium text-sm"[31m
+      [36m>[31m
+        [0mEscrow held[0m
+      [36m</p>[31m
+      [36m<p[31m
+        [33mclass[31m=[32m"text-xs text-muted-foreground"[31m
+      [36m>[31m
+        [0mHeld in escrow[0m
+      [36m</p>[31m
+    [36m</div>[31m
+  [36m</div>[31m
+  [36m<p[31m
+    [33mclass[31m=[32m"font-semibold "[31m
+  [36m>[31m
+    [0m₹22,500[0m
+  [36m</p>[31m
+[36m</div>[31m[39m
+[90m [2m❯[22m Object.getElementError node_modules/@testing-library/dom/dist/config.js:[2m37:19[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m76:38[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m52:17[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m95:19[22m[39m
+[36m [2m❯[22m src/components/brand/contracts/__tests__/contracts-and-deliverables.payments-truthful.test.tsx:[2m176:45[22m[39m
+    [90m174| [39m    [34mexpect[39m(escrowRow)[33m.[39mnot[33m.[39m[34mtoBeNull[39m()[33m;[39m
+    [90m175| [39m    // The real mock escrowAmount (45000) — never a fabricated half (2…
+    [90m176| [39m    expect(within(escrowRow as HTMLElement).getByText(/45,?000/)).toBe…
+    [90m   | [39m                                            [31m^[39m
+    [90m177| [39m    expect(within(escrowRow as HTMLElement).queryByText(/22,?500/)).to…
+    [90m178| [39m    [34mexpect[39m(screen[33m.[39m[34mqueryByText[39m([36m/50% Upon Signing/i[39m))[33m.[39m[34mtoBeNull[39m()[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m3 passed[39m[22m[90m (4)[39m
+[2m   Start at [22m 12:04:17
+[2m   Duration [22m 5.62s[2m (transform 372ms, setup 208ms, collect 705ms, tests 555ms, environment 693ms, prepare 137ms)[22m
+VERDICT: broken — contracts-and-deliverables.payments-truthful.test.tsx does not pass; the
+         static checks above are not actually exercised end to end (F-0251)

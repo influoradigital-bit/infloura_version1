@@ -4,30 +4,39 @@
 # dispute "in the relevant deal room" while no such control existed and no brand-role client
 # method for POST /deals/:dealId/disputes had ever been written.
 set -u
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "${1:-.}" 2>/dev/null || { echo "· not a directory — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 A=src/lib/api.ts
 D=src/pages/brand-chat.tsx
 [ -f "$A" ] && [ -f "$D" ] || { echo "· source files missing — unavailable"; exit 2; }
+A_CODE=$(code_view "$A") || { echo "$(code_why) - unavailable"; exit 2; }
+D_CODE=$(code_view "$D") || { echo "$(code_why) - unavailable"; exit 2; }
 fail=0
 # 1. A brand-role open method must exist on brandDisputes.
-if ! awk '/export const brandDisputes/{f=1} f&&/^};/{exit} f' "$A" | grep -q "open:"; then
+if ! awk '/export const brandDisputes/{f=1} f&&/^};/{exit} f' "$A_CODE" | grep -q "open:"; then
   echo "· brandDisputes has no open() method"; fail=1
 fi
-if ! awk '/export const brandDisputes/{f=1} f&&/^};/{exit} f' "$A" | grep -q "role: 'brand'"; then
+if ! awk '/export const brandDisputes/{f=1} f&&/^};/{exit} f' "$A_CODE" | grep -q "role: 'brand'"; then
   echo "· brandDisputes.open does not send the brand role"; fail=1
 fi
 # 2. The deal room must call it — and must NOT call the creator variant.
-if ! grep -q "brandDisputes.open" "$D"; then
+if ! grep -q "brandDisputes.open" "$D_CODE"; then
   echo "· the deal room never calls brandDisputes.open"; fail=1
 fi
 # Strip comment lines: this file's own doc-comment names creatorDisputes.open to explain
 # why it is NOT used, and a gate that cannot tell code from a comment fails on its own docs.
-DCODE=$(grep -vE '^\s*(//|\*|/\*)' "$D")
+DCODE=$(grep -vE '^\s*(//|\*|/\*)' "$D_CODE")
 if printf '%s' "$DCODE" | grep -q "creatorDisputes.open"; then
   echo "· the deal room calls the CREATOR dispute method — wrong JWT slot"; fail=1
 fi
 # 3. The stale 'intentionally NOT wired' comment must be gone.
-if grep -q "Opening a dispute is intentionally NOT wired here" "$A"; then
+if grep -q "Opening a dispute is intentionally NOT wired here" "$A_CODE"; then
   echo "· the stale 'not wired' comment still contradicts the shipped method"; fail=1
 fi
 [ $fail -eq 1 ] && { echo "VERDICT: broken (F-0242 regressed)"; \

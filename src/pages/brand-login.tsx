@@ -7,13 +7,15 @@ import { Eye, EyeOff, ArrowRight, Loader2, Mail, Lock } from 'lucide-react';
 import { AuthLoginShell } from '@/components/shared/auth-login-shell';
 import { DemoAccessPanel } from '@/components/shared/demo-access-panel';
 import { api, ApiError } from '@/lib/api';
-import { getBrandOnboardingComplete } from '@/lib/auth-session';
+import { getBrandOnboardingComplete, getBrandDisplayName, buildBrandUser } from '@/lib/auth-session';
+import { useAuthStore } from '@/lib/store';
 
 const inputClass =
   'h-11 pl-10 bg-background focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary/40 transition-[color,box-shadow,border-color] duration-150 ease-out';
 
 export default function BrandLoginPage() {
   const navigate = useNavigate();
+  const { login } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -32,6 +34,13 @@ export default function BrandLoginPage() {
       }
 
       const session = await api.auth.brandLogin({ email, password });
+      // F-0320 — populate the shared auth store the way the creator login flow does (CR-06),
+      // instead of leaving `user` null forever. api.auth.brandLogin's LoginResponse doesn't
+      // carry the identity fields the way creatorLogin's does (mapBrandAuth only returns
+      // token/userId/onboardingComplete — see NOT FIXED in the F-0320 producer return), so the
+      // display name is read back from what persistBrandSession (called inside mapBrandAuth,
+      // F-0282) already wrote to localStorage.
+      login(buildBrandUser({ id: session.userId, email, displayName: getBrandDisplayName() }));
       const done = session.onboardingComplete || getBrandOnboardingComplete();
       navigate(done ? '/brand/dashboard' : '/brand/onboarding');
     } catch (err) {

@@ -1,0 +1,62 @@
+F-0266 reproduction — gate-cannot-tell-code-from-comment
+Date: 2026-08-17
+Gate under test (UNMODIFIED at time of this run): .proof-os/gates/F-0238-no-fabricated-contract-pdf.sh
+Scratch tree: <scratchpad>/f0266-correct/src/components/brand/deal-room/deal-contract-tab.tsx
+
+Scratch tree is CORRECT: downloadContractPDF is not reachable from the live branch
+(liveApi && isApiLive => fetchRealContract(); the fabricated-data branch is demo-only
+and bound to `demoContractData`). The forbidden string "Opened a local copy" appears
+ONLY inside three kinds of comment the gate's existing naive stripper
+(`grep -vE '^\s*(//|\*|/\*)'`) does not remove:
+  1. a /* ... */-less "//" block comment ABOVE the file that quotes the string on a
+     continuation line not itself starting with // (multi-line // paragraph, later line
+     is prose, still prefixed per-line with // in this instance — retained as context)
+  2. a trailing same-line comment: `const legacyToastRemoved = true; // used to read: "Opened a local copy"`
+  3. a standalone JSX comment: `{/* Historically this toast said "Opened a local copy" ... */}`
+
+Command:
+  bash .proof-os/gates/F-0238-no-fabricated-contract-pdf.sh "<scratchpad>/f0266-correct"
+
+Observed output:
+  · the silent local-copy fallback message is still live in code
+  VERDICT: broken (F-0238 regressed)
+  NOT CHECKED: whether the live failure message is understandable, or runtime behaviour
+
+Observed exit code: 1
+
+CONCLUSION: false negative confirmed. The gate reports a correct tree as REGRESSED
+because its comment-stripping cannot see case 2 (trailing comment) and case 3 (JSX
+comment) — only whole-line // /* * prefixed lines are stripped.
+
+
+================================================================================
+SECOND, INDEPENDENT REPRODUCTION — dev, 2026-08-18 (task T-BRANDOPEN-0817)
+================================================================================
+The run above was not taken on trust. The pre-fix gate was recovered from git
+(`git show HEAD:.proof-os/gates/F-0238-no-fabricated-contract-pdf.sh`) and run
+against two scratch trees built from the REAL subject file:
+
+  <scratch>/f0266/comment/  the real src/components/brand/deal-room/deal-contract-tab.tsx
+                            plus THREE comment forms quoting the forbidden string:
+                              const legacyToastRemoved = true; // used to read: "Opened a local copy"
+                              {/* Historically this toast said "Opened a local copy" ... */}
+                              /* block form: the retired copy was "Opened a local copy" */
+                            No live code contains the string. This tree is CORRECT.
+
+  <scratch>/f0266/code/     the same real file plus a genuine regression IN CODE:
+                              export function Regressed() { toast.success("Opened a local copy"); }
+
+OBSERVED, pre-fix gate:
+    comment case (correct tree)   exit 1   "· the silent local-copy fallback message is still live in code"
+    code case    (real regression) exit 1
+    real repo tree                 exit 0
+
+The gate cannot distinguish the two. It returns the same verdict for a correct
+tree and a regressed one, so its exit 1 carries no information at all: it is
+not "a gate that is sometimes wrong", it is a gate that is right by coincidence.
+The real repo passes only because the one comment that quotes the string there
+happens to start at column 0 with `//`, which the naive line filter did strip.
+
+WHY THIS IS A DISEASE AND NOT A TYPO: the pressure it creates is to delete the
+comment that explains the fix. Every producer who hits it learns to document
+less. That is the opposite of what a trust layer is for.

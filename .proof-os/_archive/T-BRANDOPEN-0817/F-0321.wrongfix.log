@@ -1,0 +1,8 @@
+· sanity: contracts-and-deliverables.tsx exports a badge-label helper the agreement test can call
+  clean — contractStatusBadgeLabel is exported
+· sanity: brand-campaign-detail.tsx still exports contractStatusLabel
+  clean — contractStatusLabel is exported
+· side effect: statusConfig.disputed is not left behind as unreachable dead config
+VERDICT: broken — statusConfig still has a 'disputed' entry, but nothing in
+         mapApiContractStatus can ever produce the 'disputed' UI status any more (F-0321
+         side effect not resolved)

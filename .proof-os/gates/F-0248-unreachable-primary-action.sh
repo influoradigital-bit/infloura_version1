@@ -29,15 +29,23 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 FILE=src/components/brand/contracts/contracts-and-deliverables.tsx
 [ -f "$FILE" ] || { echo "· $FILE missing — unavailable"; exit 2; }
+FILE_CODE=$(code_view "$FILE") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· no live code references the unreachable 'pending_review' status"
 # Strip line comments and block-comment bodies: the records deliberately NAME the dead literal
 # in explanatory comments, and a comment is not a code path.
-stripped=$(sed -e 's://.*::' -e 's:\*.*::' "$FILE")
+stripped=$(sed -e 's://.*::' -e 's:\*.*::' "$FILE_CODE")
 if printf '%s' "$stripped" | grep -q "pending_review"; then
   printf '%s' "$stripped" | grep -n "pending_review"
   echo "VERDICT: broken — 'pending_review' is back on a live code path (F-0248); the mapper"
@@ -47,7 +55,7 @@ fi
 echo "  clean — the dead literal survives only in comments"
 
 echo "· the Sign control covers a brand that has not signed, in draft OR pending_signature"
-gate=$(tr '\n' ' ' < "$FILE" | grep -oE "\{\(selectedContract\.status === 'draft'[^}]{0,200}" | head -1)
+gate=$(tr '\n' ' ' < "$FILE_CODE" | grep -oE "\{\(selectedContract\.status === 'draft'[^}]{0,200}" | head -1)
 case "$gate" in
   *"pending_signature"*) : ;;
   *) echo "  found: ${gate:-<no draft-inclusive gate at all>}"
@@ -64,7 +72,7 @@ esac
 echo "  clean — gate is (draft || pending_signature) && !brandSigned"
 
 echo "· mapApiContractStatus still cannot emit 'pending_review'"
-if sed -n '/export function mapApiContractStatus/,/^}/p' "$FILE" | grep -q "pending_review"; then
+if sed -n '/export function mapApiContractStatus/,/^}/p' "$FILE_CODE" | grep -q "pending_review"; then
   echo "VERDICT: broken — the mapper now emits 'pending_review' (F-0248); the reachability"
   echo "         invariant this gate rests on has moved and the spec must be re-derived"
   exit 1

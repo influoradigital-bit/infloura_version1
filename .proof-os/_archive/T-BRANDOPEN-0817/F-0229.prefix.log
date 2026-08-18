@@ -1,0 +1,92 @@
+F-0229 reproduction — gate-budget-false-unavailable
+dev, 2026-08-18, task T-BRANDOPEN-0817.
+Machine: the project's own Windows host. Nothing else of mine was running.
+
+--------------------------------------------------------------------------------
+0. THE FILE THE RECORD NAMES DOES NOT EXIST IN THIS PROJECT
+--------------------------------------------------------------------------------
+The ledger says `where: .proof-os/gates/build.node.sh:44`. There is no
+`build.node.sh` under .proof-os/gates/. The only copies are the read-only synced
+plugin ones (.proof-os/.runtime/{proof-os,os042,claude-home/...}/gates/build.node.sh).
+build.node.sh is also the wrong oracle for this project: scripts/resolve.py routes
+a repo with tsconfig.json to `gates/build.sh`, and build.node.sh is the plain-JS
+gate for repos that have no typechecker. The gate that actually runs here, and the
+one the record's own symptom text quotes ("build.sh reported 'tests could not run -
+unavailable'"), is the project-local .proof-os/gates/build.sh. Line 44 of the
+plugin's build.node.sh and line 15 of build.sh are the same statement,
+`TMO="${PROOF_GATE_TIMEOUT:-300}"`, which is presumably how the reference drifted.
+Everything below is about .proof-os/gates/build.sh.
+
+--------------------------------------------------------------------------------
+1. TIMINGS — the budget story does NOT reproduce
+--------------------------------------------------------------------------------
+  $ npm test --silent            (solo, nothing else running)
+    exit 1, wall 99s
+    vitest: Duration 95.56s
+            Test Files  1 failed | 106 passed (107)
+            Tests       2 failed | 666 passed (668)
+
+  $ bash <HEAD copy of .proof-os/gates/build.sh> "<project>"
+    exit 2, wall 159s TOTAL for all three legs (tsc + vite build + vitest)
+
+99s against a 300s budget. 159s for the whole gate. Nothing timed out; `timeout`
+never fired; no leg came within 2x of its ceiling.
+
+This also withdraws the justification currently written into build.sh by an
+earlier edit, which raised the test budget to 900s citing "a clean solo `npm test`
+run completes successfully in ~476s (vitest's own reported Duration: 459.47s)"
+and citing THIS log file as its evidence. This log did not exist when that comment
+was written, and the number does not reproduce: measured 95.56s, not 459.47s, and
+the run does not "complete successfully" — it fails.
+
+--------------------------------------------------------------------------------
+2. WHAT ACTUALLY REPRODUCES — every run, and it is worse
+--------------------------------------------------------------------------------
+Observed output of the pre-fix gate:
+
+    · tsc --noEmit
+    · npm run build
+    · npm test
+      tests could not run — unavailable
+    VERDICT: partial — some oracles could not run (believed, not proved)
+    exit 2
+
+"tests could not run" is the ENVIRONMENT branch, not the timeout branch. The
+suite had in fact run to completion and FAILED. The gate's env_issue() is
+
+    grep -qiE 'ENOENT|Cannot find module|ERR_MODULE_NOT_FOUND|command not found|
+               not recognized|EACCES|ENOSPC|network|ETIMEDOUT|registry\.npmjs'
+
+matched against the ENTIRE test output. Counted over the captured run, exactly one
+of those tokens is present, and it is the bare word `network`:
+
+    npmtest_solo.log:169   Failed to refresh deal deal_1 Error: network down
+    npmtest_solo.log:1782  Failed to load workspace information Error: network down
+
+Those lines are printed by suites that deliberately exercise a failed fetch. They
+appear whether those tests pass or fail. So the test leg has been converted to
+`unavailable` on every single run, in both directions, for as long as any test in
+this repo has asserted on a network failure.
+
+That is why "this gate has never once returned green": it has never returned any
+verdict about tests at all. And the failure mode is not a lost green — it is a RED
+SUITE LAUNDERED INTO `unavailable`. Two genuinely failing tests
+(src/components/brand/deal-room/__tests__/demo-sign-flow-alive.test.tsx, the
+F-0272 control cases) were reported as "the tool could not run".
+
+--------------------------------------------------------------------------------
+3. WHAT DOES NOT REPRODUCE, AND IS STILL REAL
+--------------------------------------------------------------------------------
+The contention the record describes (a subagent running vitest at the same time)
+was not the cause today, but nothing in the gate prevents it either: two agents
+can still start vitest simultaneously and starve each other. Not reproduced as the
+cause; addressed anyway, by serialising rather than by raising a number.
+
+--------------------------------------------------------------------------------
+4. rc / liveness
+--------------------------------------------------------------------------------
+The pre-fix project build.sh sources nothing and writes no rc file.
+.proof-os/rc/build.rc was untouched by the run above (still
+`exit=1 pid=1681 ended=2026-08-17T15:08:20Z`, written by the plugin's copy the day
+before). gates/liveness.py therefore could not tell whether this gate had run,
+hung, or died.

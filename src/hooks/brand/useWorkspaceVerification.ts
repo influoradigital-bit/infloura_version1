@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { VerificationStatus } from '@/lib/types';
@@ -79,13 +80,19 @@ export function useWorkspaceVerification(): WorkspaceVerification {
   const roleResolved = role.isSuccess && !idMissing && memberRole !== null;
   const roleError = role.isError || (role.isSuccess && (idMissing || memberRole === null));
 
+  // F-0279: was `() => void role.refetch()` written inline in the return object literal — a
+  // fresh closure allocated every render even though nothing about it changes render to
+  // render. `role.refetch` is itself stable across renders of this hook (React Query), so this
+  // only needs to re-create if that identity ever changes.
+  const retryRole = useCallback(() => void role.refetch(), [role.refetch]);
+
   return {
     status,
     isLoading: me.isLoading || role.isLoading,
     isVerified: status === 'VERIFIED',
     roleResolved,
     roleError,
-    retryRole: () => void role.refetch(),
+    retryRole,
     canVerify: roleResolved ? memberRole === 'OWNER' || memberRole === 'ADMIN' : true,
   };
 }

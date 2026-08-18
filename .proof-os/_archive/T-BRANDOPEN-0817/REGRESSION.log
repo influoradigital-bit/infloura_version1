@@ -1,0 +1,81 @@
+REGRESSION — every gate modified under T-BRANDOPEN-0817, plus F-025*/F-026*/F-029*
+dev, 2026-08-18. Run against the REAL tree, sequentially, 420s cap per gate.
+
+Pre-fix column: the same 52 gates from a pre-edit backup, placed at
+.proof-os/gates_prefix/ so that the 44 gates using ROOT=$(dirname $0)/../..
+resolve to the project and not to the scratch dir. (Running the backup from
+outside the repo made 40 of them exit 2 on 'project root unreadable' and
+produced a fake 41-gate diff — recorded here because anyone repeating this
+will hit it.)
+
+SUMMARY   pre-fix: 49 x exit 0, 2 x exit 1, 1 x exit 2
+          post-fix: 49 x exit 0, 3 x exit 1, 0 x exit 2
+          verdicts changed by my edits: 1 (build.sh, 2 -> 1: the F-0229 fix)
+
+GATE                                                       PRE      POST     SECS(post)
+F-0050-static-view-components.sh                           0        0        0.9
+F-0223-approval-reports-release.sh                         0        0        10.3
+F-0224-release-has-a-caller.sh                             0        0        8.0
+F-0225-cancelled-collaboration-revives.sh                  0        0        9.6
+F-0227-no-pool-fund-over-signed-deal.sh                    0        0        7.8
+F-0234-payout-creator-scoping.sh                           0        0        12.5
+F-0235-no-fabricated-pii-live.sh                           0        0        0.7
+F-0236-no-mock-money-in-live.sh                            1        1        0.6
+F-0237-sign-over-real-terms.sh                             0        0        0.6
+F-0238-no-fabricated-contract-pdf.sh                       0        0        0.7
+F-0239-no-fake-money-progress.sh                           0        0        0.7
+F-0240-campaign-type-reaches-payload.sh                    0        0        0.8
+F-0241-no-false-draft-reassurance.sh                       0        0        0.6
+F-0242-brand-can-open-dispute.sh                           0        0        0.9
+F-0243-verification-copy-agrees.sh                         0        0        1.0
+F-0244-owner-self-lockout.sh                               0        0        6.6
+F-0245-F-0246-dashboard-states-and-identity.sh             0        0        8.0
+F-0247-premature-success-copy.sh                           0        0        7.3
+F-0248-unreachable-primary-action.sh                       0        0        7.8
+F-0249-stale-seed-overwrites-real-data.sh                  0        0        7.0
+F-0250-F-0268-pending-signature-deadlock.sh                0        0        10.7
+F-0251-contract-payments-truthful.sh                       0        0        12.9
+F-0252-contract-status-enum-parity.sh                      0        0        1.8
+F-0253-signature-canvas-submitted.sh                       0        0        11.6
+F-0254-demo-hint-guarded.sh                                0        0        7.3
+F-0255-consent-links-live.sh                               0        0        8.2
+F-0256-no-mock-campaign-seed.sh                            0        0        16.6
+F-0257-invite-creator-handoff.sh                           0        0        10.6
+F-0258-no-client-invented-fees.sh                          0        0        9.7
+F-0259-discover-loading-empty.sh                           0        0        7.9
+F-0260-absent-metric-not-zero.sh                           0        0        7.1
+F-0261-command-bar-chord-and-shortcuts.sh                  0        0        7.3
+F-0262-settings-persistence-copy.sh                        0        0        7.7
+F-0263-no-negative-sla.sh                                  0        0        6.6
+F-0264-no-dead-money-controls.sh                           0        0        8.1
+F-0265-brand-palette-tokens.sh                             0        0        1.3
+F-0271-signed-terms-rendered.sh                            0        0        7.7
+F-0272-demo-contract-fixture.sh                            0        0        0.8
+F-0272-demo-sign-flow-alive.sh                             1        1        20.2
+F-0273-frozen-escrow-counts-as-locked.sh                   0        0        1.2
+F-0273-frozen-escrow-reads-frozen.sh                       0        0        14.9
+F-0279-role-recovery-consumed.sh                           0        0        15.1
+F-0282-brand-identity-persisted.sh                         0        0        1.2
+F-0283-contract-terms-persisted.sh                         0        0        15.5
+F-0290-application-has-a-timeline.sh                       0        0        8.9
+F-0291-invite-has-a-timeline.sh                            0        0        54.8
+F-0292-signature-name-persisted.sh                         0        0        10.7
+F-0293-consent-link-preserves-form.sh                      0        0        12.5
+F-0294-server-fee-copy-rendered.sh                         0        0        13.0
+F-0295-absent-audience-surfaces.sh                         0        0        9.6
+F-0301-creator-dispute-entry.sh                            0        0        15.8
+build.sh                                                   2        1        170.0   <-- CHANGED
+
+THE THREE NON-ZERO POST-FIX VERDICTS ARE REAL, NOT MY BREAKAGE:
+  F-0236-no-mock-money-in-live.sh   exit 1 before and after. Standing finding.
+  F-0272-demo-sign-flow-alive.sh    exit 1 before and after. Its own vitest suite
+        (demo-sign-flow-alive.test.tsx) has 2 genuinely failing cases.
+  build.sh                          2 -> 1. This IS the F-0229 fix: the same red
+        suite that F-0272 reports directly was being laundered into 'unavailable'.
+        The change is the gate starting to tell the truth, not a new break.
+
+NOT CHECKED HERE: the 70 gates under .proof-os/gates/ that I did not modify and
+that are outside F-025*/F-026*/F-029*; whether the gates that now depend on
+python (50 of them, via gates/_code.sh) behave on a host without one — they will
+report unavailable, which is honest but is a new unavailable path that has only
+been exercised by fault-injection here, not on a real python-less machine.

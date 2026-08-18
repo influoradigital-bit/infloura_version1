@@ -21,17 +21,25 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 PAGE=src/pages/brand-settings.tsx
 [ -f "$PAGE" ] || { echo "· $PAGE missing — unavailable"; exit 2; }
+PAGE_CODE=$(code_view "$PAGE") || { echo "$(code_why) - unavailable"; exit 2; }
 
 fail=0
 
 echo "· leg 1: the blanket 'changes apply to this session only' claim is gone"
 # Exclude full-line comments so this checks actual rendered copy, not explanatory prose (e.g. a
 # comment documenting the OLD disclaimer text for context would otherwise self-trigger this leg).
-code_only=$(grep -vE '^\s*//' "$PAGE")
+code_only=$(grep -vE '^\s*//' "$PAGE_CODE")
 if printf '%s\n' "$code_only" | grep -qF "changes apply to this session only"; then
   printf '%s\n' "$code_only" | grep -nF "changes apply to this session only"
   echo "  still present in rendered/live code — three of the toggles on this screen PATCH the"
@@ -42,33 +50,33 @@ fi
 
 echo "· leg 2: the three live-writing handlers are still wired (copy fixed, not persistence regressed)"
 for needle in "handleEmailPrefChange" "handleCategoryPrefChange" "api.notifications.setPreference"; do
-  if ! grep -qF "$needle" "$PAGE"; then
+  if ! grep -qF "$needle" "$PAGE_CODE"; then
     echo "  $needle missing — a real write path was removed instead of the stale copy"
     fail=1
   fi
 done
 # The three Switches must still call these handlers via onCheckedChange, not just reference
 # them in a dead comment.
-if ! grep -qE "onCheckedChange=\{handleEmailPrefChange\}" "$PAGE"; then
+if ! grep -qE "onCheckedChange=\{handleEmailPrefChange\}" "$PAGE_CODE"; then
   echo "  Email Notifications switch no longer wired to handleEmailPrefChange"
   fail=1
 fi
-if ! grep -qE "onCheckedChange=\{\(e\) => handleCategoryPrefChange\('campaignAlerts', e\)\}" "$PAGE"; then
+if ! grep -qE "onCheckedChange=\{\(e\) => handleCategoryPrefChange\('campaignAlerts', e\)\}" "$PAGE_CODE"; then
   echo "  Campaign Alerts switch no longer wired to handleCategoryPrefChange"
   fail=1
 fi
-if ! grep -qE "onCheckedChange=\{\(e\) => handleCategoryPrefChange\('bidNotifications', e\)\}" "$PAGE"; then
+if ! grep -qE "onCheckedChange=\{\(e\) => handleCategoryPrefChange\('bidNotifications', e\)\}" "$PAGE_CODE"; then
   echo "  Bid Notifications switch no longer wired to handleCategoryPrefChange"
   fail=1
 fi
 [ "$fail" -eq 0 ] && echo "  clean — all three persisted switches still call their live handlers"
 
 echo "· leg 3: Push Notifications / Weekly Digest still carry their own honest 'not available' caption"
-if ! grep -qE "Push notifications are not available yet" "$PAGE"; then
+if ! grep -qE "Push notifications are not available yet" "$PAGE_CODE"; then
   echo "  Push Notifications lost its own honest caption"
   fail=1
 fi
-if ! grep -qE "Weekly digest isn't available yet" "$PAGE"; then
+if ! grep -qE "Weekly digest isn't available yet" "$PAGE_CODE"; then
   echo "  Weekly Digest lost its own honest caption"
   fail=1
 fi

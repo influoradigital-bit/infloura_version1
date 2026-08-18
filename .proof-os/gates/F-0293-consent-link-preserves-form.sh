@@ -25,10 +25,19 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 BRAND=src/pages/brand-register.tsx
+BRAND_CODE=$(code_view "$BRAND") || { echo "$(code_why) - unavailable"; exit 2; }
 CREATOR=src/pages/creator-register.tsx
+CREATOR_CODE=$(code_view "$CREATOR") || { echo "$(code_why) - unavailable"; exit 2; }
 for f in "$BRAND" "$CREATOR"; do
   [ -f "$f" ] || { echo "· $f missing — unavailable"; exit 2; }
 done
@@ -36,8 +45,8 @@ done
 echo "· brand-register.tsx: Terms/Privacy links are not same-document navigations"
 # A same-document-navigation link is <a href="/terms" ...> with no target on the SAME line/tag.
 # Match the specific anchor tags for /terms and /privacy and require target="_blank" on each.
-brand_terms_line=$(grep -n 'href="/terms"' "$BRAND" | head -1)
-brand_privacy_line=$(grep -n 'href="/privacy"' "$BRAND" | head -1)
+brand_terms_line=$(grep -n 'href="/terms"' "$BRAND_CODE" | head -1)
+brand_privacy_line=$(grep -n 'href="/privacy"' "$BRAND_CODE" | head -1)
 if [ -z "$brand_terms_line" ] || [ -z "$brand_privacy_line" ]; then
   echo "  could not find Terms/Privacy links in $BRAND"
   echo "VERDICT: broken — consent links missing entirely in brand-register.tsx (F-0293)"
@@ -58,8 +67,8 @@ fi
 echo "  clean — both links carry target=\"_blank\""
 
 echo "· creator-register.tsx: Terms/Privacy links are not same-document navigations"
-creator_terms_line=$(grep -n 'href="/terms"' "$CREATOR" | head -1)
-creator_privacy_line=$(grep -n 'href="/privacy"' "$CREATOR" | head -1)
+creator_terms_line=$(grep -n 'href="/terms"' "$CREATOR_CODE" | head -1)
+creator_privacy_line=$(grep -n 'href="/privacy"' "$CREATOR_CODE" | head -1)
 if [ -z "$creator_terms_line" ] || [ -z "$creator_privacy_line" ]; then
   echo "  could not find Terms/Privacy links in $CREATOR"
   echo "VERDICT: broken — consent links missing entirely in creator-register.tsx (F-0293)"

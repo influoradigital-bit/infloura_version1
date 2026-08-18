@@ -1,0 +1,22 @@
+=== F-0279 gate run 1: against current UNFIXED real tree ===
+· hook: WorkspaceVerification still exposes roleError + retryRole (F-0244 surface intact)
+  clean — roleError / retryRole both still on WorkspaceVerification
+· hook: retryRole is a stable reference (useCallback), not a fresh closure literal
+VERDICT: broken — src/hooks/brand/useWorkspaceVerification.ts does not import useCallback; retryRole cannot be memoised (F-0279
+         secondary defect: fresh closure every render)
+EXIT: 1
+
+=== F-0279 gate run 2: against constructed WRONG FIX (scratch copy, real tree untouched) ===
+Wrong fix: hook properly stabilised with useCallback, but brand-verification.tsx
+destructures roleError+retryRole and never uses either (void roleError; void retryRole;).
+· hook: WorkspaceVerification still exposes roleError + retryRole (F-0244 surface intact)
+  clean — roleError / retryRole both still on WorkspaceVerification
+· hook: retryRole is a stable reference (useCallback), not a fresh closure literal
+  clean — retryRole is bound via useCallback and returned by reference
+· consumer (src/pages/brand-verification.tsx): destructures roleError AND retryRole
+  clean — 27:  const { status, isLoading, isVerified, canVerify, roleError, retryRole } = useWorkspaceVerification();
+· consumer: roleError actually gates a rendered branch (not just destructured and unused)
+VERDICT: broken — roleError is destructured in src/pages/brand-verification.tsx but never appears in a
+         conditional — a consumer that destructures a symbol and never reads it again is
+         exactly the wrong fix this gate rejects (F-0279)
+EXIT: 1

@@ -24,18 +24,26 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 SRC=src/components/brand/discover/creator-discovery.tsx
 [ -f "$SRC" ] || { echo "· $SRC missing — unavailable"; exit 2; }
+SRC_CODE=$(code_view "$SRC") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· distinct loading and empty markers exist in the source"
-if ! grep -qE "discover-loading" "$SRC"; then
+if ! grep -qE "discover-loading" "$SRC_CODE"; then
   echo "VERDICT: broken — no loading-state marker found; an in-flight search renders nothing"
   echo "         distinguishable from a zero-result search (F-0259)"
   exit 1
 fi
-if ! grep -qE "discover-empty" "$SRC"; then
+if ! grep -qE "discover-empty" "$SRC_CODE"; then
   echo "VERDICT: broken — no empty-state marker found; a zero-result search renders nothing"
   echo "         distinguishable from a stalled/loading page (F-0259)"
   exit 1
@@ -44,7 +52,7 @@ echo "  clean — discover-loading and discover-empty both present"
 
 echo "· the price-range filter does not fire at its untouched default"
 # Bad shape: an unconditional filter over averageRate ?? 0 with no touched-guard anywhere nearby.
-if grep -qE "priceFilterTouched|priceRange\[0\] > 5000 \|\| priceRange\[1\] < 200000" "$SRC"; then
+if grep -qE "priceFilterTouched|priceRange\[0\] > 5000 \|\| priceRange\[1\] < 200000" "$SRC_CODE"; then
   echo "  clean — a touched-guard exists for the price filter"
 else
   echo "VERDICT: broken — no guard found; the price-range filter appears to run unconditionally,"

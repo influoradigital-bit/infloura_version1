@@ -12,7 +12,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CheckCircle2, Clock, Loader2, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Clock, Loader2, ShieldCheck } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,7 +22,8 @@ import type { WorkspaceMeResponse } from '@/lib/api';
 
 export default function BrandVerificationPage() {
   const queryClient = useQueryClient();
-  const { status, isLoading, isVerified, canVerify } = useWorkspaceVerification();
+  const { status, isLoading, isVerified, canVerify, roleError, retryRole } =
+    useWorkspaceVerification();
 
   const handleSubmitted = () => {
     // Reflect PENDING everywhere at once, then refetch to confirm from the server.
@@ -72,7 +73,30 @@ export default function BrandVerificationPage() {
               body="Only an Owner or Admin can submit workspace verification. Ask one of them to complete it."
             />
           ) : (
-            <BrandKycForm onSubmitted={handleSubmitted} />
+            <>
+              {/* F-0279: canVerify fails OPEN whenever roleResolved is false (F-0244), so a
+                  role-query rejection or missing brand_user_id lands here — the form still
+                  renders (the server enforces the real gate), but silently rendering it with
+                  no signal that the client couldn't confirm the role wastes the caller's time
+                  if the server then 403s. roleError/retryRole existed on the hook since F-0244
+                  but no consumer ever read either. */}
+              {roleError && (
+                <div
+                  role="status"
+                  className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-400/50 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/40 dark:text-amber-100"
+                >
+                  <span className="flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 flex-none" aria-hidden="true" />
+                    We couldn’t confirm your workspace role. You can still submit — the server
+                    checks permissions independently — but retrying may resolve this first.
+                  </span>
+                  <Button size="sm" variant="outline" onClick={retryRole} className="flex-none">
+                    Retry
+                  </Button>
+                </div>
+              )}
+              <BrandKycForm onSubmitted={handleSubmitted} />
+            </>
           )}
         </CardContent>
       </Card>

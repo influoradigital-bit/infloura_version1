@@ -1,0 +1,9 @@
+=== F-0319 reproduction: promoted gate greens the original defect ===
+date: 2026-08-18T09:00:48Z
+injection: deriveEscrowFromMilestones filter -> "return s === 'FUNDED';" (F-0273 verbatim)
+file sha256 (injected): f722b556a12a994d209264a898dc508bacb6fc965b47f5b052b2fedca3ee921d *src/components/brand/contracts/contracts-and-deliverables.tsx
+
+--- bash .proof-os/gates/F-0273-frozen-escrow-counts-as-locked.sh ---
+VERDICT: aligned (proved)
+NOT CHECKED: whether the backend's MilestoneStatus set is still exactly PENDING/FUNDED/RELEASED/REFUNDED/FROZEN, whether the rendered amount is right, or runtime behaviour
+EXIT=0

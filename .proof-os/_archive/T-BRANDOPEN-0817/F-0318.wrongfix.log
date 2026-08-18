@@ -1,0 +1,25 @@
+· static: addTerms() actually calls getTermsText(), not getTermsJson()
+  clean — addTerms() calls getTermsText() and never getTermsJson()
+· behavioural: ContractPdfServiceTest extracts real PDF text and asserts on it
+  clean — test file extracts PDF text and exercises termsText
+· mvn -o test ContractPdfServiceTest (budget 240s)
+[ERROR] Tests run: 4, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.349 s <<< FAILURE! -- in com.influora.service.ContractPdfServiceTest
+[ERROR] com.influora.service.ContractPdfServiceTest.testRenderWithNoTermsTextRendersHonestly -- Time elapsed: 0.192 s <<< FAILURE!
+[ERROR] com.influora.service.ContractPdfServiceTest.testRenderIncludesTermsTextInPdfContent -- Time elapsed: 0.022 s <<< FAILURE!
+[ERROR] Failures: 
+[ERROR]   ContractPdfServiceTest.testRenderIncludesTermsTextInPdfContent:142 expected the agreed terms text to appear in the rendered PDF content ==> expected: <true> but was: <false>
+[ERROR]   ContractPdfServiceTest.testRenderWithNoTermsTextRendersHonestly:167 expected an honest statement that no terms were specified, not a silently blank section under the 'Terms' heading ==> expected: <true> but was: <false>
+[ERROR] Tests run: 4, Failures: 2, Errors: 0, Skipped: 0
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.2.5:test (default-test) on project influora-api: There are test failures.
+[ERROR] 
+[ERROR] Please refer to C:\Users\Sage world\Downloads\New Influora Ai\New Influora\influora-api\target\surefire-reports for the individual test results.
+[ERROR] Please refer to dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+VERDICT: broken — ContractPdfServiceTest does not pass; the terms-in-PDF behaviour this
+         gate requires is not actually exercised end to end (F-0318)

@@ -1,0 +1,72 @@
+· component: still fetches contractRecord and renders/gates on it
+  clean — contractRecord is fetched, rendered and gates Sign
+· api.ts: isolating contracts.get() body
+  isolated 20 lines
+· api.ts: contracts.get() still branches on isLive(), live branch calls the real endpoint
+  clean — isLive() gates http.request (live) ahead of mockOr (mock), in that order
+· api.ts: mock branch resolves a real fixture, not null
+  clean — mock branch resolves a fixture with milestones
+NOT CHECKED (interim): none — all static legs passed
+· npx vitest run src/components/brand/deal-room/__tests__/demo-sign-flow-alive.test.tsx (budget 180s)
+                    [36m</span>[39m
+                  [36m</div>[39m
+                  [36m<p[39m
+                    [33mclass[39m=[32m"text-[10px] sm:text-xs text-center text-muted-foreground"[39m
+                  [36m>[39m
+                    [0mCreator signed[0m
+                  [36m</p>[39m
+                [36m</div>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"flex-1 h-0.5 mt-5 min-w-[8px] bg-muted"[39m
+                [36m/>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"flex flex-col items-center flex-1 min-w-0"[39m
+                [36m>[39m
+                  [36m<div[39m
+                    [33mclass[39m=[32m"w-10 h-10 rounded-full flex items-center justify-center mb-2 bg-muted text-muted-foreground"[39m
+                  [36m>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"text-sm font-semibold"[39m
+                    [36m>[39m
+                      [0m4[0m
+                    [36m</span>[39m
+                  [36m</div>[39m
+                  [36m<p[39m
+                    [33mclass[39m=[32m"text-[10px] sm:text-xs text-center text-muted-foreground"[39m
+                  [36m>[39m
+                    [0mActive[0m
+                  [36m</p>[39m
+                [36m</div>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"bg-border shrink-0 data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-px"[39m
+              [33mdata-orientation[39m=[32m"horizontal"[39m
+              [33mdata-slot[39m=[32m"separator"[39m
+              [33mrole[39m=[32m"none"[39m
+            [36m/>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm border-primary/20"[39m
+              [33mdata-slot[39m=[32m"card"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"@container/card...
+[90m [2m❯[22m waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:[2m163:27[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m86:33[22m[39m
+[36m [2m❯[22m src/components/brand/deal-room/__tests__/demo-sign-flow-alive.test.tsx:[2m137:25[22m[39m
+    [90m135| [39m    [34mrender[39m([33m<[39m[33mMockedDealContractTab[39m [33m{[39m[33m...[39mbaseProps[33m}[39m [33m/[39m[33m>[39m)[33m;[39m
+    [90m136| [39m
+    [90m137| [39m    expect(await screen.findByText(/contract terms are not available y…
+    [90m   | [39m                        [31m^[39m
+    [90m138| [39m    [34mexpect[39m(screen[33m.[39m[34mqueryByText[39m([36m/on signing/i[39m))[33m.[39mnot[33m.[39m[34mtoBeInTheDocument[39m()[33m;[39m
+    [90m139| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m2 passed[39m[22m[90m (4)[39m
+[2m   Start at [22m 13:42:42
+[2m   Duration [22m 16.83s[2m (transform 384ms, setup 728ms, collect 114ms, tests 11.56s, environment 1.20s, prepare 150ms)[22m
+VERDICT: broken — demo-sign-flow-alive.test.tsx does not pass (F-0272)
+NOT CHECKED: nothing further — the suite ran and failed

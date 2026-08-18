@@ -1,0 +1,24 @@
+=== F-0236 postfix: repaired gate vs the REAL tree ===
+date: 2026-08-18T09:23:53Z
+file sha256: 253aece851f139b9702edaf6b5e8504dd569f2048754669c3249c40c37e33f5e *src/components/brand/contracts/contracts-and-deliverables.tsx
+(expected 253aece851f139b9702edaf6b5e8504dd569f2048754669c3249c40c37e33f5e)
+
+· the contracts list is seeded empty in live mode, so no fixture contract can reach the tab
+    632:  const [contracts, setContracts] = useState<Contract[]>(liveApi ? [] : mockContracts);
+  clean
+· vitest: payments-truthful — live mode with no milestone data fabricates nothing
+  [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+  [2m      Tests [22m [1m[32m4 passed[39m[22m[90m (4)[39m
+  suite green
+· vitest: frozen-escrow — live milestones drive the escrow figures, not a constant
+  [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+  [2m      Tests [22m [1m[32m4 passed[39m[22m[90m (4)[39m
+  suite green
+VERDICT: aligned (proved) — no fixture contract can reach the Payments tab in live mode, and
+         two render suites drive the tab with real live records: nothing invents a 50/50
+         schedule or 2024 transaction dates, and the escrow lock/amount shown are the ones
+         derived from the record's own milestones.
+NOT CHECKED: whether the live branch shows the RIGHT amounts for a contract shape neither
+             suite covers; mock-money leakage in files other than src/components/brand/contracts/contracts-and-deliverables.tsx; live rendering against
+             a running backend; and whether isApiLive() reports what the deployed build sets.
+EXIT=0

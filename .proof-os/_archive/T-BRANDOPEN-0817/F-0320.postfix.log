@@ -1,0 +1,21 @@
+· sanity: persistBrandSession still keeps the real displayName (F-0282, must not regress)
+  clean — displayName is still threaded through auth-session.ts
+· sanity: getBrandDisplayName has at least one call site outside its own module/tests
+src/pages/brand-login.tsx:43:      login(buildBrandUser({ id: session.userId, email, displayName: getBrandDisplayName() }));
+src/pages/brand-register.tsx:132:      login(buildBrandUser({ id: result.userId, email, displayName: getBrandDisplayName() }));
+  informational — a caller exists, but this alone does NOT pass this gate (see header)
+· vitest run src/pages/__tests__/brand-auth-identity.test.tsx src/components/brand/dashboard/__tests__/dashboard-page-greeting.test.tsx (budget 120s)
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m6 passed[39m[22m[90m (6)[39m
+  suites green — brand-auth-identity.test.tsx, dashboard-page-greeting.test.tsx
+VERDICT: aligned (proved) — a real backend displayName, once persisted by
+         persistBrandSession, now reaches useAuthStore().user via the brand login AND
+         register forms, and the dashboard greeting renders that real name instead of the
+         'there' placeholder; an absent displayName still falls back honestly (empty
+         string), never a fabricated 'Brand Account'-style name
+NOT CHECKED: a live round trip against the real backend (both suites mock api.auth.brandLogin
+             /brandRegister at the boundary and seed localStorage to stand in for what
+             persistBrandSession would have written); the brand-layout.tsx sidebar path
+             (already fixed separately under F-0246 via a workspace-record fallback, not
+             touched here); whether every OTHER brand page that reads useAuthStore().user
+             renders it correctly — only the dashboard greeting is asserted.

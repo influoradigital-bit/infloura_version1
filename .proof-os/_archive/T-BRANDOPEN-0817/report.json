@@ -1,0 +1,280 @@
+{
+ "rows": [
+  {
+   "subject": "F-0229 \u00b7 gates/build.sh reaches a verdict",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0229-build-gate-reaches-a-verdict.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0229-build-gate-reaches-a-verdict.sh"
+   }
+  },
+  {
+   "subject": "F-0251 \u00b7 src/components/brand/contracts/contracts-and-deliverables.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0251-contract-payments-truthful.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0251-contract-payments-truthful.sh"
+   }
+  },
+  {
+   "subject": "F-0252 \u00b7 src/lib/types.ts",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0252-contract-status-enum-parity.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0252-contract-status-enum-parity.sh"
+   }
+  },
+  {
+   "subject": "F-0266 \u00b7 gates read code, not bytes",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0266-gates-read-code-not-bytes.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0266-gates-read-code-not-bytes.sh"
+   }
+  },
+  {
+   "subject": "F-0271 \u00b7 src/components/brand/deal-room/deal-contract-tab.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0271-signed-terms-rendered.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0271-signed-terms-rendered.sh"
+   }
+  },
+  {
+   "subject": "F-0272 \u00b7 demo contract fixture",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0272-demo-contract-fixture.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0272-demo-contract-fixture.sh"
+   }
+  },
+  {
+   "subject": "F-0273 \u00b7 frozen escrow reads frozen",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0273-frozen-escrow-counts-as-locked.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0273-frozen-escrow-counts-as-locked.sh"
+   }
+  },
+  {
+   "subject": "F-0279 \u00b7 src/hooks/brand/useWorkspaceVerification.ts",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0279-role-recovery-consumed.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0279-role-recovery-consumed.sh"
+   }
+  },
+  {
+   "subject": "F-0282 \u00b7 src/lib/auth-session.ts",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0282-brand-identity-persisted.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0282-brand-identity-persisted.sh"
+   }
+  },
+  {
+   "subject": "F-0283 \u00b7 influora-api ContractService terms persistence",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0283-contract-terms-persisted.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0283-contract-terms-persisted.sh"
+   }
+  },
+  {
+   "subject": "F-0301 \u00b7 src/pages/creator-chat.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0301-creator-dispute-entry.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0301-creator-dispute-entry.sh"
+   }
+  },
+  {
+   "subject": "F-0318 \u00b7 influora-api ContractPdfService signed PDF",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0318-signed-pdf-carries-terms.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0318-signed-pdf-carries-terms.sh"
+   }
+  },
+  {
+   "subject": "F-0319 \u00b7 promoted gate greened its own defect",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0273-frozen-escrow-counts-as-locked.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0273-frozen-escrow-counts-as-locked.sh"
+   }
+  },
+  {
+   "subject": "F-0320 \u00b7 brand identity reaches the screen",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0320-brand-identity-reaches-the-screen.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0320-brand-identity-reaches-the-screen.sh"
+   }
+  },
+  {
+   "subject": "F-0321 \u00b7 cross-surface status label agreement",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0321-status-label-agreement.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0321-status-label-agreement.sh"
+   }
+  },
+  {
+   "subject": "F-0322 \u00b7 terms cap fits the column",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0322-terms-cap-fits-column.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0322-terms-cap-fits-column.sh"
+   }
+  },
+  {
+   "subject": "F-0323 \u00b7 F-0236 gate greened its own defect",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0236-no-mock-money-in-live.sh",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0236-no-mock-money-in-live.sh"
+   }
+  },
+  {
+   "subject": "F-0325 \u00b7 gate could not print its own verdict",
+   "owner": "arjun",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0304-blog-frontmatter.py",
+    "result": "exit 0 \u2014 proved; the same gate rejects both the pre-fix tree and a constructed wrong fix",
+    "where": ".proof-os/gates/F-0304-blog-frontmatter.py"
+   }
+  },
+  {
+   "subject": "typecheck \u00b7 whole project",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "npx tsc --noEmit",
+    "result": "0 errors",
+    "where": "tsconfig.json"
+   }
+  },
+  {
+   "subject": "backend test-compile \u00b7 influora-api",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -o -DskipTests test-compile",
+    "result": "exit 0",
+    "where": "influora-api/pom.xml"
+   }
+  },
+  {
+   "subject": "frontend suite \u00b7 tree-wide",
+   "owner": "meera",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "node",
+    "command": "npx vitest run",
+    "result": "4 failed of 683 \u2014 all in deal-room-dashboard-actor-refresh and -view-profile, another session's uncommitted F-0328/CR-97 work on a file held off-limits to this task; every suite in this task's scope passes",
+    "where": "src/components/brand/deals/deal-room-dashboard.tsx"
+   }
+  },
+  {
+   "subject": "build gate \u00b7 end-to-end",
+   "owner": "meera",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/build.sh .",
+    "result": "exit 1 \u2014 LEG tsc proved, LEG build proved, LEG tests BROKEN; the test leg is red for the same out-of-scope reason above. First run in this project's history that reaches a verdict at all",
+    "where": ".proof-os/gates/build.sh"
+   }
+  },
+  {
+   "subject": "checker round 1 \u00b7 the eleven",
+   "owner": "priya",
+   "status": "partial",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "fresh-context checker, artifact paths + done_when only",
+    "result": "5 defects found incl. F-0283 closing 3 of its 4 hops and a promoted gate that greens its own defect",
+    "where": "wiki/errors/BRAND-FRONTEND-UX-AUDIT-0817.md"
+   }
+  }
+ ]
+}

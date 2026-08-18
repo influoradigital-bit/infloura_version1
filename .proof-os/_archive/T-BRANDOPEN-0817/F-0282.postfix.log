@@ -1,0 +1,24 @@
+· BrandSession interface declares a displayName field
+  clean — BrandSession declares displayName
+· persistBrandSession() body located
+· persistBrandSession() actually reads data.user.displayName into a traceable local
+  clean — 'displayName' assigned from data.user.displayName
+· that same variable ('displayName') is written to localStorage, not a differently-sourced
+  or literal stand-in
+  clean — localStorage.setItem(...) call references 'displayName'
+· the setItem call is guarded so an absent name never writes a useless value
+  clean — guarded with 'if (displayName) localStorage.setItem(...)'
+· persistBrandSession() actually returns 'displayName' on the BrandSession object
+  clean — return object includes 'displayName'
+VERDICT: aligned (proved) — persistBrandSession() reads data.user.displayName into
+         'displayName', writes it to localStorage guarded against an absent value, and
+         returns it on BrandSession, mirroring persistCreatorSession
+NOT CHECKED: whether anything in the brand LOGIN call path (src/lib/api.ts mapBrandAuth /
+             LoginResponse, or wherever the brand login page is) actually forwards this
+             value into useAuthStore().setUser()/login() so a live brand session's global
+             `user` is non-null — that wiring lives outside auth-session.ts and is
+             explicitly out of this producer's file ownership; a real localStorage round
+             trip in a browser; whether the backend ever returns a BLANK (empty-string,
+             not undefined) displayName, which this gate's guard treats as falsy and
+             correctly does not persist, but which a live account could theoretically have
+EXIT=0

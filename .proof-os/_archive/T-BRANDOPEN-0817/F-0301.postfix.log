@@ -1,0 +1,20 @@
+· api layer: a creator-side dispute-open client call actually exists
+  clean — creatorDisputes.open(dealId, reason) found in src/lib/api.ts
+· page: the 'Deal options' trigger is no longer hard-disabled
+  clean — no unconditional disabled/aria-disabled pair around the Deal options trigger
+· page: a real handler function calls creatorDisputes.open in its body
+  clean — handleOpenDispute() calls creatorDisputes.open(...)
+· page: handleOpenDispute is actually wired to a clickable control, not dead code itself
+  clean — handleOpenDispute is bound to a real onClick
+· page: the dispute trigger is gated on escrowFunded, mirroring the brand-side pattern
+  clean — selectedDeal.escrowFunded gates the control
+· vitest run src/pages/__tests__/creator-chat.dispute-entry.test.tsx (budget 180s)
+  suite green — src/pages/__tests__/creator-chat.dispute-entry.test.tsx
+VERDICT: aligned (proved) — creatorDisputes.open exists in src/lib/api.ts, the 'Deal options'
+         trigger is no longer hard-disabled, handleOpenDispute() calls
+         creatorDisputes.open(selectedDeal.id, reason), is wired to a real onClick, gated
+         on selectedDeal.escrowFunded exactly like the brand side, and src/pages/__tests__/creator-chat.dispute-entry.test.tsx passes
+NOT CHECKED: a live 409 (NO_FUNDED_ESCROW / DISPUTE_ALREADY_OPEN) round-trip against a
+             real backend; whether the admin console actually surfaces creator-opened
+             disputes distinctly from brand-opened ones (DisputeOpenerType is a backend
+             concern, not this gate's surface).

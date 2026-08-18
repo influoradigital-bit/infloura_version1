@@ -37,10 +37,18 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 WALLET=src/pages/brand-wallet.tsx
 [ -f "$WALLET" ] || { echo "· $WALLET missing — unavailable"; exit 2; }
+WALLET_CODE=$(code_view "$WALLET") || { echo "$(code_why) - unavailable"; exit 2; }
 
 fail=0
 
@@ -79,7 +87,7 @@ find_enclosing_tooltip() {
 check_control() {
   local name="$1" label="$2" fallback_back="$3" fallback_fwd="$4"
   local line
-  line=$(grep -n -F "$label" "$WALLET" | head -1 | cut -d: -f1)
+  line=$(grep -n -F "$label" "$WALLET_CODE" | head -1 | cut -d: -f1)
   if [ -z "$line" ]; then
     echo "· $name: label '$label' not found in $WALLET — unavailable"
     return 2
@@ -92,7 +100,7 @@ check_control() {
     local start=$((line - fallback_back - 10))
     [ "$start" -lt 1 ] && start=1
     local end=$((line + fallback_fwd + 15))
-    block=$(sed -n "${start},${end}p" "$WALLET")
+    block=$(sed -n "${start},${end}p" "$WALLET_CODE")
     echo "  (no enclosing <Tooltip> found — fell back to a widened line window $start-$end)"
   fi
 

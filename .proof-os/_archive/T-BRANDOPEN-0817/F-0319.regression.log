@@ -1,0 +1,141 @@
+=== T-BRANDOPEN-0817 / F-0319 regression run ===
+date: 2026-08-18T09:10:03Z
+scope: .proof-os/gates/F-02*.sh + F-03*.sh + the .py siblings in that range
+
+F-0203-npm-audit-high.sh                                   exit=0      3s
+F-0206-gitleaks-baseline.sh                                exit=0     22s
+F-0207-no-dead-scaffold.sh                                 exit=0      0s
+F-0208-rules-resolvable.sh                                 exit=0      7s
+F-0210-reduced-motion-css.sh                               exit=0      5s
+F-0213-contract-filename.sh                                exit=0      8s
+F-0222-milestone-scoped-escrow-fund.sh                     exit=0      8s
+      VERDICT: aligned (proved) — fund control passes a server milestoneId; creator mount stays clean
+F-0223-approval-reports-release.sh                         exit=0      7s
+      VERDICT: aligned (proved) — an approval that moves no money says so
+F-0224-release-has-a-caller.sh                             exit=0      7s
+      VERDICT: aligned (proved) — a funded milestone can be released from the deal room
+F-0225-cancelled-collaboration-revives.sh                  exit=0     10s
+      VERDICT: aligned (proved) — a CANCELLED collaboration revives, a live one still 409s,
+F-0226-no-false-escrow-copy.sh                             exit=0      5s
+      VERDICT: aligned (proved) — no creator contract surface claims escrow is funded at signature
+F-0227-no-pool-fund-over-signed-deal.sh                    exit=0     10s
+      VERDICT: aligned (proved) — a pool fund cannot strand money on a campaign with signed deals
+F-0229-build-gate-reaches-a-verdict.sh                     exit=0     13s
+      · a runner that never started -> exit 2 (unavailable), NOT a finding
+      · a starved budget -> LEG tests: unavailable and exit 2, never proved, and it names the budget it blew
+      VERDICT: aligned (proved) — build.sh reaches a real verdict on a suite that reports, stays unavailable when the runner never starts or the budget runs out, names each leg, and records its own liveness
+F-0230-backend-suite-green.sh                              exit=0     55s
+      VERDICT: aligned (proved) — the backend suite is green
+F-0234-payout-creator-scoping.sh                           exit=0     15s
+      VERDICT: aligned (proved) — GET /wallet/payouts is tenant-scoped in the SQL that executes
+F-0235-no-fabricated-pii-live.sh                           exit=0      1s
+      VERDICT: aligned (proved)
+F-0236-no-mock-money-in-live.sh                            exit=1      1s
+      VERDICT: broken (F-0236 regressed)
+F-0237-sign-over-real-terms.sh                             exit=0      1s
+      VERDICT: aligned (proved)
+F-0238-no-fabricated-contract-pdf.sh                       exit=0      1s
+      VERDICT: aligned (proved)
+F-0239-no-fake-money-progress.sh                           exit=0      1s
+      VERDICT: aligned (proved)
+F-0240-campaign-type-reaches-payload.sh                    exit=0      1s
+      VERDICT: aligned (proved)
+F-0241-no-false-draft-reassurance.sh                       exit=0      1s
+      VERDICT: aligned (proved)
+F-0242-brand-can-open-dispute.sh                           exit=0      1s
+      VERDICT: aligned (proved)
+F-0243-verification-copy-agrees.sh                         exit=0      1s
+      VERDICT: aligned (proved)
+F-0244-owner-self-lockout.sh                               exit=0      9s
+      VERDICT: aligned (proved) — an unresolved role is never rendered as a denial
+F-0245-F-0246-dashboard-states-and-identity.sh             exit=0     11s
+      VERDICT: aligned (proved) — an unreachable dashboard says so, and shows no invented user
+F-0247-premature-success-copy.sh                           exit=0      8s
+      VERDICT: aligned (proved) — only a server-confirmed FUNDED escrow claims to hold money
+F-0248-unreachable-primary-action.sh                       exit=0     12s
+      VERDICT: aligned (proved) — a brand can reach the Sign control on every signable status
+F-0249-stale-seed-overwrites-real-data.sh                  exit=0      9s
+      VERDICT: aligned (proved) — a read failure can no longer become a destructive write
+F-0250-F-0268-pending-signature-deadlock.sh                exit=0      9s
+      VERDICT: aligned (proved) — neither party is locked out while signatures are pending
+F-0251-contract-payments-truthful.sh                       exit=0      9s
+      VERDICT: aligned (proved) — the Payments tab has one render path (no liveApi branch), never
+F-0252-contract-status-enum-parity.sh                      exit=0      2s
+      VERDICT: aligned (proved) — src/lib/types.ts ContractStatus and influora-api
+F-0253-signature-canvas-submitted.sh                       exit=0      8s
+      VERDICT: aligned (proved) — the signature control submits exactly what the copy promises,
+F-0254-demo-hint-guarded.sh                                exit=0      9s
+      VERDICT: aligned (proved) — the demo OTP hint only renders when the app is not live
+F-0255-consent-links-live.sh                               exit=0      8s
+      VERDICT: aligned (proved) — Terms of Service and Privacy Policy are real, focusable links
+F-0256-no-mock-campaign-seed.sh                            exit=0      9s
+      VERDICT: aligned (proved) — the invite selector never offers a campaign the server doesn't have
+F-0257-invite-creator-handoff.sh                           exit=0     10s
+      VERDICT: aligned (proved) — the invite dialog no longer promises a handoff the destination doesn't consume
+F-0258-no-client-invented-fees.sh                          exit=0     11s
+      VERDICT: aligned (proved) — no client-invented fee split renders as money; the real fee source is wired
+F-0259-discover-loading-empty.sh                           exit=0      9s
+      VERDICT: aligned (proved) — Discover has a real loading state, a real empty state, and the
+F-0260-absent-metric-not-zero.sh                           exit=0      8s
+      VERDICT: aligned (proved) — an absent avg-likes/avg-views/gender metric renders as absent, never as a
+F-0261-command-bar-chord-and-shortcuts.sh                  exit=0      7s
+      VERDICT: aligned (proved) — the chord opens and closes the bar, no dead shortcut is
+F-0262-settings-persistence-copy.sh                        exit=0      8s
+      VERDICT: aligned (proved) — the disclaimer no longer claims persisted toggles are ephemeral,
+F-0263-no-negative-sla.sh                                  exit=0      8s
+      VERDICT: aligned (proved) — a past-deadline deal renders an overdue state, not a negative
+F-0264-no-dead-money-controls.sh                           exit=0      8s
+      VERDICT: aligned (proved) — Export, Form 16A and GST Summary are unconditionally disabled,
+F-0265-brand-palette-tokens.sh                             exit=0      2s
+      VERDICT: aligned (proved) — hype.tsx and contracts-and-deliverables.tsx carry no raw hex
+F-0266-gates-read-code-not-bytes.sh                        exit=0     30s
+      VERDICT: aligned (proved) — comments are told from code, in both directions, by one shared tokenizer, and no shell gate bypasses it
+F-0271-signed-terms-rendered.sh                            exit=0     20s
+      VERDICT: aligned (proved) — ContractApiRecord carries real terms text sourced from the
+F-0272-demo-contract-fixture.sh                            exit=0      0s
+      VERDICT: aligned (proved)
+F-0272-demo-sign-flow-alive.sh                             exit=0      8s
+      VERDICT: aligned (proved) — contracts.get() in mock mode resolves a real fixture with
+F-0273-frozen-escrow-counts-as-locked.sh                   exit=0     10s
+      VERDICT: aligned (proved) — deriveEscrowFromMilestones was EXECUTED over all five
+F-0273-frozen-escrow-reads-frozen.sh                       exit=0     10s
+      VERDICT: aligned (proved) — deriveEscrowFromMilestones totals over FUNDED+FROZEN as held
+F-0279-role-recovery-consumed.sh                           exit=0     10s
+      VERDICT: aligned (proved) — retryRole is memoised with useCallback in the hook, and
+F-0282-brand-identity-persisted.sh                         exit=0      1s
+      VERDICT: aligned (proved) — persistBrandSession() reads data.user.displayName into
+F-0283-contract-terms-persisted.sh                         exit=0     11s
+      VERDICT: aligned (proved) — supplied terms now have a DTO field to arrive in, a real column
+F-0290-application-has-a-timeline.sh                       exit=0     12s
+      VERDICT: aligned (proved) — an application leaves a visible record for both parties
+F-0291-invite-has-a-timeline.sh                            exit=0     25s
+      VERDICT: aligned (proved) — an invitation is visible AND still acceptable
+F-0292-signature-name-persisted.sh                         exit=0     13s
+      VERDICT: aligned (proved) — the typed signer name the UI calls the binding act now has a
+F-0293-consent-link-preserves-form.sh                      exit=0      9s
+      VERDICT: aligned (proved) — Terms/Privacy links no longer discard in-progress registration state
+F-0294-server-fee-copy-rendered.sh                         exit=0     26s
+      VERDICT: aligned (proved) — the fee block renders the server's real disclosure copy
+F-0295-absent-audience-surfaces.sh                         exit=0     25s
+      VERDICT: aligned (proved) — an empty audience array renders an explicit absent state, matching
+F-0301-creator-dispute-entry.sh                            exit=0     52s
+      VERDICT: aligned (proved) — creatorDisputes.open exists in src/lib/api.ts, the 'Deal options'
+F-0308-blog-prerendered.sh                                 exit=0      3s
+F-0318-signed-pdf-carries-terms.sh                         exit=0     11s
+      VERDICT: aligned (proved) — addTerms() reads contract.getTermsText() (never getTermsJson()
+F-0322-terms-cap-fits-column.sh                            exit=0      8s
+      VERDICT: aligned (proved) — ContractGenerateRequest#terms's character cap (16383) and
+F-0204-eslint-sage-baseline.py                             exit=1     12s
+F-0270-no-dead-controls.py                                 exit=0      0s
+      VERDICT: aligned (proved) � 298 files scanned under src
+F-0304-blog-frontmatter.py                                 exit=1      0s
+
+DONE 2026-08-18T09:21:16Z
+
+=== FINAL re-run of the two gates modified in this round (real tree) ===
+date: 2026-08-18T09:25:21Z
+F-0273-frozen-escrow-counts-as-locked.sh                   exit=0   10s
+F-0236-no-mock-money-in-live.sh                            exit=0   15s
+F-0273-frozen-escrow-reads-frozen.sh                       exit=0   8s
+F-0251-contract-payments-truthful.sh                       exit=0   8s
+src file sha256: 253aece851f139b9702edaf6b5e8504dd569f2048754669c3249c40c37e33f5e *src/components/brand/contracts/contracts-and-deliverables.tsx

@@ -28,16 +28,25 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 TARGET=src/pages/brand-register.tsx
 APP=src/App.tsx
 [ -f "$TARGET" ] || { echo "· $TARGET missing — unavailable"; exit 2; }
+TARGET_CODE=$(code_view "$TARGET") || { echo "$(code_why) - unavailable"; exit 2; }
 [ -f "$APP" ] || { echo "· $APP missing — unavailable"; exit 2; }
+APP_CODE=$(code_view "$APP") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· static: real Terms/Privacy content exists in this repo (checked, not assumed)"
 if [ -f src/content/legal/terms-of-service.md ] && [ -f src/content/legal/privacy-policy.md ] \
-   && grep -q 'path="/terms"' "$APP" && grep -q 'path="/privacy"' "$APP"; then
+   && grep -q 'path="/terms"' "$APP_CODE" && grep -q 'path="/privacy"' "$APP_CODE"; then
   echo "  confirmed — src/content/legal/{terms-of-service,privacy-policy}.md exist and"
   echo "  App.tsx routes /terms and /privacy through LegalPage"
 else
@@ -47,9 +56,9 @@ else
 fi
 
 echo "· static: no dead <button type=\"button\"> for Terms of Service / Privacy Policy in $TARGET"
-if grep -nE '<button[^>]*type="button"[^>]*>\s*Terms of Service\s*</button>' "$TARGET" >/dev/null 2>&1 || \
-   grep -nE '<button[^>]*type="button"[^>]*>\s*Privacy Policy\s*</button>' "$TARGET" >/dev/null 2>&1; then
-  grep -nE 'Terms of Service|Privacy Policy' "$TARGET"
+if grep -nE '<button[^>]*type="button"[^>]*>\s*Terms of Service\s*</button>' "$TARGET_CODE" >/dev/null 2>&1 || \
+   grep -nE '<button[^>]*type="button"[^>]*>\s*Privacy Policy\s*</button>' "$TARGET_CODE" >/dev/null 2>&1; then
+  grep -nE 'Terms of Service|Privacy Policy' "$TARGET_CODE"
   echo "VERDICT: broken — brand-register.tsx still renders Terms of Service / Privacy Policy as a"
   echo "         dead <button type=\"button\"> with no onClick and no href (F-0255)"
   exit 1
@@ -59,8 +68,8 @@ echo "  clean — no dead button wraps the consent link copy"
 echo "· static: Terms/Privacy controls carry real hrefs to routes App.tsx serves"
 TERMS_HREF_OK=false
 PRIVACY_HREF_OK=false
-grep -nE 'href="/terms"' "$TARGET" >/dev/null 2>&1 && TERMS_HREF_OK=true
-grep -nE 'href="/privacy"' "$TARGET" >/dev/null 2>&1 && PRIVACY_HREF_OK=true
+grep -nE 'href="/terms"' "$TARGET_CODE" >/dev/null 2>&1 && TERMS_HREF_OK=true
+grep -nE 'href="/privacy"' "$TARGET_CODE" >/dev/null 2>&1 && PRIVACY_HREF_OK=true
 if ! $TERMS_HREF_OK || ! $PRIVACY_HREF_OK; then
   echo "  terms href present: $TERMS_HREF_OK · privacy href present: $PRIVACY_HREF_OK"
   echo "VERDICT: broken — brand-register.tsx does not link Terms of Service / Privacy Policy to"

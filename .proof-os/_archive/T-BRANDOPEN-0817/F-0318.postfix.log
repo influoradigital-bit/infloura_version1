@@ -1,0 +1,17 @@
+· static: addTerms() actually calls getTermsText(), not getTermsJson()
+  clean — addTerms() calls getTermsText() and never getTermsJson()
+· behavioural: ContractPdfServiceTest extracts real PDF text and asserts on it
+  clean — test file extracts PDF text and exercises termsText
+· mvn -o test ContractPdfServiceTest (budget 240s)
+  suite green — ContractPdfServiceTest
+VERDICT: aligned (proved) — addTerms() reads contract.getTermsText() (never getTermsJson()
+         — the SHA-256 tamper hash), and ContractPdfServiceTest extracts real PDF text with
+         PdfTextExtractor and asserts the supplied terms text is present in the rendered
+         bytes, and that an absent-terms contract renders an honest sentence rather than a
+         blank section under the 'Terms' heading.
+NOT CHECKED: that generateAndDeliverContractPdf() (ContractService.java) actually calls
+             render() with a Contract whose termsText was persisted from a real request —
+             that hop is F-0283's own gate/tests, not this one; whether the emailed
+             download link in a live inbox actually opens a PDF containing the terms (only
+             a live E2E proves that); PDF layout/pagination overflow for very long terms
+             text (up to the F-0322 cap) is untested here.

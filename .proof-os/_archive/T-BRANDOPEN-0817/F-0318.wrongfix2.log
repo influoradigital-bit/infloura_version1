@@ -1,0 +1,3 @@
+· static: addTerms() actually calls getTermsText(), not getTermsJson()
+VERDICT: broken — addTerms() never calls contract.getTermsText(); the terms field never
+         reaches the signed artefact both parties receive by email (F-0318)

@@ -29,6 +29,15 @@
 > more (`F-0292`…`F-0296`), including **one fix that was actively wrong on the legal surface** and
 > **one gate that greened its own defect class**. See
 > **[MEDIUM remediation](#medium-remediation--t-brandmed-0817)**. Shipped in `6643cb9` and `f4f4ed6`.
+>
+> **OPEN RECORDS — task `T-BRANDOPEN-0817`, verdict `proved` (oracle).** The eleven records this
+> document still listed as open (`F-0229`, `F-0251`, `F-0252`, `F-0266`, `F-0271`, `F-0272`, `F-0273`,
+> `F-0279`, `F-0282`, `F-0283`, `F-0301`) are **closed against gates**, together with seven more the
+> reviews opened. **`F-0283` is done** — contract terms are captured, stored, returned, printed into
+> the signed PDF and immutable once created — so the "largest open item in this document" no longer
+> is. Two rounds of fresh-context review found five defects, and a gate sweep found that **two closed
+> records were closed against gates that green their own defect**. See
+> **[Open-records remediation](#open-records-remediation--t-brandopen-0817)**.
 
 **Question asked:** how does the brand flow actually work for the person using it — do they get
 confused, does it work properly?
@@ -600,6 +609,96 @@ HEAD plus only the F-0292 hunks — built and verified out of tree, then staged 
 session's working copies were never written to. The hunk filter was wrong twice and the *compiler*
 caught both times; neither would have been visible to review by eye.
 
+## Open-records remediation — `T-BRANDOPEN-0817`
+
+**Scored result (validate.py):** `VALID · 23 rows · alignment 50.0% (capped) · proved 8.7% (4/23
+scored) · believed 19 · capped 18`. As with the MEDIUM run, the cap is the registry refusing to let a
+producer self-certify: eighteen rows carry a deterministic script oracle and still render `believed`
+because `ananya`, `vikram` and `dev` are capped there. **The number says who is allowed to claim, not
+how good the work is.**
+
+Eighteen records closed, each against a gate that exits 1 on the pre-fix tree **and** on a constructed
+wrong fix — the latter now a standing requirement in this project, for the reason below.
+
+### `F-0283` is closed — and it had a fourth hop nobody counted
+
+The record's own symptom named four places contract terms did not exist: "no request, no column, no
+response **and no PDF input**." The first fix closed three. A fresh-context review found the fourth
+still open: `ContractPdfService.addTerms()` emitted a section headed **"Terms"** containing only
+amount, status and dates — in the PDF that is rendered, stored to R2 and **emailed to both parties as
+the executed contract**. Three-quarters of a fix on a legal surface reads as a whole one.
+
+Now: `contracts.terms_text` (`V20260817140000`), `ContractGenerateRequest.terms`, returned on
+`ContractResponse`, printed into the signed PDF, and immutable — `updatable = false` plus no mutator
+and no HTTP surface. The length cap was also wrong in a way only arithmetic catches: `@Size(max=20000)`
+counts **characters** against a `TEXT` column of 65,535 **bytes** on `utf8mb4`, so 20,000 emoji is
+80,000 bytes and a 500 at insert. The cap is now derived from the column.
+
+What is still **not** decided, deliberately: what the terms should *say*. That is a product and legal
+call. The mechanism exists; no default template was invented.
+
+### Two closed records were closed against gates that cannot fail
+
+This is the finding worth carrying out of this task.
+
+- **`F-0273`** (opened as `F-0319`). Its promoted gate greps the function body for the substring
+  `FROZEN`. A *later, unrelated* task added a line containing `FROZEN`, and from that moment the gate
+  was green forever. Restoring the original defect — `held` counting only `FUNDED`, so disputed money
+  renders "Not Locked" — still printed `VERDICT: aligned (proved)`, exit 0. Reproduced directly, twice.
+- **`F-0236`** (opened as `F-0323`), worse. One leg grepped for `deriveEscrowFromMilestones`, which the
+  function's own *definition* satisfies forever — deleting the call and hardcoding `escrowLocked:false`
+  left it passing. The other leg demanded a `liveApi ?` ternary that a later task deliberately removed,
+  so it was emitting a **false red** asserting the exact shape `F-0251`'s gate forbids. Two closed
+  records pointing at gates in direct contradiction over one file.
+
+Both repaired. The `F-0273` gate now **self-falsifies on every run**: a known-bad implementation is
+frozen into the gate and pushed through its own assertion table first, and if the assertions pass it,
+the gate exits 1 saying it cannot fail rather than reporting anything about the real code. That device
+is the transferable part; nothing else in the tree has it yet.
+
+A sweep classified all **106** promoted gates on disk. 81 have an execution leg; 23 are purely textual,
+of which **13 assert a token inside source as a proxy for a behaviour** — the suspect shape. Only **2
+were falsified by observed injection**, and both were real defects. **11 are named and unrepaired.**
+Neither heuristic clears a gate: `F-0264` had an execution leg and `F-0296` still got through it, and
+`F-0319` was single-site until the day it wasn't.
+
+### The comment-blindness sweep, and a gate that could not speak
+
+`F-0266` was not one file. A gate that greps raw bytes fails the fix whose own comment quotes the
+string it forbids — so documenting a fix breaks its own gate, and the pressure that creates is to stop
+documenting fixes. **122 gates checked, 53 fixed**, routed through a new shared `_code.sh` helper.
+Two things fell out of it: `_strip_comments.py` crashed on cp1252 for any file containing `₹` or `→`,
+which had been **silently exempting every money surface**; and `F-0304` crashed printing `≤` in its own
+verdict (`F-0325`) — a gate that cannot emit its verdict is indistinguishable from one reporting a
+finding.
+
+### `build.sh` had never returned a verdict in this project's history
+
+Not the timeout the record alleged — that does not reproduce; solo `npm test` is 99s against a 300s
+budget. The real defect: `env_issue()` matched the bare token `network` against test output, and two
+suites deliberately log `Error: network down`, so **a red suite was laundered into `unavailable` on
+every run, in both directions.** It now reaches a real verdict, serialises its expensive leg behind an
+advisory lock, and reports per-leg. A starved budget still yields `unavailable`, never a pass.
+
+### What is red at close, and whose it is
+
+`gates/build.sh` exits **1**, and tree-wide vitest is **4 failed of 683**. All four are in
+`deal-room-dashboard-actor-refresh` / `-view-profile`, from another session's uncommitted `F-0328` /
+`CR-97` work on a file held off-limits to every producer in this task. Every suite in this task's scope
+passes; the tree as a whole does not. That distinction is the honest one, and the gate is right to be red.
+
+### Left open on purpose
+
+- **`F-0324`** — `brand-wallet.tsx` held a `loading` state written twice and read nowhere. The dead
+  code is gone; the gap it reveals is that a money surface has **no loading affordance at all**, the
+  same class as `F-0245`, which was closed for the dashboard only. Ledgered rather than silently
+  building new UI on a wallet.
+- **`F-0326`** — the dispatcher's own defect. Producers were grouped by file ownership, but a
+  gate-repair agent must *inject into* the product file it guards in order to falsify a gate. Its
+  restore-from-backup reverted a peer's fix to `contracts-and-deliverables.tsx`; the tests and the gate
+  survived, the source did not. Caught only because the dispatcher re-ran `tsc` and vitest instead of
+  trusting two reports that were both accurate when written.
+
 ## Why the audit's findings score nothing (and the review's now do)
 
 `independence.py` measures kavya at a **0.0% catch rate (0 of 21 discoverable failures flagged
@@ -685,6 +784,11 @@ F-0249, F-0250 **and F-0248** all closed by gate; opened F-0252, F-0279, F-0282*
 F-0289 closed by `gates/F-0270-no-dead-controls.py`, which exits 0 over 298 files after 23 of its
 own first-run false positives were fixed; opened F-0301. **F-0310** closed against the same gate
 after it was found accepting a no-op `onClick` and treating `aria-disabled` as `disabled`*
+*· open-records remediation `T-BRANDOPEN-0817` — verdict `proved` (oracle, admissible); F-0229,
+F-0251, F-0252, F-0266, F-0271, F-0272, F-0273, F-0279, F-0282, F-0283, F-0301 closed, plus F-0318,
+F-0319, F-0320, F-0321, F-0322, F-0323, F-0325 opened by review and closed; **F-0324 and F-0326 open
+by choice**; 53 gates repaired for comment-blindness and 2 promoted gates caught greening their own
+defect; tree-wide vitest red from another session's F-0328/CR-97 work*
 *· MEDIUM remediation `T-BRANDMED-0817` — verdict `proved` (oracle, admissible); F-0253…F-0265 and
 F-0292…F-0296 all closed by gate, 18/18, each falsified against the pre-fix tree **and** a
 constructed wrong fix; two rounds of fresh-context review by priya (`believed`, registry-capped);

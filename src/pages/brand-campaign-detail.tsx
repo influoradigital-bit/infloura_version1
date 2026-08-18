@@ -511,8 +511,14 @@ export const contractStatusLabel = (status?: ContractStatus): string => {
     case 'PENDING_SIGNATURES': return 'Sign contract';
     case 'ACTIVE': return 'Contract active';
     case 'COMPLETED': return 'Contract complete';
-    case 'TERMINATED': return 'Contract ended';
-    case 'DISPUTED': return 'Contract disputed';
+    // F-0252: was 'TERMINATED'/'DISPUTED' — neither is a real backend ContractStatus (the
+    // backend enum has no such members); CANCELLED is the real terminal state and previously
+    // fell through to the uninformative default below.
+    // F-0321: contracts-and-deliverables.tsx's status badge called this same backend value
+    // "Expired" — a contract a party cancelled is not one whose expiration date passed. That
+    // file's mapApiContractStatus/statusConfig now say "Cancelled" too; see
+    // src/pages/__tests__/contract-status-label-agreement.test.ts for the cross-surface check.
+    case 'CANCELLED': return 'Contract cancelled';
     default: return 'View contract';
   }
 };

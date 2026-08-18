@@ -75,8 +75,9 @@ describe('contractStatusLabel', () => {
     expect(contractStatusLabel('PENDING_SIGNATURES')).toBe('Sign contract');
     expect(contractStatusLabel('ACTIVE')).toBe('Contract active');
     expect(contractStatusLabel('COMPLETED')).toBe('Contract complete');
-    expect(contractStatusLabel('TERMINATED')).toBe('Contract ended');
-    expect(contractStatusLabel('DISPUTED')).toBe('Contract disputed');
+    // F-0252: 'TERMINATED'/'DISPUTED' were never real ContractStatus values (the backend enum
+    // has no such members); CANCELLED is the real terminal state.
+    expect(contractStatusLabel('CANCELLED')).toBe('Contract cancelled');
   });
 
   it('still offers the link when status is unknown — a contractId means a real contract', () => {

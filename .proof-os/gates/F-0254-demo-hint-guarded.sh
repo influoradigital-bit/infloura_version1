@@ -22,18 +22,26 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 TARGET=src/components/brand/onboarding/onboarding-steps.tsx
 [ -f "$TARGET" ] || { echo "· $TARGET missing — unavailable"; exit 2; }
+TARGET_CODE=$(code_view "$TARGET") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· static: demo-hint copy in $TARGET is gated behind isApiLive()"
 # Find the line with the demo-hint copy, then check the nearest preceding
 # conditional (within 5 lines above) mentions isApiLive.
-HINT_LINE=$(grep -n "Demo mode: use code" "$TARGET" | head -1 | cut -d: -f1)
+HINT_LINE=$(grep -n "Demo mode: use code" "$TARGET_CODE" | head -1 | cut -d: -f1)
 if [ -z "$HINT_LINE" ]; then
   echo "  demo-hint copy not found verbatim — copy may have changed, checking for isApiLive guard near 'Demo mode' generally"
-  HINT_LINE=$(grep -n "Demo mode" "$TARGET" | head -1 | cut -d: -f1)
+  HINT_LINE=$(grep -n "Demo mode" "$TARGET_CODE" | head -1 | cut -d: -f1)
 fi
 if [ -z "$HINT_LINE" ]; then
   echo "VERDICT: broken — no demo-hint text found at all in $TARGET; cannot verify guard (F-0254)"
@@ -41,7 +49,7 @@ if [ -z "$HINT_LINE" ]; then
 fi
 START=$((HINT_LINE - 6))
 [ $START -lt 1 ] && START=1
-CONTEXT=$(sed -n "${START},${HINT_LINE}p" "$TARGET")
+CONTEXT=$(sed -n "${START},${HINT_LINE}p" "$TARGET_CODE")
 if ! printf '%s\n' "$CONTEXT" | grep -q "isApiLive()"; then
   echo "$CONTEXT"
   echo "VERDICT: broken — demo hint at $TARGET:$HINT_LINE has no isApiLive() guard in scope (F-0254)"
@@ -50,7 +58,7 @@ fi
 echo "  clean — isApiLive() guard found within 6 lines above the demo-hint copy"
 
 echo "· static: isApiLive is imported from @/lib/api in $TARGET"
-if ! grep -qE "import \{[^}]*isApiLive[^}]*\} from '@/lib/api'" "$TARGET"; then
+if ! grep -qE "import \{[^}]*isApiLive[^}]*\} from '@/lib/api'" "$TARGET_CODE"; then
   echo "VERDICT: broken — isApiLive is referenced but not imported from @/lib/api in $TARGET (F-0254)"
   exit 1
 fi

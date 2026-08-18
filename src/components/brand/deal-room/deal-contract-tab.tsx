@@ -274,49 +274,81 @@ export function DealContractTab({
               </div>
             </div>
 
-            <div>
-              {/* F-0283: this is the PAYMENT SCHEDULE, and calling it "Terms" was the last
-                  remnant of the fiction F-0237 removed. The platform does not capture, store
-                  or return contract terms at all — ContractGenerateRequest takes only
-                  {collaborationId, milestones}, and the Contract column named `terms` holds a
-                  SHA-256 tamper hash, not terms. Labelling a milestone list "Terms" above a
-                  signature control implies the brand has read something that does not exist. */}
-              <p className="text-xs text-muted-foreground mb-2">
-                Payment schedule (from contract, read-only)
-              </p>
-              {contractLoading ? (
-                <div className="bg-muted/50 p-3 rounded-md text-xs text-muted-foreground flex items-center gap-2">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Loading contract terms…
-                </div>
-              ) : !contractRecord ? (
-                <div className="bg-destructive/10 border border-destructive/30 p-3 rounded-md text-xs text-destructive-foreground">
-                  {contractError ?? 'Contract terms are not available yet.'} Signing is disabled
-                  until the real terms load.
-                </div>
-              ) : (
-                <div className="bg-muted/50 p-3 rounded-md text-xs space-y-2 max-h-48 overflow-y-auto">
-                  {contractRecord.milestones.length === 0 ? (
-                    <p className="text-muted-foreground">No milestones on this contract.</p>
-                  ) : (
-                    <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                      {contractRecord.milestones
-                        .slice()
-                        .sort((a, b) => a.sequenceNo - b.sequenceNo)
-                        .map((m) => (
-                          <li key={m.id ?? m.sequenceNo}>
-                            {m.description} — {formatINR(m.amount)}
-                            {m.dueDate ? ` (due ${m.dueDate})` : ''}
-                          </li>
-                        ))}
-                    </ol>
-                  )}
-                  <p className="text-muted-foreground pt-1 border-t border-border/50">
-                    Total: {formatINR(contractRecord.totalAmount)} {contractRecord.currency}
+            {/* F-0271/F-0283: this section IS the real terms now — ContractGenerateRequest can
+                carry free-text terms (MoneyDtos.java), Contract persists it in a column
+                separate from the pre-existing SHA-256 tamper hash, and ContractResponse.terms
+                returns whatever was actually captured. No default clause text is invented here:
+                when nothing was supplied at generation time, that is stated plainly below
+                rather than rendering the fabricated 5-item list F-0237 removed. No FE surface
+                yet lets a brand type terms before generating a contract, so today this section
+                will usually read "no terms on file" — that is the honest current state, not a
+                bug in this panel.
+
+                F-0272 fix-review note: loading/absent-record states used to be rendered TWICE —
+                once inside the Terms block and once inside the Payment-schedule block below,
+                each with byte-identical copy ("Contract terms are not available yet. Signing is
+                disabled until the real terms load."). Both blocks key off the exact same
+                contractLoading/contractRecord/contractError state, so showing the same sentence
+                twice added no information and read as a rendering glitch — and it broke every
+                singular findByText/getByText query in demo-sign-flow-alive.test.tsx with "Found
+                multiple elements". There is exactly one fetch and exactly one failure reason, so
+                there is exactly one loading/unavailable panel; the Terms and Payment-schedule
+                sections only render their own (different) content once a record actually
+                exists. */}
+            {contractLoading ? (
+              <div className="bg-muted/50 p-3 rounded-md text-xs text-muted-foreground flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading contract terms…
+              </div>
+            ) : !contractRecord ? (
+              <div className="bg-destructive/10 border border-destructive/30 p-3 rounded-md text-xs text-destructive-foreground">
+                {contractError ?? 'Contract terms are not available yet.'} Signing is disabled
+                until the real terms load.
+              </div>
+            ) : (
+              <>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Terms (from contract, read-only)
                   </p>
+                  {contractRecord.terms ? (
+                    <div className="bg-muted/50 p-3 rounded-md text-xs whitespace-pre-wrap max-h-48 overflow-y-auto">
+                      {contractRecord.terms}
+                    </div>
+                  ) : (
+                    <div className="bg-muted/50 p-3 rounded-md text-xs text-muted-foreground">
+                      No terms are on file for this contract.
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Payment schedule (from contract, read-only)
+                  </p>
+                  <div className="bg-muted/50 p-3 rounded-md text-xs space-y-2 max-h-48 overflow-y-auto">
+                    {contractRecord.milestones.length === 0 ? (
+                      <p className="text-muted-foreground">No milestones on this contract.</p>
+                    ) : (
+                      <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                        {contractRecord.milestones
+                          .slice()
+                          .sort((a, b) => a.sequenceNo - b.sequenceNo)
+                          .map((m) => (
+                            <li key={m.id ?? m.sequenceNo}>
+                              {m.description} — {formatINR(m.amount)}
+                              {m.dueDate ? ` (due ${m.dueDate})` : ''}
+                            </li>
+                          ))}
+                      </ol>
+                    )}
+                    <p className="text-muted-foreground pt-1 border-t border-border/50">
+                      Total: {formatINR(contractRecord.totalAmount)} {contractRecord.currency}
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 

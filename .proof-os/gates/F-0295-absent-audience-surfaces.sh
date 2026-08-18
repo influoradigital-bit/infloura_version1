@@ -20,13 +20,21 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 PAGE=src/pages/brand-creator-profile.tsx
 [ -f "$PAGE" ] || { echo "· $PAGE missing — unavailable"; exit 2; }
+PAGE_CODE=$(code_view "$PAGE") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· buildLiveCreatorView still exists and maps audience demographics"
-grep -q "buildLiveCreatorView" "$PAGE" || {
+grep -q "buildLiveCreatorView" "$PAGE_CODE" || {
   echo "VERDICT: broken — buildLiveCreatorView is gone; cannot verify the live-mode mapping (F-0295)"
   exit 1; }
 

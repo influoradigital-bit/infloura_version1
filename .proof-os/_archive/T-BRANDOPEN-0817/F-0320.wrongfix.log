@@ -1,0 +1,23 @@
+· sanity: persistBrandSession still keeps the real displayName (F-0282, must not regress)
+  clean — displayName is still threaded through auth-session.ts
+· sanity: getBrandDisplayName has at least one call site outside its own module/tests
+src/components/brand/dashboard/dashboard-page.tsx:224:  getBrandDisplayName();
+  informational — a caller exists, but this alone does NOT pass this gate (see header)
+· vitest run src/pages/__tests__/brand-auth-identity.test.tsx src/components/brand/dashboard/__tests__/dashboard-page-greeting.test.tsx (budget 120s)
+[31m   [31m×[31m BrandLoginPage — F-0320 populates the shared auth store[2m > [22ma real backend displayName reaches useAuthStore().user after login, not a null/placeholder identity[39m[33m 393[2mms[22m[39m
+[31m   [31m×[31m BrandLoginPage — F-0320 populates the shared auth store[2m > [22man absent backend displayName falls back to an honest empty string, never a fabricated placeholder[39m[32m 212[2mms[22m[39m
+[31m   [31m×[31m BrandRegisterPage — F-0320 populates the shared auth store[2m > [22ma real backend displayName reaches useAuthStore().user after registration[39m[33m 907[2mms[22m[39m
+[31m   [31m×[31m DashboardPage greeting — F-0320 renders the real signed-in person[2m > [22mgreets by the real backend displayName when the store has one (live brand session)[39m[33m 5066[2mms[22m[39m
+[31m   [31m×[31m DashboardPage greeting — F-0320 renders the real signed-in person[2m > [22ma single-word displayName renders as-is (no name to split further)[39m[33m 5010[2mms[22m[39m
+   [32m✓[39m DashboardPage greeting — F-0320 renders the real signed-in person[2m > [22mfalls back to the honest neutral "there" only when the store genuinely has no user — never a fabricated name[32m 21[2mms[22m[39m
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 5 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+[41m[1m FAIL [22m[49m src/pages/__tests__/brand-auth-identity.test.tsx[2m > [22mBrandLoginPage — F-0320 populates the shared auth store[2m > [22ma real backend displayName reaches useAuthStore().user after login, not a null/placeholder identity
+[41m[1m FAIL [22m[49m src/pages/__tests__/brand-auth-identity.test.tsx[2m > [22mBrandLoginPage — F-0320 populates the shared auth store[2m > [22man absent backend displayName falls back to an honest empty string, never a fabricated placeholder
+[41m[1m FAIL [22m[49m src/pages/__tests__/brand-auth-identity.test.tsx[2m > [22mBrandRegisterPage — F-0320 populates the shared auth store[2m > [22ma real backend displayName reaches useAuthStore().user after registration
+[41m[1m FAIL [22m[49m src/components/brand/dashboard/__tests__/dashboard-page-greeting.test.tsx[2m > [22mDashboardPage greeting — F-0320 renders the real signed-in person[2m > [22mgreets by the real backend displayName when the store has one (live brand session)
+[41m[1m FAIL [22m[49m src/components/brand/dashboard/__tests__/dashboard-page-greeting.test.tsx[2m > [22mDashboardPage greeting — F-0320 renders the real signed-in person[2m > [22ma single-word displayName renders as-is (no name to split further)
+[2m Test Files [22m [1m[31m2 failed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[31m5 failed[39m[22m[2m | [22m[1m[32m1 passed[39m[22m[90m (6)[39m
+VERDICT: broken — a live brand session does not reach the dashboard with its real
+         identity end to end (login/register does not populate useAuthStore().user with
+         the persisted displayName, or the dashboard greeting does not render it) (F-0320)

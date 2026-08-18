@@ -21,10 +21,18 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 PAGE=src/pages/brand-campaign-detail.tsx
 [ -f "$PAGE" ] || { echo "· $PAGE missing — unavailable"; exit 2; }
+PAGE_CODE=$(code_view "$PAGE") || { echo "$(code_why) - unavailable"; exit 2; }
 
 fail=0
 
@@ -35,7 +43,7 @@ echo "· checking $PAGE for server-copy rendering (F-0294)"
 #    JSX expression usage: `{platformFee.copy}` or `{platformFee?.copy}`, with optional
 #    whitespace, optionally guarded (e.g. `{platformFee.copy ? ... : ...}` or
 #    `{platformFee.copy && ...}` also count as long as `platformFee.copy` is the token used).
-if ! grep -Eq '\{[[:space:]]*platformFee(\.|\?\.)copy\b' "$PAGE"; then
+if ! grep -Eq '\{[[:space:]]*platformFee(\.|\?\.)copy\b' "$PAGE_CODE"; then
   echo "  no JSX usage of platformFee.copy / platformFee?.copy found"
   echo "VERDICT: broken — the server's copy field is fetched and typed but never reaches the"
   echo "         rendered page (F-0294)"
@@ -44,7 +52,7 @@ fi
 
 # 2. The client-invented substitute sentence must be gone — it claims "on real spend", which
 #    is not in BRAND_FEE_COPY and is not something the backend asserts anywhere.
-if grep -q 'Actual fees are charged on real spend' "$PAGE"; then
+if grep -q 'Actual fees are charged on real spend' "$PAGE_CODE"; then
   echo "  client-invented substitute sentence ('Actual fees are charged on real spend...')"
   echo "  is still present"
   echo "VERDICT: broken — a client-authored claim is standing in for the server's real"
@@ -55,7 +63,7 @@ fi
 # 3. The unreachable per-plan-rate branch must be gone. BrandPlatformFeeService (LOOKUP,
 #    T-BRANDMED-0817) only ever constructs SOURCE_GLOBAL_DEFAULT — no second source value is
 #    ever produced — so a ternary implying a per-plan rate exists is dead code that misleads.
-if grep -qE "plan.s current rate" "$PAGE"; then
+if grep -qE "plan.s current rate" "$PAGE_CODE"; then
   echo "  a \"your plan's current rate\" branch is still present — that value is unreachable"
   echo "  (BrandPlatformFeeService only ever returns SOURCE_GLOBAL_DEFAULT)"
   echo "VERDICT: broken — dead branch implies per-plan fee rates that do not exist (F-0294)"

@@ -1,0 +1,10 @@
+· component: still fetches contractRecord and renders/gates on it
+  clean — contractRecord is fetched, rendered and gates Sign
+· api.ts: isolating contracts.get() body
+  isolated 4 lines
+· api.ts: contracts.get() still branches on isLive(), live branch calls the real endpoint
+  clean — isLive() gates http.request (live) ahead of mockOr (mock), in that order
+· api.ts: mock branch resolves a real fixture, not null
+VERDICT: broken — contracts.get()'s mock branch still resolves null — the demo sign flow is dead again (F-0272)
+NOT CHECKED: whether the rendered fixture matches any real backend contract, live UI
+             rendering in a browser, or the sign-and-send network round trip

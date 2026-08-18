@@ -116,6 +116,29 @@ public class ContractPdfService {
                                 ? contract.getExpirationDate().toString()
                                 : "Not set"));
         document.add(Chunk.NEWLINE);
+
+        // [F-0318, signed-artifact-omits-terms] This section previously stopped above --
+        // amount/status/dates only. It never called getTermsText(), so the free-text terms both
+        // parties are e-signing under the IT Act 2000 binding notice never reached the PDF this
+        // service renders, that generateAndDeliverContractPdf() (ContractService) stores in R2
+        // and emails to both parties as the executed contract. Deliberately getTermsText(), NOT
+        // getTermsJson() -- the latter is the SHA-256 tamper-evidence hash of the generate
+        // request (ContractService#sha256TamperHash), not agreed terms; printing it here would
+        // put a hex hash in a legal document under an "Agreed Terms" heading. Renders an honest
+        // sentence when absent rather than a heading with nothing under it -- silence under a
+        // "Terms" heading in a document both parties are told is legally binding is itself
+        // misleading (same reasoning as MilestoneWriteRequest's own no-fabrication rule).
+        document.add(sectionHeading("Agreed Terms"));
+        String termsText = contract.getTermsText();
+        if (termsText != null && !termsText.isBlank()) {
+            document.add(new Paragraph(termsText, BODY_FONT));
+        } else {
+            document.add(
+                    new Paragraph(
+                            "No terms were specified for this contract at generation time.",
+                            BODY_FONT));
+        }
+        document.add(Chunk.NEWLINE);
     }
 
     private void addMilestones(Document document, List<PaymentMilestone> milestones)

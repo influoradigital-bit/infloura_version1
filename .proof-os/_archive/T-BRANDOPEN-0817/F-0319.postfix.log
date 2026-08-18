@@ -1,0 +1,27 @@
+=== F-0319 postfix: repaired promoted gate vs the REAL tree ===
+date: 2026-08-18T09:05:43Z
+file sha256: 253aece851f139b9702edaf6b5e8504dd569f2048754669c3249c40c37e33f5e *src/components/brand/contracts/contracts-and-deliverables.tsx
+
+· self-check: these assertions reject a known-bad derivation (F-0273 verbatim)
+  good — the known-bad derivation is rejected, so a green below means something
+· backend enum: MilestoneStatus/EscrowStatus still declare PENDING/FUNDED/RELEASED/REFUNDED/FROZEN
+  clean
+· deriveEscrowFromMilestones, EXECUTED over all five milestone states
+  10/10 derivation cases correct
+· vitest: contracts-and-deliverables.frozen-escrow.test.tsx — FROZEN renders distinctly
+  [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+  [2m      Tests [22m [1m[32m4 passed[39m[22m[90m (4)[39m
+  suite green
+VERDICT: aligned (proved) — deriveEscrowFromMilestones was EXECUTED over all five
+         MilestoneStatus values: FUNDED and FROZEN total as held money (a purely-FROZEN
+         contract derives locked=true with its full amount and frozen=true), while
+         RELEASED / REFUNDED / PENDING / empty derive as not held; and the render suite
+         proves FROZEN is shown to the brand distinctly from ordinary Locked escrow. The
+         assertion table was proved falsifiable against the F-0273 defect before any of
+         that was believed.
+NOT CHECKED: whether MilestoneStatus/EscrowStatus ever grow a sixth state; the per-milestone
+             accounting of a mixed FUNDED+FROZEN contract beyond the single frozen flag;
+             live rendering against a real disputed contract on a running backend; that
+             deriveEscrowFromMilestones is the ONLY thing feeding the tile (the vitest leg
+             covers the wired path, this gate's extraction does not).
+EXIT=0

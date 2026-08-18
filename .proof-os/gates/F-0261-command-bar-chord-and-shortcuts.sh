@@ -30,24 +30,33 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 BAR=src/components/brand/command-bar.tsx
 APP=src/App.tsx
 [ -f "$BAR" ] || { echo "· $BAR missing — unavailable"; exit 2; }
+BAR_CODE=$(code_view "$BAR") || { echo "$(code_why) - unavailable"; exit 2; }
 [ -f "$APP" ] || { echo "· $APP missing — unavailable"; exit 2; }
+APP_CODE=$(code_view "$APP") || { echo "$(code_why) - unavailable"; exit 2; }
 
 fail=0
 
 echo "· leg 1: command-bar's own keydown handler stops propagation before brand-layout's window listener can run"
 # Extract the keydown handler block (from the addEventListener('keydown' call back up to the
 # nearest preceding "const down" / handler declaration) and require stopPropagation inside it.
-if ! grep -qE "addEventListener\('keydown'" "$BAR"; then
+if ! grep -qE "addEventListener\('keydown'" "$BAR_CODE"; then
   echo "  no document/window keydown listener found in command-bar.tsx at all"
   echo "VERDICT: broken — command-bar.tsx no longer owns the Cmd/Ctrl+K chord (F-0261)"
   exit 1
 fi
-handler_block=$(awk '/const (down|handleKeyDown|onKeyDown) *= *\(/{flag=1} flag{print} /addEventListener\(.keydown./{if(flag) exit}' "$BAR")
+handler_block=$(awk '/const (down|handleKeyDown|onKeyDown) *= *\(/{flag=1} flag{print} /addEventListener\(.keydown./{if(flag) exit}' "$BAR_CODE")
 if ! printf '%s\n' "$handler_block" | grep -q "stopPropagation\|stopImmediatePropagation"; then
   echo "  keydown handler does not stop propagation — brand-layout's window-level listener"
   echo "  (unconditional setCommandBarOpen(true)) still runs right after it and re-opens the bar"
@@ -58,7 +67,7 @@ fi
 echo "· leg 2: no advertised-but-unimplemented keyboard shortcut, and Cmd+W is never wired"
 # Exclude full-line comments so this checks actual code, not explanatory prose (e.g. a comment
 # documenting why ⌘W is deliberately not wired would otherwise self-trigger this leg).
-code_only=$(grep -vE '^\s*//' "$BAR")
+code_only=$(grep -vE '^\s*//' "$BAR_CODE")
 if printf '%s\n' "$code_only" | grep -qE "⌘W|shortcut: *'W'|shortcut: *\"W\""; then
   echo "  Cmd+W is still advertised or implemented — that chord closes the browser tab"
   fail=1
@@ -83,12 +92,12 @@ declare -A ROUTES=(
 )
 for name in "${!ROUTES[@]}"; do
   route="${ROUTES[$name]}"
-  if ! grep -qF "$route" "$BAR"; then
+  if ! grep -qF "$route" "$BAR_CODE"; then
     echo "  $route ($name) — missing from command-bar.tsx navItems"
     fail=1
     continue
   fi
-  if ! grep -qE "path=\"$route\"" "$APP"; then
+  if ! grep -qE "path=\"$route\"" "$APP_CODE"; then
     echo "  $route ($name) — command-bar links to it but src/App.tsx has no matching <Route path=\"$route\">"
     echo "  (a command that navigates to a 404 is worse than a missing one)"
     fail=1

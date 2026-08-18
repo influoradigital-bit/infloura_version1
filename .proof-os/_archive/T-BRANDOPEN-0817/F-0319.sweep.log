@@ -1,0 +1,139 @@
+=== T-BRANDOPEN-0817 / F-0319 sweep: promoted gates that assert a token, not a behaviour ===
+date: 2026-08-18T09:25:09Z
+
+--- 1. population, from .proof-os/ledger/failures.jsonl ---
+promoted gate FILES on disk: 106
+  with an execution leg     : 82
+  purely TEXTUAL (grep only): 24
+
+--- PURELY TEXTUAL (the F-0319 shape) ---
+  6 greps   32 loc  .proof-os/gates/F-0242-brand-can-open-dispute.sh               <- F-0242
+  5 greps   25 loc  .proof-os/gates/F-0050-static-view-components.sh               <- F-0050
+  5 greps   31 loc  .proof-os/gates/F-0235-no-fabricated-pii-live.sh               <- F-0235
+  5 greps   26 loc  .proof-os/gates/F-0237-sign-over-real-terms.sh                 <- F-0237
+  4 greps   26 loc  .proof-os/gates/F-0239-no-fake-money-progress.sh               <- F-0239
+  4 greps   31 loc  .proof-os/gates/F-0243-verification-copy-agrees.sh             <- F-0243
+  4 greps   35 loc  .proof-os/gates/F-0272-demo-contract-fixture.sh                <- F-0272
+  4 greps  203 loc  .proof-os/gates/F-0304-blog-frontmatter.py                     <- F-0304
+  3 greps   25 loc  .proof-os/gates/F-0240-campaign-type-reaches-payload.sh        <- F-0240
+  3 greps   53 loc  .proof-os/gates/F-0265-brand-palette-tokens.sh                 <- F-0265
+  3 greps   14 loc  .proof-os/gates/audit-doc-consistency.sh                       <- F-0083
+  3 greps   63 loc  .proof-os/gates/fe_be_endpoints.py                             <- F-0054,F-0063
+  2 greps   20 loc  .proof-os/gates/F-0238-no-fabricated-contract-pdf.sh           <- F-0238
+  2 greps   20 loc  .proof-os/gates/F-0241-no-false-draft-reassurance.sh           <- F-0241
+  1 greps   20 loc  .proof-os/gates/F-0100-collision-check.sh                      <- F-0100,F-0123,F-0155
+  1 greps   10 loc  .proof-os/gates/F-0207-no-dead-scaffold.sh                     <- F-0207,F-0212
+  1 greps  128 loc  .proof-os/gates/F-0270-no-dead-controls.py                     <- F-0270,F-0274,F-0276,F-0289,F-0310
+  1 greps   49 loc  .proof-os/gates/notifications_wired.py                         <- F-0043
+  0 greps    6 loc  .proof-os/gates/F-0203-npm-audit-high.sh                       <- F-0203
+  0 greps    8 loc  .proof-os/gates/F-0206-gitleaks-baseline.sh                    <- F-0206
+  0 greps   69 loc  .proof-os/gates/frontmatter.py                                 <- F-0030
+  0 greps   64 loc  .proof-os/gates/graph_scope.py                                 <- F-0044
+  0 greps   65 loc  .proof-os/gates/registry_render.py                             <- F-0027
+  0 greps   73 loc  .proof-os/gates/version_assert.py                              <- F-0024,F-0036
+
+--- HAS AN EXECUTION LEG ---
+  0 greps  .proof-os/gates/F-0099-runway-alarm-fix.sh                     exec=npx,vitest <- F-0099
+  0 greps  .proof-os/gates/F-0103-dashboard-empty-wallet-fix.sh           exec=npx,vitest <- F-0103
+  0 greps  .proof-os/gates/F-0105-status-label-drift-fix.sh               exec=npx,vitest <- F-0105
+  0 greps  .proof-os/gates/F-0106-F-0116-meta-callback-fix.sh             exec=npx,vitest <- F-0106,F-0116
+  0 greps  .proof-os/gates/F-0107-copilot-empty-state-fix.sh              exec=npx,vitest <- F-0107
+  0 greps  .proof-os/gates/F-0108-changepassword-fix.sh                   exec=npx,vitest <- F-0108
+  0 greps  .proof-os/gates/F-0109-sidebar-logout-fix.sh                   exec=npx,vitest <- F-0109
+  0 greps  .proof-os/gates/F-0110-chat-visibility-resync.sh               exec=npx,vitest <- F-0110
+  0 greps  .proof-os/gates/F-0112-actor-refresh-fix.sh                    exec=npx,vitest <- F-0112
+  0 greps  .proof-os/gates/F-0113-meta-igid-fix.sh                        exec=mvn <- F-0113
+  0 greps  .proof-os/gates/F-0114-connected-accounts-mount-fix.sh         exec=npx,vitest <- F-0114
+  0 greps  .proof-os/gates/F-0115-disconnect-capability-fix.sh            exec=mvn,npx,vitest <- F-0115
+  0 greps  .proof-os/gates/F-0126-rate-limit-key-drift-fix.sh             exec=mvn <- F-0126
+  0 greps  .proof-os/gates/F-0131-fund-escrow-live-region.sh              exec=npx,vitest <- F-0131
+  0 greps  .proof-os/gates/F-0132-billing-role-gate.sh                    exec=npx,vitest <- F-0132
+  0 greps  .proof-os/gates/F-0151-F-0152-brand-chat-thread-resync-fix.sh  exec=npx,vitest <- F-0151,F-0152
+  0 greps  .proof-os/gates/F-0164-onboarding-resume-explanation-fix.sh    exec=npx,vitest <- F-0164
+  0 greps  .proof-os/gates/F-0165-meta-connection-logout-clear-fix.sh     exec=npx,vitest <- F-0165
+  0 greps  .proof-os/gates/F-0166-token-scope-fix.sh                      exec=mvn <- F-0166
+  0 greps  .proof-os/gates/F-0167-mobile-menu-a11y-fix.sh                 exec=npx,vitest <- F-0167
+  0 greps  .proof-os/gates/F-0169-mobile-avatar-a11y-fix.sh               exec=npx,vitest <- F-0169
+  0 greps  .proof-os/gates/F-0170-desktop-account-trigger-a11y-fix.sh     exec=npx,vitest <- F-0170
+  0 greps  .proof-os/gates/F-0171-token-refresh-fix.sh                    exec=mvn <- F-0171
+  0 greps  .proof-os/gates/F-0173-connected-since-date-stable-fix.sh      exec=mvn <- F-0173
+  0 greps  .proof-os/gates/F-0179-avatar-initials-leak-fix.sh             exec=npx,vitest <- F-0179
+  0 greps  .proof-os/gates/F-0192-cross-deal-message-bleed-fix.sh         exec=npx,vitest <- F-0192
+  0 greps  .proof-os/gates/F-0195-deliverables-panel-bleed-fix.sh         exec=npx,vitest <- F-0195
+  0 greps  .proof-os/gates/F-0204-eslint-sage-baseline.py                 exec=eslint,npx,subprocess <- F-0204,F-0209
+  5 greps  .proof-os/gates/F-0208-rules-resolvable.sh                     exec=eslint,npx <- F-0208
+  0 greps  .proof-os/gates/F-0210-reduced-motion-css.sh                   exec=node ",npm run <- F-0210
+  0 greps  .proof-os/gates/F-0213-contract-filename.sh                    exec=npx,vitest <- F-0213
+  0 greps  .proof-os/gates/F-0222-milestone-scoped-escrow-fund.sh         exec=vitest <- F-0222
+  5 greps  .proof-os/gates/F-0223-approval-reports-release.sh             exec=vitest <- F-0223
+  1 greps  .proof-os/gates/F-0224-release-has-a-caller.sh                 exec=vitest <- F-0224
+  6 greps  .proof-os/gates/F-0225-cancelled-collaboration-revives.sh      exec=mvn <- F-0225
+  2 greps  .proof-os/gates/F-0226-no-false-escrow-copy.sh                 exec=vitest <- F-0226
+  2 greps  .proof-os/gates/F-0227-no-pool-fund-over-signed-deal.sh        exec=mvn <- F-0227
+  2 greps  .proof-os/gates/F-0230-backend-suite-green.sh                  exec=mvn <- F-0230
+  3 greps  .proof-os/gates/F-0234-payout-creator-scoping.sh               exec=mvn <- F-0234
+  4 greps  .proof-os/gates/F-0236-no-mock-money-in-live.sh                exec=vitest <- F-0236
+  6 greps  .proof-os/gates/F-0244-owner-self-lockout.sh                   exec=vitest <- F-0244
+  4 greps  .proof-os/gates/F-0245-F-0246-dashboard-states-and-identity.sh exec=vitest <- F-0245,F-0246
+  5 greps  .proof-os/gates/F-0247-premature-success-copy.sh               exec=vitest <- F-0247
+  5 greps  .proof-os/gates/F-0248-unreachable-primary-action.sh           exec=vitest <- F-0248,F-0267,F-0269
+  7 greps  .proof-os/gates/F-0249-stale-seed-overwrites-real-data.sh      exec=vitest <- F-0249
+  7 greps  .proof-os/gates/F-0250-F-0268-pending-signature-deadlock.sh    exec=vitest <- F-0250,F-0268
+  7 greps  .proof-os/gates/F-0253-signature-canvas-submitted.sh           exec=vitest <- F-0253
+  5 greps  .proof-os/gates/F-0254-demo-hint-guarded.sh                    exec=vitest <- F-0254
+  8 greps  .proof-os/gates/F-0255-consent-links-live.sh                   exec=vitest <- F-0255
+  5 greps  .proof-os/gates/F-0256-no-mock-campaign-seed.sh                exec=vitest <- F-0256
+  3 greps  .proof-os/gates/F-0257-invite-creator-handoff.sh               exec=vitest <- F-0257
+  5 greps  .proof-os/gates/F-0258-no-client-invented-fees.sh              exec=vitest <- F-0258
+  4 greps  .proof-os/gates/F-0259-discover-loading-empty.sh               exec=vitest <- F-0259
+  5 greps  .proof-os/gates/F-0260-absent-metric-not-zero.sh               exec=vitest <- F-0260
+  9 greps  .proof-os/gates/F-0261-command-bar-chord-and-shortcuts.sh      exec=vitest <- F-0261
+ 10 greps  .proof-os/gates/F-0262-settings-persistence-copy.sh            exec=vitest <- F-0262
+  3 greps  .proof-os/gates/F-0263-no-negative-sla.sh                      exec=vitest <- F-0263
+  5 greps  .proof-os/gates/F-0264-no-dead-money-controls.sh               exec=vitest <- F-0264,F-0296
+  3 greps  .proof-os/gates/F-0273-frozen-escrow-counts-as-locked.sh       exec=esbuild,experimental-strip-types,node ",node -,vitest <- F-0273
+  3 greps  .proof-os/gates/F-0290-application-has-a-timeline.sh           exec=mvn <- F-0290
+  4 greps  .proof-os/gates/F-0291-invite-has-a-timeline.sh                exec=mvn,vitest <- F-0291
+ 26 greps  .proof-os/gates/F-0292-signature-name-persisted.sh             exec=mvn <- F-0292
+  9 greps  .proof-os/gates/F-0293-consent-link-preserves-form.sh          exec=vitest <- F-0293
+  3 greps  .proof-os/gates/F-0294-server-fee-copy-rendered.sh             exec=vitest <- F-0294
+  2 greps  .proof-os/gates/F-0295-absent-audience-surfaces.sh             exec=vitest <- F-0295
+  2 greps  .proof-os/gates/F-0308-blog-prerendered.sh                     exec=npm run <- F-0308
+  0 greps  .proof-os/gates/brand-fix-frontend.sh                          exec=npm run,npx,tsc <- F-0070,F-0071,F-0072,F-0073,F-0075
+  0 greps  .proof-os/gates/brand-missing-frontend.sh                      exec=npm run,npx,tsc <- F-0076,F-0077
+  5 greps  .proof-os/gates/build.sh                                       exec=curl,node -,npm run,npx,tsc <- F-0025
+  0 greps  .proof-os/gates/contract-ui-tests.py                           exec=npx,subprocess,vitest <- F-0218
+  1 greps  .proof-os/gates/dead_exports.py                                exec=npx,subprocess <- F-0042
+  0 greps  .proof-os/gates/dto-drift.py                                   exec=subprocess <- F-0214,F-0215,F-0216,F-0219,F-0220,F-0221
+  1 greps  .proof-os/gates/fund_escrow_onfunded.sh                        exec=vitest <- F-0049
+  0 greps  .proof-os/gates/lint_singletons.py                             exec=eslint,subprocess <- F-0047
+  0 greps  .proof-os/gates/money-tool-decline-coverage.py                 exec=pytest,subprocess <- F-0146
+  0 greps  .proof-os/gates/payout-money-safety.sh                         exec=mvn <- F-0080,F-0082
+  1 greps  .proof-os/gates/pinned-posts-coverage.py                       exec=mvn,subprocess <- F-0139
+  0 greps  .proof-os/gates/react_hooks.py                                 exec=eslint,subprocess,tsc <- F-0039
+  0 greps  .proof-os/gates/react_hooks_immutability.py                    exec=eslint,subprocess,tsc <- F-0040,F-0046
+  2 greps  .proof-os/gates/security.sh                                    exec=curl <- F-0003
+  0 greps  .proof-os/gates/stale-comment.py                               exec=subprocess <- F-0150
+  2 greps  .proof-os/gates/test-determinism.py                            exec=npx,subprocess,vitest <- F-0185,F-0217
+
+--- 2. required-literal occurrence counts (see the return note for what this does and does not prove) ---
+F-0235   api\.shipments\.get|fetchLiveShipment          brand-chat.tsx                         n=4   MULTI-SITE (satisfiable elsewhere)
+           lines: [1034, 1040, 1049, 1050]
+F-0235   MOCK_SHIPPING_ADDRESS                          brand-chat.tsx                         n=2   MULTI-SITE (satisfiable elsewhere)
+           lines: [661, 1025]
+F-0237   contractRecord                                 deal-contract-tab.tsx                  n=8   MULTI-SITE (satisfiable elsewhere)
+           lines: [70, 303, 314, 316, 330, 334, 346, 405]
+F-0237   contractRecord\.milestones                     deal-contract-tab.tsx                  n=2   MULTI-SITE (satisfiable elsewhere)
+           lines: [330, 334]
+F-0237   disabled=\{[^}]*!contractRecord                deal-contract-tab.tsx                  n=1   single site
+F-0238   demoContractData                               deal-contract-tab.tsx                  n=2   MULTI-SITE (satisfiable elsewhere)
+           lines: [142, 159]
+F-0239   runDemoContractAnimation                       deal-room-dashboard.tsx                n=2   MULTI-SITE (satisfiable elsewhere)
+           lines: [369, 452]
+F-0240   campaignType: selectedType                     brand-new-campaign.tsx                 n=1   single site
+F-0240   campaignType: isEditing                        campaign-form.tsx                      n=1   single site
+F-0241   been saved yet                                 VerificationRequiredBox.tsx            n=1   single site
+F-0242   brandDisputes\.open                            brand-chat.tsx                         n=1   single site
+F-0243   required to publish                            brand-kyc-prompt.tsx                   n=1   single site
+F-0050   (boardView|listView|timelineView)\(\)          brand-pipeline.tsx                     n=3   MULTI-SITE (satisfiable elsewhere)
+           lines: [768, 769, 770]

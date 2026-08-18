@@ -21,21 +21,29 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 SRC=src/components/brand/discover/creator-discovery.tsx
 [ -f "$SRC" ] || { echo "· $SRC missing — unavailable"; exit 2; }
+SRC_CODE=$(code_view "$SRC") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· mock campaign seed is gated behind isApiLive() (not used as an unconditional initial state)"
 # Bad shape: `React.useState(mockCampaigns)` with nothing conditioning it on live/mock mode.
-if grep -qE "useState\(mockCampaigns\)" "$SRC"; then
-  grep -nE "useState\(mockCampaigns\)" "$SRC"
+if grep -qE "useState\(mockCampaigns\)" "$SRC_CODE"; then
+  grep -nE "useState\(mockCampaigns\)" "$SRC_CODE"
   echo "VERDICT: broken — inviteCampaigns still seeds from the fabricated mock list unconditionally;"
   echo "         a brand in live mode can select a campaign that does not exist (F-0256)"
   exit 1
 fi
 # Good shape must exist somewhere: mockCampaigns only reachable through a liveApi/isApiLive check.
-if ! grep -qE "liveApi\s*\?\s*\[\]\s*:\s*mockCampaigns|!liveApi.*mockCampaigns|isApiLive\(\).*mockCampaigns" "$SRC"; then
+if ! grep -qE "liveApi\s*\?\s*\[\]\s*:\s*mockCampaigns|!liveApi.*mockCampaigns|isApiLive\(\).*mockCampaigns" "$SRC_CODE"; then
   echo "  could not find an isApiLive()-gated initial state for inviteCampaigns"
   echo "VERDICT: broken — no evidence the mock campaign seed is gated behind live/mock mode (F-0256)"
   exit 1
@@ -43,7 +51,7 @@ fi
 echo "  clean — mock seed only reachable in mock mode"
 
 echo "· a loading flag exists and can gate the selector before the real list resolves"
-if ! grep -qE "campaignsLoading" "$SRC"; then
+if ! grep -qE "campaignsLoading" "$SRC_CODE"; then
   echo "VERDICT: broken — no loading state guards the campaign selector; nothing stops a brand"
   echo "         from picking a campaign before GET /campaigns has responded (F-0256)"
   exit 1

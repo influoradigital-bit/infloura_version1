@@ -1,0 +1,57 @@
+F-0266 gate — .proof-os/gates/F-0266-gates-read-code-not-bytes.sh
+dev, 2026-08-18, task T-BRANDOPEN-0817
+
+WHAT IT ASSERTS (the property, not the patch)
+  1. gates/_code.sh exists, sources, and defines code_view/code_why; a missing python
+     is UNAVAILABLE (2), a missing helper is BROKEN (1).
+  2. Non-ASCII survives the stripper. Fixture carries the rupee sign, an arrow and an
+     em dash. This is the money-surface exemption: when _strip_comments.py emitted via
+     sys.stdout.write it crashed with UnicodeEncodeError under cp1252, and every gate
+     over a file containing those characters reported "unavailable" — honest, and
+     silently exempting exactly the screens where a false verdict costs most.
+  3. The property, both directions, live: leading //, trailing //, JSX brace-star and
+     /* */ must NOT match; the same string as real CODE MUST match; a URL inside a
+     string literal must not be truncated at its "//".
+  4. End to end through a real call site: F-0238 against a synthesized comment-only tree
+     (expect 0) and a real reintroduction in code (expect 1).
+  5. Population scan: no shell gate may hand a raw source-path variable to
+     grep/sed/awk/wc/nl — INCLUDING through a loop variable. The loop form is what a
+     partially converted gate hides behind; it carries the F-0266 preamble and still
+     reads bytes. Catches a newly added raw-grep gate, which is why it is a scan and
+     not a fixed list.
+
+PREFIX (pre-edit gates dir: unconverted population, stripper on sys.stdout.write)
+    exit 1 — "the comment stripper cannot handle non-ASCII source ... UnicodeEncodeError"
+    Leg 2 fires before the population leg is reached; leg ordering short-circuits, which
+    is correct behaviour but means the prefix run does not also display the ~50 raw-grep
+    offenders. WF-C below exercises that leg in isolation.
+
+WRONG FIXES — five constructed, all caught
+  WF-A  stripper reverted to sys.stdout.write (the cp1252 crash returns)
+        exit 1 — "cannot handle non-ASCII source"
+  WF-B  "fixed" with a naive whole-line // filter instead of a tokenizer (the exact
+        shape this record replaced — it strips a line that IS a comment and misses
+        trailing and JSX forms)
+        exit 1 — "a comment quoting a forbidden string still reads as code"
+  WF-C  helper healthy and population converted, but a NEW gate is added that greps raw
+        bytes (F-9999-new-raw-grep-gate.sh)
+        exit 1 — "F-9999-new-raw-grep-gate.sh reads $F raw on a grep/sed/awk line"
+  WF-D  strip so hard that string literals are blanked too
+        exit 1 — "the stripper lost the rupee literal"
+  WF-E  comments stripped correctly, but the fix CHEATS by deleting the forbidden token
+        from code as well — passes the comment case for the wrong reason
+        exit 1 — "the same string written as real CODE was ALSO stripped — the helper
+                  has stopped detecting genuine regressions, which is the obvious wrong
+                  fix for this record"
+        WF-E exists because WF-D fired on leg 2 before reaching the detects-real-code
+        leg; without WF-E that leg would never have been shown to be live.
+
+POSTFIX (the real tree)
+    exit 0
+      · gates/_code.sh loads; code_view/code_why present
+      · non-ASCII survives the stripper
+      · comment forms (leading //, trailing //, JSX brace-star, /* */) do not match;
+        the same string in CODE does; a URL in a string survives
+      · F-0238 end to end: comment-only tree exit 0, real reintroduction exit 1
+      · population clean: no shell gate reads a subject file raw (52 gates route
+        through gates/_code.sh)

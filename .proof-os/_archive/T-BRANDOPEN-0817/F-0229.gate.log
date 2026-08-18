@@ -1,0 +1,72 @@
+F-0229 gate — .proof-os/gates/F-0229-build-gate-reaches-a-verdict.sh
+dev, 2026-08-18, task T-BRANDOPEN-0817
+
+The gate header states plainly that the record as filed does not reproduce (the budget
+is not the problem; 99s solo against a 300s ceiling) and that the real defect was
+env_issue matching the bare token "network" against the whole test output, laundering a
+RED SUITE into "unavailable" on every run.
+
+WHAT IT ASSERTS
+  1. env_issue no longer carries the bare token "network", and a results-summary
+     discriminator (ran_to_completion) exists. Read through gates/_code.sh in shell
+     mode — grepping raw would fail on this gate's own header, which quotes "network"
+     while explaining the defect. F-0266, one layer up.
+  2. A synthetic runner that PRINTS A SUMMARY and exits 1, with "Error: network down"
+     in its output -> exit 1, LEG tests: BROKEN. Not unavailable.
+  3. A synthetic runner that never started (dash's "sh: 1: vitest: not found", exit
+     127, no summary) -> exit 2, LEG tests: unavailable. Not a finding.
+  4. The verdict names each leg: LEG tsc / LEG build / LEG tests.
+  5. HONESTY: a hanging runner with PROOF_GATE_TEST_TIMEOUT=3 must record
+     LEG tests: unavailable and exit 2 — never proved, never 0.
+  6. rc/liveness: build.sh writes an rc file carrying exit=, pid= and observed=.
+     Reported as NOT CHECKED (not broken) when gates/_rc.sh is unreachable from the
+     gates dir under test.
+
+  It deliberately does NOT run this project's real vitest — that is build.sh's own job
+  and costs ~200s. This gate runs in ~17s.
+
+THREE DEFECTS THIS GATE FOUND IN MY OWN WORK, BEFORE IT WENT GREEN
+  a) build.sh's env_issue did not match dash's wording for a missing binary
+     ("sh: 1: vitest: not found"). npm runs lifecycle scripts through sh, so an
+     UNINSTALLED test runner was reported as broken CODE at exit 1. Leg 3 caught it.
+     Fixed by adding the missing_binary() pattern gates/build.node.sh already carried
+     and this file never did. It cannot re-open the laundering defect, because
+     env_issue is only consulted when there is no results summary at all.
+  b) This gate's own leg 5 originally asserted only the overall exit code. On these
+     fixtures tsc and build are always unavailable, so the exit is 2 regardless of what
+     the test leg decides — and a build.sh edited to record a timed-out test leg as
+     "proved" PASSED. The wrong fix was invisible behind two honest unavailables. Leg 5
+     now asserts the leg table. This is why wrong-fix falsification is run and not
+     assumed: the first draft of this gate would have certified the very inversion it
+     exists to prevent.
+  c) VAR=1 cmd only works when the assignment is literal at parse time, so expanding
+     "$2" into that position made the shell treat PROOF_GATE_TIMEOUT=1 as the command
+     name and return 127, which the gate read as a failed timeout assertion. Now uses
+     env.
+
+PREFIX (pre-edit build.sh, "network" still in env_issue)
+    exit 1 — "the environment heuristic still matches the word 'network' in test output"
+
+WRONG FIXES — four constructed, all caught
+  WF-A  "network" restored in env_issue (the original laundering)
+        exit 1 — "still matches the word 'network' in test output"
+  WF-B  THE INVERSION: timed-out test leg recorded as proved
+        exit 1 — "a test leg killed by its own budget was recorded as PROVED; a timeout
+                  has been converted into a pass"
+        (against the FIRST draft of leg 5 this returned 0 — see (b) above)
+  WF-C  discriminator neutered and the env heuristic made to match test output again
+        (token "failed" instead of "network" — same disease, different word)
+        exit 1 — "a test suite that ran to completion and FAILED was reported as
+                  'unavailable'; a red suite is being laundered"
+  WF-D  rc/liveness wiring removed (rc_init call deleted)
+        exit 1 — "gates/build.sh wrote no rc file"
+
+POSTFIX (the real tree)
+    exit 0, 17s
+      · env_issue no longer matches the bare token "network"; a results-summary
+        discriminator exists
+      · a suite that reported and failed -> exit 1 (finding), despite "network down"
+      · a runner that never started -> exit 2 (unavailable), NOT a finding
+      · the verdict names each leg separately (tsc / build / tests)
+      · a starved budget -> LEG tests: unavailable and exit 2, never proved
+      · rc contract honoured: exit=1 pid=1477 ended=2026-08-18T08:46:10Z observed=exit

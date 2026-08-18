@@ -24,14 +24,22 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 BTN=src/components/feature/meera/FundEscrowButton.tsx
 [ -f "$BTN" ] || { echo "· $BTN missing — unavailable"; exit 2; }
+BTN_CODE=$(code_view "$BTN") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· the secured-money assertion is gated on the server-confirmed funded state"
-if ! grep -qE "status === 'funded' && serverAmount" "$BTN"; then
-  grep -nE "secured\. Released only on your approval" "$BTN"
+if ! grep -qE "status === 'funded' && serverAmount" "$BTN_CODE"; then
+  grep -nE "secured\. Released only on your approval" "$BTN_CODE"
   echo "VERDICT: broken — the secured-money copy is no longer gated on status === 'funded'"
   echo "         (F-0247); an in-flight or unpaid escrow can assert that funds are held"
   exit 1
@@ -39,8 +47,8 @@ fi
 echo "  clean — positive guard on 'funded'"
 
 echo "· the guard has not reverted to the incidental not-idle / no-helper-text form"
-if grep -qE "status !== 'idle'.*!helperText|!helperText.*status !== 'idle'" "$BTN"; then
-  grep -nE "status !== 'idle'" "$BTN"
+if grep -qE "status !== 'idle'.*!helperText|!helperText.*status !== 'idle'" "$BTN_CODE"; then
+  grep -nE "status !== 'idle'" "$BTN_CODE"
   echo "VERDICT: broken — the old negative guard is back (F-0247); any phase that happens to"
   echo "         have no helper text reaches the secured-money copy again"
   exit 1

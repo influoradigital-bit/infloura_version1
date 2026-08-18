@@ -25,14 +25,22 @@
 #   exit 0 = proved · 1 = broken · 2 = unavailable
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || { echo "· cannot resolve project root — unavailable"; exit 2; }
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 cd "$ROOT" || { echo "· project root unreadable — unavailable"; exit 2; }
+# F-0266: grep CODE, not file bytes. A gate that cannot tell a comment from a
+# statement fails the fix whose own comment quotes the string it forbids, and
+# greens a "fix" that was only ever described in one. gates/_code.sh is the one
+# shared, tested place that distinction lives.
+. "$SELF/_code.sh" 2>/dev/null || { echo "gates/_code.sh unreadable - unavailable"; exit 2; }
+code_ready || { echo "$(code_why) - unavailable"; exit 2; }
 
 HOOK=src/hooks/brand/useWorkspaceVerification.ts
 [ -f "$HOOK" ] || { echo "· $HOOK missing — unavailable"; exit 2; }
+HOOK_CODE=$(code_view "$HOOK") || { echo "$(code_why) - unavailable"; exit 2; }
 
 echo "· isLoading accounts for the role query, not the workspace query alone"
-if ! grep -qE "isLoading:[^,]*role\.isLoading" "$HOOK"; then
-  grep -nE "isLoading:" "$HOOK"
+if ! grep -qE "isLoading:[^,]*role\.isLoading" "$HOOK_CODE"; then
+  grep -nE "isLoading:" "$HOOK_CODE"
   echo "VERDICT: broken — isLoading no longer covers the role query (F-0244); an unresolved"
   echo "         role is once again reported as a settled one"
   exit 1
@@ -40,13 +48,13 @@ fi
 echo "  clean — isLoading covers both queries"
 
 echo "· canVerify fails open while the role is unresolved"
-if ! grep -q "roleResolved" "$HOOK"; then
+if ! grep -q "roleResolved" "$HOOK_CODE"; then
   echo "VERDICT: broken — the roleResolved discriminant is gone (F-0244); canVerify can no"
   echo "         longer tell 'not yet known' from 'known to be a non-admin'"
   exit 1
 fi
-if ! grep -qE "canVerify: *roleResolved *\?" "$HOOK"; then
-  grep -nE "canVerify:" "$HOOK"
+if ! grep -qE "canVerify: *roleResolved *\?" "$HOOK_CODE"; then
+  grep -nE "canVerify:" "$HOOK_CODE"
   echo "VERDICT: broken — canVerify no longer branches on roleResolved (F-0244); the sole"
   echo "         OWNER can be told to ask an admin again"
   exit 1
