@@ -313,6 +313,21 @@ export function DealRoomDashboard() {
     }
   }, [selectedDeal, loadMessages]);
 
+  // F-0328 — the brand opening a specific deal (click-select above, or the
+  // deep-link resolution effect) is the one moment that should tell the server
+  // "a brand looked at this application": GET /deals/:id is what DealService.get()
+  // uses to record APPLICATION_VIEWED (idempotent, first-view-only) for the
+  // creator's timeline. Keyed on the id (not the object or the list) so it fires
+  // exactly once per deal actually opened — never on a list render, never once
+  // per row. The response is discarded: the deal shown on screen already came
+  // from the list fetch above, so this isn't a second render-data fetch, only
+  // the read that triggers the server-side write. Best-effort like the server
+  // side is — a failure here must never block or clear what's already selected.
+  React.useEffect(() => {
+    if (!isApiLive() || !selectedDeal) return;
+    void dealsApi.get('brand', selectedDeal.id).catch(() => {});
+  }, [selectedDeal?.id]);
+
   // CR-97 — this dashboard (the 'Deals' page off the brand sidebar) previously had NO live
   // transport at all: the timeline only changed on manual load or the brand's own action, so a
   // counterparty accept/reject/message never appeared until reload. Open the deal-message SSE

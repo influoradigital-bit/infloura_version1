@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -58,6 +59,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -1984,5 +1986,337 @@ class DealServiceTest {
 
         assertEquals(null, response.counterpartyProfileId());
         verify(creatorProfileRepository, never()).findByUserId(anyString());
+    }
+
+    // ------------------------------------------------------------------
+    // Decision 6 (.proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md) — a brand acting on a bid
+    // directly from the campaign-detail Bids tab (Accept/Counter/Reject, never opening
+    // GET /deals/{id}) must record APPLICATION_VIEWED immediately before the decision event, via
+    // the same idempotent recordViewIfAbsent already used by get(). Guarded on UserType.BRAND
+    // because all three of doAccept/doReject/doCounter are MUTUAL paths a creator can also drive
+    // (accepting a counter-offer, withdrawing, or countering) — recording "the brand viewed your
+    // application" off a creator's own action would be a false claim in the creator's own audit
+    // trail.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "Decision 6 — accept: a BRAND acting directly from the Bids tab records Application"
+                    + " Viewed BEFORE Application Accepted")
+    void testBrandAcceptRecordsApplicationViewedBeforeDecisionEvent() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        DEAL_ID, DealMessageKind.proposal))
+                .thenReturn(Optional.of(proposalMessage(CREATOR_USER_ID, DealSenderType.creator)));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any())).thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(idempotencyService.executeOnce(
+                        eq("deal-accept:" + DEAL_ID), eq(WORKSPACE_ID), eq("deal.accept"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        service.accept(brandPrincipal, DEAL_ID, null);
+
+        InOrder order = inOrder(applicationHistoryService);
+        order.verify(applicationHistoryService)
+                .recordViewIfAbsent(
+                        eq(CAMPAIGN_ID), eq(DEAL_ID), eq(BRAND_USER_ID), anyString(), any());
+        order.verify(applicationHistoryService)
+                .record(
+                        eq(CAMPAIGN_ID),
+                        eq(DEAL_ID),
+                        eq(DEAL_ID),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.APPLICATION_ACCEPTED),
+                        eq(CollaborationStatus.TERMS_AGREED),
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.BRAND),
+                        eq(BRAND_USER_ID),
+                        anyString(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq(DEAL_ID));
+    }
+
+    @Test
+    @DisplayName(
+            "Decision 6 — reject: a BRAND acting directly from the Bids tab records Application"
+                    + " Viewed BEFORE the reject decision event")
+    void testBrandRejectRecordsApplicationViewedBeforeDecisionEvent() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("not a fit"), null);
+
+        InOrder order = inOrder(applicationHistoryService);
+        order.verify(applicationHistoryService)
+                .recordViewIfAbsent(
+                        eq(CAMPAIGN_ID), eq(DEAL_ID), eq(BRAND_USER_ID), anyString(), any());
+        order.verify(applicationHistoryService)
+                .record(
+                        eq(CAMPAIGN_ID),
+                        eq(DEAL_ID),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.APPLICATION_REJECTED),
+                        eq(CollaborationStatus.CANCELLED),
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.BRAND),
+                        eq(BRAND_USER_ID),
+                        anyString(),
+                        eq("not a fit"),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq(DEAL_ID));
+    }
+
+    @Test
+    @DisplayName("Decision 6 — counter: a BRAND acting directly from the Bids tab records Application Viewed")
+    void testBrandCounterRecordsApplicationViewed() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any())).thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(idempotencyService.executeOnce(anyString(), eq(WORKSPACE_ID), eq("deal.counter"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null);
+        service.counter(brandPrincipal, DEAL_ID, body, null);
+
+        // doCounter records no ApplicationHistoryEvent of its own (there is no COUNTER value in
+        // ApplicationHistoryEventType) — status passed is the PRE-transition INVITED, since this
+        // is recorded at the top of the method, before transitionTo(IN_NEGOTIATION) runs.
+        verify(applicationHistoryService)
+                .recordViewIfAbsent(
+                        eq(CAMPAIGN_ID),
+                        eq(DEAL_ID),
+                        eq(BRAND_USER_ID),
+                        anyString(),
+                        eq(CollaborationStatus.INVITED));
+    }
+
+    /**
+     * Guard-against-wrong-actor — {@code doAccept} is a MUTUAL proposal-accept: a creator can
+     * accept the brand's counter-offer through this exact same path. This is the load-bearing
+     * negative case Decision 6 calls out explicitly: without the {@code UserType.BRAND} guard,
+     * this would silently record "the brand viewed your application" off the CREATOR's own
+     * accept click.
+     */
+    @Test
+    @DisplayName(
+            "Decision 6 guard — a CREATOR-initiated accept (of the brand's counter-offer) records NO"
+                    + " Application Viewed")
+    void testCreatorAcceptRecordsNoApplicationViewed() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any())).thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(idempotencyService.executeOnce(
+                        eq("deal-accept:" + DEAL_ID),
+                        eq(CREATOR_USER_ID),
+                        eq("deal.accept"),
+                        any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        service.accept(creatorPrincipal, DEAL_ID, null);
+
+        verify(applicationHistoryService, never())
+                .recordViewIfAbsent(anyString(), anyString(), any(), anyString(), any());
+    }
+
+    /** Same guard, for the withdrawal branch of {@code doReject} (also a mutual path). */
+    @Test
+    @DisplayName("Decision 6 guard — a CREATOR-initiated withdrawal records NO Application Viewed")
+    void testCreatorWithdrawalRecordsNoApplicationViewed() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        service.reject(creatorPrincipal, DEAL_ID, new RejectRequest("changed my mind"), null);
+
+        verify(applicationHistoryService, never())
+                .recordViewIfAbsent(anyString(), anyString(), any(), anyString(), any());
+    }
+
+    /** Same guard, for {@code doCounter} (also a mutual path — a creator counters too). */
+    @Test
+    @DisplayName("Decision 6 guard — a CREATOR-initiated counter records NO Application Viewed")
+    void testCreatorCounterRecordsNoApplicationViewed() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any())).thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(idempotencyService.executeOnce(anyString(), eq(CREATOR_USER_ID), eq("deal.counter"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Let's do 25k", null, null, null);
+        service.counter(creatorPrincipal, DEAL_ID, body, null);
+
+        verify(applicationHistoryService, never())
+                .recordViewIfAbsent(anyString(), anyString(), any(), anyString(), any());
+    }
+
+    /**
+     * The exit-test requirement, stated explicitly: "recordViewIfAbsent is already idempotent, so
+     * a brand who opened the deal room first and then acts gets one view row, not two — verify
+     * that holds rather than assuming it." {@code DealService} itself does NOT reimplement that
+     * dedup — both call sites route through the exact same idempotent {@code
+     * recordViewIfAbsent(...)}. Its check-then-insert BRANCH — that a second call for the same
+     * applicationId consults {@code existsByApplicationIdAndEventType} and skips the {@code
+     * save} — is proved in {@code
+     * ApplicationHistoryServiceTest#testRecordViewIfAbsentIsIdempotentOnSecondView}, but that test
+     * mocks {@code ApplicationHistoryEventRepository} (see that class's {@code @Mock private
+     * ApplicationHistoryEventRepository repository} field): it proves the BRANCH, not the
+     * database. There is NO unique constraint backing {@code (application_id, event_type)} — see
+     * {@link ApplicationHistoryService#recordViewIfAbsent}'s own javadoc for the genuine
+     * concurrent-race gap this leaves (two brand actions racing the exists-check could both
+     * insert) and why it is accepted rather than closed.
+     * What THIS test proves is the DealService half of the branch-level contract: opening the
+     * Deal Room ({@code get()}) and then also acting ({@code accept()}) on the same application
+     * both call {@code recordViewIfAbsent} — never the non-idempotent {@code record(...)} with an
+     * {@code APPLICATION_VIEWED} type, which would bypass even the branch-level dedup entirely
+     * and genuinely double-write on every single call, race or not.
+     */
+    @Test
+    @DisplayName(
+            "Decision 6 — brand opens the Deal Room then also accepts: both calls route through the"
+                    + " SAME idempotent recordViewIfAbsent, never the non-idempotent record()")
+    void testBrandOpenThenAcceptBothRouteThroughIdempotentViewRecording() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        DEAL_ID, DealMessageKind.proposal))
+                .thenReturn(Optional.of(proposalMessage(CREATOR_USER_ID, DealSenderType.creator)));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        stubToDealResponseCommonReads(DEAL_ID);
+        when(idempotencyService.executeOnce(
+                        eq("deal-accept:" + DEAL_ID), eq(WORKSPACE_ID), eq("deal.accept"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        service.get(brandPrincipal, DEAL_ID); // brand opens the deal in the Deal Room first
+        service.accept(brandPrincipal, DEAL_ID, null); // then also acts from the Bids tab
+
+        verify(applicationHistoryService, times(2))
+                .recordViewIfAbsent(
+                        eq(CAMPAIGN_ID), eq(DEAL_ID), eq(BRAND_USER_ID), anyString(), any());
+        verify(applicationHistoryService, never())
+                .record(
+                        any(),
+                        any(),
+                        any(),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.APPLICATION_VIEWED),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any());
     }
 }

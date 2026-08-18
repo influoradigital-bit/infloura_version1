@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   AlertCircle,
   Archive,
+  Ban,
   Banknote,
   CheckCircle2,
   Circle,
@@ -26,7 +27,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api, ApiError, type CreatorApplicationHistoryEvent } from '@/lib/api';
-import { getApplicationStatusLabel } from '@/lib/application-status';
+import { getApplicationStatusLabel, getDeclineWording } from '@/lib/application-status';
 import { stageBadgeClass, statusToStage } from '@/lib/stage-colors';
 import { cn } from '@/lib/utils';
 
@@ -52,20 +53,20 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   CAMPAIGN_APPLIED: 'Campaign Applied',
   APPLICATION_RECEIVED: 'Application Received',
   APPLICATION_VIEWED: 'Application Viewed',
+  // F-0302 — CEO ruling Decision 3 (.proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md):
+  // `DealService#doAccept` is a MUTUAL proposal-accept, so this event type fires for either
+  // party. This entry is the BRAND-actor (and fallback/SYSTEM) wording; `eventTypeLabel` below
+  // special-cases a CREATOR actor to "Proposal Accepted" instead of using this entry, because
+  // "Application Accepted" / actor "You" reads as "you accepted your own application" —
+  // nonsensical. The creator accepted the brand's TERMS, not their own application.
   APPLICATION_ACCEPTED: 'Application Accepted',
-  /**
-   * F-0303 — the wire value is `APPLICATION_REJECTED` and the stored audit record keeps that
-   * name, because it is what actually happened. The creator-facing WORD is deliberately not
-   * "Rejected": src/lib/application-status.ts's canonical map records a CTO arbitration
-   * (Kabir R5) that a declined application renders as "Closed", never "Rejected" — the point
-   * being not to present brand-internal triage to a creator as a finalized verdict on them.
-   *
-   * The requirements document this timeline was built from asks for the opposite wording, so
-   * the two disagree. That conflict is open (F-0287) and only swapnil can settle it; until he
-   * does, the standing arbitration wins and this label matches the rest of the product. Do not
-   * "align this with the spec" without that ruling in hand.
-   */
-  APPLICATION_REJECTED: 'Closed',
+  // F-0303/F-0287 — the wire value stays `APPLICATION_REJECTED` (the truthful audit record of
+  // what happened); the WORD shown to a creator is decline wording, and decline wording has
+  // exactly one source of truth: src/lib/application-status.ts's DECLINE_WORDING /
+  // getDeclineWording(). `eventTypeLabel`/`eventTypeIcon` below resolve this event type from
+  // that shared constant rather than a literal here, specifically so this label can never drift
+  // out of sync with the CANCELLED status badge the way it did before F-0303's fix — do not add
+  // a hardcoded entry for this key back into this map.
   APPLICATION_WITHDRAWN: 'Withdrawn',
   DEAL_ROOM_ACTIVATED: 'Deal Room Activated',
   CONTRACT_GENERATED: 'Contract Generated',
@@ -77,17 +78,20 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   PAY: 'Pay',
 };
 
-/** Every value gets its own icon — no two events should be visually indistinguishable. */
+/**
+ * Every value gets its own icon — no two events should be visually indistinguishable.
+ * APPLICATION_REJECTED is deliberately absent — see the EVENT_TYPE_LABELS comment above; its
+ * icon is resolved from the same shared `getDeclineWording()` source in `eventTypeIcon` below,
+ * not a literal here.
+ */
 const EVENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   CAMPAIGN_APPLIED: Send,
   APPLICATION_RECEIVED: Inbox,
   APPLICATION_VIEWED: Eye,
   APPLICATION_ACCEPTED: CheckCircle2,
-  // F-0303 — neutral, not a red XCircle, for the same reason the label reads "Closed" rather
-  // than "Rejected": a loud rejection glyph re-asserts visually exactly what the arbitration
-  // says not to assert in words. XCircle stays imported for the genuinely creator-initiated
-  // Withdrawn row below, where a definite end-state IS the creator's own doing.
-  APPLICATION_REJECTED: Archive,
+  // XCircle stays imported for the genuinely creator-initiated Withdrawn row below, where a
+  // definite end-state IS the creator's own doing — distinct from a brand decline either way
+  // getDeclineWording() resolves (see eventTypeIcon).
   APPLICATION_WITHDRAWN: XCircle,
   DEAL_ROOM_ACTIVATED: Handshake,
   CONTRACT_GENERATED: FileText,
@@ -112,13 +116,32 @@ function prettify(value: string): string {
     .trim();
 }
 
-function eventTypeLabel(eventType: string): string {
+/**
+ * `actorType` is required (not optional) on purpose — F-0302 needs it to disambiguate
+ * APPLICATION_ACCEPTED, and a call site that forgets to pass it should fail to compile rather
+ * than silently fall back to the brand wording for a creator's own accept.
+ */
+function eventTypeLabel(eventType: string, actorType: CreatorApplicationHistoryEvent['actorType']): string {
   const key = normalizeKey(eventType);
+  // F-0302 — CEO ruling Decision 3: same event type, actor-dependent wording.
+  if (key === 'APPLICATION_ACCEPTED' && actorType === 'CREATOR') {
+    return 'Proposal Accepted';
+  }
+  // F-0303/F-0287 — decline wording has one source of truth; see EVENT_TYPE_LABELS' comment.
+  if (key === 'APPLICATION_REJECTED') {
+    return getDeclineWording().eventLabel;
+  }
   return EVENT_TYPE_LABELS[key] ?? prettify(eventType);
 }
 
 function eventTypeIcon(eventType: string): React.ComponentType<{ className?: string }> {
-  return EVENT_TYPE_ICONS[normalizeKey(eventType)] ?? Circle;
+  const key = normalizeKey(eventType);
+  if (key === 'APPLICATION_REJECTED') {
+    // 'neutral' (default/arbitration) -> Archive, matching the "Closed" wording's non-alarming
+    // tone. 'explicit' (spec override) -> Ban, a clearer decline glyph matching "Rejected".
+    return getDeclineWording().icon === 'neutral' ? Archive : Ban;
+  }
+  return EVENT_TYPE_ICONS[key] ?? Circle;
 }
 
 /**
@@ -335,13 +358,14 @@ export function ApplicationHistoryTimeline({ dealId, brandName, className }: App
               <div className="min-w-0 flex-1 pt-0.5">
                 <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium">{eventTypeLabel(event.eventType)}</span>
+                    <span className="text-sm font-medium">{eventTypeLabel(event.eventType, event.actorType)}</span>
                     {/* Text and colour are two separate lookups on purpose — do not merge them.
                         Text: application-status.ts's getApplicationStatusLabel is the single
-                        canonical creator-facing label map (CANCELLED -> "Closed", TERMS_AGREED ->
-                        "In negotiation", etc.) — the same map CreatorApplicationCard.tsx's badge
-                        and this event's own bucket derive from, so a declined application can't
-                        show "Closed" on the card and "Cancelled" here. Falls back to the raw
+                        canonical creator-facing label map (CANCELLED -> decline wording via
+                        getDeclineWording(), TERMS_AGREED -> "Accepted", etc.) — the same map
+                        CreatorApplicationCard.tsx's badge and this event's own bucket derive
+                        from, so a declined application can't show one word on the card and a
+                        different one here. Falls back to the raw
                         status string for anything the map does not know (eventStatus is typed
                         string, not the closed CollaborationStatus union) — that fallback lives
                         inside getApplicationStatusLabel itself; do not layer prettify() on top of

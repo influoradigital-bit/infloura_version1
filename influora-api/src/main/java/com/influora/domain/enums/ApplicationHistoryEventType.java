@@ -39,9 +39,11 @@ package com.influora.domain.enums;
  * #APPLICATION_WITHDRAWN} is recorded for the creator-initiated case; {@link
  * #APPLICATION_REJECTED} stays exactly what it was for the brand-initiated case. This is silent
  * about user-visible wording on purpose: whether a brand's decline may ever be SHOWN to a creator
- * as the word "Rejected" is a separate, open conflict between the requirements doc and a standing
- * CTO arbitration ({@code src/lib/application-status.ts}, Kabir R5) pending a human ruling — this
- * enum value fixes what is RECORDED, not what is DISPLAYED.
+ * as the word "Rejected" was a separate question from what this enum records — now SETTLED by CEO
+ * ruling dated 2026-08-18 (.proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md, Decision 1): the prior
+ * CTO arbitration ({@code src/lib/application-status.ts}, Kabir R5) is upheld on its conclusion —
+ * no "Rejected" label, {@code CANCELLED} always renders "Closed" — this enum value fixes what is
+ * RECORDED, not what is DISPLAYED.
  */
 public enum ApplicationHistoryEventType {
     CAMPAIGN_APPLIED,

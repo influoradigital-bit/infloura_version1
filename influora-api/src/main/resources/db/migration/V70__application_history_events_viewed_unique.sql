@@ -1,0 +1,44 @@
+-- Closes a genuine concurrent-insert race in ApplicationHistoryService#recordViewIfAbsent,
+-- surfaced during Decision 6 review (.proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md). V69 added
+-- APPLICATION_VIEWED as a first-write-wins event enforced only in application code (a plain
+-- SELECT EXISTS, then INSERT, no row lock, no schema backing) because at the time there was
+-- exactly one caller (DealService#get). Decision 6 added three more (DealService#doAccept/
+-- #doReject/#doCounter, all guarded on UserType.BRAND), so the same application can now be raced
+-- by up to four independent HTTP requests instead of one -- e.g. a brand with the Deal Room open
+-- in one tab and Accept clicked from the Bids tab in another. Two requests can both pass the
+-- exists-check before either commits its insert, leaving two APPLICATION_VIEWED rows in an
+-- append-only ledger the creator reads and is meant to trust as a single, first-write-wins
+-- signal -- undermining exactly the trust property Decision 6 was ruled on.
+--
+-- NOT a blanket UNIQUE(application_id, event_type): V69's own comment already documents why —
+-- CAMPAIGN_APPLIED / APPLICATION_ACCEPTED / APPLICATION_REJECTED / APPLICATION_WITHDRAWN all
+-- legitimately recur across a withdraw-then-reapply cycle (F-0225 revive). A blanket constraint on
+-- the raw pair would 500 every legitimate re-application. The pair (application_id, event_type)
+-- itself is therefore still NOT unique after this migration -- only APPLICATION_VIEWED is.
+--
+-- NOT a Postgres-style partial/filtered UNIQUE INDEX ... WHERE event_type = 'APPLICATION_VIEWED'
+-- either: this project targets MySQL 8 only (docker-compose.yml, docs/BACKEND-STACK.md), which
+-- has no filtered/partial index support. The portable MySQL-8-native equivalent used here is a
+-- STORED generated column that evaluates to NULL for every event_type except APPLICATION_VIEWED
+-- (where it carries application_id), plus a UNIQUE index on that column. InnoDB never treats two
+-- NULLs as equal in a UNIQUE index, so every non-APPLICATION_VIEWED row (which stores NULL here)
+-- is exempt by construction -- the generated column's UNIQUE index behaves exactly like a partial
+-- unique index scoped to APPLICATION_VIEWED rows only, using only generated-column support MySQL
+-- has carried since 5.7.6, well within this project's 8.0 floor.
+--
+-- No Java-level try/catch was added around ApplicationHistoryService#recordViewIfAbsent's
+-- repository.save() call for this. See that method's own javadoc: the entity's @Id is a
+-- pre-assigned ULID, so save() routes through em.merge() and defers the actual INSERT to flush,
+-- which for this REQUIRES_NEW method happens at ITS OWN transactional-proxy commit -- outside the
+-- method's own body, not reachable by a try/catch wrapped around the save() call inside it. This
+-- is the exact hazard already documented and fixed once in this file for #record() (see that
+-- method's own javadoc) and independently re-proven for this same entity/propagation combination
+-- by CreatorCampaignServiceApplyHistoryFkRaceTest. The constraint violation this migration can now
+-- produce surfaces from the recordViewIfAbsent(...) CALL itself, landing exactly where every one
+-- of its four call sites (DealService#get/doAccept/doReject/doCounter) already wraps it in
+-- catch (RuntimeException e) -- already-correct, already-shipped, best-effort handling that needed
+-- no Java change.
+ALTER TABLE application_history_events
+  ADD COLUMN viewed_dedup_key VARCHAR(26)
+    GENERATED ALWAYS AS (IF(event_type = 'APPLICATION_VIEWED', application_id, NULL)) STORED,
+  ADD UNIQUE KEY uq_app_history_viewed_once (viewed_dedup_key);

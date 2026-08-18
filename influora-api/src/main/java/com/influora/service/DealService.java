@@ -449,6 +449,32 @@ public class DealService {
                 card -> publishToStream(collaboration.getId(), toMessageResponse(card)));
         publishToStream(collaboration.getId(), toMessageResponse(systemMessage));
 
+        // Decision 6 (.proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md) — a brand acting on a bid
+        // directly from the campaign-detail Bids tab (no prior GET /deals/{id}) never generated an
+        // APPLICATION_VIEWED event, so the creator's timeline jumped straight from "Campaign
+        // Applied" to the decision with no "Viewed by Brand" in between. Recording the view here,
+        // immediately before the decision event below and only for the BRAND actor (this method is
+        // also the CREATOR's own withdrawal path — see the role branch just below — and a
+        // creator's own withdrawal must never read as "the brand viewed your application"), makes
+        // the click itself the engagement signal. recordViewIfAbsent is idempotent, so a brand who
+        // already opened this deal in the Deal Room gets no duplicate row here.
+        if (role == UserType.BRAND) {
+            try {
+                applicationHistoryService.recordViewIfAbsent(
+                        collaboration.getCampaignId(),
+                        collaboration.getId(),
+                        actorId,
+                        "Brand reviewed the application",
+                        collaboration.getStatus());
+            } catch (RuntimeException e) {
+                log.error(
+                        "Could not record Application Viewed for collaboration {} on reject — the"
+                                + " rejection itself already succeeded",
+                        collaboration.getId(),
+                        e);
+            }
+        }
+
         // Persistent application-history event. No dealRoomId: canReject()'s allowlist is
         // pre-contract only, so a rejected/withdrawn application never had a deal room to begin
         // with. Best-effort, same shape as CreatorCampaignService#recordApplicationHistory — a
@@ -793,6 +819,30 @@ public class DealService {
                 card -> publishToStream(collaboration.getId(), toMessageResponse(card)));
         publishToStream(collaboration.getId(), toMessageResponse(systemMessage));
 
+        // Decision 6 (.proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md) — same rationale as
+        // doReject's identical block above: a brand accepting directly from the Bids tab never
+        // opened GET /deals/{id}, so no APPLICATION_VIEWED was ever recorded. Guarded on BRAND
+        // because doAccept is a MUTUAL accept — a creator can accept the brand's counter-offer
+        // through this exact path, and that must never record "the brand viewed your application".
+        // Placed before the decision event below so the creator's timeline reads "Viewed by Brand"
+        // then the decision, never the decision appearing with no prior brand activity.
+        if (role == UserType.BRAND) {
+            try {
+                applicationHistoryService.recordViewIfAbsent(
+                        collaboration.getCampaignId(),
+                        collaboration.getId(),
+                        principal.getUserId(),
+                        "Brand reviewed the application",
+                        collaboration.getStatus());
+            } catch (RuntimeException e) {
+                log.error(
+                        "Could not record Application Viewed for collaboration {} on accept — the"
+                                + " accept itself already succeeded",
+                        collaboration.getId(),
+                        e);
+            }
+        }
+
         // Persistent application-history event. dealRoomId = the same collaboration id: acceptance
         // is the point the deal room actually starts existing (see ApplicationHistoryEvent's
         // javadoc on why dealRoomId stays null before this). Best-effort, same shape as every
@@ -878,6 +928,32 @@ public class DealService {
             AuthPrincipal principal,
             CounterRequest body,
             DealSenderType senderType) {
+        // Decision 6 (.proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md) — doCounter has no
+        // persistent ApplicationHistoryEvent of its own (there is no COUNTER value in {@code
+        // ApplicationHistoryEventType}; a counter only ever produces a DealMessage proposal card),
+        // so there is no later decision event for this to precede — it is recorded at the top,
+        // matching the ruling's Implementation snippet directly. Guarded on BRAND: counter is a
+        // MUTUAL path (a creator counters a brand's offer through this same method, branched on
+        // senderType below), and a creator's own counter must never record "the brand viewed your
+        // application". Idempotent, so a brand who already opened the deal in the Deal Room gets
+        // no duplicate row here.
+        if (principal.getUserType() == UserType.BRAND) {
+            try {
+                applicationHistoryService.recordViewIfAbsent(
+                        collaboration.getCampaignId(),
+                        collaboration.getId(),
+                        principal.getUserId(),
+                        "Brand reviewed the application",
+                        collaboration.getStatus());
+            } catch (RuntimeException e) {
+                log.error(
+                        "Could not record Application Viewed for collaboration {} on counter — the"
+                                + " counter itself already succeeded",
+                        collaboration.getId(),
+                        e);
+            }
+        }
+
         collaboration.updateAgreedRate(body.amount());
         // Aligned with createProposal 2026-07-26: a counter that revises usage rights now updates
         // the deal's terms instead of leaving the original proposal's value standing. Blank is

@@ -10,8 +10,11 @@ import com.influora.web.dto.creatorcampaign.CreatorApplicationDtos.CreatorApplic
  * "My Applications" page (my-applications-plan-2026-07-24.md) — maps a {@code Collaboration}
  * (source = APPLICATION) plus its {@code Campaign}/{@code Workspace} into the allowlist DTO.
  * {@code statusLabel} follows the CTO-arbitrated creator-facing status map exactly — there is NO
- * "Rejected" label; {@code CANCELLED} always reads as "Closed" (Kabir R5 — never surface
- * brand-internal triage as a decision the brand hasn't finalized).
+ * "Rejected" label; {@code CANCELLED} always reads as "Closed". CEO ruling
+ * (.proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md, Decision 1) upheld that conclusion but on
+ * different grounds: a brand's decline through this product IS finalized, not internal triage —
+ * "Closed" stands because the word "Rejected" adds emotional weight without adding clarity the
+ * "Closed" label plus its description doesn't already give.
  */
 public final class CreatorApplicationMapper {
 
@@ -35,7 +38,16 @@ public final class CreatorApplicationMapper {
                 collaboration.getId());
     }
 
-    /** Canonical creator-facing status map (my-applications-plan-2026-07-24.md). */
+    /**
+     * Canonical creator-facing status map (my-applications-plan-2026-07-24.md).
+     *
+     * <p>Deliberately NOT the creator-facing label: {@code TERMS_AGREED} -> "In negotiation" and
+     * {@code CANCELLED} -> "Closed" below are ruling-compliant as server strings (CEO ruling
+     * Decision 5, .proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md, kept backend mappers as-is),
+     * but the FE now shows "Accepted" for {@code TERMS_AGREED} (Decision 2) and routes decline
+     * wording through a switchable constant in {@code src/lib/application-status.ts}. Nothing
+     * renders this field today. Whatever starts rendering it must reconcile with that file first.
+     */
     public static String statusLabel(CollaborationStatus status) {
         return switch (status) {
             case APPLIED -> "Applied";

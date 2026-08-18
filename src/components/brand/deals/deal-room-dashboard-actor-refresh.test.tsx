@@ -32,6 +32,10 @@ vi.mock('@/lib/api', async () => {
     isApiLive: () => true,
     deals: {
       list: (...a: unknown[]) => dealsList(...a),
+      // F-0328 — the dashboard now calls deals.get('brand', id) on open; this test
+      // isn't about that call, so stub it to a resolved no-op rather than let it
+      // reject unhandled.
+      get: vi.fn().mockResolvedValue(null),
       accept: (...a: unknown[]) => dealsAccept(...a),
       reject: (...a: unknown[]) => dealsReject(...a),
       counter: (...a: unknown[]) => dealsCounter(...a),

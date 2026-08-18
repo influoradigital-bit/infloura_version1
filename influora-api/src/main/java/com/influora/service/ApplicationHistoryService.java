@@ -103,20 +103,47 @@ public class ApplicationHistoryService {
      * the other side of a given application.
      *
      * <p>Deliberately its own independent transaction ({@code REQUIRES_NEW}), not the caller's.
-     * {@code DealService#get} — the only call site — is {@code @Transactional(readOnly = true)},
-     * and this needs to write regardless of that flag, without the write's outcome (success OR
-     * failure) being able to affect the read it hangs off. The caller still wraps this call in a
-     * try/catch as defense in depth against the propagation boundary itself throwing.
+     * {@code DealService#get} — originally the only call site, {@code @Transactional(readOnly =
+     * true)} — needs to write regardless of that flag, without the write's outcome (success OR
+     * failure) being able to affect the read it hangs off. Decision 6
+     * (.proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md) added three more call sites — {@code
+     * DealService#doAccept}/{@code #doReject}/{@code #doCounter}, each guarded on {@code
+     * UserType.BRAND} — so a brand acting on a bid directly from the campaign-detail Bids tab
+     * (never opening {@code GET /deals/{id}}) still produces a view row before its decision event.
+     * Every call site still wraps this call in a try/catch as defense in depth against the
+     * propagation boundary itself throwing.
      *
-     * <p>Check-then-insert, not a DB unique constraint: {@code (application_id, event_type)} is
-     * NOT unique at the schema level, because {@code CAMPAIGN_APPLIED}/{@code
-     * APPLICATION_ACCEPTED}/{@code APPLICATION_REJECTED} legitimately recur across a
-     * withdraw-then-reapply cycle (F-0225 revive). Only {@code APPLICATION_VIEWED} needs
-     * first-write-wins semantics, so that rule lives here in application code rather than as a
-     * blanket constraint that would also, wrongly, cap every other event type at one row per
-     * application forever. This does leave a narrow theoretical race between the existence check
-     * and the insert under truly concurrent double-opens; acceptable here because this is a
-     * timeline dedupe, not a financial or authorization guarantee.
+     * <p>Check-then-insert as the FAST PATH, a real DB constraint as the BACKSTOP.
+     * {@code (application_id, event_type)} is deliberately NOT unique at the schema level — {@code
+     * CAMPAIGN_APPLIED}/{@code APPLICATION_ACCEPTED}/{@code APPLICATION_REJECTED}/{@code
+     * APPLICATION_WITHDRAWN} legitimately recur across a withdraw-then-reapply cycle (F-0225
+     * revive), and a blanket constraint on that pair would 500 every legitimate re-application.
+     * Only {@code APPLICATION_VIEWED} needs first-write-wins semantics. V70
+     * ({@code V70__application_history_events_viewed_unique.sql}) adds a UNIQUE index scoped to
+     * exactly that: a generated column that is NULL for every other event_type and carries {@code
+     * application_id} only when {@code event_type = 'APPLICATION_VIEWED'} — InnoDB never treats
+     * two NULLs as equal in a UNIQUE index, so every other event type is exempt by construction.
+     *
+     * <p>Before V70, this method's javadoc described the check-then-insert race between the
+     * existence check above and the {@code save} below as an accepted "narrow theoretical" gap.
+     * That was overstated the moment Decision 6 (.proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md)
+     * added three more call sites on top of {@code DealService#get} — four independent HTTP
+     * requests can race the SAME application, not one (see V70's migration comment for the full
+     * reachability argument). V70 closes the race at the schema level; this method deliberately
+     * adds NO Java-level {@code try/catch} around the {@code save} call below for it. The reason is
+     * the same hazard already documented and fixed once in this very file for {@link #record}:
+     * this entity's {@code @Id} is a pre-assigned ULID, so {@code save} routes through {@code
+     * em.merge()} and defers the actual {@code INSERT} to flush, which for a {@code REQUIRES_NEW}
+     * method happens at ITS OWN transactional-proxy commit — outside this method's own body, not
+     * reachable by a {@code try/catch} wrapped around the {@code save} call inside it. A
+     * constraint violation instead surfaces from the {@code recordViewIfAbsent(...)} CALL itself,
+     * landing exactly where every one of its four call sites (get/doAccept/doReject/doCounter)
+     * already wraps it in {@code catch (RuntimeException e)} — already-correct, already-shipped
+     * best-effort handling (log and continue; the primary business action must never fail because
+     * a view row could not be written) that needed no change to absorb this. See
+     * {@code ApplicationHistoryEventViewedUniquenessTest} for the real-database proof that V70's
+     * constraint rejects a genuine duplicate {@code APPLICATION_VIEWED} insert while leaving the
+     * recurring event types untouched.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordViewIfAbsent(
