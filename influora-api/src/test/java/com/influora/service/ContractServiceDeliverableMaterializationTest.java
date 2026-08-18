@@ -99,6 +99,7 @@ class ContractServiceDeliverableMaterializationTest {
     @Mock private WorkspaceMember workspaceMember;
 
     @Mock private com.influora.repository.ShipmentRepository shipmentRepository;
+    @Mock private ApplicationHistoryService applicationHistoryService;
 
     private DealService dealService;
     private ContractService contractService;
@@ -126,7 +127,8 @@ class ContractServiceDeliverableMaterializationTest {
                                 collaborationRepository,
                                 contractRepository,
                                 escrowHoldRepository,
-                                shipmentRepository));
+                                shipmentRepository),
+                        applicationHistoryService);
 
         contractService =
                 new ContractService(
@@ -147,7 +149,8 @@ class ContractServiceDeliverableMaterializationTest {
                         deliverableRepository,
                         dealMessageRepository,
                         creatorProfileRepository,
-                        collaborationLifecycleService);
+                        collaborationLifecycleService,
+                        applicationHistoryService);
     }
 
     private static Campaign activeCampaign() {

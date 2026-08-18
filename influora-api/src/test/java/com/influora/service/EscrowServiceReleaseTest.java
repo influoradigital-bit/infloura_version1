@@ -82,6 +82,7 @@ class EscrowServiceReleaseTest {
   @Mock private WorkspaceRepository workspaceRepository;
   @Mock private ApplicationEventPublisher eventPublisher;
   @Mock private CollaborationLifecycleService collaborationLifecycleService;
+  @Mock private ApplicationHistoryService applicationHistoryService;
 
   private EscrowService service;
 
@@ -105,7 +106,8 @@ class EscrowServiceReleaseTest {
             workspaceRepository,
             eventPublisher,
             collaborationLifecycleService,
-            escrowBackend);
+            escrowBackend,
+            applicationHistoryService);
     // [CR-51 step 2] This whole test class exercises the B5 release_condition gate
     // (assertReleaseConditionSatisfied), which now only applies to milestones created after a
     // configured cutover (see EscrowService javadoc on that method) — legacy pre-cutover

@@ -13,6 +13,8 @@ import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.enums.ApplicationHistoryActorType;
+import com.influora.domain.enums.ApplicationHistoryEventType;
 import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
@@ -44,6 +46,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Task #7 (creator campaign browse/apply, Creator Week 2 sprint — TASK_INBOX.md P0 #7). Creator
@@ -66,6 +70,8 @@ public class CreatorCampaignService {
     private final DealMessageRepository dealMessageRepository;
     /** F-0225 — the shared "may this pair start again?" decision. See the service's javadoc. */
     private final CollaborationReviveService collaborationReviveService;
+    /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
+    private final ApplicationHistoryService applicationHistoryService;
 
     public CreatorCampaignService(
             CampaignRepository campaignRepository,
@@ -75,7 +81,8 @@ public class CreatorCampaignService {
             BrandContextService brandContext,
             ApplicationEventPublisher eventPublisher,
             CollaborationReviveService collaborationReviveService,
-            DealMessageRepository dealMessageRepository) {
+            DealMessageRepository dealMessageRepository,
+            ApplicationHistoryService applicationHistoryService) {
         this.campaignRepository = campaignRepository;
         this.collaborationRepository = collaborationRepository;
         this.workspaceRepository = workspaceRepository;
@@ -84,6 +91,7 @@ public class CreatorCampaignService {
         this.eventPublisher = eventPublisher;
         this.collaborationReviveService = collaborationReviveService;
         this.dealMessageRepository = dealMessageRepository;
+        this.applicationHistoryService = applicationHistoryService;
     }
 
     public record PagedCreatorCampaigns(List<CreatorCampaignListItem> items, PageMeta meta) {}
@@ -206,6 +214,7 @@ public class CreatorCampaignService {
                         "You have already applied to this campaign");
         if (prior != null) {
             recordApplicationOnTimeline(prior, req != null ? req.message() : null);
+            recordApplicationHistory(campaign, prior, creator);
             try {
                 notifyApplicationCreated(campaign, creator, prior);
             } catch (RuntimeException e) {
@@ -236,6 +245,7 @@ public class CreatorCampaignService {
         // the brand a new application arrived. Best-effort — a lookup failure here must never fail
         // the application itself, which has already fully succeeded above.
         recordApplicationOnTimeline(collaboration, req != null ? req.message() : null);
+        recordApplicationHistory(campaign, collaboration, creator);
         try {
             notifyApplicationCreated(campaign, creator, collaboration);
         } catch (RuntimeException e) {
@@ -300,6 +310,139 @@ public class CreatorCampaignService {
                     e);
         }
     }
+
+    /**
+     * Persistent application-history counterpart to {@link #recordApplicationOnTimeline}. Two
+     * rows for the same reason {@code DealService#doAccept}/{@code #doReject} record ACCEPTED/
+     * REJECTED as their own events rather than reusing the {@code DealMessage} row: {@code
+     * CAMPAIGN_APPLIED} is the creator-facing "you applied" fact, {@code APPLICATION_RECEIVED} is
+     * the brand-facing "an application arrived" fact — same moment, two audiences, both belong in
+     * an append-only history a status-only field like {@code Collaboration.updatedAt} cannot
+     * reconstruct. {@code dealRoomId} is left {@code null}: no deal room exists yet at this point
+     * (see {@link com.influora.domain.entity.ApplicationHistoryEvent}'s javadoc).
+     *
+     * <p><b>targetRoute correctness (post-refuse fix).</b> Both rows are rendered on the
+     * CREATOR's own timeline ({@code GET /creator/applications/{dealId}/history} is creator-only —
+     * see {@link CreatorApplicationService#history}), and the frontend prefers {@code targetRoute}
+     * over every fallback. {@code CAMPAIGN_APPLIED} points at {@code
+     * "/creator/campaigns/" + campaign.getId()} — the CAMPAIGN id, a real route ({@code
+     * src/App.tsx}'s {@code path="/creator/campaigns/:id"}) — never {@code collaboration.getId()}:
+     * there is no {@code /creator/deals/:id} route (only the bare list, {@code
+     * path="/creator/deals"}), so that would have 404'd via the catch-all. {@code
+     * APPLICATION_RECEIVED} gets {@code targetRoute = null, targetId = null}: it is the
+     * brand-facing fact rendered on the creator's own timeline, there is nothing the creator can
+     * act on yet (no deal room exists before acceptance), and a brand-app route (the mistake this
+     * replaced) would have bounced a creator to the brand login. The frontend already renders no
+     * CTA when both {@code targetRoute} and {@code dealRoomId} are absent, so {@code null} is the
+     * honest value here, not a substitute route. A future deal-room-opening event should use
+     * {@code "/creator/chat?deal=" + collaboration.getId()} — the established creator convention
+     * ({@code src/components/creator/CreatorApplicationCard.tsx:52}), not {@code /creator/deals/}.
+     *
+     * <p>Best-effort — a failure here must never roll back an application that already succeeded.
+     *
+     * <p><b>Sign-off review fix (F-history-apply-fk-race).</b> This used to call {@link
+     * ApplicationHistoryService#record} directly and synchronously, right here, inside {@code
+     * apply()}'s own ambient {@code @Transactional}. That is unsafe for the NEW-application branch
+     * specifically: {@link Collaboration}'s {@code @Id} is a pre-assigned ULID with no {@code
+     * @GeneratedValue}, so {@code collaborationRepository.save(collaboration)} a few lines above
+     * this call routes through {@code em.merge()} and DEFERS the actual {@code INSERT} to flush —
+     * normally at this ambient transaction's own commit. {@code record()} is {@code REQUIRES_NEW}
+     * (see its class javadoc): calling it from here suspends the ambient transaction and opens a
+     * brand-new one on a SEPARATE connection, which cannot see the not-yet-flushed {@code
+     * collaborations} row. {@code application_history_events.application_id} carries a real FK to
+     * {@code collaborations(id)} (V69, {@code fk_app_history_application}), so that FK check fails
+     * on the {@code REQUIRES_NEW} connection — {@code DataIntegrityViolationException}, silently
+     * swallowed by the catch this method used to have, 200 returned, and the creator's timeline is
+     * permanently missing its origin event. (The revive branch, {@code prior != null} in {@link
+     * #apply}, does not hit this — {@code prior} is an already-persisted row from an earlier,
+     * already-committed transaction — but this method is shared by both branches.)
+     *
+     * <p>Publishing an event here instead, consumed by {@link
+     * #onApplicationHistoryRecorded(ApplicationHistoryRecordedEvent)} at {@code AFTER_COMMIT},
+     * closes this structurally rather than by ordering two statements just right: by the time the
+     * listener runs, the {@code collaborations} row this FK depends on is guaranteed durably
+     * committed, on every branch, forever — not an invariant that depends on this method staying
+     * positioned after {@code collaborationRepository.save(...)} in the source. Same idiom this
+     * codebase already uses for exactly this class of hazard ({@code
+     * AnalyzeSiteTriggerService#trigger}/{@code onAnalyzeSiteRequested}; {@code
+     * NotificationListener}'s handlers, which already consume THIS class's own {@code
+     * ApplicationCreatedEvent} — published from this same {@code apply()} transaction — the same
+     * way). {@code apply()} is the top-level {@code @Transactional} entry point (called directly
+     * from {@code CreatorCampaignController}, never nested inside another {@code @Transactional}
+     * caller), so a real transaction is always open when this publishes — the "published with no
+     * active transaction, listener silently never fires" trap ({@code SubscriptionDunningJob},
+     * {@code RazorpayWebhookController}) does not apply here.
+     */
+    private void recordApplicationHistory(Campaign campaign, Collaboration collaboration, CreatorProfile creator) {
+        eventPublisher.publishEvent(
+                new ApplicationHistoryRecordedEvent(
+                        campaign.getId(), collaboration.getId(), collaboration.getStatus(), creator.getUserId()));
+    }
+
+    /**
+     * AFTER_COMMIT handler for {@link ApplicationHistoryRecordedEvent} — see {@link
+     * #recordApplicationHistory}'s javadoc for the FK race this defers around.
+     *
+     * <p><b>What happens if this fails.</b> By construction this runs strictly after the
+     * surrounding transaction has already committed — the {@link Collaboration} row is durable,
+     * the application already fully succeeded, and there is nothing left to roll back. A failure
+     * in either {@code record(...)} call below is therefore a silently MISSING timeline row (the
+     * creator's history simply starts one event later, e.g. at {@code APPLICATION_VIEWED}), never
+     * a phantom one — the strictly safer of the two failure modes (see {@code
+     * BrandDeliverableServiceApprovalRollbackIsolationTest}'s sibling fix: an append-only ledger
+     * asserting an undone fact is worse than a missing row). Logged, not retried: same best-effort,
+     * log-and-move-on discipline as every other {@code AFTER_COMMIT}/post-commit write in this
+     * codebase ({@code NotificationListener}, {@code AnalyzeSiteTriggerService}, {@code
+     * SubscriptionDunningJob#publishHaltedEmail}) — there is no outbox/retry mechanism for this
+     * class of best-effort side write anywhere else either.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    void onApplicationHistoryRecorded(ApplicationHistoryRecordedEvent event) {
+        try {
+            applicationHistoryService.record(
+                    event.campaignId(),
+                    event.collaborationId(),
+                    null,
+                    ApplicationHistoryEventType.CAMPAIGN_APPLIED,
+                    event.collaborationStatus(),
+                    ApplicationHistoryActorType.CREATOR,
+                    event.creatorUserId(),
+                    "Creator applied to this campaign",
+                    null,
+                    "/creator/campaigns/" + event.campaignId(),
+                    event.campaignId());
+            applicationHistoryService.record(
+                    event.campaignId(),
+                    event.collaborationId(),
+                    null,
+                    ApplicationHistoryEventType.APPLICATION_RECEIVED,
+                    event.collaborationStatus(),
+                    ApplicationHistoryActorType.SYSTEM,
+                    "system",
+                    "Brand received a new application",
+                    null,
+                    null,
+                    null);
+        } catch (RuntimeException e) {
+            log.error(
+                    "Could not write the application-history event for collaboration {} — the"
+                            + " application itself already succeeded (and already committed, before"
+                            + " this AFTER_COMMIT listener ran)",
+                    event.collaborationId(),
+                    e);
+        }
+    }
+
+    /**
+     * Internal-only signal (F-history-apply-fk-race) — published by {@link
+     * #recordApplicationHistory} from inside {@code apply()}'s ambient {@code @Transactional},
+     * consumed by this same class's {@link #onApplicationHistoryRecorded} at {@code AFTER_COMMIT}.
+     * Carries plain field values, not live entity references — by the time the listener runs the
+     * persistence context that produced {@code campaign}/{@code collaboration} is long closed, so
+     * this must not hold onto anything that needs a session to read.
+     */
+    record ApplicationHistoryRecordedEvent(
+            String campaignId, String collaborationId, CollaborationStatus collaborationStatus, String creatorUserId) {}
 
     private void notifyApplicationCreated(
             Campaign campaign, CreatorProfile creator, Collaboration collaboration) {

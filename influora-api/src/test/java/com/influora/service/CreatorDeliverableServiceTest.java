@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -78,6 +80,7 @@ class CreatorDeliverableServiceTest {
     @Mock private CollaborationLifecycleService collaborationLifecycleService;
     @Mock private com.influora.service.verification.DeliverableVerificationService verificationService;
     @Mock private com.influora.repository.MetaOAuthTokenRepository metaOAuthTokenRepository;
+    @Mock private ApplicationHistoryService applicationHistoryService;
 
     private CreatorDeliverableService service;
     private CreatorProfile profile;
@@ -100,7 +103,8 @@ class CreatorDeliverableServiceTest {
                         eventPublisher,
                         collaborationLifecycleService,
                         verificationService,
-                        metaOAuthTokenRepository);
+                        metaOAuthTokenRepository,
+                        applicationHistoryService);
         profile = CreatorProfile.newForUser("profile1", CREATOR_USER_ID, "Test Creator");
         lenient().when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
     }
@@ -512,6 +516,41 @@ class CreatorDeliverableServiceTest {
         assertEquals("Final caption", saved.getValue().getCaption());
         assertEquals("Ready for review", saved.getValue().getCreatorNotes());
         assertNotNull(saved.getValue().getSubmittedAt());
+    }
+
+    /** Persistent application-history requirement — wiring the 8 remaining event types. */
+    @Test
+    @DisplayName("submit: records a DELIVERABLE_SUBMITTED application-history event")
+    void testSubmitRecordsApplicationHistoryEvent() {
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        Deliverable deliverable = pendingDeliverable();
+        deliverable.applyUpload(
+                1,
+                "[{\"id\":\"f1\",\"fileType\":\"VIDEO\",\"fileName\":\"reel.mp4\",\"url\":\"https://x\"}]",
+                "Draft caption",
+                null,
+                null);
+        when(deliverableRepository.findByIdAndCreatorUserId(DELIVERABLE_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(deliverable));
+        stubActiveCollaboration();
+
+        service.submitForReview(
+                principal, DELIVERABLE_ID, new SubmitRequest("Final caption", List.of("#fit"), "Ready"));
+
+        verify(applicationHistoryService)
+                .record(
+                        eq("01HCAMPAIGN123456789A"),
+                        eq(COLLAB_ID),
+                        eq(COLLAB_ID),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.DELIVERABLE_SUBMITTED),
+                        any(),
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.CREATOR),
+                        eq(CREATOR_USER_ID),
+                        anyString(),
+                        // Sign-off review follow-on (#3) — metadata is null, no raw deliverable id.
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq("/creator/chat?deal=" + COLLAB_ID),
+                        eq(COLLAB_ID));
     }
 
     @Test

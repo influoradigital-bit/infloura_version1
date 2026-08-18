@@ -9,6 +9,8 @@ import com.influora.domain.entity.Payout;
 import com.influora.domain.entity.PaymentMilestone;
 import com.influora.domain.entity.Wallet;
 import com.influora.domain.entity.WalletTransaction;
+import com.influora.domain.enums.ApplicationHistoryActorType;
+import com.influora.domain.enums.ApplicationHistoryEventType;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.TxnReferenceType;
@@ -26,6 +28,8 @@ import com.influora.service.payout.RazorpayFundAccountService;
 import com.influora.web.dto.money.MoneyDtos.PayoutResponse;
 import java.math.BigDecimal;
 import java.time.Instant;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -139,6 +143,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class PayoutService {
 
+    private static final Logger log = LoggerFactory.getLogger(PayoutService.class);
     private static final String IDEMPOTENCY_SCOPE = "payout.queue";
 
     private final PaymentMilestoneRepository milestoneRepository;
@@ -155,6 +160,8 @@ public class PayoutService {
     private final WalletLedgerService walletLedgerService;
     private final PlatformWalletService platformWalletService;
     private final WalletService walletService;
+    /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
+    private final ApplicationHistoryService applicationHistoryService;
 
     public PayoutService(
             PaymentMilestoneRepository milestoneRepository,
@@ -170,7 +177,8 @@ public class PayoutService {
             WalletTransactionRepository walletTransactionRepository,
             WalletLedgerService walletLedgerService,
             PlatformWalletService platformWalletService,
-            WalletService walletService) {
+            WalletService walletService,
+            ApplicationHistoryService applicationHistoryService) {
         this.milestoneRepository = milestoneRepository;
         this.escrowHoldRepository = escrowHoldRepository;
         this.collaborationRepository = collaborationRepository;
@@ -185,6 +193,7 @@ public class PayoutService {
         this.walletLedgerService = walletLedgerService;
         this.platformWalletService = platformWalletService;
         this.walletService = walletService;
+        this.applicationHistoryService = applicationHistoryService;
     }
 
     public PayoutResponse queuePayout(AuthPrincipal principal, String workspaceId, String milestoneId) {
@@ -215,7 +224,7 @@ public class PayoutService {
                     idempotencyKey,
                     workspaceId,
                     IDEMPOTENCY_SCOPE,
-                    () -> doQueuePayout(ctx, idempotencyKey));
+                    () -> doQueuePayout(ctx, idempotencyKey, principal.getUserId()));
         } catch (IdempotencyService.AlreadyInProgressException
                 | IdempotencyService.AlreadyCompletedException raced) {
             // Lost the insert-first race to a concurrent caller with the same key — the winner's
@@ -421,7 +430,7 @@ public class PayoutService {
      * {@link PayoutReconciliationService#reconcileOrphanedPendingPayout}.
      */
     @Transactional
-    protected PayoutResponse doQueuePayout(PayoutContext ctx, String idempotencyKey) {
+    protected PayoutResponse doQueuePayout(PayoutContext ctx, String idempotencyKey, String actorId) {
         PaymentMilestone milestone = ctx.milestone();
         Collaboration collaboration = ctx.collaboration();
         BigDecimal netAmount = ctx.netAmount();
@@ -507,6 +516,42 @@ public class PayoutService {
         // milestone only reaches queuePayout after RELEASED, a terminal state for that pair.
         milestone.markPayoutQueued(idempotencyKey);
         milestoneRepository.save(milestone);
+
+        // Persistent application-history requirement — PAY. Wired here, not at EscrowService's
+        // release: escrow release only moves money into the creator's INTERNAL Influora wallet —
+        // this method (RazorpayXClient.initiatePayout, just above) is the actual transition of
+        // record for money leaving the platform to the creator's real bank/UPI account, which is
+        // what "Pay" means literally. Placed AFTER the gateway call has returned and been durably
+        // recorded (payout.markGatewayConfirmed + milestone.markPayoutQueued already saved above)
+        // — this is the last, purely-additive thing in this method, so a failure here can never be
+        // mistaken for a reason to retry the RazorpayX call. This method's own @Transactional is a
+        // documented no-op (Spring self-invocation, see class javadoc) — there is no real ambient
+        // transaction to accidentally mark rollback-only, but the try/catch stays regardless, both
+        // as defense in depth and to match this codebase's established best-effort convention.
+        try {
+            applicationHistoryService.record(
+                    collaboration.getCampaignId(),
+                    collaboration.getId(),
+                    collaboration.getId(),
+                    ApplicationHistoryEventType.PAY,
+                    collaboration.getStatus(),
+                    ApplicationHistoryActorType.BRAND,
+                    actorId,
+                    "Payout of " + netAmount + " " + milestone.getCurrency() + " was sent to the creator",
+                    // Sign-off review follow-on (#3) — no raw entity id in the human-readable
+                    // metadata slot (rendered as error-styled text on the frontend); targetId
+                    // (below) already carries the correlation id. The description above already
+                    // carries the genuine human-readable detail (amount + currency) for this event.
+                    null,
+                    "/creator/chat?deal=" + collaboration.getId(),
+                    collaboration.getId());
+        } catch (RuntimeException e) {
+            log.error(
+                    "Could not write the application-history event for milestone {} payout — the"
+                            + " payout itself already succeeded",
+                    milestone.getId(),
+                    e);
+        }
 
         return new PayoutResponse(
                 gatewayResult.payoutId(),

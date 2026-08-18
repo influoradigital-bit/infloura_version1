@@ -2,6 +2,8 @@ package com.influora.service;
 
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Deliverable;
+import com.influora.domain.enums.ApplicationHistoryActorType;
+import com.influora.domain.enums.ApplicationHistoryEventType;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.repository.CollaborationRepository;
@@ -114,11 +116,16 @@ public class CollaborationLifecycleService {
 
     private final CollaborationRepository collaborationRepository;
     private final DeliverableRepository deliverableRepository;
+    /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
+    private final ApplicationHistoryService applicationHistoryService;
 
     public CollaborationLifecycleService(
-            CollaborationRepository collaborationRepository, DeliverableRepository deliverableRepository) {
+            CollaborationRepository collaborationRepository,
+            DeliverableRepository deliverableRepository,
+            ApplicationHistoryService applicationHistoryService) {
         this.collaborationRepository = collaborationRepository;
         this.deliverableRepository = deliverableRepository;
+        this.applicationHistoryService = applicationHistoryService;
     }
 
     /** {@code ContractService#generate} — a contract now exists and awaits signature. */
@@ -214,6 +221,43 @@ public class CollaborationLifecycleService {
         if (next != current) {
             collaboration.transitionTo(next);
             collaborationRepository.save(collaboration);
+
+            // Persistent application-history requirement — DELIVER, fired exactly at the moment
+            // this collaboration's delivery phase genuinely completes (every deliverable resolved,
+            // real transition into COMPLETED — reusing this method's own `next != current` guard
+            // so it can never re-fire on a later no-op call). Deliberately NOT fired for every
+            // review-state recompute (REVIEW_PENDING/REVISION_REQUESTED/IN_PROGRESS churn as
+            // individual deliverables move) — those are per-slot facts, covered by
+            // DELIVERABLE_SUBMITTED/DELIVERABLE_APPROVED at their own call sites
+            // (CreatorDeliverableService/BrandDeliverableService), not a collaboration-level
+            // milestone. actorType is SYSTEM: this is a derived, aggregate fact (the consequence of
+            // whichever review action tipped the last deliverable over) reached from two different
+            // callers (onDeliverableSubmitted, onDeliverableReviewed) with no single human actor at
+            // this layer. Best-effort — a failure here must never undo a status transition that
+            // already succeeded.
+            if (next == CollaborationStatus.COMPLETED) {
+                try {
+                    applicationHistoryService.record(
+                            collaboration.getCampaignId(),
+                            collaboration.getId(),
+                            collaboration.getId(),
+                            ApplicationHistoryEventType.DELIVER,
+                            CollaborationStatus.COMPLETED,
+                            ApplicationHistoryActorType.SYSTEM,
+                            "system",
+                            "Every deliverable has been resolved — delivery is complete",
+                            null,
+                            "/creator/chat?deal=" + collaboration.getId(),
+                            collaboration.getId());
+                } catch (RuntimeException e) {
+                    log.error(
+                            "Could not write the application-history event for collaboration {}"
+                                    + " reaching COMPLETED — the status transition itself already"
+                                    + " succeeded",
+                            collaboration.getId(),
+                            e);
+                }
+            }
         }
     }
 

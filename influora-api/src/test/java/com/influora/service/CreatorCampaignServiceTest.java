@@ -3,11 +3,13 @@ package com.influora.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -69,6 +71,7 @@ class CreatorCampaignServiceTest {
     @Mock private com.influora.repository.EscrowHoldRepository escrowHoldRepository;
     @Mock private com.influora.repository.ShipmentRepository shipmentRepository;
     @Mock private com.influora.repository.DealMessageRepository dealMessageRepository;
+    @Mock private ApplicationHistoryService applicationHistoryService;
 
     private CreatorCampaignService service;
 
@@ -86,9 +89,13 @@ class CreatorCampaignServiceTest {
                         brandContext,
                         eventPublisher,
                         reviveService,
-                        dealMessageRepository);
+                        dealMessageRepository,
+                        applicationHistoryService);
         CreatorProfile creator = CreatorProfile.newForUser("profile1", CREATOR_USER_ID, "Test Creator");
-        when(creatorContext.requireCreatorProfile(principal)).thenReturn(creator);
+        // lenient: the two onApplicationHistoryRecorded(...)-only tests below call the listener
+        // directly, never apply(), so they never touch creatorContext at all — this stub would
+        // otherwise trip MockitoExtension's strict-stubs check as "unnecessary" for those two.
+        org.mockito.Mockito.lenient().when(creatorContext.requireCreatorProfile(principal)).thenReturn(creator);
     }
 
     private static Campaign activeCampaign() {
@@ -203,6 +210,143 @@ class CreatorCampaignServiceTest {
         // its timeline could not be written is worse.
         ApplyResponse response = service.apply(principal, CAMPAIGN_ID, new ApplyRequest("hi"));
         assertEquals("APPLIED", response.status());
+    }
+
+    /**
+     * Persistent application-history requirement — an event is written on apply.
+     *
+     * <p><b>Sign-off review fix (F-history-apply-fk-race).</b> {@code apply()} no longer calls
+     * {@link ApplicationHistoryService#record} synchronously — it publishes {@link
+     * CreatorCampaignService.ApplicationHistoryRecordedEvent}, consumed by {@link
+     * CreatorCampaignService#onApplicationHistoryRecorded} at {@code AFTER_COMMIT} (see both
+     * javadocs for the real-FK race this closes; proven with a real foreign key in {@code
+     * CreatorCampaignServiceApplyHistoryFkRaceTest}, which this Mockito-only test cannot exercise —
+     * see that class's own javadoc for why). This test now asserts only that {@code apply()}
+     * publishes the right event with the right payload; the field-level {@code record(...)} call
+     * assertions (targetRoute correctness etc., ex-{@code testApplyEmitsOnlyRealCreatorRoutes})
+     * moved to {@link #testOnApplicationHistoryRecordedEmitsOnlyRealCreatorRoutes} below, which
+     * exercises the listener directly — that is where the field-construction logic actually lives
+     * now.
+     */
+    @Test
+    @DisplayName("F-0296: applying publishes the ApplicationHistoryRecordedEvent for CAMPAIGN_APPLIED")
+    void testApplyRecordsApplicationHistoryEvents() {
+        Campaign campaign = activeCampaign();
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(java.util.Optional.of(campaign));
+        when(collaborationRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_USER_ID))
+                .thenReturn(java.util.Optional.empty());
+        when(collaborationRepository.save(any(Collaboration.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.apply(principal, CAMPAIGN_ID, new ApplyRequest("Pick me!"));
+
+        org.mockito.ArgumentCaptor<CreatorCampaignService.ApplicationHistoryRecordedEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(CreatorCampaignService.ApplicationHistoryRecordedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        CreatorCampaignService.ApplicationHistoryRecordedEvent event = captor.getValue();
+        assertEquals(CAMPAIGN_ID, event.campaignId());
+        assertEquals(com.influora.domain.enums.CollaborationStatus.APPLIED, event.collaborationStatus());
+        assertEquals(CREATOR_USER_ID, event.creatorUserId());
+        assertTrue(event.collaborationId() != null && !event.collaborationId().isBlank());
+    }
+
+    /**
+     * Sign-off review defect #2 (and the regression guard for defect #1): every {@code
+     * targetRoute} the service can actually emit must resolve to a route that genuinely exists in
+     * {@code src/App.tsx} for the CREATOR role — this endpoint's only audience ({@code GET
+     * /creator/applications/{dealId}/history} is creator-only). {@code
+     * /creator/deals/:collaborationId} does NOT exist (only the bare list, {@code
+     * path="/creator/deals"}, src/App.tsx:464) — that was the exact defect.
+     *
+     * <p>F-history-apply-fk-race follow-on: this now drives {@link
+     * CreatorCampaignService#onApplicationHistoryRecorded} directly — the {@code AFTER_COMMIT}
+     * listener that actually builds and issues the {@code record(...)} calls today, not {@code
+     * apply()} itself (which only publishes the event these field values are derived from).
+     */
+    @Test
+    @DisplayName(
+            "F-0296 sign-off fix: onApplicationHistoryRecorded's targetRoute values are real routes"
+                    + " that exist in src/App.tsx for the creator")
+    void testOnApplicationHistoryRecordedEmitsOnlyRealCreatorRoutes() {
+        // Known-real creator routes (src/App.tsx, re-verified against the sign-off reviewer's own
+        // citations) as prefixes: both emitted routes append an id after this prefix.
+        //   "/creator/campaigns/" -> path="/creator/campaigns/:id" (src/App.tsx:540)
+        // Deal-room-opening events (none emitted by apply() today) belong on
+        // "/creator/chat?deal=" + collaborationId (src/components/creator/CreatorApplicationCard.tsx:52),
+        // NOT "/creator/deals/" + id — that path has no :id child route (src/App.tsx:464 is the
+        // bare list only) and falls through to the catch-all NotFoundPage.
+        List<String> knownRealCreatorRoutePrefixes = List.of("/creator/campaigns/");
+
+        service.onApplicationHistoryRecorded(
+                new CreatorCampaignService.ApplicationHistoryRecordedEvent(
+                        CAMPAIGN_ID,
+                        "01HCOLLABFORROUTETEST1",
+                        com.influora.domain.enums.CollaborationStatus.APPLIED,
+                        CREATOR_USER_ID));
+
+        org.mockito.ArgumentCaptor<String> targetRouteCaptor =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(applicationHistoryService, times(2))
+                .record(
+                        anyString(),
+                        anyString(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        anyString(),
+                        any(),
+                        targetRouteCaptor.capture(),
+                        any());
+        List<String> emittedRoutes = targetRouteCaptor.getAllValues();
+        assertEquals(2, emittedRoutes.size());
+        // CAMPAIGN_APPLIED — the only non-null route apply() emits — pinned to the campaign id,
+        // not the collaboration id (the exact id-type mixup flagged in the sign-off review).
+        assertEquals("/creator/campaigns/" + CAMPAIGN_ID, emittedRoutes.get(0));
+        // APPLICATION_RECEIVED — null, not a substitute route (defect #1).
+        assertNull(emittedRoutes.get(1));
+        for (String route : emittedRoutes) {
+            if (route == null) {
+                continue; // null is the honest, correct value here — see defect #1.
+            }
+            assertTrue(
+                    knownRealCreatorRoutePrefixes.stream().anyMatch(route::startsWith),
+                    "targetRoute '" + route + "' does not match any route this repo actually defines"
+                            + " for the creator in src/App.tsx");
+        }
+    }
+
+    /**
+     * A failure writing application-history must never roll back an application that already
+     * succeeded — same contract as {@code testApplySurvivesTimelineFailure} for the DealMessage
+     * write right above it.
+     *
+     * <p>F-history-apply-fk-race follow-on: this contract is now structural rather than a
+     * try/catch a future edit could drop — {@code onApplicationHistoryRecorded} runs strictly
+     * AFTER {@code apply()}'s transaction has already committed, so there is nothing left to roll
+     * back by construction. What this test still guards is narrower but real: a {@code
+     * RuntimeException} from {@code record(...)} must not escape the listener itself (which would
+     * surface as a noisy, pointless stack trace from Spring's event-dispatch machinery, logged
+     * nowhere useful, for a write whose failure is already being handled).
+     */
+    @Test
+    @DisplayName(
+            "F-0296: an application-history write failure inside onApplicationHistoryRecorded never"
+                    + " escapes the listener")
+    void testOnApplicationHistoryRecordedSurvivesApplicationHistoryFailure() {
+        doThrow(new RuntimeException("history table down"))
+                .when(applicationHistoryService)
+                .record(
+                        any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+
+        service.onApplicationHistoryRecorded(
+                new CreatorCampaignService.ApplicationHistoryRecordedEvent(
+                        CAMPAIGN_ID,
+                        "01HCOLLABFORFAILURETEST",
+                        com.influora.domain.enums.CollaborationStatus.APPLIED,
+                        CREATOR_USER_ID));
+        // No assertion needed beyond "did not throw" — JUnit fails the test automatically if the
+        // call above propagates.
     }
 
     @Test

@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -49,6 +51,7 @@ class BrandDeliverableServiceTest {
     @Mock private CollaborationLifecycleService collaborationLifecycleService;
     @Mock private com.influora.service.meera.MeeraInteractionLogService meeraInteractionLogService;
     @Mock private CollaborationRepository collaborationRepository;
+    @Mock private ApplicationHistoryService applicationHistoryService;
 
     private BrandDeliverableService service;
     private Workspace workspace;
@@ -64,7 +67,8 @@ class BrandDeliverableServiceTest {
                         escrowService,
                         collaborationLifecycleService,
                         meeraInteractionLogService,
-                        collaborationRepository);
+                        collaborationRepository,
+                        applicationHistoryService);
         workspace = Workspace.newBrand(WORKSPACE_ID, "Acme Brand", "acme", "Fashion", "SMB");
     }
 
@@ -124,6 +128,35 @@ class BrandDeliverableServiceTest {
         assertEquals(DeliverableStatus.APPROVED, saved.getValue().getStatus());
         assertNotNull(saved.getValue().getApprovedAt());
         assertNotNull(saved.getValue().getReviewedAt());
+    }
+
+    /** Persistent application-history requirement — wiring the 8 remaining event types. */
+    @Test
+    @DisplayName("approve: records a DELIVERABLE_APPROVED application-history event")
+    void testApproveRecordsApplicationHistoryEvent() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(principal.getUserId()).thenReturn("brand_user_1");
+        Deliverable deliverable = submittedDeliverable();
+        when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
+                .thenReturn(java.util.Optional.of(deliverable));
+        stubActiveCollaboration();
+
+        service.approve(principal, DELIVERABLE_ID);
+
+        verify(applicationHistoryService)
+                .record(
+                        eq("01HCAMPAIGN0000000001"),
+                        eq(COLLAB_ID),
+                        eq(COLLAB_ID),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.DELIVERABLE_APPROVED),
+                        any(),
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.BRAND),
+                        eq("brand_user_1"),
+                        anyString(),
+                        // Sign-off review follow-on (#3) — metadata is null, no raw deliverable id.
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq("/creator/chat?deal=" + COLLAB_ID),
+                        eq(COLLAB_ID));
     }
 
     // --- B3: approve -> escrow release attempt wiring ---
@@ -205,6 +238,15 @@ class BrandDeliverableServiceTest {
                 assertThrows(ApiException.class, () -> service.approve(principal, DELIVERABLE_ID));
 
         assertEquals("WALLET_NOT_FOUND", ex.getCode());
+        // Sign-off review follow-on (BLOCKING) — the escrow attempt is now BEFORE the collaboration
+        // -status recompute and the history write, specifically so neither ever runs when the
+        // escrow attempt throws. Mock-level guard (cheap, but not the real proof — see
+        // ApplicationHistoryServiceRollbackIsolationTest-style
+        // testApproveHistoryRowsDoNotSurviveEscrowReleaseFailure below for the real-transaction
+        // proof that a mock cannot provide).
+        verify(collaborationLifecycleService, never()).onDeliverableReviewed(any());
+        verify(applicationHistoryService, never())
+                .record(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

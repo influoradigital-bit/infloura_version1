@@ -103,6 +103,7 @@ class PayoutServiceTest {
     @Mock private WalletService walletService;
     @Mock private AuthPrincipal principal;
     @Mock private WorkspaceMember member;
+    @Mock private ApplicationHistoryService applicationHistoryService;
 
     private PayoutService service;
 
@@ -123,7 +124,8 @@ class PayoutServiceTest {
                         walletTransactionRepository,
                         walletLedgerService,
                         platformWalletService,
-                        walletService);
+                        walletService,
+                        applicationHistoryService);
     }
 
     /**
@@ -338,6 +340,44 @@ class PayoutServiceTest {
         ArgumentCaptor<PaymentMilestone> captor = ArgumentCaptor.forClass(PaymentMilestone.class);
         verify(milestoneRepository).save(captor.capture());
         assertEquals(IDEMPOTENCY_KEY, captor.getValue().getIdempotencyKey());
+    }
+
+    /** Persistent application-history requirement — wiring the 8 remaining event types. */
+    @Test
+    @DisplayName("queuePayout: records a PAY application-history event, after the gateway confirms")
+    void testQueuePayoutRecordsApplicationHistoryEvent() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(principal.getUserId()).thenReturn("brand_user_1");
+        PaymentMilestone milestone = releasedMilestone();
+        bindReleased(milestone);
+        when(milestoneRepository.findById(MILESTONE_ID))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(milestone));
+        when(escrowHoldRepository.findById(ESCROW_HOLD_ID)).thenReturn(Optional.of(releasedHold()));
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration()));
+        when(razorpayXClient.initiatePayout(eq(CREATOR_ID), eq(NET_AMOUNT), eq("INR"), anyString()))
+                .thenReturn(new PayoutResult("payout_abc123", "queued"));
+        mockIdempotencyExecuteOnce();
+        mockFundAccountResolution();
+        mockReleaseLedgerNetAmount();
+        mockWalletDebit();
+
+        service.queuePayout(principal, WORKSPACE_ID, MILESTONE_ID);
+
+        verify(applicationHistoryService)
+                .record(
+                        eq("01HCAMPAIGN123456789A"),
+                        eq(COLLABORATION_ID),
+                        eq(COLLABORATION_ID),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.PAY),
+                        any(),
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.BRAND),
+                        eq("brand_user_1"),
+                        anyString(),
+                        // Sign-off review follow-on (#3) — metadata is null, no raw milestone id.
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq("/creator/chat?deal=" + COLLABORATION_ID),
+                        eq(COLLABORATION_ID));
     }
 
     @Test

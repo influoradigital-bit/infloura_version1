@@ -13,6 +13,8 @@ import com.influora.domain.entity.PaymentMilestone;
 import com.influora.domain.entity.Wallet;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
+import com.influora.domain.enums.ApplicationHistoryActorType;
+import com.influora.domain.enums.ApplicationHistoryEventType;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.DisputeStatus;
@@ -92,6 +94,8 @@ public class EscrowService {
     private final ApplicationEventPublisher eventPublisher;
     private final CollaborationLifecycleService collaborationLifecycleService;
     private final EscrowBackend escrowBackend;
+    /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
+    private final ApplicationHistoryService applicationHistoryService;
 
     /**
      * CR-51 step 2 — cutover for the {@link #assertReleaseConditionSatisfied} gate. ISO-8601
@@ -140,7 +144,8 @@ public class EscrowService {
             WorkspaceRepository workspaceRepository,
             ApplicationEventPublisher eventPublisher,
             CollaborationLifecycleService collaborationLifecycleService,
-            EscrowBackend escrowBackend) {
+            EscrowBackend escrowBackend,
+            ApplicationHistoryService applicationHistoryService) {
         this.escrowHoldRepository = escrowHoldRepository;
         this.milestoneRepository = milestoneRepository;
         this.campaignRepository = campaignRepository;
@@ -156,6 +161,7 @@ public class EscrowService {
         this.eventPublisher = eventPublisher;
         this.collaborationLifecycleService = collaborationLifecycleService;
         this.escrowBackend = escrowBackend;
+        this.applicationHistoryService = applicationHistoryService;
     }
 
     /** Paged brand-scoped escrow hold list — GET /wallet/escrow (mirrors {@code WalletService.PagedWalletTransactions}). */
@@ -498,6 +504,49 @@ public class EscrowService {
             return;
         }
         collaborationLifecycleService.onEscrowFunded(collaboration.getId());
+
+        // Persistent application-history requirement — FUND_ESCROW, wired at the real commit point
+        // (applyFunding is "the one place a PENDING hold actually transitions to FUNDED" — see its
+        // javadoc), reached from this method exactly once per hold (both callers, initiateFund's
+        // immediate-wallet path and confirmFunded's webhook path, guard against re-entering
+        // applyFunding for an already-FUNDED hold before this is ever reached). actorType is SYSTEM
+        // rather than BRAND: this method has no principal — confirmFunded is a verified-webhook
+        // path with no authenticated caller at all, and attributing a webhook-triggered fact to
+        // "BRAND" would be dishonest for that path.
+        //
+        // Sign-off review fix (F-0316) — this used to rely on applyFunding's own wrapping
+        // try/catch (the one around ITS call to this whole method) as its "best-effort" net. That
+        // was wrong: that outer catch wraps the ENTIRE notifyEscrowFunded() call, so a record()
+        // failure unwound past it and skipped everything below — including the
+        // eventPublisher.publishEvent(EscrowFundedEvent) a few lines down, which means the
+        // creator's "campaign is live" notification would silently never fire for a funding that
+        // otherwise fully succeeded. This call now owns its own try/catch, matching every other
+        // one of this codebase's eight record() call sites, so a history-write failure can never
+        // suppress the notification that follows it.
+        try {
+            applicationHistoryService.record(
+                    hold.getCampaignId(),
+                    collaboration.getId(),
+                    collaboration.getId(),
+                    ApplicationHistoryEventType.FUND_ESCROW,
+                    collaboration.getStatus(),
+                    ApplicationHistoryActorType.SYSTEM,
+                    "system",
+                    "Escrow was funded — work can begin",
+                    // Sign-off review follow-on (#3) — no raw entity id in the human-readable
+                    // metadata slot (rendered as error-styled text on the frontend); targetId
+                    // (below) already carries the correlation id.
+                    null,
+                    "/creator/chat?deal=" + collaboration.getId(),
+                    collaboration.getId());
+        } catch (RuntimeException e) {
+            log.error(
+                    "Could not write the application-history event for escrow hold {} funding — the"
+                            + " funding itself already succeeded and the EscrowFundedEvent"
+                            + " notification below still fires",
+                    hold.getId(),
+                    e);
+        }
 
         String campaignTitle =
                 campaignRepository.findById(hold.getCampaignId()).map(Campaign::getTitle).orElse("your campaign");

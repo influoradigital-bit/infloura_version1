@@ -3,11 +3,13 @@ package com.influora.web;
 import com.influora.common.ApiResponse;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorApplicationService;
+import com.influora.web.dto.creatorcampaign.CreatorApplicationDtos.ApplicationHistoryEventItem;
 import com.influora.web.dto.creatorcampaign.CreatorApplicationDtos.CreatorApplicationListItem;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -36,5 +38,14 @@ public class CreatorApplicationController {
             @RequestParam(defaultValue = "50") int limit) {
         var result = creatorApplicationService.list(principal, status, page, limit);
         return ResponseEntity.ok(ApiResponse.ok(result.items(), result.meta()));
+    }
+
+    /** Append-only application-history timeline for one application. Creator-owned only — see
+     * {@link CreatorApplicationService#history}. */
+    @GetMapping("/{dealId}/history")
+    public ResponseEntity<ApiResponse<List<ApplicationHistoryEventItem>>> history(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String dealId) {
+        var items = creatorApplicationService.history(principal, dealId);
+        return ResponseEntity.ok(ApiResponse.ok(items));
     }
 }

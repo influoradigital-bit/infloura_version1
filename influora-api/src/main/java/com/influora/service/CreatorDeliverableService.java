@@ -15,6 +15,8 @@ import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.DeliverableMetric;
+import com.influora.domain.enums.ApplicationHistoryActorType;
+import com.influora.domain.enums.ApplicationHistoryEventType;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.integration.storage.R2StorageService;
@@ -113,6 +115,8 @@ public class CreatorDeliverableService {
     private final CollaborationLifecycleService collaborationLifecycleService;
     private final DeliverableVerificationService verificationService;
     private final MetaOAuthTokenRepository metaOAuthTokenRepository;
+    /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
+    private final ApplicationHistoryService applicationHistoryService;
 
     public CreatorDeliverableService(
             CreatorContextService creatorContext,
@@ -127,7 +131,8 @@ public class CreatorDeliverableService {
             ApplicationEventPublisher eventPublisher,
             CollaborationLifecycleService collaborationLifecycleService,
             DeliverableVerificationService verificationService,
-            MetaOAuthTokenRepository metaOAuthTokenRepository) {
+            MetaOAuthTokenRepository metaOAuthTokenRepository,
+            ApplicationHistoryService applicationHistoryService) {
         this.creatorContext = creatorContext;
         this.collaborationRepository = collaborationRepository;
         this.deliverableRepository = deliverableRepository;
@@ -141,6 +146,7 @@ public class CreatorDeliverableService {
         this.collaborationLifecycleService = collaborationLifecycleService;
         this.verificationService = verificationService;
         this.metaOAuthTokenRepository = metaOAuthTokenRepository;
+        this.applicationHistoryService = applicationHistoryService;
     }
 
     /**
@@ -355,6 +361,41 @@ public class CreatorDeliverableService {
 
         // W2-1 — REVIEW_PENDING (a deliverable now awaits brand review).
         collaborationLifecycleService.onDeliverableSubmitted(deliverable.getCollaborationId());
+
+        // Persistent application-history requirement — DELIVERABLE_SUBMITTED, wired at the real
+        // commit point (right after the Deliverable row's own status flip to SUBMITTED/RESUBMITTED
+        // above). Deliberately a per-slot fact, not gated on any collaboration-level status
+        // transition — a submission always genuinely happened here regardless of whether it moves
+        // Collaboration.status. Best-effort — a failure here must never roll back a submission that
+        // already succeeded, same discipline as the notification try/catch right below it.
+        try {
+            Collaboration submittedCollaboration =
+                    collaborationRepository.findById(deliverable.getCollaborationId()).orElse(null);
+            if (submittedCollaboration != null) {
+                applicationHistoryService.record(
+                        submittedCollaboration.getCampaignId(),
+                        deliverable.getCollaborationId(),
+                        deliverable.getCollaborationId(),
+                        ApplicationHistoryEventType.DELIVERABLE_SUBMITTED,
+                        submittedCollaboration.getStatus(),
+                        ApplicationHistoryActorType.CREATOR,
+                        principal.getUserId(),
+                        (newStatus == DeliverableStatus.RESUBMITTED ? "Creator resubmitted" : "Creator submitted")
+                                + " a deliverable for brand review",
+                        // Sign-off review follow-on (#3) — no raw entity id in the human-readable
+                        // metadata slot (rendered as error-styled text on the frontend); targetId
+                        // (below) already carries the correlation id.
+                        null,
+                        "/creator/chat?deal=" + deliverable.getCollaborationId(),
+                        deliverable.getCollaborationId());
+            }
+        } catch (RuntimeException e) {
+            log.error(
+                    "Could not write the application-history event for deliverable {} submission —"
+                            + " the submission itself already succeeded",
+                    deliverableId,
+                    e);
+        }
 
         // W3-1 — #13 "creator submits deliverable" (07-NOTIFICATION-SYSTEM-SPEC.md §3.2). Notifies
         // the brand a deliverable is ready to review. Best-effort, same discipline as every other

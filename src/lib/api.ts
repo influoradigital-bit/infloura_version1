@@ -2350,11 +2350,26 @@ export interface ContractApiRecord {
   effectiveDate?: string | null;
   expirationDate?: string | null;
   createdAt?: string;
+  /**
+   * [F-0283/F-0271] Free-text contract terms, sourced from `ContractResponse.terms`
+   * (`MoneyDtos.java`). `undefined`/`null` means honestly no terms are on file for this
+   * contract (nothing was supplied at generation time) — never treat that as "terms exist but
+   * are empty," and never render a fabricated default in its place (F-0237 was exactly that
+   * class of defect). No FE surface currently lets a brand TYPE terms before generating a
+   * contract — that input path does not exist yet.
+   */
+  terms?: string | null;
 }
 
 /** Body for `POST /contracts` — `ContractGenerateRequest` (`MoneyDtos.java:188`). */
 export interface ContractGeneratePayload {
   collaborationId: string;
+  /**
+   * [F-0283] Optional free-text terms to persist with the contract. Omit when there is no real
+   * terms text to send — the server persists `null`/absent honestly rather than the caller
+   * inventing filler.
+   */
+  terms?: string;
   milestones: Array<{
     sequenceNo: number;
     description: string;
@@ -2396,6 +2411,10 @@ export const contracts = {
           currency: 'INR',
           brandSignedAt: null,
           creatorSignedAt: null,
+          // [F-0283/F-0271] Honest demo state: no terms were captured for this fixture. The
+          // panel must render this the same way it would render a real contract with none on
+          // file — not invent clause text for the demo path either.
+          terms: null,
           milestones: [
             { sequenceNo: 1, description: 'On signing', amount: 25000, status: 'PENDING' },
             { sequenceNo: 2, description: 'On deliverable approval', amount: 25000, status: 'PENDING' },
@@ -2419,6 +2438,10 @@ export const contracts = {
           currency: 'INR',
           brandSignedAt: null,
           creatorSignedAt: null,
+          // [F-0283/F-0271] Echo whatever the caller actually supplied — mirrors this demo
+          // fixture's existing milestones handling below. Never invent terms text the caller
+          // didn't send.
+          terms: payload.terms ?? null,
           milestones: payload.milestones,
         }),
 
@@ -2442,6 +2465,9 @@ export const contracts = {
           currency: 'INR',
           brandSignedAt: new Date().toISOString(),
           creatorSignedAt: role === 'creator' ? new Date().toISOString() : null,
+          // [F-0283/F-0271] This fixture has no real contract behind it (empty milestones
+          // below too) — no terms to honestly echo.
+          terms: null,
           milestones: [],
         }),
 
@@ -4608,10 +4634,41 @@ export interface CreatorApplicationHistoryEvent {
   actorId: string;
   description: string;
   createdAt: string;
-  metadata?: Record<string, unknown>;
-  reason?: string;
+  /**
+   * Free-text detail attached to the event. Only `APPLICATION_REJECTED` / `APPLICATION_WITHDRAWN`
+   * (`DealService#doReject`) populate it today, with the actual sanitized decline/withdrawal
+   * reason a person typed in — genuine creator-facing text, `null` when no reason was given.
+   *
+   * The other eight event types pass `null` for this field (ContractService's
+   * CONTRACT_GENERATED/CONTRACT_SIGNED, EscrowService#applyFunding's FUND_ESCROW,
+   * Creator/BrandDeliverableService's DELIVERABLE_SUBMITTED/DELIVERABLE_APPROVED,
+   * PayoutService#doQueuePayout's PAY) — until 2026-08-17 those six passed the relevant entity's
+   * internal id here instead (contract/hold/deliverable/milestone id); that was a real defect
+   * (an opaque ULID rendered to creators in the theme's error-text token) and was fixed
+   * backend-side by changing those six call sites to pass `null`. If you are reading this while
+   * investigating why a metadata-shaped id has reappeared, that regression is exactly what
+   * `ApplicationHistoryTimeline.tsx`'s `metadataIsHumanReason` allowlist test
+   * ("never renders the opaque entity id...") exists to catch — re-verify against the real
+   * call sites before assuming this comment, rather than the code, is still current.
+   *
+   * Typed `string`, NOT an object, and there is deliberately no sibling `reason` field. The
+   * requirements document wrote this slot as "metadata/reason (optional)" and the two sides
+   * resolved that slash differently: the server emits `metadata`, while this client briefly
+   * declared both an object-shaped `metadata` and a `reason` string, and the timeline rendered
+   * `reason`. Since `@JsonInclude(NON_NULL)` means the server simply omits what it doesn't set,
+   * `reason` was never present on the wire — the rejection reason silently never rendered, and
+   * every test on both sides still passed because neither exercised the real response. Keep
+   * this name and this type aligned with the DTO.
+   */
+  metadata?: string;
   targetRoute?: string;
   targetId?: string;
+  /**
+   * Deal-room phase this event belongs to, computed server-side by `DealPhaseCalculator` so the
+   * client never guesses it from `eventType`. `null`/omitted for CANCELLED and DISPUTED events,
+   * which have no honest phase — never coerce that to `negotiate`.
+   */
+  dealPhase?: 'negotiate' | 'contract' | 'escrow' | 'deliver' | 'pay' | null;
 }
 
 export const creatorApplications = {

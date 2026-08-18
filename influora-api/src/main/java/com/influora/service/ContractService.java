@@ -14,6 +14,8 @@ import com.influora.domain.entity.PaymentMilestone;
 import com.influora.domain.entity.User;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
+import com.influora.domain.enums.ApplicationHistoryActorType;
+import com.influora.domain.enums.ApplicationHistoryEventType;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.DealMessageKind;
@@ -93,6 +95,8 @@ public class ContractService {
     private final DealMessageRepository dealMessageRepository;
     private final CreatorProfileRepository creatorProfileRepository;
     private final CollaborationLifecycleService collaborationLifecycleService;
+    /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
+    private final ApplicationHistoryService applicationHistoryService;
 
     public ContractService(
             ContractRepository contractRepository,
@@ -112,7 +116,8 @@ public class ContractService {
             DeliverableRepository deliverableRepository,
             DealMessageRepository dealMessageRepository,
             CreatorProfileRepository creatorProfileRepository,
-            CollaborationLifecycleService collaborationLifecycleService) {
+            CollaborationLifecycleService collaborationLifecycleService,
+            ApplicationHistoryService applicationHistoryService) {
         this.contractRepository = contractRepository;
         this.milestoneRepository = milestoneRepository;
         this.escrowHoldRepository = escrowHoldRepository;
@@ -131,6 +136,7 @@ public class ContractService {
         this.dealMessageRepository = dealMessageRepository;
         this.creatorProfileRepository = creatorProfileRepository;
         this.collaborationLifecycleService = collaborationLifecycleService;
+        this.applicationHistoryService = applicationHistoryService;
     }
 
     @Transactional
@@ -282,6 +288,12 @@ public class ContractService {
                         .workspaceId(workspaceId)
                         .totalAmount(totalAmount)
                         .termsJson(sha256TamperHash(req))
+                        // [F-0283, contract-terms-never-persisted] req.terms() is the free-text
+                        // terms the caller supplied at generation time -- optional, never
+                        // fabricated when absent. normalizeTerms() trims and collapses a
+                        // blank-only value to null so an empty-string terms field does not read
+                        // back as "terms exist" later.
+                        .termsText(normalizeTerms(req.terms()))
                         .build();
         contractRepository.save(contract);
 
@@ -306,6 +318,55 @@ public class ContractService {
 
         // W2-1 — a contract now exists; the collaboration leaves negotiation and awaits signature.
         collaborationLifecycleService.onContractGenerated(collaboration.getId());
+
+        // Persistent application-history requirements — wired at the point the transition actually
+        // commits (right after onContractGenerated, in the same transaction as the Contract/
+        // PaymentMilestone rows above), not at request-arrival. Two events for the same moment,
+        // same shape as CreatorCampaignService#recordApplicationHistory's two-events-one-commit
+        // pattern: CONTRACT_GENERATED is the document fact; DEAL_ROOM_ACTIVATED is the "this
+        // collaboration's active contract/milestone workflow has now begun" fact — genuinely
+        // distinct from Application Accepted (TERMS_AGREED, still pre-contract) even though both
+        // narrate "the deal room exists". No CollaborationLifecycleService hook models "deal room
+        // activated" as its own concept, so this pass fires it at the same commit as the contract
+        // it is, in practice, inseparable from. Best-effort — a failure here must never roll back
+        // a contract that already generated successfully.
+        try {
+            applicationHistoryService.record(
+                    collaboration.getCampaignId(),
+                    collaboration.getId(),
+                    collaboration.getId(),
+                    ApplicationHistoryEventType.DEAL_ROOM_ACTIVATED,
+                    CollaborationStatus.CONTRACT_PENDING,
+                    ApplicationHistoryActorType.BRAND,
+                    principal.getUserId(),
+                    "The deal room is now active — contract and milestones are set",
+                    null,
+                    "/creator/chat?deal=" + collaboration.getId(),
+                    collaboration.getId());
+            applicationHistoryService.record(
+                    collaboration.getCampaignId(),
+                    collaboration.getId(),
+                    collaboration.getId(),
+                    ApplicationHistoryEventType.CONTRACT_GENERATED,
+                    CollaborationStatus.CONTRACT_PENDING,
+                    ApplicationHistoryActorType.BRAND,
+                    principal.getUserId(),
+                    "Brand generated the contract",
+                    // Sign-off review follow-on (#3) — metadata is the human-readable detail slot,
+                    // rendered in the frontend's error-text token; contract.getId() is a raw ULID,
+                    // not human-readable text. targetId (collaboration.getId(), below) already
+                    // carries the correlation id. No genuine human-readable detail exists for this
+                    // event, so metadata is null.
+                    null,
+                    "/creator/chat?deal=" + collaboration.getId(),
+                    collaboration.getId());
+        } catch (RuntimeException e) {
+            log.error(
+                    "Could not write the application-history event for contract {} generation — the"
+                            + " contract itself was already generated successfully",
+                    contract.getId(),
+                    e);
+        }
 
         // W3-1 — #7 "contract ready for signature" (07-NOTIFICATION-SYSTEM-SPEC.md §3.1): notify
         // the creator a contract is waiting on them. Best-effort, mirrors every other notification
@@ -671,6 +732,41 @@ public class ContractService {
         if (contract.getBrandSignedAt() != null && contract.getCreatorSignedAt() != null) {
             // W2-1 — both signatures are in; the collaboration is now CONTRACTED.
             collaborationLifecycleService.onContractFullySigned(contract.getCollaborationId());
+
+            // Persistent application-history requirement — CONTRACT_SIGNED. Fires exactly once
+            // per contract: this branch is only entered the first time BOTH signatures land (a
+            // signature can only transition null -> set once, and the already-signed short-circuit
+            // above suppresses any retry of an already-recorded signature), so no extra dedupe is
+            // needed here. actorType/actorId reflect whichever signature just completed the pair —
+            // for a CREATOR signature relayed by an elevated brand member (see this method's own
+            // javadoc on that residual risk), actorId is still the calling principal who actually
+            // performed the write, not a fabricated creator identity. Best-effort — a failure here
+            // must never undo a signature that already succeeded.
+            try {
+                applicationHistoryService.record(
+                        collaboration.getCampaignId(),
+                        contract.getCollaborationId(),
+                        contract.getCollaborationId(),
+                        ApplicationHistoryEventType.CONTRACT_SIGNED,
+                        CollaborationStatus.CONTRACTED,
+                        isBrand ? ApplicationHistoryActorType.BRAND : ApplicationHistoryActorType.CREATOR,
+                        actorId,
+                        (isBrand ? "Brand" : "Creator") + " completed the contract signature — both parties"
+                                + " have now signed",
+                        // Sign-off review follow-on (#3) — no raw entity id in the human-readable
+                        // metadata slot (rendered as error-styled text on the frontend). See the
+                        // matching note on the CONTRACT_GENERATED call above.
+                        null,
+                        "/creator/chat?deal=" + contract.getCollaborationId(),
+                        contract.getCollaborationId());
+            } catch (RuntimeException e) {
+                log.error(
+                        "Could not write the application-history event for contract {} signing — the"
+                                + " signature itself was already recorded successfully",
+                        contract.getId(),
+                        e);
+            }
+
             generateAndDeliverContractPdf(contract, milestones);
             promptEscrowFundingIfNeeded(contract);
         }
@@ -944,6 +1040,19 @@ public class ContractService {
                         () -> new ApiException("CONTRACT_NOT_FOUND", "Contract not found", HttpStatus.NOT_FOUND));
     }
 
+    /**
+     * [F-0283] Trims caller-supplied terms and collapses a blank-only value to {@code null} --
+     * "" and " " must not read back downstream as "a brand supplied empty terms" any
+     * differently than "no terms were supplied at all" (both are honestly "none on file").
+     */
+    private static String normalizeTerms(String terms) {
+        if (terms == null) {
+            return null;
+        }
+        String trimmed = terms.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     private static String sha256TamperHash(ContractGenerateRequest req) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -991,6 +1100,7 @@ public class ContractService {
                 contract.getCreatorSignerName(),
                 contract.getEffectiveDate(),
                 contract.getExpirationDate(),
+                contract.getTermsText(),
                 milestoneDtos,
                 contract.getCreatedAt(),
                 contract.getUpdatedAt());

@@ -2,6 +2,7 @@ package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -98,6 +99,7 @@ class ContractServiceTest {
     @Mock private DealMessageRepository dealMessageRepository;
     @Mock private CreatorProfileRepository creatorProfileRepository;
     @Mock private CollaborationLifecycleService collaborationLifecycleService;
+    @Mock private ApplicationHistoryService applicationHistoryService;
     @Mock private AuthPrincipal principal;
     @Mock private WorkspaceMember member;
 
@@ -124,7 +126,8 @@ class ContractServiceTest {
                         deliverableRepository,
                         dealMessageRepository,
                         creatorProfileRepository,
-                        collaborationLifecycleService);
+                        collaborationLifecycleService,
+                        applicationHistoryService);
     }
 
     /**
@@ -217,6 +220,52 @@ class ContractServiceTest {
         assertEquals(WORKSPACE_ID, response.workspaceId());
         verify(contractRepository, times(1)).save(any(Contract.class));
         verify(milestoneRepository, times(1)).saveAll(any());
+    }
+
+    /** Persistent application-history requirement — wiring the 8 remaining event types. */
+    @Test
+    @DisplayName(
+            "generate: records DEAL_ROOM_ACTIVATED and CONTRACT_GENERATED application-history events")
+    void testGenerateRecordsApplicationHistoryEvents() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(principal.getUserId()).thenReturn("brand_user_1");
+        Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).workspaceId(WORKSPACE_ID).build();
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaboration));
+
+        service.generate(principal, WORKSPACE_ID, generateRequest());
+
+        verify(applicationHistoryService)
+                .record(
+                        eq(CAMPAIGN_ID),
+                        eq(COLLABORATION_ID),
+                        eq(COLLABORATION_ID),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.DEAL_ROOM_ACTIVATED),
+                        eq(com.influora.domain.enums.CollaborationStatus.CONTRACT_PENDING),
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.BRAND),
+                        eq("brand_user_1"),
+                        anyString(),
+                        any(),
+                        eq("/creator/chat?deal=" + COLLABORATION_ID),
+                        eq(COLLABORATION_ID));
+        verify(applicationHistoryService)
+                .record(
+                        eq(CAMPAIGN_ID),
+                        eq(COLLABORATION_ID),
+                        eq(COLLABORATION_ID),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.CONTRACT_GENERATED),
+                        eq(com.influora.domain.enums.CollaborationStatus.CONTRACT_PENDING),
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.BRAND),
+                        eq("brand_user_1"),
+                        anyString(),
+                        // Sign-off review follow-on (#3) — metadata is null, no raw contract id.
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq("/creator/chat?deal=" + COLLABORATION_ID),
+                        eq(COLLABORATION_ID));
     }
 
     /**
@@ -315,6 +364,149 @@ class ContractServiceTest {
 
         assertNotNull(response);
         verify(contractRepository, times(1)).save(any(Contract.class));
+    }
+
+    /**
+     * [F-0283, contract-terms-never-persisted] Before this fix, {@code ContractGenerateRequest}
+     * had no {@code terms} field at all, and the {@code Contract} column NAMED {@code terms} held
+     * only a SHA-256 tamper hash of the request -- not terms. Proves the caller-supplied terms
+     * text actually survives to the PERSISTED entity (the {@link Contract} instance passed to
+     * {@code contractRepository.save}, captured here, not just some local variable inside
+     * {@code generate}) AND comes back out on the read model ({@link ContractResponse#terms()}).
+     * A fix that adds the field but never threads the value through either hop (F-0292's own
+     * first gate missed exactly that shape) would fail this test.
+     */
+    @Test
+    @DisplayName("generate: supplied terms text survives to the persisted entity and the response")
+    void testGenerateTermsSurviveToPersistedEntityAndResponse() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).workspaceId(WORKSPACE_ID).build();
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(contractRepository.existsByCollaborationIdAndStatusNot(
+                        COLLABORATION_ID, ContractStatus.CANCELLED))
+                .thenReturn(false);
+
+        String suppliedTerms = "Brand and creator agree to the deliverables and payment schedule above.";
+        ContractGenerateRequest req =
+                new ContractGenerateRequest(
+                        COLLABORATION_ID,
+                        suppliedTerms,
+                        List.of(
+                                new MilestoneWriteRequest(
+                                        1, "Deliverable 1", BigDecimal.valueOf(5000), LocalDate.now())));
+
+        ContractResponse response = service.generate(principal, WORKSPACE_ID, req);
+
+        ArgumentCaptor<Contract> savedContract = ArgumentCaptor.forClass(Contract.class);
+        verify(contractRepository).save(savedContract.capture());
+        assertEquals(suppliedTerms, savedContract.getValue().getTermsText());
+        assertEquals(suppliedTerms, response.terms());
+    }
+
+    /**
+     * [F-0283] The mirror image of the test above: no terms supplied must read back as {@code
+     * null} on both the persisted entity and the response -- never a fabricated/default value.
+     * This is the boundary the record explicitly does not authorize: deciding what a contract's
+     * terms should say by default is a product/legal decision, not this fix's to make.
+     */
+    @Test
+    @DisplayName("generate: omitted terms persist and return as null, never fabricated")
+    void testGenerateWithNoTermsSuppliedReturnsNullTermsNotFabricated() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).workspaceId(WORKSPACE_ID).build();
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign));
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(contractRepository.existsByCollaborationIdAndStatusNot(
+                        COLLABORATION_ID, ContractStatus.CANCELLED))
+                .thenReturn(false);
+
+        // generateRequest() uses the pre-existing 2-arg constructor -- no terms supplied.
+        ContractResponse response = service.generate(principal, WORKSPACE_ID, generateRequest());
+
+        ArgumentCaptor<Contract> savedContract = ArgumentCaptor.forClass(Contract.class);
+        verify(contractRepository).save(savedContract.capture());
+        assertNull(savedContract.getValue().getTermsText());
+        assertNull(response.terms());
+    }
+
+    /**
+     * [F-0283] Immutability leg 1/2 — {@code Contract} must expose no public post-construction
+     * mutator for {@code termsText} at all. {@code Contract.Builder#termsText} (construction-time,
+     * before the entity has ever been persisted or is signable) is deliberately not what this
+     * checks; this looks for a {@code setTermsText}/{@code updateTermsText} method on the entity
+     * itself, the shape an unguarded "let a brand edit the terms" fix would take. A contract whose
+     * clauses can change after either party has e-signed under the IT Act 2000 binding notice is
+     * worse than one with no clauses at all (record scope) — the strictest available enforcement is
+     * that no such door exists in the first place, not a runtime check on a door that does. This is
+     * a reflection check specifically so it fails at the class-shape level, the same moment a wrong
+     * fix that adds such a method would be introduced — not only when some particular test happens
+     * to exercise it.
+     */
+    @Test
+    @DisplayName(
+            "Contract entity: termsText has no public post-construction mutator — write-once via"
+                    + " Builder, immutable for the life of the entity, a fortiori once signed")
+    void testContractEntityExposesNoTermsTextMutator() {
+        boolean hasEntityLevelMutator =
+                java.util.Arrays.stream(Contract.class.getDeclaredMethods())
+                        .anyMatch(
+                                m ->
+                                        java.lang.reflect.Modifier.isPublic(m.getModifiers())
+                                                && (m.getName().equals("setTermsText")
+                                                        || m.getName().equals("updateTermsText")));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                hasEntityLevelMutator,
+                "Contract must not expose a public setTermsText/updateTermsText method -- terms text"
+                        + " is write-once via Contract.Builder at construction time and must stay that"
+                        + " way for the life of the entity, including after either party signs"
+                        + " (F-0283)");
+    }
+
+    /**
+     * [F-0283] Immutability leg 2/2 — even though no mutation path exists (leg 1 above), this
+     * proves the specific scenario the record calls out by name: recording a signature must never,
+     * as a side effect, alter the terms text that was captured at generation time. Signs BRAND
+     * first (the contract is not yet fully executed, so no PDF/email side-effect chain fires and
+     * this stays a narrow unit test of {@code doRecordSignature} alone), then asserts the SAME
+     * {@link Contract} instance's {@code termsText} — and the response's {@code terms()} — are
+     * byte-for-byte the value supplied at generation, not null, not altered, not re-derived.
+     */
+    @Test
+    @DisplayName("recordSignature: signing a contract leaves its previously-captured terms text untouched")
+    void testSignatureDoesNotAlterTermsText() {
+        String suppliedTerms = "Usage rights: 90 days paid social. 2 rounds of revisions included.";
+        Contract contract =
+                Contract.builder()
+                        .id(CONTRACT_ID)
+                        .collaborationId(COLLABORATION_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .totalAmount(BigDecimal.valueOf(5000))
+                        .termsJson("{}")
+                        .termsText(suppliedTerms)
+                        .status(ContractStatus.DRAFT)
+                        .build();
+        when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(contract));
+        when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
+        mockIdempotencyExecuteOnce();
+
+        ContractResponse response =
+                service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "BRAND", "Test Brand Owner");
+
+        assertEquals(suppliedTerms, contract.getTermsText());
+        assertEquals(suppliedTerms, response.terms());
     }
 
     /**
@@ -734,6 +926,47 @@ class ContractServiceTest {
         verify(contractRepository, times(1)).save(contract);
         // generateAndDeliverContractPdf + promptEscrowFundingIfNeeded both look up collaboration.
         verify(collaborationRepository, times(2)).findById(COLLABORATION_ID);
+    }
+
+    /** Persistent application-history requirement — wiring the 8 remaining event types. */
+    @Test
+    @DisplayName(
+            "recordSignature: the call that completes both signatures records a CONTRACT_SIGNED"
+                    + " application-history event exactly once")
+    void testFullySignedRecordsApplicationHistoryEvent() {
+        when(principal.getUserId()).thenReturn("elevated_brand_member_1");
+        Contract contract = unsignedContract();
+        contract.recordBrandSignature("Test Brand Owner");
+        when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(contract));
+        when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID)).thenReturn(List.of());
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.empty());
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
+        when(escrowHoldRepository.hasEscrowForCollaboration(eq(COLLABORATION_ID), any())).thenReturn(false);
+        mockIdempotencyExecuteOnce();
+
+        service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Test Creator");
+
+        verify(applicationHistoryService, times(1))
+                .record(
+                        eq(CAMPAIGN_ID),
+                        eq(COLLABORATION_ID),
+                        eq(COLLABORATION_ID),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.CONTRACT_SIGNED),
+                        eq(com.influora.domain.enums.CollaborationStatus.CONTRACTED),
+                        // actorType narrates WHICH signature just completed the pair (CREATOR here);
+                        // actorId is still the calling principal that actually performed the write
+                        // (a brand member relaying the creator's signature — see recordSignature's
+                        // own javadoc on that residual, pre-existing risk), never a fabricated
+                        // creator identity.
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.CREATOR),
+                        eq("elevated_brand_member_1"),
+                        anyString(),
+                        // Sign-off review follow-on (#3) — metadata is null, no raw contract id.
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq("/creator/chat?deal=" + COLLABORATION_ID),
+                        eq(COLLABORATION_ID));
     }
 
     @Test

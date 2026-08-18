@@ -76,6 +76,7 @@ class DisputeEscrowConcurrencyTest {
     @Mock private WorkspaceRepository workspaceRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private CollaborationLifecycleService collaborationLifecycleService;
+    @Mock private ApplicationHistoryService applicationHistoryService;
 
     private EscrowService escrowService;
 
@@ -99,7 +100,8 @@ class DisputeEscrowConcurrencyTest {
                         workspaceRepository,
                         eventPublisher,
                         collaborationLifecycleService,
-                        escrowBackend);
+                        escrowBackend,
+                        applicationHistoryService);
     }
 
     @Test

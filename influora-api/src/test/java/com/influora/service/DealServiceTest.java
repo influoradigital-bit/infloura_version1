@@ -1,6 +1,7 @@
 package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -86,6 +87,7 @@ class DealServiceTest {
     @Mock private IdempotencyService idempotencyService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private DealMessageStreamRegistry messageStreamRegistry;
+    @Mock private ApplicationHistoryService applicationHistoryService;
     @Mock private AuthPrincipal creatorPrincipal;
     @Mock private AuthPrincipal brandPrincipal;
 
@@ -116,7 +118,8 @@ class DealServiceTest {
                                 collaborationRepository,
                                 contractRepository,
                                 escrowHoldRepository,
-                                shipmentRepository));
+                                shipmentRepository),
+                        applicationHistoryService);
     }
 
     private static Collaboration invitedDeal() {
@@ -382,6 +385,55 @@ class DealServiceTest {
         assertEquals(CollaborationStatus.TERMS_AGREED, response.status());
         verify(collaborationRepository).save(any(Collaboration.class));
         verify(dealMessageRepository).save(any(DealMessage.class));
+    }
+
+    /** Persistent application-history requirement — an event is written on accept. */
+    @Test
+    @DisplayName("accept: records an APPLICATION_ACCEPTED application-history event, dealRoomId set")
+    void testAcceptRecordsApplicationHistoryEvent() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID)).thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any())).thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(idempotencyService.executeOnce(
+                        eq("deal-accept:" + DEAL_ID),
+                        eq(CREATOR_USER_ID),
+                        eq("deal.accept"),
+                        any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        service.accept(creatorPrincipal, DEAL_ID, null);
+
+        verify(applicationHistoryService)
+                .record(
+                        eq(CAMPAIGN_ID),
+                        eq(DEAL_ID),
+                        eq(DEAL_ID),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.APPLICATION_ACCEPTED),
+                        eq(CollaborationStatus.TERMS_AGREED),
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.CREATOR),
+                        eq(CREATOR_USER_ID),
+                        anyString(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq(DEAL_ID));
     }
 
     /**
@@ -925,6 +977,217 @@ class DealServiceTest {
 
         assertEquals(true, response.ok());
         assertEquals(CollaborationStatus.CANCELLED, collaboration.getStatus());
+    }
+
+    /** Persistent application-history requirement — an event is written on reject, with no
+     * dealRoomId (canReject()'s allowlist is pre-contract only, so a rejected application never
+     * had a deal room to begin with). */
+    @Test
+    @DisplayName("reject: records an APPLICATION_REJECTED application-history event, no dealRoomId")
+    void testRejectRecordsApplicationHistoryEvent() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("not a fit"), null);
+
+        verify(applicationHistoryService)
+                .record(
+                        eq(CAMPAIGN_ID),
+                        eq(DEAL_ID),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.APPLICATION_REJECTED),
+                        eq(CollaborationStatus.CANCELLED),
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.BRAND),
+                        eq(BRAND_USER_ID),
+                        anyString(),
+                        eq("not a fit"),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq(DEAL_ID));
+    }
+
+    /**
+     * Sign-off review follow-on — {@code doReject} is not only the brand's rejection path, it is
+     * also the creator's own "withdraw my application" path (same method, branched on {@code
+     * role}). A creator-initiated call must record {@code APPLICATION_WITHDRAWN}, never {@code
+     * APPLICATION_REJECTED} — recording a creator's own withdrawal as a rejection of themselves
+     * would be wrong in the permanent audit ledger, not just on screen.
+     */
+    @Test
+    @DisplayName("reject: a CREATOR-initiated withdrawal records APPLICATION_WITHDRAWN, not APPLICATION_REJECTED")
+    void testCreatorWithdrawalRecordsApplicationWithdrawnEvent() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        service.reject(creatorPrincipal, DEAL_ID, new RejectRequest("changed my mind"), null);
+
+        verify(applicationHistoryService)
+                .record(
+                        eq(CAMPAIGN_ID),
+                        eq(DEAL_ID),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.APPLICATION_WITHDRAWN),
+                        eq(CollaborationStatus.CANCELLED),
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.CREATOR),
+                        eq(CREATOR_USER_ID),
+                        anyString(),
+                        eq("changed my mind"),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq(DEAL_ID));
+        verify(applicationHistoryService, never())
+                .record(
+                        any(),
+                        any(),
+                        any(),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.APPLICATION_REJECTED),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any());
+    }
+
+    /**
+     * Sign-off review follow-on (#2) — the frontend renders {@code description} verbatim directly
+     * beneath a status label already showing "Closed" (the standing CTO arbitration,
+     * src/lib/application-status.ts, Kabir R5: a creator is never shown the word "Rejected"). A
+     * brand-generated description containing that word would defeat the label sitting right above
+     * it. Asserts on the REAL value {@code doReject} produces (captured, not hand-typed) so a
+     * regression that reintroduces the word is actually caught.
+     */
+    @Test
+    @DisplayName("reject: brand-branch description never contains the word \"rejected\" (Kabir R5 arbitration)")
+    void testRejectDescriptionNeverSaysRejected() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID)).thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Budget moved to Q4"), null);
+
+        org.mockito.ArgumentCaptor<String> descriptionCaptor =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(applicationHistoryService)
+                .record(
+                        any(),
+                        any(),
+                        any(),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.APPLICATION_REJECTED),
+                        any(),
+                        any(),
+                        any(),
+                        descriptionCaptor.capture(),
+                        any(),
+                        any(),
+                        any());
+        String description = descriptionCaptor.getValue();
+        assertFalse(
+                description.toLowerCase(java.util.Locale.ROOT).contains("reject"),
+                "creator-visible history description must never say \"rejected\" (Kabir R5) -- got: "
+                        + description);
+    }
+
+    /** Sign-off review follow-on (#2) — the creator's OWN branch must describe a withdrawal, not
+     * something done TO them, and must equally never say "rejected". */
+    @Test
+    @DisplayName("reject: creator-branch description describes a withdrawal, not a rejection")
+    void testCreatorWithdrawalDescriptionDescribesWithdrawal() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID)).thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        service.reject(creatorPrincipal, DEAL_ID, new RejectRequest("changed my mind"), null);
+
+        org.mockito.ArgumentCaptor<String> descriptionCaptor =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(applicationHistoryService)
+                .record(
+                        any(),
+                        any(),
+                        any(),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.APPLICATION_WITHDRAWN),
+                        any(),
+                        any(),
+                        any(),
+                        descriptionCaptor.capture(),
+                        any(),
+                        any(),
+                        any());
+        String description = descriptionCaptor.getValue().toLowerCase(java.util.Locale.ROOT);
+        assertFalse(description.contains("reject"), "must not say \"rejected\" -- got: " + description);
+        assertTrue(description.contains("withdr"), "must describe a withdrawal -- got: " + description);
+    }
+
+    /**
+     * Sign-off review follow-on (#2) — when no reason was given, {@code metadata} must be {@code
+     * null}, never the internal "Deal rejected" default that exists only for the DealMessage
+     * system row's own wording. Leaking that default into this creator-visible field would
+     * reintroduce the word this whole fix removes from {@code description}, just one field over.
+     */
+    @Test
+    @DisplayName("reject: no reason given -- metadata is null, not the internal \"Deal rejected\" default")
+    void testRejectWithNoReasonLeavesMetadataNull() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID)).thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        service.reject(brandPrincipal, DEAL_ID, null, null);
+
+        verify(applicationHistoryService)
+                .record(
+                        any(),
+                        any(),
+                        any(),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.APPLICATION_REJECTED),
+                        any(),
+                        any(),
+                        any(),
+                        anyString(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        any(),
+                        any());
     }
 
     /**
@@ -1610,6 +1873,48 @@ class DealServiceTest {
         DealResponse response = service.get(brandPrincipal, DEAL_ID);
 
         assertEquals(null, response.counterpartyVerificationStatus());
+    }
+
+    /** Persistent application-history requirement #2 — brand-view tracking. */
+    @Test
+    @DisplayName("get(): a BRAND viewer records Application Viewed on the history timeline")
+    void testGetRecordsApplicationViewedForBrandViewer() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID)).thenReturn(Optional.empty());
+        stubToDealResponseCommonReads(DEAL_ID);
+
+        service.get(brandPrincipal, DEAL_ID);
+
+        verify(applicationHistoryService)
+                .recordViewIfAbsent(
+                        eq(CAMPAIGN_ID),
+                        eq(DEAL_ID),
+                        any(),
+                        anyString(),
+                        eq(CollaborationStatus.INVITED));
+    }
+
+    /** A creator reading their OWN application is not a "view" for this purpose — only the brand
+     * opening an application it received counts. */
+    @Test
+    @DisplayName("get(): a CREATOR viewer never records Application Viewed — that event is brand-only")
+    void testGetDoesNotRecordApplicationViewedForCreatorViewer() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
+        stubToDealResponseCommonReads(DEAL_ID);
+
+        service.get(creatorPrincipal, DEAL_ID);
+
+        verify(applicationHistoryService, never())
+                .recordViewIfAbsent(anyString(), anyString(), any(), anyString(), any());
     }
 
     // ------------------------------------------------------------------

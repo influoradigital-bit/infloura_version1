@@ -29,4 +29,38 @@ public final class CreatorApplicationDtos {
             BigDecimal agreedRate,
             String currency,
             String dealId) {}
+
+    /**
+     * One row of the append-only application-history timeline — {@code GET
+     * /creator/applications/{dealId}/history}. Field-for-field mirror of {@code
+     * ApplicationHistoryEvent}, renamed only where the entity's JPA column name and the wire name
+     * already differ (none do here). {@code eventType}/{@code eventStatus}/{@code actorType} are
+     * serialized as their raw enum names, same convention {@code status} uses on {@link
+     * CreatorApplicationListItem} above. {@code dealRoomId} is {@code null} until the application
+     * is accepted; {@code metadata}, {@code targetRoute} and {@code targetId} are optional and
+     * omitted when absent.
+     *
+     * <p>{@code dealPhase} is computed server-side, not stored — see {@code
+     * DealPhaseCalculator}, which mirrors {@code getDealPhase} in {@code
+     * deal-room-step-progress.tsx}. One of {@code negotiate | contract | escrow | deliver | pay},
+     * or {@code null} when the event predates any deal room (this application was
+     * rejected/cancelled and never had one) rather than defaulting to a phase that would be
+     * misleading.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ApplicationHistoryEventItem(
+            String historyId,
+            String campaignId,
+            String applicationId,
+            String dealRoomId,
+            String eventType,
+            String eventStatus,
+            String actorType,
+            String actorId,
+            String description,
+            Instant createdAt,
+            String metadata,
+            String targetRoute,
+            String targetId,
+            String dealPhase) {}
 }

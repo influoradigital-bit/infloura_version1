@@ -14,6 +14,8 @@ import com.influora.domain.entity.DealMessage;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
+import com.influora.domain.enums.ApplicationHistoryActorType;
+import com.influora.domain.enums.ApplicationHistoryEventType;
 import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ContractStatus;
@@ -97,6 +99,8 @@ public class DealService {
     private final IdempotencyService idempotencyService;
     private final ApplicationEventPublisher eventPublisher;
     private final DealMessageStreamRegistry messageStreamRegistry;
+    /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
+    private final ApplicationHistoryService applicationHistoryService;
 
     public DealService(
             CollaborationRepository collaborationRepository,
@@ -112,7 +116,8 @@ public class DealService {
             IdempotencyService idempotencyService,
             ApplicationEventPublisher eventPublisher,
             DealMessageStreamRegistry messageStreamRegistry,
-            CollaborationReviveService collaborationReviveService) {
+            CollaborationReviveService collaborationReviveService,
+            ApplicationHistoryService applicationHistoryService) {
         this.collaborationRepository = collaborationRepository;
         this.collaborationReviveService = collaborationReviveService;
         this.dealMessageRepository = dealMessageRepository;
@@ -127,6 +132,7 @@ public class DealService {
         this.idempotencyService = idempotencyService;
         this.eventPublisher = eventPublisher;
         this.messageStreamRegistry = messageStreamRegistry;
+        this.applicationHistoryService = applicationHistoryService;
     }
 
     @Transactional(readOnly = true)
@@ -155,6 +161,28 @@ public class DealService {
     @Transactional(readOnly = true)
     public DealResponse get(AuthPrincipal principal, String dealId) {
         Collaboration collaboration = requireOwnedCollaboration(principal, dealId);
+        // Brand-view tracking (persistent application-history requirement #2). Creator reads of
+        // their own application are not "views" for this purpose — only the brand opening an
+        // application it received is. Best-effort and deliberately its own transaction (see
+        // ApplicationHistoryService#recordViewIfAbsent) so a failure here can never turn a
+        // successful read into a 500, and idempotent so re-opening the same application never
+        // spams the timeline.
+        if (principal.getUserType() == UserType.BRAND) {
+            try {
+                applicationHistoryService.recordViewIfAbsent(
+                        collaboration.getCampaignId(),
+                        collaboration.getId(),
+                        principal.getUserId(),
+                        "Brand viewed the application",
+                        collaboration.getStatus());
+            } catch (RuntimeException e) {
+                log.error(
+                        "Could not record Application Viewed for collaboration {} — the read itself"
+                                + " already succeeded",
+                        collaboration.getId(),
+                        e);
+            }
+        }
         return toDealResponse(collaboration, principal, principal.getUserType());
     }
 
@@ -364,7 +392,10 @@ public class DealService {
 
         try {
             return idempotencyService.executeOnce(
-                    key, scopeId, "deal.reject", () -> doReject(dealId, role, body));
+                    key,
+                    scopeId,
+                    "deal.reject",
+                    () -> doReject(dealId, role, principal.getUserId(), body));
         } catch (IdempotencyService.AlreadyInProgressException
                 | IdempotencyService.AlreadyCompletedException raced) {
             // A prior call already reserved/completed this exact key — the effect already ran (or
@@ -380,7 +411,7 @@ public class DealService {
      * unlocked instance {@link #reject} already read, since that read happened before the lock
      * was acquired and may be stale by the time this runs.
      */
-    private OkResponse doReject(String dealId, UserType role, RejectRequest body) {
+    private OkResponse doReject(String dealId, UserType role, String actorId, RejectRequest body) {
         Collaboration collaboration =
                 collaborationRepository
                         .findByIdForUpdate(dealId)
@@ -397,11 +428,10 @@ public class DealService {
         collaboration.transitionTo(CollaborationStatus.CANCELLED);
         collaborationRepository.save(collaboration);
         String reason = body != null && body.reason() != null ? body.reason() : "Deal rejected";
+        String sanitizedReason = TextSanitizer.sanitizePlainText(reason);
         String actorLabel = role == UserType.CREATOR ? "Creator" : "Brand";
         DealMessage systemMessage =
-                appendSystemMessage(
-                        collaboration.getId(),
-                        actorLabel + " rejected: " + TextSanitizer.sanitizePlainText(reason));
+                appendSystemMessage(collaboration.getId(), actorLabel + " rejected: " + sanitizedReason);
         // CR-02 — same reason as the accept path: a declined offer must stop rendering as
         // actionable. Pre-CR-22a, canReject() also permitted withdrawal from
         // TERMS_AGREED/CONTRACTED, so this deliberately no-ops on a card already settled as
@@ -418,6 +448,61 @@ public class DealService {
         settledCard.ifPresent(
                 card -> publishToStream(collaboration.getId(), toMessageResponse(card)));
         publishToStream(collaboration.getId(), toMessageResponse(systemMessage));
+
+        // Persistent application-history event. No dealRoomId: canReject()'s allowlist is
+        // pre-contract only, so a rejected/withdrawn application never had a deal room to begin
+        // with. Best-effort, same shape as CreatorCampaignService#recordApplicationHistory — a
+        // failure here must never undo a rejection/withdrawal that already succeeded.
+        //
+        // Sign-off review follow-on (#1) — this method is not only the brand's rejection path, it
+        // is also the creator's own "withdraw my application" path (same method, branched on role
+        // right here). Recording both as APPLICATION_REJECTED made a creator's own withdrawal
+        // permanently read, in the audit ledger, as the brand having rejected them — wrong in the
+        // data, not just on screen (see ApplicationHistoryEventType's javadoc).
+        //
+        // Sign-off review follow-on (#2) — the DESCRIPTION shown here is a SEPARATE copy from the
+        // DealMessage system row above (line ~434, "actorLabel + ' rejected: ' + reason"), which
+        // keeps its own wording untouched — that row is a different audit surface. This copy is
+        // what a CREATOR reads on their OWN history timeline (GET
+        // /creator/applications/{dealId}/history is creator-only), directly under a status label
+        // that already reads "Closed" per the standing CTO arbitration
+        // (src/lib/application-status.ts, Kabir R5: a creator is never shown the word "Rejected").
+        // The brand branch's copy below must never contain that word either, or it defeats the
+        // label sitting right above it; the creator branch describes a WITHDRAWAL, not something
+        // done TO the creator. `reasonGiven` also gates `metadata`: the shared `reason` variable's
+        // "Deal rejected" default exists only for the OTHER (DealMessage) audit surface — feeding
+        // it into this creator-visible metadata field would reintroduce the exact word this fix
+        // removes from description, just one field over.
+        boolean reasonGiven = body != null && body.reason() != null && !body.reason().isBlank();
+        String historyDescription =
+                role == UserType.CREATOR
+                        ? "You withdrew this application" + (reasonGiven ? ": " + sanitizedReason : "")
+                        : "This application was closed by the brand"
+                                + (reasonGiven ? ": " + sanitizedReason : "");
+        try {
+            applicationHistoryService.record(
+                    collaboration.getCampaignId(),
+                    collaboration.getId(),
+                    null,
+                    role == UserType.CREATOR
+                            ? ApplicationHistoryEventType.APPLICATION_WITHDRAWN
+                            : ApplicationHistoryEventType.APPLICATION_REJECTED,
+                    collaboration.getStatus(),
+                    role == UserType.CREATOR
+                            ? ApplicationHistoryActorType.CREATOR
+                            : ApplicationHistoryActorType.BRAND,
+                    actorId,
+                    historyDescription,
+                    reasonGiven ? sanitizedReason : null,
+                    null,
+                    collaboration.getId());
+        } catch (RuntimeException e) {
+            log.error(
+                    "Could not write the application-history event for collaboration {} reject —"
+                            + " the rejection itself already succeeded",
+                    collaboration.getId(),
+                    e);
+        }
         return OkResponse.success();
     }
 
@@ -707,6 +792,34 @@ public class DealService {
         settledCard.ifPresent(
                 card -> publishToStream(collaboration.getId(), toMessageResponse(card)));
         publishToStream(collaboration.getId(), toMessageResponse(systemMessage));
+
+        // Persistent application-history event. dealRoomId = the same collaboration id: acceptance
+        // is the point the deal room actually starts existing (see ApplicationHistoryEvent's
+        // javadoc on why dealRoomId stays null before this). Best-effort, same shape as every
+        // other history write in this class — a failure here must never undo an accept that
+        // already succeeded.
+        try {
+            applicationHistoryService.record(
+                    collaboration.getCampaignId(),
+                    collaboration.getId(),
+                    collaboration.getId(),
+                    ApplicationHistoryEventType.APPLICATION_ACCEPTED,
+                    collaboration.getStatus(),
+                    role == UserType.CREATOR
+                            ? ApplicationHistoryActorType.CREATOR
+                            : ApplicationHistoryActorType.BRAND,
+                    principal.getUserId(),
+                    actorLabel + " accepted the proposal",
+                    null,
+                    null,
+                    collaboration.getId());
+        } catch (RuntimeException e) {
+            log.error(
+                    "Could not write the application-history event for collaboration {} accept —"
+                            + " the accept itself already succeeded",
+                    collaboration.getId(),
+                    e);
+        }
 
         // W3-1 — #4 "brand accepts creator's counter-bid" / #11 "creator accepts proposal"
         // (07-NOTIFICATION-SYSTEM-SPEC.md §3.1/§3.2). Best-effort — a lookup failure here must

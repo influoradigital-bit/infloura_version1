@@ -46,15 +46,30 @@ const STATUS_TO_STAGE: Record<string, StageKey> = {
   SHORTLISTED: 'outreach',
   FUNDED: 'outreach',
   new_proposal: 'outreach',
+  // CollaborationStatus (influora-api's CollaborationStatus.java) — INVITED is the
+  // not-yet-responded-to state, same bucket as SHORTLISTED above. `deal-stage.ts`'s
+  // `mapCollaborationStatusToDealStage` (the one canonical CollaborationStatus switch —
+  // see its own header comment on why a second one drifting from it is exactly the CR-05/
+  // CR-24 bug) calls this DealStage 'new'; this flat map has no dedicated key for it, so
+  // 'outreach' is the closest existing token.
+  INVITED: 'outreach',
   // Negotiating
   NEGOTIATING: 'negotiating',
   negotiating: 'negotiating',
   COUNTERED: 'negotiating',
+  // CollaborationStatus's own pre-contract states. `mapCollaborationStatusToDealStage` puts
+  // APPLIED, IN_NEGOTIATION and TERMS_AGREED all in its 'negotiating' DealStage — mirrored
+  // here (not re-derived) so this map and that switch cannot silently disagree.
+  APPLIED: 'negotiating',
+  IN_NEGOTIATION: 'negotiating',
+  TERMS_AGREED: 'negotiating',
   // Contracted
   CONTRACTED: 'contracted',
   CONTRACT_SIGNING: 'contracted',
   contracted: 'contracted',
   pending_signature: 'contracted',
+  // CollaborationStatus — mapCollaborationStatusToDealStage's 'contracted' DealStage.
+  CONTRACT_PENDING: 'contracted',
   // In progress
   IN_PROGRESS: 'in_progress',
   IN_PRODUCTION: 'in_progress',

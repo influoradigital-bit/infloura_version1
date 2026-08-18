@@ -1,10 +1,13 @@
+import * as React from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Calendar } from 'lucide-react';
+import { ArrowRight, Calendar, ChevronDown } from 'lucide-react';
 
+import { ApplicationHistoryTimeline } from '@/components/creator/ApplicationHistoryTimeline';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { bucketOf, getApplicationStatusBadgeProps } from '@/lib/application-status';
 import type { CreatorApplicationRow } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -42,6 +45,7 @@ function formatAppliedDate(iso: string): { relative: string; absolute: string } 
 }
 
 export function CreatorApplicationCard({ application, className }: CreatorApplicationCardProps) {
+  const [journeyOpen, setJourneyOpen] = React.useState(false);
   const brandInitial = application.brandName.charAt(0).toUpperCase() || '?';
   const badge = getApplicationStatusBadgeProps(application.status);
   const bucket = bucketOf(application.status);
@@ -82,12 +86,29 @@ export function CreatorApplicationCard({ application, className }: CreatorApplic
               <span>{relative}</span>
             </div>
 
-            <Button variant="outline" size="sm" asChild>
-              <Link to={clickThroughHref}>
-                {clickThroughLabel}
-                <ArrowRight className="ml-1.5 h-4 w-4" />
-              </Link>
-            </Button>
+            <Collapsible open={journeyOpen} onOpenChange={setJourneyOpen}>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" asChild>
+                  <Link to={clickThroughHref}>
+                    {clickThroughLabel}
+                    <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </Link>
+                </Button>
+
+                <CollapsibleTrigger asChild>
+                  <Button type="button" variant="ghost" size="sm" aria-expanded={journeyOpen}>
+                    {journeyOpen ? 'Hide journey' : 'Show journey'}
+                    <ChevronDown
+                      className={cn('ml-1.5 h-4 w-4 transition-transform', journeyOpen && 'rotate-180')}
+                    />
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
+
+              <CollapsibleContent className="mt-3 border-t border-border pt-3">
+                <ApplicationHistoryTimeline dealId={application.dealId} brandName={application.brandName} />
+              </CollapsibleContent>
+            </Collapsible>
           </div>
         </div>
       </CardContent>

@@ -8,10 +8,12 @@ import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
+import com.influora.repository.ApplicationHistoryEventRepository;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.web.dto.creatorcampaign.CreatorApplicationDtos.ApplicationHistoryEventItem;
 import com.influora.web.dto.creatorcampaign.CreatorApplicationDtos.CreatorApplicationListItem;
 import java.util.Comparator;
 import java.util.List;
@@ -38,16 +40,19 @@ public class CreatorApplicationService {
     private final CampaignRepository campaignRepository;
     private final WorkspaceRepository workspaceRepository;
     private final CreatorContextService creatorContext;
+    private final ApplicationHistoryEventRepository applicationHistoryEventRepository;
 
     public CreatorApplicationService(
             CollaborationRepository collaborationRepository,
             CampaignRepository campaignRepository,
             WorkspaceRepository workspaceRepository,
-            CreatorContextService creatorContext) {
+            CreatorContextService creatorContext,
+            ApplicationHistoryEventRepository applicationHistoryEventRepository) {
         this.collaborationRepository = collaborationRepository;
         this.campaignRepository = campaignRepository;
         this.workspaceRepository = workspaceRepository;
         this.creatorContext = creatorContext;
+        this.applicationHistoryEventRepository = applicationHistoryEventRepository;
     }
 
     public record PagedApplications(List<CreatorApplicationListItem> items, PageMeta meta) {}
@@ -105,6 +110,33 @@ public class CreatorApplicationService {
                         .toList();
 
         return new PagedApplications(items, new PageMeta(safePage, safeLimit, total, hasMore));
+    }
+
+    /**
+     * {@code GET /creator/applications/{dealId}/history} — the append-only application-history
+     * timeline for one application. {@code dealId} is the {@code Collaboration} id (same row
+     * backs the application and, once accepted, the deal room — see {@link
+     * CreatorApplicationMapper}'s {@code dealId} javadoc). Ownership is enforced the exact same
+     * way {@code DealService#requireCreatorCollaboration} enforces it: {@code
+     * findByIdAndCreatorId} scoped to THIS creator's own {@code userId} (never a client-supplied
+     * creator id, Kabir R1), so a dealId belonging to another creator 404s exactly like one that
+     * doesn't exist — it never leaks existence.
+     */
+    @Transactional(readOnly = true)
+    public List<ApplicationHistoryEventItem> history(AuthPrincipal principal, String dealId) {
+        CreatorProfile creator = creatorContext.requireCreatorProfile(principal);
+        Collaboration collaboration =
+                collaborationRepository
+                        .findByIdAndCreatorId(dealId, creator.getUserId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "DEAL_NOT_FOUND", "Deal not found", HttpStatus.NOT_FOUND));
+        return applicationHistoryEventRepository
+                .findByApplicationIdOrderByCreatedAtAscSequenceNoAsc(collaboration.getId())
+                .stream()
+                .map(ApplicationHistoryMapper::toItem)
+                .toList();
     }
 
     private Map<String, Campaign> loadCampaigns(List<Collaboration> collaborations) {

@@ -2,6 +2,8 @@ package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -30,12 +32,15 @@ class CollaborationLifecycleServiceTest {
 
     @Mock private CollaborationRepository collaborationRepository;
     @Mock private DeliverableRepository deliverableRepository;
+    @Mock private ApplicationHistoryService applicationHistoryService;
 
     private CollaborationLifecycleService service;
 
     @BeforeEach
     void setUp() {
-        service = new CollaborationLifecycleService(collaborationRepository, deliverableRepository);
+        service =
+                new CollaborationLifecycleService(
+                        collaborationRepository, deliverableRepository, applicationHistoryService);
     }
 
     private static Collaboration collaborationWithStatus(CollaborationStatus status) {
@@ -236,6 +241,48 @@ class CollaborationLifecycleServiceTest {
 
         assertEquals(CollaborationStatus.COMPLETED, c.getStatus());
         verify(collaborationRepository).save(c);
+    }
+
+    /** Persistent application-history requirement — wiring the 8 remaining event types. */
+    @Test
+    @DisplayName("onDeliverableReviewed: a genuine transition into COMPLETED records a DELIVER event")
+    void onDeliverableReviewedCompletingRecordsApplicationHistoryEvent() {
+        Collaboration c = collaborationWithStatus(CollaborationStatus.REVIEW_PENDING);
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(c));
+        when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(COLLAB_ID))
+                .thenReturn(List.of(deliverableWithStatus(DeliverableStatus.APPROVED)));
+
+        service.onDeliverableReviewed(COLLAB_ID);
+
+        verify(applicationHistoryService)
+                .record(
+                        eq(c.getCampaignId()),
+                        eq(COLLAB_ID),
+                        eq(COLLAB_ID),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.DELIVER),
+                        eq(CollaborationStatus.COMPLETED),
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.SYSTEM),
+                        eq("system"),
+                        anyString(),
+                        any(),
+                        eq("/creator/chat?deal=" + COLLAB_ID),
+                        eq(COLLAB_ID));
+    }
+
+    /** A transition to any status OTHER than COMPLETED must never record DELIVER. */
+    @Test
+    @DisplayName("onDeliverableSubmitted: a transition into REVIEW_PENDING never records DELIVER")
+    void onDeliverableSubmittedDoesNotRecordDeliverForNonCompletedTransition() {
+        Collaboration c = collaborationWithStatus(CollaborationStatus.IN_PROGRESS);
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(c));
+        when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(COLLAB_ID))
+                .thenReturn(List.of(deliverableWithStatus(DeliverableStatus.SUBMITTED)));
+
+        service.onDeliverableSubmitted(COLLAB_ID);
+
+        assertEquals(CollaborationStatus.REVIEW_PENDING, c.getStatus());
+        verify(applicationHistoryService, never())
+                .record(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

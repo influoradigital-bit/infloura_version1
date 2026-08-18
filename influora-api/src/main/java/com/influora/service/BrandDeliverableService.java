@@ -9,6 +9,8 @@ import com.influora.config.R2Properties;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.enums.ApplicationHistoryActorType;
+import com.influora.domain.enums.ApplicationHistoryEventType;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.MeeraInteractionEventType;
@@ -57,6 +59,8 @@ public class BrandDeliverableService {
     private final CollaborationLifecycleService collaborationLifecycleService;
     private final MeeraInteractionLogService meeraInteractionLogService;
     private final CollaborationRepository collaborationRepository;
+    /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
+    private final ApplicationHistoryService applicationHistoryService;
 
     public BrandDeliverableService(
             BrandContextService brandContext,
@@ -66,7 +70,8 @@ public class BrandDeliverableService {
             EscrowService escrowService,
             CollaborationLifecycleService collaborationLifecycleService,
             MeeraInteractionLogService meeraInteractionLogService,
-            CollaborationRepository collaborationRepository) {
+            CollaborationRepository collaborationRepository,
+            ApplicationHistoryService applicationHistoryService) {
         this.brandContext = brandContext;
         this.deliverableRepository = deliverableRepository;
         this.r2StorageService = r2StorageService;
@@ -75,6 +80,7 @@ public class BrandDeliverableService {
         this.collaborationLifecycleService = collaborationLifecycleService;
         this.meeraInteractionLogService = meeraInteractionLogService;
         this.collaborationRepository = collaborationRepository;
+        this.applicationHistoryService = applicationHistoryService;
     }
 
     @Transactional(readOnly = true)
@@ -105,14 +111,34 @@ public class BrandDeliverableService {
         deliverable.applyApprove();
         deliverableRepository.save(deliverable);
 
-        // W2-1 — recompute the collaboration's review-phase status: REVIEW_PENDING while other
-        // deliverables are still pending review, COMPLETED once every deliverable is resolved.
-        collaborationLifecycleService.onDeliverableReviewed(deliverable.getCollaborationId());
-
         // [B3] Approval unlocks payment — attempt the escrow release for this deliverable's
         // milestone (B5 release_condition gate applies inside EscrowService). Same transaction as
         // the status flip above: a genuine failure here (not a "not eligible yet" no-op) rolls the
         // whole approval back rather than leaving an approved-but-inconsistent state.
+        //
+        // Sign-off review fix (F-history-approve-rollback) — the escrow release attempt runs
+        // AHEAD of the collaboration-status recompute and the persistent-history write below
+        // (both used to run BEFORE this call). Those two downstream effects go through
+        // ApplicationHistoryService#record, which is REQUIRES_NEW and therefore COMMITS
+        // IMMEDIATELY, independent of this method's own @Transactional outcome — so when they ran
+        // first, a rejected/failed release (this catch block, rethrown below) rolled the
+        // Deliverable/Collaboration state back while leaving two history rows PERMANENTLY
+        // asserting "approved" / "delivery complete" for an approval that never actually happened.
+        // Append-only history has no compensating write for that. Running the escrow attempt FIRST
+        // means: if it throws, control returns to the caller via the rethrow below before either
+        // history write or the status recompute ever executes, so nothing commits for a business
+        // fact that didn't happen.
+        //
+        // This reordering changes nothing observable: {@code
+        // EscrowService#assertReleaseConditionSatisfied} re-derives its gate from {@code
+        // Deliverable} rows (already saved above, BEFORE this call — unaffected by the reorder),
+        // never from {@code Collaboration.status}, and neither {@code
+        // assertReleaseNotBlockedByCancellation} nor {@code assertEscrowNotBlockedByDispute} reads
+        // a status this recompute could ever produce (REVIEW_PENDING/COMPLETED are not among the
+        // statuses either guard checks). {@code reject}/{@code requestRevision} keep {@code
+        // onDeliverableReviewed} at their original position — neither has any code after it that
+        // can throw, so neither carries this hazard (see BrandDeliverableServiceTest's residual-
+        // risk note for the other 9 call sites that still do, structurally, elsewhere).
         EscrowService.ReleaseOutcome release;
         try {
             release = escrowService.tryReleaseOnApproval(workspace.getId(), deliverable.getMilestoneId());
@@ -124,6 +150,45 @@ public class BrandDeliverableService {
                     deliverable.getMilestoneId(),
                     e);
             throw e;
+        }
+
+        // W2-1 — recompute the collaboration's review-phase status: REVIEW_PENDING while other
+        // deliverables are still pending review, COMPLETED once every deliverable is resolved.
+        // Only reached once the escrow attempt above has NOT thrown — see the comment on that call.
+        collaborationLifecycleService.onDeliverableReviewed(deliverable.getCollaborationId());
+
+        // Persistent application-history requirement — DELIVERABLE_APPROVED, wired at the real
+        // commit point. Also only reached once the escrow attempt above has NOT thrown. A
+        // per-slot fact, not gated on the collaboration-level transition onDeliverableReviewed may
+        // or may not cause — DELIVER (a distinct event) covers the "every deliverable now resolved"
+        // milestone separately, at CollaborationLifecycleService's own commit point. Best-effort —
+        // a failure here must never roll back an approval that already succeeded.
+        try {
+            Collaboration approvedCollaboration =
+                    collaborationRepository.findById(deliverable.getCollaborationId()).orElse(null);
+            if (approvedCollaboration != null) {
+                applicationHistoryService.record(
+                        approvedCollaboration.getCampaignId(),
+                        deliverable.getCollaborationId(),
+                        deliverable.getCollaborationId(),
+                        ApplicationHistoryEventType.DELIVERABLE_APPROVED,
+                        approvedCollaboration.getStatus(),
+                        ApplicationHistoryActorType.BRAND,
+                        principal.getUserId(),
+                        "Brand approved a deliverable",
+                        // Sign-off review follow-on (#3) — no raw entity id in the human-readable
+                        // metadata slot (rendered as error-styled text on the frontend); targetId
+                        // (below) already carries the correlation id.
+                        null,
+                        "/creator/chat?deal=" + deliverable.getCollaborationId(),
+                        deliverable.getCollaborationId());
+            }
+        } catch (RuntimeException e) {
+            log.error(
+                    "Could not write the application-history event for deliverable {} approval — the"
+                            + " approval itself already succeeded",
+                    deliverableId,
+                    e);
         }
 
         // F-0223 — the release outcome travels with the approval. Eight conditions inside

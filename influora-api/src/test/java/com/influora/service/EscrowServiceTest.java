@@ -94,6 +94,7 @@ class EscrowServiceTest {
     @Mock private WorkspaceRepository workspaceRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private CollaborationLifecycleService collaborationLifecycleService;
+    @Mock private ApplicationHistoryService applicationHistoryService;
 
     private EscrowService service;
 
@@ -117,7 +118,8 @@ class EscrowServiceTest {
                         workspaceRepository,
                         eventPublisher,
                         collaborationLifecycleService,
-                        escrowBackend);
+                        escrowBackend,
+                        applicationHistoryService);
     }
 
     private EscrowHold fundedHold() {
@@ -686,6 +688,137 @@ class EscrowServiceTest {
         // Saved twice: once creating the PENDING hold, once more after applyFunding marks it
         // FUNDED — both in the same call now that funding happens immediately, no gateway round trip.
         verify(escrowHoldRepository, times(2)).save(any(EscrowHold.class));
+    }
+
+    /**
+     * Persistent application-history requirement — wiring the 8 remaining event types. Uses the
+     * milestone-based funding path (not the pool-fund path above) because only that path binds a
+     * collaborationId onto the hold — {@code notifyEscrowFunded} (and this history event with it)
+     * is a structural no-op for a hold with no collaboration.
+     */
+    @Test
+    @DisplayName("initiateFund: milestone-based funding records a FUND_ESCROW application-history event")
+    void initiateFundRecordsApplicationHistoryEvent() {
+        BigDecimal amount = BigDecimal.valueOf(5000);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        PaymentMilestone milestone =
+                PaymentMilestone.builder()
+                        .id(MILESTONE_ID)
+                        .contractId(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .amount(amount)
+                        .build();
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestone));
+        Contract fullySignedContract =
+                Contract.builder()
+                        .id(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .totalAmount(amount)
+                        .status(ContractStatus.ACTIVE)
+                        .build();
+        fullySignedContract.recordBrandSignature("Brand Owner");
+        fullySignedContract.recordCreatorSignature("Creator");
+        when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(fullySignedContract));
+        Collaboration collaboration = Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        when(collaborationRepository.findByIdForUpdate(COLLAB_ID)).thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(collaboration));
+        when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(walletWithBalance(amount));
+        stubWalletFunding();
+
+        service.initiateFund(
+                principal, WORKSPACE_ID, CAMPAIGN_ID, MILESTONE_ID, amount, "INR", FUND_IDEMPOTENCY_KEY);
+
+        verify(applicationHistoryService)
+                .record(
+                        eq(CAMPAIGN_ID),
+                        eq(COLLAB_ID),
+                        eq(COLLAB_ID),
+                        eq(com.influora.domain.enums.ApplicationHistoryEventType.FUND_ESCROW),
+                        any(),
+                        eq(com.influora.domain.enums.ApplicationHistoryActorType.SYSTEM),
+                        eq("system"),
+                        anyString(),
+                        // Sign-off review follow-on (#3) — metadata is null, no raw hold id.
+                        org.mockito.ArgumentMatchers.isNull(),
+                        eq("/creator/chat?deal=" + COLLAB_ID),
+                        eq(COLLAB_ID));
+    }
+
+    /**
+     * Sign-off review defect (F-0316) — {@code notifyEscrowFunded}'s {@code record(...)} call
+     * used to have no try/catch of its own; it relied on {@code applyFunding}'s OWN wrapping
+     * try/catch (around its call to the whole {@code notifyEscrowFunded} method) as its
+     * best-effort net. That is a suppression bug, not a safety net: that outer catch wraps the
+     * ENTIRE method, so a {@code record()} failure unwound past it and skipped everything after
+     * it in {@code notifyEscrowFunded} — including {@code
+     * eventPublisher.publishEvent(EscrowFundedEvent)} a few lines below, which means the
+     * creator's "campaign is live" notification would silently never fire for a funding that
+     * otherwise fully succeeded. Same fixture as {@link #initiateFundRecordsApplicationHistoryEvent}
+     * (the milestone-based funding path, the only one that binds a collaborationId and therefore
+     * reaches {@code notifyEscrowFunded}'s body at all) — the only difference is {@code
+     * applicationHistoryService.record(...)} is stubbed to throw.
+     */
+    @Test
+    @DisplayName(
+            "initiateFund: a FUND_ESCROW history-write failure must not suppress the"
+                    + " EscrowFundedEvent notification")
+    void initiateFundPublishesEscrowFundedEventDespiteHistoryWriteFailure() {
+        BigDecimal amount = BigDecimal.valueOf(5000);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        PaymentMilestone milestone =
+                PaymentMilestone.builder()
+                        .id(MILESTONE_ID)
+                        .contractId(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .amount(amount)
+                        .build();
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestone));
+        Contract fullySignedContract =
+                Contract.builder()
+                        .id(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .totalAmount(amount)
+                        .status(ContractStatus.ACTIVE)
+                        .build();
+        fullySignedContract.recordBrandSignature("Brand Owner");
+        fullySignedContract.recordCreatorSignature("Creator");
+        when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(fullySignedContract));
+        Collaboration collaboration = Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        when(collaborationRepository.findByIdForUpdate(COLLAB_ID)).thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(collaboration));
+        when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(walletWithBalance(amount));
+        stubWalletFunding();
+        org.mockito.Mockito.doThrow(new RuntimeException("history table down"))
+                .when(applicationHistoryService)
+                .record(
+                        any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+
+        // Must not throw out to the caller either — applyFunding's own wrapping try/catch is
+        // still the outermost net for notifyEscrowFunded as a whole (e.g. a totally unexpected
+        // NPE), even though the FUND_ESCROW write itself is no longer what trips it.
+        assertDoesNotThrow(
+                () ->
+                        service.initiateFund(
+                                principal,
+                                WORKSPACE_ID,
+                                CAMPAIGN_ID,
+                                MILESTONE_ID,
+                                amount,
+                                "INR",
+                                FUND_IDEMPOTENCY_KEY));
+
+        // The actual defect this test exists to catch: before the fix, the record() failure above
+        // unwound out of notifyEscrowFunded entirely and this publish never happened.
+        verify(eventPublisher)
+                .publishEvent(
+                        org.mockito.ArgumentMatchers.isA(
+                                com.influora.service.notification.event.EscrowFundedEvent.class));
     }
 
     // ------------------------------------------------------------------------------------------
