@@ -1,0 +1,83 @@
+=== F-0050 injection log — T-F0329-GATES — 2026-08-18T11:32:13Z ===
+subject: src/pages/brand-pipeline.tsx
+pre-injection sha256: 821fed5ccad57de6c5c2f36419626f943db1afe3cb43d35d12a5a202d17e4226 *src/pages/brand-pipeline.tsx
+
+--- BASELINE (clean tree) ---
+fixed shape holds: render helpers invoked as plain calls, no in-render component identity
+NOT CHECKED: components created during render in OTHER files (this gate is one file); whether the helpers themselves are heavy enough to need memoization; runtime state-loss behaviour
+OBSERVED EXIT=0
+
+--- INJECTION A: the F-0050 defect verbatim, with the grepped token left present ---
+The plausible wrong fix: someone 'tidies' the board branch back into a component
+defined in the render body and mounts it as JSX, while listView()/timelineView()
+stay as helper calls — so the gate's third (positive) check still sees its token.
+  // Board View — a render helper (called, not mounted as <BoardView/>), so it
+  // produces inlined elements with no in-render component identity to remount.
+  const BoardView = () => (
+    <ScrollArea className="w-full">
+        ) : (
+          <>
+            {viewMode === 'board' && <BoardView />}
+            {viewMode === 'list' && listView()}
+            {viewMode === 'timeline' && timelineView()}
+          </>
+
+gate run against injection A:
+IN-RENDER COMPONENT DEFINITION returned:
+466:  const BoardView = () => (
+JSX MOUNT of view component present (non-comment line):
+768:            {viewMode === 'board' && <BoardView />}
+NOT CHECKED: components created during render in OTHER files (this gate is one file); whether the helpers themselves are heavy enough to need memoization; runtime state-loss behaviour
+OBSERVED EXIT=1
+
+--- RESTORE after injection A (inverse edit, not a backup overwrite — F-0326) ---
+post-restore sha256: 75c9e4d35758b183c4f18a6d358745be533ce7591c7a3757e4fba794789b1a32 *src/pages/brand-pipeline.tsx
+expected:            821fed5ccad57de6c5c2f36419626f943db1afe3cb43d35d12a5a202d17e4226
+git status:  M src/pages/brand-pipeline.tsx
+git status (empty above == clean)
+  NOTE: injection A was applied with sed -i, which rewrote the whole file CRLF->LF.
+  git diff --numstat showed ZERO changed lines (content identical, endings only), and no
+  peer edit had landed in the window, so the CRLF bytes were restored from the verified
+  pre-injection copy. Later injections use a byte-exact replacer instead.
+  post-restore sha256: 821fed5ccad57de6c5c2f36419626f943db1afe3cb43d35d12a5a202d17e4226  MATCHES
+
+--- PROBE B: mirror disease — can a COMMENT alone satisfy the positive check? ---
+Wrong fix: the three call sites are deleted (view switch rewritten) but the comment
+above boardView still says 'boardView()'. A raw-bytes gate would stay green.
+gate run against probe B:
+ABSENT: no view render-helper invocation found — the page's view switch has changed shape; re-inspect
+NOT CHECKED: components created during render in OTHER files (this gate is one file); whether the helpers themselves are heavy enough to need memoization; runtime state-loss behaviour
+OBSERVED EXIT=1
+
+  restored after probe B, sha256 821fed5c... MATCHES, git clean
+
+--- PROBE C: the same defect under a NAME the gate does not know ---
+Wrong fix: a later refactor renames the board view to KanbanView and mounts it as JSX,
+still defined inside the render body. Same F-0050 class, different identifier.
+gate run against probe C:
+fixed shape holds: render helpers invoked as plain calls, no in-render component identity
+NOT CHECKED: components created during render in OTHER files (this gate is one file); whether the helpers themselves are heavy enough to need memoization; runtime state-loss behaviour
+OBSERVED EXIT=0
+
+--- FINAL RESTORE (F-0050 subject) ---
+post-restore sha256: 821fed5ccad57de6c5c2f36419626f943db1afe3cb43d35d12a5a202d17e4226 *src/pages/brand-pipeline.tsx
+expected:            821fed5ccad57de6c5c2f36419626f943db1afe3cb43d35d12a5a202d17e4226
+git status --porcelain: []
+
+gate run on the restored real tree:
+fixed shape holds: render helpers invoked as plain calls, no in-render component identity
+NOT CHECKED: components created during render in OTHER files (this gate is one file); whether the helpers themselves are heavy enough to need memoization; runtime state-loss behaviour
+OBSERVED EXIT=0
+
+=== F-0050 CONCLUSION ===
+SOUND. The belief holds: the three literal hits at brand-pipeline.tsx:768-770 are three
+legitimate call sites, and the gate is NOT a token-as-proxy gate — it already reads
+gates/_code.sh, it already carries a positive assertion, and both legs were observed to
+fire. Injection A (F-0050 verbatim, grepped token left present) = exit 1. Probe B
+(positive token present only in a comment) = exit 1. No repair made; the gate is left
+byte-identical.
+BLIND SPOT, recorded not repaired: probe C = exit 0. The gate is name-locked to
+BoardView/ListView/TimelineView, so the same in-render-component defect under a new name
+(KanbanView) passes. That is a different-shaped record than F-0050, whose symptom names
+those three identifiers; per the task's rule I did not 'improve' a gate that survived its
+own injection.

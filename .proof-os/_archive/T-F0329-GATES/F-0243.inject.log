@@ -1,0 +1,85 @@
+=== T-F0329-GATES / F-0243 injection log ===
+date: 2026-08-18T11:48:49Z
+
+-- pre-injection hashes --
+990809b45794910ade5f5b9bd4be512e6ba9416eeb51018348eaf02d9b12d74b *src/components/brand/campaigns/brand-kyc-prompt.tsx
+d82a7352eef65ff4025ba2a938fcaef7ec41082d1b2c35d7c6ec1658eb7bc2f6 *src/components/brand/WorkspaceVerificationBanner.tsx
+
+-- INJECTION: the F-0243 contradiction, restored with a TYPOGRAPHIC apostrophe --
+  brand-kyc-prompt.tsx body copy is now:
+    "...speed up payouts. This is optional - it won<U+2019>t block your campaign."
+  while WorkspaceVerificationBanner (untouched) still says verification is needed before
+  publishing. The badge '· required to publish' is left in place, so the gate's REQUIRED
+  token is still satisfied; the forbidden token uses a curly apostrophe, which the gate's
+  BRE 'won.t' does not match (a '.' matches ONE BYTE, and U+2019 is three).
+
+-- OLD gate against the injection --
+VERDICT: aligned (proved)
+NOT CHECKED: copy on brand-verification.tsx and BrandKycForm.tsx, whether the wording is understandable, or runtime behaviour
+OBSERVED EXIT=0
+
+-- CONTROL: identical injection, ASCII apostrophe instead of U+2019 --
+· the KYC prompt still claims verification won't block the campaign
+VERDICT: broken (F-0243 regressed)
+NOT CHECKED: copy on brand-verification.tsx and BrandKycForm.tsx, whether the wording is understandable, or runtime behaviour
+CONTROL OBSERVED EXIT=1
+
+=> the ONLY difference between the two runs is the apostrophe character. The gate's
+   BRE 'won.t block your campaign' catches U+0027 and misses U+2019, and U+2019 is what
+   this codebase's copy actually uses everywhere (hasn't/you'll/we'll are all curly).
+
+-- restored, hashes must equal pre --
+990809b45794910ade5f5b9bd4be512e6ba9416eeb51018348eaf02d9b12d74b *src/components/brand/campaigns/brand-kyc-prompt.tsx
+d82a7352eef65ff4025ba2a938fcaef7ec41082d1b2c35d7c6ec1658eb7bc2f6 *src/components/brand/WorkspaceVerificationBanner.tsx
+(empty = clean)
+
+=== REPAIRED GATE ===
+fresh pre-injection hashes:
+990809b45794910ade5f5b9bd4be512e6ba9416eeb51018348eaf02d9b12d74b *src/components/brand/campaigns/brand-kyc-prompt.tsx
+d82a7352eef65ff4025ba2a938fcaef7ec41082d1b2c35d7c6ec1658eb7bc2f6 *src/components/brand/WorkspaceVerificationBanner.tsx
+
+-- NEW gate vs the CURLY-apostrophe injection (the one the old gate greened) --
+[31m+ Received[39m
+[32m- [][39m
+[31m+ [[39m
+[31m+   "BrandKycPrompt says verification does NOT gate publishing ([\"optional\"]) — the backend blocks ACTIVE for an unverified workspace, so this is false on its own terms, before any comparison",[39m
+[31m+   "the two surfaces contradict each other on the same screen: [WorkspaceVerificationBanner[PENDING], BrandKycPrompt] say verification gates publishing while [BrandKycPrompt] say it does not — this is F-0243 itself",[39m
+[31m+ ][39m
+[36m [2m❯[22m .proof-os/gates/F-0243.copy-agrees.spec.tsx:[2m356:9[22m[39m
+    [90m354| [39m        [34mdisagreements[39m(surfaces)[33m,[39m
+    [90m355| [39m        'rendered copy:\n' + surfaces.map((s) => `  ${s.name}: ${norma…
+    [90m356| [39m      )[33m.[39m[34mtoEqual[39m([])[33m;[39m
+    [90m   | [39m        [31m^[39m
+    [90m357| [39m    }
+    [90m358| [39m  })[33m;[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m3 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 17:23:27
+[2m   Duration [22m 5.49s[2m (transform 436ms, setup 273ms, collect 652ms, tests 96ms, environment 888ms, prepare 181ms)[22m
+VERDICT: broken (F-0243 regressed) — the verification surfaces on /brand/campaigns/new do
+         not agree about whether verification stands between the brand and publishing
+NOT CHECKED: copy on brand-verification.tsx and BrandKycForm.tsx, or the onboarding exit
+             copy that took a third position in the original record
+OBSERVED EXIT=1
+
+-- INJECTION C: a REWORDED contradiction, avoiding both words the old gate knew --
+  "Verification is not required to publish - we'll ask for it later."
+-- NEW gate vs injection C --
+[31m+   "BrandKycPrompt says verification does NOT gate publishing ([\"not required to publish\"]) — the backend blocks ACTIVE for an unverified workspace, so this is false on its own terms, before any comparison",[39m
+[31m+   "the two surfaces contradict each other on the same screen: [WorkspaceVerificationBanner[PENDING], BrandKycPrompt] say verification gates publishing while [BrandKycPrompt] say it does not — this is F-0243 itself",[39m
+VERDICT: broken (F-0243 regressed) — the verification surfaces on /brand/campaigns/new do
+OBSERVED EXIT=1
+VERDICT: aligned (proved)
+NOT CHECKED: copy on brand-verification.tsx and BrandKycForm.tsx, whether the wording is understandable, or runtime behaviour
+OLD GATE OBSERVED EXIT=0
+
+-- FINAL restore, F-0243 subjects --
+990809b45794910ade5f5b9bd4be512e6ba9416eeb51018348eaf02d9b12d74b *src/components/brand/campaigns/brand-kyc-prompt.tsx
+d82a7352eef65ff4025ba2a938fcaef7ec41082d1b2c35d7c6ec1658eb7bc2f6 *src/components/brand/WorkspaceVerificationBanner.tsx
+expected:
+990809b45794910ade5f5b9bd4be512e6ba9416eeb51018348eaf02d9b12d74b *src/components/brand/campaigns/brand-kyc-prompt.tsx
+d82a7352eef65ff4025ba2a938fcaef7ec41082d1b2c35d7c6ec1658eb7bc2f6 *src/components/brand/WorkspaceVerificationBanner.tsx
+(empty = clean)
+
+REAL TREE OBSERVED EXIT=0

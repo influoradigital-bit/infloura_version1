@@ -1,0 +1,46 @@
+=== T-F0329-GATES · F-0235 injection ===
+date: 2026-08-18T11:34:11Z
+
+INJECTION (the plausible wrong fix):
+  src/pages/brand-chat.tsx — inside the live-only effect (guarded by 'if (!isApiLive()) return;')
+  that reflects GET /deals/:id/shipment into shippingAddress, the no-record /
+  AWAITING_ADDRESS branch now seeds the fabricated demo address instead of null:
+      setShippingAddress(null)  ->  setShippingAddress(MOCK_SHIPPING_ADDRESS)
+  Rationale a real dev would give: 'an empty address blocks Ship Product, the room
+  looks broken.' Effect: in LIVE mode the brand is shown Priya Sharma / 9876543210 /
+  402 Sea View Apartments as their creator's delivery details, and ShipmentForm mounts
+  prefilled with it and POSTs it to api.shipments.markShipped. F-0235 verbatim.
+
+--- OLD GATE vs injection ---
+VERDICT: aligned (proved)
+NOT CHECKED: whether the fetched address is the RIGHT one, runtime behaviour, or PII in files other than src/pages/brand-chat.tsx
+OBSERVED EXIT: 0
+  exit 0 — VERDICT: aligned (proved)
+  FALSE GREEN. The gate's three assertions are all satisfied by the injection:
+    1. 'useState.*(Sea View|Carter Road|9876543210)' — the literal lives in a module
+       const, so no useState line ever carries it. Unsatisfiable by construction.
+    2. 'MOCK_SHIPPING_ADDRESS binding exists' — it does; the injection USES it.
+    3. 'api.shipments.get|fetchLiveShipment exists' — untouched by the injection.
+  Nothing in the gate asks the only question that matters: is every read of the
+  fabricated address confined to a !isApiLive() path?
+
+RESTORED: sha256 b95494895708d8435b82eb4d2253590a0cbf93909475119d88e7c258467d7c1c (matches pre-injection)
+
+--- REPAIRED GATE vs the SAME injection ---
+· self-check: the reachability analyser rejects three known-bad shapes and accepts one known-good
+  good — all three known-bad rejected, known-good accepted, so a green below means something
+· src/pages/brand-chat.tsx — every read of the fabricated address fixture, checked for a provable not-live guard
+  x line 1060: `MOCK_SHIPPING_ADDRESS` is read on a path this analyser cannot prove is unreachable in live mode - fabricated PII can reach the brand and the shipment POST (F-0235)
+  1 finding(s); fixture bindings analysed: MOCK_SHIPPING_ADDRESS; reads checked: 2
+VERDICT: broken (F-0235 regressed) — a live-mode path can read the fabricated shipping
+         address, so the brand can be shown a stranger's name, phone and street address
+         as their creator's delivery details and POST them to the real shipment endpoint
+NOT CHECKED: whether the fetched address is the RIGHT one, runtime behaviour, or PII in
+             files other than src/pages/brand-chat.tsx
+OBSERVED EXIT: 1
+
+RESTORED (2nd): b95494895708d8435b82eb4d2253590a0cbf93909475119d88e7c258467d7c1c *src/pages/brand-chat.tsx — matches pre-injection
+
+RESULT F-0235: old gate FALSE GREEN (exit 0 on injection).
+  Repaired: gates/F-0235-no-fabricated-pii-live.sh + gates/_pii_guard.js (new).
+  New gate exits: 1 on the injection (line 1060 named), 0 on the real tree.

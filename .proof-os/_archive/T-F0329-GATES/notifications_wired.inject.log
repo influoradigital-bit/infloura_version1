@@ -1,0 +1,130 @@
+=== notifications_wired.py injection log — T-F0329-GATES — 2026-08-18T11:34:53Z ===
+subject: src/components/brand/brand-layout.tsx
+record:  F-0043 (notifications-mock-panel), status CLOSED against this gate.
+symptom: 'brand notifications dropdown renders hardcoded mockNotifications (defined :131)
+          while the badge count is real; /notifications backend exists but layout never
+          calls it'
+pre-injection sha256: bc7bfbd441ad882e70f559c1677db6b89b61f517f32bdf53abbb413868511270 *src/components/brand/brand-layout.tsx
+
+--- BASELINE (clean tree) ---
+VERDICT: aligned (proved) � brand notifications wired to useNotifications; no mockNotifications / useNotificationStore in src
+OBSERVED EXIT=0
+
+--- INJECTION 1 (reported defect 1: raw bytes, not gates/_code.sh) ---
+Not a wrong fix at all — the CORRECT fix, documented. A comment above the live wiring
+names the array that used to be rendered there. This is the F-0266 shape verbatim.
+gate run against injection 1:
+VERDICT: broken � 1 reference(s) to the removed mock/dead-store notification pattern
+  src/components/brand/brand-layout.tsx:167  mockNotifications  // F-0043: this replaced the hardcoded mockNotifications array that us
+OBSERVED EXIT=1
+  restored after injection 1: sha256 bc7bfbd4... MATCHES, git clean
+  DEFECT 1 CONFIRMED at OBSERVED EXIT=1 — a false RED. The tree was fully wired and
+  correct; the only thing the gate found was its own fix's documentation.
+
+--- INJECTION 2 (reported defect 2: absence-only, never proves the wiring) ---
+The wrong fix: F-0043 reintroduced VERBATIM IN BEHAVIOUR — the popover renders a
+hardcoded array and GET /notifications is never called — but the array is named
+something else, so neither forbidden token appears anywhere. The useNotifications
+import is deleted too: the wiring this gate's own VERDICT line claims to have proved
+is entirely gone.
+grep useNotifications in the subject after injection 2:
+0
+0 — the wiring is gone
+gate run against injection 2:
+VERDICT: aligned (proved) � brand notifications wired to useNotifications; no mockNotifications / useNotificationStore in src
+OBSERVED EXIT=0
+  DEFECT 2 CONFIRMED at OBSERVED EXIT=0 — a false GREEN on a CLOSED record. The gate
+  printed 'aligned (proved) - brand notifications wired to useNotifications' about a file
+  containing ZERO occurrences of useNotifications, rendering a hardcoded array, never
+  calling GET /notifications. That is F-0043 itself, certified as fixed.
+  restored after injection 2: sha256 bc7bfbd4... MATCHES, git clean
+
+==============================================================================
+REPAIR APPLIED to .proof-os/gates/notifications_wired.py (+ new gates/_code.py)
+==============================================================================
+
+--- RE-RUN, clean tree, repaired gate ---
+- src/components/brand/brand-layout.tsx: the wiring chain, over CODE
+- src/hooks/useNotifications.ts: reaches GET /notifications
+- src/: neither dead pattern is back anywhere in application CODE
+  533 source files read as code, not as bytes
+VERDICT: aligned (proved) - brand-layout imports useNotifications; `notifications` and `unreadCount` are BOUND BY that one useNotifications('brand') call and by nothing else; the popover iterates that binding and the badge consumes that count; the hook itself calls notificationsApi.list(), so the feed reaches GET /notifications; and neither mockNotifications nor useNotificationStore appears in the CODE of any of the 533 source files (comments excluded). The assertion table was proved able to reject F-0043 - and able to accept a documented fix - before any of that was believed.
+NOT CHECKED: that the popover RENDERS what it iterates (no test mounts brand-layout; this gate reads structure, not a render); the demo-mode branch inside the hook (isApiLive() === false still serves MOCK_NOTIFICATIONS, by design); the backend GET /notifications response itself; the creator-side bell; whether markRead / markAllRead reach the server; any other file that renders notifications.
+OBSERVED EXIT=0
+(2.7s wall: the view is produced in-process, not one python subprocess per file - F-0229)
+
+--- RE-INJECTION 1 (the documenting comment) against the repaired gate ---
+- src/: neither dead pattern is back anywhere in application CODE
+  533 source files read as code, not as bytes
+VERDICT: aligned (proved) - brand-layout imports useNotifications; `notifications` and `unreadCount` are BOUND BY that one useNotifications('brand') call and by nothing else; the popover iterates that binding and the badge consumes that count; the hook itself calls notificationsApi.list(), so the feed reaches GET /notifications; and neither mockNotifications nor useNotificationStore appears in the CODE of any of the 533 source files (comments excluded). The assertion table was proved able to reject F-0043 - and able to accept a documented fix - before any of that was believed.
+NOT CHECKED: that the popover RENDERS what it iterates (no test mounts brand-layout; this gate reads structure, not a render); the demo-mode branch inside the hook (isApiLive() === false still serves MOCK_NOTIFICATIONS, by design); the backend GET /notifications response itself; the creator-side bell; whether markRead / markAllRead reach the server; any other file that renders notifications.
+OBSERVED EXIT=0
+  DEFECT 1 REPAIRED: the documented tree is now OBSERVED EXIT=0 (was exit 1).
+  restored, sha256 bc7bfbd4... MATCHES, git clean
+
+--- RE-INJECTION 2 (wiring deleted, renamed array) against the repaired gate ---
+  so a green below means something
+- src/components/brand/brand-layout.tsx: the wiring chain, over CODE
+- src/hooks/useNotifications.ts: reaches GET /notifications
+- src/: neither dead pattern is back anywhere in application CODE
+  533 source files read as code, not as bytes
+VERDICT: broken - the brand notification bell is not wired to the live feed (2 failure(s)) (F-0043)
+  src/components/brand/brand-layout.tsx: no `import { useNotifications } from '.../useNotifications'` in this file's CODE - the layout cannot be wired to a hook it does not import
+  src/components/brand/brand-layout.tsx: line 166: `notifications` is bound by a direct from `[ { id: '1', title: 'New application', body: 'Aarav applied ` - NOT from useNotifications(). This is F-0043: the dropdown renders a local list and GET /notifications is never called
+NOT CHECKED: everything below the first broken link - a chain reports where it parted, not what the rest would have said
+OBSERVED EXIT=1
+  DEFECT 2 REPAIRED: OBSERVED EXIT=1 (was exit 0). The chain names WHERE it parted:
+  the import is gone and  is bound by a direct array literal.
+  restored, sha256 bc7bfbd4... MATCHES, git clean
+
+--- INJECTION 3: F-0043 moved one file LEFT (layout untouched, hook gutted) ---
+Wrong fix: someone 'simplifies' useNotifications to serve the fixture unconditionally.
+brand-layout still imports it, still destructures it, still maps it - every
+token-level assertion about the layout is satisfied - and GET /notifications is
+never called. subject: src/hooks/useNotifications.ts sha b86f20b3...
+  533 source files read as code, not as bytes
+VERDICT: broken - the brand notification bell is not wired to the live feed (1 failure(s)) (F-0043)
+  src/hooks/useNotifications.ts: useNotifications never calls `notificationsApi.list(` - the hook the layout is wired to does not reach GET /notifications (F-0043 moved one file left)
+NOT CHECKED: everything below the first broken link - a chain reports where it parted, not what the rest would have said
+OBSERVED EXIT=1
+  INJECTION 3 result: OBSERVED EXIT=1 — the chain's last hop caught it.
+  hook restored, sha256 b86f20b30c47fa29d9d26924982fd0d746e0ae896221ba5889d29e58407e6ebe MATCHES, git clean
+
+--- F-0325: can this gate print its own verdict on a cp1252 Windows console? ---
+A) a print of "rupee U+20B9, arrow U+2192, le U+2264" WITHOUT _code.harden_stdout(),
+   PYTHONIOENCODING=cp1252  -> UnicodeEncodeError, OBSERVED EXIT=1. That is F-0325: a
+   false RED that says nothing about the artefact the gate guards.
+B) the same print WITH harden_stdout()                    -> OBSERVED EXIT=0, verdict
+   delivered with the unrepresentable characters degraded to '?'. Degraded beats absent.
+C) the real gate, PYTHONIOENCODING=cp1252                  -> OBSERVED EXIT=0, full
+   VERDICT and NOT CHECKED lines delivered.
+Belt and braces: every string this gate prints is also ASCII by construction, so B is the
+safety net rather than the mechanism.
+
+Separately: injection 2's fixture deliberately contained U+20B9. gates/_code.py decodes
+STRICTLY as UTF-8 (never errors='replace'), and all 533 src files — money screens included
+— decode and strip cleanly. _strip_comments.py still writes to sys.stdout.buffer; that fix
+is untouched and is not on the path this gate uses (it imports the module, no subprocess).
+
+--- Does the frozen-fixture self-check actually fire, or is it decoration? ---
+A COPY of the repaired gate (scratchpad only; the real gate untouched) was rotted two ways:
+  rot 1: make the binding assertion satisfiable by the word appearing anywhere — the F-0319
+         end state for that one link. OBSERVED EXIT=0, and the self-check still passed:
+         the OTHER links (missing import, unreadCount bound elsewhere) caught both bad
+         fixtures. Defence in depth, but NOT a demonstration of the self-check.
+  rot 2: assess_layout returns [] — certify everything. OBSERVED EXIT=1:
+         "x ACCEPTED a known-bad layout" twice, then
+         "THIS GATE CANNOT BE TRUSTED ... Refusing to report a verdict about the real code
+          from a check that has proved itself blind."
+So the device works and is not decoration.
+
+=============================================================================
+SUMMARY — notifications_wired.py
+=============================================================================
+DEFECT 1 (raw bytes, not gates/_code.sh): CONFIRMED, injection 1, OBSERVED EXIT=1 on a
+  correct tree. REPAIRED — same injection now OBSERVED EXIT=0.
+DEFECT 2 (absence-only; wiring deleted leaves it green): CONFIRMED, injection 2, OBSERVED
+  EXIT=0 while printing "aligned (proved) - brand notifications wired to useNotifications"
+  about a file with zero occurrences of useNotifications. REPAIRED — same injection now
+  OBSERVED EXIT=1, naming the two broken links.
+Real tree: OBSERVED EXIT=0, 2.7s.

@@ -27,6 +27,16 @@ export default defineConfig({
       '**/.claude/**',
       '**/*.live.test.ts',
       '**/*.live.test.tsx',
+      // F-0334: .proof-os/ is the trust layer, not the product. Gates that prove a behaviour
+      // instead of grepping for a token keep fixture specs in .proof-os/gates/ (gate work owns
+      // that directory and nothing else), and several gates write TEMPORARY *.test.tsx there
+      // under an EXIT trap. Without this line the default include swept all of them into the
+      // product suite and into gates/build.sh's `npm test` leg — so a gate fixture failing read
+      // as a product regression, and build.sh partly graded the trust layer. Gates run their own
+      // specs under .proof-os/gates/vitest.gates.config.ts, which derives from this file and
+      // drops exactly this one entry (vitest applies `exclude` even to an explicitly-passed
+      // path, so they cannot simply pass the filename).
+      '**/.proof-os/**',
     ],
     // F-0217: raised from 15s. A page test that awaits several elements in sequence now has up
     // to 5s per wait (src/test/setup.ts), so 15s could be exhausted by three slow waits on a

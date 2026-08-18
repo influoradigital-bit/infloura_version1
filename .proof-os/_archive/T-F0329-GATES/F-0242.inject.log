@@ -1,0 +1,48 @@
+=== T-F0329-GATES · F-0242 injection ===
+date: 2026-08-18T11:41:02Z
+
+INJECTION (the plausible wrong fix):
+  src/lib/api.ts — brandDisputes.open is 'DRY-ed up' to delegate to creatorDisputes.open:
+      open: (dealId, reason) => creatorDisputes.open(dealId, reason)
+  This is the exact mistake brandDisputes' OWN doc-comment warns against: the two are
+  duplicated because the `role` option selects which session's JWT is attached
+  (getToken(role), separate per-role token storage). Delegating sends the brand's
+  dispute POST with an empty creator token slot (401) or a coexisting creator identity.
+  Effect: the brand again has no working way to escalate a deal with money on hold —
+  F-0242's symptom, restored, with the control still visibly present in the deal room.
+
+--- OLD GATE vs injection ---
+VERDICT: aligned (proved)
+NOT CHECKED: whether the control is reachable at runtime, whether both 409s render understandably, or backend authorization
+OBSERVED EXIT: 0
+  exit 0 — VERDICT: aligned (proved)
+  FALSE GREEN. The gate's assertions against the injection:
+    1. awk window over brandDisputes greps "open:" — still there (delegating).
+    2. same window greps "role: 'brand'" — SATISFIED BY A NEIGHBOUR: brandDisputes.list
+       carries role: 'brand'. The grep never asks whether OPEN sends it. This is the
+       F-0319 shape exactly: a token satisfied by an adjacent statement.
+    3. brand-chat calls brandDisputes.open — untouched, still true.
+    4. brand-chat must not call creatorDisputes.open — still true; the WRONG call now
+       happens one layer down, inside api.ts, where assertion 4 does not look.
+    5. the stale 'intentionally NOT wired' comment — this leg is DEAD ANYWAY: it greps
+       A_CODE, the COMMENT-STRIPPED view, so a re-added comment can never match it.
+
+RESTORED: sha256 f4efcd75aff7b3a40b375b2f683831782fee98c76af722b36986fe0e1a83b6c2 (matches pre-injection)
+
+--- REPAIRED GATE vs the SAME injection ---
+· self-check: these assertions reject three known-bad dispute clients and accept a known-good one
+  good — all three known-bad rejected, known-good accepted, so a green below means something
+· creatorDisputes + brandDisputes, EXTRACTED from src/lib/api.ts and EXECUTED against a recording http stub
+    x brand open ROLE — got role="creator" — this is the F-0242 defect: the request goes out on the wrong session JWT, so the brand still cannot escalate
+    1 dispute-client assertion(s) failed
+VERDICT: broken (F-0242 regressed) — the brand's dispute request does not go out as the
+         brand, so a brand with money on hold still cannot escalate
+NOT CHECKED: the deal-room control and the vitest leg below — the client they depend on
+             is already wrong
+OBSERVED EXIT: 1
+
+RESTORED (2nd): f4efcd75aff7b3a40b375b2f683831782fee98c76af722b36986fe0e1a83b6c2 *src/lib/api.ts — matches pre-injection
+
+RESULT F-0242: old gate FALSE GREEN (exit 0 on injection).
+  Repaired: gates/F-0242-brand-can-open-dispute.sh + gates/_dispute_wire.js (new).
+  New gate exits: 1 on the injection (names role="creator" on the wire), 0 on the real tree.

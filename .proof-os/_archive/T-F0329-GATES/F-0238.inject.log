@@ -1,0 +1,75 @@
+T-F0329-GATES · F-0238 injection log · 2026-08-18T11:33:40Z
+
+SUBJECT: src/components/brand/deal-room/deal-contract-tab.tsx
+PRISTINE sha256: 20ef42a8d6bf5b550b11f1fbe0a41f2ba0c3bc5df8765cc5c05fbca2f29f8f5a
+
+== BASELINE (real tree, OLD gate) ==
+exit 0 — VERDICT: aligned (proved)
+
+== INJECTION B: the plausible wrong fix ==
+Ticket a competent engineer would be handed: 'Download PDF just errors for brands before
+both parties sign — give them the draft in the meantime.' The fix hoists demoContractData
+out of the demo-only branch to the top of handleDownloadPDF, and in the LIVE catch calls
+  downloadContractPDF(demoContractData, `${contractId}.pdf`)
+toasting 'Draft contract ready' (non-destructive) instead of surfacing the failure.
+That IS F-0238: a legal document generated from invented values (brandName 'Your Brand',
+invented deliverables, a now+14d deadline) handed to the brand as if it were their contract,
+announced with a reassuring message. Only the wording changed.
+
+Token state after injection (both of the old gate's assertions are satisfied):
+  'Opened a local copy'  : absent from the file entirely (stale comment removed too)
+  'demoContractData'     : 3 occurrences — MORE than before, because the wrong fix hoists it
+The forbidden-string leg and the required-token leg are BOTH about the same identifier the
+wrong fix happens to reuse. This is the F-0319 multi-site shape: demoContractData exists for
+the legitimate demo-mode PDF, so its presence can never distinguish a scoped demo payload
+from one leaking into the live path.
+
+== OLD GATE AGAINST INJECTION B ==
+VERDICT: aligned (proved)
+NOT CHECKED: whether the live failure message is understandable, or runtime behaviour
+observed exit: 0
+
+VERDICT ON THE OLD GATE: FALSE-GREEN. Ledger record F-0238 is CLOSED against a gate that
+certifies the fabricated-legal-document defect it exists to catch.
+
+NOTE: no existing vitest suite covers handleDownloadPDF at all — the three suites under
+src/components/brand/deal-room/__tests__/ cover terms rendering (F-0271), the demo sign
+flow (F-0272) and the pending-signature deadlock (F-0250). The error path F-0238 lives on
+was, as the ledger's missed_by says, silent by construction and is still untested.
+
+== REPAIRED GATE ==
+Repair: the gate now MOUNTS the panel and CLICKS Download PDF (vitest, node_modules/.bin/vitest,
+300s budget) over four API wirings, counting how many locally generated documents reach the
+brand. It runs the same table against a frozen known-bad panel first (F-0273 device) and
+requires the two fabrication legs L1/L2 — and only those — to reject it.
+
+new gate, REAL TREE:
+  self-check L1/L2 failed, L3/L4 passed; real panel 4/4 passed; exit 0
+
+new gate, INJECTION B re-applied:
+· self-check: this assertion table rejects a panel that hands over a locally built contract
+    L1 failed
+    L2 failed
+    L3 passed
+    L4 passed
+  good — L1/L2 reject it and L3/L4 hold, so a green below means the fabrication is gone
+· the real panel: Download PDF clicked against a failing, an empty and a real presigned URL
+    L1 failed
+    L2 failed
+    L3 passed
+    L4 passed
+  [31m   [31m×[31m F-0238 no fabricated contract PDF - the real panel[2m > [22mL1 - live, the PDF fetch FAILS: no locally generated document, and the brand is told[39m[33m 860[2mms[22m[39m
+  [31m     → expected { localDocumentsHandedOver: 1, …(1) } to deeply equal { localDocumentsHandedOver: +0, …(1) }[39m
+  [31m   [31m×[31m F-0238 no fabricated contract PDF - the real panel[2m > [22mL2 - live, the fetch RESOLVES AN EMPTY URL: same, not a silent no-op[39m[32m 130[2mms[22m[39m
+  [31m     → expected { localDocumentsHandedOver: 1, …(1) } to deeply equal { localDocumentsHandedOver: +0, …(1) }[39m
+  [31m[1mAssertionError[22m: expected { localDocumentsHandedOver: 1, …(1) } to deeply equal { localDocumentsHandedOver: +0, …(1) }[39m
+  [31m[1mAssertionError[22m: expected { localDocumentsHandedOver: 1, …(1) } to deeply equal { localDocumentsHandedOver: +0, …(1) }[39m
+VERDICT: broken — a failed contract-PDF fetch still puts a document in the brand's hands
+         that no server ever produced, or fails to tell them it failed (F-0238)
+NOT CHECKED: live behaviour against a real R2 presigned URL
+observed exit: 1
+
+== RESTORE ==
+sha256 after restore: 20ef42a8d6bf5b550b11f1fbe0a41f2ba0c3bc5df8765cc5c05fbca2f29f8f5a
+HASH MATCHES PRISTINE
+git status --porcelain on the subject file: (nothing above = clean)

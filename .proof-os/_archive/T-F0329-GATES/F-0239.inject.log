@@ -1,0 +1,104 @@
+T-F0329-GATES · F-0239 · injection diagnosis and repair
+date: 2026-08-18   who: dev
+
+SUBJECT   src/components/brand/deals/deal-room-dashboard.tsx
+GATE      .proof-os/gates/F-0239-no-fake-money-progress.sh
+
+The product file is DIRTY in the working tree (another session's F-0328/CR-97 work).
+It was never written to. All injection was done in a scratch tree built from HEAD:
+  git archive HEAD src | tar -x -C $SCRATCH ; cp -r .proof-os/gates $SCRATCH/.proof-os/gates
+
+=== 1. THE WRONG FIX (variant A) — F-0239 verbatim ===
+In handleAcceptProposal's LIVE branch, after dealsApi.accept() succeeds:
+        setActionMessage('Proposal accepted.');
++       runDemoContractAnimation();
+The brand is again walked through 'Locking escrow funds' -> 'Generating contract from
+proposal' on setTimeout, in live mode, with no escrow or contract request made.
+
+=== 2. OLD GATE against the injected scratch tree ===
+OBSERVED EXIT: 0   VERDICT: aligned (proved)   -> FALSE GREEN on a CLOSED record.
+Legs executed: all four. The old gate is entirely static (4 greps over the code view);
+it has NO vitest / execution leg, so nothing was skipped and nothing reported unavailable.
+  leg 1  grep -q runContractAnimation        (must be absent) .. ran, passed
+  leg 2  grep -q runDemoContractAnimation    (must be present) .. ran, passed <- the hole
+  leg 3  onOpenChange={() => {}}             (must be absent) .. ran, passed
+  leg 4  onInteractOutside preventDefault    (must be absent) .. ran, passed
+Leg 2 is the F-0319 shape: the demo path legitimately keeps the definition and one call
+site, so the token is satisfied forever no matter where else the animation is called from.
+OLD gate against variant B (animation INLINED in the live branch, helper name untouched):
+OBSERVED EXIT: 0 — also a false green.
+
+=== 3. REPAIR ===
+The gate no longer greps for the animation's name. It extracts handleAcceptProposal (and
+the helpers it calls) out of the comment-stripped code view and RUNS them in node's vm
+inside a recording Proxy sandbox, twice: isApiLive() true and false. It records every
+request, every open of the progress dialog, every step advance, and whether that advance
+happened inside a setTimeout callback. Finding: in LIVE mode the modal must not be
+advanced by a clock, and must not open at all unless an escrow-or-contract request was
+issued. Before believing any of that it runs the SAME assertion table against F-0239
+frozen into the gate (F-0273's device) and exits 1 'this gate cannot fail' if it passes.
+A helper the handler calls that the run could not see inside is reported BLIND; the gate
+pulls it into the fragment and re-runs, and reports unavailable rather than green if it
+still cannot see.
+
+=== 4. NEW GATE — observed exits ===
+injected scratch: variant A (helper called from live)    exit 1
+injected scratch: variant B (inlined, no helper name)    exit 1
+injected scratch: variant C (helper renamed + called)    exit 1
+injected scratch: variant D (modal non-dismissable)      exit 1
+clean scratch tree (HEAD, no injection)                  exit 0
+REAL tree (with the other session's in-flight edits)     exit 0
+
+The real-tree green is not a conflict with the other session's work: their F-0328/CR-97
+edits do not touch handleAcceptProposal's live branch or the progress dialog's
+dismissability. Their four failing tests are their own in-flight work, not this gate.
+
+=== 5. FULL RUN, clean scratch tree ===
+· self-check: these assertions reject a known-bad handler (F-0239 verbatim)
+    LIVE  requests: dealsApi.accept, loadDeals, loadMessages
+    LIVE  progress modal opened: true   steps advanced on a timer: 4
+    MOCK  requests: none   progress modal opened: true   steps advanced on a timer: 4
+  x the escrow/contract progress modal is opened in LIVE mode and advanced 4 step(s) from inside setTimeout — money movement confirmed to the brand by a clock, not by a server (F-0239 verbatim)
+  x the progress modal claiming "Locking escrow funds" / "Generating contract" is opened in LIVE mode, but no escrow-or-contract request was issued (requests seen: dealsApi.accept, loadDeals, loadMessages)
+  good — the known-bad handler is rejected, so a green below means something
+· handleAcceptProposal, EXECUTED in live mode and in mock mode
+    LIVE  requests: dealsApi.accept, loadDeals, loadMessages
+    LIVE  progress modal opened: false   steps advanced on a timer: 0
+    MOCK  requests: none   progress modal opened: true   steps advanced on a timer: 4
+· the contract-progress dialog is dismissable
+  checked at line 1147
+VERDICT: aligned (proved) — handleAcceptProposal was EXECUTED with isApiLive() true and
+         false inside a recording sandbox. In LIVE mode it issues a real request and does
+         NOT open the escrow/contract progress modal, so no step of it can be advanced by
+         a setTimeout; the modal, where it exists, is dismissable. The assertion table was
+         proved falsifiable against the F-0239 defect before any of that was believed.
+NOT CHECKED: whether the live branch's success message matches what the server actually
+             did; the rendered dialog (this gate executes the handler, it does not render);
+             any OTHER handler on this page or another page that could open the same
+             progress modal — only handleAcceptProposal is executed here; and whether a
+             real POST /contracts elsewhere in the product actually succeeds.
+EXIT=0
+
+=== 6. FULL RUN, injected scratch tree (variant A) ===
+· self-check: these assertions reject a known-bad handler (F-0239 verbatim)
+    LIVE  requests: dealsApi.accept, loadDeals, loadMessages
+    LIVE  progress modal opened: true   steps advanced on a timer: 4
+    MOCK  requests: none   progress modal opened: true   steps advanced on a timer: 4
+  x the escrow/contract progress modal is opened in LIVE mode and advanced 4 step(s) from inside setTimeout — money movement confirmed to the brand by a clock, not by a server (F-0239 verbatim)
+  x the progress modal claiming "Locking escrow funds" / "Generating contract" is opened in LIVE mode, but no escrow-or-contract request was issued (requests seen: dealsApi.accept, loadDeals, loadMessages)
+  good — the known-bad handler is rejected, so a green below means something
+· handleAcceptProposal, EXECUTED in live mode and in mock mode
+    LIVE  requests: dealsApi.accept, loadDeals, loadMessages
+    LIVE  progress modal opened: true   steps advanced on a timer: 4
+    MOCK  requests: none   progress modal opened: true   steps advanced on a timer: 4
+  x the escrow/contract progress modal is opened in LIVE mode and advanced 4 step(s) from inside setTimeout — money movement confirmed to the brand by a clock, not by a server (F-0239 verbatim)
+  x the progress modal claiming "Locking escrow funds" / "Generating contract" is opened in LIVE mode, but no escrow-or-contract request was issued (requests seen: dealsApi.accept, loadDeals, loadMessages)
+· the contract-progress dialog is dismissable
+  checked at line 1148
+VERDICT: broken — the brand is shown a money/contract confirmation this component never
+         asked the server for, or cannot dismiss it (F-0239)
+NOT CHECKED: the rendered dialog, and any other page that may fabricate the same claim
+EXIT=1
+
+=== 7. SUBJECT FILE UNTOUCHED ===
+ M src/components/brand/deals/deal-room-dashboard.tsx

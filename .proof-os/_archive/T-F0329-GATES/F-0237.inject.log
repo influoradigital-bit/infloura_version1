@@ -1,0 +1,93 @@
+T-F0329-GATES · F-0237 injection log · 2026-08-18T11:32:08Z
+
+SUBJECT: src/components/brand/deal-room/deal-contract-tab.tsx
+PRISTINE sha256: 20ef42a8d6bf5b550b11f1fbe0a41f2ba0c3bc5df8765cc5c05fbca2f29f8f5a
+
+== BASELINE (real tree, OLD gate) ==
+exit 0 — VERDICT: aligned (proved)
+
+== INJECTION A: the plausible wrong fix ==
+The empty-terms branch used to read the single honest sentence
+  'No terms are on file for this contract.'
+A competent engineer, told that reads as broken to a brand about to sign, appends
+"Influora's standard engagement terms" — a 5-item clause list (6 months usage rights,
+2 revision rounds, 30-day exclusivity, 7-day payment, Mumbai arbitration) — under the
+'Terms (from contract, read-only)' heading with the Sign control beneath it.
+That IS F-0237: clause text presented as the contract's terms that no contract ever said.
+
+Token state after injection (everything the old gate greps for is still there):
+  contractRecord            : 9 occurrences
+  contractRecord.milestones : 2 occurrences
+  demoContractData          : 2 occurrences
+  disabled={...!contractRecord} : intact at the Sign button
+Deliberately avoids the one literal the gate blacklists ('Brand retains usage rights for
+6 months') — and that blacklist leg is dead anyway: it is AND-ed with '! demoContractData',
+and demoContractData is present for an unrelated reason (the demo PDF payload). This is the
+F-0319 multi-site shape exactly.
+
+== OLD GATE AGAINST INJECTION A ==
+VERDICT: aligned (proved)
+NOT CHECKED: whether the rendered milestones match the signed PDF, or runtime behaviour
+observed exit: 0
+
+VERDICT ON THE OLD GATE: FALSE-GREEN. Ledger record F-0237 is CLOSED against a gate that
+certifies the defect it exists to catch.
+
+== SECONDARY FINDING: the existing behavioural suite ALSO passes injection A ==
+node_modules/.bin/vitest run src/components/brand/deal-room/__tests__/signed-terms-rendered.test.tsx
+  observed exit: 0 (2 passed) WITH injection A in the tree.
+Why it misses: its negative controls are literal-shaped —
+  queryByText(/usage rights for 6 months/i)  vs injected '6 months of usage rights'
+  queryByText(/2 revision rounds/i)          vs injected '2 rounds of revisions'
+and its positive control findByText(/no terms are on file for this contract/i) is a SUBSTRING
+match, so appending five clauses to that same node still satisfies it.
+CONSEQUENCE FOR THE REPAIR: simply wiring this suite in as an execution leg would have
+produced a second false-green with an execution leg attached — the exact F-0264/F-0296 shape
+F-0329 warns about. The repaired gate must carry its own assertion that the empty-terms panel
+says nothing substantive, and must prove that assertion falsifiable before believing it.
+
+== REPAIRED GATE ==
+Repair: the gate now RENDERS the panel (vitest, node_modules/.bin/vitest, 300s budget) over
+a contract whose terms are a sentinel value and over one that genuinely has none, and asserts
+the terms region EQUALS the record's terms / states absence and invents nothing. It runs that
+same table against a frozen known-bad panel first (F-0273 device) and requires the three
+provenance legs A/B/C — and only those — to reject it.
+
+new gate, REAL TREE:
+  self-check A/B/C failed, D/E/F passed; real panel 6/6 passed; exit 0
+
+new gate, INJECTION A re-applied:
+· self-check: this assertion table rejects a panel that renders an invented clause list
+    A failed
+    B failed
+    C failed
+    D passed
+    E passed
+    F passed
+  good — A/B/C reject it and D/E/F hold, so a green below means provenance specifically
+· the real panel, mounted over a sentinel contract and over a contract with no terms
+    A passed
+    B passed
+    C failed
+    D passed
+    E passed
+    F passed
+  [31m   [31m×[31m F-0237 terms provenance - the real panel[2m > [22mC - when the contract carries NO terms, the panel invents none (the F-0237 defect)[39m[32m 157[2mms[22m[39m
+  [31m     → expected { tooLong: true, …(1) } to deeply equal { tooLong: false, …(1) }[39m
+  [31m[1mAssertionError[22m: expected { tooLong: true, …(1) } to deeply equal { tooLong: false, …(1) }[39m
+VERDICT: broken — what the panel puts under the Sign control did not come from the
+         fetched contract (F-0237)
+NOT CHECKED: live rendering against a real backend contract
+observed exit: 1
+
+== SECOND, SUBTLER INJECTION (A2) — is the new C leg length-only? ==
+Empty-terms copy changed to a SINGLE 96-char sentence:
+  'No terms are on file for this contract. Standard 2 revision rounds apply.'
+new gate observed exit: 1 — rejected by a DIFFERENT property of C (digits: true), not by the
+length bound that caught A. The C leg is genuinely five independent properties of what the
+brand sees, not one tuned to the injection it was written against.
+
+== RESTORE ==
+sha256 after restore: 20ef42a8d6bf5b550b11f1fbe0a41f2ba0c3bc5df8765cc5c05fbca2f29f8f5a
+HASH MATCHES PRISTINE
+git status --porcelain: (empty above = clean)

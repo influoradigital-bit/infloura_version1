@@ -1,0 +1,108 @@
+=== T-F0329-GATES / F-0240 injection log ===
+date: 2026-08-18T11:32:08Z
+
+-- pre-injection hashes --
+05209c78a6f37f87a538df3eb5eec2ca683f80633716514e613f88a271303eba *src/pages/brand-new-campaign.tsx
+be873e9542ef50fb31adad3974001fe171c98792b7e8594f4c87d742c3f28849 *src/components/brand/campaigns/campaign-form.tsx
+
+-- INJECTION A: 'detached literal' wrong fix --
+src/pages/brand-new-campaign.tsx: the picked type is hoisted into a local
+  const pickedTypeValues = selectedType ? { campaignType: selectedType } : undefined;
+and CampaignForm is then handed  initialValues={templateInitialValues ?? undefined}.
+The local is never used. Direct Deal -> no campaignType in state -> payload omits it ->
+backend defaults STANDARD. This is F-0240's exact original symptom, restored.
+The grepped token 'campaignType: selectedType' is still present in CODE (not a comment).
+
+-- OLD gate against injection A --
+VERDICT: aligned (proved)
+NOT CHECKED: the template-apply path (F-0251, still open), the backend enum mapping, or runtime behaviour
+OBSERVED EXIT=0
+
+-- restored, post-restore hashes (must equal pre) --
+05209c78a6f37f87a538df3eb5eec2ca683f80633716514e613f88a271303eba *src/pages/brand-new-campaign.tsx
+be873e9542ef50fb31adad3974001fe171c98792b7e8594f4c87d742c3f28849 *src/components/brand/campaigns/campaign-form.tsx
+(empty porcelain above = clean)
+
+=== REPAIRED GATE ===
+fresh pre-injection hashes:
+05209c78a6f37f87a538df3eb5eec2ca683f80633716514e613f88a271303eba *src/pages/brand-new-campaign.tsx
+be873e9542ef50fb31adad3974001fe171c98792b7e8594f4c87d742c3f28849 *src/components/brand/campaigns/campaign-form.tsx
+
+-- NEW gate against injection A --
+· self-check: the chain assertions reject frozen known-bad sources
+  good — 4 known-bad sources rejected, 1 known-good accepted; a green below means something
+· chain: picker → CampaignForm initialValues → formData state → create payload
+  x link 1: the value of <CampaignForm initialValues={...}> does not reference the picked type. It is: {templateInitialValues ?? undefined}
+      A `campaignType: selectedType` literal elsewhere in the file does not count � it has to be in THIS position to reach the form.
+VERDICT: broken (F-0240 regressed) — the campaign type the brand picks does not reach
+         POST /campaigns, so the backend default silently replaces their choice
+NOT CHECKED: the render leg below was not reached; the template-apply path (F-0251, still
+             open); the backend enum mapping
+OBSERVED EXIT=1
+
+-- execution leg alone vs injection A (chain leg short-circuits before it, so proved separately) --
+    [90m102| [39m        [33mJSON[39m[33m.[39m[34mstringify[39m(props[33m.[39minitialValues) [33m+[39m
+    [90m103| [39m        ' — the type is discarded between the picker and the form (F-0…
+    [90m104| [39m    )[33m.[39m[34mtoBe[39m([32m'DIRECT'[39m)[33m;[39m
+    [90m   | [39m      [31m^[39m
+    [90m105| [39m  })[33m;[39m
+    [90m106| [39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+[41m[1m FAIL [22m[49m .proof-os/gates/F-0240.reaches-payload.spec.tsx[2m > [22mF-0240 — the picked campaign type reaches the form[2m > [22mhands OPEN to CampaignForm when the brand picks Open Campaign
+[31m[1mAssertionError[22m: the brand picked Open Campaign and CampaignForm was handed undefined: expected undefined to be 'OPEN' // Object.is equality[39m
+[32m- Expected:[39m 
+"OPEN"
+[31m+ Received:[39m 
+undefined
+[36m [2m❯[22m .proof-os/gates/F-0240.reaches-payload.spec.tsx:[2m113:7[22m[39m
+    [90m111| [39m      [32m'the brand picked Open Campaign and CampaignForm was handed '[39m [33m+[39m
+    [90m112| [39m        [33mJSON[39m[33m.[39m[34mstringify[39m(props[33m.[39minitialValues)[33m,[39m
+    [90m113| [39m    )[33m.[39m[34mtoBe[39m([32m'OPEN'[39m)[33m;[39m
+    [90m   | [39m      [31m^[39m
+    [90m114| [39m  })[33m;[39m
+    [90m115| [39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m1 passed[39m[22m[90m (3)[39m
+[2m   Start at [22m 17:09:36
+[2m   Duration [22m 20.09s[2m (transform 4.29s, setup 690ms, collect 5.80s, tests 1.14s, environment 2.94s, prepare 643ms)[22m
+SPEC OBSERVED EXIT=1
+
+-- restored after injection A --
+05209c78a6f37f87a538df3eb5eec2ca683f80633716514e613f88a271303eba *src/pages/brand-new-campaign.tsx
+be873e9542ef50fb31adad3974001fe171c98792b7e8594f4c87d742c3f28849 *src/components/brand/campaigns/campaign-form.tsx
+
+-- INJECTION B: link 3 severed in campaign-form.tsx --
+   campaignType: isEditing ? undefined : undefined,   (was ': formData.campaignType')
+   Page-side literal untouched; old gate's 'campaignType: isEditing' token still present.
+-- NEW gate vs injection B --
+· self-check: the chain assertions reject frozen known-bad sources
+  good — 4 known-bad sources rejected, 1 known-good accepted; a green below means something
+· chain: picker → CampaignForm initialValues → formData state → create payload
+  x link 3: the payload's campaignType is not derived from the form's state. It is: campaignType: isEditing ? undefined : undefined
+VERDICT: broken (F-0240 regressed) — the campaign type the brand picks does not reach
+         POST /campaigns, so the backend default silently replaces their choice
+NOT CHECKED: the render leg below was not reached; the template-apply path (F-0251, still
+             open); the backend enum mapping
+OBSERVED EXIT=1
+
+-- OLD gate (from git HEAD) vs injection B, observed not inferred --
+VERDICT: aligned (proved)
+NOT CHECKED: the template-apply path (F-0251, still open), the backend enum mapping, or runtime behaviour
+OLD GATE OBSERVED EXIT=0
+
+-- FINAL restore, F-0240 subjects --
+05209c78a6f37f87a538df3eb5eec2ca683f80633716514e613f88a271303eba *src/pages/brand-new-campaign.tsx
+be873e9542ef50fb31adad3974001fe171c98792b7e8594f4c87d742c3f28849 *src/components/brand/campaigns/campaign-form.tsx
+expected:
+05209c78a6f37f87a538df3eb5eec2ca683f80633716514e613f88a271303eba *src/pages/brand-new-campaign.tsx
+be873e9542ef50fb31adad3974001fe171c98792b7e8594f4c87d742c3f28849 *src/components/brand/campaigns/campaign-form.tsx
+git porcelain:
+(empty = clean)
+
+-- repaired gate, real tree --
+             the backend CAMPAIGN_TYPE_TO_API mapping and CampaignService.create's own
+             null default; that campaignType is correctly withheld on an edit PATCH (the
+             immutability guard is asserted nowhere here); the HYPE branch, which navigates
+             away to its own flow; runtime behaviour against a live backend.
+REAL TREE OBSERVED EXIT=0

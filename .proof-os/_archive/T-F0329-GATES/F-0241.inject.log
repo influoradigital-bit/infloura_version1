@@ -1,0 +1,68 @@
+=== T-F0329-GATES / F-0241 injection log ===
+date: 2026-08-18T11:43:28Z
+
+-- pre-injection hash --
+990ff5013cff4e07962b5400540b0630bd32aab2fd86fa11e775b1c9089aad4a *src/components/brand/VerificationRequiredBox.tsx
+
+-- INJECTION: reworded false reassurance --
+  was: "This campaign hasn't been saved yet - publishing needs a verified workspace. Save it as
+        a draft now so your work isn't lost, then verify to publish it."
+  now: "This campaign hasn't been saved yet as a live campaign - we've kept it as a draft, so
+        nothing is lost. Verify your workspace to publish it."
+  Nothing was persisted (the create call threw), so 'we've kept it as a draft' is the F-0241
+  false-save claim restored. The required token 'been saved yet' is still present, and the
+  forbidden sentence 'saved as a draft, so nothing is lost' is not literally present.
+
+-- OLD gate against the injection --
+VERDICT: aligned (proved)
+NOT CHECKED: whether the save-draft button actually persists, or runtime behaviour
+OBSERVED EXIT=0
+
+-- restored, hash must equal pre --
+990ff5013cff4e07962b5400540b0630bd32aab2fd86fa11e775b1c9089aad4a *src/components/brand/VerificationRequiredBox.tsx
+(empty porcelain = clean)
+
+=== REPAIRED GATE ===
+fresh pre-injection hash:
+990ff5013cff4e07962b5400540b0630bd32aab2fd86fa11e775b1c9089aad4a *src/components/brand/VerificationRequiredBox.tsx
+
+-- NEW gate against the injection --
+   [32m✓[39m F-0241 — the box does not claim work is saved when nothing was persisted[2m > [22mSELF-CHECK: the audit rejects every frozen known-bad copy[32m 6[2mms[22m[39m
+   [32m✓[39m F-0241 — the box does not claim work is saved when nothing was persisted[2m > [22mSELF-CHECK: the audit accepts the frozen known-good copy[32m 1[2mms[22m[39m
+[31m   [31m×[31m F-0241 — the box does not claim work is saved when nothing was persisted[2m > [22mmakes no un-negated claim that the campaign is already saved[39m[32m 202[2mms[22m[39m
+[31m     → with props {"canVerify":true} the box tells the brand their work is already kept somewhere, at a moment when the create call threw and nothing was persisted (F-0241): expected [ Array(1) ] to deeply equal [][39m
+   [32m✓[39m F-0241 — the box does not claim work is saved when nothing was persisted[2m > [22mstates outright that the campaign is not saved yet[32m 21[2mms[22m[39m
+   [32m✓[39m F-0241 — the box does not claim work is saved when nothing was persisted[2m > [22moffers the save-as-draft action rather than asserting it already happened[32m 188[2mms[22m[39m
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+[41m[1m FAIL [22m[49m .proof-os/gates/F-0241.no-false-save-claim.spec.tsx[2m > [22mF-0241 — the box does not claim work is saved when nothing was persisted[2m > [22mmakes no un-negated claim that the campaign is already saved
+[31m[1mAssertionError[22m: with props {"canVerify":true} the box tells the brand their work is already kept somewhere, at a moment when the create call threw and nothing was persisted (F-0241): expected [ Array(1) ] to deeply equal [][39m
+[32m- Expected[39m
+[31m+ Received[39m
+[32m- [][39m
+[31m+ [[39m
+[31m+   "\"we’ve kept it as a draft, so nothing is lost\" [kept]",[39m
+[31m+ ][39m
+[36m [2m❯[22m .proof-os/gates/F-0241.no-false-save-claim.spec.tsx:[2m164:9[22m[39m
+    [90m162| [39m          `kept somewhere, at a moment when the create call threw and …
+    [90m163| [39m          [32m`(F-0241)`[39m[33m,[39m
+    [90m164| [39m      )[33m.[39m[34mtoEqual[39m([])[33m;[39m
+    [90m   | [39m        [31m^[39m
+    [90m165| [39m    }
+    [90m166| [39m  })[33m;[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m4 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 17:16:33
+[2m   Duration [22m 13.51s[2m (transform 292ms, setup 721ms, collect 537ms, tests 422ms, environment 3.22s, prepare 477ms)[22m
+VERDICT: broken (F-0241 regressed) — the verification box makes a claim about the
+         campaign being saved that was not true when it rendered
+NOT CHECKED: whether the save-draft button actually persists anything
+OBSERVED EXIT=1
+
+-- FINAL restore --
+990ff5013cff4e07962b5400540b0630bd32aab2fd86fa11e775b1c9089aad4a *src/components/brand/VerificationRequiredBox.tsx
+expected: 990ff5013cff4e07962b5400540b0630bd32aab2fd86fa11e775b1c9089aad4a
+(empty = clean)
+
+-- repaired gate, real tree --
+REAL TREE OBSERVED EXIT=0

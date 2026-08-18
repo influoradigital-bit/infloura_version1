@@ -1,0 +1,20 @@
+{
+ "text": "repair the 11 promoted gates that assert a token in source as a proxy for a behaviour (F-0329)",
+ "verb": "FIX",
+ "resolution": "proved",
+ "modifiers": {
+  "scope": "queue"
+ },
+ "scope": [
+  ".proof-os/gates/**"
+ ],
+ "owner": "dev",
+ "reviewer": "priya",
+ "oracles": [],
+ "oracle_first": false,
+ "dispatch": "gate",
+ "exit_gate": ".proof-os/gates/F-0329-gates-assert-behaviour.sh",
+ "done_when": "for each of the 11 named gates a constructed wrong fix has been run against it and the observed exit code recorded in .proof-os/tasks/T-F0329-GATES/; every gate that greened its wrong fix is repaired until it exits 1 on that wrong fix and 0 on the real tree; a gate .proof-os/gates/F-0329-gates-assert-behaviour.sh names F-0329, exits 1 against the pre-fix gate population and against a constructed wrong fix, and 0 after; npx tsc --noEmit stays at 0 errors and no product file is left modified; and promote.py closes F-0329 against that gate",
+ "ask": null,
+ "refused": null
+}

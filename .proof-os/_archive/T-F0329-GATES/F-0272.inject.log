@@ -1,0 +1,56 @@
+=== T-F0329-GATES · F-0272 injection ===
+date: 2026-08-18T11:46:22Z
+
+INJECTION (the plausible wrong fix):
+  src/lib/api.ts — the contracts.get demo fixture is deleted and the mock branch resolves
+  null again, written without the explicit generic the old gate greps for:
+      : mockOr<ContractApiRecord | null>({ id, ..., milestones: [...] })
+   -> : mockOr(null)
+  TypeScript infers the union, so this compiles. Effect: contractRecord is null in every
+  demo walkthrough, DealContractTab renders 'Contract terms are not available yet' and
+  'Sign & send to creator' is permanently disabled. F-0272's symptom verbatim.
+
+  MEASURED FIRST — the awk window this gate isolates contracts.get with:
+    awk '/^  get: \(role: Role, id: string\) =>/{f=1} f{print} f&&/^    : mockOr|^    \}\),/{c++; ...}'
+  Its terminator patterns expect 4-space indentation; the real lines are indented 6 and 8.
+  So it NEVER terminates: the isolated 'window' is 3781 of api.ts's 5524 lines, running from
+  contracts.get all the way to 'export default api;'. The grep -A 22 fallback never fires,
+  because a 3781-line string is not empty. Two of the three assertions are therefore
+  answered by unrelated code thousands of lines away.
+
+--- OLD GATE vs injection ---
+VERDICT: aligned (proved)
+NOT CHECKED: whether the fixture's values are plausible, whether Sign actually enables at runtime, or that isApiLive() reports what the deployed build sets
+OBSERVED EXIT: 0
+  exit 0 — VERDICT: aligned (proved)
+  FALSE GREEN. Against the injection:
+    1. grep "mockOr<ContractApiRecord \| null>\(null\)" — the injection drops the explicit
+       generic, so the literal regex misses. This leg only ever caught a byte-identical revert.
+    2. grep "milestones" — SATISFIED 3000+ LINES AWAY. contracts.generate's fixture
+       (milestones: payload.milestones) is inside the runaway window, as are dozens of other
+       'milestones' occurrences. contracts.get having none is invisible.
+    3. grep "http.request<ContractApiRecord>('GET'" — also satisfied by unrelated endpoints
+       inside the same runaway window.
+  This is the F-0296 shape inverted: not a window too small to contain the subject, but one
+  so large that everything is 'inside' it.
+
+RESTORED: sha256 f4efcd75aff7b3a40b375b2f683831782fee98c76af722b36986fe0e1a83b6c2 (matches pre-injection)
+
+--- REPAIRED GATE vs the SAME injection ---
+· self-check: these assertions reject four known-bad contracts.get implementations and accept a known-good one
+  good — all four known-bad rejected, known-good accepted, so a green below means something
+· contracts.get, located in src/lib/api.ts by the TypeScript parser (no line window) and EXECUTED in both modes
+    x mock mode resolves a contract (the F-0272 defect) — resolved null — DealContractTab renders "Contract terms are not available yet" and Sign is permanently disabled for the whole demo
+    1 contracts.get assertion(s) failed
+VERDICT: broken (F-0272 regressed) — the offline demo's contract fetch does not resolve a
+         signable contract, so DealContractTab renders its unavailable state and Sign is
+         disabled for the whole walkthrough
+NOT CHECKED: the rendered panel — the record that feeds it is already wrong
+OBSERVED EXIT: 1
+
+RESTORED (2nd): f4efcd75aff7b3a40b375b2f683831782fee98c76af722b36986fe0e1a83b6c2 *src/lib/api.ts — matches pre-injection
+
+RESULT F-0272: old gate FALSE GREEN (exit 0 on injection).
+  Repaired: gates/F-0272-demo-contract-fixture.sh + gates/_member_src.js (new).
+  The fixed-size/runaway window is GONE — contracts.get is now located by the TypeScript
+  parser and executed. New gate exits: 1 on the injection, 0 on the real tree.

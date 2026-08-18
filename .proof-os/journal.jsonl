@@ -2550,3 +2550,79 @@
 {"ts": "2026-08-18T15:21:46", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0321 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0321-status-label-agreement.sh"}
 {"ts": "2026-08-18T15:25:02", "who": "arjun", "what": "read", "file": "tasks/T-BRANDOPEN-0817/*", "task": "T-BRANDOPEN-0817", "stage": "cleanup", "gate_result": "scanned 69 file(s) for failure markers before archive"}
 {"ts": "2026-08-18T15:25:02", "who": "arjun", "what": "delete", "file": "tasks/T-BRANDOPEN-0817/*", "task": "T-BRANDOPEN-0817", "stage": "cleanup", "gate_result": "archived \u2192 _archive/T-BRANDOPEN-0817, purge 2026-09-17"}
+{"ts": "2026-08-18T16:15:21", "who": "human:swapnil", "what": "verdict", "file": ".proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md", "task": "T-RULING-0818", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-18T16:15:21", "who": "ananya", "what": "fix", "file": "src/components/brand/deals/deal-room-dashboard.tsx", "task": "T-RULING-0818", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-18T16:18:44", "who": "arjun", "what": "ledger-add", "file": ".proof-os/gates/F-0235-no-fabricated-pii-live.sh", "task": "", "stage": "intake", "gate_result": "F-0329"}
+{"ts": "2026-08-18T16:39:09", "who": "priya", "what": "ledger-add", "file": "src/lib/application-status.test.ts:86", "task": "", "stage": "intake", "gate_result": "F-0330"}
+{"ts": "2026-08-18T16:39:09", "who": "priya", "what": "ledger-add", "file": "src/pages/brand-campaign-detail.tsx:655", "task": "", "stage": "intake", "gate_result": "F-0331"}
+{"ts": "2026-08-18T16:39:09", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/CreatorApplicationMapper.java:13", "task": "", "stage": "intake", "gate_result": "F-0332"}
+{"ts": "2026-08-18T16:43:36", "who": "human:swapnil", "what": "verdict", "file": ".proof-os/tasks/T-RULING-0818/SWAPNIL-RULING.md", "task": "T-RULING-0818", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-18T16:43:36", "who": "vikram", "what": "fix", "file": "influora-api/src/main/java/com/influora/service/CreatorApplicationMapper.java", "task": "T-RULING-0818", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-18T16:57:46", "who": "arjun", "what": "ledger-add", "file": "gates/confirm.py", "task": "", "stage": "intake", "gate_result": "F-0333"}
+{"ts": "2026-08-18T16:59:42", "who": "dev", "what": "read", "file": "src/components/brand/deal-room/deal-contract-tab.tsx", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T16:59:42", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0237-sign-over-real-terms.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T16:59:43", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0238-no-fabricated-contract-pdf.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T16:59:44", "who": "dev", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T16:59:53", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0235-no-fabricated-pii-live.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T16:59:54", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0242-brand-can-open-dispute.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T16:59:54", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0272-demo-contract-fixture.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T16:59:54", "who": "dev", "what": "read", "file": "src/pages/brand-chat.tsx", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T16:59:55", "who": "dev", "what": "read", "file": "src/lib/api.ts", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T16:59:56", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0273-frozen-escrow-counts-as-locked.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T16:59:57", "who": "dev", "what": "read", "file": ".proof-os/gates/_code.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:07", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0240-campaign-type-reaches-payload.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:07", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0241-no-false-draft-reassurance.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:07", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0243-verification-copy-agrees.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:08", "who": "dev", "what": "read", "file": "src/pages/brand-new-campaign.tsx", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:08", "who": "dev", "what": "read", "file": "src/components/brand/campaigns/campaign-form.tsx", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:08", "who": "dev", "what": "read", "file": "src/components/brand/VerificationRequiredBox.tsx", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:08", "who": "dev", "what": "read", "file": "src/components/brand/campaigns/brand-kyc-prompt.tsx", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:09", "who": "dev", "what": "read", "file": "src/components/brand/WorkspaceVerificationBanner.tsx", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:09", "who": "dev", "what": "read", "file": ".proof-os/gates/_code.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:09", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0273-frozen-escrow-counts-as-locked.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:17", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0239-no-fake-money-progress.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:17", "who": "dev", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:17", "who": "dev", "what": "read", "file": ".proof-os/gates/_code.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:17", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0273-frozen-escrow-counts-as-locked.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:17", "who": "dev", "what": "read", "file": ".proof-os/gates/notifications_wired.py", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:17", "who": "dev", "what": "read", "file": "src/components/brand/deals/deal-room-dashboard.tsx", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:18", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0050-static-view-components.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:18", "who": "dev", "what": "read", "file": ".proof-os/gates/_strip_comments.py", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:18", "who": "dev", "what": "read", "file": ".proof-os/gates/_code.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:19", "who": "dev", "what": "read", "file": ".proof-os/gates/F-0273-frozen-escrow-counts-as-locked.sh", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:19", "who": "dev", "what": "read", "file": "src/components/brand/brand-layout.tsx", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:19", "who": "dev", "what": "read", "file": "src/pages/brand-pipeline.tsx", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:01:20", "who": "dev", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "T-F0329-GATES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-18T17:10:45", "who": "dev", "what": "edit", "file": ".proof-os/gates/F-0239-no-fake-money-progress.sh", "task": "T-F0329-GATES", "stage": "repair", "gate_result": ""}
+{"ts": "2026-08-18T17:10:45", "who": "dev", "what": "write", "file": ".proof-os/tasks/T-F0329-GATES/F-0239.inject.log", "task": "T-F0329-GATES", "stage": "prove", "gate_result": ""}
+{"ts": "2026-08-18T17:14:35", "who": "dev", "what": "write", "file": ".proof-os/gates/notifications_wired.py", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:14:35", "who": "dev", "what": "write", "file": ".proof-os/gates/_code.py", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:19:45", "who": "dev", "what": "edit", "file": ".proof-os/gates/F-0237-sign-over-real-terms.sh", "task": "T-F0329-GATES", "stage": "repair", "gate_result": ""}
+{"ts": "2026-08-18T17:19:45", "who": "dev", "what": "edit", "file": ".proof-os/gates/F-0238-no-fabricated-contract-pdf.sh", "task": "T-F0329-GATES", "stage": "repair", "gate_result": ""}
+{"ts": "2026-08-18T17:19:45", "who": "dev", "what": "write", "file": ".proof-os/tasks/T-F0329-GATES/F-0237.inject.log", "task": "T-F0329-GATES", "stage": "prove", "gate_result": ""}
+{"ts": "2026-08-18T17:19:45", "who": "dev", "what": "write", "file": ".proof-os/tasks/T-F0329-GATES/F-0238.inject.log", "task": "T-F0329-GATES", "stage": "prove", "gate_result": ""}
+{"ts": "2026-08-18T17:20:59", "who": "dev", "what": "write", "file": ".proof-os/gates/F-0235-no-fabricated-pii-live.sh", "task": "T-F0329-GATES", "stage": "prove", "gate_result": ""}
+{"ts": "2026-08-18T17:21:00", "who": "dev", "what": "write", "file": ".proof-os/gates/F-0242-brand-can-open-dispute.sh", "task": "T-F0329-GATES", "stage": "prove", "gate_result": ""}
+{"ts": "2026-08-18T17:21:00", "who": "dev", "what": "write", "file": ".proof-os/gates/F-0272-demo-contract-fixture.sh", "task": "T-F0329-GATES", "stage": "prove", "gate_result": ""}
+{"ts": "2026-08-18T17:21:00", "who": "dev", "what": "write", "file": ".proof-os/gates/_pii_guard.js", "task": "T-F0329-GATES", "stage": "prove", "gate_result": ""}
+{"ts": "2026-08-18T17:21:00", "who": "dev", "what": "write", "file": ".proof-os/gates/_dispute_wire.js", "task": "T-F0329-GATES", "stage": "prove", "gate_result": ""}
+{"ts": "2026-08-18T17:21:00", "who": "dev", "what": "write", "file": ".proof-os/gates/_member_src.js", "task": "T-F0329-GATES", "stage": "prove", "gate_result": ""}
+{"ts": "2026-08-18T17:27:38", "who": "dev", "what": "write", "file": ".proof-os/gates/F-0240-campaign-type-reaches-payload.sh", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:27:38", "who": "dev", "what": "write", "file": ".proof-os/gates/F-0240.reaches-payload.spec.tsx", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:27:38", "who": "dev", "what": "write", "file": ".proof-os/gates/_f0240_chain.py", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:27:38", "who": "dev", "what": "write", "file": ".proof-os/gates/F-0241-no-false-draft-reassurance.sh", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:27:38", "who": "dev", "what": "write", "file": ".proof-os/gates/F-0241.no-false-save-claim.spec.tsx", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:27:38", "who": "dev", "what": "write", "file": ".proof-os/gates/F-0243-verification-copy-agrees.sh", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:27:39", "who": "dev", "what": "write", "file": ".proof-os/gates/F-0243.copy-agrees.spec.tsx", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:30:13", "who": "arjun", "what": "ledger-add", "file": "vitest.config.ts:23", "task": "", "stage": "intake", "gate_result": "F-0334"}
+{"ts": "2026-08-18T17:32:11", "who": "dev", "what": "ledger-add", "file": ".proof-os/gates/F-0050-static-view-components.sh", "task": "", "stage": "intake", "gate_result": "F-0335"}
+{"ts": "2026-08-18T17:49:16", "who": "dev", "what": "write", "file": "vitest.config.ts", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:49:16", "who": "dev", "what": "write", "file": ".proof-os/gates/vitest.gates.config.ts", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:49:16", "who": "dev", "what": "write", "file": ".proof-os/gates/F-0237-sign-over-real-terms.sh", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:49:17", "who": "dev", "what": "write", "file": ".proof-os/gates/F-0238-no-fabricated-contract-pdf.sh", "task": "T-F0329-GATES", "stage": "build", "gate_result": ""}
+{"ts": "2026-08-18T17:53:29", "who": "dev", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0329"}
+{"ts": "2026-08-18T17:53:29", "who": "dev", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0329 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0329-gates-assert-behaviour.sh"}
+{"ts": "2026-08-18T17:53:29", "who": "dev", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0334"}
+{"ts": "2026-08-18T17:53:29", "who": "dev", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0334 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0329-gates-assert-behaviour.sh"}
+{"ts": "2026-08-18T17:53:29", "who": "arjun", "what": "read", "file": "tasks/T-F0329-GATES/*", "task": "T-F0329-GATES", "stage": "cleanup", "gate_result": "scanned 12 file(s) for failure markers before archive"}
+{"ts": "2026-08-18T17:53:29", "who": "arjun", "what": "delete", "file": "tasks/T-F0329-GATES/*", "task": "T-F0329-GATES", "stage": "cleanup", "gate_result": "archived \u2192 _archive/T-F0329-GATES, purge 2026-09-17"}
