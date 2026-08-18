@@ -334,6 +334,11 @@ Dispatched with artifact paths and the `done_when` only. She did not reuse this 
 baselines — she built a clean `git worktree` at `358b49e` and re-ran every gate herself, confirming
 9/9. She then found **two defects the fixes' own gates cannot see**:
 
+Both are now **closed against falsified gates** (`F-0273-frozen-escrow-counts-as-locked.sh`,
+`F-0272-demo-contract-fixture.sh`) — each verified to exit 1 against the pre-fix tree *and*, for
+F-0273, against a constructed wrong fix that counts every milestone status so `RELEASED` money
+would read as still held.
+
 - **`F-0273` — frozen escrow read as unlocked.** `deriveEscrowFromMilestones` counted only
   `FUNDED`. A deal under dispute holds `FROZEN` money — held, not released — and the tile rendered
   **"Not Locked"**. The brand was told their money was not held at the exact moment a dispute froze
