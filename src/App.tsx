@@ -45,6 +45,8 @@ import BrandHelpPage from '@/pages/brand-help';
 import BrandNotificationsPage from '@/pages/brand-notifications';
 import AboutPage from '@/pages/about';
 import ContactPage from '@/pages/contact';
+import BrandHowItWorksPage from '@/pages/brand-how-it-works';
+import CreatorHowItWorksPage from '@/pages/creator-how-it-works';
 import HowItWorksBrandsPage from '@/pages/how-it-works-brands';
 import HowItWorksCreatorsPage from '@/pages/how-it-works-creators';
 import SecurePaymentsFeaturePage from '@/pages/features/secure-payments';
@@ -379,6 +381,16 @@ export default function App() {
             </BrandLayoutWrapper>
           }
         />
+        {/* The canonical six-step flow, INSIDE the authenticated shell. The same content on
+            /how-it-works/brands was only ever reachable logged out. */}
+        <Route
+          path="/brand/how-it-works"
+          element={
+            <BrandLayoutWrapper>
+              <BrandHowItWorksPage />
+            </BrandLayoutWrapper>
+          }
+        />
         {/* M-C (BrandF.md §78): the bell popover's "View all notifications"
             button used to only close the popover — this route didn't exist. */}
         <Route
@@ -457,6 +469,14 @@ export default function App() {
           element={
             <CreatorProtectedRoute>
               <CreatorDashboardPage />
+            </CreatorProtectedRoute>
+          }
+        />
+        <Route
+          path="/creator/how-it-works"
+          element={
+            <CreatorProtectedRoute>
+              <CreatorHowItWorksPage />
             </CreatorProtectedRoute>
           }
         />

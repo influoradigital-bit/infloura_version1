@@ -8,6 +8,7 @@ import {
   Wallet,
   Sparkles,
   Compass,
+  Route,
   ArrowRight,
 } from 'lucide-react';
 
@@ -58,6 +59,8 @@ export default function BrandHelpPage() {
     // Let the dashboard mount first, then open — avoids racing the route change.
     setTimeout(openTour, 150);
   };
+
+  const handleSeeFullFlow = () => navigate('/brand/how-it-works');
 
   const handleAskMeera = () => {
     navigate(`/brand/meera?${MEERA_HELP_PRESEED_PARAM}=${encodeURIComponent(MEERA_HELP_PRESEED_PROMPT)}`);
@@ -124,6 +127,29 @@ export default function BrandHelpPage() {
               <div className="flex-1">
                 <p className="text-sm font-medium">Ask Meera</p>
                 <p className="text-xs text-muted-foreground">Get a walkthrough from your AI cofounder</p>
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground" />
+            </CardContent>
+          </Card>
+
+          {/* The canonical six-step flow. Until /brand/how-it-works existed, this page's
+              sections explained each surface in isolation and nothing here said what ORDER
+              they happen in. */}
+          <Card
+            role="button"
+            tabIndex={0}
+            aria-label="See the full flow — the six steps from campaign brief to payment"
+            className="cursor-pointer transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            onClick={handleSeeFullFlow}
+            onKeyDown={handleActionKeyDown(handleSeeFullFlow)}
+          >
+            <CardContent className="flex items-center gap-3 p-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                <Route className="h-4.5 w-4.5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium">See the full flow</p>
+                <p className="text-xs text-muted-foreground">Six steps, brief to payment</p>
               </div>
               <ArrowRight className="h-4 w-4 text-muted-foreground" />
             </CardContent>

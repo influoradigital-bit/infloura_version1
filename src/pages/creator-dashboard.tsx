@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 
 import { CreatorLayout } from '@/components/creator/creator-layout';
+import { CreatorFirstRunChecklist } from '@/components/creator/CreatorFirstRunChecklist';
 import { FadeUp } from '@/components/motion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -402,6 +403,11 @@ export default function CreatorDashboardPage() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
+
+        {/* First-run ladder — the ordered "what do I do next" the tiles below cannot give, since
+            they report state that a brand-new creator has none of. Retires itself once every
+            step is provably done, or on dismissal. */}
+        <CreatorFirstRunChecklist deals={deals} username={username} ready={!loading && !error} />
 
         <FadeUp y={0} className="grid gap-4 sm:grid-cols-3">
           <div>

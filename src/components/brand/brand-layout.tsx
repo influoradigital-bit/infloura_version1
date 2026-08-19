@@ -119,6 +119,9 @@ const navGroups: BrandNavGroup[] = [
       { label: 'Analytics', href: '/brand/analytics', icon: BarChart3 },
       { label: 'Reviews', href: '/brand/reviews', icon: Star },
       { label: 'Disputes', href: '/brand/disputes', icon: AlertTriangle },
+      // Persistent, not just a first-run affordance: a brand who dismissed the checklist, or who
+      // comes back confused three weeks later, needs a standing way back to the flow.
+      { label: 'How it works', href: '/brand/how-it-works', icon: HelpCircle },
     ],
   },
 ];

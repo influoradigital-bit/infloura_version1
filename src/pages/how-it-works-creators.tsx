@@ -1,13 +1,5 @@
 import { Link } from 'react-router-dom';
-import {
-  ArrowRight,
-  FileSignature,
-  MessageSquareText,
-  Search,
-  UploadCloud,
-  Wallet,
-  Zap,
-} from 'lucide-react';
+import { ArrowRight, Zap } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +9,7 @@ import { SiteFooter } from '@/components/site/SiteFooter';
 import { FunnelCta } from '@/components/site/FunnelCta';
 import { TrustBar, CREATOR_TRUST_ITEMS } from '@/components/site/TrustBar';
 import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
+import { CREATOR_STEPS as STEPS } from '@/content/how-it-works-steps';
 import { Seo } from '@/lib/seo/Seo';
 import {
   JsonLd,
@@ -25,46 +18,6 @@ import {
   getWebPageSchema,
 } from '@/lib/seo/schema';
 
-// Content per wiki/website/content-map.md §1.4.
-
-const STEPS = [
-  {
-    icon: Search,
-    step: '01',
-    title: 'Create your profile, connect Instagram',
-    body: 'Link your verified Instagram account, set your rate card (per reel, per carousel, per story), and add past work to your portfolio.',
-  },
-  {
-    icon: Zap,
-    step: '02',
-    title: 'Get discovered, or join a Hype Campaign',
-    body: 'Brands search and find you directly, or browse live Hype Campaigns and accept a slot with one tap — no negotiation required.',
-  },
-  {
-    icon: MessageSquareText,
-    step: '03',
-    title: 'Negotiate in the Deal Room',
-    body: 'A brand sends a proposal. Chat, negotiate the rate, and counter-offer — all in one thread, no lost DMs.',
-  },
-  {
-    icon: FileSignature,
-    step: '04',
-    title: 'Accept the contract — payment already secured',
-    body: 'E-sign the generated contract. The funds are already locked and protected before you start work, so payment is guaranteed.',
-  },
-  {
-    icon: UploadCloud,
-    step: '05',
-    title: 'Create and submit your deliverable',
-    body: 'Upload your reel, carousel, or video. The brand reviews it and may request revisions within the contract\'s limit.',
-  },
-  {
-    icon: Wallet,
-    step: '06',
-    title: 'Get paid, then post',
-    body: 'Once the brand approves, the payment releases to you automatically — TDS handled, invoice generated. Post within the campaign window and see the payment land, usually within 24 hours.',
-  },
-];
 
 export default function HowItWorksCreatorsPage() {
   return (

@@ -2736,3 +2736,18 @@
 {"ts": "2026-08-19T18:01:16", "who": "ananya", "what": "delete", "file": "tasks/T-FIRSTRUN-0819/*", "task": "T-FIRSTRUN-0819", "stage": "cleanup", "gate_result": "archived \u2192 _archive/T-FIRSTRUN-0819, purge 2026-09-18"}
 {"ts": "2026-08-19T18:04:46", "who": "ananya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0343"}
 {"ts": "2026-08-19T18:04:46", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0343 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-SEO-marketing-surface.sh"}
+{"ts": "2026-08-19T18:24:48", "who": "ananya", "what": "edit", "file": "src/content/how-it-works-steps.ts", "task": "T-FIRSTRUN-L23-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T18:24:48", "who": "ananya", "what": "edit", "file": "src/lib/walkthrough-video.ts", "task": "T-FIRSTRUN-L23-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T18:24:49", "who": "ananya", "what": "edit", "file": "src/components/shared/WalkthroughVideo.tsx", "task": "T-FIRSTRUN-L23-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T18:24:49", "who": "ananya", "what": "edit", "file": "src/components/shared/HowItWorksFlow.tsx", "task": "T-FIRSTRUN-L23-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T18:24:49", "who": "ananya", "what": "edit", "file": "src/pages/brand-how-it-works.tsx", "task": "T-FIRSTRUN-L23-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T18:24:49", "who": "ananya", "what": "edit", "file": "src/pages/creator-how-it-works.tsx", "task": "T-FIRSTRUN-L23-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T18:24:49", "who": "ananya", "what": "edit", "file": "src/pages/how-it-works-brands.tsx", "task": "T-FIRSTRUN-L23-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T18:24:49", "who": "ananya", "what": "edit", "file": "src/pages/how-it-works-creators.tsx", "task": "T-FIRSTRUN-L23-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T18:24:49", "who": "ananya", "what": "edit", "file": "src/App.tsx", "task": "T-FIRSTRUN-L23-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T18:24:49", "who": "ananya", "what": "edit", "file": "src/components/brand/brand-layout.tsx", "task": "T-FIRSTRUN-L23-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T18:24:49", "who": "ananya", "what": "edit", "file": "src/components/creator/creator-layout.tsx", "task": "T-FIRSTRUN-L23-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T18:24:49", "who": "ananya", "what": "edit", "file": "src/pages/brand-help.tsx", "task": "T-FIRSTRUN-L23-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T18:24:50", "who": "meera", "what": "verdict", "file": ".proof-os/gates/F-0341-first-run-guidance.sh", "task": "T-FIRSTRUN-L23-0819", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-19T18:25:43", "who": "ananya", "what": "read", "file": "tasks/T-FIRSTRUN-L23-0819/*", "task": "T-FIRSTRUN-L23-0819", "stage": "cleanup", "gate_result": "scanned 1 file(s) for failure markers before archive"}
+{"ts": "2026-08-19T18:25:43", "who": "ananya", "what": "delete", "file": "tasks/T-FIRSTRUN-L23-0819/*", "task": "T-FIRSTRUN-L23-0819", "stage": "cleanup", "gate_result": "archived \u2192 _archive/T-FIRSTRUN-L23-0819, purge 2026-09-18"}

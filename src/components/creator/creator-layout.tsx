@@ -108,6 +108,8 @@ const navGroups: CreatorNavGroup[] = [
       { label: 'Disputes', href: '/creator/disputes', icon: AlertTriangle },
       { label: 'Coupons', href: '/creator/coupons', icon: Ticket },
       { label: 'Affiliate', href: '/creator/affiliate', icon: TrendingUp },
+      // Mirrors the brand shell — a standing route back to the flow, not only a first-run one.
+      { label: 'How it works', href: '/creator/how-it-works', icon: HelpCircle },
     ],
   },
 ];

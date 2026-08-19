@@ -92,7 +92,13 @@ export default function BrandOnboardingPage() {
     }
   };
 
-  const handleComplete = async () => {
+  /**
+   * F-0341 — takes the destination as an argument. Step 3 tells the user to "pick where to go
+   * first" and then offers three destinations; every one of them completes onboarding exactly
+   * the same way and differs only in where it lands. Hardcoding '/brand/dashboard' here is what
+   * left `NextActionCard` with nothing to call, so the cards shipped as inert divs.
+   */
+  const handleComplete = async (destination = '/brand/dashboard') => {
     setIsSubmitting(true);
     setError('');
     try {
@@ -106,7 +112,7 @@ export default function BrandOnboardingPage() {
       // /brand/onboarding until the cache expires or a hard reload. Partial key match
       // (no isAuthenticated segment) invalidates every variant of this query.
       await queryClient.invalidateQueries({ queryKey: ['brand-onboarding-status'] });
-      navigate('/brand/dashboard');
+      navigate(destination);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not complete onboarding');
     } finally {
@@ -160,11 +166,13 @@ export default function BrandOnboardingPage() {
 
 interface YoureInStepProps {
   firstName?: string;
-  onComplete: () => void;
+  onComplete: (destination?: string) => void;
   isSubmitting: boolean;
 }
 
-function YoureInStep({ firstName, onComplete, isSubmitting }: YoureInStepProps) {
+/** Exported for test — F-0341 pins that these cards are live controls carrying a destination,
+ *  which is not observable from the page without driving the whole wizard past a required form. */
+export function YoureInStep({ firstName, onComplete, isSubmitting }: YoureInStepProps) {
   const name = firstName?.trim() || 'there';
 
   return (
@@ -188,22 +196,27 @@ function YoureInStep({ firstName, onComplete, isSubmitting }: YoureInStepProps) 
           title="Create your first campaign"
           subtitle="Set a brief, budget and timeline"
           accent="primary"
+          disabled={isSubmitting}
+          onSelect={() => onComplete('/brand/campaigns/new')}
         />
         <NextActionCard
           icon={Users}
           title="Discover creators"
           subtitle="Browse our verified Indian creator network"
           accent="muted"
+          disabled={isSubmitting}
+          onSelect={() => onComplete('/brand/discover')}
         />
       </div>
 
       <Button
-        onClick={onComplete}
+        onClick={() => onComplete('/brand/dashboard')}
         disabled={isSubmitting}
+        variant="outline"
         className="w-full gap-1.5"
         size="lg"
       >
-        {isSubmitting ? 'Setting up…' : 'Go to dashboard'}
+        {isSubmitting ? 'Setting up…' : 'Take me to the dashboard instead'}
         <ArrowRight className="h-4 w-4" />
       </Button>
     </div>
@@ -215,15 +228,24 @@ interface NextActionCardProps {
   title: string;
   subtitle: string;
   accent: 'primary' | 'muted';
+  /** F-0341 — required, not optional. These cards sit under the instruction "Pick where to go
+   *  first:"; they shipped as plain `<div>`s with no handler, so the one screen that asks the
+   *  user to choose a destination had nothing to click. Making this non-optional is what stops
+   *  a future call site from silently re-introducing an inert card. */
+  onSelect: () => void;
+  disabled?: boolean;
 }
 
-function NextActionCard({ icon: Icon, title, subtitle, accent }: NextActionCardProps) {
+function NextActionCard({ icon: Icon, title, subtitle, accent, onSelect, disabled }: NextActionCardProps) {
   return (
-    <div
+    <button
+      type="button"
+      onClick={onSelect}
+      disabled={disabled}
       className={
         accent === 'primary'
-          ? 'flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4'
-          : 'flex items-center gap-3 rounded-lg border border-border bg-card p-4'
+          ? 'flex w-full items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60'
+          : 'flex w-full items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60'
       }
     >
       <div
@@ -239,6 +261,7 @@ function NextActionCard({ icon: Icon, title, subtitle, accent }: NextActionCardP
         <p className="text-sm font-medium text-foreground">{title}</p>
         <p className="text-xs text-muted-foreground">{subtitle}</p>
       </div>
-    </div>
+      <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+    </button>
   );
 }

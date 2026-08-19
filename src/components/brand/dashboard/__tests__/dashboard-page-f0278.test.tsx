@@ -27,6 +27,12 @@ vi.mock('@/lib/api', () => ({
     wallet: {
       get: vi.fn(),
     },
+    // Read by BrandFirstRunChecklist. Stubbed explicitly rather than left off: the checklist
+    // survives an absent client (it degrades to "step undeterminable"), so omitting this would
+    // silently exercise that degraded path instead of the one this file is about.
+    campaigns: {
+      list: vi.fn().mockResolvedValue({ campaigns: [], meta: { page: 1, limit: 1, total: 0, hasMore: false } }),
+    },
   },
   ApiError: class ApiError extends Error {},
 }));

@@ -1,13 +1,5 @@
 import { Link } from 'react-router-dom';
-import {
-  ArrowRight,
-  BadgeCheck,
-  FileSignature,
-  MessageSquareText,
-  Search,
-  ShieldCheck,
-  Zap,
-} from 'lucide-react';
+import { ArrowRight, Zap } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +9,7 @@ import { SiteFooter } from '@/components/site/SiteFooter';
 import { FunnelCta } from '@/components/site/FunnelCta';
 import { TrustBar } from '@/components/site/TrustBar';
 import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
+import { BRAND_STEPS as STEPS } from '@/content/how-it-works-steps';
 import { Seo } from '@/lib/seo/Seo';
 import {
   JsonLd,
@@ -25,46 +18,6 @@ import {
   getWebPageSchema,
 } from '@/lib/seo/schema';
 
-// Content per wiki/website/content-map.md §1.3.
-
-const STEPS = [
-  {
-    icon: Search,
-    step: '01',
-    title: 'Create your campaign',
-    body: 'Set your goals (reach, engagement, sales), choose a campaign type — one-off collab, Hype Campaign, or seasonal — and define deliverables (reel, carousel, story, YouTube integration).',
-  },
-  {
-    icon: Search,
-    step: '02',
-    title: 'Discover creators',
-    body: 'Search by niche, follower range, city, and engagement rate. Every profile is Instagram-verified with a published rate card and visible past collaborations.',
-  },
-  {
-    icon: MessageSquareText,
-    step: '03',
-    title: 'Negotiate in the Deal Room',
-    body: 'Chat, send a proposal, and handle counter-offers in one thread — no juggling WhatsApp and DMs.',
-  },
-  {
-    icon: FileSignature,
-    step: '04',
-    title: 'Sign the contract, fund the deal',
-    body: 'An auto-generated contract spells out usage rights, exclusivity, and revision limits. Both sides e-sign, then the deal amount locks in a protected balance.',
-  },
-  {
-    icon: BadgeCheck,
-    step: '05',
-    title: 'Creator delivers, you approve',
-    body: 'The creator uploads the deliverable in the Deal Room. Request revisions within the contract limit, or approve it.',
-  },
-  {
-    icon: ShieldCheck,
-    step: '06',
-    title: 'The payment releases, creator posts',
-    body: 'On approval, the payment releases to the creator automatically. They post within the campaign window and you track performance from your dashboard.',
-  },
-];
 
 export default function HowItWorksBrandsPage() {
   return (

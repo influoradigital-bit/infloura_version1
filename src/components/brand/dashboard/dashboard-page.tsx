@@ -26,6 +26,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TrendSparkNudgeCard } from '@/components/trendspark/TrendSparkNudgeCard';
+// F-0324 — extracted to a shared component so src/pages/brand-wallet.tsx could reuse the
+// identical loading/error/retry shell instead of a second, hand-rolled one. Moved verbatim.
+import { DashboardCardError } from '@/components/shared/DashboardCardError';
+import { BrandFirstRunChecklist } from '@/components/brand/dashboard/BrandFirstRunChecklist';
 
 // ---------------------------------------------------------------------------
 // Backend endpoints:
@@ -271,6 +275,16 @@ export function DashboardPage() {
         </Button>
       </div>
 
+      {/* First-run ladder — the answer to "what do I do first?", which every card below
+          deliberately does not answer (they report pending state, and a new account has none).
+          Self-retires once all five steps are provably done, or on dismissal. */}
+      <BrandFirstRunChecklist
+        pipeline={pipeline}
+        pipelineReady={pipelineStatus === 'ready'}
+        escrowLocked={wallet.escrowLocked}
+        walletReady={walletStatus === 'ready'}
+      />
+
       {/* HERO: Action Stack — full width, the only thing above the fold */}
       <Card>
         <CardHeader className="pb-3">
@@ -418,22 +432,10 @@ export function DashboardPage() {
 }
 
 // ---------------------------------------------------------------------------
-// F-0245 — shared loading/error primitives for the dashboard's data-backed cards.
-// `text-destructive-foreground` (not `text-destructive`) per this theme's pale-bg/strong-fg
-// palette — `text-destructive` renders effectively invisible here.
+// F-0245 — DashboardCardError (loading/error primitive for the dashboard's data-backed cards)
+// now lives in src/components/shared/DashboardCardError.tsx (F-0324) so brand-wallet.tsx can
+// reuse it too.
 // ---------------------------------------------------------------------------
-
-function DashboardCardError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-3 py-8 text-center" role="alert">
-      <AlertTriangle className="h-5 w-5 text-destructive-foreground" />
-      <p className="text-sm text-destructive-foreground">{message}</p>
-      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-        Retry
-      </Button>
-    </div>
-  );
-}
 
 /** Card chrome only — used to host loading/error content in place of PipelineCard so the
  * header (title + "View all") never renders live pipeline data before it's confirmed loaded. */
@@ -595,6 +597,15 @@ interface WalletCardProps {
 }
 
 function WalletCard({ balance, escrow, runwayDays, health, healthLabel, onManage }: WalletCardProps) {
+  /* A wallet that has never held or locked a rupee is not "Healthy" — it is unfunded. The
+     health computation is right (F-0099/F-0103: `runwayDays === null` must resolve to healthy,
+     never fall through to a red CRITICAL), but rendering a green badge beside ₹0 tells a
+     first-time brand they are funded when they have not paid anything in. This branch only
+     changes the *label* on a confirmed real zero; the health value itself is untouched, so the
+     regression-pinned rule in wallet-runway.ts still governs everything downstream.
+     WalletCard renders only when walletStatus === 'ready', so this zero is confirmed, not a
+     loading or failed state. */
+  const neverFunded = balance === 0 && escrow === 0 && runwayDays === null;
   return (
     <Card
       className={cn(
@@ -609,10 +620,10 @@ function WalletCard({ balance, escrow, runwayDays, health, healthLabel, onManage
             Wallet
           </CardTitle>
           <Badge
-            variant={health === 'healthy' ? 'secondary' : 'destructive'}
+            variant={neverFunded ? 'outline' : health === 'healthy' ? 'secondary' : 'destructive'}
             className="text-xs"
           >
-            {healthLabel}
+            {neverFunded ? 'Not funded yet' : healthLabel}
           </Badge>
         </div>
       </CardHeader>
@@ -620,15 +631,20 @@ function WalletCard({ balance, escrow, runwayDays, health, healthLabel, onManage
         <div className="flex items-end justify-between">
           <div>
             <p className="text-2xl font-bold leading-none">{formatINR(balance)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Available · {formatINR(escrow)} in escrow</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {neverFunded
+                ? 'Fund this when your first deal is accepted'
+                : `Available · ${formatINR(escrow)} in escrow`}
+            </p>
           </div>
           <div className="text-right">
             <p
               className={cn(
                 'text-sm font-semibold',
-                health === 'healthy' && 'text-success',
-                health === 'warning' && 'text-warning',
-                health === 'critical' && 'text-destructive-foreground',
+                neverFunded && 'text-muted-foreground',
+                !neverFunded && health === 'healthy' && 'text-success',
+                !neverFunded && health === 'warning' && 'text-warning',
+                !neverFunded && health === 'critical' && 'text-destructive-foreground',
               )}
             >
               {runwayDays === null ? '—' : `${runwayDays}d runway`}
@@ -641,7 +657,10 @@ function WalletCard({ balance, escrow, runwayDays, health, healthLabel, onManage
           </div>
         </div>
         <Progress
-          value={runwayDays === null ? 100 : Math.min((runwayDays / 60) * 100, 100)}
+          /* An unfunded wallet reads a full bar under the old `null -> 100` rule, which is the
+             same "you're all set" signal as the green badge. `null` still means healthy for a
+             dormant *funded* wallet — only the never-funded case drops to empty. */
+          value={neverFunded ? 0 : runwayDays === null ? 100 : Math.min((runwayDays / 60) * 100, 100)}
           className={cn(
             'h-1.5',
             health === 'critical' && '[&>div]:bg-destructive',
@@ -650,11 +669,11 @@ function WalletCard({ balance, escrow, runwayDays, health, healthLabel, onManage
         />
         <Button
           size="sm"
-          variant={health === 'healthy' ? 'outline' : 'default'}
+          variant={!neverFunded && health === 'healthy' ? 'outline' : 'default'}
           className="w-full"
           onClick={onManage}
         >
-          {health === 'healthy' ? 'Manage wallet' : 'Recharge now'}
+          {neverFunded ? 'Add funds' : health === 'healthy' ? 'Manage wallet' : 'Recharge now'}
         </Button>
       </CardContent>
     </Card>

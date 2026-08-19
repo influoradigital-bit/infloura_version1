@@ -223,7 +223,9 @@ export default function CreatorOnboardingPage() {
     }
   };
 
-  const handleComplete = async () => {
+  /** F-0341 (creator mirror) — destination is an argument so the terminal step's "Check your
+   *  Deals" card can actually go there instead of being an inert div beside the one real button. */
+  const handleComplete = async (destination = '/creator/dashboard') => {
     setIsLoading(true);
     try {
       await api.onboarding.completeCreator();
@@ -231,8 +233,9 @@ export default function CreatorOnboardingPage() {
       // F-0275 — was '/creator/deals', which skips creator-dashboard.tsx's zero-state
       // entirely (its CTAs — Explore campaigns, Complete profile — only fire for
       // isEmptyCreator === true, i.e. deals.length === 0, which is exactly the state a
-      // freshly-onboarded creator is in). Matches the register-page destination below.
-      navigate('/creator/dashboard');
+      // freshly-onboarded creator is in). Matches the register-page destination below, and
+      // stays the default for every caller that does not name one.
+      navigate(destination);
     } catch (err) {
       // Was try/finally with NO catch — the final "Go to Deals" step failed silently.
       toast({
@@ -599,7 +602,7 @@ function BuildProfileStep({
 // ---------------------------------------------------------------------------
 
 interface YoureInStepProps {
-  onComplete: () => void;
+  onComplete: (destination?: string) => void;
   isLoading: boolean;
 }
 
@@ -620,15 +623,23 @@ function YoureInStep({ onComplete, isLoading }: YoureInStepProps) {
       </div>
 
       <div className="space-y-3">
-        <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-4">
+        {/* F-0341 — "Check your Deals" is an instruction; it was a plain div with nothing to
+            click, so the only way out of this screen was the button below. */}
+        <button
+          type="button"
+          onClick={() => onComplete('/creator/deals')}
+          disabled={isLoading}
+          className="flex w-full items-start gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60"
+        >
           <Briefcase className="h-5 w-5 text-primary mt-0.5 shrink-0" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Check your Deals</p>
             <p className="text-xs text-muted-foreground">
               Incoming proposals from brands show up here. Accept, counter, or reject in one tap.
             </p>
           </div>
-        </div>
+          <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
         <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-4">
           <WalletIcon className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
           <div className="min-w-0">
@@ -640,7 +651,14 @@ function YoureInStep({ onComplete, isLoading }: YoureInStepProps) {
         </div>
       </div>
 
-      <Button onClick={onComplete} disabled={isLoading} className="w-full gap-1.5" size="lg">
+      {/* Wrapped, not passed bare: `onComplete` now takes a destination, and `onClick={onComplete}`
+          would hand it the MouseEvent to navigate() to. */}
+      <Button
+        onClick={() => onComplete('/creator/dashboard')}
+        disabled={isLoading}
+        className="w-full gap-1.5"
+        size="lg"
+      >
         {isLoading ? 'Setting up…' : 'Go to Dashboard'}
         <ArrowRight className="h-4 w-4" />
       </Button>
