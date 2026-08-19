@@ -1,0 +1,52 @@
+{
+ "rows": [
+  {
+   "subject": "src/pages/creator-chat.tsx",
+   "owner": "ananya",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python .proof-os/gates/class/unreachable_dialog.py src",
+    "result": "exit 1 - 434 files scanned, 1 hit: showRevisionHandler at :1106 has no call site that opens it. Same gate exits 0 on a tree without the class (falsified both ways)",
+    "where": "src/pages/creator-chat.tsx:1106"
+   }
+  },
+  {
+   "subject": "src/pages/brand-chat.tsx",
+   "owner": "ananya",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "browser",
+    "command": "POST /api/v1/deliverables/01M05BQN0NJDMA5MY77TMTATHK/revise (live, deploy 7ea38f6)",
+    "result": "400 INVALID_REQUEST 'feedback is required', reproduced 3x; sweep found this is the only hardcoded-empty-arg call in 434 files",
+    "where": "src/pages/brand-chat.tsx:1274"
+   }
+  },
+  {
+   "subject": "src/components/brand/timeline/panels/deliverable-review-panel.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "shared-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "read handleRequestRevision at :102-124",
+    "result": "guards empty feedback, sends feedback.trim(), surfaces err.message - the correct reference implementation",
+    "where": "src/components/brand/timeline/panels/deliverable-review-panel.tsx:115"
+   }
+  },
+  {
+   "subject": "src/lib/api.ts",
+   "owner": "kabir",
+   "status": "partial",
+   "isolation": "none",
+   "evidence": {
+    "oracle": "model",
+    "command": "cross-reference 396 declared api.ts response fields against all of src/",
+    "result": "45 never read in production code, but 2 of 2 spot-checks (pdfUrl, GST trio) proved non-defects - an alternative mechanism exists in both. Kept as a lead, not a finding",
+    "where": "src/lib/api.ts:3462"
+   }
+  }
+ ]
+}

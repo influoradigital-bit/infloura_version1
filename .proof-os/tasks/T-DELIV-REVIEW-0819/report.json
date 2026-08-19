@@ -1,0 +1,88 @@
+{
+ "rows": [
+  {
+   "subject": "src/pages/brand-chat.tsx",
+   "owner": "ananya",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "browser",
+    "command": "POST /api/v1/deliverables/01M05BQN0NJDMA5MY77TMTATHK/revise (live, deploy 7ea38f6)",
+    "result": "400 Bad Request \u00e2\u20ac\u201d {\"code\":\"INVALID_REQUEST\",\"message\":\"feedback is required\"}, reproduced 3x",
+    "where": "src/pages/brand-chat.tsx:1274"
+   }
+  },
+  {
+   "subject": "src/components/brand/contracts/contracts-and-deliverables.tsx",
+   "owner": "ananya",
+   "status": "partial",
+   "isolation": "shared-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "read handleRequestRevision at :814-826",
+    "result": "sends reviewFeedback with no non-empty guard before the call",
+    "where": "src/components/brand/contracts/contracts-and-deliverables.tsx:819"
+   }
+  },
+  {
+   "subject": "src/components/brand/deliverables/DeliverableViewer.tsx",
+   "owner": "ananya",
+   "status": "partial",
+   "isolation": "shared-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "read handleRequestRevision at :279-292",
+    "result": "sends feedback param with no non-empty guard before the call",
+    "where": "src/components/brand/deliverables/DeliverableViewer.tsx:283"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/CreatorDeliverableService.java",
+   "owner": "vikram",
+   "status": "broken",
+   "isolation": "shared-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "grep StreamRegistry|publish( over CreatorDeliverableService.java",
+    "result": "no match \u00e2\u20ac\u201d submitForReview notifies but never publishes to the deal stream",
+    "where": "influora-api/src/main/java/com/influora/service/CreatorDeliverableService.java:405"
+   }
+  },
+  {
+   "subject": "src/lib/api.ts",
+   "owner": "kabir",
+   "status": "broken",
+   "isolation": "none",
+   "evidence": {
+    "oracle": "browser",
+    "command": "decode localStorage creator_token after a BRAND login (live)",
+    "result": "creator_token carries userType=BRAND, email=inglepriya7715@gmail.com \u00e2\u20ac\u201d creator slot holds a brand identity",
+    "where": "src/lib/api.ts:311"
+   }
+  },
+  {
+   "subject": "src/pages/creator-chat.tsx",
+   "owner": "ananya",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "browser",
+    "command": "open deal-room Deliverables panel on a 0/0 CONTRACTED deal (live)",
+    "result": "renders 'They appear here once the creator submits content' with no Submit control present",
+    "where": "src/pages/creator-chat.tsx:1988"
+   }
+  },
+  {
+   "subject": "src/components/brand/timeline/panels/deliverable-review-panel.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "shared-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "read handleRequestRevision at :102-124",
+    "result": "guards empty feedback, sends feedback.trim(), surfaces err.message \u00e2\u20ac\u201d the correct reference implementation",
+    "where": "src/components/brand/timeline/panels/deliverable-review-panel.tsx:115"
+   }
+  }
+ ]
+}

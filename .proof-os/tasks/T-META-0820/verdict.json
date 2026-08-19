@@ -1,0 +1,22 @@
+{
+ "verdict": "believed",
+ "oracle": "regex",
+ "isolation": "oracle",
+ "done_when": "each available oracle ran over the scope and its raw output is recorded",
+ "not_checked": [
+  "no live Graph API call was made \u2014 the dead-metric finding is code+published-deprecation, not an observed 400 from Meta",
+  "whether Advanced Access for instagram_manage_insights is actually granted on the live Meta app (dashboard state, not code)",
+  "eslint never completed (exceeded 300s) so kavya's ruleset covered nothing",
+  "runtime behaviour of the Meta connect flow with a real creator account"
+ ],
+ "skipped": [
+  {
+   "step": "gates/build.sh, gates/build.py, gates/build.node.sh",
+   "reason": "halted by the operator mid-run; the node/vite and python build oracles therefore covered nothing"
+  },
+  {
+   "step": "fresh-context checker",
+   "reason": "no independent model review was dispatched \u2014 every finding here is oracle-derived, so nothing was reviewed and nothing scores as reviewed"
+  }
+ ]
+}

@@ -3,7 +3,7 @@
   "approved_by": "Swapnil Maruti",
   "approved_on": "2026-08-02",
   "project": "New Influora",
-  "source_of_truth": "sage-team plugin — keys namespaced because plugin skills are discovered as sage-team:<name>",
+  "source_of_truth": "sage-team plugin \u2014 keys namespaced because plugin skills are discovered as sage-team:<name>",
   "channels": {
     "1_intent": {
       "who": "Swapnil Maruti",
@@ -20,7 +20,7 @@
     },
     "3_claims": {
       "what": "any service output",
-      "trust": "never — input to a gate, not a fact"
+      "trust": "never \u2014 input to a gate, not a fact"
     }
   },
   "services": {
@@ -35,7 +35,7 @@
         "retries": 0,
         "then": "final-authority"
       },
-      "note": "CEO — channel 1, sovereign. Above the registry; done_when comes from here."
+      "note": "CEO \u2014 channel 1, sovereign. Above the registry; done_when comes from here."
     },
     "arjun": {
       "kind": "scheduler",
@@ -63,7 +63,7 @@
         "retries": 1,
         "then": "escalate:swapnil"
       },
-      "note": "sign-off; overridden only by swapnil | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice — it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
+      "note": "sign-off; overridden only by swapnil | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice \u2014 it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
       "isolation": "fresh-context"
     },
     "rohan": {
@@ -79,7 +79,7 @@
         "retries": 0,
         "then": "halt:swapnil"
       },
-      "note": "promoted from cost reporter to daemon with HALT power; budget numbers are measured, not opined | 0.4.1: lowered from proved — F-0023: no gate that exists can prove this. Raise it back by naming a real oracle."
+      "note": "promoted from cost reporter to daemon with HALT power; budget numbers are measured, not opined | 0.4.1: lowered from proved \u2014 F-0023: no gate that exists can prove this. Raise it back by naming a real oracle."
     },
     "tejas": {
       "kind": "judgment",
@@ -94,7 +94,7 @@
         "retries": 1,
         "then": "escalate:swapnil"
       },
-      "note": "supervises nisha + aditya | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice — it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
+      "note": "supervises nisha + aditya | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice \u2014 it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
       "isolation": "shared-context"
     },
     "meera": {
@@ -114,7 +114,7 @@
         "retries": 2,
         "then": "escalate:priya"
       },
-      "note": "tsc · build · curl · test — exit codes, not opinion"
+      "note": "tsc \u00b7 build \u00b7 curl \u00b7 test \u2014 exit codes, not opinion"
     },
     "neha": {
       "kind": "oracle",
@@ -147,7 +147,7 @@
         "retries": 2,
         "then": "escalate:priya"
       },
-      "note": "her 9 checklist items are ALREADY gates/frontend.sh. She reviews intent & logic only — the gate claims proved, she cannot. | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice — it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
+      "note": "her 9 checklist items are ALREADY gates/frontend.sh. She reviews intent & logic only \u2014 the gate claims proved, she cannot. | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice \u2014 it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
       "isolation": "shared-context"
     },
     "kabir": {
@@ -164,7 +164,7 @@
         "retries": 2,
         "then": "escalate:priya"
       },
-      "note": "F-0003: ADVISORY. Paper findings never block the pipeline; only gates/security.sh exit codes bind. | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice — it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
+      "note": "F-0003: ADVISORY. Paper findings never block the pipeline; only gates/security.sh exit codes bind. | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice \u2014 it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
       "isolation": "shared-context"
     },
     "ash": {
@@ -179,14 +179,15 @@
         "retries": 2,
         "then": "escalate:priya"
       },
-      "note": "non-blocking | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice — it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
+      "note": "non-blocking | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice \u2014 it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
       "isolation": "shared-context"
     },
     "ananya": {
       "kind": "producer",
       "jurisdiction": [
         "src/components/**",
-        "**/*.tsx"
+        "**/*.tsx",
+        "src/lib/**"
       ],
       "may_claim": "believed",
       "runs_after": [
@@ -197,7 +198,7 @@
         "retries": 2,
         "then": "escalate:arjun"
       },
-      "note": "alias of sage-team:ananya — byte-identical SKILL.md installed as a user skill; same ceiling applies on either invocation path"
+      "note": "alias of sage-team:ananya \u2014 byte-identical SKILL.md installed as a user skill; same ceiling applies on either invocation path"
     },
     "vikram": {
       "kind": "producer",
@@ -215,7 +216,7 @@
         "retries": 2,
         "then": "escalate:arjun"
       },
-      "note": "alias of sage-team:vikram — byte-identical SKILL.md installed as a user skill; same ceiling applies on either invocation path"
+      "note": "alias of sage-team:vikram \u2014 byte-identical SKILL.md installed as a user skill; same ceiling applies on either invocation path"
     },
     "riya": {
       "kind": "producer",
@@ -233,7 +234,7 @@
         "retries": 2,
         "then": "escalate:tejas"
       },
-      "note": "keeps her intake-refusal — the G1 template for all services. The gate claims proved, she claims believed."
+      "note": "keeps her intake-refusal \u2014 the G1 template for all services. The gate claims proved, she claims believed."
     },
     "ishaan": {
       "kind": "producer",
@@ -265,7 +266,7 @@
         "retries": 2,
         "then": "escalate:tejas"
       },
-      "note": "final approval on written content | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice — it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
+      "note": "final approval on written content | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice \u2014 it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
       "isolation": "shared-context"
     },
     "zara": {
@@ -299,7 +300,7 @@
         "retries": 2,
         "then": "escalate:tejas"
       },
-      "note": "alias of sage-team:aditya — byte-identical SKILL.md installed as a user skill; same ceiling applies on either invocation path | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice — it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
+      "note": "alias of sage-team:aditya \u2014 byte-identical SKILL.md installed as a user skill; same ceiling applies on either invocation path | 0.4.1: reviewed inside the producer's conversation, so this is the same evidence counted twice \u2014 it scores nothing. Raise to believed only by dispatching into a fresh context AND journaling --isolation fresh-context.",
       "isolation": "shared-context"
     },
     "dev": {
@@ -328,7 +329,7 @@
         "retries": 1,
         "then": "escalate:arjun"
       },
-      "note": "renders journal + ledger QUERIES; never compiles prose by hand — that is why she may claim proved | 0.4.1: lowered from proved — F-0023: no gate that exists can prove this. Raise it back by naming a real oracle."
+      "note": "renders journal + ledger QUERIES; never compiles prose by hand \u2014 that is why she may claim proved | 0.4.1: lowered from proved \u2014 F-0023: no gate that exists can prove this. Raise it back by naming a real oracle."
     },
     "q-pipeline": {
       "kind": "diagnostic",
@@ -382,7 +383,7 @@
         "retries": 1,
         "then": "escalate:priya"
       },
-      "note": "its overall_pct override bug became F-0006 -> anti-self-scoring law; validate.py computes the score | 0.4.1: lowered from proved — F-0023: no gate that exists can prove this. Raise it back by naming a real oracle. | 0.4.1: scripts/validate.py moved out of `gates` — a gate is gates/<name>.py|.sh inside a directory the OS controls; a scripts/ path cannot mint an oracle. Recorded as runs_after so the check is documented without claiming provenance.",
+      "note": "its overall_pct override bug became F-0006 -> anti-self-scoring law; validate.py computes the score | 0.4.1: lowered from proved \u2014 F-0023: no gate that exists can prove this. Raise it back by naming a real oracle. | 0.4.1: scripts/validate.py moved out of `gates` \u2014 a gate is gates/<name>.py|.sh inside a directory the OS controls; a scripts/ path cannot mint an oracle. Recorded as runs_after so the check is documented without claiming provenance.",
       "runs_after": [
         "scripts/validate.py"
       ]
@@ -456,7 +457,7 @@
     "governor (always watching)"
   ],
   "reapproved_on": "2026-08-02",
-  "reapproved_note": "0.4.1 upgrade. sage-team:* alias rows dropped — journal.jsonl records bare names only, so the aliases could never accumulate evidence. Every judgment service set to isolation=shared-context / may_claim=echo (human-confirmed: reviews happen in the producer's conversation). rohan, tara, model-scheduler-audit lowered proved -> believed: no oracle backs the grant.",
+  "reapproved_note": "0.4.1 upgrade. sage-team:* alias rows dropped \u2014 journal.jsonl records bare names only, so the aliases could never accumulate evidence. Every judgment service set to isolation=shared-context / may_claim=echo (human-confirmed: reviews happen in the producer's conversation). rohan, tara, model-scheduler-audit lowered proved -> believed: no oracle backs the grant.",
   "_schema": {
     "kind": [
       "root",
@@ -483,14 +484,14 @@
       "none"
     ],
     "_derived_ceiling": {
-      "oracle": "proved — not a model at all: a tool produced an exit code",
-      "fresh-context": "believed — a model invocation that received the artifact and the done_when AND NOTHING ELSE: no producer transcript, no prior report, no conversation",
-      "shared-context": "echo — a model invocation that saw the producer's reasoning, output or conversation",
-      "none": "echo — no isolation recorded, or unknown"
+      "oracle": "proved \u2014 not a model at all: a tool produced an exit code",
+      "fresh-context": "believed \u2014 a model invocation that received the artifact and the done_when AND NOTHING ELSE: no producer transcript, no prior report, no conversation",
+      "shared-context": "echo \u2014 a model invocation that saw the producer's reasoning, output or conversation",
+      "none": "echo \u2014 no isolation recorded, or unknown"
     },
     "_ceiling_law": "effective_ceiling = min(derived_from_isolation, may_claim). A ceiling is DERIVED from isolation and `may_claim` may only ever LOWER it. Granting `proved` to a service whose isolation is shared-context is a REGISTRY ERROR and gates/registry_render.py exits 1 naming the service, the grant, the isolation and the derived ceiling. Lowering is always allowed: a human may cap any service at any time.",
-    "_isolation_is_documentation": "THE `isolation` FIELD HERE IS INTENT, NEVER THE VALUE USED FOR SCORING. A service does not declare its own isolation — that moves the self-assertion up one level instead of removing it, and trust is assigned, never asserted. The value that scores is the one RECORDED AT DISPATCH, by the dispatcher, into the journal (`journal.py --isolation`): the dispatcher knows whether it opened a fresh context, because it opened it. That makes isolation an observation, like an exit code. What this file's value does is let registry_render.py catch a grant that is already impossible.",
-    "_echo": "`echo` is the rung BELOW believed, new in 0.4.0. An echo contributes nothing AND IS EXCLUDED FROM THE DENOMINATOR — it is not scored as a zero row. A zero would drag the percentage down as though a defect had been found; an echo found nothing and proved nothing. A same-context review is not weak evidence, it is the same evidence counted twice.",
+    "_isolation_is_documentation": "THE `isolation` FIELD HERE IS INTENT, NEVER THE VALUE USED FOR SCORING. A service does not declare its own isolation \u2014 that moves the self-assertion up one level instead of removing it, and trust is assigned, never asserted. The value that scores is the one RECORDED AT DISPATCH, by the dispatcher, into the journal (`journal.py --isolation`): the dispatcher knows whether it opened a fresh context, because it opened it. That makes isolation an observation, like an exit code. What this file's value does is let registry_render.py catch a grant that is already impossible.",
+    "_echo": "`echo` is the rung BELOW believed, new in 0.4.0. An echo contributes nothing AND IS EXCLUDED FROM THE DENOMINATOR \u2014 it is not scored as a zero row. A zero would drag the percentage down as though a defect had been found; an echo found nothing and proved nothing. A same-context review is not weak evidence, it is the same evidence counted twice.",
     "_note": "gates/registry_render.py accepts exactly these nine kinds, these five ceilings and these four isolation levels. may_claim=proved with an empty gates list is refused: a proved ceiling with no oracle can never render green, so the service is trusted on paper and believed forever (F-0028). kind=root is the only kind that may omit jurisdiction."
   },
   "approved": true

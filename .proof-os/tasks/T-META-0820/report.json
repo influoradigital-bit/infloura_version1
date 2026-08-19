@@ -1,0 +1,88 @@
+{
+ "rows": [
+  {
+   "subject": "influora-api/src/main/java/com/influora/integration/meta/client/InstagramInsightsClient.java",
+   "owner": "vikram",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -nE 'audience_city|impressions' influora-api/src/main/java/com/influora/integration/meta/client/InstagramInsightsClient.java",
+    "result": "3 hits: L21 'impressions,reach,engagement,...', L23 'audience_city,audience_country,audience_gender_age,audience_locale', L87 'metric=impressions,reach,profile_views,website_clicks' \u2014 impressions removed for all Graph versions 2025-04-21 and audience_* replaced by follower_demographics, while META_GRAPH_API_VERSION is pinned v25.0",
+    "where": "influora-api/src/main/java/com/influora/integration/meta/client/InstagramInsightsClient.java:23"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/web/MetaOAuthController.java",
+   "owner": "vikram",
+   "status": "missing",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -rnE 'deauthorize|data_deletion|deletion_callback|signed_request' influora-api/src/main/java/ | wc -l",
+    "result": "0 \u2014 no Deauthorize Callback and no Data Deletion Request Callback exists anywhere in the API; the controller exposes only authorize/callback/status/disconnect",
+    "where": "influora-api/src/main/java/com/influora/web/MetaOAuthController.java:37"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/config/MetaApiProperties.java",
+   "owner": "vikram",
+   "status": "missing",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -rniE 'hub.challenge|hub_challenge|X-Hub-Signature' influora-api/src/main/java/ | wc -l",
+    "result": "0 \u2014 no Meta webhook receiver and no verify-token or app-secret-proof config; properties carry appId/appSecret/redirectUri/graphApiVersion only",
+    "where": "influora-api/src/main/java/com/influora/config/MetaApiProperties.java:17"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/tracking/ConversionTrackingService.java",
+   "owner": "vikram",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -rniE 'fbq\\(|connect.facebook.net|ConversionsApi|dataset_id|event_source_url' src influora-api/src/main/java | wc -l",
+    "result": "0 \u2014 recordConversion persists orderId/amount/currency behind an idempotency key but no event is ever forwarded to Meta; neither a Pixel nor a Conversions API client exists in either tier",
+    "where": "influora-api/src/main/java/com/influora/service/tracking/ConversionTrackingService.java:102"
+   }
+  },
+  {
+   "subject": "src/components/creator/connected-accounts.tsx",
+   "owner": "ananya",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -nE 'Facebook Page|professional account|linked' src/components/creator/connected-accounts.tsx",
+    "result": "5 hits, all presenting Facebook Page as an outcome row or a button label; no pre-connect copy states the Facebook-Login prerequisite that the Instagram professional account must ALREADY be linked to a Page, so a creator without one fails inside Meta's dialog",
+    "where": "src/components/creator/connected-accounts.tsx:174"
+   }
+  },
+  {
+   "subject": "influora-api/pom.xml",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -q -o compile  (gates/build.mvn.sh, budget 600s)",
+    "result": "exit 0 \u2014 the module compiles",
+    "where": "influora-api/pom.xml:1"
+   }
+  },
+  {
+   "subject": "src/components/3d/DiscoverCanvas.tsx",
+   "owner": "ananya",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "gates/frontend.sh  (tsc --noEmit; eslint sage rules; gitleaks; hex-colour grep)",
+    "result": "gate exit 1 \u2014 tsc clean and gitleaks found no leaks, but eslint exceeded 300s and was recorded unavailable, and the hex-colour grep flags the committed brand palette",
+    "where": "src/components/3d/DiscoverCanvas.tsx:21"
+   }
+  }
+ ]
+}

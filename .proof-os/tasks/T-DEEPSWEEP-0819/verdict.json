@@ -1,0 +1,20 @@
+{
+ "verdict": "echo",
+ "oracle": "model",
+ "isolation": "shared-context",
+ "done_when": ".proof-os/tasks/T-DEEPSWEEP-0819/TASKS.md exists and contains a markdown table with one row per confirmed defect, each naming an owner service present in registry.json, and each class sweep reports the files scanned",
+ "not_checked": [
+  "F-0346's shared-error-state class was never swept - no detector written",
+  "F-0350 contrast was never measured - read from a screenshot, no contrast tool run",
+  "F-0353's shape (a field read by the WRONG ROLE) is invisible to the unread-field detector, because reviewNotes IS read - by the brand's DeliverableViewer.tsx:441",
+  "no backend-side class was swept; every detector targets src/**",
+  "no fix was written or verified by this task",
+  "the done_when is only PARTLY met: F-0348 still names no owner because src/lib/api.ts matches no producer jurisdiction"
+ ],
+ "skipped": [
+  {
+   "step": "6 - dispatch a fresh-context checker",
+   "reason": "this session forbids invoking the Agent tool unless the user asks, so no independent checker context could be created; this verdict is the producer judging its own artifact and scores nothing"
+  }
+ ]
+}

@@ -1,0 +1,19 @@
+{
+ "verdict": "echo",
+ "oracle": "model",
+ "isolation": "shared-context",
+ "done_when": ".proof-os/tasks/T-DELIV-REVIEW-0819/TASKS.md exists and contains a markdown table with one row per task, each naming an owner service that exists in registry.json",
+ "not_checked": [
+  "whether any listed fix actually works \u00e2\u20ac\u201d no fix was written this task",
+  "whether F-0345's two unguarded call sites disable submit in the DOM; only that no guard precedes the API call",
+  "whether F-0350 fails a formal WCAG ratio \u00e2\u20ac\u201d read from a screenshot, not a contrast tool",
+  "whether the F-0348 token pattern recurs outside the deliverable surface",
+  "the done_when is NOT fully met: 6 of 7 rows name a registry service, F-0348 is UNASSIGNED because src/lib/api.ts matches no producer jurisdiction"
+ ],
+ "skipped": [
+  {
+   "step": "6 \u00b7 dispatch a fresh-context checker",
+   "reason": "this session forbids invoking the Agent tool unless the user asks for it, so no independent checker context could be created; the verdict is therefore the producer judging its own artifact and scores nothing"
+  }
+ ]
+}
