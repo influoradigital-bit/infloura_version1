@@ -38,6 +38,19 @@
 > is. Two rounds of fresh-context review found five defects, and a gate sweep found that **two closed
 > records were closed against gates that green their own defect**. See
 > **[Open-records remediation](#open-records-remediation--t-brandopen-0817)**.
+>
+> **⚠ GATE INTEGRITY — read this before trusting any "closed against a gate" claim above.**
+> Task `T-F0329-GATES` injected a plausible wrong fix into eleven promoted gates. **Ten of the
+> eleven exited 0** — every one of them guarding an already-**closed** ledger record. A gate that
+> cannot fail is worse than no gate, because the ledger reads as covered. All ten are rebuilt to
+> execute rather than grep, and each now proves on every run that its own assertions reject a
+> frozen known-bad. **96 promoted gates were classified and only these eleven were injected**, so
+> more of this class should be assumed, not hoped against. See
+> **[Gate integrity](#gate-integrity--t-f0329-gates)**.
+>
+> **Everything this audit opened is now closed.** The last records — `F-0281`/`F-0336` (creator
+> wallet), `F-0324` (brand wallet), `F-0326` (the dispatcher's own defect), `F-0333`, `F-0335` —
+> are in **[After the audit](#after-the-audit--the-last-records)**.
 
 **Question asked:** how does the brand flow actually work for the person using it — do they get
 confused, does it work properly?
@@ -699,6 +712,132 @@ passes; the tree as a whole does not. That distinction is the honest one, and th
   survived, the source did not. Caught only because the dispatcher re-ran `tsc` and vitest instead of
   trusting two reports that were both accurate when written.
 
+## Gate integrity — `T-F0329-GATES`
+
+This is the most important section in the document, because it qualifies every other one.
+
+A sweep classified all **106** promoted gates on disk. 81 carried an execution leg; 23 were purely
+textual, of which **13 asserted a token inside source as a proxy for a behaviour**. Eleven of those
+were injected with a plausible wrong fix — one that reintroduces the original defect while leaving
+the grepped token present.
+
+**Ten of eleven exited 0.** Every one guarded a record the ledger already showed as `closed`.
+
+| gate | what the injection proved |
+|---|---|
+| `F-0235` | its key assertion became **unsatisfiable** once the PII literal moved to a module constant — no `useState` line can ever match again |
+| `F-0237` | four legs satisfied, one dead by construction; **its existing vitest suite also passed the injection** — literal-shaped negative controls |
+| `F-0238` | the wrong fix *deleted* the forbidden string and used the grepped token more than before |
+| `F-0239` | passed both the helper-call and the inlined variant |
+| `F-0240` | passed two independent injections |
+| `F-0241` | reworded copy, equally false, both greps satisfied |
+| `F-0242` | `role: 'brand'` grepped over the whole object — satisfied by a **neighbouring method**; a second leg searched the comment-stripped view for a comment |
+| `F-0243` | the apostrophe, below |
+| `F-0272` | its `awk` window never terminated — **3781 of `api.ts`'s 5524 lines** were "the window" |
+| `notifications_wired.py` | printed *"brand notifications wired"* about a file containing **zero** occurrences of `useNotifications` |
+| `F-0050` | **survived** — the only one. Left alone, then found name-locked (`F-0335`) |
+
+### The apostrophe
+
+`F-0243`'s pattern was `won.t block your campaign`. A bare `.` in an ERE matches **one byte**; U+2019
+is **three**. Every apostrophe in the shipped copy is curly, so the pattern could never match the
+realistic regression. Measured on the same injected sentence: curly → exit 0 *"aligned"*, ASCII →
+exit 1 *"broken"*. The gate was not weak, it was **blind in the exact direction the product writes**.
+
+### What replaced them
+
+Each repaired gate now executes — renders the component, runs the API client against a recording
+stub, or parses with the project's own TypeScript compiler — and carries the device first built for
+`F-0273`: a known-bad frozen into the gate and pushed through its own assertion table **before** it
+looks at real code, so it exits 1 saying *it cannot fail* rather than reporting a verdict. New shared
+helpers: `_code.py`, `_pii_guard.js`, `_dispute_wire.js`, `_member_src.js`, `_f0240_chain.js`,
+`_nested_component.js`.
+
+Two of the repairs caused their own records, both closed: **`F-0334`** (the new fixture specs sat in a
+directory vitest's default include swept, so the product suite and `build.sh`'s own test leg were
+partly grading the trust layer — and the obvious fix is wrong: vitest applies `exclude` even to an
+explicitly-passed path, which sent five gates straight to `unavailable`) and **`F-0335`**
+(`F-0050` survived its injection but only enumerated the three identifiers its record happened to
+name; a differently-named component in a render body passed. It now parses the AST and decides the
+class. Its old version would also have **failed its own prescribed fix** — the module-scope hoist the
+record recommends made it go red on correct React).
+
+### `build.sh` had never returned a verdict here
+
+Not the timeout its record alleged — solo `npm test` is 99s against a 300s budget. `env_issue()`
+matched the bare token `network` against test output, and two suites deliberately log
+`Error: network down`, so **a red suite was laundered into `unavailable` on every run, in both
+directions.** It now reaches a real verdict, serialises its expensive leg behind an advisory lock,
+and a starved budget still yields `unavailable`, never a pass.
+
+### The honest residue
+
+**11 token-as-proxy gates are named and unrepaired** (`F-0329`'s record lists them). Neither triage
+heuristic clears a gate: `F-0264` had an execution leg and `F-0296` still got through it, and
+`F-0319` was single-site until an unrelated task added a second occurrence. Only 11 of 96 were
+injected. Assume more.
+
+## After the audit — the last records
+
+### The creator's wallet was showing the same money under the wrong name
+
+`F-0281` was filed as label ambiguity — three figures with no helper text. Tracing them first showed
+the labels were **wrong**, and a tooltip would have made it worse by confidently explaining a
+constant:
+
+- `escrowLocked` read `wallet.getEscrowBalance()`. The only assignment to that column anywhere is
+  `Wallet.java:63` initialising it to zero; nothing writes it. Every creator's **"In Escrow" tile was
+  permanently ₹0** (`F-0336`).
+- `pendingPayouts` held the FUNDED-milestone sum — money *still in escrow* — under a label that reads
+  as a withdrawal already on its way to the bank.
+
+All three now derive from sources that exist, and from different tables: available balance from the
+wallet, escrow from FUNDED milestones, and in-flight from `Payout` rows with `confirmedAt IS NULL`.
+Escrow is deliberately **not** derived from `EscrowHold` the way the brand side does it — a hold only
+carries a creator-attributable `collaborationId` once bound, and campaign-pool holds have none, so a
+per-creator sum there would silently miss real money. The new payout query was checked against
+`F-0234`'s class (a cross-tenant leak from an `@Query` whose missing where clause overrode name
+derivation); it is scoped to `creatorUserId`.
+
+### The brand wallet told a screen reader the opposite of the truth
+
+Most of `F-0324` was already in the tree. What was missing was the third region, and the spec that
+would have caught it was itself red. `FundEscrowStatus` is the `sr-only` live region for the Fund
+Campaign Escrow card, and its announcement had **no error case** — on a rejected fetch,
+`selectableCount` and `totalCount` are both 0, indistinguishable from a brand with no campaigns, so
+it announced *"No active campaigns to fund right now."* while the sighted user saw *"Could not load
+your campaigns"* and a Retry button. **Two audiences, contradictory accounts of one money surface,
+and the non-visual one got the false version.**
+
+Five of that spec's six failures were defects in the **spec**, not the product, and were fixed as
+such rather than by weakening them: three demanded a raw `new Error` string reach a money screen when
+the page deliberately shows a generic message for non-`ApiError` (they now reject with a real
+`ApiError`, which pins the stronger property), and two used `getByText` on copy that legitimately
+renders more than once.
+
+### The dispatcher's own defect
+
+`F-0326`. Producers are grouped by file ownership, but a gate-repair producer must inject into the
+product file it guards to prove its gate can fail — a transient second ownership declared nowhere. A
+restore from a snapshot taken before a peer's write silently reverted that peer; tests and gate
+survived, the source edit did not, and both agents reported success while telling the truth.
+
+**A lock is not the fix** — it stops two simultaneous writers, not a stale restore. `gates/_inject.sh`
+adds the claim, but the load-bearing part is the **refusal**: restore compares the file against what
+the injector itself last left, and if a peer changed it, refuses and keeps both versions. Its gate
+drives that scenario table on every run. What no shell gate can do is force an *agent* to use the
+helper; that limit is written into the gate's own `NOT CHECKED`.
+
+### `F-0333`, and a diagnosis that was wrong
+
+Filed as *"`confirm.py` rejects any uppercase gate path"*. Testing disproved it: the rejection came
+from `PROOF_OS_DIR` being unset, so project-local gates were never searched — and that root being
+opt-in is **deliberate**, so an audited project cannot mint its own oracle. The record was corrected
+before closing. The real defect is smaller and latent: `normalise()` case-folds and the folded string
+is then used as a filesystem path, which NTFS hides and a case-sensitive filesystem would not — **if
+proof-os ever runs in CI, every uppercase gate goes dark at once**. Closed unautomatable: the artefact
+is in the plugin, outside this repository, and the applied fix is unversioned.
+
 ## Why the audit's findings score nothing (and the review's now do)
 
 `independence.py` measures kavya at a **0.0% catch rate (0 of 21 discoverable failures flagged
@@ -784,6 +923,13 @@ F-0249, F-0250 **and F-0248** all closed by gate; opened F-0252, F-0279, F-0282*
 F-0289 closed by `gates/F-0270-no-dead-controls.py`, which exits 0 over 298 files after 23 of its
 own first-run false positives were fixed; opened F-0301. **F-0310** closed against the same gate
 after it was found accepting a no-op `onClick` and treating `aria-disabled` as `disabled`*
+*· gate integrity `T-F0329-GATES` — verdict `proved` (oracle, admissible); **10 of 11 promoted
+gates could not fail against their own recorded defect**, all rebuilt to execute and self-falsify;
+F-0329, F-0334, F-0335 closed; 11 token-as-proxy gates named and unrepaired*
+*· last records — F-0281 + F-0336 (creator wallet escrow figure permanently zero, tile beside it
+inverted), F-0324 (brand wallet told a screen reader the opposite of the screen), F-0326 (the
+dispatcher's own clobber, closed by a refusal not a lock), F-0333 (corrected, then closed
+unautomatable — plugin-side and latent on a case-sensitive filesystem)*
 *· open-records remediation `T-BRANDOPEN-0817` — verdict `proved` (oracle, admissible); F-0229,
 F-0251, F-0252, F-0266, F-0271, F-0272, F-0273, F-0279, F-0282, F-0283, F-0301 closed, plus F-0318,
 F-0319, F-0320, F-0321, F-0322, F-0323, F-0325 opened by review and closed; **F-0324 and F-0326 open
