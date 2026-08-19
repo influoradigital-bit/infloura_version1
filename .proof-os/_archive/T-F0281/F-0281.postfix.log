@@ -1,0 +1,29 @@
+· method markers: GATE-F0281-METHOD-START/END present in influora-api/src/main/java/com/influora/service/WalletService.java
+  present
+· self-check: known-bad getSummaryForUser (verbatim F-0336/F-0281) is compiled and tested
+  good — mvn test -Dtest=WalletServiceTest#testGetSummaryForUserEscrowLockedIgnoresDeadColumn+testGetSummaryForUserPendingPayoutsIsInFlightPayoutSum fails against the known-bad body (rc=1), as required
+· mvn -o test -Dtest=WalletServiceTest#testGetSummaryForUserEscrowLockedIgnoresDeadColumn+testGetSummaryForUserPendingPayoutsIsInFlightPayoutSum (real code on disk)
+  green — escrowLocked is the live FUNDED-milestone sum, pendingPayouts is the live
+  in-flight Payout sum, neither reads the dead wallets.escrow_balance column
+· PayoutRepository declares sumAmountByCreatorUserIdAndConfirmedAtIsNull
+  present
+· vitest: creator-wallet.money-buckets.test.tsx — labels match buckets, absent ≠ zero
+  [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+  [2m      Tests [22m [1m[32m6 passed[39m[22m[90m (6)[39m
+  suite green
+VERDICT: aligned (proved) — getSummaryForUser was EXECUTED (compiled and run under JUnit),
+         not grepped: escrowLocked is the creator's live FUNDED-milestone sum (never the
+         dead wallets.escrow_balance column) and pendingPayouts is the live in-flight Payout
+         sum (never the FUNDED-milestone figure it used to be mislabeled as). The assertion
+         table was proved falsifiable against the verbatim F-0336/F-0281 defect — compiled
+         and run, not merely described — before any green was trusted. The rendered page's
+         own suite confirms each tile's number sits under a definition that matches it, and
+         that a failed fetch renders an honest "—" rather than a fabricated ₹0 indistinct
+         from a creator who genuinely has none.
+NOT CHECKED: withdrawal-in-flight money whose EscrowHold was never bound to a collaboration
+             at all (campaign-pool funding with no milestone yet) — that money is real but
+             not attributable to any single creator today, and is not represented in any of
+             the three tiles; live rendering against a running backend and a real MySQL
+             database (H2/mocks only here); whether a future caller adds a THIRD path that
+             debits Wallet.balance outside doProcessWithdrawal/doQueuePayout, which would
+             leave pendingPayouts under-counting money actually in flight.

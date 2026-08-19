@@ -194,6 +194,103 @@ class WalletServiceTest {
     }
 
     // ------------------------------------------------------------------
+    // getSummaryForUser -- F-0281/F-0336. Three distinct creator money buckets, each from its own
+    // real source:
+    //   escrowLocked   = FUNDED milestone sum (was the permanently-dead wallets.escrow_balance)
+    //   pendingPayouts = in-flight Payout sum, confirmedAt IS NULL (was the FUNDED milestone sum
+    //                    displayed under a label meaning something else entirely)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "getSummaryForUser: escrowLocked is the creator's FUNDED milestone sum, never the dead"
+                    + " wallets.escrow_balance column (F-0336)")
+    void testGetSummaryForUserEscrowLockedIgnoresDeadColumn() {
+        // Dead column deliberately set to a different, non-zero sentinel to prove it is NOT read --
+        // mirrors testGetSummaryDerivesEscrowLockedFromFundedHoldsOnly's brand-side proof above.
+        com.influora.domain.entity.Wallet wallet =
+                createTestWallet(new BigDecimal("2000.00"), new BigDecimal("777.00"));
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.of(wallet));
+        when(paymentMilestoneRepository.sumAmountByCreatorIdAndStatus(USER_ID, MilestoneStatus.FUNDED))
+                .thenReturn(new BigDecimal("15000.00"));
+        when(payoutRepository.sumAmountByCreatorUserIdAndConfirmedAtIsNull(USER_ID))
+                .thenReturn(BigDecimal.ZERO);
+
+        WalletSummaryResponse result = walletService.getSummaryForUser(USER_ID);
+
+        assertEquals(
+                new BigDecimal("15000.00"),
+                result.escrowLocked(),
+                "escrowLocked must be the live FUNDED-milestone sum");
+        assertTrue(
+                new BigDecimal("777.00").compareTo(result.escrowLocked()) != 0,
+                "the dead wallets.escrow_balance sentinel must never surface as escrowLocked");
+    }
+
+    @Test
+    @DisplayName(
+            "getSummaryForUser: pendingPayouts is the in-flight Payout sum, not the FUNDED milestone"
+                    + " sum it used to be mislabeled as (F-0281)")
+    void testGetSummaryForUserPendingPayoutsIsInFlightPayoutSum() {
+        com.influora.domain.entity.Wallet wallet =
+                createTestWallet(new BigDecimal("2000.00"), BigDecimal.ZERO);
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.of(wallet));
+        // Deliberately different from the in-flight figure below, so a fix that left pendingPayouts
+        // wired to the milestone sum (the F-0281 defect) is caught rather than coincidentally
+        // matching.
+        when(paymentMilestoneRepository.sumAmountByCreatorIdAndStatus(USER_ID, MilestoneStatus.FUNDED))
+                .thenReturn(new BigDecimal("15000.00"));
+        when(payoutRepository.sumAmountByCreatorUserIdAndConfirmedAtIsNull(USER_ID))
+                .thenReturn(new BigDecimal("2500.00"));
+
+        WalletSummaryResponse result = walletService.getSummaryForUser(USER_ID);
+
+        assertEquals(
+                new BigDecimal("2500.00"),
+                result.pendingPayouts(),
+                "pendingPayouts must be the in-flight Payout sum");
+        assertTrue(
+                new BigDecimal("15000.00").compareTo(result.pendingPayouts()) != 0,
+                "pendingPayouts must not still be the FUNDED-milestone sum (F-0281's mislabeled figure)");
+    }
+
+    @Test
+    @DisplayName(
+            "getSummaryForUser: escrowLocked and pendingPayouts are non-null zero when the creator has"
+                    + " no FUNDED milestones and nothing in flight")
+    void testGetSummaryForUserZeroBucketsAreNonNull() {
+        com.influora.domain.entity.Wallet wallet =
+                createTestWallet(new BigDecimal("500.00"), BigDecimal.ZERO);
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.of(wallet));
+        when(paymentMilestoneRepository.sumAmountByCreatorIdAndStatus(USER_ID, MilestoneStatus.FUNDED))
+                .thenReturn(BigDecimal.ZERO);
+        when(payoutRepository.sumAmountByCreatorUserIdAndConfirmedAtIsNull(USER_ID))
+                .thenReturn(BigDecimal.ZERO);
+
+        WalletSummaryResponse result = walletService.getSummaryForUser(USER_ID);
+
+        assertEquals(BigDecimal.ZERO, result.escrowLocked());
+        assertEquals(BigDecimal.ZERO, result.pendingPayouts());
+    }
+
+    @Test
+    @DisplayName(
+            "getSummaryForUser: a creator with no wallet row yet still reports real escrowLocked/"
+                    + "pendingPayouts figures (a creator can have FUNDED milestones before ever being paid)")
+    void testGetSummaryForUserNoWalletRowStillComputesBuckets() {
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.empty());
+        when(paymentMilestoneRepository.sumAmountByCreatorIdAndStatus(USER_ID, MilestoneStatus.FUNDED))
+                .thenReturn(new BigDecimal("8000.00"));
+        when(payoutRepository.sumAmountByCreatorUserIdAndConfirmedAtIsNull(USER_ID))
+                .thenReturn(BigDecimal.ZERO);
+
+        WalletSummaryResponse result = walletService.getSummaryForUser(USER_ID);
+
+        assertEquals(0, BigDecimal.ZERO.compareTo(result.availableBalance()));
+        assertEquals(new BigDecimal("8000.00"), result.escrowLocked());
+    }
+
+    // ------------------------------------------------------------------
     // requestCreatorWithdrawal -- B10/C-5 (real disbursement) + M-6 (mandatory, namespaced key)
     // ------------------------------------------------------------------
 

@@ -158,28 +158,65 @@ public class WalletService {
         return toSummaryResponse(wallet, escrowLocked, pendingPayouts);
     }
 
+    // GATE-F0281-METHOD-START — do not remove/rename these markers. F-0281's self-falsification
+    // gate (.proof-os/gates/F-0281-creator-money-buckets-honest.sh) locates this method by them to
+    // swap in a known-bad implementation and prove its own assertions can reject it before it ever
+    // trusts a green run against the real code (same discipline as F-0273's frozen bad.ts).
     /**
-     * Creator wallet summary — {@code pendingPayouts} is FUNDED milestone totals across the
-     * creator's collaborations (money in escrow awaiting release to them).
+     * Creator wallet summary — three DISTINCT money states, each derived from its own real source
+     * rather than the field names being trusted at face value (F-0281/F-0336 — both were wrong
+     * before this fix, in opposite directions: one always read zero, the other read real money
+     * under a label meaning something else).
+     *
+     * <ul>
+     *   <li>{@code availableBalance} — {@link Wallet#getBalance()}. Released to the creator and
+     *       withdrawable right now.
+     *   <li>{@code escrowLocked} — sum of the creator's FUNDED {@code PaymentMilestone}s (money the
+     *       brand has committed into escrow but not yet approved/released to this creator).
+     *       Previously this read {@link Wallet#getEscrowBalance()}, a column NO service ever
+     *       writes (see that field's javadoc and {@code getSummary}'s, the brand-side sibling of
+     *       this method) — permanently zero, always, for every creator (F-0336). {@code
+     *       wallets.escrow_balance} is not derivable for a creator via {@code EscrowHold} the way
+     *       {@code getSummary} derives it for a brand: an {@code EscrowHold} only carries a
+     *       creator-attributable {@code collaborationId} once bound (campaign-pool holds have none
+     *       at all — see {@code EscrowHold}'s class javadoc), so a per-creator sum over that table
+     *       would silently miss holds that are real escrow money but not yet linked to anyone. The
+     *       {@code PaymentMilestone} FUNDED sum this uses instead is exactly the money that IS
+     *       attributable to this creator, and is real (funding a hold moves {@code
+     *       wallets.balance}, so it is provably not a fabricated figure).
+     *   <li>{@code pendingPayouts} — sum of the creator's {@link Payout} rows still IN FLIGHT to
+     *       their bank ({@code confirmedAt IS NULL} — see {@link
+     *       PayoutRepository#sumAmountByCreatorUserIdAndConfirmedAtIsNull}). Previously this field
+     *       held the FUNDED-milestone sum above — i.e. brand-funded-but-unapproved money — under a
+     *       label ("Pending Payouts") that reads as "a withdrawal is already on its way to my bank"
+     *       (F-0281). It is the opposite: that money has not even been released to the creator yet,
+     *       let alone queued for disbursement. Both {@code doProcessWithdrawal} (lump-sum wallet
+     *       withdrawal) and {@code PayoutService#doQueuePayout} (milestone-linked payout) debit
+     *       {@link Wallet#getBalance()} before ever calling RazorpayX, so by the time a {@link
+     *       Payout} row exists its amount has already left {@code availableBalance} — it cannot
+     *       double-count against that figure.
+     * </ul>
      */
     @Transactional(readOnly = true)
     public WalletSummaryResponse getSummaryForUser(String userId) {
-        BigDecimal pendingRaw =
+        BigDecimal escrowRaw =
                 paymentMilestoneRepository.sumAmountByCreatorIdAndStatus(
                         userId, MilestoneStatus.FUNDED);
-        final BigDecimal pendingPayouts =
-                pendingRaw == null ? BigDecimal.ZERO : pendingRaw;
-        // Creator-side escrowLocked derivation is out of scope for this fix (Track C targets only
-        // the brand dashboard's escrowLocked figure) — still reads the dead `escrow_balance`
-        // column here, unchanged from prior behavior.
+        final BigDecimal escrowLocked = escrowRaw == null ? BigDecimal.ZERO : escrowRaw;
+
+        BigDecimal inFlightRaw =
+                payoutRepository.sumAmountByCreatorUserIdAndConfirmedAtIsNull(userId);
+        final BigDecimal pendingPayouts = inFlightRaw == null ? BigDecimal.ZERO : inFlightRaw;
+
         return walletRepository
                 .findByOwnerId(userId)
-                .map(wallet -> toSummaryResponse(wallet, wallet.getEscrowBalance(), pendingPayouts))
+                .map(wallet -> toSummaryResponse(wallet, escrowLocked, pendingPayouts))
                 .orElseGet(
                         () ->
                                 new WalletSummaryResponse(
-                                        BigDecimal.ZERO, BigDecimal.ZERO, pendingPayouts, null));
+                                        BigDecimal.ZERO, escrowLocked, pendingPayouts, null));
     }
+    // GATE-F0281-METHOD-END
 
     /**
      * Creator withdrawal — debits the authenticated user's wallet via the ledger, initiates a real

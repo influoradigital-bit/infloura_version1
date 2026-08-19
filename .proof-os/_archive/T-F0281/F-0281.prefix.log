@@ -1,0 +1,3 @@
+· method markers: GATE-F0281-METHOD-START/END present in influora-api/src/main/java/com/influora/service/WalletService.java
+VERDICT: broken — the anchors this gate uses to swap in a known-bad implementation are
+         gone; self-falsification cannot run, so nothing below can be trusted (F-0281)

@@ -1,0 +1,54 @@
+· method markers: GATE-F0281-METHOD-START/END present in influora-api/src/main/java/com/influora/service/WalletService.java
+  present
+· self-check: known-bad getSummaryForUser (verbatim F-0336/F-0281) is compiled and tested
+  good — mvn test -Dtest=WalletServiceTest#testGetSummaryForUserEscrowLockedIgnoresDeadColumn+testGetSummaryForUserPendingPayoutsIsInFlightPayoutSum fails against the known-bad body (rc=1), as required
+· mvn -o test -Dtest=WalletServiceTest#testGetSummaryForUserEscrowLockedIgnoresDeadColumn+testGetSummaryForUserPendingPayoutsIsInFlightPayoutSum (real code on disk)
+WARNING: A Java agent has been loaded dynamically (C:\Users\Sage world\.m2\repository\net\bytebuddy\byte-buddy-agent\1.14.19\byte-buddy-agent-1.14.19.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+[ERROR] Tests run: 2, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 2.041 s <<< FAILURE! -- in com.influora.service.WalletServiceTest
+[ERROR] com.influora.service.WalletServiceTest.testGetSummaryForUserEscrowLockedIgnoresDeadColumn -- Time elapsed: 1.979 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: escrowLocked must be the live FUNDED-milestone sum ==> expected: <15000.00> but was: <777.00>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:182)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:1156)
+	at com.influora.service.WalletServiceTest.testGetSummaryForUserEscrowLockedIgnoresDeadColumn(WalletServiceTest.java:221)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.WalletServiceTest.testGetSummaryForUserPendingPayoutsIsInFlightPayoutSum -- Time elapsed: 0.006 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: pendingPayouts must be the in-flight Payout sum ==> expected: <2500.00> but was: <15000.00>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:182)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:1156)
+	at com.influora.service.WalletServiceTest.testGetSummaryForUserPendingPayoutsIsInFlightPayoutSum(WalletServiceTest.java:248)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] Failures: 
+[ERROR]   WalletServiceTest.testGetSummaryForUserEscrowLockedIgnoresDeadColumn:221 escrowLocked must be the live FUNDED-milestone sum ==> expected: <15000.00> but was: <777.00>
+[ERROR]   WalletServiceTest.testGetSummaryForUserPendingPayoutsIsInFlightPayoutSum:248 pendingPayouts must be the in-flight Payout sum ==> expected: <2500.00> but was: <15000.00>
+[ERROR] Tests run: 2, Failures: 2, Errors: 0, Skipped: 0
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.2.5:test (default-test) on project influora-api: There are test failures.
+[ERROR] 
+[ERROR] Please refer to C:\Users\Sage world\Downloads\New Influora Ai\New Influora\influora-api\target\surefire-reports for the individual test results.
+[ERROR] Please refer to dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+VERDICT: broken — escrowLocked and/or pendingPayouts are not correctly derived for a
+         creator (F-0281/F-0336)
+NOT CHECKED: the rendered page — the vitest leg below was not reached because the
+             derivation that feeds it is already wrong

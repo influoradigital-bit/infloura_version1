@@ -1,12 +1,15 @@
 package com.influora.repository;
 
 import com.influora.domain.entity.Payout;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface PayoutRepository extends JpaRepository<Payout, String> {
 
@@ -78,4 +81,29 @@ public interface PayoutRepository extends JpaRepository<Payout, String> {
      * checks each candidate for an actually-orphaned retry debit before touching anything.
      */
     List<Payout> findByStatusInAndUpdatedAtBefore(List<String> statuses, Instant threshold);
+
+    /**
+     * [F-0281/F-0336] Sum of {@link Payout} amounts for one creator that are still IN FLIGHT to
+     * their bank — i.e. {@code confirmedAt IS NULL}. Powers the creator wallet summary's {@code
+     * pendingPayouts} figure ({@code WalletService#getSummaryForUser}).
+     *
+     * <p>{@code confirmedAt} is the right predicate, not a status list, because of how {@link
+     * Payout} actually stamps it: {@link Payout#confirmStatus} sets it on EVERY terminal webhook —
+     * {@code processed} (money landed, no longer "pending"), and {@code
+     * reversed}/{@code rejected}/{@code cancelled} ({@link
+     * com.influora.service.PayoutReconciliationService#FAILURE_STATUSES} — money never landed and
+     * was already re-credited to the wallet by {@code reCreditReversedPayout}, so it must not be
+     * double-counted here as still in flight). Only the pre-terminal states — {@code queued},
+     * {@code pending}, {@code processing}, and this entity's own {@link
+     * Payout#STATUS_PENDING} pre-gateway marker — leave {@code confirmedAt} null, and every one of
+     * those genuinely means "debited from the wallet, not yet resolved by the gateway", which is
+     * exactly the money a creator would call "pending". {@code COALESCE(...,0)} matches this
+     * repository's sibling sum-query convention (see {@code EscrowHoldRepository}/{@code
+     * PaymentMilestoneRepository}) so a creator with nothing in flight gets a non-null zero.
+     */
+    @Query(
+            "SELECT COALESCE(SUM(p.amount), 0) FROM Payout p "
+                    + "WHERE p.creatorUserId = :creatorUserId AND p.confirmedAt IS NULL")
+    BigDecimal sumAmountByCreatorUserIdAndConfirmedAtIsNull(
+            @Param("creatorUserId") String creatorUserId);
 }
