@@ -886,14 +886,26 @@ class ContractServiceTest {
         verifyNoInteractions(contractPdfService, r2StorageService, eventPublisher);
     }
 
+    /**
+     * [Swapnil ruling 2026-08-20] This used to drive the second signature through {@code
+     * recordSignature(.., "CREATOR", ..)} -- the brand relaying the creator's out-of-band assent.
+     * That relay is deleted (a brand may no longer complete a contract on a creator's behalf), so
+     * the only way a contract reaches fully-signed is each party signing as themselves: the brand
+     * via {@code recordSignature} and the creator via {@link
+     * ContractService#recordSignatureForCreator}, which derives the CREATOR role from the
+     * authenticated principal and scopes the lookup to that creator's own user id ({@code
+     * findByIdAndCreatorId}) instead of the caller's workspace. What this test proves is unchanged:
+     * the ONE call that completes the pair fires PDF generation + delivery exactly once.
+     */
     @Test
     @DisplayName(
-            "recordSignature: the FIRST call that completes both signatures (BRAND already signed,"
-                    + " now CREATOR signs) generates and delivers the PDF exactly once")
+            "recordSignatureForCreator: the FIRST call that completes both signatures (BRAND already"
+                    + " signed, now CREATOR signs) generates and delivers the PDF exactly once")
     void testSecondRoleCompletesSignatureAndFiresPdfOnce() {
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
         Contract contract = unsignedContract();
         contract.recordBrandSignature("Test Brand Owner"); // brand already signed in a prior call
-        when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
+        when(contractRepository.findByIdAndCreatorId(CONTRACT_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(contract));
         PaymentMilestone milestone =
                 PaymentMilestone.builder()
@@ -918,8 +930,7 @@ class ContractServiceTest {
                 .thenReturn(false);
         mockIdempotencyExecuteOnce();
 
-        ContractResponse response =
-                service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Test Creator");
+        ContractResponse response = service.recordSignatureForCreator(principal, CONTRACT_ID, "Test Creator");
 
         assertNotNull(response.brandSignedAt());
         assertNotNull(response.creatorSignedAt());
@@ -928,16 +939,26 @@ class ContractServiceTest {
         verify(collaborationRepository, times(2)).findById(COLLABORATION_ID);
     }
 
-    /** Persistent application-history requirement — wiring the 8 remaining event types. */
+    /**
+     * Persistent application-history requirement — wiring the 8 remaining event types.
+     *
+     * <p>[Swapnil ruling 2026-08-20] Driven through {@link
+     * ContractService#recordSignatureForCreator} now that the brand-relays-the-creator path is
+     * deleted. The event assertion is the same one it always was — the completing signature records
+     * CONTRACT_SIGNED exactly once, with {@code actorType = CREATOR} narrating WHICH signature
+     * closed the pair and {@code actorId} being the principal that actually performed the write.
+     * The only thing that changed is that those two now agree: the writer IS the creator, so
+     * {@code actorId} is the creator's own user id rather than the relaying brand member's.
+     */
     @Test
     @DisplayName(
-            "recordSignature: the call that completes both signatures records a CONTRACT_SIGNED"
-                    + " application-history event exactly once")
+            "recordSignatureForCreator: the call that completes both signatures records a"
+                    + " CONTRACT_SIGNED application-history event exactly once")
     void testFullySignedRecordsApplicationHistoryEvent() {
-        when(principal.getUserId()).thenReturn("elevated_brand_member_1");
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
         Contract contract = unsignedContract();
         contract.recordBrandSignature("Test Brand Owner");
-        when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
+        when(contractRepository.findByIdAndCreatorId(CONTRACT_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID)).thenReturn(List.of());
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.empty());
@@ -946,7 +967,7 @@ class ContractServiceTest {
         when(escrowHoldRepository.hasEscrowForCollaboration(eq(COLLABORATION_ID), any())).thenReturn(false);
         mockIdempotencyExecuteOnce();
 
-        service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Test Creator");
+        service.recordSignatureForCreator(principal, CONTRACT_ID, "Test Creator");
 
         verify(applicationHistoryService, times(1))
                 .record(
@@ -956,12 +977,11 @@ class ContractServiceTest {
                         eq(com.influora.domain.enums.ApplicationHistoryEventType.CONTRACT_SIGNED),
                         eq(com.influora.domain.enums.CollaborationStatus.CONTRACTED),
                         // actorType narrates WHICH signature just completed the pair (CREATOR here);
-                        // actorId is still the calling principal that actually performed the write
-                        // (a brand member relaying the creator's signature — see recordSignature's
-                        // own javadoc on that residual, pre-existing risk), never a fabricated
-                        // creator identity.
+                        // actorId is still the calling principal that actually performed the write,
+                        // never a fabricated identity. Since the relay was deleted that principal
+                        // is the creator themselves, so the two now agree by construction.
                         eq(com.influora.domain.enums.ApplicationHistoryActorType.CREATOR),
-                        eq("elevated_brand_member_1"),
+                        eq(CREATOR_USER_ID),
                         anyString(),
                         // Sign-off review follow-on (#3) — metadata is null, no raw contract id.
                         org.mockito.ArgumentMatchers.isNull(),
@@ -969,22 +989,35 @@ class ContractServiceTest {
                         eq(COLLABORATION_ID));
     }
 
+    /**
+     * Distinct from {@code testRetriedCreatorSignatureForCreatorIsNoOp} below: there the contract
+     * is only creator-signed, here it is FULLY executed (ACTIVE). That is the case the {@code
+     * verifyNoInteractions(.., collaborationRepository)} guards — an idempotent replay of an
+     * already-executed signature must touch nothing beyond the contract itself, in particular it
+     * must not take the CR-22a collaboration row lock (see {@code doRecordSignature}'s javadoc,
+     * which names this test by name for exactly that reason).
+     *
+     * <p>[Swapnil ruling 2026-08-20] Retried through {@link
+     * ContractService#recordSignatureForCreator} since the brand-relayed CREATOR role no longer
+     * exists; the replay path being exercised ({@code doRecordSignature}'s already-signed
+     * short-circuit) is the same one either entry point reaches.
+     */
     @Test
     @DisplayName(
-            "recordSignature: a retried CREATOR sign call after BOTH parties already signed is an"
-                    + " idempotent no-op -- PDF/email delivery is never re-fired a second time")
+            "recordSignatureForCreator: a retried CREATOR sign call after BOTH parties already"
+                    + " signed is an idempotent no-op -- PDF/email delivery is never re-fired")
     void testRetriedSignatureAfterFullyExecutedIsNoOp() {
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
         Contract contract = unsignedContract();
         contract.recordBrandSignature("Test Brand Owner");
         contract.recordCreatorSignature("Test Creator");
-        when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
+        when(contractRepository.findByIdAndCreatorId(CONTRACT_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
                 .thenReturn(List.of());
         mockIdempotencyExecuteOnce();
 
-        ContractResponse response =
-                service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Test Creator");
+        ContractResponse response = service.recordSignatureForCreator(principal, CONTRACT_ID, "Test Creator");
 
         assertEquals(ContractStatus.ACTIVE, response.status());
         verify(contractRepository, never()).save(any());
@@ -1265,14 +1298,23 @@ class ContractServiceTest {
         verifyNoInteractions(contractRepository);
     }
 
+    /**
+     * Complements {@code testCreatorSignsOwnContractAndPromptsEscrow}, which stubs the workspace
+     * OWNER lookup empty and therefore never reaches the publish: here a real OWNER is on file, so
+     * this is the test that proves the {@link ContractReadyForEscrowEvent} is actually published to
+     * someone once both signatures land. [Swapnil ruling 2026-08-20] The completing signature is
+     * now the creator's own ({@link ContractService#recordSignatureForCreator}) rather than a brand
+     * relay, so there is no {@code brandContext.requireMember} on this path at all.
+     */
     @Test
     @DisplayName(
-            "recordSignature: dual signature publishes escrow funding prompt when no FUNDED hold exists")
+            "recordSignatureForCreator: dual signature publishes escrow funding prompt when no"
+                    + " FUNDED hold exists")
     void testDualSignaturePublishesEscrowFundingPrompt() {
-        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
         Contract contract = unsignedContract();
         contract.recordBrandSignature("Test Brand Owner");
-        when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
+        when(contractRepository.findByIdAndCreatorId(CONTRACT_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(contract));
         when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
                 .thenReturn(List.of());
@@ -1292,8 +1334,53 @@ class ContractServiceTest {
                 .thenReturn(Optional.of(owner));
         mockIdempotencyExecuteOnce();
 
-        service.recordSignature(principal, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Test Creator");
+        service.recordSignatureForCreator(principal, CONTRACT_ID, "Test Creator");
 
         verify(eventPublisher).publishEvent(any(ContractReadyForEscrowEvent.class));
+    }
+
+    /**
+     * [Swapnil ruling 2026-08-20 — the guard this whole file was reshaped around] {@code
+     * recordSignature} records the BRAND signature and nothing else. The brand-relays-the-creator's
+     * -assent path it used to carry let a workspace member attribute a signature to a creator who
+     * never made one, on a document the e-sign UI calls binding under the IT Act 2000. That relay
+     * was previously tolerated only because it was the sole route to a fully-executed contract;
+     * {@code recordSignatureForCreator} removed that excuse, so the relay is deleted outright.
+     *
+     * <p>Two things are asserted, and both matter. First, that {@code role=CREATOR} is REJECTED
+     * (403 {@code CREATOR_SIGNATURE_NOT_RELAYABLE}) rather than silently downgraded to BRAND — a
+     * quiet downgrade would file a real signature under the wrong party's name, which is worse than
+     * the forgery it was meant to prevent. Second, and this is the part a bare {@code assertThrows}
+     * would miss, that the contract is left completely untouched: no creator signature stamped on
+     * the in-memory entity, still exactly half-signed (PENDING_SIGNATURES, never ACTIVE), nothing
+     * persisted, and the idempotency/PDF/event machinery never entered — proving the rejection
+     * happens before any write rather than after a partial one.
+     */
+    @Test
+    @DisplayName(
+            "recordSignature: role=CREATOR is rejected with CREATOR_SIGNATURE_NOT_RELAYABLE (403)"
+                    + " and the contract is left untouched -- a brand cannot sign for a creator")
+    void testCreatorSignatureCannotBeRelayedByBrand() {
+        Contract contract = unsignedContract();
+        contract.recordBrandSignature("Test Brand Owner"); // brand side is legitimately done
+        when(contractRepository.findByIdAndWorkspaceId(CONTRACT_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(contract));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.recordSignature(
+                                        principal, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Test Creator"));
+
+        assertEquals("CREATOR_SIGNATURE_NOT_RELAYABLE", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        // The contract is NOT modified: no creator signature, no promotion to ACTIVE.
+        assertNull(contract.getCreatorSignedAt());
+        assertNull(contract.getCreatorSignerName());
+        assertEquals(ContractStatus.PENDING_SIGNATURES, contract.getStatus());
+        assertNotNull(contract.getBrandSignedAt()); // the pre-existing brand signature survives
+        verify(contractRepository, never()).save(any());
+        verifyNoInteractions(idempotencyService, contractPdfService, r2StorageService, eventPublisher);
     }
 }

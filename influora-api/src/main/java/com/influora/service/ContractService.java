@@ -553,36 +553,36 @@ public class ContractService {
      * UserType.CREATOR}'s only other usage in this codebase, {@code
      * MetaOAuthController#requireCreator}, which is unrelated).
      *
-     * <p><b>Why {@code role=CREATOR} cannot simply be rejected:</b> a first attempt at this fix
-     * rejected {@code role=CREATOR} outright, on the reasoning that no principal who could
-     * legitimately claim it can ever reach this method. That is true, but {@code
-     * ContractServiceTest#testSecondRoleCompletesSignatureAndFiresPdfOnce}/{@code
-     * testRetriedSignatureAfterFullyExecutedIsNoOp} prove {@code role=CREATOR} is the ONLY existing
-     * mechanism this product has for a contract to ever reach {@link
-     * com.influora.domain.enums.ContractStatus#ACTIVE} — the brand relays the creator's (out-of-band,
-     * e.g. verbal/email) assent and records it here. Rejecting it outright would not just close a
-     * forgery, it would permanently break every contract's path to becoming ACTIVE — a functional
-     * regression far larger than the security finding. That is NOT "strictest feasible validation,"
-     * it is throwing out a load-bearing feature.
+     * <p><b>Why the relay used to be kept, and why it no longer is [Swapnil ruling 2026-08-20].</b>
+     * An earlier pass rejected {@code role=CREATOR} outright and had to be reverted: at that time
+     * {@code role=CREATOR} was the ONLY mechanism this product had for a contract to ever reach
+     * {@link com.influora.domain.enums.ContractStatus#ACTIVE}. There was no creator-authenticated
+     * signing path, so the brand relayed the creator's out-of-band (verbal/email) assent and
+     * recorded it here. Rejecting it did not just close a forgery, it broke every contract's path
+     * to becoming fully executed — a functional regression larger than the finding. The compromise
+     * was to gate the relay behind an elevated {@link MemberRole}, which narrowed the forgery
+     * without closing it: an {@code OWNER}/{@code ADMIN}/{@code MANAGER} could still attribute a
+     * signature to a creator who never made one.
      *
-     * <p><b>The fix actually applied</b> — {@code role=BRAND} was never forgeable (a brand principal
-     * self-attributing their own signature is definitionally correct) and needs no new check.
-     * {@code role=CREATOR} still cannot be bound to a real creator identity with the auth data
-     * available at this call site, so the strictest available tightening is applied instead:
-     * recording a signature ON BEHALF OF the creator now additionally requires the brand principal
-     * hold an elevated {@link MemberRole} ({@code OWNER}/{@code ADMIN}/{@code MANAGER}, the same
-     * gate {@link #generate} already uses for creating the contract in the first place) — a
-     * {@code VIEWER}/{@code MEMBER} workspace member can no longer unilaterally claim the creator's
-     * signature. This does not eliminate the forgery (an OWNER/ADMIN/MANAGER can still misattribute
-     * a signature), but it closes the widest version of it (any active member, regardless of
-     * permission level, could previously do so) and matches the permission level this codebase
-     * already trusts for other contract-binding actions.
+     * <p><b>That constraint is gone.</b> {@link #recordSignatureForCreator} gives creators a real
+     * authenticated signing path — {@code ContractController#sign} routes a {@code
+     * UserType.CREATOR} principal there, it calls {@code creatorContext.requireCreator}, scopes the
+     * contract to the creator's own user id, and hardcodes the role rather than reading it from the
+     * request. A contract can now reach ACTIVE with each party signing as themselves, so the relay
+     * no longer carries any weight — it was only ever load-bearing because the creator path did not
+     * exist yet.
      *
-     * <p><b>Residual risk, stated plainly:</b> creator sign-off on this contract is still recorded
-     * by a BRAND principal on the creator's behalf — this method has never captured the CREATOR's
-     * own cryptographic assent, only an elevated brand member's claim that the creator agreed.
-     * Closing this fully requires a real creator-authenticated signing flow (a product decision, not
-     * a code fix) — flagged here for Arjun/product rather than silently worked around.
+     * <p><b>So this method now records the BRAND signature only.</b> {@code role=CREATOR} is
+     * rejected with {@code CREATOR_SIGNATURE_NOT_RELAYABLE} (403) rather than silently downgraded,
+     * because a caller asking for a creator signature is asking for something that must not happen,
+     * and quietly recording it as BRAND would put a real signature under the wrong party's name.
+     * {@code role=BRAND} was never forgeable — a brand principal self-attributing its own signature
+     * is definitionally correct.
+     *
+     * <p><b>Consequence, so it is not rediscovered as a bug:</b> a brand can no longer complete a
+     * contract on a creator's behalf by any route. A contract stays half-signed until the creator
+     * personally signs in and signs. Any deal previously closed by relaying assent must now be
+     * signed by the creator themselves.
      */
     @Transactional
     public ContractResponse recordSignature(
@@ -594,20 +594,32 @@ public class ContractService {
         WorkspaceMember member = brandContext.requireMember(principal, workspaceId);
         Contract contract = requireContract(contractId, workspaceId);
 
-        boolean isBrand;
-        if ("BRAND".equalsIgnoreCase(role)) {
-            isBrand = true;
-        } else if ("CREATOR".equalsIgnoreCase(role)) {
-            isBrand = false;
-            // [SEC: Kabir, E2 LOW-4] Recording a signature ON BEHALF OF the creator is the one
-            // residual-forgery-risk path (see method javadoc) -- restrict it to the same elevated
-            // membership levels #generate already requires to create the contract at all, rather
-            // than letting any active member (including VIEWER/MEMBER) claim it.
-            brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN, MemberRole.MANAGER);
-        } else {
+        // [Swapnil ruling 2026-08-20] This method records the BRAND signature and nothing else.
+        // A CREATOR signature is recorded ONLY by #recordSignatureForCreator, which derives the
+        // role from the authenticated creator and scopes the contract to their own user id.
+        //
+        // The CREATOR branch that used to live here -- a brand OWNER/ADMIN/MANAGER relaying the
+        // creator's out-of-band assent -- is deleted, not merely gated. Its justification was that
+        // no creator-authenticated signing path existed, making the relay the only way any contract
+        // could reach ACTIVE; #recordSignatureForCreator ended that. What was left was a brand
+        // principal able to attribute a signature to a creator who never made it, on a document
+        // the e-sign UI calls binding under the IT Act 2000.
+        //
+        // Rejecting rather than ignoring an explicit role=CREATOR is deliberate: a caller asking
+        // for a creator signature is asking for something this method must never do again, and a
+        // silent downgrade to BRAND would record a real signature under the wrong party's name.
+        if (role != null && "CREATOR".equalsIgnoreCase(role.trim())) {
             throw new ApiException(
-                    "INVALID_SIGNER_ROLE", "role must be BRAND or CREATOR", HttpStatus.BAD_REQUEST);
+                    "CREATOR_SIGNATURE_NOT_RELAYABLE",
+                    "A creator signature can only be recorded by the creator, signed in as"
+                            + " themselves. This endpoint records the brand signature only.",
+                    HttpStatus.FORBIDDEN);
         }
+        if (role != null && !role.isBlank() && !"BRAND".equalsIgnoreCase(role.trim())) {
+            throw new ApiException(
+                    "INVALID_SIGNER_ROLE", "role must be BRAND", HttpStatus.BAD_REQUEST);
+        }
+        boolean isBrand = true;
 
         // [SEC: Kabir, E2 LOW-3 — fixed] Two truly-concurrent requests for the SAME role could both
         // read alreadySignedByThisRole == false before either commits, both proceed, and both reach

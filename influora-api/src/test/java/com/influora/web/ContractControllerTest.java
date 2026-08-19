@@ -31,9 +31,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * and 400'd with {@code INVALID_SIGNER_ROLE} whenever it was absent -- exactly what the real FE
  * call path sends ({@code api.ts:1466} -> {@code signContract} -> {@code {name, agreedAt}}, no
  * {@code role} field at all). The fix server-derives the signer role from the authenticated
- * principal instead: a BRAND principal defaults to {@code role=BRAND} when the body omits it, and
- * a CREATOR principal is routed to {@link ContractService#recordSignatureForCreator} exactly as
- * before (unchanged by this fix -- covered here for regression insurance).
+ * principal instead: a BRAND principal signs as {@code role=BRAND}, and a CREATOR principal is
+ * routed to {@link ContractService#recordSignatureForCreator} exactly as before (unchanged by this
+ * fix -- covered here for regression insurance).
+ *
+ * <p>[Swapnil ruling 2026-08-20] "Server-derives" is now absolute rather than a default: {@code
+ * body.role()} is not read at all, so an explicitly supplied {@code role=CREATOR} is ignored rather
+ * than relayed. See {@link #brandSign_ignoresExplicitCreatorRoleInBody}, which replaced the earlier
+ * test asserting the pass-through.
  */
 @ExtendWith(MockitoExtension.class)
 class ContractControllerTest {
@@ -103,23 +108,58 @@ class ContractControllerTest {
         verify(contractService).recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "BRAND", null);
     }
 
+    /**
+     * [Swapnil ruling 2026-08-20] Replaces {@code brandSign_withExplicitRole_isPassedThroughUnchanged},
+     * which asserted the OPPOSITE — that {@code body.role()} was forwarded verbatim, preserving the
+     * elevated-member CREATOR relay (a brand OWNER/ADMIN/MANAGER recording the creator's
+     * out-of-band verbal/email assent). That relay is deleted, not gated. {@code
+     * ContractController#sign} no longer reads {@code body.role()} at any point: every principal
+     * reaching the brand branch has already cleared {@code brandContext.requireBrandWorkspace}, so
+     * the role is BRAND by construction, and a creator signs as themselves via {@link
+     * ContractService#recordSignatureForCreator}.
+     *
+     * <p>Why this asserts on the ARGUMENT and not merely on a successful call: the thing being
+     * foreclosed is a brand hand-crafting {@code {"role":"CREATOR"}} — a field the real FE never
+     * sends ({@code api.ts:1466}) — to attribute a signature to a creator who never made one, on a
+     * document the e-sign UI calls binding under the IT Act 2000. A test that only checked the call
+     * returned normally would still pass if the body's role were being forwarded; pinning the exact
+     * {@code "BRAND"} argument that reaches {@link ContractService#recordSignature} is the only
+     * thing that proves the field was ignored rather than honoured.
+     *
+     * <p>Defence in depth, not the sole guard: the service layer independently rejects {@code
+     * role=CREATOR} with {@code CREATOR_SIGNATURE_NOT_RELAYABLE} (403) — see {@code
+     * ContractServiceTest#testCreatorSignatureCannotBeRelayedByBrand}. This test is the outer half,
+     * proving the controller never hands the service that role in the first place.
+     */
     @Test
-    @DisplayName("brand sign still honors an explicit role (elevated-member CREATOR relay path, unchanged)")
-    void brandSign_withExplicitRole_isPassedThroughUnchanged() {
+    @DisplayName(
+            "brand sign IGNORES an explicit role=CREATOR in the body -- BRAND is what reaches"
+                    + " recordSignature, so a brand cannot relay a creator signature by hand")
+    void brandSign_ignoresExplicitCreatorRoleInBody() {
         Workspace workspace = mock(Workspace.class);
         when(workspace.getId()).thenReturn(WORKSPACE_ID);
         when(brandContext.requireBrandWorkspace(BRAND_PRINCIPAL)).thenReturn(workspace);
+        // Stubbed for the BRAND role deliberately: if the controller regressed to forwarding
+        // body.role(), this stub would not match and the test would fail rather than silently pass.
+        // A brand-only signature also leaves the contract half-signed, never ACTIVE.
         when(contractService.recordSignature(
-                        BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Real Creator Name"))
-                .thenReturn(fakeResponse(ContractStatus.ACTIVE));
+                        BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "BRAND", "Real Creator Name"))
+                .thenReturn(fakeResponse(ContractStatus.PENDING_SIGNATURES));
 
+        // A hand-crafted payload asking to sign as the creator -- the exact forgery attempt.
         ContractSignRequest body = new ContractSignRequest("CREATOR", "Real Creator Name", null);
 
         var response = controller.sign(BRAND_PRINCIPAL, CONTRACT_ID, body);
 
-        assertEquals(ContractStatus.ACTIVE, response.data().status());
+        // The requested role is discarded; the service is told BRAND.
         verify(contractService)
-                .recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "CREATOR", "Real Creator Name");
+                .recordSignature(BRAND_PRINCIPAL, WORKSPACE_ID, CONTRACT_ID, "BRAND", "Real Creator Name");
+        verify(contractService, never())
+                .recordSignature(
+                        eq(BRAND_PRINCIPAL), eq(WORKSPACE_ID), eq(CONTRACT_ID), eq("CREATOR"), anyString());
+        // ...and no creator-signing path was reached on the brand's behalf either.
+        verify(contractService, never()).recordSignatureForCreator(eq(BRAND_PRINCIPAL), anyString(), anyString());
+        assertEquals(ContractStatus.PENDING_SIGNATURES, response.data().status());
     }
 
     @Test

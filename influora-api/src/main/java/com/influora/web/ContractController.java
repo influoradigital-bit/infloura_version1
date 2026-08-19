@@ -89,27 +89,27 @@ public class ContractController {
                     contractService.recordSignatureForCreator(principal, contractId, signerName));
         }
         var workspace = brandContext.requireBrandWorkspace(principal);
-        // [Fix: brand-feature-audit.md #2] Server-derive the signer role from the authenticated
-        // principal's own userType instead of REQUIRING `body.role()`. Every principal that
-        // reaches this branch is BRAND-authenticated (`requireBrandWorkspace` above), and the
-        // FE's only real call path (`api.ts:1466`, `signContract`) sends just
-        // `{name, agreedAt}` -- no `role` -- to self-attest the brand's own signature, which
-        // previously 400'd with INVALID_SIGNER_ROLE on every brand sign. Mirrors how
-        // `recordSignatureForCreator` (creator branch above) ignores the body entirely and
-        // derives the role from the authenticated identity.
+        // The signer role is derived from the authenticated principal, never from the request
+        // body. Every principal reaching this branch is BRAND-authenticated
+        // (`requireBrandWorkspace` above), so the role is BRAND — full stop. A creator signs
+        // through the CREATOR branch above, where `recordSignatureForCreator` scopes the
+        // contract to their own user id and hardcodes the role.
         //
-        // An explicit `role` is still honored when a caller sends one -- this preserves the
-        // elevated-member CREATOR-relay path documented on
-        // `ContractService#recordSignature` (Kabir E2 LOW-4: a brand OWNER/ADMIN/MANAGER
-        // recording the creator's out-of-band signature). That path is not exercised by any FE
-        // call site today, but nothing here removes it; `recordSignature` still validates
-        // `role` is BRAND or CREATOR and still gates CREATOR-relay behind elevated membership.
-        String role = (body != null && body.role() != null && !body.role().isBlank())
-                ? body.role()
-                : "BRAND";
+        // [Swapnil ruling 2026-08-20] `body.role()` is no longer read at all. It previously was,
+        // to preserve the elevated-member CREATOR relay -- a brand OWNER/ADMIN/MANAGER recording
+        // the creator's out-of-band (verbal/email) assent. That relay existed because it was once
+        // the ONLY way a contract could reach ACTIVE: there was no creator-authenticated signing
+        // path, so without it no contract could ever be fully executed. `recordSignatureForCreator`
+        // removed that constraint -- creators now sign for themselves -- and with the justification
+        // gone, what remained was a brand principal able to attribute a signature to a creator who
+        // never made it, on a document the UI calls legally binding under the IT Act 2000.
+        //
+        // Consequence, stated so nobody rediscovers it as a bug: a contract can now only become
+        // ACTIVE if the creator personally signs in and signs. A brand can no longer complete a
+        // contract on a creator's behalf, by any route.
         return ApiResponse.ok(
                 contractService.recordSignature(
-                        principal, workspace.getId(), contractId, role, signerName));
+                        principal, workspace.getId(), contractId, "BRAND", signerName));
     }
 
     /**
