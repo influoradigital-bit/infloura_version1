@@ -36,6 +36,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -79,6 +80,10 @@ import { runwayTone as computeRunwayTone } from '@/lib/wallet-runway';
 // a brand actually visits.
 import { FundEscrowButton } from '@/components/feature/meera/FundEscrowButton';
 import { FundEscrowStatus } from '@/components/brand/wallet/FundEscrowStatus';
+// F-0324 (wallet-has-no-loading-affordance) — the same loading/error/retry shell
+// dashboard-page.tsx uses (F-0245), extracted to src/components/shared/ so both pages share
+// one implementation instead of two.
+import { DashboardCardError } from '@/components/shared/DashboardCardError';
 
 // Types
 interface Transaction {
@@ -356,6 +361,19 @@ const emptyWalletSummary: WalletSummaryResponse = {
   runwayDays: null,
 };
 
+/**
+ * F-0324 (wallet-has-no-loading-affordance) — same three-way shape as dashboard-page.tsx's
+ * `LoadStatus` (F-0245), tracked PER DATA REGION rather than one page-wide flag: this page loads
+ * from three independent sources (loadWallet, loadEscrow, loadFundableCampaigns), and one
+ * failing/slow fetch must not blank or spinner-lock a region that already loaded fine.
+ *
+ * The defect this closes: the file used to hold a `loading` boolean written on both edges of
+ * `loadWallet` and read by nothing — a state variable that existed but changed nothing on
+ * screen, indistinguishable from having no loading state at all. `walletStatus` below is that
+ * same boolean's replacement, this time actually gating what renders.
+ */
+type LoadStatus = 'loading' | 'error' | 'ready';
+
 export default function BrandWalletPage() {
   const [isBalanceVisible, setIsBalanceVisible] = React.useState(true);
   const [isAddFundsOpen, setIsAddFundsOpen] = React.useState(false);
@@ -391,20 +409,31 @@ export default function BrandWalletPage() {
     isApiLive() ? [] : mockTransactions,
   );
   const [loadError, setLoadError] = React.useState<string | null>(null);
+  // F-0324 — feeds the Balance Cards row, the Transactions tab and the Payouts tab (all three
+  // read walletSummary/transactions, populated by the same loadWallet call). 'ready' immediately
+  // in mock mode, where loadWallet never runs.
+  const [walletStatus, setWalletStatus] = React.useState<LoadStatus>(isApiLive() ? 'loading' : 'ready');
 
   // H-20 applies equally here: live mode starts empty and fetches GET /wallet/escrow; mock mode
   // keeps rendering the polished mockEscrowItems demo dataset (handled where escrowItems is read).
   const [escrowRows, setEscrowRows] = React.useState<EscrowHoldRow[]>([]);
-  const [escrowLoading, setEscrowLoading] = React.useState(isApiLive());
+  const [escrowStatus, setEscrowStatus] = React.useState<LoadStatus>(isApiLive() ? 'loading' : 'ready');
   const [escrowError, setEscrowError] = React.useState<string | null>(null);
 
   // P-2: direct "Fund Escrow" — a brand's own ACTIVE campaigns to pick from.
   const [fundableCampaigns, setFundableCampaigns] = React.useState<Campaign[]>([]);
-  const [fundableCampaignsLoading, setFundableCampaignsLoading] = React.useState(isApiLive());
+  const [fundableCampaignsStatus, setFundableCampaignsStatus] = React.useState<LoadStatus>(
+    isApiLive() ? 'loading' : 'ready',
+  );
+  const [fundableCampaignsError, setFundableCampaignsError] = React.useState<string | null>(null);
   const [selectedFundCampaignId, setSelectedFundCampaignId] = React.useState<string>('');
 
+  // F-0324 — `walletStatus` is written on every path (start / success / failure) and read by
+  // the Balance Cards, Transactions and Payouts tabs below; this is the loading affordance the
+  // original defect (a state written but read by nothing) removed.
   const loadWallet = React.useCallback(async () => {
     if (!isApiLive()) return;
+    setWalletStatus('loading');
     setLoadError(null);
     try {
       const [summary, txRows] = await Promise.all([
@@ -413,23 +442,24 @@ export default function BrandWalletPage() {
       ]);
       setWalletSummary(summary ?? emptyWalletSummary);
       setTransactions(Array.isArray(txRows) ? txRows.map(mapWalletTransaction) : []);
+      setWalletStatus('ready');
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Could not load wallet data.');
-    } finally {
+      setWalletStatus('error');
     }
   }, []);
 
   const loadEscrow = React.useCallback(async () => {
     if (!isApiLive()) return;
-    setEscrowLoading(true);
+    setEscrowStatus('loading');
     setEscrowError(null);
     try {
       const rows = await api.wallet.escrowList();
       setEscrowRows(Array.isArray(rows) ? rows : []);
+      setEscrowStatus('ready');
     } catch (err) {
       setEscrowError(err instanceof ApiError ? err.message : 'Could not load escrow holdings.');
-    } finally {
-      setEscrowLoading(false);
+      setEscrowStatus('error');
     }
   }, []);
 
@@ -437,18 +467,26 @@ export default function BrandWalletPage() {
   // DRAFT/PAUSED/COMPLETED/CANCELLED campaign isn't something you'd lock money
   // against from this control (funding still ultimately re-validates server-side
   // via EscrowService regardless of what this list shows).
+  //
+  // F-0324: a failed fetch here used to be swallowed into the same "no campaigns to fund"
+  // empty copy a genuinely-empty account sees — indistinguishable from this page's core
+  // defect. It now gets its own error state with a Retry (below), same as the other two
+  // regions; the card stays scoped to itself so a failure here still can't blank the rest
+  // of the page.
   const loadFundableCampaigns = React.useCallback(async () => {
     if (!isApiLive()) return;
-    setFundableCampaignsLoading(true);
+    setFundableCampaignsStatus('loading');
+    setFundableCampaignsError(null);
     try {
       const { campaigns: rows } = await api.campaigns.list({ status: 'ACTIVE', limit: 100 });
       setFundableCampaigns(rows);
-    } catch {
-      // Non-fatal — the Fund Escrow card just shows "no campaigns to fund" instead of a
-      // hard error; the brand can still fund from Meera chat or retry via this card.
+      setFundableCampaignsStatus('ready');
+    } catch (err) {
       setFundableCampaigns([]);
-    } finally {
-      setFundableCampaignsLoading(false);
+      setFundableCampaignsError(
+        err instanceof ApiError ? err.message : 'Could not load your campaigns.',
+      );
+      setFundableCampaignsStatus('error');
     }
   }, []);
 
@@ -640,6 +678,10 @@ export default function BrandWalletPage() {
     }
     return true;
   });
+
+  // F-0324 — same source (transactions, from loadWallet) the Payouts tab reads; extracted so
+  // the tab's loading/error/empty gating below can check its length without re-filtering inline.
+  const brandPayouts = transactions.filter((t) => t.type === 'escrow_release');
 
   const getTransactionIcon = (type: Transaction['type']) => {
     switch (type) {
@@ -945,6 +987,36 @@ export default function BrandWalletPage() {
         </div>
 
         {/* Balance Cards */}
+        {/* F-0324 — this grid renders real ledger figures (balance, escrow, pending
+            settlement, runway). While loadWallet is in flight or has failed, walletSummary
+            still holds its initial all-zero default — rendering the cards as-is here would
+            show a confident "₹0" indistinguishable from a genuinely empty wallet. loading and
+            error each get their own visually distinct state; only 'ready' renders real
+            numbers. */}
+        {/* GATE-F0324-CARDS-START */}
+        {walletStatus === 'loading' && (
+          <div
+            className="grid gap-4 md:grid-cols-2 lg:grid-cols-4"
+            role="status"
+            aria-label="Loading wallet balances"
+          >
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="h-32 w-full rounded-xl" />
+          </div>
+        )}
+        {walletStatus === 'error' && (
+          <Card>
+            <CardContent className="pt-6">
+              <DashboardCardError
+                message={loadError ?? 'Could not load wallet data.'}
+                onRetry={loadWallet}
+              />
+            </CardContent>
+          </Card>
+        )}
+        {walletStatus === 'ready' && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {/* Available Balance */}
           <Card className="relative overflow-hidden">
@@ -992,7 +1064,15 @@ export default function BrandWalletPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                {escrowActiveCount} active campaigns
+                {/* F-0324 — escrowActiveCount comes from a SEPARATE fetch (loadEscrow) than the
+                    amount above (loadWallet). walletStatus === 'ready' only vouches for the
+                    amount; the count needs its own honest state so it never reads as a
+                    confirmed zero while its own fetch is still in flight or has failed. */}
+                {escrowStatus === 'loading'
+                  ? 'Loading…'
+                  : escrowStatus === 'error'
+                    ? 'Count unavailable'
+                    : `${escrowActiveCount} active campaigns`}
               </p>
             </CardContent>
           </Card>
@@ -1052,6 +1132,8 @@ export default function BrandWalletPage() {
             </CardContent>
           </Card>
         </div>
+        )}
+        {/* GATE-F0324-CARDS-END */}
 
         {/* Tax Summary Cards */}
         <div className="grid gap-4 md:grid-cols-2">
@@ -1173,7 +1255,31 @@ export default function BrandWalletPage() {
             </div>
 
             {/* Transactions List */}
+            {/* F-0324 — transactions comes from loadWallet, same as the Balance Cards above;
+                loading/error/genuinely-empty need the same three visually distinct treatments
+                here, not just on the balance figures. */}
             <Card>
+              {walletStatus === 'loading' && (
+                <div className="space-y-3 p-4" role="status" aria-label="Loading transactions">
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-16 w-full" />
+                </div>
+              )}
+              {walletStatus === 'error' && (
+                <div className="p-4">
+                  <DashboardCardError
+                    message={loadError ?? 'Could not load wallet data.'}
+                    onRetry={loadWallet}
+                  />
+                </div>
+              )}
+              {walletStatus === 'ready' && filteredTransactions.length === 0 && (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  No transactions to show.
+                </p>
+              )}
+              {walletStatus === 'ready' && filteredTransactions.length > 0 && (
               <ScrollArea className="h-[500px]">
                 <div className="divide-y">
                   {filteredTransactions.map((transaction) => (
@@ -1272,6 +1378,7 @@ export default function BrandWalletPage() {
                   ))}
                 </div>
               </ScrollArea>
+              )}
             </Card>
           </TabsContent>
 
@@ -1298,7 +1405,8 @@ export default function BrandWalletPage() {
                       after a campaign is picked (an otherwise-silent DOM insertion). Visually
                       hidden; the visible content below is unchanged. */}
                   <FundEscrowStatus
-                    loading={fundableCampaignsLoading}
+                    loading={fundableCampaignsStatus === 'loading'}
+                    error={fundableCampaignsStatus === 'error'}
                     selectableCount={selectableFundCampaigns.length}
                     totalCount={fundableCampaigns.length}
                     selectedId={selectedFundCampaignId}
@@ -1306,10 +1414,16 @@ export default function BrandWalletPage() {
                       fundableCampaigns.find((c) => c.id === selectedFundCampaignId)?.title
                     }
                   />
-                  {fundableCampaignsLoading ? (
-                    <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-                      <RefreshCw className="h-4 w-4 animate-spin" /> Loading your campaigns…
-                    </p>
+                  {fundableCampaignsStatus === 'loading' ? (
+                    <div className="space-y-2 py-1" role="status" aria-label="Loading your campaigns">
+                      <Skeleton className="h-9 w-full" />
+                      <Skeleton className="h-9 w-2/3" />
+                    </div>
+                  ) : fundableCampaignsStatus === 'error' ? (
+                    <DashboardCardError
+                      message={fundableCampaignsError ?? 'Could not load your campaigns.'}
+                      onRetry={loadFundableCampaigns}
+                    />
                   ) : selectableFundCampaigns.length === 0 ? (
                     <p className="py-2 text-sm text-muted-foreground">
                       {fundableCampaigns.length === 0
@@ -1383,22 +1497,27 @@ export default function BrandWalletPage() {
               <CardContent>
                 {isApiLive() ? (
                   <div className="space-y-4">
-                    {escrowLoading && (
-                      <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-                        <RefreshCw className="h-4 w-4 animate-spin" /> Loading escrow holdings…
-                      </p>
+                    {/* F-0324 — loading, error (with retry) and genuinely-empty are three
+                        visually distinct states; a still-loading or failed fetch must never
+                        render the same "No escrow holdings yet" copy a real empty account sees. */}
+                    {escrowStatus === 'loading' && (
+                      <div className="space-y-3" role="status" aria-label="Loading escrow holdings">
+                        <Skeleton className="h-20 w-full rounded-lg" />
+                        <Skeleton className="h-20 w-full rounded-lg" />
+                      </div>
                     )}
-                    {!escrowLoading && escrowError && (
-                      <p className="flex items-center gap-2 py-6 text-sm text-stage-disputed-fg">
-                        <AlertCircle className="h-4 w-4" /> {escrowError}
-                      </p>
+                    {escrowStatus === 'error' && (
+                      <DashboardCardError
+                        message={escrowError ?? 'Could not load escrow holdings.'}
+                        onRetry={loadEscrow}
+                      />
                     )}
-                    {!escrowLoading && !escrowError && escrowRows.length === 0 && (
+                    {escrowStatus === 'ready' && escrowRows.length === 0 && (
                       <p className="py-6 text-sm text-muted-foreground">
                         No escrow holdings yet. Funds locked for a campaign will show up here.
                       </p>
                     )}
-                    {!escrowLoading && !escrowError && escrowRows.length > 0 &&
+                    {escrowStatus === 'ready' && escrowRows.length > 0 &&
                       escrowRows.map((row) => {
                         const badge = escrowStatusBadge(row.status);
                         return (
@@ -1492,7 +1611,15 @@ export default function BrandWalletPage() {
                   <div>
                     <p className="text-sm text-muted-foreground">Total Locked in Escrow</p>
                     <p className="text-2xl font-bold text-amber-500">
-                      {formatCurrency(wallet.escrowLocked)}
+                      {/* F-0324 — this figure reads wallet.escrowLocked (loadWallet's region)
+                          but renders unconditionally regardless of the Escrow tab's own
+                          escrowStatus above; without this it would show a stale/zero amount
+                          while walletStatus is still 'loading' or has errored. */}
+                      {walletStatus === 'ready'
+                        ? formatCurrency(wallet.escrowLocked)
+                        : walletStatus === 'loading'
+                          ? 'Loading…'
+                          : '—'}
                     </p>
                   </div>
                   <div className="text-right">
@@ -1534,10 +1661,28 @@ export default function BrandWalletPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                {/* F-0324 — same loadWallet region as the Transactions tab; a still-loading or
+                    failed fetch must not render as "no payouts yet". */}
+                {walletStatus === 'loading' && (
+                  <div className="space-y-3" role="status" aria-label="Loading payouts">
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                  </div>
+                )}
+                {walletStatus === 'error' && (
+                  <DashboardCardError
+                    message={loadError ?? 'Could not load wallet data.'}
+                    onRetry={loadWallet}
+                  />
+                )}
+                {walletStatus === 'ready' && brandPayouts.length === 0 && (
+                  <p className="py-10 text-center text-sm text-muted-foreground">
+                    No payouts released to creators yet.
+                  </p>
+                )}
+                {walletStatus === 'ready' && brandPayouts.length > 0 && (
                 <div className="space-y-4">
-                  {transactions
-                    .filter((t) => t.type === 'escrow_release')
-                    .map((payout) => (
+                  {brandPayouts.map((payout) => (
                       <div
                         key={payout.id}
                         className="flex items-center gap-4 rounded-lg border border-border/50 p-4"
@@ -1566,6 +1711,7 @@ export default function BrandWalletPage() {
                       </div>
                     ))}
                 </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

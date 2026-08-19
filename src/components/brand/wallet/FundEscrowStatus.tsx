@@ -3,6 +3,14 @@ import * as React from 'react';
 export interface FundEscrowStatusProps {
   /** true while the brand's fundable campaigns are still loading */
   loading: boolean;
+  /**
+   * F-0324: the fetch failed. Without this the announcement fell through to the
+   * selectableCount===0 branch and told a screen-reader user "No active campaigns to fund right
+   * now." while the sighted user was looking at "Could not load your campaigns" and a Retry
+   * button — the two audiences were given contradictory accounts of the same money surface, and
+   * the non-visual one was the false version. Absent must not read as empty (F-0245's class).
+   */
+  error?: boolean;
   /** campaigns the brand can still fund (after filtering out already-locked ones) */
   selectableCount: number;
   /** total active campaigns — distinguishes "none exist" from "all already funded" */
@@ -19,6 +27,9 @@ export interface FundEscrowStatusProps {
  */
 export function fundEscrowAnnouncement(p: FundEscrowStatusProps): string {
   if (p.loading) return 'Loading your campaigns.';
+  // Checked BEFORE the count branches: on a rejected fetch selectableCount and totalCount are
+  // both 0, which is indistinguishable from a brand that genuinely has no campaigns.
+  if (p.error) return 'Could not load your campaigns. Use the retry button to try again.';
   if (p.selectableCount === 0) {
     return p.totalCount === 0
       ? 'No active campaigns to fund right now.'
