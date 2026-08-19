@@ -1,5 +1,6 @@
 package com.influora.integration.meta.client;
 
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.dto.AudienceDemographicsResponse;
 import com.influora.integration.meta.dto.InstagramInsightsResponse;
 import com.influora.integration.meta.dto.InstagramMediaResponse;
@@ -17,8 +18,17 @@ public class InstagramInsightsClient {
             "id,username,name,biography,followers_count,follows_count,media_count,profile_picture_url,website";
     private static final String MEDIA_FIELDS =
             "id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count";
+    // Metric names verified against IG Media Insights (ref updated 2026-06-18) for the pinned
+    // graph-api-version. Removed: impressions (deprecated for media created after 2024-07-02),
+    // engagement (superseded by total_interactions, v18.0+), video_views (superseded by views).
     private static final String INSIGHTS_METRICS =
-            "impressions,reach,engagement,saved,shares,video_views,likes,comments";
+            "reach,likes,comments,saved,shares,views,total_interactions";
+    // Account-level interaction metrics, all period=day + metric_type=total_value. impressions was
+    // deprecated for every version on 2025-04-21 (replaced by views); profile_views and
+    // website_clicks are no longer supported metrics — profile_links_taps is the surviving
+    // profile-action counter. See IG Account Insights reference (updated 2026-06-16).
+    private static final String ACCOUNT_METRICS =
+            "reach,views,total_interactions,accounts_engaged,profile_links_taps";
     // 2026 compliance: Page Viewer Metric migration deadline June 15 (spec §1.8) — revisit before then.
     private static final String AUDIENCE_METRICS = "audience_city,audience_country,audience_gender_age,audience_locale";
 
@@ -33,8 +43,13 @@ public class InstagramInsightsClient {
      * Required permission: {@code instagram_basic}.
      */
     public InstagramUserResponse getProfile(String igUserId, String accessToken) {
+        return getProfile(igUserId, accessToken, MetaAuthPath.FACEBOOK_LOGIN);
+    }
+
+    /** As above, routed to the host matching the token's origin (T-IGLOGIN-0820). */
+    public InstagramUserResponse getProfile(String igUserId, String accessToken, MetaAuthPath authPath) {
         String path = "/" + igUserId + "?fields=" + USER_FIELDS;
-        return apiClient.get(path, accessToken, InstagramUserResponse.class, igUserId);
+        return apiClient.get(path, accessToken, InstagramUserResponse.class, igUserId, authPath);
     }
 
     /**
@@ -44,9 +59,15 @@ public class InstagramInsightsClient {
      * @param limit capped at 100 per request (Meta API limit)
      */
     public InstagramMediaResponse getMedia(String igUserId, String accessToken, int limit) {
+        return getMedia(igUserId, accessToken, limit, MetaAuthPath.FACEBOOK_LOGIN);
+    }
+
+    /** As above, routed to the host matching the token's origin (T-IGLOGIN-0820). */
+    public InstagramMediaResponse getMedia(
+            String igUserId, String accessToken, int limit, MetaAuthPath authPath) {
         int cappedLimit = Math.min(limit, 100);
         String path = "/" + igUserId + "/media?fields=" + MEDIA_FIELDS + "&limit=" + cappedLimit;
-        return apiClient.get(path, accessToken, InstagramMediaResponse.class, igUserId);
+        return apiClient.get(path, accessToken, InstagramMediaResponse.class, igUserId, authPath);
     }
 
     /**
@@ -58,8 +79,14 @@ public class InstagramInsightsClient {
      * degrade gracefully rather than treating it as a hard failure.
      */
     public InstagramInsightsResponse getMediaInsights(String mediaId, String accessToken, String businessAccountId) {
+        return getMediaInsights(mediaId, accessToken, businessAccountId, MetaAuthPath.FACEBOOK_LOGIN);
+    }
+
+    /** As above, routed to the host matching the token's origin (T-IGLOGIN-0820). */
+    public InstagramInsightsResponse getMediaInsights(
+            String mediaId, String accessToken, String businessAccountId, MetaAuthPath authPath) {
         String path = "/" + mediaId + "/insights?metric=" + INSIGHTS_METRICS;
-        return apiClient.get(path, accessToken, InstagramInsightsResponse.class, businessAccountId);
+        return apiClient.get(path, accessToken, InstagramInsightsResponse.class, businessAccountId, authPath);
     }
 
     /**
@@ -68,8 +95,14 @@ public class InstagramInsightsClient {
      * 100+ followers — Meta returns an empty/error payload otherwise.
      */
     public AudienceDemographicsResponse getAudienceDemographics(String igUserId, String accessToken) {
+        return getAudienceDemographics(igUserId, accessToken, MetaAuthPath.FACEBOOK_LOGIN);
+    }
+
+    /** As above, routed to the host matching the token's origin (T-IGLOGIN-0820). */
+    public AudienceDemographicsResponse getAudienceDemographics(
+            String igUserId, String accessToken, MetaAuthPath authPath) {
         String path = "/" + igUserId + "/insights?metric=" + AUDIENCE_METRICS + "&period=lifetime";
-        return apiClient.get(path, accessToken, AudienceDemographicsResponse.class, igUserId);
+        return apiClient.get(path, accessToken, AudienceDemographicsResponse.class, igUserId, authPath);
     }
 
     /**
@@ -81,14 +114,25 @@ public class InstagramInsightsClient {
      */
     public InstagramInsightsResponse getAccountInsights(
             String igUserId, String accessToken, long sinceEpochSeconds, long untilEpochSeconds) {
+        return getAccountInsights(
+                igUserId, accessToken, sinceEpochSeconds, untilEpochSeconds, MetaAuthPath.FACEBOOK_LOGIN);
+    }
+
+    /** As above, routed to the host matching the token's origin (T-IGLOGIN-0820). */
+    public InstagramInsightsResponse getAccountInsights(
+            String igUserId,
+            String accessToken,
+            long sinceEpochSeconds,
+            long untilEpochSeconds,
+            MetaAuthPath authPath) {
         String path =
                 "/"
                         + igUserId
-                        + "/insights?metric=impressions,reach,profile_views,website_clicks"
-                        + "&period=day&since="
+                        + "/insights?metric=" + ACCOUNT_METRICS
+                        + "&period=day&metric_type=total_value&since="
                         + sinceEpochSeconds
                         + "&until="
                         + untilEpochSeconds;
-        return apiClient.get(path, accessToken, InstagramInsightsResponse.class, igUserId);
+        return apiClient.get(path, accessToken, InstagramInsightsResponse.class, igUserId, authPath);
     }
 }

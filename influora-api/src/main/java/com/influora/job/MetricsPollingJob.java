@@ -3,6 +3,7 @@ package com.influora.job;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.CreatorMetric;
 import com.influora.domain.entity.MetaOAuthToken;
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.client.InstagramInsightsClient;
 import com.influora.integration.meta.dto.InstagramUserResponse;
 import com.influora.integration.meta.exception.MetaApiException;
@@ -183,7 +184,14 @@ public class MetricsPollingJob {
         }
 
         try {
-            InstagramUserResponse profile = instagramClient.getProfile(igBusinessAccountId, token.get());
+            InstagramUserResponse profile =
+                    instagramClient.getProfile(
+                            igBusinessAccountId,
+                            token.get(),
+                            // T-IGLOGIN-0820: host follows the token, never a default.
+                            tokenStorage
+                                    .getCreatorAuthPath(creatorProfileId)
+                                    .orElse(MetaAuthPath.FACEBOOK_LOGIN));
 
             CreatorMetric metric =
                     CreatorMetric.builder()

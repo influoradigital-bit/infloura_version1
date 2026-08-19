@@ -4,7 +4,7 @@ import { Loader2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 import { CreatorLayout } from '@/components/creator/creator-layout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, type MetaAuthPath } from '@/lib/api';
 
 type CallbackState = 'loading' | 'success' | 'error';
 
@@ -70,7 +70,7 @@ export default function CreatorMetaCallbackPage() {
     localStorage.removeItem(META_ONBOARDING_RESUME_KEY);
   }, []);
 
-  const handleRetry = async () => {
+  const handleRetry = async (authPath?: MetaAuthPath) => {
     setIsRetrying(true);
     try {
       // F-0168 — the general-return-path marker was already read-and-cleared at mount
@@ -87,7 +87,7 @@ export default function CreatorMetaCallbackPage() {
       }
       // CR-66 — re-run the OAuth authorize flow itself rather than just navigating back to
       // Settings and stranding the creator to find the Connect button again by hand.
-      const { authorizationUrl } = await api.metaOAuth.authorize();
+      const { authorizationUrl } = await api.metaOAuth.authorize(authPath);
       window.location.href = authorizationUrl;
     } catch (err) {
       setIsRetrying(false);
@@ -228,13 +228,29 @@ export default function CreatorMetaCallbackPage() {
                 (serverReportedConnected
                   ? 'Brands can now see your verified Instagram and Facebook metrics.'
                   : connectedAccountType === 'personal'
-                    ? 'Instagram is connected, but brands need a Business or Creator account linked to a Facebook Page before they can see your metrics. Switch account types in the Instagram app, then reconnect.'
+                    ? "We couldn't find an Instagram professional account linked to a Facebook Page on this login. If your Instagram isn't linked to a Page, connect with Instagram directly instead — no Page required."
                     : "We couldn't verify full access to your Instagram metrics. Please try reconnecting.")}
               {state === 'error' && errorMessage}
             </CardDescription>
           </CardHeader>
           {state !== 'loading' && (
             <CardContent className="flex flex-col items-center gap-2">
+              {/*
+                T-IGLOGIN-0820 — the recovery for a wrong "yes, I have a Facebook Page". The
+                Facebook path reports connected:false / personal when it finds no linked
+                professional account, which is exactly what a creator with no Page hits. Offer
+                the path that does not need one, instead of telling them to go change settings
+                in the Instagram app and come back.
+              */}
+              {state === 'success' && !serverReportedConnected && connectedAccountType === 'personal' && (
+                <Button
+                  className="w-full"
+                  onClick={() => void handleRetry('INSTAGRAM_LOGIN')}
+                  disabled={isRetrying}
+                >
+                  Connect with Instagram instead (no Facebook Page)
+                </Button>
+              )}
               <Button
                 onClick={() => {
                   if (state === 'error' && !resumingOnboarding) {

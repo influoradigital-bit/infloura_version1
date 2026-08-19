@@ -11,6 +11,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.AudienceDemographics;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.integration.meta.client.InstagramInsightsClient;
@@ -101,7 +102,7 @@ class AudienceDemographicsJobTest {
                                         "audience_locale",
                                         "lifetime",
                                         List.of(new DemographicValue(Map.of("en_US", 900L), null)))));
-        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN)).thenReturn(response);
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN)).thenReturn(response);
 
         job.pollDemographics();
 
@@ -138,7 +139,7 @@ class AudienceDemographicsJobTest {
 
         job.pollDemographics();
 
-        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString());
+        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(demographicsRepository, never()).save(any());
     }
 
@@ -150,7 +151,7 @@ class AudienceDemographicsJobTest {
                 .thenReturn(List.of(token));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(0);
-        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new AudienceDemographicsResponse(Collections.emptyList()));
 
         job.pollDemographics();
@@ -166,7 +167,7 @@ class AudienceDemographicsJobTest {
                 .thenReturn(List.of(token));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(0);
-        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN)).thenReturn(null);
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN)).thenReturn(null);
 
         job.pollDemographics();
 
@@ -184,7 +185,7 @@ class AudienceDemographicsJobTest {
 
         job.pollDemographics();
 
-        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString());
+        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(demographicsRepository, never()).save(any());
     }
 
@@ -196,7 +197,7 @@ class AudienceDemographicsJobTest {
                 .thenReturn(List.of(token));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
-        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaRateLimitException("rate limited"));
 
         job.pollDemographics();
@@ -214,7 +215,7 @@ class AudienceDemographicsJobTest {
                 .thenReturn(List.of(token));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
-        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaApiException("boom"));
 
         job.pollDemographics();
@@ -240,7 +241,7 @@ class AudienceDemographicsJobTest {
 
         when(tokenStorage.getValidCreatorToken(creator2)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
-        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(
                         new AudienceDemographicsResponse(
                                 List.of(
@@ -266,7 +267,7 @@ class AudienceDemographicsJobTest {
                 .thenReturn(List.of(token));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
-        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(
                         new AudienceDemographicsResponse(
                                 List.of(
@@ -277,8 +278,8 @@ class AudienceDemographicsJobTest {
 
         job.pollDemographics();
 
-        verify(instagramClient, never()).getAudienceDemographics(eq(CREATOR_ID), anyString());
-        verify(instagramClient).getAudienceDemographics(eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN));
+        verify(instagramClient, never()).getAudienceDemographics(eq(CREATOR_ID), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
+        verify(instagramClient).getAudienceDemographics(eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     @Test
@@ -299,7 +300,7 @@ class AudienceDemographicsJobTest {
         job.pollDemographics();
 
         verify(rateLimitTracker, never()).getCurrentUsage(CREATOR_ID);
-        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString());
+        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(demographicsRepository, never()).save(any());
     }
 
@@ -316,7 +317,7 @@ class AudienceDemographicsJobTest {
 
         job.pollDemographics();
 
-        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString());
+        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(demographicsRepository, never()).save(any());
         verify(auditLog).recordToolCall(any(), any(), any(), any(), any(), any(), any(), any());
     }
@@ -329,7 +330,7 @@ class AudienceDemographicsJobTest {
 
         job.pollDemographics();
 
-        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString());
+        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(demographicsRepository, never()).save(any());
         verify(auditLog)
                 .recordToolCall(any(), any(), any(), any(), any(), any(), any(), any());
@@ -348,7 +349,7 @@ class AudienceDemographicsJobTest {
                             return Optional.of(TOKEN);
                         });
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
-        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN))
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(
                         new AudienceDemographicsResponse(
                                 List.of(

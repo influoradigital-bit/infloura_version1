@@ -12,6 +12,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.client.InstagramInsightsClient;
 import com.influora.integration.meta.dto.InstagramInsightsResponse;
 import com.influora.integration.meta.dto.InstagramMediaResponse;
@@ -66,13 +67,13 @@ class InstagramMetricsFetcherTest {
 
         InstagramUserResponse profile =
                 new InstagramUserResponse("ig_1", "user1", "User", "Bio", 1000L, 100L, 20L, null, null);
-        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE)).thenReturn(profile);
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN)).thenReturn(profile);
 
         InstagramMediaResponse.MediaItem mediaItem =
                 new InstagramMediaResponse.MediaItem(
                         "media_1", "caption", "IMAGE", "http://img", "http://permalink/1",
                         "2026-06-01T10:15:30+00:00", 42L, 7L);
-        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(List.of(mediaItem), null));
 
         InstagramInsightsResponse insights =
@@ -81,7 +82,7 @@ class InstagramMetricsFetcherTest {
                                 new InstagramInsightsResponse.InsightMetric(
                                         "reach", "lifetime", "reach", "reach",
                                         List.of(new InstagramInsightsResponse.InsightValue(500L, null)))));
-        when(instagramClient.getMediaInsights("media_1", TOKEN_VALUE, IG_BUSINESS_ACCOUNT_ID)).thenReturn(insights);
+        when(instagramClient.getMediaInsights("media_1", TOKEN_VALUE, IG_BUSINESS_ACCOUNT_ID, MetaAuthPath.FACEBOOK_LOGIN)).thenReturn(insights);
 
         InstagramMetricsFetcher.Result result = fetcher.fetchAll(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE);
 
@@ -96,45 +97,45 @@ class InstagramMetricsFetcherTest {
     @DisplayName("fetchAll: default media limit passed through to getMedia is 25 (matches MetricsPollingJob.RECENT_MEDIA_LIMIT)")
     void testFetchAllUsesDefaultMediaLimitOf25() {
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
-        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramUserResponse("ig_1", "u", "n", "b", 1L, 1L, 1L, null, null));
-        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(Collections.emptyList(), null));
 
         fetcher.fetchAll(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE);
 
-        verify(instagramClient).getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
+        verify(instagramClient).getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN);
     }
 
     @Test
     @DisplayName("fetchAll: an explicit mediaLimit overload passes that limit through to getMedia")
     void testFetchAllExplicitMediaLimit() {
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
-        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramUserResponse("ig_1", "u", "n", "b", 1L, 1L, 1L, null, null));
-        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 10))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 10, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(Collections.emptyList(), null));
 
         fetcher.fetchAll(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 10);
 
-        verify(instagramClient).getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 10);
+        verify(instagramClient).getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 10, MetaAuthPath.FACEBOOK_LOGIN);
     }
 
     @Test
     @DisplayName("fetchAll: profile-fetch rate-limit exception propagates to the caller (no partial Result to return)")
     void testFetchAllPropagatesProfileRateLimitException() {
-        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaRateLimitException("rate limited"));
 
         assertThrows(MetaRateLimitException.class, () -> fetcher.fetchAll(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE));
 
-        verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt());
+        verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     @Test
     @DisplayName("fetchAll: profile-fetch token-expired exception propagates to the caller")
     void testFetchAllPropagatesTokenExpiredException() {
-        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaTokenExpiredException("expired"));
 
         assertThrows(MetaTokenExpiredException.class, () -> fetcher.fetchAll(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE));
@@ -143,7 +144,7 @@ class InstagramMetricsFetcherTest {
     @Test
     @DisplayName("fetchAll: generic profile-fetch MetaApiException propagates to the caller")
     void testFetchAllPropagatesGenericProfileApiException() {
-        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaApiException("server error"));
 
         assertThrows(MetaApiException.class, () -> fetcher.fetchAll(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE));
@@ -162,7 +163,7 @@ class InstagramMetricsFetcherTest {
                 fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
 
         assertTrue(media.isEmpty());
-        verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt());
+        verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     @Test
@@ -174,7 +175,7 @@ class InstagramMetricsFetcherTest {
                 fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
 
         assertTrue(media.isEmpty());
-        verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt());
+        verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     // ------------------------------------------------------------------
@@ -185,7 +186,7 @@ class InstagramMetricsFetcherTest {
     @DisplayName("fetchMediaWithInsights: media-list rate-limited marks limited and returns empty list, no throw")
     void testFetchMediaListRateLimitedReturnsEmptyAndMarksLimited() {
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
-        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaRateLimitException("rate limited"));
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
@@ -199,7 +200,7 @@ class InstagramMetricsFetcherTest {
     @DisplayName("fetchMediaWithInsights: media-list generic API failure returns empty list, no throw")
     void testFetchMediaListApiFailureReturnsEmpty() {
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
-        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaApiException("server error"));
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
@@ -213,7 +214,7 @@ class InstagramMetricsFetcherTest {
     @DisplayName("fetchMediaWithInsights: null media response data yields empty list, no NPE")
     void testFetchMediaNullDataYieldsEmptyList() {
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
-        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(null, null));
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
@@ -226,14 +227,14 @@ class InstagramMetricsFetcherTest {
     @DisplayName("fetchMediaWithInsights: empty media list yields empty result, never calls getMediaInsights")
     void testFetchMediaEmptyListNoInsightsCalls() {
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
-        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(Collections.emptyList(), null));
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
                 fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
 
         assertTrue(media.isEmpty());
-        verify(instagramClient, never()).getMediaInsights(anyString(), anyString(), anyString());
+        verify(instagramClient, never()).getMediaInsights(anyString(), anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     // ------------------------------------------------------------------
@@ -248,9 +249,9 @@ class InstagramMetricsFetcherTest {
                 new InstagramMediaResponse.MediaItem(
                         "media_rl", "caption", "IMAGE", "http://img", "http://permalink/rl",
                         "2026-06-04T00:00:00+00:00", 1L, 1L);
-        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(List.of(mediaItem), null));
-        when(instagramClient.getMediaInsights("media_rl", TOKEN_VALUE, IG_BUSINESS_ACCOUNT_ID))
+        when(instagramClient.getMediaInsights("media_rl", TOKEN_VALUE, IG_BUSINESS_ACCOUNT_ID, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaRateLimitException("rate limited"));
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
@@ -270,9 +271,9 @@ class InstagramMetricsFetcherTest {
                 new InstagramMediaResponse.MediaItem(
                         "media_reels", "caption", "REELS", "http://reels", "http://permalink/reels",
                         "2026-06-03T12:00:00+00:00", 999L, 88L);
-        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(List.of(mediaItem), null));
-        when(instagramClient.getMediaInsights("media_reels", TOKEN_VALUE, IG_BUSINESS_ACCOUNT_ID))
+        when(instagramClient.getMediaInsights("media_reels", TOKEN_VALUE, IG_BUSINESS_ACCOUNT_ID, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaApiException("Meta Graph API call failed with status 400"));
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
@@ -297,7 +298,7 @@ class InstagramMetricsFetcherTest {
         InstagramMediaResponse.MediaItem good2 =
                 new InstagramMediaResponse.MediaItem(
                         "media_ok2", "c", "IMAGE", "u", "p3", "2026-06-05T00:00:00+00:00", 1L, 1L);
-        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25))
+        when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(List.of(good1, bad, good2), null));
 
         InstagramInsightsResponse okInsights =
@@ -306,10 +307,10 @@ class InstagramMetricsFetcherTest {
                                 new InstagramInsightsResponse.InsightMetric(
                                         "reach", "lifetime", "reach", "reach",
                                         List.of(new InstagramInsightsResponse.InsightValue(10L, null)))));
-        when(instagramClient.getMediaInsights(eq("media_ok1"), anyString(), anyString())).thenReturn(okInsights);
-        when(instagramClient.getMediaInsights(eq("media_bad"), anyString(), anyString()))
+        when(instagramClient.getMediaInsights(eq("media_ok1"), anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN))).thenReturn(okInsights);
+        when(instagramClient.getMediaInsights(eq("media_bad"), anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenThrow(new MetaApiException("unexpected"));
-        when(instagramClient.getMediaInsights(eq("media_ok2"), anyString(), anyString())).thenReturn(okInsights);
+        when(instagramClient.getMediaInsights(eq("media_ok2"), anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN))).thenReturn(okInsights);
 
         List<InstagramMetricsFetcher.MediaWithInsights> media =
                 fetcher.fetchMediaWithInsights(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25);
@@ -318,6 +319,6 @@ class InstagramMetricsFetcherTest {
         assertEquals(okInsights, media.get(0).insights());
         assertNull(media.get(1).insights());
         assertEquals(okInsights, media.get(2).insights());
-        verify(instagramClient, times(3)).getMediaInsights(anyString(), anyString(), anyString());
+        verify(instagramClient, times(3)).getMediaInsights(anyString(), anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 }

@@ -3,6 +3,7 @@ package com.influora.integration.meta.oauth;
 import com.influora.common.JsonLists;
 import com.influora.common.Ulids;
 import com.influora.config.MetaApiProperties;
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
@@ -205,6 +206,28 @@ public class MetaTokenStorage {
             Instant expiresAt,
             List<String> grantedScopes,
             String igBusinessAccountId) {
+        storeCreatorToken(
+                creatorProfileId,
+                accessToken,
+                expiresAt,
+                grantedScopes,
+                igBusinessAccountId,
+                MetaAuthPath.FACEBOOK_LOGIN);
+    }
+
+    /**
+     * As above, recording which Instagram Platform configuration minted the token
+     * (T-IGLOGIN-0820). Everything downstream — API host, refresh endpoint, whether a Facebook
+     * Page lookup applies — branches on this, so it must be the path the OAuth flow actually
+     * used and never a default.
+     */
+    public void storeCreatorToken(
+            String creatorProfileId,
+            String accessToken,
+            Instant expiresAt,
+            List<String> grantedScopes,
+            String igBusinessAccountId,
+            MetaAuthPath authPath) {
         // F-0173 — the revoke-before-insert step above mints a brand-new row (fresh createdAt)
         // on EVERY call, not just first-connect: MetaTokenRefreshService routes every creator
         // token refresh through this same method (F-0171), so the row this creator's Meta
@@ -232,6 +255,7 @@ public class MetaTokenStorage {
                         .id(Ulids.newUlid())
                         .creatorProfileId(creatorProfileId)
                         // .workspaceId(...) intentionally omitted — stays null (creator-owned row).
+                        .authPath(authPath)
                         .igBusinessAccountId(igBusinessAccountId)
                         .encryptedAccessToken(encrypted)
                         .expiresAt(expiresAt)
@@ -252,6 +276,20 @@ public class MetaTokenStorage {
                 Map.of(
                         "creatorProfileId", creatorProfileId,
                         "scopeCount", grantedScopes == null ? 0 : grantedScopes.size()));
+    }
+
+    /**
+     * Which login path minted the creator's current token (T-IGLOGIN-0820). Callers that are about
+     * to hit Graph MUST pair this with {@link #getValidCreatorToken} — sending an Instagram-Login
+     * token to graph.facebook.com (or the reverse) fails. Empty means no usable row, which callers
+     * already treat as "skip".
+     */
+    @Transactional(readOnly = true)
+    public Optional<MetaAuthPath> getCreatorAuthPath(String creatorProfileId) {
+        return repository
+                .findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(creatorProfileId)
+                .filter(t -> t.getExpiresAt().isAfter(Instant.now()))
+                .map(MetaOAuthToken::getAuthPath);
     }
 
     /** Returns the decrypted token for a creator-owned row. Empty if none exists, it has been

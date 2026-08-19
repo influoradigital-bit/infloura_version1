@@ -123,7 +123,12 @@ public class CreatorCaptionSyncJob {
 
                 InstagramMediaResponse mediaResponse =
                         instagramClient.getMedia(
-                                igBusinessAccountId, accessToken.get(), props.getCaptionSyncMediaLimit());
+                                igBusinessAccountId,
+                                accessToken.get(),
+                                props.getCaptionSyncMediaLimit(),
+                                // T-IGLOGIN-0820: this loop already holds the token row, so the
+                                // host comes straight off it rather than a second lookup.
+                                token.getAuthPath());
                 creatorsProcessed++;
 
                 if (mediaResponse == null || mediaResponse.data() == null) {

@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+
+import com.influora.domain.entity.MetaAuthPath;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -85,7 +87,7 @@ class MetricsPollingJobTest {
 
         InstagramUserResponse profile =
                 new InstagramUserResponse("ig_12345", "testuser", "Test User", "Bio", 10000L, 500L, 150L, null, null);
-        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE)).thenReturn(profile);
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN)).thenReturn(profile);
 
         pollingJob.pollMetrics();
 
@@ -127,7 +129,7 @@ class MetricsPollingJobTest {
         pollingJob.pollMetrics();
 
         // Verify InstagramInsightsClient was never called (deferred to next cycle)
-        verify(instagramClient, never()).getProfile(anyString(), anyString());
+        verify(instagramClient, never()).getProfile(anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(creatorMetricsRepository, never()).save(any(CreatorMetric.class));
 
         // Verify audit log still recorded completion (0 polled, 0 failed — skipped is not a failure)
@@ -146,7 +148,7 @@ class MetricsPollingJobTest {
         pollingJob.pollMetrics();
 
         // Verify InstagramInsightsClient was never called
-        verify(instagramClient, never()).getProfile(anyString(), anyString());
+        verify(instagramClient, never()).getProfile(anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(creatorMetricsRepository, never()).save(any(CreatorMetric.class));
 
         // Verify audit log recorded 0 polled, 0 failed (skip is not failure)
@@ -162,7 +164,7 @@ class MetricsPollingJobTest {
         when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.of(TOKEN_VALUE));
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
-        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaRateLimitException("Rate limit exceeded"));
 
         pollingJob.pollMetrics();
@@ -187,7 +189,7 @@ class MetricsPollingJobTest {
         when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.of(TOKEN_VALUE));
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
-        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaTokenExpiredException("Token expired"));
 
         pollingJob.pollMetrics();
@@ -206,7 +208,7 @@ class MetricsPollingJobTest {
         when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenReturn(Optional.of(TOKEN_VALUE));
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
-        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE))
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaApiException("Server error"));
 
         pollingJob.pollMetrics();
@@ -231,7 +233,7 @@ class MetricsPollingJobTest {
 
         InstagramUserResponse profile =
                 new InstagramUserResponse("ig_12345", "testuser", "Test User", "Bio", 10000L, 500L, 150L, null, null);
-        when(instagramClient.getProfile(eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE)))
+        when(instagramClient.getProfile(eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenAnswer(
                         invocation -> {
                             Thread.sleep(100); // Simulate slow Meta API call
@@ -256,7 +258,7 @@ class MetricsPollingJobTest {
         thread1.join();
 
         // Verify instagramClient.getProfile was called exactly ONCE (second call was skipped)
-        verify(instagramClient, times(1)).getProfile(eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE));
+        verify(instagramClient, times(1)).getProfile(eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), eq(MetaAuthPath.FACEBOOK_LOGIN));
 
         // Verify audit log was called exactly ONCE (second call returned early without executing runPoll)
         // The overlap guard (compareAndSet returns false) causes an early return, so the audit log
@@ -289,13 +291,13 @@ class MetricsPollingJobTest {
         when(rateLimitTracker.getCurrentUsage(igId1)).thenReturn(50);
         InstagramUserResponse profile1 =
                 new InstagramUserResponse("ig_1", "user1", "User 1", "Bio 1", 5000L, 100L, 50L, null, null);
-        when(instagramClient.getProfile(igId1, TOKEN_VALUE)).thenReturn(profile1);
+        when(instagramClient.getProfile(igId1, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN)).thenReturn(profile1);
 
         // Creator 2: failure (MetaApiException)
         when(tokenStorage.getValidCreatorToken(creator2))
                 .thenReturn(Optional.of(TOKEN_VALUE));
         when(rateLimitTracker.getCurrentUsage(igId2)).thenReturn(50);
-        when(instagramClient.getProfile(igId2, TOKEN_VALUE))
+        when(instagramClient.getProfile(igId2, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaApiException("Error"));
 
         // Creator 3: success
@@ -304,7 +306,7 @@ class MetricsPollingJobTest {
         when(rateLimitTracker.getCurrentUsage(igId3)).thenReturn(50);
         InstagramUserResponse profile3 =
                 new InstagramUserResponse("ig_3", "user3", "User 3", "Bio 3", 8000L, 200L, 80L, null, null);
-        when(instagramClient.getProfile(igId3, TOKEN_VALUE)).thenReturn(profile3);
+        when(instagramClient.getProfile(igId3, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN)).thenReturn(profile3);
 
         pollingJob.pollMetrics();
 
@@ -328,7 +330,7 @@ class MetricsPollingJobTest {
         // InstagramUserResponse with null followersCount
         InstagramUserResponse profile =
                 new InstagramUserResponse("ig_12345", "testuser", "Test User", "Bio", null, null, null, null, null);
-        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE)).thenReturn(profile);
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN)).thenReturn(profile);
 
         pollingJob.pollMetrics();
 
@@ -354,13 +356,13 @@ class MetricsPollingJobTest {
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
         InstagramUserResponse profile =
                 new InstagramUserResponse("ig_12345", "testuser", "Test User", "Bio", 10000L, 500L, 150L, null, null);
-        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE)).thenReturn(profile);
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN)).thenReturn(profile);
 
         pollingJob.pollMetrics();
 
         // The regression this guards against: calling getProfile with the ULID instead.
-        verify(instagramClient, never()).getProfile(eq(CREATOR_ID), anyString());
-        verify(instagramClient).getProfile(eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE));
+        verify(instagramClient, never()).getProfile(eq(CREATOR_ID), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
+        verify(instagramClient).getProfile(eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     @Test
@@ -382,7 +384,7 @@ class MetricsPollingJobTest {
         pollingJob.pollMetrics();
 
         verify(rateLimitTracker, never()).getCurrentUsage(CREATOR_ID);
-        verify(instagramClient, never()).getProfile(anyString(), anyString());
+        verify(instagramClient, never()).getProfile(anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(creatorMetricsRepository, never()).save(any(CreatorMetric.class));
     }
 
@@ -403,7 +405,7 @@ class MetricsPollingJobTest {
 
         pollingJob.pollMetrics();
 
-        verify(instagramClient, never()).getProfile(anyString(), anyString());
+        verify(instagramClient, never()).getProfile(anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(creatorMetricsRepository, never()).save(any(CreatorMetric.class));
         verify(auditLog).recordToolCall(any(), any(), any(), any(), any(), any(), any(), any());
     }
@@ -416,7 +418,7 @@ class MetricsPollingJobTest {
 
         pollingJob.pollMetrics();
 
-        verify(instagramClient, never()).getProfile(anyString(), anyString());
+        verify(instagramClient, never()).getProfile(anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(creatorMetricsRepository, never()).save(any(CreatorMetric.class));
         verify(auditLog).recordToolCall(any(), any(), any(), any(), any(), any(), any(), any());
     }

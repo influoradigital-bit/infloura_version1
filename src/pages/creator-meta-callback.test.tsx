@@ -131,8 +131,24 @@ describe('CreatorMetaCallbackPage', () => {
     expect(await screen.findByText('Business account needed')).toBeInTheDocument();
     expect(screen.queryByText('Account connected')).not.toBeInTheDocument();
     expect(
-      screen.getByText(/brands need a business or creator account/i),
+      screen.getByText(/couldn't find an instagram professional account linked to a facebook page/i),
     ).toBeInTheDocument();
+  });
+
+  it('T-IGLOGIN-0820: a personal/no-Page result offers the Instagram-only path instead of dead-ending', async () => {
+    // The Facebook path reports connected:false / personal when it finds no linked professional
+    // account — which is exactly what a creator with no Facebook Page hits after answering "yes"
+    // to the chooser. They must be offered the path that needs no Page, not sent away to change
+    // settings in the Instagram app.
+    setCallbackUrl('?code=abc123&state=xyz789');
+    metaCallback.mockResolvedValue({ connected: false, grantedScopes: [], accountType: 'personal' });
+
+    renderCallback();
+
+    const fallback = await screen.findByRole('button', {
+      name: /connect with instagram instead/i,
+    });
+    expect(fallback).toBeInTheDocument();
   });
 
   it('CR-103/F-0116: connected:false with no accountType gets a generic incomplete message, not a false claim', async () => {

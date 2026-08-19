@@ -2,6 +2,8 @@ package com.influora.service.verification;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+
+import com.influora.domain.entity.MetaAuthPath;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -147,8 +149,9 @@ class DeliverableVerificationServiceTest {
         return new InstagramInsightsResponse(
                 List.of(
                         metric("reach", reach),
-                        metric("impressions", impressions),
-                        metric("engagement", engagement)));
+                        // F-0355: Meta's replacements for the removed impressions/engagement keys.
+                        metric("views", impressions),
+                        metric("total_interactions", engagement)));
     }
 
     private static InstagramInsightsResponse.InsightMetric metric(String name, long value) {
@@ -169,9 +172,9 @@ class DeliverableVerificationServiceTest {
     void verifiedHappyPath() {
         Deliverable deliverable = postedDeliverable(POST_URL);
         stubHappyPathTokenAndRateLimit();
-        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
+        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(mediaListWithMatch());
-        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, IG_BUSINESS_ACCOUNT_ID))
+        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, IG_BUSINESS_ACCOUNT_ID, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(insightsWith(5000, 8000, 300));
         when(deliverableMetricRepository.findByMilestoneId(MILESTONE_ID)).thenReturn(Optional.empty());
         when(collaborationRepository.findById(COLLAB_ID))
@@ -199,9 +202,9 @@ class DeliverableVerificationServiceTest {
     void reVerificationOverwritesSameRowRatherThanAppending() {
         Deliverable deliverable = postedDeliverable(POST_URL);
         stubHappyPathTokenAndRateLimit();
-        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
+        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(mediaListWithMatch());
-        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, IG_BUSINESS_ACCOUNT_ID))
+        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, IG_BUSINESS_ACCOUNT_ID, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(insightsWith(9000, 12000, 500));
 
         DeliverableMetric existingVerifiedRow =
@@ -236,7 +239,7 @@ class DeliverableVerificationServiceTest {
     void privatePostFallsBackWithoutCrashing() {
         Deliverable deliverable = postedDeliverable(POST_URL);
         stubHappyPathTokenAndRateLimit();
-        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
+        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(List.of(), null));
 
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
@@ -245,7 +248,7 @@ class DeliverableVerificationServiceTest {
         assertEquals(DeliverableStatus.POSTED, deliverable.getStatus());
         verify(deliverableMetricRepository, never()).save(any());
         verify(deliverableRepository, never()).save(any());
-        verify(instagramInsightsClient, never()).getMediaInsights(any(), any(), any());
+        verify(instagramInsightsClient, never()).getMediaInsights(any(), any(), any(), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     // ------------------------------------------------------------------------------------------
@@ -263,7 +266,7 @@ class DeliverableVerificationServiceTest {
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
 
         assertEquals(DeliverableVerificationService.Outcome.FALLBACK_NO_TOKEN, outcome);
-        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt());
+        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(deliverableMetricRepository, never()).save(any());
     }
 
@@ -288,9 +291,9 @@ class DeliverableVerificationServiceTest {
         when(metaTokenStorage.getValidCreatorToken(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(ACCESS_TOKEN));
         lenient().when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(0);
-        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
+        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(mediaListWithMatch());
-        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, IG_BUSINESS_ACCOUNT_ID))
+        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, IG_BUSINESS_ACCOUNT_ID, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(insightsWith(5000, 8000, 300));
         when(deliverableMetricRepository.findByMilestoneId(MILESTONE_ID)).thenReturn(Optional.empty());
         when(collaborationRepository.findById(COLLAB_ID))
@@ -312,9 +315,9 @@ class DeliverableVerificationServiceTest {
     void usesIgBusinessAccountIdNotUlidForMediaFetch() {
         Deliverable deliverable = postedDeliverable(POST_URL);
         stubHappyPathTokenAndRateLimit();
-        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
+        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(mediaListWithMatch());
-        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, IG_BUSINESS_ACCOUNT_ID))
+        when(instagramInsightsClient.getMediaInsights("17900000000000001", ACCESS_TOKEN, IG_BUSINESS_ACCOUNT_ID, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(insightsWith(5000, 8000, 300));
         when(deliverableMetricRepository.findByMilestoneId(MILESTONE_ID)).thenReturn(Optional.empty());
         when(collaborationRepository.findById(COLLAB_ID))
@@ -323,8 +326,8 @@ class DeliverableVerificationServiceTest {
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
 
         assertEquals(DeliverableVerificationService.Outcome.VERIFIED, outcome);
-        verify(instagramInsightsClient, never()).getMedia(eq(CREATOR_PROFILE_ID), any(), anyInt());
-        verify(instagramInsightsClient).getMedia(eq(IG_BUSINESS_ACCOUNT_ID), eq(ACCESS_TOKEN), eq(50));
+        verify(instagramInsightsClient, never()).getMedia(eq(CREATOR_PROFILE_ID), any(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
+        verify(instagramInsightsClient).getMedia(eq(IG_BUSINESS_ACCOUNT_ID), eq(ACCESS_TOKEN), eq(50), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     @Test
@@ -349,7 +352,7 @@ class DeliverableVerificationServiceTest {
 
         assertEquals(DeliverableVerificationService.Outcome.FALLBACK_RATE_LIMITED, outcome);
         verify(rateLimitTracker, never()).getCurrentUsage(CREATOR_PROFILE_ID);
-        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt());
+        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     @Test
@@ -367,7 +370,7 @@ class DeliverableVerificationServiceTest {
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
 
         assertEquals(DeliverableVerificationService.Outcome.FALLBACK_DATA_INTEGRITY, outcome);
-        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt());
+        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(deliverableMetricRepository, never()).save(any());
     }
 
@@ -383,7 +386,7 @@ class DeliverableVerificationServiceTest {
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
 
         assertEquals(DeliverableVerificationService.Outcome.FALLBACK_NO_TOKEN, outcome);
-        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt());
+        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     // ------------------------------------------------------------------------------------------
@@ -404,7 +407,7 @@ class DeliverableVerificationServiceTest {
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
 
         assertEquals(DeliverableVerificationService.Outcome.FALLBACK_RATE_LIMITED, outcome);
-        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt());
+        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     @Test
@@ -412,7 +415,7 @@ class DeliverableVerificationServiceTest {
     void metaRateLimitExceptionDuringMediaFetchFallsBack() {
         Deliverable deliverable = postedDeliverable(POST_URL);
         stubHappyPathTokenAndRateLimit();
-        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50))
+        when(instagramInsightsClient.getMedia(IG_BUSINESS_ACCOUNT_ID, ACCESS_TOKEN, 50, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenThrow(new MetaRateLimitException("429 from Meta"));
 
         DeliverableVerificationService.Outcome outcome = service.verify(deliverable);
@@ -438,7 +441,7 @@ class DeliverableVerificationServiceTest {
         assertEquals(DeliverableVerificationService.Outcome.FALLBACK_UNRECOGNIZED_URL, outcome);
         verify(metaOAuthTokenRepository, never())
                 .findFirstByCreatorProfileIdAndRevokedFalseOrderByCreatedAtAsc(any());
-        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt());
+        verify(instagramInsightsClient, never()).getMedia(any(), any(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(deliverableMetricRepository, never()).save(any());
         assertEquals(DeliverableStatus.POSTED, deliverable.getStatus());
     }

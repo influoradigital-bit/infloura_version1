@@ -2,6 +2,7 @@ package com.influora.job;
 
 import com.influora.common.JsonLists;
 import com.influora.config.MetaApiProperties;
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.integration.meta.dto.MetaTokenResponse;
 import com.influora.integration.meta.exception.MetaApiException;
@@ -90,7 +91,8 @@ public class MetaTokenRefreshService {
                         workspaceId,
                         creatorProfileId,
                         tokenRow.getGrantedScopesJson(),
-                        tokenRow.getIgBusinessAccountId())) {
+                        tokenRow.getIgBusinessAccountId(),
+                        tokenRow.getAuthPath())) {
                     refreshed++;
                 } else {
                     failed++;
@@ -124,7 +126,8 @@ public class MetaTokenRefreshService {
             String workspaceId,
             String creatorProfileId,
             String grantedScopesJson,
-            String igBusinessAccountId) {
+            String igBusinessAccountId,
+            MetaAuthPath authPath) {
         // F-0171 fix: this sweep is system-wide (findTokensExpiringSoon has no workspace filter,
         // by design — see class javadoc), so it processes both brand rows (workspaceId non-null)
         // and creator rows (workspaceId always null). It was calling the WORKSPACE-scoped
@@ -148,7 +151,13 @@ public class MetaTokenRefreshService {
         }
 
         try {
-            MetaTokenResponse refreshed = oAuthService.refreshLongLivedToken(currentToken.get());
+            // T-IGLOGIN-0820: the two paths refresh at DIFFERENT endpoints —  Facebook reuses its
+            // long-lived exchange, Instagram has a dedicated refresh_access_token. Sending one to
+            // the other's endpoint fails, so this branches on the row rather than defaulting.
+            MetaTokenResponse refreshed =
+                    authPath == MetaAuthPath.INSTAGRAM_LOGIN
+                            ? oAuthService.refreshInstagramLongLivedToken(currentToken.get())
+                            : oAuthService.refreshLongLivedToken(currentToken.get());
             if (refreshed == null || refreshed.accessToken() == null || refreshed.accessToken().isBlank()) {
                 log.error(
                         "MetaTokenRefreshService: Meta returned an empty refreshed token for creator {}",

@@ -2,6 +2,7 @@ package com.influora.job;
 
 import com.influora.common.JsonLists;
 import com.influora.common.Ulids;
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.AudienceDemographics;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.integration.meta.client.InstagramInsightsClient;
@@ -184,7 +185,16 @@ public class AudienceDemographicsJob {
 
         try {
             AudienceDemographicsResponse response =
-                    instagramClient.getAudienceDemographics(igBusinessAccountId, token.get());
+                    instagramClient.getAudienceDemographics(
+                            igBusinessAccountId,
+                            token.get(),
+                            // T-IGLOGIN-0820: route to the host the token belongs to. Defaulting
+                            // to FACEBOOK_LOGIN is safe only because getCreatorAuthPath is empty
+                            // exactly when there is no usable token, which this method already
+                            // returned on above.
+                            tokenStorage
+                                    .getCreatorAuthPath(creatorProfileId)
+                                    .orElse(MetaAuthPath.FACEBOOK_LOGIN));
 
             if (response == null || response.data() == null || response.data().isEmpty()) {
                 // Accounts under Meta's 100+ follower threshold (or with no audience data yet) return

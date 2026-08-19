@@ -3,6 +3,7 @@ package com.influora.web;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -10,6 +11,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.common.ApiException;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.enums.UserType;
@@ -56,6 +58,9 @@ class MetaOAuthControllerTest {
     @Mock private CreatorMetaOAuthService creatorMetaOAuthService;
     @Mock private MetaConnectionService metaConnectionService;
 
+    private final com.influora.config.MetaApiProperties metaApiProperties =
+            new com.influora.config.MetaApiProperties();
+
     private MetaOAuthController controller;
 
     @BeforeEach
@@ -66,7 +71,8 @@ class MetaOAuthControllerTest {
                         stateStore,
                         creatorProfileRepository,
                         creatorMetaOAuthService,
-                        metaConnectionService);
+                        metaConnectionService,
+                        metaApiProperties);
     }
 
     private CreatorProfile testProfile() {
@@ -76,15 +82,15 @@ class MetaOAuthControllerTest {
     @Test
     @DisplayName("authorize: issues CSRF state and returns the Meta dialog URL")
     void authorize_issuesStateAndReturnsUrl() {
-        when(stateStore.issue(eq(USER_ID))).thenReturn("state-123");
+        when(stateStore.issue(eq(USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN))).thenReturn("state-123");
         when(oAuthService.buildAuthorizationUrl(eq("state-123")))
                 .thenReturn("https://www.facebook.com/v19.0/dialog/oauth?...");
 
-        var response = controller.authorize(CREATOR_PRINCIPAL);
+        var response = controller.authorize(CREATOR_PRINCIPAL, null);
 
         assertTrue(response.data() instanceof MetaAuthorizeResponse);
         assertEquals("state-123", response.data().state());
-        verify(stateStore, times(1)).issue(eq(USER_ID));
+        verify(stateStore, times(1)).issue(eq(USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     @Test
@@ -92,8 +98,8 @@ class MetaOAuthControllerTest {
     void authorize_rejectsNonCreator() {
         AuthPrincipal brandPrincipal = new AuthPrincipal(USER_ID, "brand@example.com", UserType.BRAND, WORKSPACE_ID);
 
-        assertThrows(ApiException.class, () -> controller.authorize(brandPrincipal));
-        verify(stateStore, never()).issue(anyString());
+        assertThrows(ApiException.class, () -> controller.authorize(brandPrincipal, null));
+        verify(stateStore, never()).issue(anyString(), any(MetaAuthPath.class));
     }
 
     @Test
@@ -101,8 +107,9 @@ class MetaOAuthControllerTest {
     void callback_happyPath_delegatesToCreatorMetaOAuthService() {
         CreatorProfile profile = testProfile();
         when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile));
-        when(stateStore.consume("state-123", USER_ID)).thenReturn(true);
-        when(creatorMetaOAuthService.connect(CREATOR_PROFILE_ID, "auth-code"))
+        when(stateStore.consumePath("state-123", USER_ID))
+                .thenReturn(java.util.Optional.of(MetaAuthPath.FACEBOOK_LOGIN));
+        when(creatorMetaOAuthService.connect(CREATOR_PROFILE_ID, "auth-code", MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new ConnectResult(true, MetaOAuthService.REQUIRED_SCOPES, "business"));
 
         MetaCallbackResponse response =
@@ -111,7 +118,8 @@ class MetaOAuthControllerTest {
         assertTrue(response.connected());
         assertEquals(MetaOAuthService.REQUIRED_SCOPES, response.grantedScopes());
         assertEquals("business", response.accountType());
-        verify(creatorMetaOAuthService, times(1)).connect(CREATOR_PROFILE_ID, "auth-code");
+        verify(creatorMetaOAuthService, times(1))
+                .connect(CREATOR_PROFILE_ID, "auth-code", MetaAuthPath.FACEBOOK_LOGIN);
     }
 
     @Test
@@ -119,8 +127,9 @@ class MetaOAuthControllerTest {
     void callback_noBusinessAccount_surfacesAsPersonalAccountType() {
         CreatorProfile profile = testProfile();
         when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile));
-        when(stateStore.consume("state-123", USER_ID)).thenReturn(true);
-        when(creatorMetaOAuthService.connect(CREATOR_PROFILE_ID, "auth-code"))
+        when(stateStore.consumePath("state-123", USER_ID))
+                .thenReturn(java.util.Optional.of(MetaAuthPath.FACEBOOK_LOGIN));
+        when(creatorMetaOAuthService.connect(CREATOR_PROFILE_ID, "auth-code", MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new ConnectResult(false, MetaOAuthService.REQUIRED_SCOPES, "personal"));
 
         MetaCallbackResponse response =
@@ -133,7 +142,7 @@ class MetaOAuthControllerTest {
     @Test
     @DisplayName("callback: rejects invalid state before any token exchange")
     void callback_invalidState_rejectedBeforeExchange() {
-        when(stateStore.consume("bad-state", USER_ID)).thenReturn(false);
+        when(stateStore.consumePath("bad-state", USER_ID)).thenReturn(java.util.Optional.empty());
 
         ApiException ex =
                 assertThrows(
@@ -142,7 +151,8 @@ class MetaOAuthControllerTest {
 
         assertEquals("META_OAUTH_STATE_INVALID", ex.getCode());
         verify(oAuthService, never()).exchangeCodeForToken(anyString());
-        verify(creatorMetaOAuthService, never()).connect(anyString(), anyString());
+        verify(creatorMetaOAuthService, never())
+                .connect(anyString(), anyString(), any(MetaAuthPath.class));
     }
 
     @Test

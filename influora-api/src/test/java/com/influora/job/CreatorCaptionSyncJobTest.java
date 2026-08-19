@@ -2,6 +2,8 @@ package com.influora.job;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+
+import com.influora.domain.entity.MetaAuthPath;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -88,7 +90,7 @@ class CreatorCaptionSyncJobTest {
         job.syncCaptions();
 
         verify(tokenStorage, never()).getValidCreatorToken(anyString());
-        verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt());
+        verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     @Test
@@ -99,7 +101,7 @@ class CreatorCaptionSyncJobTest {
         when(tokenStorage.getValidCreatorToken(CREATOR_ID_1)).thenReturn(Optional.of(ACCESS_TOKEN));
         MediaItem item = new MediaItem("media_1", "A real caption", "IMAGE", null, null,
                 "2026-08-01T12:00:00+0000", 10L, 2L);
-        when(instagramClient.getMedia(IG_ID_1, ACCESS_TOKEN, props.getCaptionSyncMediaLimit()))
+        when(instagramClient.getMedia(IG_ID_1, ACCESS_TOKEN, props.getCaptionSyncMediaLimit(), MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(List.of(item), null));
         when(captionRepository.findByCreatorProfileIdAndIgMediaId(CREATOR_ID_1, "media_1"))
                 .thenReturn(Optional.empty());
@@ -116,7 +118,7 @@ class CreatorCaptionSyncJobTest {
                 .thenReturn(List.of(tokenFor(CREATOR_ID_1, IG_ID_1)));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID_1)).thenReturn(Optional.of(ACCESS_TOKEN));
         MediaItem blankItem = new MediaItem("media_1", "  ", "IMAGE", null, null, null, null, null);
-        when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt()))
+        when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(new InstagramMediaResponse(List.of(blankItem), null));
 
         job.syncCaptions();
@@ -132,7 +134,7 @@ class CreatorCaptionSyncJobTest {
                 .thenReturn(List.of(tokenFor(CREATOR_ID_1, IG_ID_1)));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID_1)).thenReturn(Optional.of(ACCESS_TOKEN));
         MediaItem item = new MediaItem("media_1", "Already cached", "IMAGE", null, null, null, null, null);
-        when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt()))
+        when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(new InstagramMediaResponse(List.of(item), null));
         when(captionRepository.findByCreatorProfileIdAndIgMediaId(CREATOR_ID_1, "media_1"))
                 .thenReturn(Optional.of(com.influora.domain.entity.CreatorCaptionCache.builder()
@@ -156,10 +158,10 @@ class CreatorCaptionSyncJobTest {
                 .thenReturn(List.of(tokenFor(CREATOR_ID_1, IG_ID_1), tokenFor(CREATOR_ID_2, IG_ID_2)));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID_1)).thenReturn(Optional.of(ACCESS_TOKEN));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID_2)).thenReturn(Optional.of(ACCESS_TOKEN));
-        when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt()))
+        when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenThrow(new MetaApiException("rate limited"));
         MediaItem item = new MediaItem("media_2", "Creator 2's caption", "IMAGE", null, null, null, null, null);
-        when(instagramClient.getMedia(eq(IG_ID_2), eq(ACCESS_TOKEN), anyInt()))
+        when(instagramClient.getMedia(eq(IG_ID_2), eq(ACCESS_TOKEN), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(new InstagramMediaResponse(List.of(item), null));
         when(captionRepository.findByCreatorProfileIdAndIgMediaId(CREATOR_ID_2, "media_2"))
                 .thenReturn(Optional.empty());
@@ -183,7 +185,7 @@ class CreatorCaptionSyncJobTest {
         when(tokenStorage.getValidCreatorToken(CREATOR_ID_1)).thenReturn(Optional.of(ACCESS_TOKEN));
         MediaItem bad = new MediaItem("media_bad", "Bad item", "IMAGE", null, null, null, null, null);
         MediaItem good = new MediaItem("media_good", "Good item", "IMAGE", null, null, null, null, null);
-        when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt()))
+        when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(new InstagramMediaResponse(List.of(bad, good), null));
         when(captionRepository.findByCreatorProfileIdAndIgMediaId(CREATOR_ID_1, "media_bad"))
                 .thenThrow(new RuntimeException("db blip"));
@@ -204,7 +206,7 @@ class CreatorCaptionSyncJobTest {
 
         job.syncCaptions();
 
-        verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt());
+        verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     @Test
@@ -214,12 +216,12 @@ class CreatorCaptionSyncJobTest {
         when(tokenRepository.findByWorkspaceIdIsNullAndRevokedFalseAndExpiresAtAfter(any()))
                 .thenReturn(List.of(tokenFor(CREATOR_ID_1, IG_ID_1), tokenFor(CREATOR_ID_2, IG_ID_2)));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID_1)).thenReturn(Optional.of(ACCESS_TOKEN));
-        when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt()))
+        when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(new InstagramMediaResponse(List.of(), null));
 
         job.syncCaptions();
 
         verify(tokenStorage, never()).getValidCreatorToken(CREATOR_ID_2);
-        verify(instagramClient, never()).getMedia(eq(IG_ID_2), anyString(), anyInt());
+        verify(instagramClient, never()).getMedia(eq(IG_ID_2), anyString(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 }

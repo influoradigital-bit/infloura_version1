@@ -3,8 +3,11 @@ package com.influora.integration.meta.client;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+
+import com.influora.domain.entity.MetaAuthPath;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -54,7 +57,7 @@ class InstagramInsightsClientTest {
         InstagramUserResponse mockResponse = new InstagramUserResponse(
                 IG_USER_ID, "testuser", "Test User", "Bio", 10000L, 500L, 150L, null, null);
 
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramUserResponse.class), eq(IG_USER_ID)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramUserResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(mockResponse);
 
         InstagramUserResponse result = client.getProfile(IG_USER_ID, ACCESS_TOKEN);
@@ -63,7 +66,7 @@ class InstagramInsightsClientTest {
         assertEquals(IG_USER_ID, result.id());
         assertEquals("testuser", result.username());
 
-        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(InstagramUserResponse.class), eq(IG_USER_ID));
+        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(InstagramUserResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
         String path = pathCaptor.getValue();
 
         assertTrue(path.contains("/" + IG_USER_ID));
@@ -78,12 +81,12 @@ class InstagramInsightsClientTest {
     void testGetMediaCapsLimitAt100() {
         InstagramMediaResponse mockResponse = new InstagramMediaResponse(null, null);
 
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramMediaResponse.class), eq(IG_USER_ID)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramMediaResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(mockResponse);
 
         client.getMedia(IG_USER_ID, ACCESS_TOKEN, 250); // Request 250, should be capped
 
-        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(InstagramMediaResponse.class), eq(IG_USER_ID));
+        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(InstagramMediaResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
         String path = pathCaptor.getValue();
 
         assertTrue(path.contains("limit=100")); // Capped at 100
@@ -94,12 +97,12 @@ class InstagramInsightsClientTest {
     void testGetMediaRequestsCorrectFields() {
         InstagramMediaResponse mockResponse = new InstagramMediaResponse(null, null);
 
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramMediaResponse.class), eq(IG_USER_ID)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramMediaResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(mockResponse);
 
         client.getMedia(IG_USER_ID, ACCESS_TOKEN, 50);
 
-        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(InstagramMediaResponse.class), eq(IG_USER_ID));
+        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(InstagramMediaResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
         String path = pathCaptor.getValue();
 
         assertTrue(path.contains("/" + IG_USER_ID + "/media"));
@@ -115,21 +118,27 @@ class InstagramInsightsClientTest {
     void testGetMediaInsightsRequestsCorrectFields() {
         InstagramInsightsResponse mockResponse = new InstagramInsightsResponse(null);
 
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(BUSINESS_ACCOUNT_ID)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(BUSINESS_ACCOUNT_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(mockResponse);
 
         client.getMediaInsights(MEDIA_ID, ACCESS_TOKEN, BUSINESS_ACCOUNT_ID);
 
-        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(BUSINESS_ACCOUNT_ID));
+        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(BUSINESS_ACCOUNT_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
         String path = pathCaptor.getValue();
 
         assertTrue(path.contains("/" + MEDIA_ID + "/insights"));
         assertTrue(path.contains("metric="));
-        assertTrue(path.contains("impressions"));
         assertTrue(path.contains("reach"));
-        assertTrue(path.contains("engagement"));
         assertTrue(path.contains("likes"));
         assertTrue(path.contains("comments"));
+        assertTrue(path.contains("saved"));
+        assertTrue(path.contains("shares"));
+        assertTrue(path.contains("views"));
+        assertTrue(path.contains("total_interactions"));
+        // F-0355 regression guard: Meta removed these; requesting one 400s the whole call.
+        assertFalse(path.contains("impressions"));
+        assertFalse(path.contains("engagement"));
+        assertFalse(path.contains("video_views"));
     }
 
     @Test
@@ -137,12 +146,12 @@ class InstagramInsightsClientTest {
     void testGetAudienceDemographicsRequestsCorrectFields() {
         AudienceDemographicsResponse mockResponse = new AudienceDemographicsResponse(null);
 
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(AudienceDemographicsResponse.class), eq(IG_USER_ID)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(AudienceDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(mockResponse);
 
         client.getAudienceDemographics(IG_USER_ID, ACCESS_TOKEN);
 
-        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(AudienceDemographicsResponse.class), eq(IG_USER_ID));
+        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(AudienceDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
         String path = pathCaptor.getValue();
 
         assertTrue(path.contains("/" + IG_USER_ID + "/insights"));
@@ -161,28 +170,33 @@ class InstagramInsightsClientTest {
         long sinceEpoch = 1704067200L; // 2024-01-01
         long untilEpoch = 1706745600L; // 2024-02-01
 
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(IG_USER_ID)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(mockResponse);
 
         client.getAccountInsights(IG_USER_ID, ACCESS_TOKEN, sinceEpoch, untilEpoch);
 
-        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(IG_USER_ID));
+        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
         String path = pathCaptor.getValue();
 
         assertTrue(path.contains("/" + IG_USER_ID + "/insights"));
         assertTrue(path.contains("since=" + sinceEpoch));
         assertTrue(path.contains("until=" + untilEpoch));
         assertTrue(path.contains("period=day"));
-        assertTrue(path.contains("impressions"));
+        assertTrue(path.contains("metric_type=total_value"));
+        // F-0355 regression guard: account-level impressions was removed for ALL versions on
+        // 2025-04-21; profile_views and website_clicks are no longer supported metric names.
+        assertFalse(path.contains("impressions"));
+        assertFalse(path.contains("profile_views"));
+        assertFalse(path.contains("website_clicks"));
         assertTrue(path.contains("reach"));
-        assertTrue(path.contains("profile_views"));
-        assertTrue(path.contains("website_clicks"));
+        assertTrue(path.contains("views"));
+        assertTrue(path.contains("total_interactions"));
     }
 
     @Test
     @DisplayName("getProfile: throws MetaRateLimitException when apiClient throws it")
     void testGetProfileThrowsRateLimitException() {
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramUserResponse.class), eq(IG_USER_ID)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramUserResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenThrow(new MetaRateLimitException("Rate limit exceeded"));
 
         assertThrows(MetaRateLimitException.class, () -> client.getProfile(IG_USER_ID, ACCESS_TOKEN));
@@ -191,7 +205,7 @@ class InstagramInsightsClientTest {
     @Test
     @DisplayName("getProfile: throws MetaTokenExpiredException when apiClient throws it")
     void testGetProfileThrowsTokenExpiredException() {
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramUserResponse.class), eq(IG_USER_ID)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramUserResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenThrow(new MetaTokenExpiredException("Token expired"));
 
         assertThrows(MetaTokenExpiredException.class, () -> client.getProfile(IG_USER_ID, ACCESS_TOKEN));
@@ -200,7 +214,7 @@ class InstagramInsightsClientTest {
     @Test
     @DisplayName("getMediaInsights: throws MetaRateLimitException on 429")
     void testGetMediaInsightsThrowsRateLimitException() {
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(BUSINESS_ACCOUNT_ID)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(BUSINESS_ACCOUNT_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenThrow(new MetaRateLimitException("Rate limit hit"));
 
         assertThrows(MetaRateLimitException.class, () -> client.getMediaInsights(MEDIA_ID, ACCESS_TOKEN, BUSINESS_ACCOUNT_ID));
@@ -209,7 +223,7 @@ class InstagramInsightsClientTest {
     @Test
     @DisplayName("getMediaInsights: throws MetaTokenExpiredException on 401")
     void testGetMediaInsightsThrowsTokenExpiredException() {
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(BUSINESS_ACCOUNT_ID)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(BUSINESS_ACCOUNT_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenThrow(new MetaTokenExpiredException("Unauthorized"));
 
         assertThrows(MetaTokenExpiredException.class, () -> client.getMediaInsights(MEDIA_ID, ACCESS_TOKEN, BUSINESS_ACCOUNT_ID));
@@ -218,7 +232,7 @@ class InstagramInsightsClientTest {
     @Test
     @DisplayName("getAudienceDemographics: propagates rate limit exception")
     void testGetAudienceDemographicsThrowsRateLimitException() {
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(AudienceDemographicsResponse.class), eq(IG_USER_ID)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(AudienceDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenThrow(new MetaRateLimitException("Too many requests"));
 
         assertThrows(MetaRateLimitException.class, () -> client.getAudienceDemographics(IG_USER_ID, ACCESS_TOKEN));

@@ -1,8 +1,10 @@
 package com.influora.service.creatorcopilot;
 
 import com.influora.integration.meta.client.FacebookPageClient;
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.dto.FacebookAccountsListResponse.InstagramBusinessAccount;
 import com.influora.integration.meta.dto.MetaPermissionsResponse;
+import com.influora.integration.meta.dto.InstagramShortLivedTokenResponse;
 import com.influora.integration.meta.dto.MetaTokenResponse;
 import com.influora.integration.meta.exception.MetaApiException;
 import com.influora.integration.meta.oauth.MetaOAuthService;
@@ -79,6 +81,22 @@ public class CreatorMetaOAuthService {
      */
     @Transactional
     public ConnectResult connect(String creatorProfileId, String code) {
+        return connect(creatorProfileId, code, MetaAuthPath.FACEBOOK_LOGIN);
+    }
+
+    /**
+     * As above, for a specific Instagram Platform configuration (T-IGLOGIN-0820).
+     *
+     * <p>The Instagram-Login branch is NOT the Facebook branch with different URLs. Its code
+     * exchange is a form POST returning a different body; the Instagram user id arrives IN that
+     * body rather than being resolved from a Page; and {@code FacebookPageClient} must never be
+     * called, because on this path there is no Facebook Page to call it about.
+     */
+    @Transactional
+    public ConnectResult connect(String creatorProfileId, String code, MetaAuthPath authPath) {
+        if (authPath == MetaAuthPath.INSTAGRAM_LOGIN) {
+            return connectViaInstagramLogin(creatorProfileId, code);
+        }
         MetaTokenResponse shortLived = oAuthService.exchangeCodeForToken(code);
         MetaTokenResponse longLived = oAuthService.exchangeForLongLivedToken(shortLived.accessToken());
 
@@ -105,9 +123,64 @@ public class CreatorMetaOAuthService {
         List<String> grantedScopes = resolveGrantedScopesSafely(longLived.accessToken(), creatorProfileId);
 
         tokenStorage.storeCreatorToken(
-                creatorProfileId, longLived.accessToken(), expiresAt, grantedScopes, igBusinessAccountId);
+                creatorProfileId,
+                longLived.accessToken(),
+                expiresAt,
+                grantedScopes,
+                igBusinessAccountId,
+                MetaAuthPath.FACEBOOK_LOGIN);
 
         if (igAccount == null) {
+            return new ConnectResult(false, grantedScopes, ACCOUNT_TYPE_PERSONAL);
+        }
+        return new ConnectResult(true, grantedScopes, ACCOUNT_TYPE_BUSINESS);
+    }
+
+    /**
+     * Business Login for Instagram connect — the path for a creator with no linked Facebook Page.
+     *
+     * <p>{@code connected=false} here means Meta returned no {@code user_id} with the exchange.
+     * That is the only failure mode available on this path: there is no Page lookup that can come
+     * back empty, which is what {@code ACCOUNT_TYPE_PERSONAL} represents on the Facebook branch.
+     * Business Login is only offered to professional accounts, so a successful exchange is by
+     * definition a professional account.
+     */
+    private ConnectResult connectViaInstagramLogin(String creatorProfileId, String code) {
+        InstagramShortLivedTokenResponse shortLived = oAuthService.exchangeInstagramCodeForToken(code);
+        MetaTokenResponse longLived =
+                oAuthService.exchangeInstagramForLongLivedToken(shortLived.accessToken());
+
+        if (longLived.expiresInSeconds() == null) {
+            log.warn(
+                    "CreatorMetaOAuthService: Instagram long-lived exchange for creator {} omitted"
+                            + " expires_in; falling back to the documented ~60-day default",
+                    creatorProfileId);
+        }
+        long expiresInSeconds =
+                longLived.expiresInSeconds() != null
+                        ? longLived.expiresInSeconds()
+                        : DEFAULT_LONG_LIVED_TOKEN_LIFETIME_SECONDS;
+        Instant expiresAt = Instant.now().plusSeconds(expiresInSeconds);
+
+        // The code exchange is the ONLY source of both of these on this path — there is no
+        // /me/accounts to resolve an id from and no /me/permissions call in this flow.
+        String igUserId = shortLived.userId();
+        List<String> grantedScopes =
+                shortLived.permissions() != null ? shortLived.permissions() : List.of();
+
+        tokenStorage.storeCreatorToken(
+                creatorProfileId,
+                longLived.accessToken(),
+                expiresAt,
+                grantedScopes,
+                igUserId,
+                MetaAuthPath.INSTAGRAM_LOGIN);
+
+        if (igUserId == null || igUserId.isBlank()) {
+            log.warn(
+                    "CreatorMetaOAuthService: Instagram code exchange for creator {} returned no"
+                            + " user_id; token stored but no account id to call Graph with",
+                    creatorProfileId);
             return new ConnectResult(false, grantedScopes, ACCOUNT_TYPE_PERSONAL);
         }
         return new ConnectResult(true, grantedScopes, ACCOUNT_TYPE_BUSINESS);

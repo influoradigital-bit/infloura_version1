@@ -4403,11 +4403,30 @@ const META_CONNECTION_KEY = 'meta_connection';
  */
 const META_REQUIRED_SCOPES = ['instagram_basic', 'instagram_manage_insights', 'pages_show_list'];
 
+/**
+ * Which Instagram Platform configuration to start the OAuth handshake with (T-IGLOGIN-0820).
+ * Mirrors the backend `MetaAuthPath` enum.
+ *
+ * - `FACEBOOK_LOGIN` — requires the creator's Instagram professional account to already be
+ *   linked to a Facebook Page they can administer. Only this path can later reach Partnership
+ *   Ads, hashtag search and product tagging.
+ * - `INSTAGRAM_LOGIN` — no Facebook Page required. Cannot access ads or tagging.
+ */
+export type MetaAuthPath = 'FACEBOOK_LOGIN' | 'INSTAGRAM_LOGIN';
+
 export const metaOAuth = {
-  /** GET /meta/oauth/authorize (MetaOAuthController.java:54) */
-  authorize: () =>
+  /**
+   * GET /meta/oauth/authorize (MetaOAuthController.java:54)
+   *
+   * Omitting `authPath` lets the backend default to FACEBOOK_LOGIN, which keeps every existing
+   * caller behaving exactly as before this parameter existed.
+   */
+  authorize: (authPath?: MetaAuthPath) =>
     isLive()
-      ? http.request<MetaAuthorizeResponse>('GET', '/meta/oauth/authorize', { role: 'creator' })
+      ? http.request<MetaAuthorizeResponse>('GET', '/meta/oauth/authorize', {
+          role: 'creator',
+          ...(authPath ? { query: { authPath } } : {}),
+        })
       : mockOr<MetaAuthorizeResponse>({
           authorizationUrl: `${window.location.origin}/creator/settings/meta/callback?code=mock_code&state=mock_state`,
           state: 'mock_state',

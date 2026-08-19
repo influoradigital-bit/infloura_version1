@@ -1,6 +1,7 @@
 package com.influora.service.verification;
 
 import com.influora.common.Ulids;
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.DeliverableMetric;
@@ -67,9 +68,13 @@ public class DeliverableVerificationService {
 
     private static final int RECENT_MEDIA_LIMIT = 50;
 
-    private static final String METRIC_IMPRESSIONS = "impressions";
+    // F-0355: the response keys follow InstagramInsightsClient#INSIGHTS_METRICS. Meta removed
+    // "impressions" (media created after 2024-07-02) and "engagement"; "views" and
+    // "total_interactions" are their documented replacements. The DeliverableMetric columns keep
+    // their existing names — only the Meta-side key changed.
+    private static final String METRIC_VIEWS = "views";
     private static final String METRIC_REACH = "reach";
-    private static final String METRIC_ENGAGEMENT = "engagement";
+    private static final String METRIC_TOTAL_INTERACTIONS = "total_interactions";
 
     /** Outcome of one {@link #verify(Deliverable)} call — never an exception for expected failures. */
     public enum Outcome {
@@ -170,6 +175,10 @@ public class DeliverableVerificationService {
         // creator-scoped getter every other creator-owned code path already uses (e.g.
         // MetaConnectionService, CreatorCaptionSyncJob).
         Optional<String> accessToken = metaTokenStorage.getValidCreatorToken(creatorProfileId);
+        // T-IGLOGIN-0820: the token's own path decides the Graph host; an Instagram-Login token
+        // sent to graph.facebook.com is rejected outright.
+        MetaAuthPath authPath =
+                metaTokenStorage.getCreatorAuthPath(creatorProfileId).orElse(MetaAuthPath.FACEBOOK_LOGIN);
         if (accessToken.isEmpty()) {
             return fallback(
                     deliverable,
@@ -202,7 +211,8 @@ public class DeliverableVerificationService {
         InstagramMediaResponse mediaResponse;
         try {
             mediaResponse =
-                    instagramInsightsClient.getMedia(igBusinessAccountId, accessToken.get(), RECENT_MEDIA_LIMIT);
+                    instagramInsightsClient.getMedia(
+                            igBusinessAccountId, accessToken.get(), RECENT_MEDIA_LIMIT, authPath);
         } catch (MetaRateLimitException e) {
             // F-0126: markLimited must use the same key as getCurrentUsage() above (and the same
             // key MetaGraphApiClient itself uses) — igBusinessAccountId, not creatorProfileId.
@@ -232,7 +242,7 @@ public class DeliverableVerificationService {
             // this account's usage. Must be igBusinessAccountId, same as getMedia() above.
             insights =
                     instagramInsightsClient.getMediaInsights(
-                            matched.get().id(), accessToken.get(), igBusinessAccountId);
+                            matched.get().id(), accessToken.get(), igBusinessAccountId, authPath);
         } catch (MetaRateLimitException e) {
             rateLimitTracker.markLimited(igBusinessAccountId);
             return fallback(deliverable, Outcome.FALLBACK_RATE_LIMITED, "rate limited fetching insights: " + e.getMessage());
@@ -245,8 +255,8 @@ public class DeliverableVerificationService {
         }
 
         Long reach = metricValue(insights, METRIC_REACH);
-        Long impressions = metricValue(insights, METRIC_IMPRESSIONS);
-        Long engagements = metricValue(insights, METRIC_ENGAGEMENT);
+        Long impressions = metricValue(insights, METRIC_VIEWS);
+        Long engagements = metricValue(insights, METRIC_TOTAL_INTERACTIONS);
 
         return persistVerified(deliverable, reach, impressions, engagements, matched.get().id());
     }

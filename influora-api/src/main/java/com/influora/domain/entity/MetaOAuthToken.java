@@ -2,6 +2,8 @@ package com.influora.domain.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -39,6 +41,17 @@ public class MetaOAuthToken {
 
     @Column(name = "creator_profile_id", nullable = false, length = 26)
     private String creatorProfileId;
+
+    /**
+     * Which Instagram Platform configuration minted this token (T-IGLOGIN-0820). Never null —
+     * V20260820120000 backfills every pre-existing row to {@link MetaAuthPath#FACEBOOK_LOGIN},
+     * which is exact rather than assumed because that was the only path that existed. Callers MUST
+     * branch on this for API host, id resolution and refresh; the two token types are not
+     * interchangeable.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "auth_path", nullable = false, length = 32)
+    private MetaAuthPath authPath = MetaAuthPath.FACEBOOK_LOGIN;
 
     /**
      * Instagram's real numeric Business Account id, resolved via {@code
@@ -84,6 +97,14 @@ public class MetaOAuthToken {
 
     public String getCreatorProfileId() {
         return creatorProfileId;
+    }
+
+    public MetaAuthPath getAuthPath() {
+        return authPath;
+    }
+
+    public void setAuthPath(MetaAuthPath authPath) {
+        this.authPath = authPath;
     }
 
     public String getIgBusinessAccountId() {
@@ -179,6 +200,11 @@ public class MetaOAuthToken {
 
         public Builder creatorProfileId(String creatorProfileId) {
             t.creatorProfileId = creatorProfileId;
+            return this;
+        }
+
+        public Builder authPath(MetaAuthPath authPath) {
+            t.authPath = authPath;
             return this;
         }
 

@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.client.FacebookPageClient;
 import com.influora.integration.meta.dto.FacebookAccountsListResponse.InstagramBusinessAccount;
 import com.influora.integration.meta.dto.MetaPermissionsResponse;
@@ -88,7 +89,8 @@ class CreatorMetaOAuthServiceTest {
                         eq(LONG_LIVED_TOKEN),
                         any(),
                         eq(List.of("instagram_basic", "pages_show_list")),
-                        isNull());
+                        isNull(),
+                        eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     @Test
@@ -101,7 +103,13 @@ class CreatorMetaOAuthServiceTest {
 
         assertNull(result.grantedScopes(), "unverifiable grant state must surface as null, not a fabricated list");
         verify(tokenStorage)
-                .storeCreatorToken(eq(CREATOR_PROFILE_ID), eq(LONG_LIVED_TOKEN), any(), isNull(), isNull());
+                .storeCreatorToken(
+                        eq(CREATOR_PROFILE_ID),
+                        eq(LONG_LIVED_TOKEN),
+                        any(),
+                        isNull(),
+                        isNull(),
+                        eq(MetaAuthPath.FACEBOOK_LOGIN));
     }
 
     @Test
@@ -151,7 +159,12 @@ class CreatorMetaOAuthServiceTest {
                 org.mockito.ArgumentCaptor.forClass(java.time.Instant.class);
         verify(tokenStorage)
                 .storeCreatorToken(
-                        eq(CREATOR_PROFILE_ID), eq(LONG_LIVED_TOKEN), expiresAtCaptor.capture(), any(), isNull());
+                        eq(CREATOR_PROFILE_ID),
+                        eq(LONG_LIVED_TOKEN),
+                        expiresAtCaptor.capture(),
+                        any(),
+                        isNull(),
+                        eq(MetaAuthPath.FACEBOOK_LOGIN));
 
         // Before the fix this was Instant.now() (0-second lifetime) — an already-expired token
         // stored as if the connect had succeeded. Assert it lands close to the ~60-day default,

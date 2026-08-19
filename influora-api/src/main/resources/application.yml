@@ -318,6 +318,11 @@ influora:
     app-id: ${META_APP_ID:}
     app-secret: ${META_APP_SECRET:}
     redirect-uri: ${META_REDIRECT_URI:}
+    # T-IGLOGIN-0820 — Business Login for Instagram (no Facebook Page required). Distinct app
+    # credentials from the Facebook pair above; blank keeps that path off, same convention.
+    instagram-app-id: ${META_INSTAGRAM_APP_ID:}
+    instagram-app-secret: ${META_INSTAGRAM_APP_SECRET:}
+    instagram-redirect-uri: ${META_INSTAGRAM_REDIRECT_URI:}
     graph-api-version: ${META_GRAPH_API_VERSION:v25.0}
     # [SEC: Kabir sign-off gate] DISTINCT AES-256 secret from every other key; must decode to
     # exactly 32 bytes (enforced in MetaTokenStorage). No committed default here — application-dev.yml

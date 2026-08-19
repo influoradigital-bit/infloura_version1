@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useMetaConnection } from '@/hooks/creator/useMetaConnection';
-import { api } from '@/lib/api';
+import { api, type MetaAuthPath } from '@/lib/api';
 
 interface MetaScopeInfo {
   scope: string;
@@ -55,6 +55,10 @@ export function ConnectedAccounts() {
   // creator-scoped revoke already existed (MetaOAuthController.java:129).
   const [isDisconnecting, setIsDisconnecting] = React.useState(false);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = React.useState(false);
+  // T-IGLOGIN-0820 — Meta offers two configurations and only one demands a Facebook Page, so the
+  // creator has to be asked BEFORE the redirect. Sending a creator with no Page into the
+  // Facebook dialog dead-ends them inside Meta's UI with nothing explaining why.
+  const [showPathChoice, setShowPathChoice] = React.useState(false);
 
   const handleDisconnect = async () => {
     setIsDisconnecting(true);
@@ -74,14 +78,15 @@ export function ConnectedAccounts() {
     }
   };
 
-  const handleConnect = async () => {
+  const handleConnect = async (authPath: MetaAuthPath) => {
+    setShowPathChoice(false);
     setIsConnecting(true);
     try {
       // F-0168 — this is a plain "just send me back here" initiator with no return-path of its
       // own; clear any leftover marker from an abandoned Deal Room/Co-pilot connect first, or
       // it would misroute this Settings-initiated connect into wherever that other attempt was.
       api.metaOAuth.clearConnectReturnTo();
-      const { authorizationUrl } = await api.metaOAuth.authorize();
+      const { authorizationUrl } = await api.metaOAuth.authorize(authPath);
       // Full-page navigation, not a fetch — Meta's OAuth dialog itself must load
       // in the top-level browsing context so the user can log in and approve.
       window.location.href = authorizationUrl;
@@ -109,7 +114,8 @@ export function ConnectedAccounts() {
           <CardTitle className="text-base">Connected Accounts</CardTitle>
         </div>
         <CardDescription>
-          Connect Instagram and Facebook so brands see your verified reach and engagement.
+          Connect Instagram so brands see your verified reach and engagement. A Facebook Page is
+          optional — you'll be asked which applies to you.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -149,7 +155,7 @@ export function ConnectedAccounts() {
               Connected
             </span>
           ) : (
-            <Button size="sm" onClick={handleConnect} disabled={isConnecting}>
+            <Button size="sm" onClick={() => setShowPathChoice(true)} disabled={isConnecting}>
               {isConnecting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -194,7 +200,12 @@ export function ConnectedAccounts() {
               Connected
             </span>
           ) : (
-            <Button size="sm" variant="outline" onClick={handleConnect} disabled={isConnecting}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowPathChoice(true)}
+              disabled={isConnecting}
+            >
               {isConnecting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -253,6 +264,60 @@ export function ConnectedAccounts() {
           </Button>
         )}
       </CardContent>
+
+      {/*
+        T-IGLOGIN-0820 — asked BEFORE the redirect, because the two Meta configurations differ in
+        whether a Facebook Page is required and the choice cannot be changed mid-dialog. The
+        answer is a hint, not a fact: creators routinely do not know whether their Instagram is
+        linked to a Page, so a wrong "yes" is recovered on the callback screen rather than
+        dead-ending here.
+      */}
+      <AlertDialog open={showPathChoice} onOpenChange={setShowPathChoice}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Is your Instagram linked to a Facebook Page?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Instagram offers two ways to connect. Pick the one that matches your setup — you can
+              change it later from this page.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={() => handleConnect('FACEBOOK_LOGIN')}
+              disabled={isConnecting}
+              className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted disabled:opacity-60"
+            >
+              <span className="flex items-center gap-2 text-sm font-medium">
+                <Facebook className="h-4 w-4 text-[#1877F2]" aria-hidden="true" />
+                Yes — I have a Facebook Page
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Connect with Facebook. Needed later for paid partnership ads run from your handle.
+                You must be able to manage the Page.
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleConnect('INSTAGRAM_LOGIN')}
+              disabled={isConnecting}
+              className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted disabled:opacity-60"
+            >
+              <span className="flex items-center gap-2 text-sm font-medium">
+                <Instagram className="h-4 w-4" aria-hidden="true" />
+                No — Instagram only
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Connect with your Instagram login. No Facebook Page needed. Profile, media and
+                insights all work; paid partnership ads do not.
+              </span>
+            </button>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isConnecting}>Cancel</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={showDisconnectConfirm}

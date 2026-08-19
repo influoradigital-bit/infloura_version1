@@ -17,6 +17,14 @@ public class MetaApiProperties {
     private String appId = "";
     private String appSecret = "";
     private String redirectUri = "";
+    // T-IGLOGIN-0820 — Business Login for Instagram. These are the INSTAGRAM app's credentials
+    // from the Instagram product in the App Dashboard, NOT the Facebook app id/secret above; the
+    // two are distinct and reusing one for the other fails the token exchange. Blank by default
+    // for the same reason as the Facebook pair: isInstagramLoginConfigured() is the gate that
+    // decides whether the no-Facebook-Page path is offered at all.
+    private String instagramAppId = "";
+    private String instagramAppSecret = "";
+    private String instagramRedirectUri = "";
     private String graphApiVersion = "v25.0";
     private String tokenEncryptionKey = "";
     private int tokenRefreshDaysBeforeExpiry = 7;
@@ -25,6 +33,43 @@ public class MetaApiProperties {
 
     public boolean isConfigured() {
         return appId != null && !appId.isBlank() && appSecret != null && !appSecret.isBlank();
+    }
+
+    /**
+     * Whether the Instagram-Login path (no Facebook Page required) can be offered. Deliberately
+     * independent of {@link #isConfigured()} — a deploy may have one path configured and not the
+     * other, and the connect UI must show only what will actually work rather than dead-ending a
+     * creator on an unconfigured branch.
+     */
+    public boolean isInstagramLoginConfigured() {
+        return instagramAppId != null
+                && !instagramAppId.isBlank()
+                && instagramAppSecret != null
+                && !instagramAppSecret.isBlank();
+    }
+
+    public String getInstagramAppId() {
+        return instagramAppId;
+    }
+
+    public void setInstagramAppId(String instagramAppId) {
+        this.instagramAppId = instagramAppId;
+    }
+
+    public String getInstagramAppSecret() {
+        return instagramAppSecret;
+    }
+
+    public void setInstagramAppSecret(String instagramAppSecret) {
+        this.instagramAppSecret = instagramAppSecret;
+    }
+
+    public String getInstagramRedirectUri() {
+        return instagramRedirectUri;
+    }
+
+    public void setInstagramRedirectUri(String instagramRedirectUri) {
+        this.instagramRedirectUri = instagramRedirectUri;
     }
 
     public String getAppId() {

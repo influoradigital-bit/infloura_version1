@@ -15,6 +15,8 @@ import com.influora.web.dto.meta.MetaDtos.MetaAuthorizeResponse;
 import com.influora.web.dto.meta.MetaDtos.MetaCallbackResponse;
 import com.influora.web.dto.meta.MetaDtos.MetaConnectionStatusResponse;
 import com.influora.web.dto.meta.MetaDtos.MetaDisconnectResponse;
+import com.influora.config.MetaApiProperties;
+import com.influora.domain.entity.MetaAuthPath;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,26 +44,51 @@ public class MetaOAuthController {
     private final CreatorProfileRepository creatorProfileRepository;
     private final CreatorMetaOAuthService creatorMetaOAuthService;
     private final MetaConnectionService metaConnectionService;
+    private final MetaApiProperties metaApiProperties;
 
     public MetaOAuthController(
             MetaOAuthService oAuthService,
             MetaOAuthStateStore stateStore,
             CreatorProfileRepository creatorProfileRepository,
             CreatorMetaOAuthService creatorMetaOAuthService,
-            MetaConnectionService metaConnectionService) {
+            MetaConnectionService metaConnectionService,
+            MetaApiProperties metaApiProperties) {
         this.oAuthService = oAuthService;
         this.stateStore = stateStore;
         this.creatorProfileRepository = creatorProfileRepository;
         this.creatorMetaOAuthService = creatorMetaOAuthService;
         this.metaConnectionService = metaConnectionService;
+        this.metaApiProperties = metaApiProperties;
     }
 
     /** Mints a CSRF-bound state token and returns the Meta authorization dialog URL. */
     @GetMapping("/authorize")
-    public ApiResponse<MetaAuthorizeResponse> authorize(@AuthenticationPrincipal AuthPrincipal principal) {
+    public ApiResponse<MetaAuthorizeResponse> authorize(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(name = "authPath", required = false) MetaAuthPath authPath) {
         requireCreator(principal);
-        String state = stateStore.issue(principal.getUserId());
-        return ApiResponse.ok(new MetaAuthorizeResponse(oAuthService.buildAuthorizationUrl(state), state));
+
+        // T-IGLOGIN-0820. Defaulting to FACEBOOK_LOGIN keeps every existing client working
+        // unchanged; the creator-facing UI sends INSTAGRAM_LOGIN when the creator says they have
+        // no Facebook Page linked to their Instagram account.
+        MetaAuthPath resolved = authPath != null ? authPath : MetaAuthPath.FACEBOOK_LOGIN;
+
+        // Fail loudly rather than handing back an authorize URL with a blank client_id — Meta
+        // answers that with "Invalid app ID", which reads to the creator as their account being
+        // broken rather than as this deploy simply not having the Instagram app configured.
+        if (resolved == MetaAuthPath.INSTAGRAM_LOGIN && !metaApiProperties.isInstagramLoginConfigured()) {
+            throw new ApiException(
+                    "META_INSTAGRAM_LOGIN_NOT_CONFIGURED",
+                    "Connecting without a Facebook Page is not available on this environment",
+                    HttpStatus.SERVICE_UNAVAILABLE);
+        }
+
+        String state = stateStore.issue(principal.getUserId(), resolved);
+        String url =
+                resolved == MetaAuthPath.INSTAGRAM_LOGIN
+                        ? oAuthService.buildInstagramAuthorizationUrl(state)
+                        : oAuthService.buildAuthorizationUrl(state);
+        return ApiResponse.ok(new MetaAuthorizeResponse(url, state));
     }
 
     /**
@@ -87,10 +114,18 @@ public class MetaOAuthController {
             @RequestParam String state) {
         requireCreator(principal);
 
-        if (!stateStore.consume(state, principal.getUserId())) {
-            throw new ApiException(
-                    "META_OAUTH_STATE_INVALID", "OAuth state is invalid, expired, or already used", HttpStatus.BAD_REQUEST);
-        }
+        // The path is recovered from the state token, not from a request parameter: Meta's
+        // redirect carries only code and state, and trusting a client-supplied path here would let
+        // a caller drive the wrong token exchange for a state it did not initiate.
+        MetaAuthPath authPath =
+                stateStore
+                        .consumePath(state, principal.getUserId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "META_OAUTH_STATE_INVALID",
+                                                "OAuth state is invalid, expired, or already used",
+                                                HttpStatus.BAD_REQUEST));
 
         CreatorProfile creatorProfile =
                 creatorProfileRepository
@@ -102,7 +137,7 @@ public class MetaOAuthController {
                                                 "No creator profile for this user",
                                                 HttpStatus.NOT_FOUND));
 
-        ConnectResult result = creatorMetaOAuthService.connect(creatorProfile.getId(), code);
+        ConnectResult result = creatorMetaOAuthService.connect(creatorProfile.getId(), code, authPath);
 
         return ApiResponse.ok(
                 new MetaCallbackResponse(result.connected(), result.grantedScopes(), result.accountType()));

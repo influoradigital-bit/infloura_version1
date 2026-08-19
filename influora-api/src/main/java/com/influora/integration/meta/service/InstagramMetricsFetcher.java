@@ -1,5 +1,6 @@
 package com.influora.integration.meta.service;
 
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.client.InstagramInsightsClient;
 import com.influora.integration.meta.dto.InstagramInsightsResponse;
 import com.influora.integration.meta.dto.InstagramMediaResponse;
@@ -129,8 +130,16 @@ public class InstagramMetricsFetcher {
      * applied here, inside {@link #fetchMediaWithInsights}.
      */
     public Result fetchAll(String igBusinessAccountId, String accessToken, int mediaLimit) {
-        InstagramUserResponse profile = instagramClient.getProfile(igBusinessAccountId, accessToken);
-        List<MediaWithInsights> media = fetchMediaWithInsights(igBusinessAccountId, accessToken, mediaLimit);
+        return fetchAll(igBusinessAccountId, accessToken, mediaLimit, MetaAuthPath.FACEBOOK_LOGIN);
+    }
+
+    /** As above, routed to the host matching the token's origin (T-IGLOGIN-0820). */
+    public Result fetchAll(
+            String igBusinessAccountId, String accessToken, int mediaLimit, MetaAuthPath authPath) {
+        InstagramUserResponse profile =
+                instagramClient.getProfile(igBusinessAccountId, accessToken, authPath);
+        List<MediaWithInsights> media =
+                fetchMediaWithInsights(igBusinessAccountId, accessToken, mediaLimit, authPath);
         return new Result(profile, media);
     }
 
@@ -144,13 +153,20 @@ public class InstagramMetricsFetcher {
      */
     public List<MediaWithInsights> fetchMediaWithInsights(
             String igBusinessAccountId, String accessToken, int mediaLimit) {
+        return fetchMediaWithInsights(
+                igBusinessAccountId, accessToken, mediaLimit, MetaAuthPath.FACEBOOK_LOGIN);
+    }
+
+    /** As above, routed to the host matching the token's origin (T-IGLOGIN-0820). */
+    public List<MediaWithInsights> fetchMediaWithInsights(
+            String igBusinessAccountId, String accessToken, int mediaLimit, MetaAuthPath authPath) {
         if (isRateLimited(igBusinessAccountId, "media_metrics (pre media-list fetch)")) {
             return List.of();
         }
 
         InstagramMediaResponse mediaResponse;
         try {
-            mediaResponse = instagramClient.getMedia(igBusinessAccountId, accessToken, mediaLimit);
+            mediaResponse = instagramClient.getMedia(igBusinessAccountId, accessToken, mediaLimit, authPath);
         } catch (MetaRateLimitException e) {
             rateLimitTracker.markLimited(igBusinessAccountId);
             log.warn(
@@ -172,7 +188,8 @@ public class InstagramMetricsFetcher {
 
         List<MediaWithInsights> results = new ArrayList<>(mediaResponse.data().size());
         for (InstagramMediaResponse.MediaItem mediaItem : mediaResponse.data()) {
-            results.add(fetchOneMediaWithInsights(igBusinessAccountId, accessToken, mediaItem));
+            results.add(
+                    fetchOneMediaWithInsights(igBusinessAccountId, accessToken, mediaItem, authPath));
         }
         return results;
     }
@@ -183,10 +200,14 @@ public class InstagramMetricsFetcher {
      * throwing -- mirrors {@code MetricsPollingJob.pollOneMedia}'s per-item try/catch exactly.
      */
     private MediaWithInsights fetchOneMediaWithInsights(
-            String igBusinessAccountId, String accessToken, InstagramMediaResponse.MediaItem mediaItem) {
+            String igBusinessAccountId,
+            String accessToken,
+            InstagramMediaResponse.MediaItem mediaItem,
+            MetaAuthPath authPath) {
         try {
             InstagramInsightsResponse insights =
-                    instagramClient.getMediaInsights(mediaItem.id(), accessToken, igBusinessAccountId);
+                    instagramClient.getMediaInsights(
+                            mediaItem.id(), accessToken, igBusinessAccountId, authPath);
             return new MediaWithInsights(mediaItem, insights);
         } catch (MetaRateLimitException e) {
             rateLimitTracker.markLimited(igBusinessAccountId);
