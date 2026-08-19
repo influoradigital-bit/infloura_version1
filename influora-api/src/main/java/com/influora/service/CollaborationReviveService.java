@@ -82,6 +82,27 @@ import org.springframework.transaction.annotation.Transactional;
  * So the check is on the artifacts themselves, not on the status that is supposed to imply
  * their absence. A 409 the brand or creator can read is the correct outcome — the alternative
  * is a silently re-opened escrow.
+ *
+ * <h2>F-0232 — why the contract probe is status-blind</h2>
+ *
+ * The obvious method to reach for is {@code existsByCollaborationIdAndStatusNot(id, CANCELLED)},
+ * and it is asked first below. But that method encodes {@code ContractService#generate}'s
+ * DUPLICATE rule — "a CANCELLED contract (future re-negotiation support) does not block a fresh
+ * one" — which is not the same question as "is anything durable still attached". A {@code
+ * CANCELLED} contract leaves its {@code PaymentMilestone} and {@code Deliverable} rows behind:
+ * both are keyed on {@code collaboration_id}, and no path in this codebase deletes or reverses
+ * them. Reusing the duplicate guard as the encumbrance guard would have re-opened the same hole
+ * the section above exists to close, one status further along. So a second probe asks the
+ * status-blind question: does ANY contract row exist for this pair, in any status?
+ *
+ * <p>Those probes also cover the artifacts this service holds no repository for. {@code
+ * PaymentMilestone} and {@code Deliverable} are materialised only inside {@code
+ * ContractService#generate}, so neither can exist without a contract row to trip on; and {@code
+ * DisputeService#openDispute} refuses unless there is FUNDED, unreleased escrow, so an open
+ * dispute always trips the escrow probe. Every artifact {@code Collaboration#revive}'s javadoc
+ * claims a {@code CANCELLED} row cannot have — contract, escrow hold, milestone, deliverable,
+ * dispute — is therefore reachable from the probes here. That javadoc's claim is the false
+ * assumption F-0232 names; this service does not rely on it.
  */
 @Service
 public class CollaborationReviveService {
@@ -163,6 +184,15 @@ public class CollaborationReviveService {
         if (contractRepository.existsByCollaborationIdAndStatusNot(
                 collaborationId, ContractStatus.CANCELLED)) {
             return "a contract that was never voided";
+        }
+        // F-0232 — the probe above answers ContractService#generate's duplicate question, under
+        // which a CANCELLED contract is "clean". For revive it is not: cancelling a contract
+        // leaves its PaymentMilestone and Deliverable rows keyed on this collaboration, and
+        // nothing deletes them. Status-blind on purpose; see the class javadoc.
+        if (!contractRepository
+                .findByCollaborationIdOrderByVersionDescCreatedAtDesc(collaborationId)
+                .isEmpty()) {
+            return "a cancelled contract whose milestones and deliverables were never reversed";
         }
         if (escrowHoldRepository.hasEscrowForCollaboration(collaborationId, ANY_ESCROW)) {
             return "an escrow hold";

@@ -45,13 +45,17 @@ import org.springframework.transaction.annotation.Transactional;
  * request").
  *
  * <p><b>BL-5 correction (BrandF.md §101, re-corrected after Priya's review):</b> this class has
- * FOUR other {@code Subscription} writers, none of which goes through the webhook, and the
+ * FIVE other {@code Subscription} writers, none of which goes through the webhook, and the
  * sentence above must not be read as "only ever written from a verified webhook" — that
  * generalization is false and was the load-bearing (and incorrect) claim of an earlier audit
  * pass. (The first correction pass here undercounted this list as "two" and omitted {@link
- * #cancel(String)} entirely; the enumeration below was re-derived from every {@code
- * subscriptionRepository.save(...)}/{@code saveAndFlush(...)} call site in this class, not
- * patched in place, so it shouldn't need a third correction.)
+ * #cancel(String)} entirely; the second added the missing {@code cancel} bullet but left the
+ * count word reading "FOUR" against a five-item list, so the enumeration still under-reported a
+ * controller-reachable writer to anyone who trusted the count instead of counting the bullets.
+ * Both the count and the list below are re-derived from every {@code
+ * subscriptionRepository.save(...)}/{@code saveAndFlush(...)} call site in this class — five
+ * non-webhook, plus the two inside {@link #applySubscriptionWebhookUpdate} — so they cannot
+ * drift apart again without a save call site being added or removed.)
  *
  * <ul>
  *   <li>{@link #createFreeSubscription} — writes a {@code FREE}/{@code ACTIVE} row, reached from
@@ -583,6 +587,12 @@ public class SubscriptionService {
             return;
         }
 
+        // Captured BEFORE the writes below overwrite them — the ACTIVE branch needs to know what
+        // this row looked like BEFORE this delivery was applied to tell a real (re)activation
+        // apart from a routine renewal event on a subscription that is already ACTIVE.
+        SubscriptionStatus previousStatus = subscription.getStatus();
+        String previousRazorpaySubscriptionId = subscription.getRazorpaySubscriptionId();
+
         subscription.linkRazorpaySubscription(razorpaySubscriptionId);
         if (!plan.getId().equals(subscription.getPlanId())) {
             subscription.changePlan(plan.getId());
@@ -601,7 +611,41 @@ public class SubscriptionService {
             // revoking a currently-paying customer's Pro entitlement while Razorpay keeps charging
             // them. Clearing it here, alongside every other (re)activation write, keeps the flag
             // meaning exactly one thing: "the customer's MOST RECENT cancel is still pending."
-            subscription.setCancelAtPeriodEnd(false);
+            //
+            // ...which is precisely why the clear is NOT unconditional — only a real
+            // (re)activation may clear it. This method handles subscription.charged as well as
+            // subscription.activated and maps both to ACTIVE, but a charged delivery for the
+            // subscription the customer ALREADY cancelled via #cancel is not a reactivation: a
+            // cancel-at-period-end row deliberately stays ACTIVE and keeps billing until its
+            // period elapses (see #cancel), so the final cycle's renewal charge — or a charged
+            // retry queued during an outage — legitimately arrives on an ACTIVE, flag-set row,
+            // ahead of the terminal subscription.cancelled. Clearing on THAT delivery silently
+            // un-cancels a customer who did cancel: the flag is what SubscriptionRenewalResetJob
+            // partitions on, so the row gets renewed instead of finalized, GET /billing/plan
+            // reports cancelAtPeriodEnd=false, and the only way back is to cancel a second time.
+            //
+            // The event type is not a parameter here, so the discriminator is the row's own
+            // BEFORE-state: a genuine (re)activation is a TRANSITION into ACTIVE (from
+            // PAST_DUE/HALTED/CANCELLED — every other status this enum has), or an event whose
+            // sub_* id DIFFERS from the one this row tracked — which is what a re-subscribe
+            // produces, since it
+            // must go back through #initiateCheckout and create a brand-new Razorpay
+            // subscription. A delivery that is neither (already ACTIVE, same subscription) can
+            // only be a renewal event on the very subscription whose cancel is still pending,
+            // and must leave the flag alone.
+            boolean reactivation =
+                    previousStatus != SubscriptionStatus.ACTIVE
+                            || !razorpaySubscriptionId.equals(previousRazorpaySubscriptionId);
+            if (reactivation) {
+                subscription.setCancelAtPeriodEnd(false);
+            } else if (subscription.isCancelAtPeriodEnd()) {
+                log.info(
+                        "Preserving pending cancel-at-period-end on an ACTIVE webhook for an"
+                                + " already-ACTIVE row: razorpaySubscriptionId={}, workspaceId={}"
+                                + " — the customer's cancel is still pending; only"
+                                + " subscription.cancelled or the lapsed-period job may retire it",
+                        razorpaySubscriptionId, workspaceId);
+            }
         }
         if (periodStart != null && periodEnd != null) {
             subscription.renewPeriod(periodStart, periodEnd);
