@@ -10,7 +10,7 @@ We verify who you are before releasing any Payout — this protects you, other u
 
 ## 1. Why we require KYC
 
-**KYC ("Know Your Customer")** verification is required under the Prevention of Money Laundering Act, 2002 (PMLA) and RBI's KYC Master Directions, which apply to payment flows like the escrow Payouts on Influora. We also use KYC to confirm your identity for TDS reporting and to reduce fraud on the platform.
+**KYC ("Know Your Customer")** verification is required under the Prevention of Money Laundering Act, 2002 (PMLA) and RBI's KYC Master Directions, which apply to payment flows like the payment protection Payouts on Influora. We also use KYC to confirm your identity for TDS reporting and to reduce fraud on the platform.
 
 You cannot fund a Campaign or receive a Payout until your KYC is verified.
 
@@ -27,7 +27,7 @@ You cannot fund a Campaign or receive a Payout until your KYC is verified.
 - GST registration (where applicable)
 - Company incorporation documents (CIN, registration certificate)
 - Authorized signatory's PAN and ID
-- Business bank account details — to fund escrow
+- Business bank account details — to fund the deal
 
 We only collect what's needed for verification and Payout processing — see our Privacy Policy for how this data is used and retained.
 
@@ -37,7 +37,7 @@ We aim to verify KYC submissions within **24–48 hours** of a complete, correct
 
 ## 4. What happens without KYC
 
-- You can browse and set up a Campaign, but you cannot fund escrow (brands) or receive a Payout (creators) until KYC is verified.
+- You can browse and set up a Campaign, but you cannot fund the deal (brands) or receive a Payout (creators) until KYC is verified.
 - Unverified accounts may have limited platform features.
 
 ## 5. How we protect your KYC data

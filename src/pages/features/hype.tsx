@@ -10,8 +10,16 @@ import { SlotProgressBar } from '@/components/ui/slot-progress-bar';
 import { demoHypeConfig } from '@/lib/demo-data';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
+import { FaqSection } from '@/components/site/FaqSection';
+import { FunnelCta } from '@/components/site/FunnelCta';
+import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
 import { Seo } from '@/lib/seo/Seo';
-import { JsonLd, getBreadcrumbListSchema } from '@/lib/seo/schema';
+import {
+  JsonLd,
+  getBreadcrumbListSchema,
+  getQaPageSchema,
+  getWebPageSchema,
+} from '@/lib/seo/schema';
 
 // Content per wiki/website/content-map.md §2.3 + homepage-copy.md §6.
 
@@ -40,8 +48,8 @@ const HOW_IT_WORKS = [
   },
   {
     step: '04',
-    title: 'Escrow auto-funds per slot',
-    body: 'Each accepted slot is funded in escrow automatically, so every creator who accepts is guaranteed payment.',
+    title: 'Funding locks automatically per slot',
+    body: 'Each accepted slot is funded and protected automatically, so every creator who accepts is guaranteed payment.',
   },
   {
     step: '05',
@@ -51,7 +59,38 @@ const HOW_IT_WORKS = [
   {
     step: '06',
     title: 'Auto-payout on verification',
-    body: "Once a post is verified, escrow releases that creator's payout automatically — no manual tracking across 100 creators.",
+    body: "Once a post is verified, the payment releases that creator's payout automatically — no manual tracking across 100 creators.",
+  },
+];
+
+// Like "Deal Room", "Hype Campaign" is Influora's own term — this page is its
+// definitional source, so it carries one canonical standalone answer.
+const CANONICAL_QUESTION = 'What is a Hype Campaign?';
+const CANONICAL_ANSWER =
+  'A Hype Campaign is a multi-creator campaign format where a brand posts one source reel at ' +
+  'a single flat per-reel rate and caps the number of slots. Up to 100 creators accept a slot ' +
+  'with one tap, with no negotiation, and post their own remix inside a 72-hour window. Each ' +
+  'accepted slot is funded up front and paid out automatically once the post is verified.';
+
+const FAQS = [
+  {
+    question: CANONICAL_QUESTION,
+    answer: CANONICAL_ANSWER,
+  },
+  {
+    question: 'How is a Hype Campaign different from a normal influencer deal?',
+    answer:
+      'A normal deal is negotiated one-to-one: rate, scope and timeline are agreed per creator in a Deal Room. A Hype Campaign removes the negotiation entirely — the brand sets one flat rate and one brief, and creators either take a slot at that rate or they do not. It trades per-creator control for speed and volume.',
+  },
+  {
+    question: 'What does a Hype Campaign cost a brand?',
+    answer:
+      'The brand chooses the per-reel rate and the number of slots, so the maximum spend is fixed before launch: rate multiplied by slot cap. Only slots that are actually accepted and delivered are paid for, so an under-filled campaign costs less than the cap rather than more.',
+  },
+  {
+    question: 'What happens if a creator accepts a slot and does not post?',
+    answer:
+      'That slot is not paid out. Payment releases only against a verified post inside the campaign window, so an accepted-but-undelivered slot returns its funds to the brand rather than being lost.',
   },
 ];
 
@@ -60,8 +99,22 @@ export default function HypeFeaturePage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="Hype Campaigns — 100 Creators, 72 Hours"
-        description="Launch a 72-hour Hype Campaign: set a flat per-reel rate, cap the slots, and let up to 100 creators accept with one tap. Escrow pays each reel automatically."
+        description="Launch a 72-hour Hype Campaign: set a flat per-reel rate, cap the slots, and let up to 100 creators accept with one tap. Each reel is paid out automatically."
         canonical="/features/hype"
+      />
+      <JsonLd
+        data={getWebPageSchema({
+          name: 'Hype Campaigns — 100 creators, one sound, 72 hours',
+          description: CANONICAL_ANSWER,
+          url: '/features/hype',
+        })}
+      />
+      <JsonLd
+        data={getQaPageSchema({
+          question: CANONICAL_QUESTION,
+          answer: CANONICAL_ANSWER,
+          url: '/features/hype',
+        })}
       />
       <JsonLd
         data={getBreadcrumbListSchema([
@@ -87,7 +140,7 @@ export default function HypeFeaturePage() {
               <p className="mt-4 text-lg text-muted-foreground">
                 A Hype Campaign is a 72-hour blitz: the brand drops a source reel, sets a flat per-reel
                 rate, and caps the number of slots. Creators accept with one tap — no negotiation, no
-                back-and-forth — and post before the window closes. Escrow pays each approved reel
+                back-and-forth — and post before the window closes. Each approved reel is paid out
                 automatically.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
@@ -188,7 +241,7 @@ export default function HypeFeaturePage() {
                   <h3 className="font-semibold">Why brands love it</h3>
                   <p className="mt-2 text-sm text-muted-foreground">
                     Instead of running 100 separate negotiations, a brand launches one Hype Campaign and
-                    fills every slot in hours. Escrow pays each approved reel automatically, so there's no
+                    fills every slot in hours. Each approved reel is paid out automatically, so there's no
                     manual payout tracking across 100 creators.
                   </p>
                 </CardContent>
@@ -200,7 +253,7 @@ export default function HypeFeaturePage() {
                   <h3 className="font-semibold">Why creators love it</h3>
                   <p className="mt-2 text-sm text-muted-foreground">
                     The rate is fixed and visible upfront. There's nothing to negotiate — tap accept, post
-                    within the window, and get paid through escrow as soon as the reel is approved.
+                    within the window, and get paid through Secure Payments as soon as the reel is approved.
                   </p>
                 </CardContent>
               </Card>
@@ -208,28 +261,21 @@ export default function HypeFeaturePage() {
           </div>
         </section>
 
-        {/* Cross-link + final CTA */}
-        <section className="py-20">
-          <FadeUp className="mx-auto max-w-2xl px-6 text-center">
-            <h2 className="text-3xl font-semibold">Every Hype Campaign is escrow-protected</h2>
-            <p className="mt-3 text-muted-foreground">
-              Each accepted slot funds automatically in escrow the moment a creator taps accept.
-            </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90" asChild>
-                <Link to="/brand/register">
-                  Launch a Hype Campaign <Zap className="ml-1.5 h-4 w-4" aria-hidden="true" />
-                </Link>
-              </Button>
-              <Button size="lg" variant="outline" asChild>
-                <Link to="/features/escrow">How escrow works</Link>
-              </Button>
-            </div>
-          </FadeUp>
-        </section>
+        <FaqSection heading="Hype Campaign questions, answered" items={FAQS} />
+
+        <FunnelCta
+          heading="Launch a Hype Campaign"
+          sub="Set one flat rate, cap the slots, and let creators fill them. Your maximum spend is fixed before you launch."
+          primary={{ label: 'Launch a Hype Campaign', to: '/brand/register' }}
+          secondary={{ label: 'See how the payment is protected', to: '/features/secure-payments' }}
+          reassurances={['Spend capped up front', 'Paid only on verified posts', 'Free to start']}
+          tone="hype"
+        />
       </main>
 
       <SiteFooter />
+      <StickyCta label="Launch a Hype Campaign" to="/brand/register" note="Spend capped up front" />
+      <StickyCtaSpacer />
     </div>
   );
 }

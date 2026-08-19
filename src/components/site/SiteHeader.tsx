@@ -34,7 +34,7 @@ const HOW_IT_WORKS_LINKS = [
 ];
 
 const FEATURES_LINKS = [
-  { label: 'Escrow Protection', href: '/features/escrow' },
+  { label: 'Secure Payments', href: '/features/secure-payments' },
   { label: 'Deal Room', href: '/features/deal-room' },
   { label: 'Hype Campaigns', href: '/features/hype' },
 ];

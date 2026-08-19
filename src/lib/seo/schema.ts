@@ -58,7 +58,7 @@ export function getOrganizationSchema(options: OrganizationSchemaOptions = {}): 
     legalName = COMPANY.legalName,
     url = SITE_URL,
     logoUrl = DEFAULT_LOGO_URL,
-    description = 'Escrow-protected influencer marketing platform connecting Indian brands with verified creators.',
+    description = 'Influencer marketing platform for India with built-in payment protection, connecting brands with verified creators.',
     sameAs = ([COMPANY.socials.instagram, COMPANY.socials.linkedin] as string[]).filter(
       (value) => value.length > 0,
     ),
@@ -256,4 +256,273 @@ export function JsonLd({ data }: JsonLdProps): ReactElement {
     type: 'application/ld+json',
     dangerouslySetInnerHTML: { __html: json },
   });
+}
+
+// ---------------------------------------------------------------------------
+// AEO / GEO schema helpers
+//
+// Added for the SEO/AEO/GEO pass (T-SEOCRO-0819). The four types below are the
+// ones that actually change what an answer engine does with a page:
+//
+//   SoftwareApplication + Offer  -> price eligibility in AI Overviews and the
+//                                  "what does it cost" answer, which is the
+//                                  single most-asked commercial query.
+//   HowTo                        -> step extraction for "how do I ..." prompts.
+//                                  ChatGPT/Perplexity quote HowTo steps nearly
+//                                  verbatim.
+//   QAPage                       -> ONE canonical question per page, which is
+//                                  what a retrieval engine matches against.
+//   speakable                    -> marks the passages a voice/AI surface should
+//                                  read back, so the engine quotes the sentence
+//                                  we wrote instead of one it assembles itself.
+//
+// All of them take their copy from the SAME constants the page renders (never a
+// second hand-written string), so schema and visible text cannot drift — that
+// drift is what gets a page demoted for structured-data mismatch.
+// ---------------------------------------------------------------------------
+
+export interface OfferOption {
+  /** Plan name exactly as shown on /pricing. */
+  name: string;
+  /** Numeric price in INR. Use 0 for free tiers. */
+  price: number;
+  /** UN/CEFACT unit code, e.g. "MON" for monthly. Omit for one-off/free. */
+  billingPeriod?: string;
+  description?: string;
+}
+
+export interface SoftwareApplicationSchemaOptions {
+  name?: string;
+  description: string;
+  url?: string;
+  /** e.g. "BusinessApplication" / "WebApplication". */
+  applicationCategory?: string;
+  offers?: OfferOption[];
+  /** Feature bullets — schema.org featureList. */
+  featureList?: string[];
+}
+
+/**
+ * SoftwareApplication schema — used on the homepage and /pricing.
+ *
+ * `offers` renders as an AggregateOffer when more than one plan is passed, which
+ * is what lets an answer engine state a price *range* ("free, or ₹4,999/mo")
+ * instead of picking one plan arbitrarily and misquoting the cost.
+ */
+export function getSoftwareApplicationSchema(
+  options: SoftwareApplicationSchemaOptions,
+): JsonLdObject {
+  const {
+    name = SITE_NAME,
+    description,
+    url = SITE_URL,
+    applicationCategory = 'BusinessApplication',
+    offers = [],
+    featureList = [],
+  } = options;
+
+  const base: JsonLdObject = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name,
+    description,
+    url,
+    applicationCategory,
+    operatingSystem: 'Web',
+    provider: {
+      '@type': 'Organization',
+      name: SITE_NAME,
+      url: SITE_URL,
+    },
+  };
+
+  if (featureList.length > 0) {
+    base.featureList = featureList;
+  }
+
+  if (offers.length === 0) {
+    return base;
+  }
+
+  const offerNodes: JsonLdValue[] = offers.map((offer) => {
+    const node: Record<string, JsonLdValue> = {
+      '@type': 'Offer',
+      name: offer.name,
+      price: offer.price,
+      priceCurrency: 'INR',
+      availability: 'https://schema.org/InStock',
+      url: `${SITE_URL}/pricing`,
+    };
+    if (offer.description) {
+      node.description = offer.description;
+    }
+    if (offer.billingPeriod) {
+      node.priceSpecification = {
+        '@type': 'UnitPriceSpecification',
+        price: offer.price,
+        priceCurrency: 'INR',
+        billingDuration: 1,
+        billingIncrement: 1,
+        unitCode: offer.billingPeriod,
+      };
+    }
+    return node;
+  });
+
+  const prices = offers.map((offer) => offer.price);
+
+  base.offers = {
+    '@type': 'AggregateOffer',
+    priceCurrency: 'INR',
+    lowPrice: Math.min(...prices),
+    highPrice: Math.max(...prices),
+    offerCount: offers.length,
+    offers: offerNodes,
+  };
+
+  return base;
+}
+
+export interface HowToStep {
+  name: string;
+  text: string;
+}
+
+export interface HowToSchemaOptions {
+  name: string;
+  description: string;
+  steps: HowToStep[];
+  /** Site-relative or absolute canonical for the page the HowTo lives on. */
+  url: string;
+  /** ISO-8601 duration, e.g. "PT10M". */
+  totalTime?: string;
+}
+
+/**
+ * HowTo schema — used on /how-it-works/brands and /how-it-works/creators.
+ *
+ * Answer engines lift these steps almost verbatim for "how do I run an
+ * influencer campaign in India" prompts, so each `text` must be a complete,
+ * standalone sentence: it gets quoted without the surrounding page.
+ */
+export function getHowToSchema(options: HowToSchemaOptions): JsonLdObject {
+  const { name, description, steps, url, totalTime } = options;
+  const absoluteUrl = url.startsWith('http')
+    ? url
+    : `${SITE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+
+  const base: JsonLdObject = {
+    '@context': 'https://schema.org',
+    '@type': 'HowTo',
+    name,
+    description,
+    step: steps.map((step, index) => ({
+      '@type': 'HowToStep',
+      position: index + 1,
+      name: step.name,
+      text: step.text,
+      url: `${absoluteUrl}#step-${index + 1}`,
+    })),
+  };
+
+  if (totalTime) {
+    base.totalTime = totalTime;
+  }
+
+  return base;
+}
+
+export interface QaPageSchemaOptions {
+  /** The single canonical question this page answers. */
+  question: string;
+  /** A complete, standalone answer — 40-60 words is the citation sweet spot. */
+  answer: string;
+  url: string;
+}
+
+/**
+ * QAPage schema — one canonical question per page.
+ *
+ * Distinct from FAQPage (many questions of equal weight): a retrieval engine
+ * scores a page against a *single* dominant intent, and declaring it explicitly
+ * beats making the engine infer it from six sibling FAQ entries.
+ */
+export function getQaPageSchema(options: QaPageSchemaOptions): JsonLdObject {
+  const { question, answer, url } = options;
+  const absoluteUrl = url.startsWith('http')
+    ? url
+    : `${SITE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'QAPage',
+    mainEntity: {
+      '@type': 'Question',
+      name: question,
+      text: question,
+      url: absoluteUrl,
+      answerCount: 1,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: answer,
+        url: absoluteUrl,
+      },
+    },
+  };
+}
+
+export interface WebPageSchemaOptions {
+  name: string;
+  description: string;
+  url: string;
+  /** CSS selectors whose text a voice/AI surface should read back. */
+  speakableSelectors?: string[];
+  /** ISO date the page content was last substantively reviewed. */
+  dateModified?: string;
+}
+
+/**
+ * WebPage schema with `speakable` — used on every marketing page.
+ *
+ * `speakable` is how we choose which sentence gets quoted. Without it the engine
+ * picks its own extract, which in practice is whatever sits nearest the H1 —
+ * frequently a nav label or a badge, not the answer. Pages mark their intended
+ * pull-quote with `data-speakable`.
+ */
+export function getWebPageSchema(options: WebPageSchemaOptions): JsonLdObject {
+  const {
+    name,
+    description,
+    url,
+    speakableSelectors = ['h1', '[data-speakable]'],
+    dateModified,
+  } = options;
+
+  const absoluteUrl = url.startsWith('http')
+    ? url
+    : `${SITE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+
+  const base: JsonLdObject = {
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    name,
+    description,
+    url: absoluteUrl,
+    inLanguage: 'en-IN',
+    isPartOf: {
+      '@type': 'WebSite',
+      name: SITE_NAME,
+      url: SITE_URL,
+    },
+    speakable: {
+      '@type': 'SpeakableSpecification',
+      cssSelector: speakableSelectors,
+    },
+  };
+
+  if (dateModified) {
+    base.dateModified = dateModified;
+  }
+
+  return base;
 }

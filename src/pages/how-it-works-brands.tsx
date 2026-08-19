@@ -14,8 +14,16 @@ import { Badge } from '@/components/ui/badge';
 import { FadeUp, StaggerContainer, StaggerItem } from '@/components/motion';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
+import { FunnelCta } from '@/components/site/FunnelCta';
+import { TrustBar } from '@/components/site/TrustBar';
+import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
 import { Seo } from '@/lib/seo/Seo';
-import { JsonLd, getBreadcrumbListSchema } from '@/lib/seo/schema';
+import {
+  JsonLd,
+  getBreadcrumbListSchema,
+  getHowToSchema,
+  getWebPageSchema,
+} from '@/lib/seo/schema';
 
 // Content per wiki/website/content-map.md §1.3.
 
@@ -41,8 +49,8 @@ const STEPS = [
   {
     icon: FileSignature,
     step: '04',
-    title: 'Sign the contract, fund escrow',
-    body: 'An auto-generated contract spells out usage rights, exclusivity, and revision limits. Both sides e-sign, then the deal amount locks in escrow.',
+    title: 'Sign the contract, fund the deal',
+    body: 'An auto-generated contract spells out usage rights, exclusivity, and revision limits. Both sides e-sign, then the deal amount locks in a protected balance.',
   },
   {
     icon: BadgeCheck,
@@ -53,8 +61,8 @@ const STEPS = [
   {
     icon: ShieldCheck,
     step: '06',
-    title: 'Escrow releases, creator posts',
-    body: 'On approval, escrow auto-releases payment to the creator. They post within the campaign window and you track performance from your dashboard.',
+    title: 'The payment releases, creator posts',
+    body: 'On approval, the payment releases to the creator automatically. They post within the campaign window and you track performance from your dashboard.',
   },
 ];
 
@@ -63,8 +71,34 @@ export default function HowItWorksBrandsPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="How It Works for Brands"
-        description="Create a campaign, discover verified creators, negotiate in the Deal Room, and pay through escrow. How brands run deals on Influora, step by step."
+        description="Create a campaign, discover verified creators, negotiate in the Deal Room, and pay with protection built in. How brands run deals on Influora, step by step."
         canonical="/how-it-works/brands"
+      />
+      {/*
+        HowTo, built from the same STEPS array the page renders.
+
+        This is the highest-leverage schema on the site for AEO: "how do I run an
+        influencer campaign in India" is a procedural query, and ChatGPT,
+        Perplexity and AI Overviews all lift HowTo steps close to verbatim. The
+        steps are mapped, never re-typed, so the quoted answer is always the copy
+        actually on the page.
+      */}
+      <JsonLd
+        data={getHowToSchema({
+          name: 'How to run an influencer campaign in India on Influora',
+          description:
+            'The six steps a brand takes on Influora, from creating a campaign to the creator posting and the payment releasing.',
+          url: '/how-it-works/brands',
+          steps: STEPS.map((s) => ({ name: s.title, text: s.body })),
+        })}
+      />
+      <JsonLd
+        data={getWebPageSchema({
+          name: 'How It Works for Brands',
+          description:
+            'A brand creates a campaign, discovers verified creators, negotiates in the Deal Room, e-signs a contract and funds the deal, approves the delivered work, and the payment releases to the creator automatically.',
+          url: '/how-it-works/brands',
+        })}
       />
       <JsonLd
         data={getBreadcrumbListSchema([
@@ -88,7 +122,7 @@ export default function HowItWorksBrandsPage() {
               </h1>
               <p className="mt-4 text-lg text-muted-foreground">
                 Six steps from campaign brief to a posted reel — discovery, negotiation, contract, and
-                escrow-protected payout, all inside one platform.
+                payment-protected payout, all inside one platform.
               </p>
               <div className="mt-8 flex flex-wrap justify-center gap-3">
                 <Button size="lg" className="bg-accent-foreground text-white hover:bg-accent-foreground/90" asChild>
@@ -103,6 +137,8 @@ export default function HowItWorksBrandsPage() {
             </FadeUp>
           </div>
         </section>
+
+        <TrustBar />
 
         {/* Steps */}
         <section className="py-20">
@@ -158,27 +194,19 @@ export default function HowItWorksBrandsPage() {
           </div>
         </section>
 
-        {/* Final CTA */}
-        <section className="py-20">
-          <FadeUp className="mx-auto max-w-2xl px-6 text-center">
-            <h2 className="text-3xl font-semibold">Ready to launch your first campaign?</h2>
-            <p className="mt-3 text-muted-foreground">
-              Free to start — no subscription on the Free tier. Upgrade to Pro anytime for lower fees and
-              team features.
-            </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Button size="lg" className="bg-accent-foreground text-white hover:bg-accent-foreground/90" asChild>
-                <Link to="/brand/register">Launch your first campaign</Link>
-              </Button>
-              <Button size="lg" variant="outline" asChild>
-                <Link to="/pricing">See pricing</Link>
-              </Button>
-            </div>
-          </FadeUp>
-        </section>
+        <FunnelCta
+          heading="Ready to launch your first campaign?"
+          sub="Free to start — no subscription on the Free tier. Upgrade to Pro anytime for lower fees and team features."
+          primary={{ label: 'Launch your first campaign', to: '/brand/register' }}
+          secondary={{ label: 'See pricing first', to: '/pricing' }}
+          reassurances={['Free to start', 'Contracts included', 'Pay only on completed deals']}
+          className="py-20"
+        />
       </main>
 
       <SiteFooter />
+      <StickyCta label="Launch a campaign" to="/brand/register" note="Free to start" />
+      <StickyCtaSpacer />
     </div>
   );
 }

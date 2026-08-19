@@ -62,8 +62,8 @@ export default function BlogIndexPage() {
     ? `${categoryLabel} — Influora Blog`
     : 'Blog — Influencer Marketing Guides for Indian Brands & Creators | Influora';
   const pageDescription = categoryLabel
-    ? `${categoryLabel} articles on escrow payments, contracts, and running influencer deals in India — from the Influora team.`
-    : 'Guides on escrow payments, creator pricing, contracts, and how to run brand-creator deals in India, written by the Influora team.';
+    ? `${categoryLabel} articles on protected payments, contracts, and running influencer deals in India — from the Influora team.`
+    : 'Guides on protected payments, creator pricing, contracts, and how to run brand-creator deals in India, written by the Influora team.';
   const canonicalPath = category ? `/blog/category/${category}` : '/blog';
 
   const breadcrumbSchema = getBreadcrumbListSchema(
@@ -110,8 +110,8 @@ export default function BlogIndexPage() {
             </h1>
             <p className="mt-3 text-muted-foreground">
               {categoryLabel
-                ? `Guides ${categoryLabel.toLowerCase()} on running cleaner, escrow-protected deals.`
-                : 'Guides on escrow, pricing, contracts, and running brand-creator deals in India — no fluff, just what actually matters before you sign.'}
+                ? `Guides ${categoryLabel.toLowerCase()} on running cleaner, payment-protected deals.`
+                : 'Guides on payments, pricing, contracts, and running brand-creator deals in India — no fluff, just what actually matters before you sign.'}
             </p>
           </FadeUp>
 

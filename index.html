@@ -1,11 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-IN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Influora — Escrow-Protected Influencer Marketing for India</title>
-    <meta name="description" content="Influora connects Indian brands with verified creators. Negotiate in one Deal Room, pay through escrow, and run campaigns from a single reel to a 100-creator Hype blitz." />
+    <title>Influencer Marketing Platform for India | Influora</title>
+    <meta
+      name="description"
+      content="Hire verified Indian creators, agree terms in one Deal Room, and pay only after the work is approved. Contracts, TDS and payment protection built in. Free to start."
+    />
     <link rel="canonical" href="https://influora.in/" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="author" content="Influora" />
 
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="/icon-light-32x32.png" sizes="32x32" type="image/png" />
@@ -13,13 +18,34 @@
     <link rel="apple-touch-icon" href="/apple-icon.png" />
     <meta name="theme-color" content="#0f172a" />
 
+    <!--
+      Connection warm-up for the two origins the app hits on first paint. These
+      shave a full DNS+TLS round trip off LCP on a cold Indian mobile connection,
+      which is a Core Web Vital and therefore a ranking input.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Influora" />
-    <meta property="og:title" content="Influora — Escrow-Protected Influencer Marketing for India" />
-    <meta property="og:description" content="Discover verified creators, negotiate in one Deal Room, and pay through escrow." />
+    <meta property="og:locale" content="en_IN" />
+    <meta property="og:title" content="Influencer Marketing Platform for India | Influora" />
+    <meta
+      property="og:description"
+      content="Hire verified Indian creators, agree terms in one Deal Room, and pay only after the work is approved."
+    />
     <meta property="og:url" content="https://influora.in/" />
     <meta property="og:image" content="https://influora.in/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Influora — influencer marketing platform for India" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Influencer Marketing Platform for India | Influora" />
+    <meta
+      name="twitter:description"
+      content="Hire verified Indian creators, agree terms in one Deal Room, and pay only after the work is approved."
+    />
+    <meta name="twitter:image" content="https://influora.in/og-image.png" />
 
     <script type="application/ld+json">
     {
@@ -28,20 +54,92 @@
       "name": "Influora",
       "url": "https://influora.in",
       "logo": "https://influora.in/icon.svg",
-      "description": "Escrow-protected influencer marketing platform connecting Indian brands with verified creators.",
-      "areaServed": "IN"
+      "description": "Influencer marketing platform for India with built-in payment protection, connecting brands with verified creators.",
+      "areaServed": {
+        "@type": "Country",
+        "name": "India"
+      },
+      "knowsAbout": [
+        "influencer marketing",
+        "creator payments",
+        "influencer contracts",
+        "TDS on creator payouts",
+        "UGC campaigns"
+      ]
     }
     </script>
   </head>
   <body>
     <div id="root">
-      <!-- Static fallback for non-JS crawlers (GPTBot, ClaudeBot, PerplexityBot, CCBot, Bingbot). Replaced on render. -->
-      <h1>Influora — Where brands and creators sign real deals</h1>
-      <p>Influora is an escrow-protected influencer marketing platform for India. Discover verified creators, negotiate in one Deal Room, and pay through escrow — from a single reel to a 100-creator Hype campaign.</p>
+      <!--
+        Static fallback for crawlers that do not execute JavaScript (GPTBot,
+        ClaudeBot, PerplexityBot, CCBot, and Bingbot's non-JS pass). Replaced the
+        instant React hydrates, so a real browser never sees it.
+
+        WHY IT IS ANSWER-SHAPED RATHER THAN A TAGLINE: what a retrieval engine
+        keeps from a page is a passage it can quote standing alone. A hero
+        headline ("Where brands and creators sign real deals") is unquotable out
+        of context — it names no entity, no country and no mechanism. Each
+        paragraph below is written to survive being lifted on its own, and the
+        Q&A block mirrors the FAQ the React app renders at the same URL so the
+        two never contradict each other.
+
+        Note for whoever edits this next: scripts/prerender.mjs overwrites
+        dist/index.html with the fully-rendered React output at build time, so
+        this markup is the fallback for the *dev* server and for any deploy where
+        prerender did not run. Keep it in step with src/pages/landing.tsx anyway
+        — .proof-os/gates/F-SEO-marketing-surface.sh fails the build if the
+        dropped vocabulary reappears here.
+      -->
+      <h1>Influora — influencer marketing platform for India</h1>
+      <p>
+        Influora is an influencer marketing platform for India. Brands hire verified creators, agree
+        the scope and price in a shared Deal Room, and pay only after they approve the delivered
+        work. Contracts, TDS handling and invoicing are generated automatically.
+      </p>
+
+      <h2>How do influencer payments stay safe on Influora?</h2>
+      <p>
+        Influora holds the brand's payment with a licensed payment partner from the moment the
+        contract is signed, and releases it to the creator only after the brand approves the
+        delivered work. The brand never pays in advance for work that does not arrive, and the
+        creator never starts filming without the money already secured.
+      </p>
+
+      <h2>What is a Deal Room?</h2>
+      <p>
+        A Deal Room is the single shared workspace where one brand and one creator settle a
+        collaboration: the chat, the proposal and counter-offers, the deliverables list, the e-signed
+        contract and the payment all live in one thread, instead of being spread across WhatsApp,
+        email and a separate invoice.
+      </p>
+
+      <h2>What does Influora cost?</h2>
+      <p>
+        Influora has two brand tiers: Free, which has no subscription and charges a platform fee only
+        when a deal completes, and Pro at ₹4,999 per month, which reduces the per-deal fee and adds
+        team seats and unlimited creator analytics. Creators join, build a portfolio and get paid for
+        free.
+      </p>
+
+      <h2>What is a Hype Campaign?</h2>
+      <p>
+        A Hype Campaign is Influora's multi-creator format: a brand posts one source reel at a single
+        flat per-reel rate, caps the number of slots, and up to 100 creators accept with one tap and
+        post inside a 72-hour window. Each accepted slot is funded up front and paid out
+        automatically once the post is verified.
+      </p>
+
       <nav>
-        <a href="/pricing">Pricing</a> · <a href="/how-it-works/brands">For Brands</a> ·
-        <a href="/how-it-works/creators">For Creators</a> · <a href="/features/escrow">Escrow</a> ·
-        <a href="/blog">Blog</a> · <a href="/about">About</a> · <a href="/contact">Contact</a>
+        <a href="/pricing">Pricing</a> ·
+        <a href="/how-it-works/brands">For Brands</a> ·
+        <a href="/how-it-works/creators">For Creators</a> ·
+        <a href="/features/secure-payments">Secure Payments</a> ·
+        <a href="/features/deal-room">Deal Room</a> ·
+        <a href="/features/hype">Hype Campaigns</a> ·
+        <a href="/blog">Blog</a> ·
+        <a href="/about">About</a> ·
+        <a href="/contact">Contact</a>
       </nav>
     </div>
     <script type="module" src="/src/main.tsx"></script>

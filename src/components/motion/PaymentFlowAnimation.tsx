@@ -5,7 +5,7 @@ import { CheckCircle2, Lock, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
- * Scroll-pinned escrow explainer: a sticky panel whose three stages
+ * Scroll-pinned payment-protection explainer: a sticky panel whose three stages
  * (Funded → Locked → Released) light up as the visitor scrolls through a
  * 300vh track. Scrubbed with useScroll/useTransform — no GSAP context to
  * manage, and reduced-motion renders the three steps statically.
@@ -14,8 +14,8 @@ import { cn } from '@/lib/utils';
 const STAGES = [
   {
     icon: Wallet,
-    title: 'Brand funds escrow',
-    body: 'The full deal amount is deposited before any work starts. Creators see "Escrow funded" on every invite.',
+    title: 'Brand funds the deal',
+    body: 'The full deal amount is deposited before any work starts. Creators see "Payment secured" on every invite.',
   },
   {
     icon: Lock,
@@ -62,7 +62,7 @@ function Stage({
   return <motion.div style={{ opacity, y }}>{content}</motion.div>;
 }
 
-export function EscrowFlowAnimation({ className }: { className?: string }) {
+export function PaymentFlowAnimation({ className }: { className?: string }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion() ?? false;
   const { scrollYProgress } = useScroll({
@@ -76,18 +76,18 @@ export function EscrowFlowAnimation({ className }: { className?: string }) {
     <section
       ref={trackRef}
       className={cn('relative', !reduce && 'h-[300vh]', className)}
-      aria-label="How escrow protects both sides"
+      aria-label="How payment protection works for both sides"
     >
       <div className={cn(!reduce && 'sticky top-0 flex min-h-screen items-center')}>
         <div className="mx-auto grid w-full max-w-5xl gap-10 px-6 py-16 lg:grid-cols-[1fr_1.2fr] lg:gap-16">
           <div>
-            <p className="text-sm font-medium text-accent-foreground">Escrow-first payments</p>
+            <p className="text-sm font-medium text-accent-foreground">Protection-first payments</p>
             <h2 className="mt-2 text-3xl font-semibold leading-tight">
               Money moves only when both sides are protected
             </h2>
             <p className="mt-3 text-muted-foreground">
               Every Influora deal — from a single reel to a 100-creator Hype blitz — runs on the
-              same escrow rail.
+              same protected payment rail.
             </p>
             {!reduce && (
               <div className="mt-8 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-muted" aria-hidden="true">

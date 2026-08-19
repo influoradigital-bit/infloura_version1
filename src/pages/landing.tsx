@@ -21,15 +21,25 @@ import { lazy, Suspense } from 'react';
 import { CanvasFallback } from '@/components/3d/CanvasFallback';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
+import { FaqSection } from '@/components/site/FaqSection';
+import { FunnelCta } from '@/components/site/FunnelCta';
+import { TrustBar } from '@/components/site/TrustBar';
+import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
 import { Seo } from '@/lib/seo/Seo';
-import { JsonLd, getOrganizationSchema, getWebsiteSchema } from '@/lib/seo/schema';
+import {
+  JsonLd,
+  getOrganizationSchema,
+  getWebsiteSchema,
+  getSoftwareApplicationSchema,
+  getWebPageSchema,
+} from '@/lib/seo/schema';
 
 // Lazy — keeps three.js out of the critical bundle (Lighthouse mobile ≥ 85)
 const HeroGlobeGate = lazy(() =>
   import('@/components/3d/HeroGlobe').then((m) => ({ default: m.HeroGlobeGate })),
 );
 import { FadeUp, StaggerContainer, StaggerItem, WordReveal, CountUp } from '@/components/motion';
-import { EscrowFlowAnimation } from '@/components/motion/EscrowFlowAnimation';
+import { PaymentFlowAnimation } from '@/components/motion/PaymentFlowAnimation';
 import { HypeLiveIndicator } from '@/components/ui/hype-live-indicator';
 import { SlotProgressBar } from '@/components/ui/slot-progress-bar';
 import { MeeraOrb } from '@/components/feature/meera/MeeraOrb';
@@ -41,12 +51,61 @@ import { demoHypeConfig } from '@/lib/demo-data';
 
 const HERO = {
   headline: 'Where brands and creators sign real deals',
-  sub: 'Discover creators, negotiate in one Deal Room, and pay through escrow — from a single reel to a 100-creator Hype blitz.',
+  sub: 'Discover creators, negotiate in one Deal Room, and pay with protection built in — from a single reel to a 100-creator Hype blitz.',
 };
+
+/**
+ * Homepage FAQ.
+ *
+ * These are not "questions we wish people asked" — each one is a high-intent
+ * query an Indian brand actually types before it picks a platform, phrased the
+ * way they phrase it. That matters twice over: it is what a searcher scans for
+ * before converting, and it is the literal string an answer engine matches a
+ * prompt against. Answers are written to stand alone (no "it", no "we", no
+ * dependency on the paragraph above) because ChatGPT, Perplexity and AI
+ * Overviews quote the answer detached from both the question and the page.
+ *
+ * Every claim below is one the product actually implements — see
+ * wiki/website/content-map.md and the feature pages each answer links to. Do not
+ * add an answer here that the app cannot back up; an answer engine that cites us
+ * and is then contradicted by the product is worse than not being cited.
+ */
+const FAQS = [
+  {
+    question: 'How do brands find influencers in India on Influora?',
+    answer:
+      'Brands search Influora\u2019s creator directory by niche, city, follower count and engagement rate, with every profile\u2019s stats synced from the creator\u2019s connected Instagram account rather than self-reported. A brand can invite any creator straight into a Deal Room, or post a campaign brief and let creators apply to it.',
+  },
+  {
+    question: 'How much does influencer marketing cost in India?',
+    answer:
+      'Rates on Influora are set by each creator and shown on their profile as a rate card, so a brand sees the price before it starts a conversation. Nano and micro creators commonly price a single reel in the low thousands of rupees, while larger accounts price higher; Influora itself charges no subscription on the Free tier and takes a platform fee only when a deal completes.',
+  },
+  {
+    question: 'How do I pay an influencer safely?',
+    answer:
+      'The safe pattern is to never pay in full up front and never expect a creator to work with nothing secured. On Influora the brand deposits the deal amount with a licensed payment partner when the contract is e-signed, the creator delivers, the brand approves, and only then does the payment release \u2014 so neither side is ever exposed to the other.',
+  },
+  {
+    question: 'What is a Deal Room?',
+    answer:
+      'A Deal Room is the single shared workspace on Influora where one brand and one creator settle a collaboration: the chat, the proposal and counter-offers, the deliverables list, the e-signed contract and the payment all live in that one thread. It replaces a negotiation spread across WhatsApp, email and a separate invoice.',
+  },
+  {
+    question: 'Do creators pay to join Influora?',
+    answer:
+      'No. Creating a creator account, building a portfolio page, applying to campaigns and accepting Hype Campaign slots are all free. Influora takes a commission only when a deal actually pays out, so a creator who earns nothing pays nothing.',
+  },
+  {
+    question: 'How long does it take to launch a campaign?',
+    answer:
+      'A brand can create an account, build a brief and send its first creator invites the same day \u2014 Meera, the built-in AI co-pilot, drafts the campaign from a plain-language description of the product and goal. The slower step is usually creator response time, not setup.',
+  },
+];
 
 const STATS = [
   { label: 'Creators on platform', value: 8915, format: (n: number) => `${Math.round(n).toLocaleString('en-IN')}+` },
-  { label: 'Paid out via escrow', value: 42600000, format: (n: number) => `₹${(n / 10000000).toFixed(1)}Cr+` },
+  { label: 'Paid out to creators', value: 42600000, format: (n: number) => `₹${(n / 10000000).toFixed(1)}Cr+` },
   { label: 'Avg. payout time', value: 24, format: (n: number) => `${Math.round(n)}h` },
 ];
 
@@ -68,7 +127,7 @@ const FEATURES = [
   },
   {
     icon: ShieldCheck,
-    title: 'Escrow on every deal',
+    title: 'Protection on every deal',
     body: 'Funds lock before work starts and release on approval. Nobody chases payments.',
   },
   {
@@ -93,7 +152,7 @@ const MEERA = {
     { icon: Search, text: 'Suggests matching creators by niche, city, and engagement' },
     { icon: TrendingUp, text: 'Works out a budget and per-reel rate from your goal' },
     { icon: FileCheck2, text: 'Drafts the campaign so you launch in minutes, not days' },
-    { icon: ShieldCheck, text: 'Proposes escrow funding — you confirm every money step' },
+    { icon: ShieldCheck, text: 'Proposes the funding step — you confirm every money step' },
   ],
 };
 
@@ -102,7 +161,7 @@ const MEERA = {
 const HYPE_STEPS = [
   { step: '1', text: 'Drop one source reel and set a flat per-reel rate' },
   { step: '2', text: 'Creators accept slots with one tap — no negotiation' },
-  { step: '3', text: 'Escrow auto-funds each slot as it fills' },
+  { step: '3', text: 'Funding locks automatically each slot as it fills' },
   { step: '4', text: 'Verified posts auto-release payouts inside the 72-hour window' },
 ];
 
@@ -131,7 +190,7 @@ const CREATOR_EARNINGS = [
   {
     icon: MessageSquareText,
     title: 'Brand deals',
-    body: 'Negotiate your rate in the Deal Room. Escrow locks the full amount before you shoot a single frame.',
+    body: "Negotiate your rate in the Deal Room. The brand's payment is locked in full before you shoot a single frame.",
   },
   {
     icon: Zap,
@@ -162,12 +221,55 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Seo
-        title="Influora — Escrow-protected influencer deals for India"
-        description="Discover verified creators, negotiate in one Deal Room, and pay through escrow — from one reel to a 100-creator Hype campaign, contracts and TDS built in."
+        title="Influencer Marketing Platform for India | Influora"
+        description="Hire verified Indian creators, agree terms in one Deal Room, and pay only after the work is approved. Contracts, TDS and payment protection built in. Free to start."
         canonical="/"
       />
       <JsonLd data={getOrganizationSchema()} />
       <JsonLd data={getWebsiteSchema()} />
+      <JsonLd
+        data={getWebPageSchema({
+          name: 'Influencer Marketing Platform for India',
+          description:
+            'Influora is an influencer marketing platform for India where brands hire verified creators, agree terms in a Deal Room, and pay only after approving the delivered work.',
+          url: '/',
+        })}
+      />
+      {/*
+        SoftwareApplication + AggregateOffer. "What does it cost" is the single
+        most-asked commercial query in this category, and without a priced offer
+        an answer engine either omits us from a cost comparison or invents a
+        number. The prices here must stay in step with /pricing — see the
+        PRICING_OFFERS constant there, which is the same data.
+      */}
+      <JsonLd
+        data={getSoftwareApplicationSchema({
+          description:
+            'Influencer marketing platform for Indian brands and creators, with a creator directory, Deal Room negotiation, auto-generated contracts, protected payments and campaign sales tracking.',
+          featureList: [
+            'Verified creator discovery',
+            'Deal Room negotiation',
+            'Auto-generated e-signed contracts',
+            'Protected payments released on approval',
+            'TDS handling and invoice generation',
+            'Hype multi-creator campaigns',
+            'Per-creator sales and coupon tracking',
+          ],
+          offers: [
+            {
+              name: 'Free',
+              price: 0,
+              description: 'No subscription. Pay a platform fee only when a deal completes.',
+            },
+            {
+              name: 'Pro',
+              price: 4999,
+              billingPeriod: 'MON',
+              description: 'Lower per-deal fee, 5 seats, unlimited creator analytics.',
+            },
+          ],
+        })}
+      />
 
       <SiteHeader />
 
@@ -179,7 +281,7 @@ export default function LandingPage() {
               <FadeUp>
                 <Badge variant="outline" className="gap-1.5">
                   <ShieldCheck className="h-3 w-3" aria-hidden="true" />
-                  Escrow-protected influencer deals
+                  Payment-protected influencer deals
                 </Badge>
               </FadeUp>
               <WordReveal
@@ -187,17 +289,41 @@ export default function LandingPage() {
                 className="mt-4 text-4xl font-bold leading-tight tracking-tight sm:text-5xl"
               />
               <FadeUp delay={0.3}>
-                <p className="mt-4 max-w-lg text-lg text-muted-foreground">{HERO.sub}</p>
+                <p className="mt-4 max-w-lg text-lg text-muted-foreground" data-speakable>
+                  {HERO.sub}
+                </p>
               </FadeUp>
-              <FadeUp delay={0.4} className="mt-8 flex flex-wrap gap-3">
+              {/*
+                CRO — single-intent hero.
+
+                This used to be two `size="lg"` buttons side by side: "Launch a
+                campaign" (brand) next to "Join as a creator" (creator). Two
+                audiences, two destinations, near-equal visual weight, at the one
+                point on the site where intent is highest. A visitor who arrived
+                ready to act was handed a decision instead of an action.
+
+                The brand path is now the only button, because that is the side
+                that pays and the side the rest of this page is written for. The
+                creator path is not removed — a creator who lands here still has a
+                one-tap route directly under it, plus "I'm a creator" in the
+                header and a full creator section further down. It simply stops
+                competing with the primary action for the same click.
+              */}
+              <FadeUp delay={0.4} className="mt-8">
                 <Button size="lg" asChild>
                   <Link to="/brand/register">
                     Launch a campaign <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
                   </Link>
                 </Button>
-                <Button size="lg" variant="outline" asChild>
-                  <Link to="/creator/register">Join as a creator</Link>
-                </Button>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Free to start · no subscription ·{' '}
+                  <Link
+                    to="/creator/register"
+                    className="font-medium text-primary hover:underline"
+                  >
+                    I'm a creator
+                  </Link>
+                </p>
               </FadeUp>
               <FadeUp delay={0.5} className="mt-10 grid grid-cols-3 gap-6">
                 {STATS.map((stat) => (
@@ -218,8 +344,10 @@ export default function LandingPage() {
           </div>
         </section>
 
+        <TrustBar />
+
         {/* Features */}
-        <section className="border-t border-border/60 bg-card/50 py-20" aria-label="Platform features">
+        <section className="bg-card/50 py-20" aria-label="Platform features">
           <div className="mx-auto max-w-6xl px-6">
             <FadeUp className="mx-auto max-w-xl text-center">
               <h2 className="text-3xl font-semibold">Everything between the DM and the payout</h2>
@@ -311,8 +439,8 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Escrow scroll story */}
-        <EscrowFlowAnimation className="border-t border-border/60" />
+        {/* Payment-protection scroll story */}
+        <PaymentFlowAnimation className="border-t border-border/60" />
 
         {/* Hype spotlight */}
         <section className="border-t border-border/60 bg-card/50 py-20" aria-label="Hype Campaigns">
@@ -498,13 +626,13 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Creator earnings — three income streams, one escrow */}
+        {/* Creator earnings — three income streams, one protected rail */}
         <section className="border-t border-border/60 py-20" aria-label="How creators earn">
           <div className="mx-auto max-w-6xl px-6">
             <FadeUp className="mx-auto max-w-xl text-center">
               <h2 className="text-3xl font-semibold">Creators earn three ways</h2>
               <p className="mt-3 text-muted-foreground">
-                Every stream pays through the same escrow — funds lock before you start, payout lands
+                Every stream pays through the same protected rail — funds lock before you start, payout lands
                 after approval, TDS invoice generated for you.
               </p>
             </FadeUp>
@@ -541,7 +669,7 @@ export default function LandingPage() {
                 <div>
                   <p className="text-2xl font-bold">₹0</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Brand Free tier — no subscription, escrow and contracts included
+                    Brand Free tier — no subscription, payment protection and contracts included
                   </p>
                 </div>
                 <div>
@@ -566,26 +694,31 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Final CTA */}
-        <section className="py-20" aria-label="Get started">
-          <FadeUp className="mx-auto max-w-2xl px-6 text-center">
-            <h2 className="text-3xl font-semibold">Sign your next deal on Influora</h2>
-            <p className="mt-3 text-muted-foreground">
-              Free to start. Pay only when a deal goes through escrow.
-            </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Button size="lg" asChild>
-                <Link to="/brand/register">Create a brand account</Link>
-              </Button>
-              <Button size="lg" variant="outline" asChild>
-                <Link to="/creator/register">Create a creator account</Link>
-              </Button>
-            </div>
-          </FadeUp>
-        </section>
+        {/*
+          FAQ sits between the last proof section and the close on purpose: it is
+          the last-objection handler. It also carries the homepage's FAQPage
+          JSON-LD, which is the block most likely to be lifted into an AI Overview
+          for the queries above.
+        */}
+        <FaqSection
+          heading="Influencer marketing in India, answered"
+          intro="The questions brands and creators ask before they pick a platform."
+          items={FAQS}
+        />
+
+        <FunnelCta
+          heading="Sign your next deal on Influora"
+          sub="Create a brand account, post a brief, and have your first creator invites out today."
+          primary={{ label: 'Create a brand account', to: '/brand/register' }}
+          secondary={{ label: "I'm a creator — create a creator account", to: '/creator/register' }}
+          reassurances={['Free to start', 'No subscription', 'Pay only when a deal completes']}
+          className="py-20"
+        />
       </main>
 
       <SiteFooter />
+      <StickyCta label="Launch a campaign" to="/brand/register" note="Free to start" />
+      <StickyCtaSpacer />
     </div>
   );
 }

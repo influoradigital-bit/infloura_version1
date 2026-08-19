@@ -2656,3 +2656,65 @@
 {"ts": "2026-08-19T16:06:57", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0324 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0324-wallet-load-states-distinct.sh"}
 {"ts": "2026-08-19T16:25:58", "who": "arjun", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0326"}
 {"ts": "2026-08-19T16:25:58", "who": "arjun", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0326 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0326-injection-cannot-clobber-a-peer.sh"}
+{"ts": "2026-08-19T16:36:05", "who": "aditya", "what": "read", "file": "index.html", "task": "T-SEOCRO-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T16:36:05", "who": "aditya", "what": "read", "file": "public/llms.txt", "task": "T-SEOCRO-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T16:36:05", "who": "aditya", "what": "read", "file": "public/sitemap.xml", "task": "T-SEOCRO-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T16:36:06", "who": "aditya", "what": "read", "file": "public/robots.txt", "task": "T-SEOCRO-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T16:36:06", "who": "aditya", "what": "read", "file": "src/lib/seo/schema.ts", "task": "T-SEOCRO-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T16:36:07", "who": "aditya", "what": "read", "file": "src/lib/seo/Seo.tsx", "task": "T-SEOCRO-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T16:36:07", "who": "aditya", "what": "read", "file": "src/pages/landing.tsx", "task": "T-SEOCRO-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T16:36:07", "who": "aditya", "what": "read", "file": "src/components/site/SiteHeader.tsx", "task": "T-SEOCRO-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T16:36:07", "who": "aditya", "what": "read", "file": "src/components/site/SiteFooter.tsx", "task": "T-SEOCRO-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T16:36:08", "who": "aditya", "what": "read", "file": "scripts/prerender.mjs", "task": "T-SEOCRO-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T16:36:08", "who": "aditya", "what": "read", "file": "src/App.tsx", "task": "T-SEOCRO-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T16:36:08", "who": "aditya", "what": "read", "file": "src/pages/legal/LegalPage.tsx", "task": "T-SEOCRO-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T17:17:04", "who": "ananya", "what": "edit", "file": "index.html", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:04", "who": "ananya", "what": "edit", "file": "public/llms.txt", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:04", "who": "ananya", "what": "edit", "file": "public/_redirects", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:04", "who": "ananya", "what": "edit", "file": "public/og-image.png", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:04", "who": "ananya", "what": "edit", "file": "src/App.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:04", "who": "ananya", "what": "edit", "file": "src/lib/seo/schema.ts", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:04", "who": "ananya", "what": "edit", "file": "src/pages/landing.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:04", "who": "ananya", "what": "edit", "file": "src/pages/pricing.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:04", "who": "ananya", "what": "edit", "file": "src/pages/about.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:05", "who": "ananya", "what": "edit", "file": "src/pages/how-it-works-brands.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:05", "who": "ananya", "what": "edit", "file": "src/pages/how-it-works-creators.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:05", "who": "ananya", "what": "edit", "file": "src/pages/features/secure-payments.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:05", "who": "ananya", "what": "edit", "file": "src/pages/features/deal-room.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:05", "who": "ananya", "what": "edit", "file": "src/pages/features/hype.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:05", "who": "ananya", "what": "edit", "file": "src/pages/blog/post.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:05", "who": "ananya", "what": "edit", "file": "src/components/site/FaqSection.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:05", "who": "ananya", "what": "edit", "file": "src/components/site/FunnelCta.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:06", "who": "ananya", "what": "edit", "file": "src/components/site/TrustBar.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:06", "who": "ananya", "what": "edit", "file": "src/components/site/trust-items.ts", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:06", "who": "ananya", "what": "edit", "file": "src/components/site/StickyCta.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:06", "who": "ananya", "what": "edit", "file": "src/components/site/SiteFooter.tsx", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:06", "who": "ananya", "what": "edit", "file": "scripts/marketing-routes.mjs", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:06", "who": "ananya", "what": "edit", "file": "scripts/generate-sitemap.mjs", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:07", "who": "ananya", "what": "edit", "file": "scripts/generate-og-image.mjs", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:07", "who": "ananya", "what": "edit", "file": "scripts/prerender.mjs", "task": "T-SEOCRO-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:17:07", "who": "aditya", "what": "verdict", "file": ".proof-os/gates/F-SEO-marketing-surface.sh", "task": "T-SEOCRO-0819", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-19T17:17:26", "who": "ananya", "what": "ledger-add", "file": "public/og-image.png", "task": "", "stage": "intake", "gate_result": "F-0337"}
+{"ts": "2026-08-19T17:17:26", "who": "vikram", "what": "ledger-add", "file": "src/App.tsx", "task": "", "stage": "intake", "gate_result": "F-0338"}
+{"ts": "2026-08-19T17:17:26", "who": "aditya", "what": "ledger-add", "file": "public/sitemap.xml", "task": "", "stage": "intake", "gate_result": "F-0339"}
+{"ts": "2026-08-19T17:17:26", "who": "ananya", "what": "ledger-add", "file": "src/pages/about.tsx", "task": "", "stage": "intake", "gate_result": "F-0340"}
+{"ts": "2026-08-19T17:20:06", "who": "aditya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0337"}
+{"ts": "2026-08-19T17:20:06", "who": "aditya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0337 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-SEO-crawler-assets.sh"}
+{"ts": "2026-08-19T17:20:06", "who": "aditya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0339"}
+{"ts": "2026-08-19T17:20:06", "who": "aditya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0339 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-SEO-crawler-assets.sh"}
+{"ts": "2026-08-19T17:22:28", "who": "aditya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0338"}
+{"ts": "2026-08-19T17:22:28", "who": "aditya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0338 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-SEO-marketing-surface.sh"}
+{"ts": "2026-08-19T17:22:28", "who": "aditya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0340"}
+{"ts": "2026-08-19T17:22:28", "who": "aditya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0340 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-SEO-marketing-surface.sh"}
+{"ts": "2026-08-19T17:26:32", "who": "ananya", "what": "read", "file": "src/components/brand/dashboard/dashboard-page.tsx", "task": "T-FIRSTRUN-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T17:26:32", "who": "ananya", "what": "read", "file": "src/pages/creator-dashboard.tsx", "task": "T-FIRSTRUN-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T17:26:32", "who": "ananya", "what": "read", "file": "src/pages/brand-onboarding.tsx", "task": "T-FIRSTRUN-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T17:26:32", "who": "ananya", "what": "read", "file": "src/pages/how-it-works-brands.tsx", "task": "T-FIRSTRUN-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T17:26:32", "who": "ananya", "what": "read", "file": "src/pages/brand-help.tsx", "task": "T-FIRSTRUN-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T17:26:32", "who": "ananya", "what": "read", "file": "src/App.tsx", "task": "T-FIRSTRUN-0819", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-19T17:28:39", "who": "ananya", "what": "create", "file": "wiki/decisions/first-run-dashboard-guidance-2026-08-19.md", "task": "T-FIRSTRUN-0819", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-19T17:28:39", "who": "ananya", "what": "ledger-add", "file": "src/pages/brand-onboarding.tsx", "task": "", "stage": "intake", "gate_result": "F-0341"}
+{"ts": "2026-08-19T17:32:52", "who": "ananya", "what": "ledger-add", "file": "src/pages/landing.tsx", "task": "", "stage": "intake", "gate_result": "F-0342"}
+{"ts": "2026-08-19T17:32:52", "who": "ananya", "what": "read", "file": "tasks/T-SEOCRO-0819/*", "task": "T-SEOCRO-0819", "stage": "cleanup", "gate_result": "scanned 2 file(s) for failure markers before archive"}
+{"ts": "2026-08-19T17:32:52", "who": "ananya", "what": "delete", "file": "tasks/T-SEOCRO-0819/*", "task": "T-SEOCRO-0819", "stage": "cleanup", "gate_result": "archived \u2192 _archive/T-SEOCRO-0819, purge 2026-09-18"}
+{"ts": "2026-08-19T17:33:04", "who": "ananya", "what": "review", "file": "wiki/decisions/first-run-dashboard-guidance-2026-08-19.md", "task": "T-FIRSTRUN-0819", "stage": "judgment", "gate_result": "echo", "isolation": "shared-context"}

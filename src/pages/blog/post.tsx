@@ -138,10 +138,10 @@ export default function BlogPostPage() {
                 <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-accent text-accent-foreground">
                   <ShieldCheck className="h-5 w-5" aria-hidden="true" />
                 </span>
-                <h2 className="text-xl font-semibold">See escrow-protected deals in action</h2>
+                <h2 className="text-xl font-semibold">See payment-protected deals in action</h2>
                 <p className="max-w-md text-sm text-muted-foreground">
-                  Every deal on Influora — from a single reel to a 100-creator Hype Campaign — is funded through
-                  escrow before work begins.
+                  Every deal on Influora — from a single reel to a 100-creator Hype Campaign — is funded
+                  and protected before work begins.
                 </p>
                 <div className="flex flex-wrap justify-center gap-3">
                   <Button size="lg" className="bg-accent-foreground text-white hover:bg-accent-foreground/90" asChild>

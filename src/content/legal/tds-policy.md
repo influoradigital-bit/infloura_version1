@@ -12,11 +12,11 @@ We handle the tax complexity so you don't have to. This policy explains how Tax 
 
 **TDS ("Tax Deducted at Source")** is tax withheld from a payment before it reaches you, and paid directly to the Indian government on your behalf. Under **Section 194-O of the Income Tax Act**, Influora acts as an **e-commerce operator** facilitating payment between brands and creators, which means we are required to deduct TDS from creator Payouts before releasing them.
 
-This applies to every creator Payout released through escrow, regardless of Campaign size, unless a specific exemption applies (see below).
+This applies to every creator Payout released through payment protection, regardless of Campaign size, unless a specific exemption applies (see below).
 
 ## 2. How it works, step by step
 
-1. A Campaign completes and escrow is approved for release.
+1. A Campaign completes and payment protection is approved for release.
 2. We calculate the **gross Payout** (the full amount owed to the creator before deductions).
 3. We deduct:
    - The Platform commission (see our Pricing page for the current rate)

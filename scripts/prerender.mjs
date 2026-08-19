@@ -58,36 +58,51 @@
 import puppeteer from 'puppeteer-core';
 import { JSDOM } from 'jsdom';
 import { spawn, execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
+
+import { PRERENDER_ROUTES } from './marketing-routes.mjs';
 
 const DIST_DIR = resolve('dist');
 const ORIGIN = process.env.PRERENDER_ORIGIN || 'http://localhost:4174';
 const PREVIEW_PORT = Number(new URL(ORIGIN).port || 4174);
 const MANAGE_SERVER = process.env.PRERENDER_MANAGE_SERVER !== '0';
 
-// The 16 marketing routes from GEO-TECHNICAL-AUDIT.md / SHARED_CONTEXT.md.
-// Everything NOT in this list (/brand/*, /creator/*, /admin/*, /:handle
-// public portfolios, /terms /privacy /support placeholder shells — see
-// GEO-TECHNICAL-AUDIT.md H3, tracked separately) stays pure client-rendered.
-const MARKETING_ROUTES = [
-  '/',
-  '/pricing',
-  '/about',
-  '/contact',
-  '/how-it-works/brands',
-  '/how-it-works/creators',
-  '/features/escrow',
-  '/features/deal-room',
-  '/features/hype',
-  '/blog',
-  '/blog/what-is-escrow-in-influencer-marketing',
-  '/blog/how-to-pay-influencers-safely-india-2026',
-  '/blog/micro-influencer-pricing-guide-india-2026',
-  '/terms',
-  '/privacy',
-  '/support',
-];
+// The public marketing routes now come from scripts/marketing-routes.mjs,
+// which scripts/generate-sitemap.mjs imports too. They used to be two
+// independent hardcoded lists and they drifted: the sitemap kept advertising
+// /features/escrow after the page was renamed, and the page that replaced it
+// had no entry here at all. Same failure shape as F-0308 below, one level up.
+const STATIC_ROUTES = PRERENDER_ROUTES;
+
+// F-0308: the blog slugs used to be hardcoded here alongside the static routes.
+// src/content/blog is glob-loaded by the app (src/lib/blog/posts.ts), so every
+// post added after that list was written was silently dropped from prerender —
+// shipped with no static HTML, no meta description and no Article JSON-LD,
+// while this script still printed "16/16" and exited 0. The count compared the
+// list to itself, so nothing could ever fail. Derive the routes from the same
+// directory the app reads instead, so a new .md file cannot go un-prerendered.
+const BLOG_CONTENT_DIR = resolve('src/content/blog');
+
+function discoverBlogRoutes() {
+  if (!existsSync(BLOG_CONTENT_DIR)) {
+    throw new Error(
+      `[prerender] blog content dir missing: ${BLOG_CONTENT_DIR}. ` +
+        `Refusing to prerender a site with no blog rather than silently shipping zero posts.`,
+    );
+  }
+  const slugs = readdirSync(BLOG_CONTENT_DIR)
+    .filter((f) => f.endsWith('.md'))
+    .map((f) => f.replace(/\.md$/, ''))
+    .sort();
+  if (slugs.length === 0) {
+    throw new Error(`[prerender] no .md posts found in ${BLOG_CONTENT_DIR}`);
+  }
+  return slugs.map((slug) => `/blog/${slug}`);
+}
+
+const BLOG_ROUTES = discoverBlogRoutes();
+const MARKETING_ROUTES = [...STATIC_ROUTES, ...BLOG_ROUTES];
 
 /**
  * Resolve a Chrome/Chromium binary WITHOUT downloading one (puppeteer-core is deliberate;

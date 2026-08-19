@@ -14,8 +14,16 @@ import { Badge } from '@/components/ui/badge';
 import { FadeUp, StaggerContainer, StaggerItem } from '@/components/motion';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
+import { FunnelCta } from '@/components/site/FunnelCta';
+import { TrustBar, CREATOR_TRUST_ITEMS } from '@/components/site/TrustBar';
+import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
 import { Seo } from '@/lib/seo/Seo';
-import { JsonLd, getBreadcrumbListSchema } from '@/lib/seo/schema';
+import {
+  JsonLd,
+  getBreadcrumbListSchema,
+  getHowToSchema,
+  getWebPageSchema,
+} from '@/lib/seo/schema';
 
 // Content per wiki/website/content-map.md §1.4.
 
@@ -41,8 +49,8 @@ const STEPS = [
   {
     icon: FileSignature,
     step: '04',
-    title: 'Accept the contract — escrow already funded',
-    body: 'E-sign the generated contract. The funds are already locked in escrow before you start work, so payment is guaranteed.',
+    title: 'Accept the contract — payment already secured',
+    body: 'E-sign the generated contract. The funds are already locked and protected before you start work, so payment is guaranteed.',
   },
   {
     icon: UploadCloud,
@@ -54,7 +62,7 @@ const STEPS = [
     icon: Wallet,
     step: '06',
     title: 'Get paid, then post',
-    body: 'Once the brand approves, escrow releases to you automatically — TDS handled, invoice generated. Post within the campaign window and see the payment land, usually within 24 hours.',
+    body: 'Once the brand approves, the payment releases to you automatically — TDS handled, invoice generated. Post within the campaign window and see the payment land, usually within 24 hours.',
   },
 ];
 
@@ -63,8 +71,26 @@ export default function HowItWorksCreatorsPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="How It Works for Creators"
-        description="Connect Instagram, get discovered or join a Hype Campaign, negotiate in the Deal Room, and get paid through escrow — usually within 24 hours."
+        description="Connect Instagram, get discovered or join a Hype Campaign, negotiate in the Deal Room, and get paid through Secure Payments — usually within 24 hours."
         canonical="/how-it-works/creators"
+      />
+      {/* HowTo from the same STEPS the page renders — see the note on the brands page. */}
+      <JsonLd
+        data={getHowToSchema({
+          name: 'How to get paid brand deals as a creator in India',
+          description:
+            'The steps a creator takes on Influora, from connecting Instagram to accepting a contract and receiving payout.',
+          url: '/how-it-works/creators',
+          steps: STEPS.map((s) => ({ name: s.title, text: s.body })),
+        })}
+      />
+      <JsonLd
+        data={getWebPageSchema({
+          name: 'How It Works for Creators',
+          description:
+            'A creator connects Instagram, gets discovered or joins a Hype Campaign, negotiates in the Deal Room, e-signs a contract with the payment already secured, delivers the work, and receives payout with TDS and invoicing handled.',
+          url: '/how-it-works/creators',
+        })}
       />
       <JsonLd
         data={getBreadcrumbListSchema([
@@ -88,7 +114,7 @@ export default function HowItWorksCreatorsPage() {
               </h1>
               <p className="mt-4 text-lg text-muted-foreground">
                 Six steps from profile to payout — verified creators of all sizes, from nano to macro,
-                get paid through escrow with no invoice-chasing.
+                get paid through Secure Payments with no invoice-chasing.
               </p>
               <div className="mt-8 flex flex-wrap justify-center gap-3">
                 <Button size="lg" className="bg-accent-foreground text-white hover:bg-accent-foreground/90" asChild>
@@ -103,6 +129,8 @@ export default function HowItWorksCreatorsPage() {
             </FadeUp>
           </div>
         </section>
+
+        <TrustBar items={CREATOR_TRUST_ITEMS} />
 
         {/* Steps */}
         <section className="py-20">
@@ -173,26 +201,19 @@ export default function HowItWorksCreatorsPage() {
           </div>
         </section>
 
-        {/* Final CTA */}
-        <section className="py-20">
-          <FadeUp className="mx-auto max-w-2xl px-6 text-center">
-            <h2 className="text-3xl font-semibold">Ready to get discovered?</h2>
-            <p className="mt-3 text-muted-foreground">
-              Free to join. Every deal you accept is escrow-protected before you start work.
-            </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Button size="lg" className="bg-accent-foreground text-white hover:bg-accent-foreground/90" asChild>
-                <Link to="/creator/register">Join as a creator</Link>
-              </Button>
-              <Button size="lg" variant="outline" asChild>
-                <Link to="/features/escrow">How escrow protects you</Link>
-              </Button>
-            </div>
-          </FadeUp>
-        </section>
+        <FunnelCta
+          heading="Ready to get discovered?"
+          sub="Free to join. Every deal you accept is payment-protected before you start work."
+          primary={{ label: 'Create a creator account', to: '/creator/register' }}
+          secondary={{ label: 'First, show me how my payment is protected', to: '/features/secure-payments' }}
+          reassurances={['Free to join', 'Paid after approval', 'TDS and invoices handled']}
+          className="py-20"
+        />
       </main>
 
       <SiteFooter />
+      <StickyCta label="Join as a creator" to="/creator/register" note="Free to join" />
+      <StickyCtaSpacer />
     </div>
   );
 }

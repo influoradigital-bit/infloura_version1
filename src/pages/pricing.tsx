@@ -12,12 +12,18 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { FadeUp, StaggerContainer, StaggerItem } from '@/components/motion';
+import { FadeUp } from '@/components/motion';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
+import { FaqSection } from '@/components/site/FaqSection';
+import { FunnelCta } from '@/components/site/FunnelCta';
+import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
 import { Seo } from '@/lib/seo/Seo';
-import { JsonLd, getFaqPageSchema } from '@/lib/seo/schema';
+import {
+  JsonLd,
+  getSoftwareApplicationSchema,
+  getWebPageSchema,
+} from '@/lib/seo/schema';
 
 // Content per wiki/website/pricing-subscription-copy.md (Tejas CMO draft,
 // CTO-corrected 2026-07-14) + Nisha content-QA refinements
@@ -47,7 +53,7 @@ const FREE_INCLUDED: IncludedItem[] = [
   { label: '1 creator analytics deep-dive/month' },
   { label: 'Campaign performance dashboard (unlimited)' },
   { label: 'Auto-generated contracts + e-signature' },
-  { label: 'Escrow protection on every deal' },
+  { label: 'Payment protection on every deal' },
   { label: 'TDS handling and dispute resolution' },
 ];
 
@@ -60,7 +66,7 @@ const PRO_INCLUDED: IncludedItem[] = [
   { label: 'Export reports (CSV/PDF)', comingSoon: true },
   { label: 'Campaign templates library', comingSoon: true },
   { label: 'Auto-generated contracts + e-signature' },
-  { label: 'Escrow protection on every deal' },
+  { label: 'Payment protection on every deal' },
   { label: 'TDS handling and dispute resolution' },
 ];
 
@@ -69,7 +75,7 @@ const CREATOR_INCLUDED = [
   'Free to accept deals and Hype Campaign slots',
   'TDS invoice generated automatically',
   'UPI or direct bank payout',
-  'Escrow protection before you start work',
+  'Payment protection before you start work',
 ];
 
 type MatrixCellValue =
@@ -141,7 +147,7 @@ const MATRIX_ROWS: MatrixRow[] = [
     pro: { kind: 'check' },
   },
   {
-    feature: 'Escrow protection',
+    feature: 'Payment protection',
     free: { kind: 'text', value: 'Every deal' },
     pro: { kind: 'text', value: 'Every deal' },
   },
@@ -191,7 +197,7 @@ const FAQS = [
   {
     question: 'Do I have to subscribe to use Influora?',
     answer:
-      'No. Free tier requires no subscription. You can discover creators, run deals, use escrow, and generate contracts without ever paying a monthly fee. Pro is only for brands who want lower fees, more seats, and unlimited analytics.',
+      'No. Free tier requires no subscription. You can discover creators, run deals, use Secure Payments, and generate contracts without ever paying a monthly fee. Pro is only for brands who want lower fees, more seats, and unlimited analytics.',
   },
   {
     question: "What's the difference between Free and Pro?",
@@ -221,17 +227,17 @@ const FAQS = [
   {
     question: 'How is the brand fee different on Pro?',
     answer:
-      'Pro gives you a lower fee on every closed deal (shown transparently before you fund escrow and on every invoice). The exact rate is in the tier comparison table above. Free tier uses the standard rate.',
+      'Pro gives you a lower fee on every closed deal (shown transparently before you fund the deal and on every invoice). The exact rate is in the tier comparison table above. Free tier uses the standard rate.',
   },
   {
     question: 'When do I actually pay (or get paid)?',
     answer:
-      'Brands: nothing is charged until a deal is funded and completed through escrow. Creators: payout releases automatically once the brand approves the deliverable, usually within 24 hours.',
+      'Brands: nothing is charged until a deal is funded and completed through Secure Payments. Creators: payout releases automatically once the brand approves the deliverable, usually within 24 hours.',
   },
   {
     question: 'What if the deal falls through?',
     answer:
-      "If a deal doesn't complete — for example, the creator never delivers — the escrowed amount is returned to the brand once the dispute (if any) is resolved. You're not charged for work that never happened.",
+      "If a deal doesn't complete — for example, the creator never delivers — the protected amount is returned to the brand once the dispute (if any) is resolved. You're not charged for work that never happened.",
   },
   {
     question: 'When will Export reports and Campaign templates be available?',
@@ -245,10 +251,49 @@ export default function PricingPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="Pricing"
-        description="Two tiers for brands: Free (pay-per-deal, no subscription) and Pro (₹4,999/month, lower fees + team features). Creators join free. Transparent escrow-backed pricing."
+        description="Two tiers for brands: Free (pay-per-deal, no subscription) and Pro (₹4,999/month, lower fees + team features). Creators join free. Transparent protection-backed pricing."
         canonical="/pricing"
       />
-      <JsonLd data={getFaqPageSchema(FAQS)} />
+      {/*
+        The priced offer lives here as well as on the homepage, because /pricing
+        is the URL an answer engine actually retrieves for a cost question. Only
+        the two TIER PRICES appear (₹0 and ₹4,999) — never a platform-fee
+        percentage. That is a standing CTO ruling (see the header comment on this
+        file, CEO-DECISIONS.md P-3): the fee is word-based on this page, and
+        putting a digit in the structured data would leak exactly the number the
+        rendered page is forbidden to state, while also creating a schema/visible
+        mismatch that costs the rich result.
+      */}
+      <JsonLd
+        data={getSoftwareApplicationSchema({
+          description:
+            'Influora pricing for brands and creators: a Free tier with no subscription, and Pro at ₹4,999/month with lower per-deal fees and team features. Creators join free.',
+          url: 'https://influora.in/pricing',
+          offers: [
+            {
+              name: 'Free',
+              price: 0,
+              description:
+                'No subscription. Discover creators, run deals, use protected payments and generate contracts; a platform fee applies only when a deal completes.',
+            },
+            {
+              name: 'Pro',
+              price: 4999,
+              billingPeriod: 'MON',
+              description:
+                'Reduced per-deal fee, 5 team seats, unlimited creator analytics.',
+            },
+          ],
+        })}
+      />
+      <JsonLd
+        data={getWebPageSchema({
+          name: 'Influora Pricing',
+          description:
+            'Influora has two brand tiers: Free with no subscription and a platform fee only on completed deals, and Pro at ₹4,999 per month with reduced fees and team features. Creators join and get paid for free.',
+          url: '/pricing',
+        })}
+      />
 
       <SiteHeader />
 
@@ -346,9 +391,19 @@ export default function PricingPage() {
                         Transparent savings shown upfront. Creator commission unchanged.
                       </p>
                     </div>
+                    {/*
+                      F-0340 class. This pointed at /brand/settings/billing — a
+                      route behind the auth guard. /pricing is a PUBLIC page, so
+                      its typical reader is logged out and has no account yet:
+                      the highest-intent click on the most commercially important
+                      page landed them on a login wall for an account they do not
+                      have. Registration is the actual next step for that reader;
+                      an existing brand upgrading is already inside the app and
+                      reaches billing from Settings, not from public pricing.
+                    */}
                     <Button size="lg" variant="outline" className="mt-8 w-full" asChild>
-                      <Link to="/brand/settings/billing">
-                        Upgrade to Pro <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
+                      <Link to="/brand/register">
+                        Get started with Pro <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
                       </Link>
                     </Button>
                   </CardContent>
@@ -420,7 +475,7 @@ export default function PricingPage() {
                       <span className="font-medium text-foreground">
                         If your monthly campaign spend is above ₹2,10,000,
                       </span>{' '}
-                      the lower brand fee (shown on every deal before you fund escrow) compounds quickly —
+                      the lower brand fee (shown on every deal before you fund the deal) compounds quickly —
                       the subscription price pays for itself in fee savings alone.
                     </p>
                     <p>
@@ -476,8 +531,8 @@ export default function PricingPage() {
               </Badge>
               <h2 className="mt-3 text-2xl font-semibold">One flat rate, no per-deal negotiation</h2>
               <p className="mt-3 text-muted-foreground">
-                Brands set a flat per-reel rate and a slot cap upfront. Every accepted slot auto-funds in
-                escrow at that same rate — no back-and-forth on price.
+                Brands set a flat per-reel rate and a slot cap upfront. Every accepted slot is funded and protected up front
+                at that same flat rate — no back-and-forth on price.
               </p>
               <div className="mt-6">
                 <Button variant="outline" asChild>
@@ -494,58 +549,33 @@ export default function PricingPage() {
             <FadeUp>
               <h2 className="text-3xl font-semibold">No hidden fees</h2>
               <p className="mt-3 text-muted-foreground">
-                Every fee is shown on the deal before you fund escrow, and on the invoice after payout.
-                There's no separate charge for escrow, contracts, or TDS handling — they're part of the
+                Every fee is shown on the deal before you fund the deal, and on the invoice after payout.
+                There's no separate charge for payment protection, contracts, or TDS handling — they're part of the
                 same transparent flow.
               </p>
             </FadeUp>
           </div>
         </section>
 
-        {/* FAQ */}
-        <section className="border-t border-border/60 bg-card/50 py-20" aria-label="Pricing FAQ">
-          <div className="mx-auto max-w-3xl px-6">
-            <FadeUp className="text-center">
-              <h2 className="text-3xl font-semibold">Pricing questions, answered</h2>
-            </FadeUp>
-            <FadeUp delay={0.1} className="mt-10">
-              <Accordion type="single" collapsible className="w-full">
-                {FAQS.map((faq) => (
-                  <AccordionItem key={faq.question} value={faq.question}>
-                    <AccordionTrigger className="text-left text-base font-medium">
-                      {faq.question}
-                    </AccordionTrigger>
-                    <AccordionContent className="text-muted-foreground">{faq.answer}</AccordionContent>
-                  </AccordionItem>
-                ))}
-              </Accordion>
-            </FadeUp>
-          </div>
-        </section>
+        <FaqSection
+          heading="Pricing questions, answered"
+          items={FAQS}
+          className="border-t border-border/60 bg-card/50 py-20"
+        />
 
-        {/* Final CTA */}
-        <section className="py-20">
-          <FadeUp className="mx-auto max-w-2xl px-6 text-center">
-            <h2 className="text-3xl font-semibold">
-              Start free — upgrade to Pro when you're ready to scale
-            </h2>
-            <StaggerContainer className="mt-8 flex flex-wrap justify-center gap-3">
-              <StaggerItem>
-                <Button size="lg" className="bg-accent-foreground text-white hover:bg-accent-foreground/90" asChild>
-                  <Link to="/brand/register">Start free</Link>
-                </Button>
-              </StaggerItem>
-              <StaggerItem>
-                <Button size="lg" variant="outline" asChild>
-                  <Link to="/creator/register">Join free</Link>
-                </Button>
-              </StaggerItem>
-            </StaggerContainer>
-          </FadeUp>
-        </section>
+        <FunnelCta
+          heading="Start free — upgrade to Pro when you're ready to scale"
+          sub="No card required. The Free tier has no subscription and no time limit."
+          primary={{ label: 'Start free as a brand', to: '/brand/register' }}
+          secondary={{ label: "I'm a creator — joining is free", to: '/creator/register' }}
+          reassurances={['No subscription on Free', 'No setup fee', 'Cancel Pro anytime']}
+          className="py-20"
+        />
       </main>
 
       <SiteFooter />
+      <StickyCta label="Start free" to="/brand/register" note="No subscription on Free" />
+      <StickyCtaSpacer />
     </div>
   );
 }

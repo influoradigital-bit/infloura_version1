@@ -17,7 +17,7 @@ interface EscrowLockSequenceProps {
 
 /**
  * T2 — the signature escrow-lock hero moment. Event-triggered timeline
- * (fill → lock → pulse → caption), NOT the scroll-pinned EscrowFlowAnimation.
+ * (fill → lock → pulse → caption), NOT the scroll-pinned PaymentFlowAnimation.
  * Reuses that component's reduced-motion handling pattern and staged-reveal
  * shape, but this is a new timeline component per handoff §4/§8.6.
  *

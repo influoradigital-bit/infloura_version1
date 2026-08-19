@@ -33,7 +33,7 @@ export default function ContactPage() {
               </Badge>
               <h1 className="mt-4 text-4xl font-bold leading-tight tracking-tight sm:text-5xl">Talk to us</h1>
               <p className="mt-4 text-lg text-muted-foreground">
-                Questions about a campaign, escrow, or your account — reach the Influora team directly.
+                Questions about a campaign, payments, or your account — reach the Influora team directly.
               </p>
             </FadeUp>
           </div>
@@ -50,7 +50,7 @@ export default function ContactPage() {
                     </span>
                     <h2 className="font-semibold">Email support</h2>
                     <p className="text-sm text-muted-foreground">
-                      For account, campaign, escrow, or general questions.
+                      For account, campaign, payment, or general questions.
                     </p>
                     <a
                       href={`mailto:${COMPANY.email}`}

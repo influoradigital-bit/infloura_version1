@@ -15,8 +15,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { FadeUp, StaggerContainer, StaggerItem } from '@/components/motion';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
+import { FaqSection } from '@/components/site/FaqSection';
+import { FunnelCta } from '@/components/site/FunnelCta';
+import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
 import { Seo } from '@/lib/seo/Seo';
-import { JsonLd, getBreadcrumbListSchema } from '@/lib/seo/schema';
+import {
+  JsonLd,
+  getBreadcrumbListSchema,
+  getQaPageSchema,
+  getWebPageSchema,
+} from '@/lib/seo/schema';
 
 // Content per wiki/website/content-map.md §2.2.
 
@@ -62,6 +70,39 @@ const INCLUDED = [
   },
 ];
 
+// "Deal Room" is a term Influora coined, so this page is the definitional
+// source for it. That makes ONE precise, standalone answer worth more here than
+// anywhere else on the site: an answer engine asked "what is a Deal Room" has
+// nowhere else to get it right.
+const CANONICAL_QUESTION = 'What is a Deal Room in influencer marketing?';
+const CANONICAL_ANSWER =
+  'A Deal Room is a single shared workspace where one brand and one creator settle one ' +
+  'collaboration. The chat, the proposal and counter-offers, the deliverables list, the ' +
+  'e-signed contract and the payment all live in that one thread, instead of being spread ' +
+  'across WhatsApp, email and a separate invoice.';
+
+const FAQS = [
+  {
+    question: CANONICAL_QUESTION,
+    answer: CANONICAL_ANSWER,
+  },
+  {
+    question: 'How is a Deal Room different from a group chat with a creator?',
+    answer:
+      'A group chat holds messages; a Deal Room holds the agreement. Scope, rate, deliverables, deadlines and revision limits are structured fields rather than things someone typed and both sides half-remember, and the contract and payment are attached to those fields — so what was agreed and what is owed cannot drift apart.',
+  },
+  {
+    question: 'Who can see a Deal Room?',
+    answer:
+      'Only the brand team members on that campaign and the one creator in that deal. Each brand-creator collaboration gets its own Deal Room, so creators never see each other\u2019s rates or terms.',
+  },
+  {
+    question: 'Can terms be changed after the contract is signed?',
+    answer:
+      'Not silently. Once both sides e-sign, the agreed scope and amount are locked to that contract. A change means a new proposal in the same Deal Room, which both sides have to accept — so there is always a record of what changed and when.',
+  },
+];
+
 export default function DealRoomFeaturePage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -69,6 +110,20 @@ export default function DealRoomFeaturePage() {
         title="Deal Room — Negotiate Brand Deals in One Thread"
         description="The Deal Room replaces Instagram DMs, WhatsApp, and email with one thread: chat, proposals, counter-offers, contracts, and deliverables — all in one place."
         canonical="/features/deal-room"
+      />
+      <JsonLd
+        data={getWebPageSchema({
+          name: 'Deal Room — negotiate, contract and pay in one thread',
+          description: CANONICAL_ANSWER,
+          url: '/features/deal-room',
+        })}
+      />
+      <JsonLd
+        data={getQaPageSchema({
+          question: CANONICAL_QUESTION,
+          answer: CANONICAL_ANSWER,
+          url: '/features/deal-room',
+        })}
       />
       <JsonLd
         data={getBreadcrumbListSchema([
@@ -178,28 +233,24 @@ export default function DealRoomFeaturePage() {
           </div>
         </section>
 
-        {/* Cross-link + final CTA */}
-        <section className="border-t border-border/60 bg-card/50 py-20">
-          <FadeUp className="mx-auto max-w-2xl px-6 text-center">
-            <h2 className="text-3xl font-semibold">Contracts and escrow live in the same thread</h2>
-            <p className="mt-3 text-muted-foreground">
-              Every Deal Room negotiation ends in an e-signed contract and an escrow-funded deal.
-            </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Button size="lg" className="bg-accent-foreground text-white hover:bg-accent-foreground/90" asChild>
-                <Link to="/features/escrow">
-                  See how escrow works <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
-                </Link>
-              </Button>
-              <Button size="lg" variant="outline" asChild>
-                <Link to="/how-it-works/brands">Full walkthrough for brands</Link>
-              </Button>
-            </div>
-          </FadeUp>
-        </section>
+        <FaqSection
+          heading="Deal Room questions, answered"
+          items={FAQS}
+          className="border-t border-border/60 bg-card/50 py-20"
+        />
+
+        <FunnelCta
+          heading="Open your first Deal Room"
+          sub="Every negotiation ends in an e-signed contract and a funded deal — in the same thread it started in."
+          primary={{ label: 'Create a brand account', to: '/brand/register' }}
+          secondary={{ label: 'See how the payment is protected', to: '/features/secure-payments' }}
+          reassurances={['Free to start', 'Contracts generated for you', 'No separate invoicing']}
+        />
       </main>
 
       <SiteFooter />
+      <StickyCta label="Create a brand account" to="/brand/register" note="Free to start" />
+      <StickyCtaSpacer />
     </div>
   );
 }

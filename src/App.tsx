@@ -47,7 +47,7 @@ import AboutPage from '@/pages/about';
 import ContactPage from '@/pages/contact';
 import HowItWorksBrandsPage from '@/pages/how-it-works-brands';
 import HowItWorksCreatorsPage from '@/pages/how-it-works-creators';
-import EscrowFeaturePage from '@/pages/features/escrow';
+import SecurePaymentsFeaturePage from '@/pages/features/secure-payments';
 import DealRoomFeaturePage from '@/pages/features/deal-room';
 import HypeFeaturePage from '@/pages/features/hype';
 import BlogIndexPage from '@/pages/blog/index';
@@ -622,11 +622,31 @@ export default function App() {
         <Route path="/contact" element={<ContactPage />} />
         <Route path="/how-it-works/brands" element={<HowItWorksBrandsPage />} />
         <Route path="/how-it-works/creators" element={<HowItWorksCreatorsPage />} />
-        <Route path="/features/escrow" element={<EscrowFeaturePage />} />
+        <Route path="/features/secure-payments" element={<SecurePaymentsFeaturePage />} />
+        {/*
+          T-SEOCRO-0819: /features/escrow was the canonical URL until the term was
+          dropped from customer-facing copy. It is in the wild (sitemap, llms.txt,
+          old blog cross-links, anything already crawled), so it must not 404 —
+          that would drop the accumulated signal instead of forwarding it. The
+          real 301 is served by public/_redirects at the edge; this in-app
+          <Navigate replace> is the client-side twin, for a visitor who reaches
+          the old path after the SPA has already booted.
+        */}
+        <Route path="/features/escrow" element={<Navigate to="/features/secure-payments" replace />} />
         <Route path="/features/deal-room" element={<DealRoomFeaturePage />} />
         <Route path="/features/hype" element={<HypeFeaturePage />} />
         <Route path="/blog" element={<BlogIndexPage />} />
         <Route path="/blog/category/:category" element={<BlogIndexPage />} />
+        {/*
+          Retired blog slug. Must be registered BEFORE the /blog/:slug param
+          route — React Router 7 ranks a static segment above a dynamic one, but
+          declaring it first also documents the intent. Edge 301 in
+          public/_redirects; this is its client-side twin.
+        */}
+        <Route
+          path="/blog/what-is-escrow-in-influencer-marketing"
+          element={<Navigate to="/blog/what-is-payment-protection-in-influencer-marketing" replace />}
+        />
         <Route path="/blog/:slug" element={<BlogPostPage />} />
         {/*
           CR-88 red-team follow-up (Priya) — these two routes rendered a "coming soon"
@@ -654,6 +674,85 @@ export default function App() {
               docSlug="privacy-policy"
               description="Influora's Privacy Policy."
               canonical="/privacy"
+            />
+          }
+        />
+        {/*
+          T-SEOCRO-0819 — these six routes did not exist.
+
+          SiteFooter has linked /refund-policy, /disputes, /grievance, /kyc, /tds
+          and /disclosure from EVERY page on the site since it was written, and
+          public/llms.txt advertises four of them to AI crawlers as key pages. None
+          of them were registered here, so each one fell through to the `/:handle`
+          public-portfolio catch-all at the bottom of this file and rendered a
+          "creator not found" screen. That is six broken links per page for both
+          users and crawlers, and — because the catch-all returns a normal 200 —
+          six soft-404s that a search engine has to spend crawl budget on and then
+          discard.
+
+          The content was never missing: all eight policy drafts already exist under
+          src/content/legal/ and LegalPage already renders any of them by slug. Only
+          the wiring was absent. Every one stays `noindex` for the same reason
+          /terms and /privacy do (v0 drafts pending counsel review) — the win here
+          is that the links now resolve, not that they get indexed.
+        */}
+        <Route
+          path="/refund-policy"
+          element={
+            <LegalPage
+              docSlug="escrow-and-refund-policy"
+              description="How refunds work on Influora and when protected funds are returned to the brand."
+              canonical="/refund-policy"
+            />
+          }
+        />
+        <Route
+          path="/disputes"
+          element={
+            <LegalPage
+              docSlug="dispute-resolution-policy"
+              description="How Influora mediates a dispute between a brand and a creator, and what happens to the protected funds."
+              canonical="/disputes"
+            />
+          }
+        />
+        <Route
+          path="/grievance"
+          element={
+            <LegalPage
+              docSlug="grievance-redressal-policy"
+              description="Influora's grievance redressal process and grievance officer contact details."
+              canonical="/grievance"
+            />
+          }
+        />
+        <Route
+          path="/kyc"
+          element={
+            <LegalPage
+              docSlug="kyc-policy"
+              description="Creator identity and payout verification on Influora — what is required and how long it takes."
+              canonical="/kyc"
+            />
+          }
+        />
+        <Route
+          path="/tds"
+          element={
+            <LegalPage
+              docSlug="tds-policy"
+              description="How tax deducted at source (TDS) is handled on creator payouts on Influora."
+              canonical="/tds"
+            />
+          }
+        />
+        <Route
+          path="/disclosure"
+          element={
+            <LegalPage
+              docSlug="advertising-disclosure-policy"
+              description="Influora's advertising disclosure requirements for sponsored creator content in India."
+              canonical="/disclosure"
             />
           }
         />

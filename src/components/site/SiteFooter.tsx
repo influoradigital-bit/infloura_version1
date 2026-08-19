@@ -20,7 +20,7 @@ const FOOTER_NAV: Array<{ heading: string; links: Array<{ label: string; href: s
       { label: 'How It Works — Brands', href: '/how-it-works/brands' },
       { label: 'How It Works — Creators', href: '/how-it-works/creators' },
       { label: 'Pricing', href: '/pricing' },
-      { label: 'Escrow Protection', href: '/features/escrow' },
+      { label: 'Secure Payments', href: '/features/secure-payments' },
       { label: 'Deal Room', href: '/features/deal-room' },
       { label: 'Hype Campaigns', href: '/features/hype' },
     ],
@@ -39,7 +39,7 @@ const FOOTER_NAV: Array<{ heading: string; links: Array<{ label: string; href: s
     links: [
       { label: 'Terms of Service', href: '/terms' },
       { label: 'Privacy Policy', href: '/privacy' },
-      { label: 'Refund & Escrow Policy', href: '/refund-policy' },
+      { label: 'Refund & Payment Policy', href: '/refund-policy' },
       { label: 'Dispute Resolution', href: '/disputes' },
       { label: 'Grievance Redressal', href: '/grievance' },
       { label: 'Advertising Disclosure', href: '/disclosure' },
@@ -62,7 +62,7 @@ export function SiteFooter() {
           <div className="sm:col-span-2 lg:col-span-1">
             <InfluoraLogo size="sm" />
             <p className="mt-3 max-w-[220px] text-xs text-muted-foreground">
-              Escrow-protected influencer marketing for Indian brands and creators.
+              Payment-protected influencer marketing for Indian brands and creators.
             </p>
           </div>
           {FOOTER_NAV.map((column) => (
@@ -119,7 +119,7 @@ export function SiteFooter() {
           <nav className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground" aria-label="Footer legal">
             <Link to="/terms" className="hover:text-foreground">Terms</Link>
             <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
-            <Link to="/refund-policy" className="hover:text-foreground">Refund/Escrow</Link>
+            <Link to="/refund-policy" className="hover:text-foreground">Refund</Link>
             <Link to="/disputes" className="hover:text-foreground">Disputes</Link>
             <Link to="/grievance" className="hover:text-foreground">Grievance</Link>
             <Link to="/kyc" className="hover:text-foreground">KYC</Link>

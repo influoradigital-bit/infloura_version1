@@ -1,3 +1,21 @@
+# ---------------------------------------------------------------------------
+# Permanent redirects for retired URLs (T-SEOCRO-0819).
+#
+# Both of these were live, crawled and linked before the "escrow" wording was
+# dropped from customer-facing copy. Letting them 404 would throw away the
+# ranking signal they already carry instead of passing it to the page that
+# replaced them, so they 301 rather than disappear.
+#
+# These MUST come before the SPA wildcard below — the first matching rule wins,
+# and the wildcard matches everything.
+#
+# The canonical list lives in scripts/marketing-routes.mjs (PERMANENT_REDIRECTS)
+# and .proof-os/gates/F-SEO-redirects-resolve.sh fails the build if a rule there
+# is missing from this file.
+# ---------------------------------------------------------------------------
+/features/escrow                              /features/secure-payments                              301
+/blog/what-is-escrow-in-influencer-marketing  /blog/what-is-payment-protection-in-influencer-marketing  301
+
 # SPA fallback for Netlify/Cloudflare Pages
 # Deep links serve app-shell.html with HTTP 200 (not 404).
 #

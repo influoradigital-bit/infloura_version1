@@ -27,7 +27,7 @@ Address: `[GRIEVANCE OFFICER — ADDRESS — TBD]`
 - A complaint about content on the platform (offensive, illegal, or infringing)
 - A complaint about a policy violation you've witnessed
 
-Campaign-specific disagreements (delivery, approval, escrow release) go through our **Dispute Resolution Policy**, not this one. If you're not sure which applies, contact us and we'll point you the right way.
+Campaign-specific disagreements (delivery, approval, payment protection release) go through our **Dispute Resolution Policy**, not this one. If you're not sure which applies, contact us and we'll point you the right way.
 
 ## 4. How to file a grievance
 

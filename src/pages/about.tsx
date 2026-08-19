@@ -1,14 +1,14 @@
-import { Link } from 'react-router-dom';
-import { ArrowRight, Globe2, MapPin, ShieldCheck, Sparkles } from 'lucide-react';
+import { Globe2, MapPin, ShieldCheck, Sparkles } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { FadeUp, StaggerContainer, StaggerItem, CountUp } from '@/components/motion';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
+import { FunnelCta } from '@/components/site/FunnelCta';
+import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
 import { Seo } from '@/lib/seo/Seo';
-import { JsonLd, getOrganizationSchema } from '@/lib/seo/schema';
+import { JsonLd, getOrganizationSchema, getWebPageSchema } from '@/lib/seo/schema';
 
 // Content per wiki/website/content-map.md §1.2.
 // CEO-DECISIONS.md #4: no client logos until written permission exists —
@@ -17,15 +17,15 @@ import { JsonLd, getOrganizationSchema } from '@/lib/seo/schema';
 
 const STATS = [
   { label: 'Creators on platform', value: 8915, format: (n: number) => `${Math.round(n).toLocaleString('en-IN')}+` },
-  { label: 'Paid out via escrow', value: 42600000, format: (n: number) => `₹${(n / 10000000).toFixed(1)}Cr+` },
+  { label: 'Paid out to creators', value: 42600000, format: (n: number) => `₹${(n / 10000000).toFixed(1)}Cr+` },
   { label: 'Avg. payout time', value: 24, format: (n: number) => `${Math.round(n)}h` },
 ];
 
 const DIFFERENTIATORS = [
   {
     icon: ShieldCheck,
-    title: 'Escrow on every deal',
-    body: "Not just a marketplace fee — every single deal, from a one-off reel to a 100-creator Hype Campaign, runs on the same escrow rail.",
+    title: 'Protection on every deal',
+    body: "Not just a marketplace fee — every single deal, from a one-off reel to a 100-creator Hype Campaign, runs on the same protected payment rail.",
   },
   {
     icon: MapPin,
@@ -35,7 +35,7 @@ const DIFFERENTIATORS = [
   {
     icon: Globe2,
     title: 'Built for DTC and export brands alike',
-    body: 'Whether you sell direct-to-consumer in India or run a B2B export business reaching global buyers through Indian creators, the same Deal Room and escrow flow works.',
+    body: 'Whether you sell direct-to-consumer in India or run a B2B export business reaching global buyers through Indian creators, the same Deal Room and protected payment flow works.',
   },
 ];
 
@@ -44,10 +44,18 @@ export default function AboutPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="About Influora"
-        description="Influora replaces WhatsApp-chaos influencer deals with one escrow-protected platform for Indian brands and creators. Our story and what makes us different."
+        description="Influora replaces WhatsApp-chaos influencer deals with one payment-protected platform for Indian brands and creators. Our story and what makes us different."
         canonical="/about"
       />
       <JsonLd data={getOrganizationSchema()} />
+      <JsonLd
+        data={getWebPageSchema({
+          name: 'About Influora',
+          description:
+            'Influora is an influencer marketing platform built for the Indian market, replacing WhatsApp-and-invoice brand deals with one workspace where terms, contract and payment live together.',
+          url: '/about',
+        })}
+      />
 
       <SiteHeader />
 
@@ -65,7 +73,7 @@ export default function AboutPage() {
               <p className="mt-4 text-lg text-muted-foreground">
                 Influora exists to replace the spreadsheet-WhatsApp-invoice mess of influencer marketing
                 with one platform Indian brands and creators can trust — where every deal is
-                escrow-protected from the moment a contract is signed.
+                payment-protected from the moment a contract is signed.
               </p>
             </FadeUp>
           </div>
@@ -98,7 +106,7 @@ export default function AboutPage() {
                     </p>
                     <p className="mt-3 text-sm text-foreground">
                       One platform: verified creator discovery, a single Deal Room thread, an e-signed
-                      contract with clear terms, and escrow that holds the brand's payment until the
+                      contract with clear terms, and protection that holds the brand's payment until the
                       deliverable is approved. Nobody has to chase anybody.
                     </p>
                   </CardContent>
@@ -164,35 +172,32 @@ export default function AboutPage() {
               </h2>
               <p className="mt-3 text-muted-foreground">
                 Every creator profile is Instagram-verified before it's discoverable, and every payout
-                moves through Influora's licensed payment gateway partner — the same escrow rail whether
+                moves through Influora's licensed payment gateway partner — the same protected payment rail whether
                 it's a single reel or a 100-creator Hype Campaign.
               </p>
             </FadeUp>
           </div>
         </section>
 
-        {/* Final CTA */}
-        <section className="border-t border-border/60 bg-card/50 py-20">
-          <FadeUp className="mx-auto max-w-2xl px-6 text-center">
-            <h2 className="text-3xl font-semibold">Start your first campaign</h2>
-            <p className="mt-3 text-muted-foreground">
-              Free to start for brands and creators. Escrow-protected from the first deal.
-            </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Button size="lg" className="bg-accent-foreground text-white hover:bg-accent-foreground/90" asChild>
-                <Link to="/brand/register">
-                  Start your first campaign <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
-                </Link>
-              </Button>
-              <Button size="lg" variant="outline" asChild>
-                <Link to="/brand/discover">Browse creator profiles</Link>
-              </Button>
-            </div>
-          </FadeUp>
-        </section>
+        {/*
+          The secondary link used to point at /brand/discover — an AUTHENTICATED
+          route. An unauthenticated visitor clicking it from a public page was
+          bounced to the login screen, which is a dead end at the exact moment
+          they showed interest. It now points at the public brands walkthrough.
+        */}
+        <FunnelCta
+          heading="Start your first campaign"
+          sub="Free to start for brands and creators. Payment-protected from the first deal."
+          primary={{ label: 'Start your first campaign', to: '/brand/register' }}
+          secondary={{ label: 'See how a deal works first', to: '/how-it-works/brands' }}
+          reassurances={['Free to start', 'No subscription', 'Contracts and TDS included']}
+          className="border-t border-border/60 bg-card/50 py-20"
+        />
       </main>
 
       <SiteFooter />
+      <StickyCta label="Start your first campaign" to="/brand/register" note="Free to start" />
+      <StickyCtaSpacer />
     </div>
   );
 }
