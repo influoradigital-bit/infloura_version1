@@ -79,7 +79,13 @@ public interface PaymentMilestoneRepository extends JpaRepository<PaymentMilesto
 
     /**
      * Sum of milestone amounts in a given status across every collaboration owned by a creator.
-     * Powers the creator wallet summary's {@code pendingPayouts} (FUNDED, not-yet-released).
+     *
+     * <p>[F-0281/F-0336] Powers the creator wallet summary's {@code escrowLocked} (FUNDED —
+     * committed by the brand into escrow, not yet approved/released to this creator), NOT {@code
+     * pendingPayouts} as this javadoc previously said. That mislabeling was the bug: the money this
+     * query totals is displayed under a "Pending Payouts" label that reads as a withdrawal already
+     * in flight to the creator's bank — the opposite of what FUNDED-but-not-RELEASED means. See
+     * {@code WalletService#getSummaryForUser}'s javadoc for the corrected three-bucket mapping.
      */
     @Query(
             "SELECT COALESCE(SUM(m.amount), 0) FROM PaymentMilestone m WHERE m.status = :status "

@@ -48,11 +48,28 @@ public final class MoneyDtos {
             Integer runwayDays) {}
 
     /**
-     * Brand dashboard wallet summary (canonical {@code GET /wallet} per BACKEND-API-SPEC §33.5.5).
-     * Field names are the brand-client aliases: {@code availableBalance} ≡ {@code balance},
-     * {@code escrowLocked} ≡ {@code escrowBalance}. {@code pendingPayouts} is the sum of FUNDED (held,
-     * not-yet-released) milestone amounts across the workspace's collaborations. {@code runwayDays}
-     * follows the same honest-null contract as {@link WalletBalanceResponse}.
+     * Wallet summary for the canonical {@code GET /wallet} (BACKEND-API-SPEC §33.5.5) — shared by
+     * both the brand dashboard ({@code WalletService#getSummary}) and the creator wallet ({@code
+     * WalletService#getSummaryForUser}), which derive the SAME three field names from DIFFERENT
+     * sources because they answer different questions. Field names are the brand-client aliases:
+     * {@code availableBalance} ≡ {@code balance}, {@code escrowLocked} ≡ {@code escrowBalance}.
+     *
+     * <ul>
+     *   <li><b>Brand:</b> {@code escrowLocked} = live sum of the workspace's FUNDED {@code
+     *       EscrowHold}s. {@code pendingPayouts} = sum of FUNDED milestone amounts across the
+     *       workspace's collaborations — money already committed into escrow, not yet released to
+     *       creators.
+     *   <li><b>Creator</b> [F-0281/F-0336]: {@code escrowLocked} = sum of the creator's OWN FUNDED
+     *       milestones (brand-funded, not yet approved/released to them — the analogous "committed
+     *       but not released" figure, since a per-creator sum over {@code EscrowHold} would miss
+     *       holds not yet bound to a collaboration). {@code pendingPayouts} = sum of the creator's
+     *       {@code Payout} rows still in flight to their bank ({@code confirmedAt IS NULL}) — a
+     *       withdrawal that has already been requested/queued but not yet gateway-confirmed. See
+     *       {@code WalletService#getSummaryForUser}'s javadoc for the full three-bucket mapping and
+     *       why {@code pendingPayouts} cannot mean the same thing here as it does for a brand.
+     * </ul>
+     *
+     * {@code runwayDays} follows the same honest-null contract as {@link WalletBalanceResponse}.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record WalletSummaryResponse(
