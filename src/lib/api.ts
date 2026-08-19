@@ -207,27 +207,71 @@ export class ApiError extends Error {
 const TOKEN_REFRESH_SKEW_MS = 60_000;
 
 /**
- * Reads the `exp` claim (seconds since epoch) out of a JWT without verifying it.
+ * Parses a JWT's payload claims WITHOUT verifying its signature.
  *
- * Verification is emphatically the server's job — this is used only to decide *when* to ask for
- * a new token, never to decide whether the current one is trusted. A forged `exp` can at worst
- * make the client refresh earlier or later than ideal; the server still rejects a bad token.
+ * Verification is emphatically the server's job — nothing read here decides whether a token is
+ * trusted, only when to renew it (`decodeJwtExpSeconds`) and which local slot it may occupy
+ * (`tokenMatchesRole`). A forged claim can at worst make this client refresh at the wrong moment
+ * or refuse to store a token; the server still independently rejects a bad token.
  *
- * Returns null for anything that is not a JWT carrying a numeric `exp` — notably the mock-mode
- * tokens (`mock_brand_token`), which must not trigger refresh attempts.
+ * Returns null for anything that is not a three-part JWT with a JSON payload — notably the
+ * mock-mode tokens (`mock_brand_token`), which are plain strings and must keep working.
  */
-function decodeJwtExpSeconds(token: string): number | null {
+function decodeJwtClaims(token: string): Record<string, unknown> | null {
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   try {
     // base64url → base64, then pad to a multiple of 4 for atob.
     const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
-    const claims = JSON.parse(atob(padded)) as { exp?: unknown };
-    return typeof claims.exp === 'number' ? claims.exp : null;
+    const claims = JSON.parse(atob(padded)) as unknown;
+    return typeof claims === 'object' && claims !== null ? (claims as Record<string, unknown>) : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Reads the `exp` claim (seconds since epoch) out of a JWT without verifying it.
+ *
+ * Used only to decide *when* to ask for a new token. Returns null for anything that is not a JWT
+ * carrying a numeric `exp` — notably the mock-mode tokens (`mock_brand_token`), which must not
+ * trigger refresh attempts.
+ */
+function decodeJwtExpSeconds(token: string): number | null {
+  const exp = decodeJwtClaims(token)?.exp;
+  return typeof exp === 'number' ? exp : null;
+}
+
+/**
+ * The `userType` claim value each session slot is allowed to hold. Mirrors
+ * `JwtService.createAccessToken`, which stamps `UserType.name()` (BRAND | CREATOR | ADMIN) onto
+ * every access token. ADMIN is deliberately absent: admins authenticate through
+ * `/admin/auth/login` and never occupy `brand_token`/`creator_token`.
+ */
+const ROLE_USER_TYPES: Record<Role, string> = {
+  brand: 'BRAND',
+  creator: 'CREATOR',
+};
+
+/**
+ * F-0348 — does this access token actually belong in `role`'s storage slot?
+ *
+ * `POST /auth/refresh` is role-blind: it carries no role and the server answers from the single
+ * shared HttpOnly refresh cookie, so it returns a token for whatever identity that cookie holds,
+ * not for the role we asked about. Signing in as a brand and then touching any creator-side call
+ * therefore wrote a BRAND token into `creator_token`, and the creator shell rendered — with
+ * creator-only controls reachable — under the brand principal. The `userType` claim is the only
+ * thing that tells the two apart client-side, so it is checked before every write.
+ *
+ * Fails OPEN when there is no readable `userType`: mock-mode tokens are not JWTs at all, and a
+ * real token whose payload we cannot parse is still the server's to accept or reject. This is a
+ * slot-routing guard, not an authorization decision.
+ */
+function tokenMatchesRole(token: string, role: Role): boolean {
+  const userType = decodeJwtClaims(token)?.userType;
+  if (typeof userType !== 'string') return true;
+  return userType === ROLE_USER_TYPES[role];
 }
 
 class HttpClient {
@@ -252,12 +296,19 @@ class HttpClient {
    * matters because the token-refresh path (`fetchWithAuthRetry`) calls `setToken(role, newToken)`
    * with no third argument on every silent renewal, and that call must keep writing to whichever
    * storage the original login chose, not silently upgrade a session-only login to persistent.
+   *
+   * F-0348 — returns false and writes NOTHING (not even the `remember` preference) when the
+   * token's `userType` claim does not match `role`. This is the single choke point every write
+   * to `brand_token`/`creator_token` goes through — login, register and silent refresh alike —
+   * so refusing here is what keeps a brand identity out of the creator slot.
    */
-  setToken(role: Role, token: string, remember?: boolean): void {
+  setToken(role: Role, token: string, remember?: boolean): boolean {
+    if (!tokenMatchesRole(token, role)) return false;
     if (remember !== undefined) {
       localStorage.setItem(REMEMBER_ME_KEYS[role], String(remember));
     }
     this.tokenStorage(role).setItem(TOKEN_KEYS[role], token);
+    return true;
   }
 
   clearToken(role: Role): void {
@@ -308,7 +359,11 @@ class HttpClient {
         if (!res.ok) return null;
         const envelope = (await res.json()) as ApiEnvelope<{ accessToken: string; expiresIn: number }>;
         if (!envelope.success || !envelope.data?.accessToken) return null;
-        this.setToken(role, envelope.data.accessToken);
+        // F-0348 — the request above sends no role (the server reads one shared refresh cookie),
+        // so the identity coming back may not be the one we asked for. Report "no token" rather
+        // than handing back, or storing, another role's session: callers treat null as a failed
+        // refresh, and `fetchWithAuthRetry` then clears this role's stale slot.
+        if (!this.setToken(role, envelope.data.accessToken)) return null;
         return envelope.data.accessToken;
       } catch {
         return null;
@@ -672,7 +727,24 @@ export interface CreatorRegisterPayload {
   acceptedTerms: boolean;
 }
 
+/**
+ * F-0348 — rejects a login/register response whose access token belongs to the other role,
+ * BEFORE any part of the session is persisted.
+ *
+ * `HttpClient.setToken` already guards the token slots themselves, but the `persistBrandSession`
+ * / `persistCreatorSession` helpers (src/lib/auth-session.ts) write the identity fields —
+ * `brand_token`, `creator_user_id`, `*_email` — without going through it. Failing the whole call
+ * here keeps every storage path consistent rather than leaving half a foreign session behind for
+ * the shell to render.
+ */
+function assertTokenRole(data: BackendTokenPair, role: Role): void {
+  if (!tokenMatchesRole(data.accessToken, role)) {
+    throw new ApiError('ROLE_MISMATCH', `This account cannot sign in to the ${role} app.`, 401);
+  }
+}
+
 async function mapBrandAuth(data: BackendTokenPair): Promise<LoginResponse> {
+  assertTokenRole(data, 'brand');
   const session: BrandSession = persistBrandSession(data);
   return {
     token: session.token,
@@ -732,6 +804,7 @@ export const auth = {
       body: payload,
       role: 'creator',
     });
+    assertTokenRole(data, 'creator');
     // CR-06 — mirror the brand flow: keep the identity, not just the token.
     const session = persistCreatorSession(data);
     return {
@@ -769,6 +842,7 @@ export const auth = {
       body: payload,
       role: 'creator',
     });
+    assertTokenRole(data, 'creator');
     // CR-06 — same identity capture as creatorLogin.
     const session = persistCreatorSession(data);
     return {
@@ -880,6 +954,12 @@ export const auth = {
     return mockOr({ message: 'ok' });
   },
 
+  /**
+   * Stores a role's access token. Returns false — having stored nothing — when the token's
+   * `userType` says it belongs to the other role (F-0348); callers that want to surface that
+   * can branch on it, and those that ignore it still end up with an empty slot rather than a
+   * cross-role session.
+   */
   setToken: (role: Role, token: string, remember?: boolean) => http.setToken(role, token, remember),
 };
 
@@ -4865,14 +4945,52 @@ export interface CreatorDeliverableUploadResponse {
   status: CreatorDeliverableRowStatus;
 }
 
-/** GET /creator/deliverables/:id/status response — DeliverableStatusResponse (CreatorDeliverableDtos.java:29). */
+/** Content platform/type of a deliverable slot — DeliverableType.java. */
+export type CreatorDeliverableType =
+  | 'INSTAGRAM_POST'
+  | 'INSTAGRAM_REEL'
+  | 'INSTAGRAM_STORY'
+  | 'INSTAGRAM_CAROUSEL'
+  | 'YOUTUBE_VIDEO'
+  | 'YOUTUBE_SHORT'
+  | 'FACEBOOK_POST'
+  | 'FACEBOOK_REEL'
+  | 'TIKTOK_VIDEO';
+
+/**
+ * GET /creator/deliverables/:id/status response — DeliverableStatusResponse
+ * (CreatorDeliverableDtos.java:29), mirrored field for field.
+ *
+ * F-0363 — this used to declare only 9 of the record's 17 components, so callers that needed
+ * `reviewNotes` (the brand's revision feedback, written by `Deliverable#applyRevision` and put on
+ * the wire by `CreatorDeliverableService#toStatusResponse`) had to cast around the shared type.
+ * The server always sends every component (nulls included); the fields the record can leave null
+ * are typed `| null` here. The added members are optional because callers also synthesize
+ * placeholder rows of this shape locally from a bare status (see
+ * `useCreatorDeliverableLifecycle`), which carry no server data — `?` marks "absent locally",
+ * `| null` marks "sent as null by the server".
+ */
 export interface CreatorDeliverableStatusResponse {
   id: string;
   collaborationId: string;
+  /** Non-null on the wire (deliverables.type is NOT NULL). */
+  type?: CreatorDeliverableType;
   title: string;
   status: CreatorDeliverableRowStatus;
+  /** LocalDate (YYYY-MM-DD); null when the slot has no deadline. */
+  deadline?: string | null;
   versionNumber: number;
   revisionCount: number;
+  /** DeliverableFileResponse[] — same record as the upload response's `files`; never null. */
+  files?: CreatorDeliverableUploadFile[];
+  caption?: string | null;
+  /** Never null on the wire — `JsonLists.stringListFromJson` returns an empty list. */
+  hashtags?: string[];
+  creatorNotes?: string | null;
+  /** The brand's revision feedback the creator must see (F-0353). */
+  reviewNotes?: string | null;
+  submittedAt?: string | null;
+  reviewedAt?: string | null;
   actions: { canUploadNewVersion: boolean; canSubmit: boolean; canReportMetrics: boolean };
   /** verified-analytics-0804 — cached metric source / verification state. */
   metricSource: CreatorDeliverableMetricSource | null;
@@ -5009,10 +5127,19 @@ export const creatorDeliverables = {
       : mockOr<CreatorDeliverableStatusResponse>({
           id: deliverableId,
           collaborationId: 'mock_deal',
+          type: 'INSTAGRAM_REEL',
           title: 'Instagram Reel',
           status: 'APPROVED' as CreatorDeliverableRowStatus,
+          deadline: null,
           versionNumber: 1,
           revisionCount: 0,
+          files: [],
+          caption: null,
+          hashtags: [],
+          creatorNotes: null,
+          reviewNotes: null,
+          submittedAt: null,
+          reviewedAt: null,
           actions: { canUploadNewVersion: false, canSubmit: false, canReportMetrics: true },
           metricSource: null,
           lastVerifiedAt: null,
