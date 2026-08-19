@@ -37,6 +37,7 @@ import {
   type MessageKind,
   type ContractApiRecord,
   type CreatorDeliverableListItem,
+  type CreatorDeliverableStatusResponse,
   type ShipmentApiRecord,
   type ShipmentApiStatus,
   type ShipmentCondition,
@@ -173,6 +174,19 @@ function mapShipmentApiStatusToUiStatus(status: ShipmentApiStatus): ShipmentStat
  * proposal made the list say "Negotiating" while the room said "Contracted".
  */
 type DealRoom = CreatorChatDealRoom;
+
+/**
+ * Everything `RevisionHandler` renders, every field read from the API (F-0352 — these were
+ * hardcoded literals, including an invented brand comment about "more vibrant colors"). Built
+ * only by `openRevisionHandler`, which loads the row first; the dialog is never mounted without
+ * it, so there is no state in which it can show placeholder feedback or invented counts.
+ */
+interface RevisionContext {
+  deliverableId: string;
+  title: string;
+  currentRevision: number;
+  brandFeedback: string;
+}
 
 interface ChatTimelineEvent {
   id: string;
@@ -428,7 +442,6 @@ const mockTimelineEvents: ChatTimelineEvent[] = [
       fileUrl: '/placeholder-video.mp4',
       caption: 'Summer vibes with @StyleCoFashion! Check out their amazing new collection.',
       revision: 1,
-      maxRevisions: 2,
       paymentAmount: 25000,
     },
   },
@@ -452,7 +465,6 @@ const mockTimelineEvents: ChatTimelineEvent[] = [
       fileUrl: '/placeholder-video-2.mp4',
       caption: 'Styling tips for summer with @StyleCoFashion new arrivals!',
       revision: 1,
-      maxRevisions: 2,
     },
   },
 ];
@@ -1104,7 +1116,17 @@ export default function CreatorChatPage() {
   const [counterAmount, setCounterAmount] = React.useState('');
   const [counterMessage, setCounterMessage] = React.useState('');
   const [showRevisionHandler, setShowRevisionHandler] = React.useState(false);
-  const [selectedDeliverableForRevision] = React.useState<string | null>(null);
+  // F-0351/F-0352 — replaces `selectedDeliverableForRevision`, a read-only useState with no
+  // setter that was therefore always null: it fed the dialog a synthesized "Deliverable null"
+  // title next to a hardcoded fake brand comment. The dialog now opens from real data or not
+  // at all. `revisionLoadingId` marks the row whose status fetch is in flight.
+  const [revisionContext, setRevisionContext] = React.useState<RevisionContext | null>(null);
+  const [revisionLoadingId, setRevisionLoadingId] = React.useState<string | null>(null);
+  // F-0354 — the notes RevisionHandler collects, held here until the submission that carries
+  // them. Keyed by deliverable id so a creator who opens the revision dialog for one slot and
+  // then submits a different slot cannot attach the wrong notes to it.
+  const [pendingRevisionNotes, setPendingRevisionNotes] =
+    React.useState<{ deliverableId: string; notes: string } | null>(null);
   const [isSubmittingDeliverable, setIsSubmittingDeliverable] = React.useState(false);
   // CR-53 — if upload succeeds but the submit step fails, remember the exact
   // (deliverableId, file) pair that already made it to the server so a retry can
@@ -1493,8 +1515,21 @@ export default function CreatorChatPage() {
           uploadedDeliverableRef.current = { deliverableId: data.deliverableId, file: data.file };
         }
 
+        // F-0354 — carry the creator's revision notes into the submission. SubmitRequest has a
+        // real `notes` field (CreatorDeliverableDtos.java:70) that
+        // CreatorDeliverableService#submitForReview sanitizes and persists via
+        // Deliverable#applySubmit, so the 500 characters RevisionHandler collects now reach the
+        // brand instead of being dropped. Only attached when the notes belong to THIS row.
+        const revisionNotes =
+          pendingRevisionNotes?.deliverableId === data.deliverableId
+            ? pendingRevisionNotes.notes
+            : undefined;
+
         try {
-          await api.deliverables.submit(data.deliverableId, { finalCaption: data.caption });
+          await api.deliverables.submit(data.deliverableId, {
+            finalCaption: data.caption,
+            ...(revisionNotes ? { notes: revisionNotes } : {}),
+          });
         } catch (submitErr) {
           // Tag the error so DeliverableSubmission can tell "upload also failed" apart from
           // "upload is done, only submit needs a retry" and show the right recovery message.
@@ -1505,6 +1540,9 @@ export default function CreatorChatPage() {
         }
 
         uploadedDeliverableRef.current = null;
+        // The notes have been sent — clear them so a later submission of another slot (or a
+        // second submission of this one) doesn't silently resend stale text.
+        if (revisionNotes) setPendingRevisionNotes(null);
         await loadDeliverables();
       } else {
         await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -1516,15 +1554,73 @@ export default function CreatorChatPage() {
     }
   };
 
-  const handleStartRevision = async (_revisionNotes: string) => {
+  /**
+   * F-0351 — the entry point `RevisionHandler` never had. The component was imported, its state
+   * declared and its JSX mounted, but nothing in this file ever called
+   * `setShowRevisionHandler(true)`, so a creator whose deliverable came back REVISION_REQUESTED
+   * had no way to read the brand's feedback at all.
+   *
+   * The row's real review state is loaded BEFORE the dialog opens, so it can never render while
+   * the feedback is still unknown. The count comes from the same list record the button was
+   * rendered from (`toListItem` sets `currentRevision` whenever `revisionCount > 0`, which
+   * `Deliverable#applyRevision` guarantees for a REVISION_REQUESTED row) — if the server ever
+   * omits it we say so rather than open the dialog over an invented number. There is no maximum
+   * to carry: nothing server-side caps revisions (F-0360).
+   */
+  const openRevisionHandler = async (row: CreatorDeliverableListItem) => {
+    if (row.currentRevision == null) {
+      toast({
+        title: 'Revision details unavailable',
+        description: 'This deliverable is missing its revision count. Please refresh and try again.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setRevisionLoadingId(row.id);
+    try {
+      // `reviewNotes` is declared on the shared `CreatorDeliverableStatusResponse` (api.ts:4991),
+      // so the local intersection alias and its cast are gone — the field is read off the shared
+      // type directly.
+      const status: CreatorDeliverableStatusResponse =
+        await api.creatorDeliverables.getStatus(row.id);
+      const feedback = status.reviewNotes?.trim();
+      setRevisionContext({
+        deliverableId: row.id,
+        title: status.title || row.title,
+        currentRevision: row.currentRevision,
+        // The brand's own words (F-0353). Feedback is mandatory on
+        // BrandDeliverableService#requestRevision, so blank here means the row predates that
+        // rule — say that plainly rather than substitute prose the brand never wrote.
+        brandFeedback: feedback || 'The brand requested changes but left no written feedback.',
+      });
+      setShowRevisionHandler(true);
+    } catch (err) {
+      console.error('Failed to load revision feedback', err);
+      toast({
+        title: 'Could not load the brand feedback',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRevisionLoadingId(null);
+    }
+  };
+
+  const handleStartRevision = async (revisionNotes: string) => {
     // No dedicated "start revision" endpoint exists (or is needed) — a revision
     // is just a re-submission of the same deliverable row via
     // creatorDeliverables.upload + deliverables.submit, which
     // handleSubmitDeliverableForm already wires to the real API. This handler
     // stays a pure local UI transition: close the feedback dialog and open the
     // real submission form so the creator can upload the revised file.
-    // revisionNotes isn't sent anywhere today — there's no field for it in
-    // DeliverableSubmissionData/the submit DTO, so it's dropped here.
+    // F-0354 — the notes are no longer dropped: they're parked against this deliverable id and
+    // sent as SubmitRequest.notes by handleSubmitDeliverableForm's submit call.
+    if (revisionContext) {
+      setPendingRevisionNotes({
+        deliverableId: revisionContext.deliverableId,
+        notes: revisionNotes,
+      });
+    }
     setShowRevisionHandler(false);
     setShowDeliverableDialog(true);
   };
@@ -2588,7 +2684,8 @@ export default function CreatorChatPage() {
                         </p>
 
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>Revision {String(event.metadata?.revision)}/{String(event.metadata?.maxRevisions)}</span>
+                          {/* F-0360 — count only; there is no revision maximum to divide by. */}
+                          <span>Revision {String(event.metadata?.revision)}</span>
                           {event.metadata?.status === 'approved' && event.metadata?.paymentAmount != null && (
                             <span className="text-stage-approved-fg font-medium">
                               Payment: {formatINR(Number(event.metadata.paymentAmount))}
@@ -2748,12 +2845,68 @@ export default function CreatorChatPage() {
 
               {openPanel === 'deliverables' && (
                 <div className="space-y-4">
-                  <DealDeliverablesTab
-                    done={selectedDeal.deliverablesDone}
-                    total={selectedDeal.deliverablesTotal}
-                    dealValue={selectedDeal.dealAmount}
-                    items={deliverableItems}
-                  />
+                  {deliverableItems.length === 0 ? (
+                    // F-0349 — DealDeliverablesTab's shared empty state reads "No deliverables
+                    // yet. They appear here once the creator submits content." On the creator's
+                    // own screen that instructs an action the creator cannot take: slots are
+                    // materialized server-side by ContractService#materializeDeliverables when
+                    // the contract is generated, and with zero slots no Submit control renders
+                    // at all. Say what actually unblocks it instead.
+                    <div className="flex items-center justify-center px-8 py-16 text-center text-sm text-muted-foreground">
+                      <div className="max-w-sm">
+                        <Package className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                        <p className="font-medium text-foreground">No deliverable slots yet</p>
+                        <p className="mt-1">
+                          Slots are created from the contract, not by uploading. Once the brand
+                          sends the contract for this deal and it is signed, each agreed
+                          deliverable appears here for you to upload and submit.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <DealDeliverablesTab
+                      done={selectedDeal.deliverablesDone}
+                      total={selectedDeal.deliverablesTotal}
+                      dealValue={selectedDeal.dealAmount}
+                      items={deliverableItems}
+                    />
+                  )}
+                  {/* F-0351 — the creator's way into RevisionHandler. A REVISION_REQUESTED row
+                      is the brand asking for changes, and nothing on this page opened the
+                      dialog that carries that request. Live mode only: liveDeliverables is
+                      empty in demo mode, where there is no real feedback to show. */}
+                  {liveApi &&
+                    liveDeliverables
+                      .filter((d) => d.status === 'REVISION_REQUESTED')
+                      .map((d) => (
+                        <Card key={`revision-${d.id}`} className="border-warning/40">
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="font-medium text-sm">{d.title}</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  The brand requested changes
+                                  {/* F-0360 — the real count, no "of N". The dialog this card
+                                      opens renders the same `currentRevision`, and no server
+                                      code caps it, so neither surface claims a maximum. */}
+                                  {d.currentRevision != null
+                                    ? ` — revision ${d.currentRevision}`
+                                    : ''}
+                                  .
+                                </p>
+                              </div>
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs shrink-0"
+                                onClick={() => void openRevisionHandler(d)}
+                                disabled={revisionLoadingId === d.id}
+                              >
+                                {revisionLoadingId === d.id ? 'Loading…' : 'View feedback & revise'}
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
                   {/* Post-approval lifecycle: mark-posted → report metrics / upload proof.
                       Wires the four previously-orphan CreatorDeliverableController routes
                       (PROJECT-DEEP-AUDIT-2026-08-04.md §5). Live mode only. */}
@@ -2865,8 +3018,13 @@ export default function CreatorChatPage() {
                 title: d.title,
                 description: d.description,
                 completed: d.completed,
-                currentRevision: d.currentRevision ?? undefined,
-                maxRevisions: d.maxRevisions ?? undefined,
+                // F-0360 — deliberately not forwarded. Every place `DeliverableSubmission`
+                // renders these is an "of {maxRevisions}" claim ("Rev 3/2", "This is revision 3
+                // of 2. After this ... you'll need new terms"), and no server code enforces a
+                // maximum. `maxRevisions` is now null on the wire, so forwarding `currentRevision`
+                // alone would print "revision 3 of ." there. The revision count still reaches the
+                // creator on the REVISION_REQUESTED card above and in RevisionHandler, which say
+                // it without a ceiling. Cleaning up that component's own copy is a follow-up.
               }))
             : [
                 { id: 'reel-1', title: 'Instagram Reel #1', description: 'High-quality reel with trending audio', completed: true },
@@ -2925,15 +3083,16 @@ export default function CreatorChatPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Revision Handler Modal */}
-      {showRevisionHandler && (
+      {/* Revision Handler Modal — every prop below comes from the loaded deliverable
+          (F-0352: the title was synthesized and the feedback/counts were literals, so the
+          creator would have read an invented brand comment as if the brand had written it). */}
+      {showRevisionHandler && revisionContext && (
         <RevisionHandler
           open={showRevisionHandler}
           onOpenChange={setShowRevisionHandler}
-          deliverableTitle={selectedDeliverableForRevision ? `Deliverable ${selectedDeliverableForRevision}` : 'Deliverable'}
-          currentRevision={1}
-          maxRevisions={2}
-          brandFeedback="Please make the colors more vibrant and add more movement in the middle section. Also, the audio seems too quiet."
+          deliverableTitle={revisionContext.title}
+          currentRevision={revisionContext.currentRevision}
+          brandFeedback={revisionContext.brandFeedback}
           onStartRevision={handleStartRevision}
         />
       )}
