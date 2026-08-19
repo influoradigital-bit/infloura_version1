@@ -24,7 +24,7 @@ export function TimelineEventCard({
     case 'message':
       return <MessageEventCard event={event} currentUserType={currentUserType} />;
     case 'proposal':
-      return <ProposalEventCard event={event} currentUserType={currentUserType} />;
+      return <ProposalEventCard event={event} />;
     case 'contract':
       return <ContractEventCard event={event} currentUserType={currentUserType} />;
     case 'deliverable':

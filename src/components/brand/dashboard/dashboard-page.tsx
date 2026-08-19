@@ -119,6 +119,17 @@ export function DashboardPage() {
   const [walletStatus, setWalletStatus] = React.useState<LoadStatus>('loading');
   const [pipelineStatus, setPipelineStatus] = React.useState<LoadStatus>('loading');
 
+  // F-0278 — distinguish genuinely-empty (never created a campaign, no deals, nothing ever) from
+  // established-with-nothing-pending. Check all three data sources are ready and truly empty.
+  const isGenuinelyEmpty =
+    actionsStatus === 'ready' &&
+    walletStatus === 'ready' &&
+    pipelineStatus === 'ready' &&
+    actionItems.length === 0 &&
+    wallet.availableBalance === 0 &&
+    wallet.escrowLocked === 0 &&
+    pipeline.every((s) => s.count === 0);
+
   // Load each of the three data sources independently — `Promise.allSettled` (not
   // `Promise.all`) so that one endpoint rejecting (e.g. a brand-new workspace's
   // `GET /wallet` 404ing) can't discard the other two calls that DID succeed. Each
@@ -247,9 +258,11 @@ export function DashboardPage() {
               ? 'Loading your latest activity…'
               : actionsStatus === 'error'
                 ? 'Some figures may be out of date.'
-                : urgentCount > 0
-                  ? `${urgentCount} urgent action${urgentCount > 1 ? 's' : ''} need your attention`
-                  : 'You\'re all caught up.'}
+                : isGenuinelyEmpty
+                  ? 'Your brand workspace is ready — create your first campaign to get started.'
+                  : urgentCount > 0
+                    ? `${urgentCount} urgent action${urgentCount > 1 ? 's' : ''} need your attention`
+                    : 'You\'re all caught up.'}
           </p>
         </div>
         <Button onClick={() => navigate('/brand/campaigns/new')} size="lg" className="gap-2">
@@ -333,13 +346,29 @@ export function DashboardPage() {
           })}
 
           {actionsStatus === 'ready' && actionItems.length === 0 && (
-            <div className="text-center py-12">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15">
-                <CheckCircle2 className="h-6 w-6 text-success" />
+            isGenuinelyEmpty ? (
+              <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+                <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                  <Target className="h-6 w-6 text-primary" />
+                </div>
+                <p className="text-sm font-medium">Ready to launch your first campaign?</p>
+                <p className="text-xs text-muted-foreground max-w-sm">
+                  Create a campaign to find creators, manage collaborations, and track your brand's influencer partnerships.
+                </p>
+                <Button onClick={() => navigate('/brand/campaigns/new')} size="sm" className="mt-2 gap-2">
+                  <Target className="h-3.5 w-3.5" />
+                  Create Campaign
+                </Button>
               </div>
-              <p className="font-medium">All caught up!</p>
-              <p className="text-sm text-muted-foreground">No pending actions right now.</p>
-            </div>
+            ) : (
+              <div className="text-center py-12">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15">
+                  <CheckCircle2 className="h-6 w-6 text-success" />
+                </div>
+                <p className="font-medium">All caught up!</p>
+                <p className="text-sm text-muted-foreground">No pending actions right now.</p>
+              </div>
+            )
           )}
         </CardContent>
       </Card>

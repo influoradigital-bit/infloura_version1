@@ -182,14 +182,21 @@ describe('DashboardPage — F-0245 loading/error/empty are three distinct states
 
   it('resolved-empty renders the real empty state', async () => {
     actionsMock.mockResolvedValue([]);
-    walletGetMock.mockResolvedValue({ availableBalance: 0, escrowLocked: 0, runwayDays: null });
-    pipelineMock.mockResolvedValue([]);
+    walletGetMock.mockResolvedValue({ availableBalance: 0, escrowLocked: 0, pendingPayouts: 0, runwayDays: null });
+    pipelineMock.mockResolvedValue([
+      { stage: 'draft', count: 0 },
+      { stage: 'active', count: 0 },
+      { stage: 'completed', count: 0 },
+    ]);
 
     renderDashboard();
 
-    expect(await screen.findByText('All caught up!')).toBeInTheDocument();
-    expect(screen.getByText('No pending actions right now.')).toBeInTheDocument();
-    expect(screen.getByText('No deals in your pipeline yet.')).toBeInTheDocument();
+    // F-0278: genuinely empty (no campaigns, no deals, zero wallet) now shows onboarding, not "all caught up"
+    expect(await screen.findByText(/ready to launch your first campaign/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create campaign/i })).toBeInTheDocument();
+
+    // Should NOT show "all caught up" for a genuinely empty workspace
+    expect(screen.queryByText('All caught up!')).not.toBeInTheDocument();
 
     // No leftover loading/error affordances once genuinely resolved-empty.
     expect(screen.queryByRole('status', { name: 'Loading pending actions' })).not.toBeInTheDocument();

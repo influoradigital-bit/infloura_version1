@@ -199,10 +199,12 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
       <div className="flex min-h-screen bg-background">
         {/* Desktop Sidebar */}
         <aside className="fixed inset-y-0 left-0 z-50 hidden w-60 flex-col border-r border-border bg-sidebar lg:flex">
-          {/* Logo */}
+          {/* Logo — F-0275: a logo is the universal "take me home" affordance, and the nav's
+              own "Home" item (above) already points at /creator/dashboard. Was
+              /creator/deals, disagreeing with the nav it sits right next to. */}
           <div className="flex h-14 items-center gap-2.5 border-b border-sidebar-border px-5">
             <button
-              onClick={() => navigate('/creator/deals')}
+              onClick={() => navigate('/creator/dashboard')}
               className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
             >
               <InfluoraLogo size="md" showName={true} />
@@ -375,8 +377,9 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
               >
                 {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </button>
+              {/* F-0275 — same "take me home" fix as the desktop logo above. */}
               <button
-                onClick={() => navigate('/creator/deals')}
+                onClick={() => navigate('/creator/dashboard')}
                 className="flex items-center gap-2"
               >
                 <InfluoraLogo size="sm" showName={true} />

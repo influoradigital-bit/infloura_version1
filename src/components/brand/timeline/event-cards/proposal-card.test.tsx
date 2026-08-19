@@ -47,7 +47,7 @@ describe('ProposalEventCard — DeliverableSlot[] metadata must not crash the re
     });
 
     // Before the fix this render threw, so the assertion is that it completes at all.
-    expect(() => render(<ProposalEventCard event={event} currentUserType="brand" />)).not.toThrow();
+    expect(() => render(<ProposalEventCard event={event} />)).not.toThrow();
 
     // Prefers the backend's own deliverableCount (number of slots), not the summed qty.
     expect(screen.getByText('2 pieces')).toBeInTheDocument();
@@ -62,7 +62,7 @@ describe('ProposalEventCard — DeliverableSlot[] metadata must not crash the re
       amount: 1000,
       deliverables: [{ type: 'POST', qty: 3 }],
     });
-    render(<ProposalEventCard event={event} currentUserType="brand" />);
+    render(<ProposalEventCard event={event} />);
 
     expect(screen.getByText('1 piece')).toBeInTheDocument();
     expect(screen.getByText('3x POST')).toBeInTheDocument();
@@ -70,14 +70,14 @@ describe('ProposalEventCard — DeliverableSlot[] metadata must not crash the re
 
   it('still renders pre-2026-07-26 proposals that stored a plain count', () => {
     const event = makeEvent({ amount: 1000, deliverables: 3 });
-    render(<ProposalEventCard event={event} currentUserType="brand" />);
+    render(<ProposalEventCard event={event} />);
 
     expect(screen.getByText('3 pieces')).toBeInTheDocument();
   });
 
   it('says so honestly when the proposal carries no deliverable information', () => {
     const event = makeEvent({ amount: 1000 });
-    render(<ProposalEventCard event={event} currentUserType="brand" />);
+    render(<ProposalEventCard event={event} />);
 
     // Not "0 pieces" — absent terms are unknown, not zero (TECH-STACK.md rule 7).
     expect(screen.getByText('Not specified')).toBeInTheDocument();

@@ -59,9 +59,15 @@ export default function CreatorLoginPage() {
           : createMockCreatorUser(),
       );
 
+      // F-0275 — a returning creator with zero pending proposals used to land on
+      // /creator/inbox (→ /creator/deals?status=new), whose empty state is text-only
+      // ("You'll see fresh proposals here...") with no way forward. /creator/dashboard
+      // carries the real zero-state (isEmptyCreator in creator-dashboard.tsx) with actual
+      // CTAs — Explore campaigns, Complete profile — so every entry point (register,
+      // onboarding-complete, login) now agrees on the same first screen.
       const onboardingCompleted =
         result.onboardingComplete || !!localStorage.getItem('creator_onboarding_completed');
-      navigate(onboardingCompleted ? '/creator/inbox' : '/creator/onboarding');
+      navigate(onboardingCompleted ? '/creator/dashboard' : '/creator/onboarding');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Login failed. Please try again.');
     } finally {

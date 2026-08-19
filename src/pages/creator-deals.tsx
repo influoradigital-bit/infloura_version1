@@ -726,8 +726,14 @@ function StatusPill({ status }: { status: DealRoom['status'] }) {
 // Empty state — tailored copy per filter.
 // ---------------------------------------------------------------------------
 function EmptyState({ filter }: { filter: DealStatusFilter }) {
+  const navigate = useNavigate();
   const copy: Record<DealStatusFilter, { icon: React.ComponentType<{ className?: string }>; title: string; body: string }> = {
-    all:         { icon: Building2,  title: 'No deals yet',           body: 'Brands will reach out as they discover your profile. Make sure your profile is complete.' },
+    // F-0275 — was "Brands will reach out as they discover your profile. Make sure your
+    // profile is complete.", which told the creator this is a purely passive product with
+    // nothing to do but wait. Creators can browse and apply to campaigns themselves via
+    // /creator/campaigns; the CTA below makes that discoverable instead of implying it
+    // doesn't exist.
+    all:         { icon: Building2,  title: 'No deals yet',           body: 'Brands will reach out as they discover your profile — or go find one yourself.' },
     new:         { icon: Sparkles,    title: 'No new proposals',       body: 'You\'ll see fresh proposals here as brands send them.' },
     negotiating: { icon: MessageCircle, title: 'Nothing in flight',    body: 'Deals you\'re negotiating will appear here.' },
     contracted:  { icon: AlertCircle, title: 'No contracts yet',       body: 'Signed contracts will show up here.' },
@@ -746,6 +752,17 @@ function EmptyState({ filter }: { filter: DealStatusFilter }) {
       </div>
       <p className="font-medium">{c.title}</p>
       <p className="mt-1 text-sm text-muted-foreground max-w-xs">{c.body}</p>
+      {filter === 'all' && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-4 gap-2"
+          onClick={() => navigate('/creator/campaigns')}
+        >
+          <Search className="h-4 w-4" />
+          Browse campaigns
+        </Button>
+      )}
     </div>
   );
 }

@@ -220,7 +220,7 @@ export function CampaignForm({
   // Set when a publish (ACTIVE) is refused because the workspace isn't verified — renders the
   // persistent inline box instead of a disappearing toast. Cleared on the next submit attempt.
   const [verificationBlocked, setVerificationBlocked] = React.useState(false);
-  const { canVerify } = useWorkspaceVerification();
+  const { canVerify, isLoading: verificationLoading, isVerified } = useWorkspaceVerification();
   const [newRequirement, setNewRequirement] = React.useState('');
   const [newHashtag, setNewHashtag] = React.useState('');
   const [newInterest, setNewInterest] = React.useState('');
@@ -1400,7 +1400,7 @@ export function CampaignForm({
                 </div>
               )}
 
-              {currentStep === 'review' && verificationBlocked && (
+              {currentStep === 'review' && (verificationBlocked || (!verificationLoading && isVerified === false)) && (
                 <div className="mt-6">
                   <VerificationRequiredBox
                     canVerify={canVerify}
@@ -1436,7 +1436,7 @@ export function CampaignForm({
                       <Button
                         type="button"
                         onClick={() => handleSubmit('ACTIVE')}
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || (!verificationLoading && isVerified === false)}
                       >
                         {isSubmitting ? (
                           <>

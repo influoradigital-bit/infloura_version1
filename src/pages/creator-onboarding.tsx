@@ -228,7 +228,11 @@ export default function CreatorOnboardingPage() {
     try {
       await api.onboarding.completeCreator();
       localStorage.setItem('creator_onboarding_completed', 'true');
-      navigate('/creator/deals');
+      // F-0275 — was '/creator/deals', which skips creator-dashboard.tsx's zero-state
+      // entirely (its CTAs — Explore campaigns, Complete profile — only fire for
+      // isEmptyCreator === true, i.e. deals.length === 0, which is exactly the state a
+      // freshly-onboarded creator is in). Matches the register-page destination below.
+      navigate('/creator/dashboard');
     } catch (err) {
       // Was try/finally with NO catch — the final "Go to Deals" step failed silently.
       toast({
@@ -637,7 +641,7 @@ function YoureInStep({ onComplete, isLoading }: YoureInStepProps) {
       </div>
 
       <Button onClick={onComplete} disabled={isLoading} className="w-full gap-1.5" size="lg">
-        {isLoading ? 'Setting up…' : 'Go to Deals'}
+        {isLoading ? 'Setting up…' : 'Go to Dashboard'}
         <ArrowRight className="h-4 w-4" />
       </Button>
     </div>

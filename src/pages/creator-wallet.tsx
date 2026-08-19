@@ -35,7 +35,9 @@ import {
   Loader2,
   Receipt,
   Banknote,
+  Info,
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
   api,
@@ -87,12 +89,30 @@ function safeRandomUUID(): string {
 //   - tax documents (Form-16A etc.) — no backend endpoint
 // ---------------------------------------------------------------------------
 
-/** Real wallet zero-state — used until `/wallet` resolves, and again if it 404s/errors. */
-const EMPTY_EARNINGS = {
-  availableBalance: 0,
-  escrowLocked: 0,
-  pendingPayouts: 0,
+/**
+ * F-0281 — the three tiles' shape. Every field is `number | null`: `null` means "we do not know
+ * this figure right now" (still loading, or the last fetch failed) and must render as an explicit
+ * "—", never as `formatINR(0)`. A `0` here is only ever a genuine, server-confirmed zero. Collapsing
+ * "unavailable" into "0" is exactly the bug class F-0260 closed on the brand side — a creator whose
+ * data failed to load must not look identical to one who genuinely has no money.
+ */
+interface Earnings {
+  availableBalance: number | null;
+  escrowLocked: number | null;
+  pendingPayouts: number | null;
+}
+
+/** Absent state — used until `/wallet` resolves for the first time, and again if it 404s/errors. */
+const EMPTY_EARNINGS: Earnings = {
+  availableBalance: null,
+  escrowLocked: null,
+  pendingPayouts: null,
 };
+
+/** Renders a known amount as INR, or an explicit "—" for a `null` (unavailable, not zero) figure. */
+function formatEarning(amount: number | null): string {
+  return amount === null ? '—' : formatINR(amount);
+}
 
 /**
  * Minimum withdrawal in INR. MUST mirror `WalletService.MIN_CREATOR_WITHDRAWAL`
@@ -137,6 +157,45 @@ function mapWalletTransactionRow(row: WalletTransactionRow): WalletTransaction {
     status: row.status,
     balanceAfter: row.balanceAfter,
   };
+}
+
+/**
+ * F-0281 — the three headline wallet figures (Available Balance / In Escrow / Pending
+ * Payouts) had no distinguishing copy anywhere: same size, same weight, no tooltip. On the
+ * highest-anxiety screen a creator has, that left "is this mine yet?" unanswered. Each
+ * label gets a keyboard-reachable info trigger (Radix Tooltip opens on focus, not just
+ * hover) with a plain-language definition matching what the field actually is on this page
+ * — `GET /wallet`'s `availableBalance` / `escrowLocked` / `pendingPayouts` (see the
+ * live-wiring note above `EMPTY_EARNINGS`).
+ */
+function WalletFigureLabel({
+  label,
+  definition,
+  labelClassName,
+  iconClassName,
+}: {
+  label: string;
+  definition: string;
+  labelClassName?: string;
+  iconClassName?: string;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <p className={labelClassName}>{label}</p>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className={cn('shrink-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2', iconClassName)}
+            aria-label={`What is ${label}?`}
+          >
+            <Info className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-56 text-left">{definition}</TooltipContent>
+      </Tooltip>
+    </div>
+  );
 }
 
 function formatINR(amount: number): string {
@@ -397,7 +456,9 @@ export default function CreatorWalletPage() {
     } catch (err) {
       console.error('Failed to load wallet balance', err);
       setWalletError('Could not refresh wallet balance. Showing last known data.');
-      // Never leave a fabricated balance on screen on error — zero it out.
+      // F-0281/F-0260 class — never leave a fabricated balance on screen on error, and never
+      // paper over "we don't know" as a confident zero either: EMPTY_EARNINGS is all-`null`, which
+      // formatEarning renders as "—", visually distinct from a real, server-confirmed ₹0.
       setEarnings(EMPTY_EARNINGS);
     } finally {
       setWalletLoading(false);
@@ -641,23 +702,55 @@ export default function CreatorWalletPage() {
 
         {/* Earnings Overview — every figure here is a real field off WalletSummaryResponse
             (GET /wallet); there is no lifetime-earnings or month-over-month endpoint yet,
-            so we no longer fabricate a "Total Earned" / growth number. */}
+            so we no longer fabricate a "Total Earned" / growth number.
+
+            F-0281/F-0336 — the tooltip copy below was previously layered on top of data that
+            could not support it: `escrowLocked` read a wallet column no backend service ever
+            writes (permanently ₹0 for every creator), and `pendingPayouts` actually held the
+            FUNDED-escrow figure under a definition that described a withdrawal in flight — the
+            opposite of what that money was. WalletService#getSummaryForUser now derives both
+            figures for real (see its javadoc), so these definitions are rewritten to match what
+            the numbers beside them actually are, not what the old, broken numbers needed to be
+            explained away. `formatEarning` renders an explicit "—" instead of a fabricated ₹0
+            when a fetch fails — a creator with no money and a creator with a failed fetch must
+            not look identical (F-0260's class). */}
         <Card className="bg-gradient-to-br from-primary to-accent text-white mb-6">
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-white/80">Available Balance</p>
+              <WalletFigureLabel
+                label="Available Balance"
+                definition="Already released to you. Yours to withdraw to your bank or UPI right now."
+                labelClassName="text-sm text-white/80"
+                iconClassName="text-white/70 hover:text-white"
+              />
               {walletLoading && <Loader2 className="h-4 w-4 animate-spin" />}
             </div>
-            <p className="text-4xl font-bold mb-6">{formatINR(earnings.availableBalance)}</p>
+            <p className="text-4xl font-bold mb-6" aria-label="Available balance">
+              {formatEarning(earnings.availableBalance)}
+            </p>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white/10 rounded-lg p-3">
-                <p className="text-xs text-white/80">In Escrow</p>
-                <p className="text-lg font-semibold">{formatINR(earnings.escrowLocked)}</p>
+                <WalletFigureLabel
+                  label="In Escrow"
+                  definition="Funds a brand has locked for a deal that's still in progress. Not withdrawable yet — moves to Available Balance once you deliver and it's approved."
+                  labelClassName="text-xs text-white/80"
+                  iconClassName="text-white/70 hover:text-white"
+                />
+                <p className="text-lg font-semibold" aria-label="In escrow">
+                  {formatEarning(earnings.escrowLocked)}
+                </p>
               </div>
               <div className="bg-white/10 rounded-lg p-3">
-                <p className="text-xs text-white/80">Pending Payouts</p>
-                <p className="text-lg font-semibold">{formatINR(earnings.pendingPayouts)}</p>
+                <WalletFigureLabel
+                  label="Pending Payouts"
+                  definition="A withdrawal you've already requested that's on its way to your bank or UPI — already deducted from Available Balance, not yet confirmed as landed."
+                  labelClassName="text-xs text-white/80"
+                  iconClassName="text-white/70 hover:text-white"
+                />
+                <p className="text-lg font-semibold" aria-label="Pending payouts">
+                  {formatEarning(earnings.pendingPayouts)}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -1087,9 +1180,11 @@ export default function CreatorWalletPage() {
             {/* Available Balance */}
             <div className="bg-gradient-to-br from-violet-50 to-purple-50 border border-violet-200 rounded-lg p-4 text-center">
               <p className="text-sm text-muted-foreground">Available to Withdraw</p>
-              <p className="text-3xl font-bold text-stage-contracted-fg">{formatINR(earnings.availableBalance)}</p>
+              <p className="text-3xl font-bold text-stage-contracted-fg">
+                {formatEarning(earnings.availableBalance)}
+              </p>
               <p className="text-xs text-muted-foreground mt-1">
-                {formatINR(earnings.escrowLocked)} locked in escrow
+                {formatEarning(earnings.escrowLocked)} in escrow, not yet released
               </p>
             </div>
 
@@ -1112,7 +1207,7 @@ export default function CreatorWalletPage() {
                   value={withdrawAmount}
                   onChange={(e) => changeWithdrawAmount(e.target.value)}
                   className="pl-9"
-                  max={earnings.availableBalance}
+                  max={earnings.availableBalance ?? undefined}
                 />
               </div>
               <div className="flex items-center justify-between text-xs">
@@ -1120,7 +1215,10 @@ export default function CreatorWalletPage() {
                 <Button
                   variant="link"
                   className="h-auto p-0 text-xs"
-                  onClick={() => changeWithdrawAmount(earnings.availableBalance.toString())}
+                  disabled={earnings.availableBalance === null}
+                  onClick={() =>
+                    changeWithdrawAmount((earnings.availableBalance ?? 0).toString())
+                  }
                 >
                   Withdraw All
                 </Button>
@@ -1209,7 +1307,7 @@ export default function CreatorWalletPage() {
             </Button>
             <Button
               onClick={handleWithdraw}
-              disabled={isWithdrawing || !withdrawAmount || parseFloat(withdrawAmount) < MIN_WITHDRAWAL_INR || parseFloat(withdrawAmount) > earnings.availableBalance || (liveApi && (!primaryPayoutMethod || !primaryPayoutMethod.usable))}
+              disabled={isWithdrawing || !withdrawAmount || earnings.availableBalance === null || parseFloat(withdrawAmount) < MIN_WITHDRAWAL_INR || parseFloat(withdrawAmount) > earnings.availableBalance || (liveApi && (!primaryPayoutMethod || !primaryPayoutMethod.usable))}
               className="bg-primary hover:bg-primary/90"
             >
               {isWithdrawing ? (
