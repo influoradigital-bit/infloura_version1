@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Gate for F-0338 (dead-route) and F-0340 (funnel-dead-end), plus the retired
+# Gate for F-0338 (dead-route), F-0340 (funnel-dead-end) and F-0342
+# (invented traction metric), plus the retired
 # "escrow" vocabulary.
 #
 # Two things must hold on the public marketing surface:
@@ -166,13 +167,44 @@ for f in $MARKETING_PAGES; do
 done
 [ "$leaked" -eq 0 ] && echo "  no public page links into an authenticated zone"
 
+# --- 4. no invented traction metric on a marketing page -------------------
+# F-0342. Both / and /about used to <CountUp> three hardcoded literals —
+# "8,915 creators", "₹4.3Cr paid out", "24h avg payout" — presented as live
+# platform telemetry. No endpoint produces any of those figures; they were typed
+# in. Invented traction is a factual claim to every visitor, ASCI/consumer-law
+# exposure in India, and it now propagates into AI answers we cannot retract.
+#
+# The rule: a marketing page may not hold a stat-shaped numeric literal. Real
+# measured numbers are welcome in that slot, but they have to arrive from an API
+# response, not from a constant in the page. Prose numbers ("72-hour window",
+# "100 creators", "₹4,999") are untouched — this matches only the
+# `value: <number>` shape that feeds a counter.
+echo
+echo "== no invented traction metric on a marketing page =="
+
+metric=0
+for f in src/pages/landing.tsx src/pages/about.tsx src/components/site/proof-points.ts; do
+  [ -f "$f" ] || continue
+  if strip_comments "$f" | grep -nE "value:[[:space:]]*[0-9]{3,}" >/dev/null; then
+    echo "  FAIL $f declares a stat-shaped numeric literal:"
+    strip_comments "$f" | grep -nE "value:[[:space:]]*[0-9]{3,}" | sed 's/^/           /'
+    echo "         (a traction figure must come from an endpoint, not a literal — see"
+    echo "          src/components/site/proof-points.ts)"
+    metric=1
+    fail=1
+  fi
+done
+[ "$metric" -eq 0 ] && echo "  no hardcoded traction figures"
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "PASS — marketing surface clean"
   echo "NOT CHECKED: logged-in app screens, code identifiers, API field names (out of scope by decision);"
   echo "             whether the copy is GOOD, only that the retired term is absent;"
   echo "             whether a guarded route is guarded correctly, only that public pages avoid it;"
-  echo "             links in marketing pages not listed in MARKETING_PAGES above."
+  echo "             links in marketing pages not listed in MARKETING_PAGES above;"
+  echo "             whether a NON-numeric claim is true — \"Trusted by 500+ Indian brands\" on"
+  echo "             /about is prose, sanctioned by CEO-DECISIONS.md #4, and is NOT checked here (F-0343)."
   exit 0
 fi
 

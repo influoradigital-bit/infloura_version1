@@ -2,24 +2,24 @@ import { Globe2, MapPin, ShieldCheck, Sparkles } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { FadeUp, StaggerContainer, StaggerItem, CountUp } from '@/components/motion';
+import { FadeUp, StaggerContainer, StaggerItem } from '@/components/motion';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
 import { FunnelCta } from '@/components/site/FunnelCta';
 import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
+import { PROOF_POINTS } from '@/components/site/proof-points';
 import { Seo } from '@/lib/seo/Seo';
 import { JsonLd, getOrganizationSchema, getWebPageSchema } from '@/lib/seo/schema';
 
 // Content per wiki/website/content-map.md §1.2.
 // CEO-DECISIONS.md #4: no client logos until written permission exists —
-// anonymized stats + "trusted by 500+ brands" text only.
+// anonymized stats + "trusted by 500+ brands" text only. NOTE (F-0342): the
+// invented traction figures that used to sit in this file are gone (see
+// src/components/site/proof-points.ts). The "500+ brands" line below is left
+// in place because decision #4 explicitly sanctions that wording — it is the
+// same class of unsubstantiated claim and is logged as F-0343 for Swapnil,
+// not something to remove unilaterally.
 // CEO-DECISIONS.md #6: no hard follower-count threshold stated publicly.
-
-const STATS = [
-  { label: 'Creators on platform', value: 8915, format: (n: number) => `${Math.round(n).toLocaleString('en-IN')}+` },
-  { label: 'Paid out to creators', value: 42600000, format: (n: number) => `₹${(n / 10000000).toFixed(1)}Cr+` },
-  { label: 'Avg. payout time', value: 24, format: (n: number) => `${Math.round(n)}h` },
-];
 
 const DIFFERENTIATORS = [
   {
@@ -116,19 +116,18 @@ export default function AboutPage() {
           </div>
         </section>
 
-        {/* Stats */}
+        {/* Proof points — capability, not traction (F-0342) */}
         <section className="py-20">
           <div className="mx-auto max-w-4xl px-6 text-center">
             <FadeUp>
-              <h2 className="text-3xl font-semibold">Where we stand today</h2>
+              <h2 className="text-3xl font-semibold">What you get from day one</h2>
             </FadeUp>
             <StaggerContainer className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-3">
-              {STATS.map((stat) => (
-                <StaggerItem key={stat.label}>
-                  <p className="text-3xl font-bold">
-                    <CountUp value={stat.value} formatFn={stat.format} viewMargin="0px" />
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">{stat.label}</p>
+              {/* F-0342 — see src/components/site/proof-points.ts. */}
+              {PROOF_POINTS.map((point) => (
+                <StaggerItem key={point.label}>
+                  <p className="text-3xl font-bold">{point.value}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{point.label}</p>
                 </StaggerItem>
               ))}
             </StaggerContainer>

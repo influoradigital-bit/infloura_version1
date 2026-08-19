@@ -25,6 +25,7 @@ import { FaqSection } from '@/components/site/FaqSection';
 import { FunnelCta } from '@/components/site/FunnelCta';
 import { TrustBar } from '@/components/site/TrustBar';
 import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
+import { PROOF_POINTS } from '@/components/site/proof-points';
 import { Seo } from '@/lib/seo/Seo';
 import {
   JsonLd,
@@ -38,7 +39,7 @@ import {
 const HeroGlobeGate = lazy(() =>
   import('@/components/3d/HeroGlobe').then((m) => ({ default: m.HeroGlobeGate })),
 );
-import { FadeUp, StaggerContainer, StaggerItem, WordReveal, CountUp } from '@/components/motion';
+import { FadeUp, StaggerContainer, StaggerItem, WordReveal } from '@/components/motion';
 import { PaymentFlowAnimation } from '@/components/motion/PaymentFlowAnimation';
 import { HypeLiveIndicator } from '@/components/ui/hype-live-indicator';
 import { SlotProgressBar } from '@/components/ui/slot-progress-bar';
@@ -101,12 +102,6 @@ const FAQS = [
     answer:
       'A brand can create an account, build a brief and send its first creator invites the same day \u2014 Meera, the built-in AI co-pilot, drafts the campaign from a plain-language description of the product and goal. The slower step is usually creator response time, not setup.',
   },
-];
-
-const STATS = [
-  { label: 'Creators on platform', value: 8915, format: (n: number) => `${Math.round(n).toLocaleString('en-IN')}+` },
-  { label: 'Paid out to creators', value: 42600000, format: (n: number) => `₹${(n / 10000000).toFixed(1)}Cr+` },
-  { label: 'Avg. payout time', value: 24, format: (n: number) => `${Math.round(n)}h` },
 ];
 
 const FEATURES = [
@@ -325,13 +320,17 @@ export default function LandingPage() {
                   </Link>
                 </p>
               </FadeUp>
+              {/*
+                F-0342: this slot used to CountUp three invented traction figures
+                (8,915 creators / ₹4.3Cr paid out / 24h). See
+                src/components/site/proof-points.ts for why they are gone and what
+                any replacement has to satisfy.
+              */}
               <FadeUp delay={0.5} className="mt-10 grid grid-cols-3 gap-6">
-                {STATS.map((stat) => (
-                  <div key={stat.label}>
-                    <p className="text-2xl font-bold">
-                      <CountUp value={stat.value} formatFn={stat.format} viewMargin="0px" />
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{stat.label}</p>
+                {PROOF_POINTS.map((point) => (
+                  <div key={point.label}>
+                    <p className="text-2xl font-bold">{point.value}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{point.label}</p>
                   </div>
                 ))}
               </FadeUp>
