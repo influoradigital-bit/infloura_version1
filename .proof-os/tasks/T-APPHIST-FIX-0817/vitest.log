@@ -1,0 +1,22 @@
+▲ [WARNING] Duplicate key "baseUrl" in object literal [duplicate-object-key]
+
+    ../../tsconfig.json:21:4:
+      21 │     "baseUrl": ".",
+         ╵     ~~~~~~~~~
+
+  The original key "baseUrl" is here:
+
+    ../../tsconfig.json:20:4:
+      20 │     "baseUrl": ".",
+         ╵     ~~~~~~~~~
+
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mC:/Users/Sage world/Downloads/New Influora Ai/New Influora[39m
+
+ [32m✓[39m src/components/creator/ApplicationHistoryTimeline.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 361[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 20:45:08
+[2m   Duration [22m 6.49s[2m (transform 418ms, setup 444ms, collect 735ms, tests 361ms, environment 1.53s, prepare 209ms)[22m
+

@@ -1,0 +1,12 @@
+{"verdict":"believed","oracle":"model","isolation":"fresh-context",
+ "done_when":"an ApplicationHistoryEvent entity plus V69 migration persist an immutable timestamped event for apply, brand-view, accept, reject and each deal-room transition; GET /creator/applications/{dealId}/history returns them in chronological order; /creator/applications renders a vertical timeline per application with event name, actor, date/time and status; the maven build and npx tsc --noEmit both exit 0; and priya, dispatched into a fresh context with the artifact paths and this done_when only, signs off",
+ "not_checked":[
+  "nothing was run against a deployed server — the whole feature is verified by build, unit and slice tests, never by a live request",
+  "whether the brand's applicant-triage UI actually calls GET /deals/{id} in production; if it does not, FR-02's brand-view event never fires however correct the code is",
+  "whether V69 applies cleanly to the production MySQL schema — every ordering and FK test ran against H2 with hand-written DDL, not against the real migration engine",
+  "whether the AFTER_COMMIT listener fires under the real container config, including any path where apply() is invoked without an ambient transaction",
+  "the residual phantom-event window at the eight write sites that still commit before their caller does; the one reachable instance was found and fixed, the rest are reasoned-about, not eliminated",
+  "the full frontend suite, which is red on another engineer's untracked in-progress file for an unrelated ticket"],
+ "skipped":[
+  {"step":"promotion of this task's ledger records","reason":"proof-os closes a record only by promotion against a gate script on disk; fixes were written, gates were not, so F-0305 F-0306 F-0307 F-0309 F-0311 F-0312 F-0313 F-0314 F-0315 F-0316 F-0317 remain formally open and are reported as such"},
+  {"step":"resolution of F-0287, F-0302 and F-0303","reason":"the rejection-wording conflict overrides a standing CTO arbitration, which priya's own registry entry says is overridden only by swapnil; not settled here"}]}

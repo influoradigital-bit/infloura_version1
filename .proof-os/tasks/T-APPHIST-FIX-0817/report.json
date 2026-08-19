@@ -1,0 +1,220 @@
+{
+ "rows": [
+  {
+   "subject": "influora-api build",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -o -q -DskipTests compile",
+    "result": "exit 0, no diagnostics",
+    "where": "influora-api/pom.xml:1"
+   }
+  },
+  {
+   "subject": "influora-api test suite",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -o test -Dtest=<17 classes>",
+    "result": "285 tests run with 0 failures and 0 errors, none skipped — BUILD SUCCESS",
+    "where": "influora-api/src/test/java/com/influora/service/ApplicationHistoryServiceRollbackIsolationTest.java:1"
+   }
+  },
+  {
+   "subject": "frontend typecheck",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "npx tsc --noEmit -p tsconfig.json",
+    "result": "exit 0",
+    "where": "src/components/creator/ApplicationHistoryTimeline.tsx:1"
+   }
+  },
+  {
+   "subject": "creator + lib frontend tests",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "vitest",
+    "command": "npx vitest run src/components/creator/ src/lib/",
+    "result": "27 files, 202 tests passed",
+    "where": "src/components/creator/ApplicationHistoryTimeline.test.tsx:1"
+   }
+  },
+  {
+   "subject": "FR-01 create application history",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "independent review of ApplicationHistoryEvent and V69 in a fresh context",
+    "result": "no setters, createdAt set once and updatable=false, no updated_at column, no UPDATE or DELETE in the app layer — genuinely append-only",
+    "where": "influora-api/src/main/java/com/influora/domain/entity/ApplicationHistoryEvent.java:98"
+   }
+  },
+  {
+   "subject": "FR-02 track brand view",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "independent review of the brand-view write path",
+    "result": "recorded brand-only and idempotently from DealService#get via recordViewIfAbsent",
+    "where": "influora-api/src/main/java/com/influora/service/DealService.java:172"
+   }
+  },
+  {
+   "subject": "FR-03 track decision with reason",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "independent review of doReject and its history emission",
+    "result": "branched on actor so a creator withdrawal is APPLICATION_WITHDRAWN and a brand decline is APPLICATION_REJECTED, with reasonGiven gating metadata",
+    "where": "influora-api/src/main/java/com/influora/service/DealService.java:483"
+   }
+  },
+  {
+   "subject": "FR-04 activate deal room on acceptance",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "independent review of the accept path",
+    "result": "the accept event carries dealRoomId and the timeline resolves it to the deal room CTA",
+    "where": "influora-api/src/main/java/com/influora/service/DealService.java:802"
+   }
+  },
+  {
+   "subject": "FR-05 direct navigation to the deal room",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "independent check of every emitted targetRoute against the route table",
+    "result": "both destinations exist and are creator-reachable; the nonexistent /creator/deals/:id is correctly avoided",
+    "where": "src/App.tsx:540"
+   }
+  },
+  {
+   "subject": "FR-06 show current deal room step",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "independent review of DealPhaseCalculator and the phase badge",
+    "result": "phase computed server-side from real status and rendered only when non-null, never coerced for CANCELLED or DISPUTED",
+    "where": "influora-api/src/main/java/com/influora/service/DealPhaseCalculator.java:1"
+   }
+  },
+  {
+   "subject": "FR-07 complete first-to-last timeline",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "independent read of all 14 event write sites",
+    "result": "every enum value is emitted at a point where the fact it claims has committed, across apply, view, accept, reject, contract, escrow, deliverable, deliver and pay",
+    "where": "influora-api/src/main/java/com/influora/domain/enums/ApplicationHistoryEventType.java:26"
+   }
+  },
+  {
+   "subject": "FR-08 chronological ordering",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "independent review plus removal of the tiebreak from the derived query",
+    "result": "ordered by created_at then a real AUTO_INCREMENT sequence_no; the fixture now inverts insertion order against sequence order so a missing tiebreak returns the wrong rows",
+    "where": "influora-api/src/test/java/com/influora/repository/ApplicationHistoryEventOrderingTest.java:133"
+   }
+  },
+  {
+   "subject": "FR-09 no duplicate deal rooms",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "independent review of the apply idempotency path",
+    "result": "a UNIQUE(campaign_id, creator_id) constraint backs a pre-check and a concurrent-race catch, so repeat clicks reuse the one row",
+    "where": "influora-api/src/main/java/com/influora/service/CreatorCampaignService.java:175"
+   }
+  },
+  {
+   "subject": "FR-10 auditability after completion",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "independent review of persistence and retention",
+    "result": "rows persist indefinitely with no purge path and no mutation route",
+    "where": "influora-api/src/main/resources/db/migration/V69__application_history_events.sql:37"
+   }
+  },
+  {
+   "subject": "endpoint authorization",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "independent attempt to reach another creator's history",
+    "result": "ownership is SQL-scoped to the JWT creator id with no client-supplied parameter, and a foreign dealId returns the same 404 as a nonexistent one",
+    "where": "influora-api/src/main/java/com/influora/service/CreatorApplicationService.java:130"
+   }
+  },
+  {
+   "subject": "guard tests are capable of failing",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "reverted each fix in turn and re-ran its guard, then restored the tree",
+    "result": "rollback isolation, apply FK race, approval ordering and the arbitration test each went red for their stated reason; the ordering fixture was rebuilt after it was shown not to",
+    "where": "influora-api/src/test/java/com/influora/service/CreatorCampaignServiceApplyHistoryFkRaceTest.java:1"
+   }
+  },
+  {
+   "subject": "src/lib/application-status.ts",
+   "owner": "kavya",
+   "status": "partial",
+   "isolation": "shared-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "read the arbitration header against the requirements document",
+    "result": "the shipped wording follows the standing CTO arbitration while the requirements document asks for the opposite; the conflict is open and reserved for swapnil",
+    "where": "src/lib/application-status.ts:5"
+   }
+  },
+  {
+   "subject": "FR-02 live firing",
+   "owner": "kavya",
+   "status": "partial",
+   "isolation": "shared-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "traced the brand-view write to its trigger",
+    "result": "the event fires from GET /deals/{id}; whether the brand triage UI calls that endpoint in production is not decidable from source",
+    "where": "influora-api/src/main/java/com/influora/service/DealService.java:172"
+   }
+  }
+ ]
+}

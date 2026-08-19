@@ -1,0 +1,8 @@
+· markers: GATE-F0324-CARDS-START/END present in src/pages/brand-wallet.tsx
+  present
+· self-check: known-bad Balance Cards block (verbatim pre-fix F-0324) is rejected by the spec
+  good — brand-wallet.load-states.test.tsx fails against the known-bad block (rc=1), as required
+· per-region status machinery present in src/pages/brand-wallet.tsx
+  clean
+  dashboard-page.tsx and brand-wallet.tsx share one DashboardCardError implementation
+· vitest: src/pages/__tests__/brand-wallet.load-states.test.tsx (real code on disk)

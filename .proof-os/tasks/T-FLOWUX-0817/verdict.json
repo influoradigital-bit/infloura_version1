@@ -1,0 +1,23 @@
+{
+  "verdict": "echo",
+  "oracle": "model",
+  "isolation": "shared-context",
+  "done_when": "each available oracle ran, findings are classed into ledger records with missed_by, and the blind spots are named",
+  "not_checked": [
+    "whether any of these screens actually renders this way in a browser — every finding is read off source, nothing was clicked",
+    "whether a real creator or brand is in fact confused; comprehension was inferred from copy and routing, never observed with a user",
+    "whether the dead controls fail silently or throw at runtime",
+    "whether the backend rejects a publish for an unverified workspace in the way campaign-form's error branch assumes",
+    "the admin flow, the marketing site, and every mobile-viewport rendering"
+  ],
+  "skipped": [
+    {
+      "step": "gates/build.sh, gates/security.sh, gates/graph_source.py",
+      "reason": "resolve.py named them for an AUDIT verb, but none can observe navigation, copy or empty states, which is the whole of what was asked; tsc and the gitleaks leg of gates/frontend.sh were run and are reported"
+    },
+    {
+      "step": "live browser verification",
+      "reason": "the user chose the source-read method over driving the deployed site"
+    }
+  ]
+}

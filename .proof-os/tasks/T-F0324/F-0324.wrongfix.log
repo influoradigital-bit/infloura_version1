@@ -1,0 +1,70 @@
+· markers: GATE-F0324-CARDS-START/END present in src/pages/brand-wallet.tsx
+  present
+· self-check: known-bad Balance Cards block (verbatim pre-fix F-0324) is rejected by the spec
+  good — brand-wallet.load-states.test.tsx fails against the known-bad block (rc=1), as required
+· per-region status machinery present in src/pages/brand-wallet.tsx
+  clean
+  dashboard-page.tsx and brand-wallet.tsx share one DashboardCardError implementation
+· vitest: src/pages/__tests__/brand-wallet.load-states.test.tsx (real code on disk)
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M5 12h14"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M12 5v14"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+              [0mAdd Funds[0m
+            [36m</button>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"grid gap-4 md:grid-cols-2 lg:grid-cols-4"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm relative overflow-hidden"[39m
+            [33mdata-slot[39m=[32m"card"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent"[39m
+            [36m/>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 relative pb-2"[39m
+              [33mdata-slot[39m=[32m"card-header"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"text-muted-foreground text-sm flex items-center justify-between"[39m
+                [33mdata-slot[39m=[32m"card-description"[39m
+              [36m>[39m
+                [36m<span>[39m
+                  [0mAvailable Balance[0m
+                [36m</span>[39m
+                [36m<button[39m
+                  [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[transform,box-shadow,opacity,border-color,background-color,color] duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 ...
+[90m [2m❯[22m Proxy.waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:[2m163:27[22m[39m
+[36m [2m❯[22m src/pages/__tests__/brand-wallet.load-states.test.tsx:[2m272:13[22m[39m
+    [90m270| [39m      [35mawait[39m user[33m.[39m[34mclick[39m(screen[33m.[39m[34mgetByRole[39m([32m'tab'[39m[33m,[39m { name[33m:[39m [36m/escrow/i[39m }))[33m;[39m
+    [90m271| [39m
+    [90m272| [39m      [35mawait[39m [34mwaitFor[39m(() [33m=>[39m
+    [90m   | [39m            [31m^[39m
+    [90m273| [39m        expect(screen.getByText('No active campaigns to fund right now…
+    [90m274| [39m      )[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m6 failed[39m[22m[2m | [22m[1m[32m3 passed[39m[22m[90m (9)[39m
+[2m   Start at [22m 10:43:53
+[2m   Duration [22m 42.53s[2m (transform 738ms, setup 395ms, collect 1.49s, tests 32.06s, environment 1.16s, prepare 366ms)[22m
+VERDICT: broken — the brand wallet does not honestly distinguish loading, error and
+         genuinely-empty on at least one of its three data regions (F-0324)

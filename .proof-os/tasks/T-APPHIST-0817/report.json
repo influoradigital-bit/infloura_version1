@@ -1,0 +1,136 @@
+{
+  "rows": [
+    {
+      "subject": "FR-01 create application history",
+      "owner": "kavya",
+      "status": "partial",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read Collaboration.java field list and CreatorCampaignService.apply",
+        "result": "applying persists a permanent Collaboration row with an immutable appliedAt, so the application itself survives; no event/history record is written alongside it",
+        "where": "influora-api/src/main/java/com/influora/domain/entity/Collaboration.java:70"
+      }
+    },
+    {
+      "subject": "FR-02 track brand view",
+      "owner": "kavya",
+      "status": "missing",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "grep -rn 'viewedAt|VIEWED|markViewed|applicationViewed' over influora-api/src/main/java",
+        "result": "the only hits are ContentFlag.reviewedAt, CreatorProfile.applicationReviewedAt (platform onboarding review) and Deliverable.reviewedAt; none is a brand opening a campaign application, and no field, endpoint or UI records it",
+        "where": "influora-api/src/main/java/com/influora/domain/entity/Collaboration.java:57"
+      }
+    },
+    {
+      "subject": "FR-03 track decision with timestamp and reason",
+      "owner": "kavya",
+      "status": "partial",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read DealService.doReject and the RejectRequest DTO",
+        "result": "RejectRequest carries an optional 500-char reason and doReject writes it into a timestamped system message; there is no structured acceptedAt/rejectedAt/rejectionReason column, so the decision time is recoverable only from that message",
+        "where": "influora-api/src/main/java/com/influora/service/DealService.java:399"
+      }
+    },
+    {
+      "subject": "FR-04 activate deal room on acceptance",
+      "owner": "kavya",
+      "status": "aligned",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read CreatorCampaignService.apply and DealService accept path",
+        "result": "the deal room is the Collaboration row itself, created at apply time and transitioned on acceptance, so the room is always present and correctly scoped once accepted",
+        "where": "influora-api/src/main/java/com/influora/service/CreatorCampaignService.java:211"
+      }
+    },
+    {
+      "subject": "FR-05 direct navigation to the exact deal room",
+      "owner": "kavya",
+      "status": "aligned",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read CreatorApplicationCard click-through and creator-chat.tsx param handling",
+        "result": "the card routes accepted applications to /creator/chat?deal=<dealId> under an 'Open deal room' label and creator-chat seeds its selection from that param",
+        "where": "src/components/creator/CreatorApplicationCard.tsx:52"
+      }
+    },
+    {
+      "subject": "FR-06 show current deal room step",
+      "owner": "kavya",
+      "status": "aligned",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read deal-room-step-progress.tsx and its mount in creator-chat.tsx",
+        "result": "the five phases match the FRD list exactly (Negotiate, Contract, Fund escrow, Deliver, Pay) with distinct current/completed/pending styling, and the creator deal room mounts it",
+        "where": "src/components/brand/deal-room/deal-room-step-progress.tsx:6"
+      }
+    },
+    {
+      "subject": "FR-07 complete first-to-last timeline",
+      "owner": "kavya",
+      "status": "missing",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read creator-applications.tsx, CreatorApplicationCard.tsx and the CreatorApplicationRow interface",
+        "result": "the surface renders one card per application carrying a single date and one CTA; the row type has no events collection and no second timestamp, so no journey is displayed",
+        "where": "src/lib/api.ts:4549"
+      }
+    },
+    {
+      "subject": "FR-08 chronological ordering",
+      "owner": "kavya",
+      "status": "partial",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read the deal message thread ordering and the applications list ordering",
+        "result": "the deal message thread is ordered chronologically, which covers the two system events that exist; there is no application-level event list for ordering to apply to",
+        "where": "influora-api/src/main/java/com/influora/service/DealService.java:401"
+      }
+    },
+    {
+      "subject": "FR-09 no duplicate deal rooms",
+      "owner": "kavya",
+      "status": "aligned",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read CreatorCampaignService.apply idempotency javadoc and body",
+        "result": "a UNIQUE(campaign_id, creator_id) database constraint backs a pre-check plus a DataIntegrityViolationException catch for the concurrent race, so repeated clicks reuse the one row",
+        "where": "influora-api/src/main/java/com/influora/service/CreatorCampaignService.java:158"
+      }
+    },
+    {
+      "subject": "FR-10 auditability after completion",
+      "owner": "kavya",
+      "status": "partial",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read Collaboration lifecycle and DealMessage persistence",
+        "result": "the collaboration row and its message thread persist indefinitely after completion, so what was captured stays available; the events the FRD lists were mostly never captured to begin with",
+        "where": "influora-api/src/main/java/com/influora/domain/entity/Collaboration.java:73"
+      }
+    },
+    {
+      "subject": "src/lib/application-status.ts",
+      "owner": "kavya",
+      "status": "partial",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read the canonical status map header and STATUS_LABELS",
+        "result": "a prior CTO arbitration deliberately removed any Rejected state (CANCELLED renders as Closed) and maps TERMS_AGREED to 'In negotiation' rather than 'Accepted', which is the opposite of what FRD sections 4, 5 and 13 ask for — a standing product ruling the document contradicts",
+        "where": "src/lib/application-status.ts:5"
+      }
+    }
+  ]
+}

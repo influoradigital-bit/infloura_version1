@@ -1,0 +1,1242 @@
+▲ [WARNING] Duplicate key "baseUrl" in object literal [duplicate-object-key]
+
+    ../../tsconfig.json:21:4:
+      21 │     "baseUrl": ".",
+         ╵     ~~~~~~~~~
+
+  The original key "baseUrl" is here:
+
+    ../../tsconfig.json:20:4:
+      20 │     "baseUrl": ".",
+         ╵     ~~~~~~~~~
+
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mC:/Users/Sage world/Downloads/New Influora Ai/New Influora[39m
+
+ [31m❯[39m src/components/brand/deal-room/deal-payments-tab.f0222.test.tsx [2m([22m[2m16 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 1324[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0222 — the brand deal room funds a MILESTONE, never a bare campaign[2m > [22mpasses a real server milestoneId to the fund control [33m 465[2mms[22m[39m
+   [32m✓[39m F-0222 — the brand deal room funds a MILESTONE, never a bare campaign[2m > [22mtargets the first PENDING milestone, skipping ones already funded[32m 53[2mms[22m[39m
+   [32m✓[39m F-0222 — the brand deal room funds a MILESTONE, never a bare campaign[2m > [22moffers nothing to fund once every milestone has moved past PENDING[32m 55[2mms[22m[39m
+   [32m✓[39m F-0222 — the brand deal room funds a MILESTONE, never a bare campaign[2m > [22mnever renders a fund control on the creator mount, which passes no campaignId[32m 46[2mms[22m[39m
+   [32m✓[39m F-0222 — the brand deal room funds a MILESTONE, never a bare campaign[2m > [22mwithholds the control until BOTH parties have signed[32m 54[2mms[22m[39m
+   [32m✓[39m F-0222 — the brand deal room funds a MILESTONE, never a bare campaign[2m > [22mdoes not skip a milestone that carries no status yet[32m 67[2mms[22m[39m
+   [32m✓[39m F-0222 — the brand deal room funds a MILESTONE, never a bare campaign[2m > [22mrefuses to fund a milestone the server never persisted[32m 40[2mms[22m[39m
+   [32m✓[39m F-0222 — the panel states escrow honestly[2m > [22mdoes not claim escrow is active on a signed but unfunded deal[32m 46[2mms[22m[39m
+   [32m✓[39m F-0222 — the panel states escrow honestly[2m > [22mreports escrow active only when the deal really is funded[32m 45[2mms[22m[39m
+   [32m✓[39m F-0222 — the panel states escrow honestly[2m > [22mkeeps the creator mount on its prior signature-derived behaviour[32m 75[2mms[22m[39m
+[31m   [31m×[31m F-0224 — the brand can release a funded milestone[2m > [22mcalls the release endpoint with that milestone id[39m[32m 45[2mms[22m[39m
+[31m     → userEvent is not defined[39m
+[31m   [31m×[31m F-0224 — the brand can release a funded milestone[2m > [22msurfaces the server refusal verbatim rather than a generic failure[39m[32m 28[2mms[22m[39m
+[31m     → userEvent is not defined[39m
+   [32m✓[39m F-0224 — the brand can release a funded milestone[2m > [22moffers nothing to release on a milestone that is still PENDING[32m 198[2mms[22m[39m
+   [32m✓[39m F-0224 — the brand can release a funded milestone[2m > [22moffers nothing to release on one already RELEASED[32m 28[2mms[22m[39m
+   [32m✓[39m F-0224 — the brand can release a funded milestone[2m > [22mnever shows a release control on the creator mount[32m 28[2mms[22m[39m
+   [32m✓[39m F-0224 — the brand can release a funded milestone[2m > [22mdoes not offer release against a derived placeholder row, which has no server id[32m 43[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-disputes.test.tsx[2m > [22m[2mCreatorDisputesPage[2m > [22m[2mopens a dispute via api.creatorDisputes.open with trimmed reason
+[22m[39mSelect is changing from uncontrolled to controlled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled value for the lifetime of the component.
+
+[90mstderr[2m | src/pages/creator-disputes.test.tsx[2m > [22m[2mCreatorDisputesPage[2m > [22m[2mopens a dispute via api.creatorDisputes.open with trimmed reason
+[22m[39mSelect is changing from controlled to uncontrolled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled value for the lifetime of the component.
+
+[90mstderr[2m | src/pages/creator-disputes.test.tsx[2m > [22m[2mCreatorDisputesPage[2m > [22m[2msurfaces DISPUTE_ALREADY_OPEN from open() — no silent second-active UX
+[22m[39mSelect is changing from uncontrolled to controlled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled value for the lifetime of the component.
+
+ [32m✓[39m src/pages/creator-disputes.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 6569[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDisputesPage[2m > [22mrenders heading inside creator layout and loads via api.creatorDisputes [33m 517[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDisputesPage[2m > [22mopens a dispute via api.creatorDisputes.open with trimmed reason [33m 2806[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDisputesPage[2m > [22msurfaces DISPUTE_ALREADY_OPEN from open() — no silent second-active UX [33m 2099[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDisputesPage[2m > [22mrenders a neutral Disputed badge when a row carries no disputeStatus [33m 316[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — deal-room proposal[2m > [22m[2msends the proposal as a counter with the collected terms
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — deal-room proposal[2m > [22m[2msurfaces a DEAL_NOT_NEGOTIABLE conflict instead of failing silently
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — deal-room proposal[2m > [22m[2mhides Send Proposal once the deal is past negotiation
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/components/brand/discover/creator-discovery.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 7046[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — invite vs priced offer[2m > [22msends a priced offer via deals.create when a budget is set [33m 2692[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — invite vs priced offer[2m > [22mfalls back to creators.invite when the budget is cleared to zero [33m 2239[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — invite vs priced offer[2m > [22mexplains a COLLABORATION_EXISTS conflict instead of asking the brand to retry [33m 2105[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2maccepts the creator's offer as the brand
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/pages/brand-register.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 9995[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — email OTP gate[2m > [22mregisters directly when the server does not require OTP [33m 3908[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — email OTP gate[2m > [22msends and verifies an OTP before registering when the server requires it [33m 3018[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — email OTP gate[2m > [22mreturns to the form when registration fails after verification [33m 3063[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2msurfaces a failed accept instead of leaving the click silent
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2msurfaces a failed accept instead of leaving the click silent
+[22m[39mFailed to accept proposal ApiError: This deal cannot be accepted in its current state
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat-proposal.test.tsx:269:7
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:20 {
+  code: [32m'DEAL_NOT_ACCEPTABLE'[39m,
+  status: [33m409[39m,
+  details: [90mundefined[39m
+}
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2moffers Counter but not Accept on the brand's own offer
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2mhides both controls once the deal has left negotiation
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2mreplaces a settled card republished under its original id, retiring the buttons
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/pages/creator-chat-bare-invite.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 8190[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — bare-invite Accept/Decline fallback[2m > [22mshows the invite-response card (not "No messages yet") for a zero-message, still-acceptable deal, and wires Accept to api.deals.accept [33m 2304[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — bare-invite Accept/Decline fallback[2m > [22mwires Decline to api.deals.reject with the real deal id [33m 1842[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — bare-invite Accept/Decline fallback[2m > [22mregression: a deal WITH a real proposal message still shows the original priced proposal card, not the bare-invite fallback [33m 1564[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — bare-invite Accept/Decline fallback[2m > [22mCR-02: does NOT show the bare-invite card (or any Accept control) for the creator's own zero-message APPLIED application [33m 1014[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — bare-invite Accept/Decline fallback[2m > [22mCR-02: does NOT show the bare-invite card for an already-settled, zero-message TERMS_AGREED deal — falls back to the plain empty state [33m 1456[2mms[22m[39m
+ [32m✓[39m src/admin/components/users/BrandProfile.test.tsx [2m([22m[2m25 tests[22m[2m)[22m[33m 13044[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandProfile Component[2m > [22mKYC Action Flow (P1 CRITICAL)[2m > [22mshould show Approve/Reject KYC buttons only when status is PENDING [33m 332[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandProfile Component[2m > [22mKYC Action Flow (P1 CRITICAL)[2m > [22mshould open dialog, accept justification, and call verifyKyc(APPROVE) on Approve flow [33m 2442[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandProfile Component[2m > [22mKYC Action Flow (P1 CRITICAL)[2m > [22mshould open dialog, accept reason, and call verifyKyc(REJECT) on Reject flow [33m 2424[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandProfile Component[2m > [22mSuspend/Reinstate Flow[2m > [22mshould open dialog, accept reason, and call suspend on Suspend flow [33m 1921[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandProfile Component[2m > [22mSuspend/Reinstate Flow[2m > [22mshould open dialog, accept reason, and call reinstate on Reinstate flow [33m 2878[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2mre-reads the deal on a system frame, closing the gate with the card untouched
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/components/brand/campaigns/campaigns-list.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 13199[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignsList — server-side pagination (D-2)[2m > [22mrequests page 1 at the 100-row server ceiling, shows the total count, and renders a Load more control instead of silently truncating [33m 5421[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignsList — server-side pagination (D-2)[2m > [22mLoad more fetches page 2 and appends the previously-unreachable 101st campaign [33m 7772[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2msurfaces a failed deal refresh instead of leaving a stale gate silent
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/admin/components/moderation/FlagQueue.test.tsx [2m([22m[2m30 tests[22m[2m)[22m[33m 13680[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mLoading and Error States[2m > [22mshould render loading skeleton when data is loading [33m 366[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mFlag Table Display[2m > [22mshould render all flags in the table [33m 342[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mStatus Filter[2m > [22mshould list ESCALATED as a selectable status filter option [33m 785[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mSearch Filter[2m > [22mshould call setFilters when search input changes [33m 305[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mSortable Columns[2m > [22mshould toggle sort direction when clicking same column twice [33m 344[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mFlag Detail Drawer[2m > [22mshould open detail drawer when clicking a flag row [33m 764[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mFlag Detail Drawer[2m > [22mshould show content preview in drawer [33m 483[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mFlag Detail Drawer[2m > [22mshould show reviewed metadata when available [33m 366[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mModeration Action Flow (P2 CRITICAL)[2m > [22mshould show all action buttons for PENDING or REVIEWED flags [33m 421[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mModeration Action Flow (P2 CRITICAL)[2m > [22mshould NOT show action buttons for ACTIONED flags [33m 483[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mModeration Action Flow (P2 CRITICAL)[2m > [22mshould open reason dialog, accept reason, and call moderationApi.actionFlag for REMOVE [33m 1687[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mModeration Action Flow (P2 CRITICAL)[2m > [22mshould open reason dialog and call moderationApi.actionFlag for REJECT (dismiss) [33m 1873[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mModeration Action Flow (P2 CRITICAL)[2m > [22mshould open reason dialog and call moderationApi.actionFlag for ESCALATE, and never allow submission without a reason [33m 1597[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mModeration Action Flow (P2 CRITICAL)[2m > [22mshould disable action button when reason is empty [33m 778[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mAccessibility[2m > [22mshould make flag rows keyboard-navigable with Space key [33m 330[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2msurfaces a failed deal refresh instead of leaving a stale gate silent
+[22m[39mFailed to refresh deal deal_1 Error: network down
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat-proposal.test.tsx:378:32
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:155:11
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:26
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1574:12[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runFiles [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1787:3[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2mopens the proposal wizard when Counter is clicked
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/pages/brand-chat-proposal.test.tsx [2m([22m[2m12 tests[22m[2m)[22m[33m 10439[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — deal-room proposal[2m > [22msends the proposal as a counter with the collected terms [33m 1822[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — deal-room proposal[2m > [22msurfaces a DEAL_NOT_NEGOTIABLE conflict instead of failing silently [33m 1449[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — deal-room proposal[2m > [22mhides Send Proposal once the deal is past negotiation [33m 552[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22maccepts the creator's offer as the brand [33m 1394[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22msurfaces a failed accept instead of leaving the click silent [33m 1444[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22moffers Counter but not Accept on the brand's own offer [33m 471[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22mhides both controls once the deal has left negotiation [33m 615[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22mreplaces a settled card republished under its original id, retiring the buttons [33m 806[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22mre-reads the deal on a system frame, closing the gate with the card untouched [33m 557[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22msurfaces a failed deal refresh instead of leaving a stale gate silent [33m 368[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22mopens the proposal wizard when Counter is clicked [33m 526[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22msuppresses the failure toast when a newer refresh already succeeded, but still logs [33m 423[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-settings-change-password.test.tsx[2m > [22m[2mCreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22m[2msurfaces the server error message on a rejected current password, and keeps the dialog open
+[22m[39mFailed to change password Error: Current password is incorrect
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-settings-change-password.test.tsx:172:38
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:155:11
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:26
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1574:12[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runFiles [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1787:3[90m)[39m
+
+ [32m✓[39m src/pages/creator-settings-change-password.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 15496[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22msubmits the entered passwords to api.auth.changePassword and confirms success [33m 4584[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22mrejects a submit with any field left empty, client-side, without calling the API [33m 2922[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22mrejects mismatched new/confirm passwords client-side without calling the API [33m 3769[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22mrejects a too-short new password client-side without calling the API [33m 1727[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22msurfaces the server error message on a rejected current password, and keeps the dialog open [33m 2478[2mms[22m[39m
+ [32m✓[39m src/pages/brand-creator-profile-provenance.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 6577[2mms[22m[39m
+   [33m[2m✓[22m[39m brand-creator-profile — follower provenance (CR-119)[2m > [22mlabels every platform explicitly — never leaves provenance to badge-presence alone [33m 5680[2mms[22m[39m
+   [33m[2m✓[22m[39m brand-creator-profile — follower provenance (CR-119)[2m > [22mTwitter is NOT presented as verified — no Twitter/X integration exists in this codebase [33m 398[2mms[22m[39m
+ [32m✓[39m src/pages/brand-campaign-detail.contract-ui.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 7108[2mms[22m[39m
+   [33m[2m✓[22m[39m campaign detail — contract controls (live mode)[2m > [22mdeep-links a contracted deal to that exact contract, not the contracts list [33m 2775[2mms[22m[39m
+   [33m[2m✓[22m[39m campaign detail — contract controls (live mode)[2m > [22moffers Generate contract only at TERMS_AGREED with no contract, and POSTs the deal id [33m 1500[2mms[22m[39m
+   [33m[2m✓[22m[39m campaign detail — contract controls (live mode)[2m > [22msays "No contract yet" rather than offering a control the server would reject [33m 1072[2mms[22m[39m
+   [33m[2m✓[22m[39m campaign detail — contract controls (live mode)[2m > [22msurfaces a 403 in the operator’s own words instead of a generic failure [33m 1756[2mms[22m[39m
+ [32m✓[39m src/components/creator/creator-layout-mobile-account-menu.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 6228[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — mobile avatar menu accessible name (F-0169)[2m > [22mhas a real, fixed accessible name before identity has resolved [33m 4331[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — mobile avatar menu accessible name (F-0169)[2m > [22mkeeps the same accessible name once identity has resolved (not overridden by initials) [33m 755[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — mobile avatar menu accessible name (F-0169)[2m > [22mopens the dropdown menu on click (control is still functional, not just labeled) [33m 1135[2mms[22m[39m
+ [32m✓[39m src/pages/creator-wallet-withdraw-idempotency.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 5858[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage — withdraw Idempotency-Key lifecycle (P-4)[2m > [22mreuses the same Idempotency-Key when the user retries after a failed withdrawal [33m 1380[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage — withdraw Idempotency-Key lifecycle (P-4)[2m > [22mdoes not fire a second request with a different key when Withdraw is clicked again before the first response returns [33m 889[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage — withdraw Idempotency-Key lifecycle (P-4)[2m > [22mmints a fresh Idempotency-Key for a new withdrawal after a prior one succeeded [33m 3585[2mms[22m[39m
+ [32m✓[39m src/components/creator/deal-room/deliverable-submission.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 5787[2mms[22m[39m
+   [33m[2m✓[22m[39m DeliverableSubmission — CR-53 retry-only-submit after successful upload[2m > [22mkeeps the file/caption and offers "Retry Submit" when the error is tagged uploaded:true [33m 1842[2mms[22m[39m
+   [33m[2m✓[22m[39m DeliverableSubmission — CR-53 retry-only-submit after successful upload[2m > [22mshows the generic error (no "Retry Submit" label) when the error is not tagged uploaded [33m 1647[2mms[22m[39m
+   [33m[2m✓[22m[39m DeliverableSubmission — CR-53 retry-only-submit after successful upload[2m > [22mclears the retry-only state once a new file is picked [33m 2293[2mms[22m[39m
+ [32m✓[39m src/components/creator/creator-layout-desktop-account-trigger.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 5856[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — desktop sidebar account trigger accessible name (F-0170)[2m > [22mhas a non-empty accessible name before identity has resolved [33m 3549[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — desktop sidebar account trigger accessible name (F-0170)[2m > [22maccessible name contains the visible display name once identity resolves — not overridden [33m 987[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — desktop sidebar account trigger accessible name (F-0170)[2m > [22mF-0179: composed accessible name excludes the decorative avatar initials [33m 1308[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/brand-register.consent-links.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 8072[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — consent links reachable (F-0255)[2m > [22mrenders Terms of Service and Privacy Policy as real, focusable links to routes this app serves [33m 4938[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — consent links reachable (F-0255)[2m > [22mdoes not render Terms of Service / Privacy Policy as a dead <button type="button"> [33m 3127[2mms[22m[39m
+ [32m✓[39m src/components/brand/contracts/__tests__/contracts-and-deliverables.signature.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 8169[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0253 — signature dialog submits exactly what it promises[2m > [22mrenders no <canvas> signature pad anywhere in the Sign Contract dialog [33m 2442[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0253 — signature dialog submits exactly what it promises[2m > [22msubmits only the typed name and an agreedAt timestamp — no image/bitmap field [33m 4703[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0253 — signature dialog submits exactly what it promises[2m > [22mthe legal notice describes the typed name, not a drawn mark [33m 1020[2mms[22m[39m
+ [32m✓[39m src/pages/creator-register.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 9669[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage — email OTP gate[2m > [22mregisters directly when the server does not require OTP [33m 4407[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage — email OTP gate[2m > [22msends and verifies an OTP before registering when the server requires it [33m 3090[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage — email OTP gate[2m > [22mkeeps the user on the form when the OTP cannot be delivered [33m 2168[2mms[22m[39m
+ [32m✓[39m src/pages/brand-campaign-detail-active-edit-gate.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 9822[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandCampaignDetailPage — header Edit gated by ACTIVE status[2m > [22mdisables Edit with a clear reason for an ACTIVE campaign [33m 3373[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandCampaignDetailPage — header Edit gated by ACTIVE status[2m > [22mleaves Edit fully working (enabled, navigable) for a PAUSED campaign [33m 2183[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandCampaignDetailPage — header Edit gated by ACTIVE status[2m > [22mleaves Edit fully working (enabled, navigable) for a DRAFT campaign [33m 1019[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandCampaignDetailPage — header Edit gated by ACTIVE status[2m > [22mstill hides Edit entirely for a COMPLETED campaign (pre-existing behavior, unchanged) [33m 1521[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandCampaignDetailPage — header Edit gated by ACTIVE status[2m > [22mPause/Resume status-change action for an ACTIVE campaign is untouched by the Edit gate [33m 1722[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — foreground resync (CR-93 / F-0110 — brand half)[2m > [22m[2mdoes nothing on the initial mount beyond the normal load
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — foreground resync (CR-93 / F-0110 — brand half)[2m > [22m[2mrefetches messages and the deal on becoming visible again
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22m[2mF-0151: a background resync (foreground visibility) never replaces an already-rendered thread with the loading spinner
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22m[2mF-0152: a slower earlier request cannot overwrite a faster, newer request's result
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22m[2mF-0152: a failed background resync leaves the already-rendered thread alone instead of wiping it
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22m[2mF-0192: switching deals clears the previous deal's thread instead of bleeding it into the new deal
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22m[2mF-0192: switching deals clears the previous deal's thread instead of bleeding it into the new deal
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0195: loadDeliverables must not be corrupted by a stale, out-of-order response[2m > [22m[2mF-0195: a slow, stale deliverables response for a previously-selected deal cannot overwrite a newer deal's freshly-loaded rows
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0195: loadDeliverables must not be corrupted by a stale, out-of-order response[2m > [22m[2mF-0195: a slow, stale deliverables response for a previously-selected deal cannot overwrite a newer deal's freshly-loaded rows
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1039:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1048:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0195: loadDeliverables must not be corrupted by a stale, out-of-order response[2m > [22m[2mF-0195: a slow, stale deliverables response for a previously-selected deal cannot overwrite a newer deal's freshly-loaded rows
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+ [32m✓[39m src/pages/brand-chat-visibility-resync.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 5602[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — foreground resync (CR-93 / F-0110 — brand half)[2m > [22mdoes nothing on the initial mount beyond the normal load [33m 1265[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — foreground resync (CR-93 / F-0110 — brand half)[2m > [22mrefetches messages and the deal on becoming visible again [33m 847[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22mF-0151: a background resync (foreground visibility) never replaces an already-rendered thread with the loading spinner [33m 493[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22mF-0152: a slower earlier request cannot overwrite a faster, newer request's result [33m 506[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22mF-0152: a failed background resync leaves the already-rendered thread alone instead of wiping it [33m 356[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22mF-0192: switching deals clears the previous deal's thread instead of bleeding it into the new deal [33m 1020[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — F-0195: loadDeliverables must not be corrupted by a stale, out-of-order response[2m > [22mF-0195: a slow, stale deliverables response for a previously-selected deal cannot overwrite a newer deal's freshly-loaded rows [33m 1106[2mms[22m[39m
+ [32m✓[39m src/components/brand/deals/deal-room-dashboard-actor-refresh.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 6044[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — actor-side refresh (CR-98 / F-0112)[2m > [22mrefetches messages (not just deals) after the brand accepts its own proposal [33m 2615[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — actor-side refresh (CR-98 / F-0112)[2m > [22mrefetches messages after the brand rejects its own proposal [33m 1306[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — actor-side refresh (CR-98 / F-0112)[2m > [22mrefetches messages after the brand sends a counter offer [33m 2120[2mms[22m[39m
+ [32m✓[39m src/admin/components/AdminLayout.test.tsx [2m([22m[2m33 tests[22m[2m)[22m[33m 6121[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mComponent Initialization[2m > [22mshould call initAuditLogger on mount [33m 375[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mComponent Initialization[2m > [22mshould render page title in topbar [33m 357[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mNavigation Items[2m > [22mshould render all 6 navigation sections [33m 428[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mMobile Navigation Toggle[2m > [22mshould open mobile nav when menu button clicked [33m 583[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mMobile Navigation Toggle[2m > [22mshould close mobile nav when close button clicked [33m 322[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mMobile Navigation Toggle[2m > [22mshould close mobile nav when overlay is clicked [33m 347[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mMobile Navigation Toggle[2m > [22mshould close mobile nav when any nav link is clicked [33m 344[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mMobile Nav Keyboard Accessibility (Cycle 3 Fix)[2m > [22mshould move focus to close button when mobile nav opens [33m 389[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mMobile Nav Keyboard Accessibility (Cycle 3 Fix)[2m > [22mshould return focus to menu trigger when mobile nav closes [33m 331[2mms[22m[39m
+ [32m✓[39m src/components/brand/campaigns/campaigns-list-active-edit-gate.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 2595[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignsList — Edit gated by ACTIVE status[2m > [22mdisables Edit with a clear reason for an ACTIVE campaign [33m 1129[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignsList — Edit gated by ACTIVE status[2m > [22mleaves Edit fully working for a PAUSED campaign (no regression) [33m 532[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignsList — Edit gated by ACTIVE status[2m > [22mleaves Edit fully working for a DRAFT campaign (no regression) [33m 530[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignsList — Edit gated by ACTIVE status[2m > [22mPause/Resume status-change control for an ACTIVE campaign is untouched by the Edit gate [33m 398[2mms[22m[39m
+[90mstderr[2m | src/components/creator/creator-layout-mobile-menu.test.tsx[2m > [22m[2mCreatorLayout — mobile hamburger menu accessible name (F-0167)[2m > [22m[2maccessible name and aria-expanded flip to the open state on click
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/creator/creator-layout-mobile-menu.test.tsx[2m > [22m[2mCreatorLayout — mobile hamburger menu accessible name (F-0167)[2m > [22m[2mclosing the sheet (Escape) reverts the accessible name and aria-expanded
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+ [32m✓[39m src/components/creator/creator-layout-mobile-menu.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 2121[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — mobile hamburger menu accessible name (F-0167)[2m > [22mhas a real accessible name in the closed state, discoverable by role [33m 646[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — mobile hamburger menu accessible name (F-0167)[2m > [22maccessible name and aria-expanded flip to the open state on click [33m 664[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — mobile hamburger menu accessible name (F-0167)[2m > [22mclosing the sheet (Escape) reverts the accessible name and aria-expanded [33m 808[2mms[22m[39m
+ [32m✓[39m src/pages/creator-chat-visibility-resync.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 4397[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — foreground resync (CR-93 / F-0110 — creator half)[2m > [22mdoes nothing on the initial mount beyond the normal load [33m 1088[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — foreground resync (CR-93 / F-0110 — creator half)[2m > [22mrefetches messages and the deal on becoming visible again [33m 1141[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — foreground resync (CR-93 / F-0110 — creator half)[2m > [22mF-0192: switching deals clears the previous deal's thread instead of bleeding it into the new deal [33m 2164[2mms[22m[39m
+ [32m✓[39m src/components/brand/discover/creator-discovery-redirect.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 4203[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — redirect to the conversation it just opened[2m > [22msends a priced offer, then redirects to THAT creator’s deal room [33m 2473[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — redirect to the conversation it just opened[2m > [22msends an unpriced invite, then redirects to THAT creator’s deal room [33m 1726[2mms[22m[39m
+ [32m✓[39m src/components/brand/dashboard/__tests__/dashboard-page.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 2150[2mms[22m[39m
+   [33m[2m✓[22m[39m DashboardPage — F-0245 loading/error/empty are three distinct states[2m > [22mpending fetch renders skeletons, never the zero/empty copy [33m 495[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandLayout sidebar — F-0246 no fabricated identity in live mode[2m > [22mGET /workspaces/me resolves: shows the real workspace identity, never the fabricated one [33m 712[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandLayout sidebar — F-0246 no fabricated identity in live mode[2m > [22mGET /workspaces/me rejects: degrades honestly, never renders the fabricated identity [33m 540[2mms[22m[39m
+ [32m✓[39m src/components/brand/discover/__tests__/creator-discovery-invite-handoff.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 3113[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0257 — invite → create-campaign handoff no longer over-promises[2m > [22mdoes not claim the creator will be pre-selected on the new-campaign page [33m 2042[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0257 — invite → create-campaign handoff no longer over-promises[2m > [22mstill navigates to the campaign wizard when the brand confirms [33m 1068[2mms[22m[39m
+ [32m✓[39m src/components/brand/discover/__tests__/creator-discovery-invite-campaigns.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 1834[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0256 — invite campaign selector never seeds fabricated campaigns in live mode[2m > [22mstarts empty/disabled while the real campaign list is in flight, then shows only real campaigns [33m 1228[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0256 — invite campaign selector never seeds fabricated campaigns in live mode[2m > [22mnever lets the brand submit against a fabricated campaign id [33m 600[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/brand-campaign-detail.fee-block.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 1299[2mms[22m[39m
+   [33m[2m✓[22m[39m campaign detail — budget/fee block (live mode)[2m > [22mnever renders the invented Creator Pay / GST / Contingency split, and shows the real fee rate [33m 883[2mms[22m[39m
+   [33m[2m✓[22m[39m campaign detail — budget/fee block (live mode)[2m > [22mfalls back to an honest "not available" state when the fee endpoint fails, never to a guess [33m 412[2mms[22m[39m
+ [32m✓[39m src/pages/creator-chat-refresh.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 2295[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — refreshDeal staleness guard (CR-29 / W2-L1)[2m > [22mmounts the room for the deal named in ?deal= [33m 720[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — refreshDeal staleness guard (CR-29 / W2-L1)[2m > [22mtoasts a failed refresh when it is still the newest one [33m 653[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — refreshDeal staleness guard (CR-29 / W2-L1)[2m > [22msuppresses the failure toast when a newer refresh already succeeded, but still logs [33m 916[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/brand-settings.disclaimer.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 1734[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Notifications persistence copy (F-0262)[2m > [22mdoes not claim the whole notifications card is session-only / non-persisting [33m 594[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Notifications persistence copy (F-0262)[2m > [22mflipping Campaign Alerts PATCHes every eventType in its group immediately [33m 316[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Notifications persistence copy (F-0262)[2m > [22mPush Notifications and Weekly Digest still individually disclose they are unavailable [33m 306[2mms[22m[39m
+ [32m✓[39m src/pages/creator-chat-verified-badge.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 2248[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — "Verified Brand" badge honesty (M-1, BrandF.md §83c/§87)[2m > [22mdoes NOT render "Verified Brand" for an UNVERIFIED brand [33m 669[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — "Verified Brand" badge honesty (M-1, BrandF.md §83c/§87)[2m > [22mdoes NOT render "Verified Brand" for a PENDING brand [33m 487[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — "Verified Brand" badge honesty (M-1, BrandF.md §83c/§87)[2m > [22mdoes NOT render "Verified Brand" when the field is null (brand counterparty missing/unresolved) [33m 554[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — "Verified Brand" badge honesty (M-1, BrandF.md §83c/§87)[2m > [22mDOES render "Verified Brand" for a VERIFIED brand [33m 534[2mms[22m[39m
+ [32m✓[39m src/pages/creator-settings-logout.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 2186[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — logout clears the full creator session (CR-32)[2m > [22mrenders the Danger Zone logout control [33m 487[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — logout clears the full creator session (CR-32)[2m > [22mremoves every creator_* key, not just the token [33m 723[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — logout clears the full creator session (CR-32)[2m > [22mdoes not leave a name for the next creator to inherit [33m 463[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — logout clears the full creator session (CR-32)[2m > [22mstill clears the local session when the server logout call fails [33m 510[2mms[22m[39m
+ [32m✓[39m src/components/feature/meera/FundEscrowButton.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 1115[2mms[22m[39m
+ [32m✓[39m src/pages/creator-meta-callback.test.tsx [2m([22m[2m17 tests[22m[2m)[22m[33m 1109[2mms[22m[39m
+ [32m✓[39m src/components/creator/connected-accounts.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 1863[2mms[22m[39m
+   [33m[2m✓[22m[39m ConnectedAccounts — disconnect (CR-102 / F-0115)[2m > [22mshows a confirmation dialog before disconnecting — a click alone does not call the API [33m 676[2mms[22m[39m
+   [33m[2m✓[22m[39m ConnectedAccounts — disconnect (CR-102 / F-0115)[2m > [22mcalls api.metaOAuth.disconnect and refreshes status on confirm [33m 357[2mms[22m[39m
+ [32m✓[39m src/pages/creator-portfolio-public-provenance.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 2465[2mms[22m[39m
+   [33m[2m✓[22m[39m creator-portfolio-public — real mock-mode fixture provenance (CR-119)[2m > [22mthe shipped mock fixture never claims a YouTube follower count is platform-verified [33m 1876[2mms[22m[39m
+ [32m✓[39m src/pages/creator-dashboard.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 2923[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDashboardPage[2m > [22mgreets the creator by first name after load [33m 337[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDashboardPage[2m > [22mshows available balance and active deals cards [33m 1142[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDashboardPage[2m > [22mrenders quick links to deals, campaigns, and wallet [33m 1262[2mms[22m[39m
+ [32m✓[39m src/pages/creator-analytics.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 1075[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorAnalyticsPage[2m > [22mrenders analytics header and demo-data banner in mock mode [33m 324[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorAnalyticsPage[2m > [22mshows mock metric card titles after load [33m 744[2mms[22m[39m
+ [32m✓[39m src/pages/creator-settings-connected-accounts.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 2385[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — ConnectedAccounts mount (CR-101 / F-0114)[2m > [22mrenders the Connected Accounts card [33m 1470[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — ConnectedAccounts mount (CR-101 / F-0114)[2m > [22mreflects real connection status from useMetaConnection, not a static placeholder [33m 911[2mms[22m[39m
+ [32m✓[39m src/components/brand/__tests__/command-bar.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 2369[2mms[22m[39m
+   [33m[2m✓[22m[39m CommandBar — Cmd/Ctrl+K chord (F-0261)[2m > [22mopens on the first press and closes on the second, despite a conflicting window-level listener [33m 504[2mms[22m[39m
+   [33m[2m✓[22m[39m CommandBar — Escape closes the dialog (F-0261)[2m > [22mcloses when Escape is pressed [33m 435[2mms[22m[39m
+   [33m[2m✓[22m[39m CommandBar — all 15 destinations reachable (F-0261)[2m > [22mrenders every destination title in the "Go To" group [33m 735[2mms[22m[39m
+ [32m✓[39m src/components/creator/creator-layout-logout.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 3373[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — sidebar logout (CR-90 / F-0109)[2m > [22mcalls the server logout endpoint before clearing local session state [33m 2080[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — sidebar logout (CR-90 / F-0109)[2m > [22mstill clears local session and navigates away even when the server call fails [33m 1288[2mms[22m[39m
+ [32m✓[39m src/pages/brand-creator-profile-pr1.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 1302[2mms[22m[39m
+   [33m[2m✓[22m[39m PR-1 — creator profile track-record fields are never fabricated zeros[2m > [22mcreator with zero real reviews/campaigns: honest empty states, no fabricated zeros, no false attestation [33m 773[2mms[22m[39m
+   [33m[2m✓[22m[39m PR-1 — creator profile track-record fields are never fabricated zeros[2m > [22mcreator with real reviews/campaigns: real numbers render, attestation only appears with real data [33m 524[2mms[22m[39m
+ [32m✓[39m src/components/brand/discover/__tests__/creator-discovery-loading-empty.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 1380[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0259 — Discover has a real loading state and a real empty state[2m > [22mshows a loading state while the search is in flight, distinct from the empty state [33m 770[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0259 — Discover has a real loading state and a real empty state[2m > [22mkeeps a creator with no averageRate visible at the untouched default filters [33m 545[2mms[22m[39m
+ [32m✓[39m src/lib/__tests__/deal-message-stream.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 166[2mms[22m[39m
+[90mstderr[2m | src/components/feature/meera/__tests__/FundEscrowButton.test.tsx[2m > [22m[2mFundEscrowButton — F-0247 secured-money copy gating[2m > [22m[2minitiating: no secured-money assertion while the fund request is in flight
+[22m[39mAn update to FundEscrowButton inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to FundEscrowButton inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to FundEscrowButton inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to FundEscrowButton inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+[90mstderr[2m | src/pages/creator-wallet-payouts.test.tsx[2m > [22m[2mcreator-wallet Payouts tab — real payout history (CR-77)[2m > [22m[2mreads GET /wallet/payouts rather than deriving from wallet transactions
+[22m[39mFailed to load platform fee TypeError: __vite_ssr_import_13__.api.wallet.platformFee is not a function
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-wallet.tsx:363:38
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-wallet.tsx:369:5
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/pages/__tests__/brand-pipeline.sla.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 832[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandPipelinePage — overdue SLA rendering (F-0263)[2m > [22ma deal whose deadline is already in the past renders an overdue state, not a negative hour count [33m 391[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-wallet-payouts.test.tsx[2m > [22m[2mcreator-wallet Payouts tab — real payout history (CR-77)[2m > [22m[2ma FAILED payout says so, and never claims a settlement date
+[22m[39mFailed to load platform fee TypeError: __vite_ssr_import_13__.api.wallet.platformFee is not a function
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-wallet.tsx:363:38
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-wallet.tsx:369:5
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/components/feature/meera/__tests__/FundEscrowButton.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 1319[2mms[22m[39m
+   [33m[2m✓[22m[39m FundEscrowButton — F-0247 secured-money copy gating[2m > [22minitiating: no secured-money assertion while the fund request is in flight [33m 417[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-wallet-payouts.test.tsx[2m > [22m[2mcreator-wallet Payouts tab — real payout history (CR-77)[2m > [22m[2mthe status badge is NOT colour-inverted: failed reads Failed, settled reads Paid
+[22m[39mFailed to load platform fee TypeError: __vite_ssr_import_13__.api.wallet.platformFee is not a function
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-wallet.tsx:363:38
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-wallet.tsx:369:5
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/components/brand/deals/deal-room-dashboard-view-profile.test.tsx [2m([22m[2m1 test[22m[2m)[22m[33m 994[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — View Profile navigates to the real counterparty (F-0157)[2m > [22mnavigates to the deal's real counterpartyId, never the hardcoded creator-1 fixture [33m 990[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-wallet-payouts.test.tsx[2m > [22m[2mcreator-wallet Payouts tab — real payout history (CR-77)[2m > [22m[2man in-progress payout uses a real, defined design token, not a mistyped class
+[22m[39mFailed to load platform fee TypeError: __vite_ssr_import_13__.api.wallet.platformFee is not a function
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-wallet.tsx:363:38
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-wallet.tsx:369:5
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/creator-wallet-payouts.test.tsx[2m > [22m[2mcreator-wallet Payouts tab — real payout history (CR-77)[2m > [22m[2mstates the missing breakdown in words rather than shipping placeholder columns
+[22m[39mFailed to load platform fee TypeError: __vite_ssr_import_13__.api.wallet.platformFee is not a function
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-wallet.tsx:363:38
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-wallet.tsx:369:5
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/creator-wallet-payouts.test.tsx[2m > [22m[2mcreator-wallet Payouts tab — real payout history (CR-77)[2m > [22m[2man error clears the list rather than leaving stale rows on a money screen
+[22m[39mFailed to load platform fee TypeError: __vite_ssr_import_13__.api.wallet.platformFee is not a function
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-wallet.tsx:363:38
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-wallet.tsx:369:5
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/pages/creator-wallet.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 1106[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage[2m > [22mrenders wallet header and withdraw CTA [33m 488[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage[2m > [22mshows platform fee percent after mock fetch (G-Kv3-A3) [33m 522[2mms[22m[39m
+ [32m✓[39m src/pages/creator-wallet-payouts.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 1333[2mms[22m[39m
+   [33m[2m✓[22m[39m creator-wallet Payouts tab — real payout history (CR-77)[2m > [22mreads GET /wallet/payouts rather than deriving from wallet transactions [33m 481[2mms[22m[39m
+ [32m✓[39m src/components/brand/contracts/__tests__/contracts-sign-reachability.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 1481[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0248 — Sign Contract is reachable in live mode[2m > [22mrenders a clickable Sign Contract button for a contract awaiting the brand signature [33m 1171[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0248 — Sign Contract is reachable in live mode[2m > [22mdoes NOT show the Sign button once the brand has already signed (awaiting creator instead) [33m 301[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-deals.test.tsx[2m > [22m[2mCreatorDealsPage[2m > [22m[2mrenders deals header and status filter chips
+[22m[39mAn update to CreatorDealsPage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to CreatorDealsPage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to CreatorDealsPage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ [32m✓[39m src/pages/creator-deals.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 957[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDealsPage[2m > [22mrenders deals header and status filter chips [33m 602[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/brand-wallet.dead-controls.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 2468[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0264 dead money controls[2m > [22mExport is disabled and gives a reason [33m 618[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0264 dead money controls[2m > [22mnone of the three dead controls carry a bare onClick that would fire on a stray click [33m 1405[2mms[22m[39m
+[90mstderr[2m | src/components/creator/deal-room/__tests__/pending-signature-deadlock.test.tsx[2m > [22m[2mCreatorContractPanel — pending_signature keeps the creator Sign control reachable[2m > [22m[2mrenders the Sign Now button on pending_signature
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/creator/deal-room/__tests__/pending-signature-deadlock.test.tsx[2m > [22m[2mCreatorContractPanel — pending_signature keeps the creator Sign control reachable[2m > [22m[2mdoes not label pending_signature as "Brand Signed - Your Turn to Sign"
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+ [32m✓[39m src/components/creator/deal-room/__tests__/pending-signature-deadlock.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 675[2mms[22m[39m
+ [32m✓[39m src/components/creator/creator-layout-search.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 762[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — header search buttons (CR-122 / CR-124)[2m > [22mCR-124: mobile search icon button navigates to /creator/deals on click [33m 490[2mms[22m[39m
+ [32m✓[39m src/hooks/useMeeraStream.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 714[2mms[22m[39m
+[90mstderr[2m | src/pages/__tests__/brand-settings.test.tsx[2m > [22m[2mBrandSettingsPage — Workspace Information (F-0249)[2m > [22m[2mlive mode, GET /workspaces/me REJECTS: never seeds the mock values and disables Save
+[22m[39mFailed to load workspace information Error: network down
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\__tests__\brand-settings.test.tsx:90:29
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:155:11
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:26
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+
+ [32m✓[39m src/pages/brand-disputes.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 477[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandDisputesPage[2m > [22mrenders heading and mock dispute rows [33m 329[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/brand-settings.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 612[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Workspace Information (F-0249)[2m > [22mlive mode, GET /workspaces/me REJECTS: never seeds the mock values and disables Save [33m 436[2mms[22m[39m
+ [32m✓[39m src/pages/creator-coupons.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 684[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorCouponsPage[2m > [22mshows mock coupon codes after load [33m 523[2mms[22m[39m
+ [32m✓[39m src/components/shared/collaboration-reviews-panel.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 984[2mms[22m[39m
+   [33m[2m✓[22m[39m CollaborationReviewsPanel (creator)[2m > [22mdisables submit until stars selected, then accepts mock submit [33m 868[2mms[22m[39m
+ [32m✓[39m src/pages/brand-messages.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 449[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandMessagesPage — ?creator= URL matching against CreatorProfile id[2m > [22mopens the EXISTING conversation when arriving via a CreatorProfile id that has a real deal [33m 364[2mms[22m[39m
+ [32m✓[39m src/lib/creator-disputes-api.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 827[2mms[22m[39m
+   [33m[2m✓[22m[39m creatorDisputes.list (mock mode)[2m > [22mreturns demo rows with lifecycle fields populated [33m 410[2mms[22m[39m
+   [33m[2m✓[22m[39m creatorDisputes.list (mock mode)[2m > [22mlists eligible deals for open-dispute in mock mode [33m 412[2mms[22m[39m
+ [32m✓[39m src/components/brand/dashboard/dashboard-page.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 439[2mms[22m[39m
+   [33m[2m✓[22m[39m DashboardPage — wallet runway (D-1)[2m > [22mrenders a dormant-but-funded wallet (runwayDays omitted/null) as healthy, not critical [33m 346[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/brand-creator-profile.absent-metrics.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 527[2mms[22m[39m
+ [32m✓[39m src/components/brand/deal-room/__tests__/pending-signature-deadlock.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 453[2mms[22m[39m
+   [33m[2m✓[22m[39m DealContractTab — pending_signature keeps the brand Sign control reachable[2m > [22mrenders the signer-name input and Sign button on pending_signature [33m 331[2mms[22m[39m
+ [32m✓[39m src/lib/brand-disputes-api.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 415[2mms[22m[39m
+   [33m[2m✓[22m[39m brandDisputes.list (mock mode)[2m > [22mreturns demo rows with lifecycle fields populated [33m 408[2mms[22m[39m
+ [32m✓[39m src/components/creator/deal-room/creator-contract-card.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 419[2mms[22m[39m
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2mreports exactly one crash, carrying componentStack (the throw-site field)
+[22m[39mError: render exploded
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'render exploded'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: render exploded
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2mdedupes the same crash (same message + pathname) to a single report
+[22m[39mError: same crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'same crash'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: same crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+Error: same crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'same crash'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: same crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2mdoes NOT dedupe a different message on the same pathname
+[22m[39mError: crash A
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'crash A'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: crash A
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+Error: crash B
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'crash B'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: crash B
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2mdoes NOT dedupe the same message on a different pathname
+[22m[39mError: cross-route crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'cross-route crash'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: cross-route crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+Error: cross-route crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'cross-route crash'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: cross-route crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2mstill renders the fallback when the report call REJECTS
+[22m[39mError: reject case
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'reject case'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: reject case
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2mstill renders the fallback when the report call THROWS synchronously
+[22m[39mError: throw case
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'throw case'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: throw case
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2m"Try again" still works after a report failure
+[22m[39mError: retry after failure
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'retry after failure'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: retry after failure
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2m"Try again" still works after a report failure
+[22m[39mError: retry after failure
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'retry after failure'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: retry after failure
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+ [32m✓[39m src/components/ErrorBoundary.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 411[2mms[22m[39m
+ [32m✓[39m src/hooks/brand/__tests__/useWorkspaceVerification.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 483[2mms[22m[39m
+ [32m✓[39m src/pages/creator-campaign-detail-stale-response.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 354[2mms[22m[39m
+ [32m✓[39m src/hooks/creator/useMetaConnection.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 317[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-reviews.test.tsx[2m > [22m[2mCreatorReviewsPage[2m > [22m[2mrenders page title and description inside creator layout
+[22m[39mAn update to CollaborationReviewsPanel inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to CollaborationReviewsPanel inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ [32m✓[39m src/pages/creator-campaign-detail-status-label.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 364[2mms[22m[39m
+ [32m✓[39m src/pages/creator-reviews.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 402[2mms[22m[39m
+ [32m✓[39m src/lib/__tests__/api-contract.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 336[2mms[22m[39m
+   [33m[2m✓[22m[39m api.ts REST paths resolve to real Java controllers[2m > [22mno NEW fabricated FE→BE contract (unmatched paths ⊆ known baseline) [33m 321[2mms[22m[39m
+ [32m✓[39m src/components/creator/copilot/DailySuggestionSection.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 415[2mms[22m[39m
+ [32m✓[39m src/components/creator/ApplicationHistoryTimeline.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 892[2mms[22m[39m
+ [32m✓[39m src/components/brand/wallet/FundEscrowStatus.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[32m 157[2mms[22m[39m
+ [32m✓[39m src/admin/components/dashboard/KpiCard.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 227[2mms[22m[39m
+ [32m✓[39m src/hooks/useEscrowFund.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 232[2mms[22m[39m
+ [32m✓[39m src/lib/__tests__/contract-generator-filename.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 50[2mms[22m[39m
+ [32m✓[39m src/lib/creator-deal-mappers.test.ts [2m([22m[2m36 tests[22m[2m)[22m[32m 59[2mms[22m[39m
+ [32m✓[39m src/components/trendspark/ThemeProvenanceBadge.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 112[2mms[22m[39m
+ [32m✓[39m src/components/brand/timeline/event-cards/proposal-card.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[32m 191[2mms[22m[39m
+ [32m✓[39m src/lib/meera-api.speak-lang.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/lib/__tests__/creator-session.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/components/brand/onboarding/__tests__/onboarding-steps.demo-hint.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 166[2mms[22m[39m
+ [32m✓[39m src/admin/__tests__/rbac-permission-matrix.test.ts [2m([22m[2m54 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/lib/__tests__/deal-stage-accept.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/lib/__tests__/escrow-release-reason.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/lib/__tests__/brand-pipeline-stage.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m src/lib/__tests__/creator-contract-mappers.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/lib/wallet-runway.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/lib/__tests__/remember-me-token-storage.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/hooks/brand/useBrandBillingAccess.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/components/brand/dashboard/dashboard-empty-wallet.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m src/pages/brand-campaign-detail.contract-wiring.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/components/brand/deal-room/deal-payments-tab.f0222.test.tsx[2m > [22mF-0224 — the brand can release a funded milestone[2m > [22mcalls the release endpoint with that milestone id
+[31m[1mReferenceError[22m: userEvent is not defined[39m
+[36m [2m❯[22m src/components/brand/deal-room/deal-payments-tab.f0222.test.tsx:[2m195:5[22m[39m
+    [90m194| [39m    renderPanel({ campaignId: 'camp_1', escrowFunded: true, milestones…
+    [90m195| [39m
+    [90m196| [39m    await userEvent.click(screen.getByRole('button', { name: /release/…
+    [90m   | [39m  [31m^[39m
+    [90m197| [39m
+    [90m198| [39m    [34mexpect[39m(releasePayout)[33m.[39m[34mtoHaveBeenCalledWith[39m([32m'ms_f'[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/brand/deal-room/deal-payments-tab.f0222.test.tsx[2m > [22mF-0224 — the brand can release a funded milestone[2m > [22msurfaces the server refusal verbatim rather than a generic failure
+[31m[1mReferenceError[22m: userEvent is not defined[39m
+[36m [2m❯[22m src/components/brand/deal-room/deal-payments-tab.f0222.test.tsx:[2m207:5[22m[39m
+    [90m206| [39m    renderPanel({ campaignId: 'camp_1', escrowFunded: true, milestones…
+    [90m207| [39m
+    [90m208| [39m    await userEvent.click(screen.getByRole('button', { name: /release/…
+    [90m   | [39m  [31m^[39m
+    [90m209| [39m
+    [90m210| [39m    [35mawait[39m [34mwaitFor[39m(() [33m=>[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m97 passed[39m[22m[90m (98)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m615 passed[39m[22m[90m (617)[39m
+[2m   Start at [22m 20:45:27
+[2m   Duration [22m 125.80s[2m (transform 106.59s, setup 129.68s, collect 339.63s, tests 265.87s, environment 291.68s, prepare 74.56s)[22m
+

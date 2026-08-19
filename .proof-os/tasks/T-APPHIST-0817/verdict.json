@@ -1,0 +1,23 @@
+{
+  "verdict": "echo",
+  "oracle": "model",
+  "isolation": "shared-context",
+  "done_when": "a table states how many of the FRD's requirements are broken live",
+  "not_checked": [
+    "nothing was run against a live deployment — every row is read off source, so 'live' here means what the shipped code can do, not what a running server was observed doing",
+    "whether GET /creator/applications on the deployed API returns the same shape as the CreatorApplicationRow interface asserts",
+    "whether any Flyway migration adds columns the entity class does not declare",
+    "whether the brand's own applicant-review screen writes anything the creator surface could later read",
+    "the two FRD items that are product decisions rather than code state — the missing Rejected and Accepted labels — which need Swapnil's ruling, not a fix"
+  ],
+  "skipped": [
+    {
+      "step": "fresh-context checker dispatch",
+      "reason": "not requested; the report is therefore an echo and validate.py exited 2 (nothing measured independently) rather than reporting a percentage"
+    },
+    {
+      "step": "gates/build.sh, gates/security.sh",
+      "reason": "resolve.py named them for CHECK, but neither can observe conformance to a requirements document"
+    }
+  ]
+}

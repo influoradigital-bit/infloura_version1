@@ -1,0 +1,26 @@
+{
+  "verdict": "proved",
+  "oracle": "script",
+  "isolation": "oracle",
+  "done_when": "gates/blog_frontmatter.py exits 0 on src/content/blog/*.md (title<=60, excerpt<=160, schema complete, slug==filename, slugs unique) AND npm run build exits 0",
+  "not_checked": [
+    "whether the blog copy is any good, accurate, or persuasive \u2014 both gates measure shape and presence only",
+    "whether the claims in the new posts match what Influora actually ships; product claims were grounded by reading src/pages/features/*.tsx copy, but nothing verifies that at build time",
+    "the rendered <title>, which post.tsx:52 builds as `${title} | Influora Blog` \u2014 the 16-char brand suffix pushes 4 of 6 posts past 60 chars in the SERP; the suffix truncates, not the keywords, which is accepted rather than fixed",
+    "whether these posts rank, or whether the keywords chosen have real search volume \u2014 no keyword tool was run",
+    "whether /blog is reachable on influora.in at all: this repo's site is not the WordPress instance currently serving influora.in, and deploying it is out of scope here",
+    "the live WordPress remediation \u2014 no admin access in this session, so none of the 9 placeholder fixes or the influora.io sweep were applied to the live site"
+  ],
+  "skipped": [
+    {
+      "step": "6 (dispatch an independent fresh-context checker)",
+      "reason": "session instructions forbid launching agents unless the user asks. No independent review of the blog copy was run, so copy quality is unverified \u2014 the two gates measure shape and presence only, never whether the writing is correct or persuasive."
+    }
+  ],
+  "evidence": {
+    "oracle": "script",
+    "command": "python .proof-os/gates/F-0304-blog-frontmatter.py && npm run build && bash .proof-os/gates/F-0308-blog-prerendered.sh",
+    "result": "6 of 6 posts valid, 0 defects; PRERENDER 19 of 19 routes snapshotted; blog posts prerendered 6 of 6; exit 0",
+    "where": ".proof-os/rc/blog-prerendered.rc:1"
+  }
+}

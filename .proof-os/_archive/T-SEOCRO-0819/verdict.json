@@ -1,0 +1,21 @@
+{
+  "verdict": "believed",
+  "oracle": "script",
+  "isolation": "oracle",
+  "done_when": "SEO/AEO/GEO work implemented, the retired \"escrow\" wording removed from the public marketing surface, and every main marketing page closed with a real conversion funnel",
+  "not_checked": [
+    "whether any of this actually moves rankings \u2014 no live crawl, no Search Console, no rank tracker was consulted; every claim here is about what the site now SERVES, never about where it places",
+    "the funnel components rendering and behaving in a real browser: the Browser pane was hidden so the page never composited and React never hydrated for the probe. Prerendered HTML was inspected instead, which proves the markup but NOT click behaviour, the sticky-CTA scroll trigger, or the accordion expanding",
+    "whether the deployed host honours public/_redirects \u2014 the 301s are verified as declared, not as served",
+    "whether the new copy CONVERTS better; no A/B test was run and none is possible pre-traffic. The CRO changes are argued from structure (single-intent CTA, objection handling, mobile persistence), not measured",
+    "the homepage stat block (8,915 creators, \u20b94.26Cr paid out, 24h avg payout) \u2014 these read as live metrics but are hardcoded constants with no data source. Left untouched because changing headline claims is a business call, but they are unverified and carry ASCI/consumer-law exposure if wrong",
+    "logged-in app screens, hooks, API clients and code identifiers still say \"escrow\" \u2014 deliberate, per the scope decision, because the Java API serialises escrow-named JSON fields",
+    "whether the legal v0 drafts now reachable at the six new routes are legally sound \u2014 they remain noindex, pending counsel"
+  ],
+  "skipped": [
+    {
+      "step": "\u00a76 dispatch of an independent fresh-context checker",
+      "reason": "The user's Done_when was to implement, and every finding here is a tool exit code rather than a judgment \u2014 the three gates, tsc, eslint, vitest and the build are the oracles. No model reviewed this work in a separate context, so nothing in this task claims fresh-context isolation; the one row that needed a browser/human check is recorded as missing rather than passed."
+    }
+  ]
+}

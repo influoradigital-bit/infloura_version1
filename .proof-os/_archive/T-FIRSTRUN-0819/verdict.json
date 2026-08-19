@@ -1,0 +1,24 @@
+{
+  "verdict": "proved",
+  "oracle": "script",
+  "isolation": "oracle",
+  "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0341-first-run-guidance.sh",
+    "result": "GATE PROVED: first-run guidance controls are live and derivation is evidence-backed (exit 0). Falsified: with NextActionCard reverted to the pre-fix <div>, the same gate printed GATE BROKEN and exited 1; restored, exit 0.",
+    "where": ".proof-os/gates/F-0341-first-run-guidance.sh:35"
+  },
+  "done_when": "Find solution for first-time brand/creator users being confused on arrival at the dashboard, and build L0 (dead onboarding controls) + L1 (first-run checklist on both dashboards)",
+  "not_checked": [
+    "whether the checklist actually reduces first-run confusion — that is a claim about users, and no activation funnel is instrumented to test it",
+    "whether Tejas's and Swapnil's specific confusion was the empty dashboard rather than an earlier step (signup, KYC, wallet funding) — the root causes explain the reported symptom but were never confirmed against those two sessions",
+    "the happy path against a real Spring backend — the browser verification stubbed the API envelope, since localhost:8080 was not running",
+    "L2 (in-app how-it-works routes) and L3 (video embed) were not built, so the canonical six-step flow is still unreachable from inside the authenticated shell except via /brand/help"
+  ],
+  "skipped": [
+    {
+      "step": "§6 fresh-context checker dispatch",
+      "reason": "session policy forbids dispatching a subagent unless the user asks for one, so no independent model reviewed the design. Substituted with a deterministic oracle instead of a model reviewer: gate .proof-os/gates/F-0341-first-run-guidance.sh, falsified against the pre-fix tree (exit 1 on the inert <div>, exit 0 restored) so it is not a gate that greens its own producer's work."
+    }
+  ]
+}

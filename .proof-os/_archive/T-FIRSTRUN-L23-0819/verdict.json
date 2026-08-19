@@ -1,0 +1,28 @@
+{
+  "verdict": "proved",
+  "oracle": "script",
+  "isolation": "oracle",
+  "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0341-first-run-guidance.sh",
+    "result": "GATE PROVED (exit 0), 7 spec files / 58 new tests. Falsified three ways, each restored: inert <div> -> exit 1; re-introduced local STEPS copy -> exit 1; shell nav entry removed -> exit 1. Prerender diff of both public how-it-works pages against the pre-refactor baseline: 0 differing lines, HowTo JSON-LD included.",
+    "where": ".proof-os/gates/F-0341-first-run-guidance.sh:35"
+  },
+  "done_when": "Build L2 (canonical six-step flow reachable inside the authenticated app) and L3 (walkthrough video embedded where the confusion happens)",
+  "not_checked": [
+    "whether the in-app flow page reduces first-run confusion — no activation funnel is instrumented, so this remains a design argument rather than a measured outcome",
+    "the walkthrough video itself: no URL is configured in this repo, so the embed path was verified with a temporary stand-in URL and the video the team actually recorded has never been viewed, sized, or checked for captions",
+    "whether *.influora.in is the right self-hosting allowlist — it matches the production domain but no CDN host was confirmed with anyone",
+    "the pages against a real Spring backend; the browser run stubbed the API envelope because localhost:8080 was not running"
+  ],
+  "skipped": [
+    {
+      "step": "§6 fresh-context checker dispatch",
+      "reason": "session policy forbids dispatching a subagent unless the user asks for one. Substituted with deterministic oracles that were falsified against broken trees rather than a model reviewing its own producer's work: the gate above, plus a byte-level prerender diff for the SEO surface the extraction could have silently changed."
+    },
+    {
+      "step": "captions track on the self-hosted <video> branch",
+      "reason": "no caption file exists for a video that has not been supplied. The full step list renders directly beneath the player as the accessible equivalent, and the component carries a comment to add a <track> when captions exist."
+    }
+  ]
+}

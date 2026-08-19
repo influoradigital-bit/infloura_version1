@@ -1,0 +1,76 @@
+{
+  "rows": [
+    {
+      "subject": "src/pages/brand-onboarding.tsx",
+      "owner": "ananya",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "regex",
+        "command": "sed -n '214,247p' src/pages/brand-onboarding.tsx | grep -cE \"onClick|href=|<Link|navigate\\(\"  &&  grep -nE '<NextActionCard' -A6 src/pages/brand-onboarding.tsx | grep -cE 'onClick|href|to='",
+        "result": "0 and 0 — NextActionCard has no click target in its body and none passed at either call site; graphify explain NextActionCard reports Degree 1 (contains only, no outbound edge)",
+        "where": "src/pages/brand-onboarding.tsx:220"
+      }
+    },
+    {
+      "subject": "src/pages/how-it-works-brands.tsx",
+      "owner": "ananya",
+      "status": "partial",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "regex",
+        "command": "grep -rnE 'how-it-works' src/components/brand src/components/creator src/pages/brand-*.tsx src/pages/creator-*.tsx | grep -v test",
+        "result": "1 hit, and it is a code comment in brand-register.tsx:47 — zero links to the canonical 6-step flow from any authenticated brand or creator surface",
+        "where": "src/pages/how-it-works-brands.tsx:33"
+      }
+    },
+    {
+      "subject": "src/components/brand/brand-layout.tsx",
+      "owner": "ananya",
+      "status": "missing",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "regex",
+        "command": "grep -cE \"\\{ label: '.*', href: '/brand/\" src/components/brand/brand-layout.tsx  &&  grep -nE 'step|Step|order|checklist|Checklist' src/components/brand/brand-layout.tsx",
+        "result": "12 destinations; all 9 'step|order' matches are 'border-*' substrings — zero sequencing or checklist affordance in the shell",
+        "where": "src/components/brand/brand-layout.tsx:105"
+      }
+    },
+    {
+      "subject": "src/components/brand/dashboard/dashboard-page.tsx",
+      "owner": "ananya",
+      "status": "missing",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "regex",
+        "command": "find src -iname '*checklist*' -o -iname '*first-run*' -o -iname '*firstrun*' | wc -l",
+        "result": "0 — no first-run checklist component exists anywhere in src/; the brand-new-account path renders four independent zero-states (isGenuinelyEmpty at dashboard-page.tsx:120)",
+        "where": "src/components/brand/dashboard/dashboard-page.tsx:120"
+      }
+    },
+    {
+      "subject": "src/pages/creator-dashboard.tsx",
+      "owner": "ananya",
+      "status": "partial",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "regex",
+        "command": "grep -cE \"\\{ label: '.*', href: '/creator/\" src/components/creator/creator-layout.tsx  &&  sed -n '591,615p' src/pages/creator-dashboard.tsx",
+        "result": "11 destinations; isEmptyCreator block renders two working CTAs (Explore campaigns, Complete profile) but no ordered next-step sequence",
+        "where": "src/pages/creator-dashboard.tsx:591"
+      }
+    },
+    {
+      "subject": "onboarding walkthrough video embed (whole app)",
+      "owner": "ananya",
+      "status": "missing",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "regex",
+        "command": "grep -rniE 'youtube\\.com|youtu\\.be|vimeo|loom\\.com|<video|\\.mp4' src/pages src/components --include=*.tsx",
+        "result": "2 surviving hits, both unrelated on inspection (a mock filename in collaboration-timeline.tsx:125, a trending-video row in TrendSparkNudgeCard.tsx:163) — zero onboarding/walkthrough video surfaces in the product",
+        "where": "src/components/trendspark/TrendSparkNudgeCard.tsx:163"
+      }
+    }
+  ]
+}

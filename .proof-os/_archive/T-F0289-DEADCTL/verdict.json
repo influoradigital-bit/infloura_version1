@@ -1,0 +1,29 @@
+{
+ "verdict": "proved",
+ "oracle": "script",
+ "isolation": "oracle",
+ "done_when": "every site the gate flags is either wired to a real handler, or rendered disabled with a stated reason, or excluded from the gate as a documented false positive; gates/F-0270-no-dead-controls.py then exits 0 on src and tsc --noEmit stays at 0 errors",
+ "not_checked": [
+  "whether an onClick that EXISTS actually does anything — a no-op handler satisfies this gate, so the rule that agents must never add one is prose, not enforcement",
+  "controls that are not <Button>: raw <button>, DropdownMenuItem, and Card-level onClick are outside the gate entirely",
+  "whether an asChild trigger's own handler is wired — the gate now trusts asChild rather than following it",
+  "runtime behaviour: nothing was clicked in a browser, so a control that is wired but throws still passes",
+  "whether the disabled-with-reason choices are the RIGHT product answer rather than merely an honest one — attachments and the creator overflow menu are gaps a human may want built, not explained"
+ ],
+ "skipped": [
+  {
+   "step": "kavya review",
+   "reason": "resolve.py named kavya as reviewer, but independence.py measures her at a 0.0% catch rate over 21 discoverable failures, so the review would render echo and score nothing; the deterministic gate is the stronger evidence here and it ran"
+  },
+  {
+   "step": "live browser verification",
+   "reason": "no running deployment; disabled states and tooltips were verified in source, not observed"
+  }
+ ],
+ "evidence": {
+  "oracle": "script",
+  "command": "python .proof-os/gates/F-0270-no-dead-controls.py src && npx tsc --noEmit",
+  "result": "gate: VERDICT aligned (proved) - 298 files scanned under src, exit 0 (was 39 findings, then 16 after the asChild false-positive fix, now 0); tsc: exit 0, no diagnostics; vitest deal-room suites 22/22 passed",
+  "where": ".proof-os/gates/F-0270-no-dead-controls.py:1"
+ }
+}

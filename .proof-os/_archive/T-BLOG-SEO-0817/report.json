@@ -1,0 +1,112 @@
+{
+  "rows": [
+    {
+      "subject": "src/content/blog/what-is-a-deal-room-in-influencer-marketing.md",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "python .proof-os/gates/F-0304-blog-frontmatter.py",
+        "result": "6 of 6 posts valid; 0 defects; title <=60 and excerpt <=160 on every post; exit 0",
+        "where": ".proof-os/rc/blog-frontmatter.rc:2"
+      }
+    },
+    {
+      "subject": "src/content/blog/how-to-find-micro-influencers-in-india.md",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "python .proof-os/gates/F-0304-blog-frontmatter.py",
+        "result": "6 of 6 posts valid; 0 defects; title <=60 and excerpt <=160 on every post; exit 0",
+        "where": ".proof-os/rc/blog-frontmatter.rc:2"
+      }
+    },
+    {
+      "subject": "src/content/blog/nano-vs-micro-vs-macro-influencers-india.md",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "python .proof-os/gates/F-0304-blog-frontmatter.py",
+        "result": "6 of 6 posts valid; 0 defects; title <=60 and excerpt <=160 on every post; exit 0",
+        "where": ".proof-os/rc/blog-frontmatter.rc:2"
+      }
+    },
+    {
+      "subject": "src/content/blog/what-is-escrow-in-influencer-marketing.md",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "python .proof-os/gates/F-0304-blog-frontmatter.py",
+        "result": "excerpt trimmed 184 to 157 chars; 6 of 6 posts valid; 0 defects; exit 0",
+        "where": ".proof-os/rc/blog-frontmatter.rc:2"
+      }
+    },
+    {
+      "subject": "src/content/blog/micro-influencer-pricing-guide-india-2026.md",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "python .proof-os/gates/F-0304-blog-frontmatter.py",
+        "result": "title trimmed 67 to 53 and excerpt 173 to 158; 6 of 6 posts valid; 0 defects; exit 0",
+        "where": ".proof-os/rc/blog-frontmatter.rc:2"
+      }
+    },
+    {
+      "subject": "src/content/blog/how-to-pay-influencers-safely-india-2026.md",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "python .proof-os/gates/F-0304-blog-frontmatter.py",
+        "result": "excerpt trimmed 162 to 156 chars; 6 of 6 posts valid; 0 defects; exit 0",
+        "where": ".proof-os/rc/blog-frontmatter.rc:2"
+      }
+    },
+    {
+      "subject": "scripts/prerender.mjs",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "npm run build && bash .proof-os/gates/F-0308-blog-prerendered.sh",
+        "result": "PRERENDER 19 of 19 routes snapshotted; blog posts prerendered 6 of 6; exit 0",
+        "where": ".proof-os/rc/blog-prerendered.rc:2"
+      }
+    },
+    {
+      "subject": ".proof-os/gates/F-0304-blog-frontmatter.py",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "python .proof-os/gates/F-0304-blog-frontmatter.py (planted bad category)",
+        "result": "discriminates: clean tree returns exit 0, planted bad category is rejected with a nonzero status; teeth verified",
+        "where": ".proof-os/rc/blog-frontmatter.rc:2"
+      }
+    },
+    {
+      "subject": "influora.in WordPress placeholder + domain remediation",
+      "owner": "aditya",
+      "status": "missing",
+      "isolation": "none",
+      "evidence": {
+        "oracle": "none",
+        "command": "n/a - no WordPress admin access in this session",
+        "result": "copy written and handed over; nothing applied to the live site",
+        "where": "https://influora.in/"
+      }
+    }
+  ]
+}

@@ -1,0 +1,551 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ---------------------< com.influora:influora-api >----------------------
+[INFO] Building influora-api 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ influora-api ---
+[INFO] Copying 3 resources from src\main\resources to target\classes
+[INFO] Copying 110 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ influora-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ influora-api ---
+[INFO] Copying 1 resource from src\test\resources to target\test-classes
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ influora-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.2.5:test (default-test) @ influora-api ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.influora.repository.ApplicationHistoryEventOrderingTest
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+17:42:50.251 [main] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [com.influora.repository.ApplicationHistoryEventOrderingTest]: ApplicationHistoryEventOrderingTest does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+17:42:50.604 [main] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration com.influora.InfluoraApiApplication for test class com.influora.repository.ApplicationHistoryEventOrderingTest
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.3.5)
+
+2026-08-18T17:42:51.438+05:30 level=WARN  correlationId=n/a thread=main logger=o.s.b.t.j.DuplicateJsonObjectContextCustomizerFactory$DuplicateJsonObjectContextCustomizer msg=
+
+Found multiple occurrences of org.json.JSONObject on the class path:
+
+	jar:file:/C:/Users/Sage%20world/.m2/repository/org/json/json/20180130/json-20180130.jar!/org/json/JSONObject.class
+	jar:file:/C:/Users/Sage%20world/.m2/repository/com/vaadin/external/google/android-json/0.0.20131108.vaadin1/android-json-0.0.20131108.vaadin1.jar!/org/json/JSONObject.class
+
+You may wish to exclude one of them to ensure predictable runtime behavior
+
+2026-08-18T17:42:51.460+05:30 level=INFO  correlationId=n/a thread=main logger=c.i.r.ApplicationHistoryEventOrderingTest msg=Starting ApplicationHistoryEventOrderingTest using Java 21.0.9 with PID 13812 (started by Sage world in C:\Users\Sage world\Downloads\New Influora Ai\New Influora\influora-api)
+2026-08-18T17:42:51.460+05:30 level=INFO  correlationId=n/a thread=main logger=c.i.r.ApplicationHistoryEventOrderingTest msg=No active profile set, falling back to 1 default profile: "default"
+2026-08-18T17:42:53.056+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Multiple Spring Data modules found, entering strict repository configuration mode
+2026-08-18T17:42:53.056+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-08-18T17:42:53.269+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Finished Spring Data repository scanning in 204 ms. Found 1 JPA repository interface.
+2026-08-18T17:42:53.424+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.b.t.a.j.TestDatabaseAutoConfiguration$EmbeddedDataSourceBeanFactoryPostProcessor msg=Replacing 'dataSource' DataSource bean with embedded version
+2026-08-18T17:42:53.693+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.j.d.e.EmbeddedDatabaseFactory msg=Starting embedded database: url='jdbc:h2:mem:4c61a97c-5d2f-4ada-a00e-6fcbf62b6932;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false', username='sa'
+2026-08-18T17:42:54.216+05:30 level=INFO  correlationId=n/a thread=main logger=o.h.jpa.internal.util.LogHelper msg=HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-08-18T17:42:54.341+05:30 level=INFO  correlationId=n/a thread=main logger=org.hibernate.Version msg=HHH000412: Hibernate ORM core version 6.5.3.Final
+2026-08-18T17:42:54.427+05:30 level=INFO  correlationId=n/a thread=main logger=o.h.c.i.RegionFactoryInitiator msg=HHH000026: Second-level cache disabled
+2026-08-18T17:42:54.848+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.o.j.p.SpringPersistenceUnitInfo msg=No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-08-18T17:42:54.920+05:30 level=WARN  correlationId=n/a thread=main logger=org.hibernate.orm.deprecation msg=HHH90000025: H2Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-08-18T17:42:57.209+05:30 level=INFO  correlationId=n/a thread=main logger=o.h.e.t.j.p.i.JtaPlatformInitiator msg=HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-08-18T17:42:57.216+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.o.j.LocalContainerEntityManagerFactoryBean msg=Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-08-18T17:42:57.717+05:30 level=INFO  correlationId=n/a thread=main logger=c.i.r.ApplicationHistoryEventOrderingTest msg=Started ApplicationHistoryEventOrderingTest in 6.957 seconds (process running for 8.809)
+WARNING: A Java agent has been loaded dynamically (C:\Users\Sage world\.m2\repository\net\bytebuddy\byte-buddy-agent\1.14.19\byte-buddy-agent-1.14.19.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+Hibernate: CREATE TABLE application_history_events (id VARCHAR(26) PRIMARY KEY,sequence_no BIGINT NOT NULL AUTO_INCREMENT,campaign_id VARCHAR(26) NOT NULL,application_id VARCHAR(26) NOT NULL,deal_room_id VARCHAR(26),event_type VARCHAR(32) NOT NULL,event_status VARCHAR(32) NOT NULL,actor_type VARCHAR(16) NOT NULL,actor_id VARCHAR(26),description CLOB NOT NULL,metadata CLOB,target_route VARCHAR(255),target_id VARCHAR(26),created_at TIMESTAMP(3) NOT NULL,UNIQUE (sequence_no))
+Hibernate: INSERT INTO application_history_events (id, sequence_no, campaign_id, application_id, event_type, event_status, actor_type, actor_id, description, created_at) VALUES (?, ?, ?, ?, ?, 'APPLIED', 'CREATOR', ?, ?, ?)
+Hibernate: INSERT INTO application_history_events (id, sequence_no, campaign_id, application_id, event_type, event_status, actor_type, actor_id, description, created_at) VALUES (?, ?, ?, ?, ?, 'APPLIED', 'CREATOR', ?, ?, ?)
+Hibernate: select ahe1_0.id,ahe1_0.actor_id,ahe1_0.actor_type,ahe1_0.application_id,ahe1_0.campaign_id,ahe1_0.created_at,ahe1_0.deal_room_id,ahe1_0.description,ahe1_0.event_status,ahe1_0.event_type,ahe1_0.metadata,ahe1_0.sequence_no,ahe1_0.target_id,ahe1_0.target_route from application_history_events ahe1_0 where ahe1_0.application_id=? order by ahe1_0.created_at,ahe1_0.sequence_no
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 8.699 s -- in com.influora.repository.ApplicationHistoryEventOrderingTest
+[INFO] Running com.influora.repository.ApplicationHistoryEventViewedUniquenessTest
+2026-08-18T17:42:58.698+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.t.c.s.AnnotationConfigContextLoaderUtils msg=Could not detect default configuration classes for test class [com.influora.repository.ApplicationHistoryEventViewedUniquenessTest]: ApplicationHistoryEventViewedUniquenessTest does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+2026-08-18T17:42:58.698+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.b.t.c.SpringBootTestContextBootstrapper msg=Found @SpringBootConfiguration com.influora.InfluoraApiApplication for test class com.influora.repository.ApplicationHistoryEventViewedUniquenessTest
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.3.5)
+
+2026-08-18T17:42:58.739+05:30 level=WARN  correlationId=n/a thread=main logger=o.s.b.t.j.DuplicateJsonObjectContextCustomizerFactory$DuplicateJsonObjectContextCustomizer msg=
+
+Found multiple occurrences of org.json.JSONObject on the class path:
+
+	jar:file:/C:/Users/Sage%20world/.m2/repository/org/json/json/20180130/json-20180130.jar!/org/json/JSONObject.class
+	jar:file:/C:/Users/Sage%20world/.m2/repository/com/vaadin/external/google/android-json/0.0.20131108.vaadin1/android-json-0.0.20131108.vaadin1.jar!/org/json/JSONObject.class
+
+You may wish to exclude one of them to ensure predictable runtime behavior
+
+2026-08-18T17:42:58.755+05:30 level=INFO  correlationId=n/a thread=main logger=c.i.r.ApplicationHistoryEventViewedUniquenessTest msg=Starting ApplicationHistoryEventViewedUniquenessTest using Java 21.0.9 with PID 13812 (started by Sage world in C:\Users\Sage world\Downloads\New Influora Ai\New Influora\influora-api)
+2026-08-18T17:42:58.755+05:30 level=INFO  correlationId=n/a thread=main logger=c.i.r.ApplicationHistoryEventViewedUniquenessTest msg=No active profile set, falling back to 1 default profile: "default"
+2026-08-18T17:42:59.287+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Multiple Spring Data modules found, entering strict repository configuration mode
+2026-08-18T17:42:59.293+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-08-18T17:42:59.304+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Finished Spring Data repository scanning in 11 ms. Found 1 JPA repository interface.
+2026-08-18T17:42:59.351+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.b.t.a.j.TestDatabaseAutoConfiguration$EmbeddedDataSourceBeanFactoryPostProcessor msg=Replacing 'dataSource' DataSource bean with embedded version
+2026-08-18T17:42:59.385+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.j.d.e.EmbeddedDatabaseFactory msg=Starting embedded database: url='jdbc:h2:mem:3f0b3a36-1170-4a9f-b7df-2029d7df9b3a;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false', username='sa'
+2026-08-18T17:42:59.421+05:30 level=INFO  correlationId=n/a thread=main logger=o.h.jpa.internal.util.LogHelper msg=HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-08-18T17:42:59.425+05:30 level=INFO  correlationId=n/a thread=main logger=o.h.c.i.RegionFactoryInitiator msg=HHH000026: Second-level cache disabled
+2026-08-18T17:42:59.452+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.o.j.p.SpringPersistenceUnitInfo msg=No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-08-18T17:42:59.455+05:30 level=WARN  correlationId=n/a thread=main logger=org.hibernate.orm.deprecation msg=HHH90000025: H2Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-08-18T17:43:00.348+05:30 level=INFO  correlationId=n/a thread=main logger=o.h.e.t.j.p.i.JtaPlatformInitiator msg=HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-08-18T17:43:00.348+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.o.j.LocalContainerEntityManagerFactoryBean msg=Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-08-18T17:43:00.459+05:30 level=INFO  correlationId=n/a thread=main logger=c.i.r.ApplicationHistoryEventViewedUniquenessTest msg=Started ApplicationHistoryEventViewedUniquenessTest in 1.757 seconds (process running for 11.547)
+Hibernate: DROP TABLE IF EXISTS application_history_events
+Hibernate: CREATE TABLE application_history_events (id VARCHAR(26) PRIMARY KEY,sequence_no BIGINT NOT NULL AUTO_INCREMENT,campaign_id VARCHAR(26) NOT NULL,application_id VARCHAR(26) NOT NULL,deal_room_id VARCHAR(26),event_type VARCHAR(32) NOT NULL,event_status VARCHAR(32) NOT NULL,actor_type VARCHAR(16) NOT NULL,actor_id VARCHAR(26),description CLOB NOT NULL,metadata CLOB,target_route VARCHAR(255),target_id VARCHAR(26),created_at TIMESTAMP(3) NOT NULL,viewed_dedup_key VARCHAR(26)   GENERATED ALWAYS AS (     CASE WHEN event_type = 'APPLICATION_VIEWED'          THEN application_id ELSE NULL END),UNIQUE (sequence_no),UNIQUE (viewed_dedup_key))
+Hibernate: select ahe1_0.id,ahe1_0.actor_id,ahe1_0.actor_type,ahe1_0.application_id,ahe1_0.campaign_id,ahe1_0.created_at,ahe1_0.deal_room_id,ahe1_0.description,ahe1_0.event_status,ahe1_0.event_type,ahe1_0.metadata,ahe1_0.sequence_no,ahe1_0.target_id,ahe1_0.target_route from application_history_events ahe1_0 where ahe1_0.id=?
+Hibernate: insert into application_history_events (actor_id,actor_type,application_id,campaign_id,created_at,deal_room_id,description,event_status,event_type,metadata,target_id,target_route,id) values (?,?,?,?,?,?,?,?,?,?,?,?,?)
+Hibernate: select ahe1_0.id,ahe1_0.actor_id,ahe1_0.actor_type,ahe1_0.application_id,ahe1_0.campaign_id,ahe1_0.created_at,ahe1_0.deal_room_id,ahe1_0.description,ahe1_0.event_status,ahe1_0.event_type,ahe1_0.metadata,ahe1_0.sequence_no,ahe1_0.target_id,ahe1_0.target_route from application_history_events ahe1_0 where ahe1_0.id=?
+Hibernate: insert into application_history_events (actor_id,actor_type,application_id,campaign_id,created_at,deal_room_id,description,event_status,event_type,metadata,target_id,target_route,id) values (?,?,?,?,?,?,?,?,?,?,?,?,?)
+2026-08-18T17:43:00.577+05:30 level=WARN  correlationId=n/a thread=main logger=o.h.e.jdbc.spi.SqlExceptionHelper msg=SQL Error: 23505, SQLState: 23505
+2026-08-18T17:43:00.577+05:30 level=ERROR correlationId=n/a thread=main logger=o.h.e.jdbc.spi.SqlExceptionHelper msg=Unique index or primary key violation: "PUBLIC.CONSTRAINT_INDEX_84 ON PUBLIC.APPLICATION_HISTORY_EVENTS(VIEWED_DEDUP_KEY NULLS FIRST) VALUES ( /* 1 */ '01HDEALVIEWEDUNIQUEA01' )"; SQL statement:
+insert into application_history_events (actor_id,actor_type,application_id,campaign_id,created_at,deal_room_id,description,event_status,event_type,metadata,target_id,target_route,id) values (?,?,?,?,?,?,?,?,?,?,?,?,?) [23505-224]
+Hibernate: select ahe1_0.id,ahe1_0.actor_id,ahe1_0.actor_type,ahe1_0.application_id,ahe1_0.campaign_id,ahe1_0.created_at,ahe1_0.deal_room_id,ahe1_0.description,ahe1_0.event_status,ahe1_0.event_type,ahe1_0.metadata,ahe1_0.sequence_no,ahe1_0.target_id,ahe1_0.target_route from application_history_events ahe1_0 where ahe1_0.application_id=? order by ahe1_0.created_at,ahe1_0.sequence_no
+Hibernate: DROP TABLE IF EXISTS application_history_events
+Hibernate: CREATE TABLE application_history_events (id VARCHAR(26) PRIMARY KEY,sequence_no BIGINT NOT NULL AUTO_INCREMENT,campaign_id VARCHAR(26) NOT NULL,application_id VARCHAR(26) NOT NULL,deal_room_id VARCHAR(26),event_type VARCHAR(32) NOT NULL,event_status VARCHAR(32) NOT NULL,actor_type VARCHAR(16) NOT NULL,actor_id VARCHAR(26),description CLOB NOT NULL,metadata CLOB,target_route VARCHAR(255),target_id VARCHAR(26),created_at TIMESTAMP(3) NOT NULL,viewed_dedup_key VARCHAR(26)   GENERATED ALWAYS AS (     CASE WHEN event_type = 'APPLICATION_VIEWED'          THEN application_id ELSE NULL END),UNIQUE (sequence_no),UNIQUE (viewed_dedup_key))
+Hibernate: select ahe1_0.id,ahe1_0.actor_id,ahe1_0.actor_type,ahe1_0.application_id,ahe1_0.campaign_id,ahe1_0.created_at,ahe1_0.deal_room_id,ahe1_0.description,ahe1_0.event_status,ahe1_0.event_type,ahe1_0.metadata,ahe1_0.sequence_no,ahe1_0.target_id,ahe1_0.target_route from application_history_events ahe1_0 where ahe1_0.id=?
+Hibernate: insert into application_history_events (actor_id,actor_type,application_id,campaign_id,created_at,deal_room_id,description,event_status,event_type,metadata,target_id,target_route,id) values (?,?,?,?,?,?,?,?,?,?,?,?,?)
+Hibernate: select ahe1_0.id,ahe1_0.actor_id,ahe1_0.actor_type,ahe1_0.application_id,ahe1_0.campaign_id,ahe1_0.created_at,ahe1_0.deal_room_id,ahe1_0.description,ahe1_0.event_status,ahe1_0.event_type,ahe1_0.metadata,ahe1_0.sequence_no,ahe1_0.target_id,ahe1_0.target_route from application_history_events ahe1_0 where ahe1_0.id=?
+Hibernate: insert into application_history_events (actor_id,actor_type,application_id,campaign_id,created_at,deal_room_id,description,event_status,event_type,metadata,target_id,target_route,id) values (?,?,?,?,?,?,?,?,?,?,?,?,?)
+Hibernate: select ahe1_0.id,ahe1_0.actor_id,ahe1_0.actor_type,ahe1_0.application_id,ahe1_0.campaign_id,ahe1_0.created_at,ahe1_0.deal_room_id,ahe1_0.description,ahe1_0.event_status,ahe1_0.event_type,ahe1_0.metadata,ahe1_0.sequence_no,ahe1_0.target_id,ahe1_0.target_route from application_history_events ahe1_0 where ahe1_0.application_id=? order by ahe1_0.created_at,ahe1_0.sequence_no
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.988 s -- in com.influora.repository.ApplicationHistoryEventViewedUniquenessTest
+[INFO] Running com.influora.service.ApplicationHistoryServiceRollbackIsolationTest
+2026-08-18T17:43:00.682+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.t.c.s.AnnotationConfigContextLoaderUtils msg=Could not detect default configuration classes for test class [com.influora.service.ApplicationHistoryServiceRollbackIsolationTest]: ApplicationHistoryServiceRollbackIsolationTest does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+2026-08-18T17:43:00.806+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.b.t.c.SpringBootTestContextBootstrapper msg=Found @SpringBootConfiguration com.influora.InfluoraApiApplication for test class com.influora.service.ApplicationHistoryServiceRollbackIsolationTest
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.3.5)
+
+2026-08-18T17:43:00.848+05:30 level=WARN  correlationId=n/a thread=main logger=o.s.b.t.j.DuplicateJsonObjectContextCustomizerFactory$DuplicateJsonObjectContextCustomizer msg=
+
+Found multiple occurrences of org.json.JSONObject on the class path:
+
+	jar:file:/C:/Users/Sage%20world/.m2/repository/org/json/json/20180130/json-20180130.jar!/org/json/JSONObject.class
+	jar:file:/C:/Users/Sage%20world/.m2/repository/com/vaadin/external/google/android-json/0.0.20131108.vaadin1/android-json-0.0.20131108.vaadin1.jar!/org/json/JSONObject.class
+
+You may wish to exclude one of them to ensure predictable runtime behavior
+
+2026-08-18T17:43:00.848+05:30 level=INFO  correlationId=n/a thread=main logger=c.i.s.ApplicationHistoryServiceRollbackIsolationTest msg=Starting ApplicationHistoryServiceRollbackIsolationTest using Java 21.0.9 with PID 13812 (started by Sage world in C:\Users\Sage world\Downloads\New Influora Ai\New Influora\influora-api)
+2026-08-18T17:43:00.848+05:30 level=INFO  correlationId=n/a thread=main logger=c.i.s.ApplicationHistoryServiceRollbackIsolationTest msg=No active profile set, falling back to 1 default profile: "default"
+2026-08-18T17:43:01.300+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Multiple Spring Data modules found, entering strict repository configuration mode
+2026-08-18T17:43:01.300+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-08-18T17:43:01.313+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Finished Spring Data repository scanning in 11 ms. Found 2 JPA repository interfaces.
+2026-08-18T17:43:01.327+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.b.t.a.j.TestDatabaseAutoConfiguration$EmbeddedDataSourceBeanFactoryPostProcessor msg=Replacing 'dataSource' DataSource bean with embedded version
+2026-08-18T17:43:01.359+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.j.d.e.EmbeddedDatabaseFactory msg=Starting embedded database: url='jdbc:h2:mem:0f7f31d3-db4c-446a-9819-855000bca58e;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false', username='sa'
+2026-08-18T17:43:01.390+05:30 level=INFO  correlationId=n/a thread=main logger=o.h.jpa.internal.util.LogHelper msg=HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-08-18T17:43:01.397+05:30 level=INFO  correlationId=n/a thread=main logger=o.h.c.i.RegionFactoryInitiator msg=HHH000026: Second-level cache disabled
+2026-08-18T17:43:01.416+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.o.j.p.SpringPersistenceUnitInfo msg=No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-08-18T17:43:01.418+05:30 level=WARN  correlationId=n/a thread=main logger=org.hibernate.orm.deprecation msg=HHH90000025: H2Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-08-18T17:43:02.348+05:30 level=INFO  correlationId=n/a thread=main logger=o.h.e.t.j.p.i.JtaPlatformInitiator msg=HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+Hibernate: drop table if exists admin_audit_log cascade 
+Hibernate: drop table if exists admin_refresh_tokens cascade 
+Hibernate: drop table if exists admin_users cascade 
+Hibernate: drop table if exists affiliate_earnings cascade 
+Hibernate: drop table if exists affiliate_settlement_batches cascade 
+Hibernate: drop table if exists ai_conversations cascade 
+Hibernate: drop table if exists ai_messages cascade 
+Hibernate: drop table if exists application_history_events cascade 
+Hibernate: drop table if exists audience_demographics cascade 
+Hibernate: drop table if exists audit_log cascade 
+Hibernate: drop table if exists brand_ai_credits cascade 
+Hibernate: drop table if exists brand_profiles cascade 
+Hibernate: drop table if exists campaign_intents cascade 
+Hibernate: drop table if exists campaign_service_invoices cascade 
+Hibernate: drop table if exists campaign_templates cascade 
+Hibernate: drop table if exists campaigns cascade 
+Hibernate: drop table if exists collaborations cascade 
+Hibernate: drop table if exists content_flags cascade 
+Hibernate: drop table if exists contracts cascade 
+Hibernate: drop table if exists conversion_webhook_secrets cascade 
+Hibernate: drop table if exists coupon_codes cascade 
+Hibernate: drop table if exists coupon_redemptions cascade 
+Hibernate: drop table if exists creator_bank_accounts cascade 
+Hibernate: drop table if exists creator_captions cascade 
+Hibernate: drop table if exists creator_metrics cascade 
+Hibernate: drop table if exists creator_nudge_log cascade 
+Hibernate: drop table if exists creator_profiles cascade 
+Hibernate: drop table if exists creator_scores cascade 
+Hibernate: drop table if exists deal_messages cascade 
+Hibernate: drop table if exists deliverable_metrics cascade 
+Hibernate: drop table if exists deliverables cascade 
+Hibernate: drop table if exists disputes cascade 
+Hibernate: drop table if exists email_otp_challenges cascade 
+Hibernate: drop table if exists email_outbox cascade 
+Hibernate: drop table if exists email_preferences cascade 
+Hibernate: drop table if exists error_log cascade 
+Hibernate: drop table if exists escrow_holds cascade 
+Hibernate: drop table if exists featured_creators cascade 
+Hibernate: drop table if exists file_uploads cascade 
+Hibernate: drop table if exists hsn_sac_codes cascade 
+Hibernate: drop table if exists idempotency_keys cascade 
+Hibernate: drop table if exists invoice_number_sequences cascade 
+Hibernate: drop table if exists invoices cascade 
+Hibernate: drop table if exists media_metrics cascade 
+Hibernate: drop table if exists meera_interaction_log cascade 
+Hibernate: drop table if exists meera_tool_calls cascade 
+Hibernate: drop table if exists meta_oauth_tokens cascade 
+Hibernate: drop table if exists notifications cascade 
+Hibernate: drop table if exists nudge_log cascade 
+Hibernate: drop table if exists password_reset_tokens cascade 
+Hibernate: drop table if exists payment_milestones cascade 
+Hibernate: drop table if exists payouts cascade 
+Hibernate: drop table if exists plans cascade 
+Hibernate: drop table if exists platform_commission_invoices cascade 
+Hibernate: drop table if exists platform_fee_config cascade 
+Hibernate: drop table if exists platform_stats cascade 
+Hibernate: drop table if exists portfolio_events cascade 
+Hibernate: drop table if exists refresh_tokens cascade 
+Hibernate: drop table if exists reviews cascade 
+Hibernate: drop table if exists saved_creators cascade 
+Hibernate: drop table if exists shipments cascade 
+Hibernate: drop table if exists shopify_integrations cascade 
+Hibernate: drop table if exists snapsby_catalog_video cascade 
+Hibernate: drop table if exists subscriptions cascade 
+Hibernate: drop table if exists support_ticket_messages cascade 
+Hibernate: drop table if exists support_tickets cascade 
+Hibernate: drop table if exists trends cascade 
+Hibernate: drop table if exists usage_counter_details cascade 
+Hibernate: drop table if exists usage_counters cascade 
+Hibernate: drop table if exists users cascade 
+Hibernate: drop table if exists utm_campaigns cascade 
+Hibernate: drop table if exists wallet_topups cascade 
+Hibernate: drop table if exists wallet_transactions cascade 
+Hibernate: drop table if exists wallets cascade 
+Hibernate: drop table if exists woocommerce_integrations cascade 
+Hibernate: drop table if exists workspace_member_invites cascade 
+Hibernate: drop table if exists workspace_members cascade 
+Hibernate: drop table if exists workspaces cascade 
+Hibernate: create table admin_audit_log (created_at timestamp(6) with time zone not null, admin_id varchar(26) not null, entity_id varchar(26) not null, id varchar(26) not null, ip_address varchar(45) not null, entity_type varchar(50) not null, action varchar(100) not null, admin_email varchar(255) not null, reason TEXT, new_value json, old_value json, source enum ('CLIENT_REPORTED','SERVER_INTERNAL') not null, primary key (id))
+Hibernate: create table admin_refresh_tokens (revoked boolean not null, created_at timestamp(6) with time zone not null, expires_at timestamp(6) with time zone not null, admin_id varchar(26) not null, id varchar(26) not null, token_hash varchar(64) not null, primary key (id))
+Hibernate: create table admin_users (failed_login_attempts integer not null, failed_mfa_attempts integer not null, is_active boolean not null, mfa_enabled boolean not null, created_at timestamp(6) with time zone not null, last_login_at timestamp(6) with time zone, locked_until timestamp(6) with time zone, mfa_locked_until timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, id varchar(26) not null, email varchar(255) not null unique, encrypted_mfa_secret TEXT, password_hash varchar(255) not null, role enum ('ADMIN','SUPER_ADMIN','SUPPORT') not null, primary key (id))
+Hibernate: create table affiliate_earnings (commission_amount numeric(12,2) not null, currency varchar(3) not null, created_at DATETIME(6) not null, settled_at DATETIME(6), campaign_id varchar(26) not null, creator_id varchar(26) not null, id varchar(26) not null, redemption_id varchar(26) not null unique, settlement_batch_id varchar(26), workspace_id varchar(26) not null, idempotency_key varchar(100) not null unique, status enum ('FAILED','PENDING','SETTLED') not null, primary key (id))
+Hibernate: create table affiliate_settlement_batches (total_amount numeric(14,2) not null, total_creators integer not null, period_year_month varchar(7) not null, completed_at DATETIME(6), started_at DATETIME(6) not null, id varchar(26) not null, status enum ('COMPLETED','FAILED','IN_PROGRESS') not null, primary key (id))
+Hibernate: create table ai_conversations (created_at timestamp(6) with time zone not null, last_message_at timestamp(6) with time zone, id varchar(26) not null, started_by varchar(26) not null, workspace_id varchar(26) not null, title varchar(200), status enum ('ACTIVE','CAMPAIGN_CREATED','DORMANT','PAUSED_CREDITS') not null, primary key (id))
+Hibernate: create table ai_messages (credits_charged integer not null, created_at timestamp(6) with time zone not null, conversation_id varchar(26) not null, id varchar(26) not null, content TEXT, metadata json, role enum ('ASSISTANT','SYSTEM','TOOL','USER') not null, primary key (id))
+Hibernate: create table application_history_events (created_at timestamp(6) with time zone not null, sequence_no bigint, actor_id varchar(26), application_id varchar(26) not null, campaign_id varchar(26) not null, deal_room_id varchar(26), id varchar(26) not null, target_id varchar(26), description TEXT not null, metadata TEXT, target_route varchar(255), actor_type enum ('BRAND','CREATOR','SYSTEM') not null, event_status enum ('APPLIED','CANCELLED','COMPLETED','CONTRACTED','CONTRACT_PENDING','DISPUTED','INVITED','IN_NEGOTIATION','IN_PROGRESS','REVIEW_PENDING','REVISION_REQUESTED','SHORTLISTED','TERMS_AGREED') not null, event_type enum ('APPLICATION_ACCEPTED','APPLICATION_RECEIVED','APPLICATION_REJECTED','APPLICATION_VIEWED','APPLICATION_WITHDRAWN','CAMPAIGN_APPLIED','CONTRACT_GENERATED','CONTRACT_SIGNED','DEAL_ROOM_ACTIVATED','DELIVER','DELIVERABLE_APPROVED','DELIVERABLE_SUBMITTED','FUND_ESCROW','PAY') not null, primary key (id))
+Hibernate: create table audience_demographics (created_at timestamp(6) with time zone not null, fetched_at DATETIME(6) not null, time DATETIME(6) not null, data_source varchar(20) not null, platform varchar(20) not null, creator_profile_id varchar(26) not null, id varchar(26) not null, age_gender_breakdown json, city_breakdown json, country_breakdown json, locale_breakdown json, primary key (id))
+Hibernate: create table audit_log (after_balance numeric(14,2), before_balance numeric(14,2), server_amount numeric(12,2), created_at timestamp(6) with time zone not null, tool_tier varchar(16), id varchar(26) not null, workspace_id varchar(26), actor_type varchar(32) not null, outcome varchar(32) not null, tool_name varchar(32), actor_id varchar(64), event_type varchar(64) not null, idempotency_key varchar(64), reason_code varchar(64), request_digest varchar(128), detail_json json, primary key (id))
+Hibernate: create table brand_ai_credits (credits_remaining integer not null, cycle_start date not null, daily_actions_date date, daily_actions_used integer not null, last_reset date not null, monthly_allotment integer not null, created_at timestamp(6) with time zone not null, first_campaign_at timestamp(6) with time zone, unlimited_until timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, workspace_id varchar(26) not null, primary key (workspace_id))
+Hibernate: create table brand_profiles (created_at timestamp(6) with time zone not null, last_posted_at timestamp(6) with time zone, scraped_at timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, id varchar(26) not null, workspace_id varchar(26) not null, analysis_error varchar(500), website_url varchar(500), analysis_status enum ('ANALYZING','FAILED','PENDING','READY') not null, brand_aesthetic json, competitor_urls json, niche_tags json, product_catalog json, theme_tags json, tone_profile json, primary key (id))
+Hibernate: create table campaign_intents (confirmed boolean not null, creator_count integer, product_price numeric(12,2), proposed_budget numeric(12,2), created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, campaign_id varchar(26), conversation_id varchar(26) not null, id varchar(26) not null, workspace_id varchar(26) not null, product_url varchar(500), product_name varchar(255), campaign_type enum ('DIRECT','HYPE','REVIEW','STANDARD') not null, location_filter json, status enum ('ABANDONED','CONFIRMED','DRAFTING','READY') not null, primary key (id))
+Hibernate: create table campaign_service_invoices (currency varchar(3) not null, gross_amount numeric(14,2) not null, tcs_amount numeric(14,2), created_at timestamp(6) with time zone not null, issued_at timestamp(6) with time zone not null, hsn_sac_code varchar(10), creator_gstin varchar(15), brand_workspace_id varchar(26) not null, campaign_id varchar(26) not null, collaboration_id varchar(26) not null, creator_user_id varchar(26) not null, escrow_hold_id varchar(26) not null unique, id varchar(26) not null, invoice_number varchar(32) not null unique, pdf_r2_key varchar(500), status enum ('ISSUED','PAID') not null, primary key (id))
+Hibernate: create table campaign_templates (budget_max numeric(12,2), budget_min numeric(12,2), created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, created_by varchar(26), id varchar(26) not null, workspace_id varchar(26), name varchar(200) not null, brand_guidelines TEXT, description TEXT, campaign_type enum ('DIRECT','HYPE','REVIEW','STANDARD'), category enum ('AFFILIATE','AWARENESS','CUSTOM','SALES','UGC') not null, content_types json, hashtags json, objectives json, platforms json, requirements json, scope enum ('CUSTOM','SYSTEM') not null, target_audience json, primary key (id))
+Hibernate: create table campaigns (application_deadline date, budget_max numeric(12,2), budget_min numeric(12,2), commission_rate numeric(5,4), currency varchar(3) not null, end_date date, is_private boolean not null, max_collaborators integer, start_date date, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, created_by varchar(26) not null, id varchar(26) not null, workspace_id varchar(26) not null, title varchar(300) not null, brand_guidelines TEXT, description TEXT, campaign_type enum ('DIRECT','HYPE','REVIEW','STANDARD'), content_types json, hashtags json, hype_config json, objectives json, platforms json, requirements json, status enum ('ACTIVE','CANCELLED','COMPLETED','DRAFT','PAUSED','PENDING_APPROVAL') not null, target_audience json, primary key (id))
+Hibernate: create table collaborations (agreed_rate numeric(12,2), currency varchar(3), applied_at timestamp(6) with time zone not null, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, campaign_id varchar(26) not null, creator_id varchar(26) not null, id varchar(26) not null, notes TEXT, usage_rights TEXT, source enum ('APPLICATION','INVITATION') not null, status enum ('APPLIED','CANCELLED','COMPLETED','CONTRACTED','CONTRACT_PENDING','DISPUTED','INVITED','IN_NEGOTIATION','IN_PROGRESS','REVIEW_PENDING','REVISION_REQUESTED','SHORTLISTED','TERMS_AGREED') not null, primary key (id))
+Hibernate: create table content_flags (created_at timestamp(6) with time zone not null, reviewed_at timestamp(6) with time zone, content_id varchar(26) not null, flagged_by_user_id varchar(26), id varchar(26) not null, reviewed_by varchar(26), action_taken varchar(100), content_preview TEXT, flag_reason varchar(255) not null, content_type enum ('DELIVERABLE','MESSAGE','PROFILE','REVIEW') not null, flagged_by enum ('ADMIN','AI','USER') not null, status enum ('ACTIONED','ESCALATED','PENDING','REVIEWED') not null, primary key (id))
+Hibernate: create table contracts (currency varchar(3) not null, effective_date date, expiration_date date, total_amount numeric(12,2) not null, version integer not null, brand_signed_at timestamp(6) with time zone, created_at timestamp(6) with time zone not null, creator_signed_at timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, collaboration_id varchar(26) not null, id varchar(26) not null, workspace_id varchar(26) not null, pdf_r2_key varchar(500), brand_signer_name varchar(255), creator_signer_name varchar(255), terms_text text, status enum ('ACTIVE','CANCELLED','COMPLETED','DRAFT','PENDING_SIGNATURES') not null, terms json, primary key (id))
+Hibernate: create table conversion_webhook_secrets (revoked boolean not null, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, id varchar(26) not null, workspace_id varchar(26) not null, encrypted_secret TEXT not null, primary key (id))
+Hibernate: create table coupon_codes (discount_value numeric(10,2) not null, usage_count integer not null, usage_limit integer, created_at DATETIME(6) not null, expires_at DATETIME(6), discount_type varchar(20) not null, campaign_id varchar(26) not null, creator_id varchar(26) not null, id varchar(26) not null, workspace_id varchar(26) not null, code varchar(50) not null, primary key (id))
+Hibernate: create table coupon_redemptions (discount_applied numeric(12,2) not null, order_amount numeric(12,2) not null, redeemed_at DATETIME(6) not null, coupon_id varchar(26) not null, id varchar(26) not null, customer_id varchar(100), idempotency_key varchar(100) not null unique, order_id varchar(100) not null, metadata json, primary key (id))
+Hibernate: create table creator_bank_accounts (is_primary boolean not null, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, usable_after timestamp(6) with time zone not null, instrument_type varchar(16) not null, creator_user_id varchar(26) not null, id varchar(26) not null, display_mask varchar(32) not null, razorpay_contact_id varchar(64), razorpay_fund_account_id varchar(64), account_ciphertext TEXT not null, ifsc_ciphertext TEXT, primary key (id))
+Hibernate: create table creator_captions (created_at timestamp(6) with time zone not null, posted_at timestamp(6) with time zone, tagged_at timestamp(6) with time zone, creator_profile_id varchar(26) not null, id varchar(26) not null, ig_media_id varchar(64) not null, caption_text TEXT, tag_status enum ('FAILED','PENDING','TAGGED') not null, tagged_themes json, primary key (id))
+Hibernate: create table creator_metrics (avg_engagement_rate numeric(8,4), media_count integer, avg_impressions_per_post bigint, avg_reach_per_post bigint, created_at timestamp(6) with time zone not null, fetched_at DATETIME(6) not null, followers bigint not null, following bigint, profile_views bigint, time DATETIME(6) not null, website_clicks bigint, data_source varchar(20) not null, platform varchar(20) not null, creator_profile_id varchar(26) not null, id varchar(26) not null, username varchar(200), primary key (id))
+Hibernate: create table creator_nudge_log (match_score integer not null, acted_at timestamp(6) with time zone, created_at timestamp(6) with time zone not null, dismissed_at timestamp(6) with time zone, shown_at timestamp(6) with time zone not null, creator_profile_id varchar(26) not null, id varchar(26) not null, trend_id varchar(26) not null, prompt_version varchar(32) not null, theme varchar(32) not null, content_idea TEXT not null, headline varchar(255) not null, message_source enum ('AI','FALLBACK') not null, primary key (id))
+Hibernate: create table creator_profiles (aadhaar_last4 varchar(4), currency varchar(3) not null, engagement_rate numeric(5,2), is_discoverable boolean not null, is_suspended boolean not null, is_verified boolean not null, rate_max numeric(12,2), rate_min numeric(12,2), application_reviewed_at timestamp(6) with time zone, created_at timestamp(6) with time zone not null, reinstated_at timestamp(6) with time zone, suspended_at timestamp(6) with time zone, tier_adjusted_at timestamp(6) with time zone, total_followers bigint not null, updated_at timestamp(6) with time zone not null, username_changed_at timestamp(6) with time zone, pan varchar(10), creator_invoice_code varchar(12), gstin varchar(15), application_reviewed_by varchar(26), id varchar(26) not null, reinstated_by varchar(26), suspended_by varchar(26), tier_adjusted_by varchar(26), user_id varchar(26) not null unique, username varchar(80), city varchar(100), display_name varchar(100) not null, avatar_url varchar(500), cover_image_url varchar(500), selfie_url varchar(500), suspended_reason varchar(500), application_rejection_reason varchar(1000), bio TEXT, application_status enum ('APPROVED','PENDING','REJECTED') not null, categories json, content_styles json, identity_kyc_status enum ('PENDING','REJECTED','UNVERIFIED','VERIFIED'), languages json, portfolio_settings_json json, tax_registration_status enum ('EXEMPT','GST_REGISTERED','UNREGISTERED'), theme_tags json, tier_override enum ('MACRO','MICRO','MID','NANO'), primary key (id))
+Hibernate: create table creator_scores (audience_match_score numeric(5,2), brand_safety_score numeric(5,2), content_sentiment numeric(5,2), engagement_consistency numeric(5,2), estimated_rate_max numeric(12,2), estimated_rate_min numeric(12,2), fake_follower_score numeric(5,2), posting_frequency numeric(5,2), quality_score numeric(5,2), rate_confidence numeric(5,2), rate_currency varchar(3) not null, computed_at DATETIME(6) not null, created_at timestamp(6) with time zone not null, time DATETIME(6) not null, algorithm_version varchar(20) not null, creator_profile_id varchar(26) not null, id varchar(26) not null, fake_follower_reasons json, garm_flags json, primary key (id))
+Hibernate: create table deal_messages (created_at timestamp(6) with time zone not null, collaboration_id varchar(26) not null, id varchar(26) not null, sender_id varchar(26) not null, content TEXT, kind enum ('contract','deliverable','payment','proposal','shipment','system','text') not null, metadata json, read_by_json json, sender_type enum ('brand','creator','system') not null, primary key (id))
+Hibernate: create table deliverable_metrics (created_at timestamp(6) with time zone not null, engagements bigint, impressions bigint, reach bigint, reported_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, verified_at timestamp(6) with time zone, source varchar(20) not null, collaboration_id varchar(26) not null, id varchar(26) not null, milestone_id varchar(26) not null unique, reported_by_creator_id varchar(26) not null, platform_media_id varchar(100), proof_screenshot_r2_key varchar(500), link varchar(1000), primary key (id))
+Hibernate: create table deliverables (deadline date, revision_count integer not null, slot_index integer not null, version_number integer not null, approved_at timestamp(6) with time zone, created_at timestamp(6) with time zone not null, posted_at timestamp(6) with time zone, reviewed_at timestamp(6) with time zone, submitted_at timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, collaboration_id varchar(26) not null, creator_profile_id varchar(26) not null, id varchar(26) not null, milestone_id varchar(26), post_id varchar(100), title varchar(200) not null, post_url varchar(500), caption TEXT, creator_notes TEXT, description TEXT, review_notes TEXT, files_json json, hashtags_json json, status enum ('APPROVED','DRAFT','METRICS_REPORTED','PENDING','POSTED','REJECTED','RESUBMITTED','REVISION_REQUESTED','SUBMITTED','VERIFIED') not null, type enum ('FACEBOOK_POST','FACEBOOK_REEL','INSTAGRAM_CAROUSEL','INSTAGRAM_POST','INSTAGRAM_REEL','INSTAGRAM_STORY','TIKTOK_VIDEO','YOUTUBE_SHORT','YOUTUBE_VIDEO') not null, primary key (id))
+Hibernate: create table disputes (created_at timestamp(6) with time zone not null, resolved_at timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, version bigint not null, collaboration_id varchar(26) not null, id varchar(26) not null, opened_by_user_id varchar(26) not null, resolved_by_admin_id varchar(26), reason TEXT not null, resolution_notes TEXT, opened_by_type enum ('BRAND','CREATOR') not null, status enum ('OPEN','RESOLVED_BRAND','RESOLVED_CREATOR','RESOLVED_SPLIT','UNDER_REVIEW') not null, primary key (id))
+Hibernate: create table email_otp_challenges (attempts integer not null, verified boolean not null, created_at timestamp(6) with time zone not null, expires_at timestamp(6) with time zone not null, id varchar(26) not null, otp_hash varchar(64) not null, email varchar(255) not null, primary key (id))
+Hibernate: create table email_outbox (retry_count TINYINT not null, created_at timestamp(6) with time zone not null, next_retry_at timestamp(6) with time zone, sent_at timestamp(6) with time zone, id varchar(26) not null, user_id varchar(26) not null, template_key varchar(64) not null, idempotency_key varchar(128), error_message varchar(512), template_data JSON not null, to_email varchar(255) not null, status enum ('FAILED','PENDING','SENT') not null, primary key (id))
+Hibernate: create table email_preferences (unsubscribed boolean not null, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, id varchar(26) not null, user_id varchar(26) not null, event_type varchar(64) not null, primary key (id))
+Hibernate: create table error_log (resolved boolean not null, status_code integer, created_at timestamp(6) with time zone not null, resolved_at timestamp(6) with time zone, http_method varchar(16), id varchar(26) not null, resolved_by varchar(26), user_id varchar(26), endpoint varchar(512), exception_class varchar(255), message TEXT, stack_trace TEXT, severity enum ('CRITICAL','ERROR','WARN') not null, primary key (id))
+Hibernate: create table escrow_holds (amount numeric(14,2) not null, currency varchar(3) not null, created_at timestamp(6) with time zone not null, funded_at timestamp(6) with time zone, released_at timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, campaign_id varchar(26), collaboration_id varchar(26), hold_txn_id varchar(26), id varchar(26) not null, milestone_id varchar(26), release_txn_id varchar(26), workspace_id varchar(26) not null, idempotency_key varchar(64) not null, status enum ('FROZEN','FUNDED','PENDING','REFUNDED','RELEASED') not null, primary key (id))
+Hibernate: create table featured_creators (display_order integer not null, is_active boolean not null, created_at timestamp(6) with time zone not null, featured_from timestamp(6) with time zone, featured_until timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, creator_profile_id varchar(26) not null, featured_by_user_id varchar(26), id varchar(26) not null, featured_category varchar(64) not null, featured_reason varchar(500), primary key (id))
+Hibernate: create table file_uploads (created_at timestamp(6) with time zone not null, size_bytes bigint not null, updated_at timestamp(6) with time zone not null, id varchar(26) not null, owner_id varchar(26) not null, purpose varchar(32) not null, etag varchar(128), mime_type varchar(128) not null, r2_bucket varchar(128) not null, r2_key varchar(512) not null, thumbnail_key varchar(512), public_url varchar(1024), owner_type enum ('USER','WORKSPACE') not null, status enum ('DELETED','FAILED','PENDING','READY'), primary key (id))
+Hibernate: create table hsn_sac_codes (created_at timestamp(6) with time zone not null, code varchar(10) not null, code_type varchar(20) not null, id varchar(26) not null, description varchar(200) not null, applies_to enum ('CREATOR_SERVICE','PLATFORM_COMMISSION','SUBSCRIPTION') not null, primary key (id))
+Hibernate: create table idempotency_keys (completed_at timestamp(6) with time zone, created_at timestamp(6) with time zone not null, workspace_id varchar(26), scope varchar(64) not null, idempotency_key varchar(128) not null, result_digest varchar(128), status enum ('COMPLETED','FAILED','IN_PROGRESS') not null, primary key (idempotency_key))
+Hibernate: create table invoice_number_sequences (next_seq integer not null, fiscal_year varchar(7) not null, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, creator_invoice_code varchar(12), id varchar(26) not null, series_type enum ('CAMPAIGN_SERVICE','COMMISSION_BRAND','COMMISSION_CREATOR','SUBSCRIPTION') not null, primary key (id))
+Hibernate: create table invoices (amount integer not null, base_amount numeric(14,2), cgst_amount numeric(14,2), igst_amount numeric(14,2), sgst_amount numeric(14,2), created_at timestamp(6) with time zone not null, issued_at timestamp(6) with time zone, paid_at timestamp(6) with time zone, period_end timestamp(6) with time zone not null, period_start timestamp(6) with time zone not null, hsn_sac_code varchar(10), id varchar(26) not null, subscription_id varchar(26) not null, workspace_id varchar(26) not null, invoice_number varchar(32) unique, razorpay_invoice_id varchar(100) unique, pdf_r2_key varchar(500), status enum ('DRAFT','FAILED','ISSUED','PAID') not null, primary key (id))
+Hibernate: create table media_metrics (avg_watch_time_seconds numeric(10,2), comments bigint, created_at timestamp(6) with time zone not null, engagement bigint, fetched_at DATETIME(6) not null, impressions bigint, likes bigint, posted_at DATETIME(6), reach bigint, saves bigint, shares bigint, time DATETIME(6) not null, video_views bigint, data_source varchar(20) not null, media_type varchar(20) not null, platform varchar(20) not null, creator_profile_id varchar(26) not null, id varchar(26) not null, media_id varchar(50) not null, permalink varchar(500), caption TEXT, primary key (id))
+Hibernate: create table meera_interaction_log (recommended_flag boolean, created_at timestamp(6) with time zone not null, campaign_id varchar(26), id varchar(26) not null, workspace_id varchar(26) not null, prompt_version varchar(32), tool_name varchar(32), session_id varchar(64), revision_reason TEXT, event_type enum ('DRAFT_CREATED','DRAFT_FUNDED','OPTIONS_PRESENTED','OPTION_TAPPED','REVISION_REQUESTED') not null, primary key (id))
+Hibernate: create table meera_tool_calls (server_amount numeric(12,2), created_at timestamp(6) with time zone not null, conversation_id varchar(26), id varchar(26) not null, result_ref_id varchar(26), workspace_id varchar(26) not null, idempotency_key varchar(64) not null, request_digest varchar(128), result_ref_type enum ('CAMPAIGN','ESCROW_HOLD','INTENT','MILESTONE','NONE') not null, status enum ('EXECUTED','FAILED','RECEIVED','REJECTED') not null, tool_name enum ('calculate_budget','confirm_launch','create_campaign','get_campaign_performance','request_payment','show_creators') not null, primary key (id))
+Hibernate: create table meta_oauth_tokens (revoked boolean not null, created_at timestamp(6) with time zone not null, expires_at timestamp(6) with time zone not null, last_refreshed_at timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, creator_profile_id varchar(26) not null, id varchar(26) not null, workspace_id varchar(26), ig_business_account_id varchar(64), encrypted_access_token TEXT not null, granted_scopes json, primary key (id))
+Hibernate: create table notifications (is_read boolean not null, created_at timestamp(6) with time zone not null, id varchar(26) not null, user_id varchar(26) not null, workspace_id varchar(26), event_type varchar(64) not null, link varchar(512), body TEXT, title varchar(255) not null, primary key (id))
+Hibernate: create table nudge_log (match_score integer not null, clicked_at timestamp(6) with time zone, created_at timestamp(6) with time zone not null, purchased_at timestamp(6) with time zone, shown_at timestamp(6) with time zone not null, id varchar(26) not null, purchased_video_id varchar(26), trend_id varchar(26) not null, workspace_id varchar(26) not null, message TEXT not null, campaign_type enum ('EDUCATIONAL','HYPE','PRIDE','SEASONAL') not null, message_source enum ('AI','FALLBACK') not null, mode enum ('OWN_CONTENT','SNAPSBY') not null, video_ids json, primary key (id))
+Hibernate: create table password_reset_tokens (used boolean not null, created_at timestamp(6) with time zone not null, expires_at timestamp(6) with time zone not null, id varchar(26) not null, user_id varchar(26) not null, token_hash varchar(64) not null, primary key (id))
+Hibernate: create table payment_milestones (amount numeric(12,2) not null, currency varchar(3) not null, due_date date, sequence_no integer not null, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, collaboration_id varchar(26) not null, contract_id varchar(26) not null, escrow_hold_id varchar(26), id varchar(26) not null, released_txn_id varchar(26), idempotency_key varchar(64), description varchar(300), release_condition enum ('ON_APPROVAL','ON_POSTED','ON_VERIFIED_METRICS') not null, status enum ('FROZEN','FUNDED','PENDING','REFUNDED','RELEASED') not null, primary key (id))
+Hibernate: create table payouts (amount numeric(12,2) not null, currency varchar(3) not null, confirmed_at timestamp(6) with time zone, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, creator_user_id varchar(26) not null, id varchar(26) not null, milestone_id varchar(26), status varchar(32) not null, fund_account_id varchar(64) not null, idempotency_key varchar(64) not null unique, razorpay_payout_id varchar(64) not null unique, webhook_payload TEXT, primary key (id))
+Hibernate: create table plans (active boolean not null, ai_monthly_allotment integer not null, campaign_templates_enabled boolean not null, creator_analytics_monthly_limit integer, export_enabled boolean not null, fee_bps integer, price_inr integer not null, seat_limit integer not null, tracked_creator_limit integer, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, id varchar(26) not null, name varchar(100) not null, razorpay_plan_id varchar(100), billing_cycle enum ('MONTHLY') not null, code enum ('FREE','PRO') not null unique, primary key (id))
+Hibernate: create table platform_commission_invoices (commission_amount numeric(14,2) not null, fee_bps_applied integer not null, gst_amount numeric(14,2) not null, created_at timestamp(6) with time zone not null, issued_at timestamp(6) with time zone not null, hsn_sac_code varchar(10), campaign_id varchar(26) not null, counterparty_user_id varchar(26), counterparty_workspace_id varchar(26), escrow_hold_id varchar(26), id varchar(26) not null, ledger_txn_id varchar(26) not null, invoice_number varchar(32) not null unique, pdf_r2_key varchar(500), leg enum ('BRAND','CREATOR') not null, status enum ('ISSUED','PAID') not null, primary key (id))
+Hibernate: create table platform_fee_config (allow_high_fee boolean not null, brand_fee_bps integer not null, default_fee_bps integer not null, max_fee_bps integer not null, min_fee_bps integer not null, razorpay_absorbed_by_platform boolean not null, effective_at timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, version bigint not null, id varchar(26) not null, updated_by varchar(26), approved_by varchar(255), primary key (id))
+Hibernate: create table platform_stats (engagement_rate numeric(5,2), is_verified boolean not null, followers bigint not null, creator_profile_id varchar(26) not null, id varchar(26) not null, platform varchar(32) not null, handle varchar(200), profile_url varchar(500), primary key (id))
+Hibernate: create table portfolio_events (created_at timestamp(6) with time zone not null, occurred_at DATETIME(6) not null, creator_profile_id varchar(26) not null, id varchar(26) not null, visitor_hash varchar(64), event_type enum ('LINK_CLICK','MEDIA_KIT_DOWNLOAD','VIEW') not null, primary key (id))
+Hibernate: create table refresh_tokens (revoked boolean not null, created_at timestamp(6) with time zone not null, expires_at timestamp(6) with time zone not null, id varchar(26) not null, user_id varchar(26) not null, token_hash varchar(64) not null, primary key (id))
+Hibernate: create table reviews (hidden boolean not null, stars tinyint not null, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, collaboration_id varchar(26) not null, id varchar(26) not null, reviewer_user_id varchar(26) not null, review_text TEXT, reviewer_type enum ('BRAND','CREATOR') not null, primary key (id))
+Hibernate: create table saved_creators (saved boolean not null, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, creator_profile_id varchar(26) not null, id varchar(26) not null, workspace_id varchar(26) not null, primary key (id))
+Hibernate: create table shipments (estimated_delivery date, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, pincode varchar(12) not null, phone varchar(20) not null, collaboration_id varchar(26) not null unique, id varchar(26) not null, carrier varchar(120), city varchar(120) not null, state varchar(120) not null, tracking_number varchar(120), recipient_name varchar(200) not null, address_line1 varchar(300) not null, address_line2 varchar(300), product_name varchar(300), tracking_url varchar(500), condition_note TEXT, received_condition enum ('DAMAGED','GOOD'), status enum ('ADDRESS_PROVIDED','AWAITING_ADDRESS','DAMAGED','RECEIVED','SHIPPED') not null, primary key (id))
+Hibernate: create table shopify_integrations (revoked boolean not null, connected_at timestamp(6) with time zone not null, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, id varchar(26) not null, workspace_id varchar(26) not null, encrypted_access_token TEXT not null, shop_domain varchar(255) not null, webhook_secret varchar(255), granted_scopes json, primary key (id))
+Hibernate: create table snapsby_catalog_video (active boolean not null, price_inr integer not null, created_at timestamp(6) with time zone not null, language varchar(16) not null, id varchar(26) not null, niche varchar(64) not null, title varchar(300) not null, preview_url varchar(500), themes json not null, primary key (id))
+Hibernate: create table subscriptions (cancel_at_period_end boolean not null, is_comp boolean not null, seats_purchased integer not null, comp_expires_at timestamp(6) with time zone, created_at timestamp(6) with time zone not null, current_period_end timestamp(6) with time zone not null, current_period_start timestamp(6) with time zone not null, last_webhook_event_at timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, version bigint not null, comp_granted_by varchar(26), id varchar(26) not null, plan_id varchar(26) not null, workspace_id varchar(26) not null unique, razorpay_subscription_id varchar(100) unique, comp_reason varchar(500), status enum ('ACTIVE','CANCELLED','HALTED','PAST_DUE') not null, primary key (id))
+Hibernate: create table support_ticket_messages (created_at timestamp(6) with time zone not null, id varchar(26) not null, sender_id varchar(26) not null, ticket_id varchar(26) not null, content TEXT not null, sender_type enum ('ADMIN','USER') not null, primary key (id))
+Hibernate: create table support_tickets (created_at timestamp(6) with time zone not null, resolved_at timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, assigned_to varchar(26), id varchar(26) not null, user_id varchar(26) not null, category varchar(100) not null, subject varchar(255) not null, priority enum ('HIGH','LOW','MEDIUM','URGENT') not null, status enum ('CLOSED','IN_PROGRESS','OPEN','RESOLVED','WAITING_USER') not null, user_type enum ('ADMIN','BRAND','CREATOR') not null, primary key (id))
+Hibernate: create table trends (detected_date date not null, peak_window_days integer not null, created_at timestamp(6) with time zone not null, expires_at timestamp(6) with time zone not null, region varchar(8) not null, updated_at timestamp(6) with time zone not null, id varchar(26) not null, trend_text varchar(500) not null, campaign_type enum ('EDUCATIONAL','HYPE','PRIDE','SEASONAL') not null, source json not null, theme_source enum ('AI_RECOVERED','KEYWORD') not null, themes json not null, primary key (id))
+Hibernate: create table usage_counter_details (period_start date not null, created_at timestamp(6) with time zone not null, id varchar(26) not null, workspace_id varchar(26) not null, dedup_key varchar(50) not null, metric enum ('CREATOR_ANALYTICS_VIEW','EXPORT','TRACKED_CREATOR') not null, primary key (id))
+Hibernate: create table usage_counters (period_start date not null, used integer not null, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, id varchar(26) not null, workspace_id varchar(26) not null, metric enum ('CREATOR_ANALYTICS_VIEW','EXPORT','TRACKED_CREATOR') not null, primary key (id))
+Hibernate: create table users (email_verified boolean not null, kyc_prompt_dismissed boolean not null, onboarding_completed boolean not null, phone_verified boolean not null, created_at timestamp(6) with time zone not null, deleted_at DATETIME(6), last_login_at timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, id varchar(26) not null, first_name varchar(50), last_name varchar(50), timezone varchar(50) not null, display_name varchar(100), avatar_url varchar(500), email varchar(255) unique, password_hash varchar(255), phone_number varchar(255) unique, status enum ('ACTIVE','DEACTIVATED','PENDING_VERIFICATION','SUSPENDED') not null, user_type enum ('ADMIN','BRAND','CREATOR') not null, primary key (id))
+Hibernate: create table utm_campaigns (revenue_attributed numeric(14,2) not null, click_count bigint not null, conversion_count bigint not null, created_at DATETIME(6) not null, expires_at DATETIME(6), unique_visitors bigint not null, updated_at DATETIME(6) not null, campaign_id varchar(26) not null, collaboration_id varchar(26) not null, creator_profile_id varchar(26) not null, id varchar(26) not null, utm_campaign varchar(100) not null, utm_content varchar(100), utm_medium varchar(100) not null, utm_source varchar(100) not null, utm_term varchar(100), short_url varchar(200), base_url varchar(1000) not null, full_tracking_url varchar(2000) not null, primary key (id))
+Hibernate: create table wallet_topups (amount numeric(14,2) not null, currency varchar(3) not null, created_at timestamp(6) with time zone not null, credited_at timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, credit_txn_id varchar(26), id varchar(26) not null, workspace_id varchar(26) not null, idempotency_key varchar(64) not null, razorpay_order_id varchar(64), status enum ('CREDITED','PENDING') not null, primary key (id))
+Hibernate: create table wallet_transactions (amount numeric(14,2) not null, balance_after numeric(14,2) not null, currency varchar(3) not null, created_at timestamp(6) with time zone not null, group_id varchar(26) not null, id varchar(26) not null, reference_id varchar(26), wallet_id varchar(26) not null, idempotency_key varchar(64) not null, gateway_ref varchar(120), description varchar(300), direction enum ('CREDIT','DEBIT') not null, reference_type enum ('CAMPAIGN','COLLABORATION','DEPOSIT_ORDER','ESCROW_HOLD','MANUAL','MILESTONE'), status enum ('COMPLETED','FAILED','PENDING','REVERSED') not null, type enum ('ADJUSTMENT','DEPOSIT','ESCROW_HOLD','ESCROW_REFUND','ESCROW_RELEASE','PAYOUT','PLATFORM_FEE','WITHDRAWAL') not null, primary key (id))
+Hibernate: create table wallets (balance numeric(14,2) not null, currency varchar(3) not null, escrow_balance numeric(14,2) not null, is_active boolean not null, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, id varchar(26) not null, owner_id varchar(26) not null, owner_type enum ('USER','WORKSPACE') not null, primary key (id))
+Hibernate: create table woocommerce_integrations (revoked boolean not null, connected_at timestamp(6) with time zone not null, created_at timestamp(6) with time zone not null, updated_at timestamp(6) with time zone not null, id varchar(26) not null, workspace_id varchar(26) not null, site_url varchar(500) not null, encrypted_webhook_secret TEXT not null, primary key (id))
+Hibernate: create table workspace_member_invites (accepted_at timestamp(6) with time zone, created_at timestamp(6) with time zone not null, expires_at timestamp(6) with time zone not null, id varchar(26) not null, invited_by_user_id varchar(26) not null, workspace_id varchar(26) not null, invite_token_hash varchar(64) not null, email varchar(255) not null, role enum ('ADMIN','MANAGER','MEMBER','OWNER','VIEWER') not null, status enum ('ACCEPTED','EXPIRED','PENDING','REVOKED') not null, primary key (id))
+Hibernate: create table workspace_members (is_active boolean not null, created_at timestamp(6) with time zone not null, joined_at timestamp(6) with time zone, id varchar(26) not null, user_id varchar(26) not null, workspace_id varchar(26) not null, role enum ('ADMIN','MANAGER','MEMBER','OWNER','VIEWER') not null, primary key (id))
+Hibernate: create table workspaces (is_suspended boolean not null, created_at timestamp(6) with time zone not null, kyc_reviewed_at timestamp(6) with time zone, reinstated_at timestamp(6) with time zone, suspended_at timestamp(6) with time zone, updated_at timestamp(6) with time zone not null, gstin varchar(20), pan varchar(20), id varchar(26) not null, kyc_reviewed_by varchar(26), reinstated_by varchar(26), suspended_by varchar(26), phone varchar(30), company_size varchar(50), industry varchar(100), slug varchar(100) not null unique, name varchar(200) not null, billing_address varchar(500), kyc_gstin_doc_url varchar(500), kyc_pan_doc_url varchar(500), logo_url varchar(500), suspended_reason varchar(500), website_url varchar(500), kyc_rejection_reason varchar(2000), billing_email varchar(255), description TEXT, type enum ('AGENCY','BRAND') not null, verification_status enum ('PENDING','REJECTED','UNVERIFIED','VERIFIED') not null, primary key (id))
+2026-08-18T17:43:02.476+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.o.j.LocalContainerEntityManagerFactoryBean msg=Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-08-18T17:43:02.605+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.j.r.query.QueryEnhancerFactory msg=Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-08-18T17:43:03.480+05:30 level=INFO  correlationId=n/a thread=main logger=c.i.s.ApplicationHistoryServiceRollbackIsolationTest msg=Started ApplicationHistoryServiceRollbackIsolationTest in 2.674 seconds (process running for 14.571)
+Hibernate: select c1_0.id,c1_0.agreed_rate,c1_0.applied_at,c1_0.campaign_id,c1_0.created_at,c1_0.creator_id,c1_0.currency,c1_0.notes,c1_0.source,c1_0.status,c1_0.updated_at,c1_0.usage_rights from collaborations c1_0 where c1_0.id=?
+Hibernate: select ahe1_0.id,ahe1_0.actor_id,ahe1_0.actor_type,ahe1_0.application_id,ahe1_0.campaign_id,ahe1_0.created_at,ahe1_0.deal_room_id,ahe1_0.description,ahe1_0.event_status,ahe1_0.event_type,ahe1_0.metadata,ahe1_0.sequence_no,ahe1_0.target_id,ahe1_0.target_route from application_history_events ahe1_0 where ahe1_0.id=?
+Hibernate: insert into application_history_events (actor_id,actor_type,application_id,campaign_id,created_at,deal_room_id,description,event_status,event_type,metadata,target_id,target_route,id) values (?,?,?,?,?,?,?,?,?,?,?,?,?)
+2026-08-18T17:43:03.515+05:30 level=WARN  correlationId=n/a thread=main logger=o.h.e.jdbc.spi.SqlExceptionHelper msg=SQL Error: 23502, SQLState: 23502
+2026-08-18T17:43:03.515+05:30 level=ERROR correlationId=n/a thread=main logger=o.h.e.jdbc.spi.SqlExceptionHelper msg=NULL not allowed for column "DESCRIPTION"; SQL statement:
+insert into application_history_events (actor_id,actor_type,application_id,campaign_id,created_at,deal_room_id,description,event_status,event_type,metadata,target_id,target_route,id) values (?,?,?,?,?,?,?,?,?,?,?,?,?) [23502-224]
+Hibernate: insert into collaborations (agreed_rate,applied_at,campaign_id,created_at,creator_id,currency,notes,source,status,updated_at,usage_rights,id) values (?,?,?,?,?,?,?,?,?,?,?,?)
+Hibernate: select c1_0.id,c1_0.agreed_rate,c1_0.applied_at,c1_0.campaign_id,c1_0.created_at,c1_0.creator_id,c1_0.currency,c1_0.notes,c1_0.source,c1_0.status,c1_0.updated_at,c1_0.usage_rights from collaborations c1_0 where c1_0.id=?
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.856 s -- in com.influora.service.ApplicationHistoryServiceRollbackIsolationTest
+[INFO] Running com.influora.service.ApplicationHistoryServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.509 s -- in com.influora.service.ApplicationHistoryServiceTest
+[INFO] Running com.influora.service.CreatorApplicationServiceTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.524 s -- in com.influora.service.CreatorApplicationServiceTest
+[INFO] Running com.influora.service.CreatorCampaignServiceApplyHistoryFkRaceTest
+2026-08-18T17:43:04.626+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.t.c.s.AnnotationConfigContextLoaderUtils msg=Could not detect default configuration classes for test class [com.influora.service.CreatorCampaignServiceApplyHistoryFkRaceTest]: CreatorCampaignServiceApplyHistoryFkRaceTest does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+2026-08-18T17:43:04.647+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.b.t.c.SpringBootTestContextBootstrapper msg=Found @SpringBootConfiguration com.influora.InfluoraApiApplication for test class com.influora.service.CreatorCampaignServiceApplyHistoryFkRaceTest
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.3.5)
+
+2026-08-18T17:43:04.744+05:30 level=WARN  correlationId=n/a thread=main logger=o.s.b.t.j.DuplicateJsonObjectContextCustomizerFactory$DuplicateJsonObjectContextCustomizer msg=
+
+Found multiple occurrences of org.json.JSONObject on the class path:
+
+	jar:file:/C:/Users/Sage%20world/.m2/repository/org/json/json/20180130/json-20180130.jar!/org/json/JSONObject.class
+	jar:file:/C:/Users/Sage%20world/.m2/repository/com/vaadin/external/google/android-json/0.0.20131108.vaadin1/android-json-0.0.20131108.vaadin1.jar!/org/json/JSONObject.class
+
+You may wish to exclude one of them to ensure predictable runtime behavior
+
+2026-08-18T17:43:04.748+05:30 level=INFO  correlationId=n/a thread=main logger=c.i.s.CreatorCampaignServiceApplyHistoryFkRaceTest msg=Starting CreatorCampaignServiceApplyHistoryFkRaceTest using Java 21.0.9 with PID 13812 (started by Sage world in C:\Users\Sage world\Downloads\New Influora Ai\New Influora\influora-api)
+2026-08-18T17:43:04.748+05:30 level=INFO  correlationId=n/a thread=main logger=c.i.s.CreatorCampaignServiceApplyHistoryFkRaceTest msg=No active profile set, falling back to 1 default profile: "default"
+2026-08-18T17:43:05.522+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Multiple Spring Data modules found, entering strict repository configuration mode
+2026-08-18T17:43:05.522+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-08-18T17:43:05.543+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Finished Spring Data repository scanning in 19 ms. Found 3 JPA repository interfaces.
+2026-08-18T17:43:05.591+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.b.t.a.j.TestDatabaseAutoConfiguration$EmbeddedDataSourceBeanFactoryPostProcessor msg=Replacing 'dataSource' DataSource bean with embedded version
+2026-08-18T17:43:05.855+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.j.d.e.EmbeddedDatabaseFactory msg=Starting embedded database: url='jdbc:h2:mem:b3710b7f-bf1b-4e33-bc66-4a087a26e4b5;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false', username='sa'
+2026-08-18T17:43:05.907+05:30 level=INFO  correlationId=n/a thread=main logger=o.h.jpa.internal.util.LogHelper msg=HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-08-18T17:43:05.911+05:30 level=INFO  correlationId=n/a thread=main logger=o.h.c.i.RegionFactoryInitiator msg=HHH000026: Second-level cache disabled
+2026-08-18T17:43:05.932+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.o.j.p.SpringPersistenceUnitInfo msg=No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-08-18T17:43:05.941+05:30 level=WARN  correlationId=n/a thread=main logger=org.hibernate.orm.deprecation msg=HHH90000025: H2Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-08-18T17:43:07.744+05:30 level=INFO  correlationId=n/a thread=main logger=o.h.e.t.j.p.i.JtaPlatformInitiator msg=HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-08-18T17:43:07.746+05:30 level=INFO  correlationId=n/a thread=main logger=o.s.o.j.LocalContainerEntityManagerFactoryBean msg=Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-08-18T17:43:08.216+05:30 level=INFO  correlationId=n/a thread=main logger=c.i.s.CreatorCampaignServiceApplyHistoryFkRaceTest msg=Started CreatorCampaignServiceApplyHistoryFkRaceTest in 3.562 seconds (process running for 19.303)
+Hibernate: CREATE TABLE campaigns (id VARCHAR(26) PRIMARY KEY,workspace_id VARCHAR(26) NOT NULL,title VARCHAR(300) NOT NULL,description CLOB,status VARCHAR(32) NOT NULL,budget_min DECIMAL(12,2),budget_max DECIMAL(12,2),currency VARCHAR(3) NOT NULL,start_date DATE,end_date DATE,application_deadline DATE,platforms JSON,content_types JSON,objectives JSON,requirements JSON,hashtags JSON,target_audience JSON,brand_guidelines CLOB,is_private BOOLEAN NOT NULL,max_collaborators INT,created_by VARCHAR(26) NOT NULL,campaign_type VARCHAR(32),hype_config JSON,commission_rate DECIMAL(5,4),created_at TIMESTAMP NOT NULL,updated_at TIMESTAMP NOT NULL)
+Hibernate: CREATE TABLE collaborations (id VARCHAR(26) PRIMARY KEY,campaign_id VARCHAR(26) NOT NULL,creator_id VARCHAR(26) NOT NULL,status VARCHAR(32) NOT NULL,source VARCHAR(32) NOT NULL,agreed_rate DECIMAL(12,2),currency VARCHAR(3),notes CLOB,usage_rights CLOB,created_at TIMESTAMP NOT NULL,applied_at TIMESTAMP NOT NULL,updated_at TIMESTAMP NOT NULL,CONSTRAINT fk_collab_campaign_test FOREIGN KEY (campaign_id) REFERENCES campaigns(id))
+Hibernate: CREATE TABLE application_history_events (id VARCHAR(26) PRIMARY KEY,sequence_no BIGINT NOT NULL AUTO_INCREMENT,campaign_id VARCHAR(26) NOT NULL,application_id VARCHAR(26) NOT NULL,deal_room_id VARCHAR(26),event_type VARCHAR(32) NOT NULL,event_status VARCHAR(32) NOT NULL,actor_type VARCHAR(16) NOT NULL,actor_id VARCHAR(26),description CLOB NOT NULL,metadata CLOB,target_route VARCHAR(255),target_id VARCHAR(26),created_at TIMESTAMP(3) NOT NULL,UNIQUE (sequence_no),CONSTRAINT fk_app_history_campaign_test FOREIGN KEY (campaign_id) REFERENCES campaigns(id),CONSTRAINT fk_app_history_application_test FOREIGN KEY (application_id) REFERENCES collaborations(id))
+Hibernate: select c1_0.id,c1_0.application_deadline,c1_0.brand_guidelines,c1_0.budget_max,c1_0.budget_min,c1_0.campaign_type,c1_0.commission_rate,c1_0.content_types,c1_0.created_at,c1_0.created_by,c1_0.currency,c1_0.description,c1_0.end_date,c1_0.hashtags,c1_0.hype_config,c1_0.is_private,c1_0.max_collaborators,c1_0.objectives,c1_0.platforms,c1_0.requirements,c1_0.start_date,c1_0.status,c1_0.target_audience,c1_0.title,c1_0.updated_at,c1_0.workspace_id from campaigns c1_0 where c1_0.id=?
+Hibernate: insert into campaigns (application_deadline,brand_guidelines,budget_max,budget_min,campaign_type,commission_rate,content_types,created_at,created_by,currency,description,end_date,hashtags,hype_config,is_private,max_collaborators,objectives,platforms,requirements,start_date,status,target_audience,title,updated_at,workspace_id,id) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+Hibernate: select c1_0.id,c1_0.application_deadline,c1_0.brand_guidelines,c1_0.budget_max,c1_0.budget_min,c1_0.campaign_type,c1_0.commission_rate,c1_0.content_types,c1_0.created_at,c1_0.created_by,c1_0.currency,c1_0.description,c1_0.end_date,c1_0.hashtags,c1_0.hype_config,c1_0.is_private,c1_0.max_collaborators,c1_0.objectives,c1_0.platforms,c1_0.requirements,c1_0.start_date,c1_0.status,c1_0.target_audience,c1_0.title,c1_0.updated_at,c1_0.workspace_id from campaigns c1_0 where c1_0.id=?
+Hibernate: select c1_0.id,c1_0.agreed_rate,c1_0.applied_at,c1_0.campaign_id,c1_0.created_at,c1_0.creator_id,c1_0.currency,c1_0.notes,c1_0.source,c1_0.status,c1_0.updated_at,c1_0.usage_rights from collaborations c1_0 where c1_0.id=?
+Hibernate: insert into collaborations (agreed_rate,applied_at,campaign_id,created_at,creator_id,currency,notes,source,status,updated_at,usage_rights,id) values (?,?,?,?,?,?,?,?,?,?,?,?)
+Hibernate: select ahe1_0.id,ahe1_0.actor_id,ahe1_0.actor_type,ahe1_0.application_id,ahe1_0.campaign_id,ahe1_0.created_at,ahe1_0.deal_room_id,ahe1_0.description,ahe1_0.event_status,ahe1_0.event_type,ahe1_0.metadata,ahe1_0.sequence_no,ahe1_0.target_id,ahe1_0.target_route from application_history_events ahe1_0 where ahe1_0.id=?
+Hibernate: insert into application_history_events (actor_id,actor_type,application_id,campaign_id,created_at,deal_room_id,description,event_status,event_type,metadata,target_id,target_route,id) values (?,?,?,?,?,?,?,?,?,?,?,?,?)
+Hibernate: select ahe1_0.id,ahe1_0.actor_id,ahe1_0.actor_type,ahe1_0.application_id,ahe1_0.campaign_id,ahe1_0.created_at,ahe1_0.deal_room_id,ahe1_0.description,ahe1_0.event_status,ahe1_0.event_type,ahe1_0.metadata,ahe1_0.sequence_no,ahe1_0.target_id,ahe1_0.target_route from application_history_events ahe1_0 where ahe1_0.id=?
+Hibernate: insert into application_history_events (actor_id,actor_type,application_id,campaign_id,created_at,deal_room_id,description,event_status,event_type,metadata,target_id,target_route,id) values (?,?,?,?,?,?,?,?,?,?,?,?,?)
+Hibernate: select ahe1_0.id,ahe1_0.actor_id,ahe1_0.actor_type,ahe1_0.application_id,ahe1_0.campaign_id,ahe1_0.created_at,ahe1_0.deal_room_id,ahe1_0.description,ahe1_0.event_status,ahe1_0.event_type,ahe1_0.metadata,ahe1_0.sequence_no,ahe1_0.target_id,ahe1_0.target_route from application_history_events ahe1_0 where ahe1_0.application_id=? order by ahe1_0.created_at,ahe1_0.sequence_no
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.736 s -- in com.influora.service.CreatorCampaignServiceApplyHistoryFkRaceTest
+[INFO] Running com.influora.service.CreatorCampaignServiceTest
+2026-08-18T17:43:09.219+05:30 level=ERROR correlationId=n/a thread=main logger=c.i.service.CreatorCampaignService msg=Could not write the application-history event for collaboration 01HCOLLABFORFAILURETEST — the application itself already succeeded (and already committed, before this AFTER_COMMIT listener ran)
+
+java.lang.RuntimeException: history table down
+	at com.influora.service.ApplicationHistoryService.record(ApplicationHistoryService.java:82)
+	at com.influora.service.CreatorCampaignService.onApplicationHistoryRecorded(CreatorCampaignService.java:402)
+	at com.influora.service.CreatorCampaignServiceTest.testOnApplicationHistoryRecordedSurvivesApplicationHistoryFailure(CreatorCampaignServiceTest.java:342)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:728)
+	at org.junit.jupiter.engine.execution.MethodInvocation.proceed(MethodInvocation.java:60)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed(InvocationInterceptorChain.java:131)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.intercept(TimeoutExtension.java:156)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod(TimeoutExtension.java:147)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestMethod(TimeoutExtension.java:86)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0(InterceptingExecutableInvoker.java:103)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0(InterceptingExecutableInvoker.java:93)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation.proceed(InvocationInterceptorChain.java:106)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.proceed(InvocationInterceptorChain.java:64)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.chainAndInvoke(InvocationInterceptorChain.java:45)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.invoke(InvocationInterceptorChain.java:37)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:92)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:86)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.lambda$invokeTestMethod$7(TestMethodTestDescriptor.java:218)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.invokeTestMethod(TestMethodTestDescriptor.java:214)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:139)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:69)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:156)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:146)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:144)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:143)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:100)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:160)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:146)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:144)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:143)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:100)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:160)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:146)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:144)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:143)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:100)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:35)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:57)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:54)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:198)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:169)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:93)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:58)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:141)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:57)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:103)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:85)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:47)
+	at org.apache.maven.surefire.junitplatform.LazyLauncher.execute(LazyLauncher.java:56)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:184)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:148)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:122)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+
+2026-08-18T17:43:09.303+05:30 level=ERROR correlationId=n/a thread=main logger=c.i.service.CreatorCampaignService msg=Could not write the application timeline for collaboration 01M0ACMB9QZPKCZFV8HZF4F4AS — the application itself already succeeded
+
+java.lang.RuntimeException: timeline down
+	at com.influora.service.CreatorCampaignService.recordApplicationOnTimeline(CreatorCampaignService.java:285)
+	at com.influora.service.CreatorCampaignService.apply(CreatorCampaignService.java:247)
+	at com.influora.service.CreatorCampaignServiceTest.testApplySurvivesTimelineFailure(CreatorCampaignServiceTest.java:211)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:728)
+	at org.junit.jupiter.engine.execution.MethodInvocation.proceed(MethodInvocation.java:60)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed(InvocationInterceptorChain.java:131)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.intercept(TimeoutExtension.java:156)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod(TimeoutExtension.java:147)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestMethod(TimeoutExtension.java:86)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0(InterceptingExecutableInvoker.java:103)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0(InterceptingExecutableInvoker.java:93)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation.proceed(InvocationInterceptorChain.java:106)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.proceed(InvocationInterceptorChain.java:64)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.chainAndInvoke(InvocationInterceptorChain.java:45)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.invoke(InvocationInterceptorChain.java:37)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:92)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:86)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.lambda$invokeTestMethod$7(TestMethodTestDescriptor.java:218)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.invokeTestMethod(TestMethodTestDescriptor.java:214)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:139)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:69)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:156)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:146)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:144)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:143)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:100)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:160)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:146)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:144)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:143)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:100)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:160)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:146)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:144)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:143)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:100)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:35)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:57)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:54)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:198)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:169)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:93)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:58)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:141)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:57)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:103)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:85)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:47)
+	at org.apache.maven.surefire.junitplatform.LazyLauncher.execute(LazyLauncher.java:56)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:184)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:148)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:122)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+
+[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.959 s -- in com.influora.service.CreatorCampaignServiceTest
+[INFO] Running com.influora.service.DealServiceTest
+[INFO] Tests run: 62, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.176 s -- in com.influora.service.DealServiceTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 94, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  25.817 s
+[INFO] Finished at: 2026-08-18T17:43:10+05:30
+[INFO] ------------------------------------------------------------------------

@@ -1,0 +1,17 @@
+{"verdict": "echo",
+ "oracle": "model",
+ "isolation": "fresh-context",
+ "done_when": "for each of F-0235 F-0236 F-0237 F-0238 F-0239 F-0240 F-0241 F-0242 F-0243, a gate file exists under .proof-os/gates/ naming that record id, exits 1 against the pre-fix code and 0 against the fixed code, tsc --noEmit stays at 0 errors, and promote.py closes the record against that gate",
+ "not_checked": [
+   "runtime behaviour — nothing was rendered in a browser and no live backend was called; every fix and every gate finding is source- and contract-level",
+   "whether the nine gates would catch a DIFFERENT expression of the same defect — each greps for the specific shape that was fixed, and priya demonstrated two cases (F-0236 FROZEN, F-0237 missing terms field) where the defect survives in a form its own gate cannot see",
+   "priya's verdict itself scores nothing: the registry caps her at echo, so this review is excluded from any denominator despite being dispatched fresh-context",
+   "whether promote.py's closed_by 'human:swapnil' represents human approval — it does not; it is the operator label the script requires and no person reviewed these closures",
+   "the concurrent session's uncommitted work in FundEscrowButton.tsx, useWorkspaceVerification.ts and brand-settings.tsx, which overlaps records F-0247/F-0244/F-0249 from the same audit and was neither reviewed nor gated here",
+   "whether expert reports accurately attribute their own edits — one claimed a function that commit 7a37c85 introduced"
+ ],
+ "skipped": [
+   {"step": "gates/build.sh", "reason": "exceeded the 10-minute wall clock in the prior task and was killed; not re-run here, so the production build remains unverified for these changes"},
+   {"step": "live browser verification", "reason": "no running deployment was available; the F-0272 dead demo Sign button and the F-0273 frozen-escrow tile are read off code paths, not observed"},
+   {"step": "F-0271 and F-0272 remediation", "reason": "both need backend or fixture work beyond this task's scope — a terms field on ContractResponse and a mock ContractApiRecord — so they are left open rather than closed against a gate that would not prove them"}
+ ]}

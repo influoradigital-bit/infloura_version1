@@ -1,0 +1,3 @@
+· markers: GATE-F0324-CARDS-START/END present in src/pages/brand-wallet.tsx
+VERDICT: broken — the anchors this gate uses to swap in a known-bad Balance Cards block
+         are gone; self-falsification cannot run, so nothing below can be trusted (F-0324)

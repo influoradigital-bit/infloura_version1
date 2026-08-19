@@ -1,0 +1,29 @@
+{
+ "verdict": "echo",
+ "oracle": "model",
+ "isolation": "fresh-context",
+ "done_when": "each available oracle ran, findings are classed into ledger records with missed_by, and the blind spots are named",
+ "not_checked": [
+  "whether any finding reproduces in a browser against a live backend — nothing was rendered, every UX finding is source-derived",
+  "whether the deployed build runs with VITE_API_MODE=live; api.ts fails open to mock on a missing or misspelled var, so the mock-data findings may be wider or narrower in production than in source",
+  "whether POST /deals/{id}/accept funds escrow server-side — decides if the escrow copy findings are copy bugs or money bugs",
+  "backend authorisation for /brand/analytics/:creatorId — no client-side ownership check exists and the Java side was not read",
+  "kavya's judgment rows at all: measured catch rate 0 of 21 discoverable failures caps the service at echo, so 85 findings scored nothing and are excluded from the 83.3%",
+  "eslint (kavya's promoted ruleset) — exceeded the 300s budget, unavailable",
+  "the build gate — HUNG past 623s then DIED without recording an exit; unavailable, never green"
+ ],
+ "skipped": [
+  {
+   "step": "gates/build.sh",
+   "reason": "started, exceeded the 10-minute wall clock and was killed; liveness.py records it HUNG then STALE — unavailable, never green"
+  },
+  {
+   "step": "gates/graph_source.py",
+   "reason": "graphify returned a 732-node truncated subgraph for a UI-surface question; routed to direct source reads instead"
+  },
+  {
+   "step": "live browser verification",
+   "reason": "no running deployment was available in this session, so every UX finding is source-derived"
+  }
+ ]
+}

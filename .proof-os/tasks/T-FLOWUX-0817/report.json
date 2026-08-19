@@ -1,0 +1,196 @@
+{
+  "rows": [
+    {
+      "subject": "src/",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "npx tsc --noEmit -p tsconfig.json",
+        "result": "exit 0, no diagnostics emitted",
+        "where": "src/App.tsx:1"
+      }
+    },
+    {
+      "subject": "src/components/brand/timeline/event-cards/contract-card.tsx",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "grep",
+        "command": "python .proof-os/tasks/T-FLOWUX-0817/dead-controls.py",
+        "result": "reported contract-card.tsx:110 as an enabled <Button> with no onClick/asChild/submit/href; the Sign control renders whenever status==='generated', which line 20 makes the default when metadata omits contractStatus",
+        "where": "src/components/brand/timeline/event-cards/contract-card.tsx:110"
+      }
+    },
+    {
+      "subject": "src/pages/creator-chat.tsx",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "grep",
+        "command": "python .proof-os/tasks/T-FLOWUX-0817/dead-controls.py",
+        "result": "reported creator-chat.tsx:2559 as an enabled <Button> with no handler; it is the Paperclip attach control in the message composer and there is no file input beside it",
+        "where": "src/pages/creator-chat.tsx:2559"
+      }
+    },
+    {
+      "subject": "src/pages/brand-chat.tsx",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "grep",
+        "command": "python .proof-os/tasks/T-FLOWUX-0817/dead-controls.py",
+        "result": "reported brand-chat.tsx:2520 as an enabled <Button> with no handler; same Paperclip attach control on the brand side of the same conversation",
+        "where": "src/pages/brand-chat.tsx:2520"
+      }
+    },
+    {
+      "subject": "src/components/brand/deals/deal-room-dashboard.tsx",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "grep",
+        "command": "python .proof-os/tasks/T-FLOWUX-0817/dead-controls.py",
+        "result": "reported deal-room-dashboard.tsx:774 as an enabled <Button> with no handler; it is 'Continue Chat', rendered beside a working 'Send Proposal' when selectedDeal.status==='negotiating'",
+        "where": "src/components/brand/deals/deal-room-dashboard.tsx:774"
+      }
+    },
+    {
+      "subject": "src/components/brand/timeline/panels/deliverable-review-panel.tsx",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "grep",
+        "command": "python .proof-os/tasks/T-FLOWUX-0817/dead-controls.py",
+        "result": "reported deliverable-review-panel.tsx:395 as an enabled <Button> with no handler; it is 'Download Approved Version', shown once status==='approved'",
+        "where": "src/components/brand/timeline/panels/deliverable-review-panel.tsx:395"
+      }
+    },
+    {
+      "subject": "src/pages/brand-messages.tsx",
+      "owner": "meera",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "grep",
+        "command": "python .proof-os/tasks/T-FLOWUX-0817/dead-controls.py",
+        "result": "reported brand-messages.tsx:928 as an enabled <Button> with no handler; it is the 'View Contract' control inside the contract message card",
+        "where": "src/pages/brand-messages.tsx:928"
+      }
+    },
+    {
+      "subject": "src/components/brand/timeline/event-cards/proposal-card.tsx",
+      "owner": "meera",
+      "status": "partial",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "grep",
+        "command": "python .proof-os/tasks/T-FLOWUX-0817/dead-controls.py",
+        "result": "reported three enabled handler-less <Button>s at :87 :90 :93 (Accept/Counter/Reject); they sit behind currentUserType==='creator' and the only CollaborationTimeline mount passes 'brand', so they are unreachable today rather than live",
+        "where": "src/components/brand/timeline/event-cards/proposal-card.tsx:87"
+      }
+    },
+    {
+      "subject": "src/pages/brand-wallet.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "grep",
+        "command": "python .proof-os/tasks/T-FLOWUX-0817/dead-controls.py",
+        "result": "the four candidates at :722 :732 :1075 :1107 are all correctly handled — three carry an explicit disabled + aria-disabled with a Tooltip stating the reason, and :732 is a DialogTrigger asChild child; this file is the reference pattern for how a control with nothing behind it should render",
+        "where": "src/pages/brand-wallet.tsx:719"
+      }
+    },
+    {
+      "subject": "src/pages/creator-login.tsx",
+      "owner": "kavya",
+      "status": "broken",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read creator-login.tsx, creator-onboarding.tsx, creator-register.tsx, App.tsx, creator-deals.tsx, creator-dashboard.tsx",
+        "result": "login routes to /creator/inbox (App.tsx:472 redirects it to /creator/deals?status=new) and onboarding completion routes to /creator/deals, while the zero-state with CTAs lives only on /creator/dashboard where register sends them",
+        "where": "src/pages/creator-login.tsx:64"
+      }
+    },
+    {
+      "subject": "src/components/brand/dashboard/dashboard-page.tsx",
+      "owner": "kavya",
+      "status": "broken",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read dashboard-page.tsx alongside creator-dashboard.tsx for the role comparison",
+        "result": "an account with no campaigns renders 'You're all caught up.' at :240 and a green tick 'All caught up! No pending actions right now.' at :311, with no zero-state card; creator-dashboard.tsx:591 has the equivalent card the brand lacks",
+        "where": "src/components/brand/dashboard/dashboard-page.tsx:306"
+      }
+    },
+    {
+      "subject": "src/components/brand/campaigns/campaign-form.tsx",
+      "owner": "kavya",
+      "status": "partial",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read campaign-form.tsx handleSubmit and the review-step footer, plus WorkspaceVerificationBanner.tsx",
+        "result": "verificationBlocked is cleared at :461 and only set from the server's rejection, so Publish stays enabled at :1436 for a known-unverified workspace; the app-wide banner does warn proactively on /brand/campaigns routes, which limits the surprise but does not disarm the button",
+        "where": "src/components/brand/campaigns/campaign-form.tsx:1436"
+      }
+    },
+    {
+      "subject": "src/pages/creator-wallet.tsx",
+      "owner": "kavya",
+      "status": "partial",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read the balance card block in creator-wallet.tsx",
+        "result": "'Available Balance', 'In Escrow' and 'Pending Payouts' render as three bare figures at :643 :650 :654 with no tooltip or helper copy separating brand-funded-but-unapproved from withdrawal-in-flight",
+        "where": "src/pages/creator-wallet.tsx:650"
+      }
+    },
+    {
+      "subject": "src/lib/deal-stage.ts",
+      "owner": "kavya",
+      "status": "aligned",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read deal-stage.ts and brand-pipeline-stage.ts",
+        "result": "one shared switch over CollaborationStatus with each surface's vocabulary delta written down and ruled on, so the two sides of a deal cannot silently disagree about its stage",
+        "where": "src/lib/deal-stage.ts:4"
+      }
+    },
+    {
+      "subject": "src/components/creator/creator-layout.tsx",
+      "owner": "kavya",
+      "status": "aligned",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read creator-layout.tsx navGroups against the creator routes in App.tsx",
+        "result": "eleven nav entries across Main and Manage plus Profile, Public Page and Settings in the avatar menu; every protected creator route is reachable by clicking, and each page self-wraps CreatorLayout so no creator screen strands the user without navigation",
+        "where": "src/components/creator/creator-layout.tsx:91"
+      }
+    },
+    {
+      "subject": "src/pages/creator-campaign-detail.tsx",
+      "owner": "kavya",
+      "status": "aligned",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "read the apply dialog success branch in creator-campaign-detail.tsx",
+        "result": "the post-apply screen names the brand it went to, tells the creator both places it will appear, and offers a route to each",
+        "where": "src/pages/creator-campaign-detail.tsx:391"
+      }
+    }
+  ]
+}

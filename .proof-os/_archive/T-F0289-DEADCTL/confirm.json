@@ -1,0 +1,20 @@
+{
+ "text": "fix F-0289 dead controls",
+ "verb": "FIX",
+ "resolution": "proved",
+ "modifiers": {},
+ "scope": [
+  "src/**"
+ ],
+ "owner": "ananya",
+ "reviewer": "kavya",
+ "oracles": [
+  "script"
+ ],
+ "oracle_first": true,
+ "dispatch": "gate",
+ "exit_gate": ".proof-os/gates/F-0270-no-dead-controls.py",
+ "done_when": "every site the gate flags is either wired to a real handler, or rendered disabled with a stated reason, or excluded from the gate as a documented false positive; gates/F-0270-no-dead-controls.py then exits 0 on src and tsc --noEmit stays at 0 errors",
+ "ask": null,
+ "refused": null
+}

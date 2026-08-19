@@ -1,0 +1,172 @@
+{
+  "rows": [
+    {
+      "subject": ".proof-os/gates/F-SEO-marketing-surface.sh",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "bash .proof-os/gates/F-SEO-marketing-surface.sh (+ 5 injected-defect runs)",
+        "result": "baseline exit 0; each of 4 injected defects was detected and blocked (retired term in rendered copy, unrouted nav link, public page linking into an authenticated zone), and a comment-only mention of the term was correctly allowed through",
+        "where": ".proof-os/gates/F-SEO-marketing-surface.sh:1"
+      }
+    },
+    {
+      "subject": ".proof-os/gates/F-SEO-redirects-resolve.sh",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "bash .proof-os/gates/F-SEO-redirects-resolve.sh (+ 4 injected-defect runs)",
+        "result": "baseline exit 0; each of 4 injected defects was detected and blocked (absent edge 301, absent in-app Navigate twin, rule placed below the SPA wildcard, redirect target that does not resolve)",
+        "where": ".proof-os/gates/F-SEO-redirects-resolve.sh:1"
+      }
+    },
+    {
+      "subject": ".proof-os/gates/F-SEO-crawler-assets.sh",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "bash .proof-os/gates/F-SEO-crawler-assets.sh (+ 3 injected-defect runs)",
+        "result": "baseline exit 0; each of 3 injected defects was detected and blocked (deleted referenced og-image.png, blog post absent from sitemap, noindex URL present in sitemap)",
+        "where": ".proof-os/gates/F-SEO-crawler-assets.sh:1"
+      }
+    },
+    {
+      "subject": "public/og-image.png",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "node scripts/generate-og-image.mjs && python -c \"struct.unpack('>II', png[16:24])\"",
+        "result": "1200x630 PNG written, 179130 bytes; previously referenced by every page and did not exist",
+        "where": "public/og-image.png:1"
+      }
+    },
+    {
+      "subject": "dist/sitemap.xml",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "npm run build && bash .proof-os/gates/F-SEO-crawler-assets.sh",
+        "result": "16 URLs: 10 indexable routes + all 6 blog posts; 0 noindex URLs; previously 3 of 6 posts and a dead /features/escrow entry",
+        "where": "scripts/generate-sitemap.mjs:1"
+      }
+    },
+    {
+      "subject": "src/App.tsx",
+      "owner": "vikram",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "npx tsc -p tsconfig.json --noEmit",
+        "result": "0 errors; 6 previously-unrouted legal pages + 2 redirect routes registered",
+        "where": "src/App.tsx:640"
+      }
+    },
+    {
+      "subject": "src/lib/seo/schema.ts",
+      "owner": "ananya",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "npx tsc -p tsconfig.json --noEmit",
+        "result": "0 errors; SoftwareApplication/AggregateOffer, HowTo, QAPage and WebPage+speakable helpers added",
+        "where": "src/lib/seo/schema.ts:260"
+      }
+    },
+    {
+      "subject": "src/components/site/FaqSection.tsx",
+      "owner": "ananya",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "node",
+        "command": "node -e \"JSDOM over dist/**/index.html: count ld+json parse errors and FAQPage mainEntity\"",
+        "result": "every ld+json block parsed cleanly across 8 prerendered pages; 31 FAQ pairs rendered and emitted from the same source arrays",
+        "where": "src/components/site/FaqSection.tsx:47"
+      }
+    },
+    {
+      "subject": "src/pages/landing.tsx",
+      "owner": "ananya",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "node",
+        "command": "node -e \"JSDOM over dist/index.html\"",
+        "result": "1 h1, 6 ld+json blocks all parsed cleanly, 7 speakable nodes, 6 FAQ pairs, trust bar and sticky CTA present",
+        "where": "dist/index.html:1"
+      }
+    },
+    {
+      "subject": "src/pages/pricing.tsx",
+      "owner": "ananya",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "bash .proof-os/gates/F-SEO-marketing-surface.sh",
+        "result": "authenticated-zone check caught the public 'Upgrade to Pro' CTA pointing at /brand/settings/billing; repointed to /brand/register, gate now exit 0",
+        "where": "src/pages/pricing.tsx:394"
+      }
+    },
+    {
+      "subject": "src/content/blog",
+      "owner": "ananya",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "npm run build && grep -rli escrow dist/**/*.html",
+        "result": "19/19 routes prerendered; zero matches for the retired term in any prerendered HTML",
+        "where": "src/content/blog/what-is-payment-protection-in-influencer-marketing.md:1"
+      }
+    },
+    {
+      "subject": "src (regression suite)",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "vitest",
+        "command": "npx vitest run",
+        "result": "124 test files passed, 737 tests passed, 0 failed",
+        "where": "vitest.config.ts:1"
+      }
+    },
+    {
+      "subject": "src (lint)",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "eslint",
+        "command": "npx eslint src scripts",
+        "result": "0 errors (67 pre-existing react-hooks warnings, policy: warn-only)",
+        "where": "eslint.config.js:1"
+      }
+    },
+    {
+      "subject": "live rendering of the funnel components in a browser",
+      "owner": "neha",
+      "status": "missing",
+      "isolation": "none",
+      "evidence": {
+        "oracle": "none",
+        "command": "preview_start influora-dev + computer screenshot",
+        "result": "NOT VERIFIED - the Browser pane was hidden, so the page never composited and React never hydrated for the probe; prerendered HTML was inspected instead, which proves the markup but not click behaviour or the sticky-CTA scroll trigger",
+        "where": "src/components/site/StickyCta.tsx:44"
+      }
+    }
+  ]
+}
