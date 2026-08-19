@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Gate for F-0338 (dead-route), F-0340 (funnel-dead-end) and F-0342
-# (invented traction metric), plus the retired
+# Gate for F-0338 (dead-route), F-0340 (funnel-dead-end), F-0342 (invented
+# traction metric) and F-0343 (unsubstantiated social-proof count), plus the retired
 # "escrow" vocabulary.
 #
 # Two things must hold on the public marketing surface:
@@ -196,6 +196,40 @@ for f in src/pages/landing.tsx src/pages/about.tsx src/components/site/proof-poi
 done
 [ "$metric" -eq 0 ] && echo "  no hardcoded traction figures"
 
+# --- 5. no unsubstantiated social-proof COUNT in rendered copy -------------
+# F-0343. Check 4 catches an invented number in a stat-shaped CONSTANT. This
+# catches the same lie written as prose, which is how it actually shipped:
+# /about carried the eyebrow "Trusted by 500+ Indian brands" with nothing behind
+# the figure. CEO-DECISIONS.md #4 had sanctioned that wording; it was removed on
+# Swapnil's instruction, so the decision record is out of date on that point.
+#
+# Matches a count immediately followed by "+" and an audience noun
+# ("500+ brands", "8,915+ creators"), or the phrase "trusted by". Prose numbers
+# without the "+" are untouched, so "up to 100 creators accept a slot" and
+# "a 100-creator Hype Campaign" stay legal — those describe a campaign's shape,
+# not a customer count.
+#
+# If a real, substantiated figure is ever approved, it belongs here as an
+# explicit `[[substantiated-claim-ok]]` opt-out on the line, the same mechanism
+# public/llms.txt uses — so the exemption is visible rather than a silent regex
+# hole.
+echo
+echo "== no unsubstantiated social-proof count in rendered copy =="
+
+CLAIM='[0-9][0-9,]*\+[[:space:]]*(indian[[:space:]]+)?(brands|creators|customers|users|clients|businesses|companies)|[Tt]rusted by'
+
+social=0
+for f in "${SURFACE_FILES[@]}" src/pages/features/*.tsx; do
+  [ -f "$f" ] || continue
+  if strip_comments "$f" | grep -v '\[\[substantiated-claim-ok\]\]' | grep -nE "$CLAIM" >/dev/null; then
+    echo "  FAIL $f asserts a customer/creator count with no source:"
+    strip_comments "$f" | grep -v '\[\[substantiated-claim-ok\]\]' | grep -nE "$CLAIM" | sed 's/^/           /'
+    social=1
+    fail=1
+  fi
+done
+[ "$social" -eq 0 ] && echo "  no unsubstantiated counts"
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "PASS — marketing surface clean"
@@ -203,8 +237,8 @@ if [ "$fail" -eq 0 ]; then
   echo "             whether the copy is GOOD, only that the retired term is absent;"
   echo "             whether a guarded route is guarded correctly, only that public pages avoid it;"
   echo "             links in marketing pages not listed in MARKETING_PAGES above;"
-  echo "             whether a NON-numeric claim is true — \"Trusted by 500+ Indian brands\" on"
-  echo "             /about is prose, sanctioned by CEO-DECISIONS.md #4, and is NOT checked here (F-0343)."
+  echo "             whether a claim with no NUMBER in it is true — \"verified profiles\","
+  echo "             \"licensed payment partner\" and similar are not adjudicable by grep."
   exit 0
 fi
 

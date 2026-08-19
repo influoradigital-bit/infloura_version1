@@ -12,13 +12,14 @@ import { Seo } from '@/lib/seo/Seo';
 import { JsonLd, getOrganizationSchema, getWebPageSchema } from '@/lib/seo/schema';
 
 // Content per wiki/website/content-map.md §1.2.
-// CEO-DECISIONS.md #4: no client logos until written permission exists —
-// anonymized stats + "trusted by 500+ brands" text only. NOTE (F-0342): the
-// invented traction figures that used to sit in this file are gone (see
-// src/components/site/proof-points.ts). The "500+ brands" line below is left
-// in place because decision #4 explicitly sanctions that wording — it is the
-// same class of unsubstantiated claim and is logged as F-0343 for Swapnil,
-// not something to remove unilaterally.
+// CEO-DECISIONS.md #4: no client logos until written permission exists.
+//
+// SUPERSEDED IN PART (F-0342, F-0343): decision #4 also permitted "anonymized
+// stats" and a "trusted by 500+ brands" line. Both are gone — the invented
+// traction block (see src/components/site/proof-points.ts) and the 500+ eyebrow
+// below it. Swapnil directed the removal; nothing on this page now asserts a
+// customer count, a payout total or a creator count. The no-fake-logos half of
+// decision #4 still stands.
 // CEO-DECISIONS.md #6: no hard follower-count threshold stated publicly.
 
 const DIFFERENTIATORS = [
@@ -161,11 +162,28 @@ export default function AboutPage() {
           </div>
         </section>
 
-        {/* Trust signals — no fake logos (CEO-DECISIONS.md #4) */}
+        {/* Trust signals — no fake logos, and no unsubstantiated counts (F-0342, F-0343) */}
         <section className="py-20">
           <div className="mx-auto max-w-3xl px-6 text-center">
             <FadeUp>
-              <p className="text-sm font-medium text-accent-foreground">Trusted by 500+ Indian brands</p>
+              {/*
+                F-0343: an eyebrow line here asserted a specific count of Indian
+                brands using the platform.
+                No source produced that figure — same class as the invented
+                traction block removed in F-0342. CEO-DECISIONS.md #4 had
+                sanctioned the wording, and Swapnil has since directed that it be
+                removed, so the decision record is now out of date on this point
+                (that file lives only in the .claude/worktrees copies, not in this
+                tree, so it could not be amended here).
+
+                What replaced it is the mechanism the heading and body already
+                describe: verification and a licensed payment partner are things
+                the product does, checkable by using it, and they carry the
+                section without asserting a customer count nobody can stand behind.
+              */}
+              <p className="text-sm font-medium text-accent-foreground">
+                Verified profiles · licensed payment partner
+              </p>
               <h2 className="mt-2 text-2xl font-semibold">
                 Verified creators of all sizes, from nano to macro
               </h2>
