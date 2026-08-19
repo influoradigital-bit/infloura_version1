@@ -788,6 +788,23 @@ export default function BrandChatPage() {
   const [liveDeliverables, setLiveDeliverables] = React.useState<DealDeliverableItem[]>([]);
   const [deliverablesLoading, setDeliverablesLoading] = React.useState(false);
   const [deliverablesError, setDeliverablesError] = React.useState<string | null>(null);
+  /**
+   * F-0346 — action failures need their own slot. `deliverablesError` is the LOAD error, and
+   * the panel renders it as a full-height "could not load + Retry" state in place of the list;
+   * routing a failed Approve/Request-changes through it therefore unmounted a perfectly good,
+   * already-loaded list. This one renders as a banner ABOVE the list, so a failed mutation
+   * leaves the rows the brand is acting on still on screen.
+   */
+  const [deliverablesActionError, setDeliverablesActionError] = React.useState<string | null>(null);
+  /**
+   * F-0344 — feedback collected for a revision request. The deal-room list card has no
+   * feedback field of its own (DealDeliverablesTab is a status list), so the brand is asked
+   * for it here before the call, exactly as deliverable-review-panel.tsx does.
+   */
+  const [revisionTargetId, setRevisionTargetId] = React.useState<string | null>(null);
+  const [revisionFeedback, setRevisionFeedback] = React.useState('');
+  const [revisionSubmitting, setRevisionSubmitting] = React.useState(false);
+  const [revisionError, setRevisionError] = React.useState<string | null>(null);
 
   const syncUrl = React.useCallback(
     (dealId: string, panel: ToolsPanel) => {
@@ -1215,6 +1232,9 @@ export default function BrandChatPage() {
     const isCurrent = () => isMountedRef.current && deliverablesRequestRef.current === token;
     setDeliverablesLoading(true);
     setDeliverablesError(null);
+    // F-0346 — a fresh read (deal switch, Retry, post-action reload) also clears any stale
+    // action banner; nothing else is scoped to notice a deal switch.
+    setDeliverablesActionError(null);
     try {
       const rows = await deliverablesApi.list('brand', dealId);
       // Kavya M-2: guard the shape at runtime so a non-array (e.g. an error
@@ -1257,24 +1277,55 @@ export default function BrandChatPage() {
     // Kavya M-1: snapshot the id — selectedDeal can change between guard and reload.
     const dealId = selectedDeal?.id;
     if (!dealId) return;
-    setDeliverablesError(null);
+    setDeliverablesActionError(null);
     try {
       await deliverablesApi.approve(id);
       await loadDeliverables(dealId);
-    } catch {
-      setDeliverablesError('Could not approve. Try again.');
+    } catch (err) {
+      // F-0346 — the server's own message ("deliverable is not awaiting review", etc.) is
+      // actionable; "Try again." is not. Same convention as fetchLiveContract above.
+      setDeliverablesActionError(
+        err instanceof ApiError ? err.message : 'Could not approve. Try again.',
+      );
     }
   };
 
-  const handleReviseLive = async (id: string) => {
+  /**
+   * F-0344 — this used to call `deliverablesApi.requestRevision(id, '')` with a hardcoded
+   * empty string, which BrandDeliverableService rejects with 400 "feedback is required", so
+   * the button could never succeed. The click now opens the feedback dialog below and the
+   * call is made from `submitRevisionRequest` with real text, mirroring
+   * deliverable-review-panel.tsx's handleRequestRevision.
+   */
+  const handleReviseLive = (id: string) => {
+    setDeliverablesActionError(null);
+    setRevisionFeedback('');
+    setRevisionError(null);
+    setRevisionTargetId(id);
+  };
+
+  const submitRevisionRequest = async () => {
     const dealId = selectedDeal?.id;
-    if (!dealId) return;
-    setDeliverablesError(null);
+    const deliverableId = revisionTargetId;
+    if (!dealId || !deliverableId) return;
+    if (!revisionFeedback.trim()) {
+      setRevisionError('Please provide feedback so the creator knows what to change');
+      return;
+    }
+    setRevisionError(null);
+    setRevisionSubmitting(true);
     try {
-      await deliverablesApi.requestRevision(id, '');
+      await deliverablesApi.requestRevision(deliverableId, revisionFeedback.trim());
+      setRevisionTargetId(null);
+      setRevisionFeedback('');
       await loadDeliverables(dealId);
-    } catch {
-      setDeliverablesError('Could not request revision. Try again.');
+    } catch (err) {
+      // Stays in the dialog with the server's own reason, so the typed feedback is not lost.
+      setRevisionError(
+        err instanceof ApiError ? err.message : 'Could not request revision. Try again.',
+      );
+    } finally {
+      setRevisionSubmitting(false);
     }
   };
 
@@ -1450,11 +1501,41 @@ export default function BrandChatPage() {
     setTimeout(scrollToBottom, 50);
   };
 
+  /**
+   * F-0362b — same mode-blind shape F-0362 fixed on `handleRequestRevision` below: this flipped
+   * local `deliverableStatuses` only, so on a live account the card would read "Approved" while
+   * nothing reached the server. Both of its call sites are demo-gated today (the inline
+   * chat-feed card renders inside the `!isApiLive()` mock-timeline block, and the panel call is
+   * the `isApiLive() ? … : …` demo branch), so the silent no-op is LATENT, not live-reachable —
+   * but the handler itself is mode-blind, and one relaxed render gate is all it would take.
+   * Live clicks now delegate to `handleApproveLive`, the same entry point the live panel uses:
+   * it POSTs `deliverablesApi.approve(id)`, reloads the rows, and surfaces server failures in
+   * `deliverablesActionError`. Demo mode keeps the local-state flip.
+   */
   const handleApproveDeliverable = (itemId: string) => {
+    if (isApiLive()) {
+      void handleApproveLive(itemId);
+      return;
+    }
     setDeliverableStatuses((prev) => ({ ...prev, [itemId]: 'approved' }));
   };
 
+  /**
+   * F-0362 — this flips local `deliverableStatuses` only, so on a live account it would show
+   * the card moving to "Revision Requested" while nothing at all reached the server. The
+   * inline chat-feed deliverable card that calls it renders inside the `!isApiLive()` demo
+   * timeline block today (and the demo branch of the deliverables panel), so the silent no-op
+   * is not currently reachable live — but the handler itself is mode-blind, and one relaxed
+   * render gate is all it would take. Live clicks now delegate to `handleReviseLive`, the same
+   * entry point the live panel uses: it opens the feedback dialog, and `submitRevisionRequest`
+   * posts `deliverablesApi.requestRevision(id, feedback.trim())` with non-empty text (empty
+   * feedback is what F-0344 got a 400 for). Demo mode keeps the local-state flip.
+   */
   const handleRequestRevision = (itemId: string) => {
+    if (isApiLive()) {
+      handleReviseLive(itemId);
+      return;
+    }
     setDeliverableStatuses((prev) => ({ ...prev, [itemId]: 'revision' }));
   };
 
@@ -2686,14 +2767,27 @@ export default function BrandChatPage() {
                         </div>
                       </div>
                     ) : (
-                      <DealDeliverablesTab
-                        done={liveDeliverables.filter((i) => i.status === 'approved').length}
-                        total={liveDeliverables.length}
-                        dealValue={selectedDeal.dealValue}
-                        items={liveDeliverables}
-                        onApprove={handleApproveLive}
-                        onRequestRevision={handleReviseLive}
-                      />
+                      // F-0346 — the action error is a banner over a still-rendered list, not a
+                      // replacement for it. Only the LOAD error above (which means there are no
+                      // rows to show) takes over the panel.
+                      <div className="flex h-full flex-col">
+                        {deliverablesActionError && (
+                          <div className="flex items-start gap-2 border-b border-border bg-destructive/10 px-5 py-3">
+                            <AlertCircle className="h-4 w-4 shrink-0 mt-px text-destructive-foreground" />
+                            <p className="text-sm text-destructive-foreground">{deliverablesActionError}</p>
+                          </div>
+                        )}
+                        <div className="min-h-0 flex-1">
+                          <DealDeliverablesTab
+                            done={liveDeliverables.filter((i) => i.status === 'approved').length}
+                            total={liveDeliverables.length}
+                            dealValue={selectedDeal.dealValue}
+                            items={liveDeliverables}
+                            onApprove={handleApproveLive}
+                            onRequestRevision={handleReviseLive}
+                          />
+                        </div>
+                      </div>
                     )
                   ) : (
                     <DealDeliverablesTab
@@ -2785,6 +2879,57 @@ export default function BrandChatPage() {
               disabled={disputeSubmitting || disputeReason.trim().length < 10}
             >
               {disputeSubmitting ? 'Opening…' : 'Open dispute'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* F-0344 — feedback collection for a deal-room revision request. The server requires
+          non-empty feedback (400 INVALID_REQUEST "feedback is required"), and the creator has
+          nothing to act on without it, so Send stays disabled until there is text. */}
+      <Dialog
+        open={revisionTargetId !== null}
+        onOpenChange={(open) => {
+          if (!open && !revisionSubmitting) setRevisionTargetId(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Request changes</DialogTitle>
+            <DialogDescription>
+              {selectedDeal?.creatorName ?? 'The creator'} sees this as the reason the
+              deliverable was sent back, so be specific about what needs to change.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="brand-revision-feedback">What needs to change?</Label>
+            <Textarea
+              id="brand-revision-feedback"
+              value={revisionFeedback}
+              onChange={(e) => {
+                setRevisionFeedback(e.target.value);
+                if (revisionError) setRevisionError(null);
+              }}
+              placeholder="E.g., Colour grade looks off, please adjust saturation..."
+              rows={5}
+            />
+            {revisionError && (
+              <p className="text-sm text-destructive-foreground">{revisionError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRevisionTargetId(null)}
+              disabled={revisionSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void submitRevisionRequest()}
+              disabled={revisionSubmitting || !revisionFeedback.trim()}
+            >
+              {revisionSubmitting ? 'Sending…' : 'Send request'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -671,6 +671,10 @@ export function ContractsAndDeliverables() {
   const [showReviewDialog, setShowReviewDialog] = useState(false);
   const [selectedDeliverable, setSelectedDeliverable] = useState<ContractDeliverable | null>(null);
   const [reviewFeedback, setReviewFeedback] = useState('');
+  // F-0345 — POST /deliverables/:id/revise rejects blank feedback with 400 "feedback is
+  // required", so the dialog must refuse to submit before the call. Same guard as
+  // deliverable-review-panel.tsx's handleRequestRevision.
+  const [reviewFeedbackError, setReviewFeedbackError] = useState('');
   const [signatureText, setSignatureText] = useState('');
   const [isApproving, setIsApproving] = useState(false);
   const [isRequestingRevision, setIsRequestingRevision] = useState(false);
@@ -767,6 +771,8 @@ export function ContractsAndDeliverables() {
 
   const handleReviewDeliverable = (deliverable: ContractDeliverable) => {
     setSelectedDeliverable(deliverable);
+    setReviewFeedback('');
+    setReviewFeedbackError('');
     setShowReviewDialog(true);
   };
 
@@ -808,15 +814,24 @@ export function ContractsAndDeliverables() {
     setShowReviewDialog(false);
     setSelectedDeliverable(null);
     setReviewFeedback('');
+    setReviewFeedbackError('');
   };
 
   // POST /deliverables/:id/revise (src/lib/api.ts:812)
   const handleRequestRevision = async () => {
     if (!selectedDeliverable) return;
+    // F-0345 — the server 400s on blank feedback, and a revision the creator can't read
+    // is useless anyway. Refuse here instead of round-tripping into an error toast.
+    const feedback = reviewFeedback.trim();
+    if (!feedback) {
+      setReviewFeedbackError('Please provide feedback so the creator knows what to change');
+      return;
+    }
+    setReviewFeedbackError('');
     if (liveApi) {
       setIsRequestingRevision(true);
       try {
-        await api.deliverables.requestRevision(selectedDeliverable.id, reviewFeedback);
+        await api.deliverables.requestRevision(selectedDeliverable.id, feedback);
       } catch (err) {
         toast({
           title: 'Could not request revision',
@@ -834,12 +849,13 @@ export function ContractsAndDeliverables() {
         selectedContract?.id,
         selectedDeliverable.id,
         'revision_requested',
-        reviewFeedback,
+        feedback,
       ),
     );
     setShowReviewDialog(false);
     setSelectedDeliverable(null);
     setReviewFeedback('');
+    setReviewFeedbackError('');
   };
 
   // POST /contracts/:id/sign (src/lib/api.ts:776)
@@ -1826,13 +1842,26 @@ export function ContractsAndDeliverables() {
             )}
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Feedback (Optional)</label>
+              <label className="text-sm font-medium">
+                Feedback{' '}
+                <span className="text-muted-foreground font-normal">(required for revision request, optional for approval)</span>
+              </label>
               <Textarea
                 placeholder="Add feedback for the creator..."
                 value={reviewFeedback}
-                onChange={(e) => setReviewFeedback(e.target.value)}
+                onChange={(e) => {
+                  setReviewFeedback(e.target.value);
+                  if (reviewFeedbackError) setReviewFeedbackError('');
+                }}
+                className={reviewFeedbackError ? 'border-red-500' : undefined}
                 rows={3}
               />
+              {reviewFeedbackError && (
+                <div className="flex items-center gap-1.5 text-red-500 text-xs">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  {reviewFeedbackError}
+                </div>
+              )}
             </div>
           </div>
 

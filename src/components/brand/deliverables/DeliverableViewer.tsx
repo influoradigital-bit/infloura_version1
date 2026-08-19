@@ -108,13 +108,23 @@ function ReviseModal({
   onOpenChange,
   onSubmit,
   isSubmitting,
+  deliverableId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (feedback: string) => Promise<void>;
   isSubmitting: boolean;
+  deliverableId: string;
 }) {
   const [feedback, setFeedback] = React.useState('');
+
+  // F-0122: this modal stays mounted for the life of the viewer, so `feedback` was
+  // only ever cleared after a *successful* submit. Cancelling and reopening — or the
+  // viewer switching to a different deliverable while mounted — replayed the previous
+  // draft into the next request. Clear on every open/close flip and on subject change.
+  React.useEffect(() => {
+    setFeedback('');
+  }, [open, deliverableId]);
 
   const handleSubmit = async () => {
     if (!feedback.trim()) return;
@@ -169,13 +179,21 @@ function RejectModal({
   onOpenChange,
   onSubmit,
   isSubmitting,
+  deliverableId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (feedback: string) => Promise<void>;
   isSubmitting: boolean;
+  deliverableId: string;
 }) {
   const [feedback, setFeedback] = React.useState('');
+
+  // F-0122: same stale-draft leak as ReviseModal above — a rejection reason typed for
+  // one deliverable must not survive a cancel or a switch to a different deliverable.
+  React.useEffect(() => {
+    setFeedback('');
+  }, [open, deliverableId]);
 
   const handleSubmit = async () => {
     if (!feedback.trim()) return;
@@ -278,9 +296,23 @@ export function DeliverableViewer({
 
   const handleRequestRevision = async (feedback: string) => {
     if (!deliverable) return;
+    // F-0345: the server rejects blank feedback with 400 "feedback is required". The
+    // modal's disabled button is presentation only — this handler is the last client-side
+    // point before the request, so guard here the way deliverable-review-panel.tsx does
+    // before its own requestRevision call. Trim too: whitespace-only padding reached the
+    // creator as an empty note.
+    const trimmedFeedback = feedback.trim();
+    if (!trimmedFeedback) {
+      toast({
+        title: 'Feedback is required',
+        description: 'Explain what needs to change so the creator knows what to fix.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsRevising(true);
     try {
-      await api.deliverables.requestRevision(deliverable.id, feedback);
+      await api.deliverables.requestRevision(deliverable.id, trimmedFeedback);
       setReviseModalOpen(false);
       onActionComplete?.();
       onOpenChange(false);
@@ -512,6 +544,7 @@ export function DeliverableViewer({
         onOpenChange={setReviseModalOpen}
         onSubmit={handleRequestRevision}
         isSubmitting={isRevising}
+        deliverableId={deliverableId}
       />
 
       <RejectModal
@@ -519,6 +552,7 @@ export function DeliverableViewer({
         onOpenChange={setRejectModalOpen}
         onSubmit={handleReject}
         isSubmitting={isRejecting}
+        deliverableId={deliverableId}
       />
     </>
   );
