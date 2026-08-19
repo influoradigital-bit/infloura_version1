@@ -17,10 +17,17 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import CreatorDealsPage from './creator-deals';
 import { api, type Deal } from '@/lib/api';
+
+const navigateMock = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return { ...actual, useNavigate: () => navigateMock };
+});
 
 vi.mock('@/components/creator/creator-layout', () => ({
   CreatorLayout: ({ children }: { children: React.ReactNode }) => (
@@ -120,5 +127,23 @@ describe('CreatorDealsPage', () => {
     expect(
       vi.mocked(api.deals.list).mock.calls.every(([role, status]) => role === 'creator' && status === 'all'),
     ).toBe(true);
+  });
+
+  it('F-0275: the "all" empty state gives an honest, working CTA instead of implying a purely passive product', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderPage('/creator/deals?status=all');
+
+    // Was "Brands will reach out as they discover your profile" with no way for the
+    // creator to act — this asserts the actual dead-end wording is gone.
+    await waitFor(() => {
+      expect(screen.getByText('No deals yet')).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText(/^Brands will reach out as they discover your profile\.\s*Make sure/i),
+    ).not.toBeInTheDocument();
+
+    const cta = screen.getByRole('button', { name: /Browse campaigns/i });
+    await user.click(cta);
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/creator/campaigns'));
   });
 });
