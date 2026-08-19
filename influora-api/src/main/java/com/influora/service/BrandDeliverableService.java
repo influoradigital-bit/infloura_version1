@@ -27,6 +27,8 @@ import java.io.IOException;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.ApplicationEventPublisherAware;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,7 +48,7 @@ import org.springframework.transaction.annotation.Transactional;
  * PayoutReleasedEvent} itself — this method does not duplicate either of those.
  */
 @Service
-public class BrandDeliverableService {
+public class BrandDeliverableService implements ApplicationEventPublisherAware {
 
     private static final Logger log = LoggerFactory.getLogger(BrandDeliverableService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -61,6 +63,15 @@ public class BrandDeliverableService {
     private final CollaborationRepository collaborationRepository;
     /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
     private final ApplicationHistoryService applicationHistoryService;
+
+    /**
+     * F-0288-approval-event — publisher for {@link DeliverableApprovedEvent}. Injected through
+     * {@link ApplicationEventPublisherAware} rather than the constructor on purpose: the
+     * constructor is called directly by unit tests, and this dependency is not one any of them
+     * needs to supply. Consequently it is {@code null} outside a Spring context, which is why
+     * {@link #publishApproved} null-checks before using it.
+     */
+    private ApplicationEventPublisher eventPublisher;
 
     public BrandDeliverableService(
             BrandContextService brandContext,
@@ -81,6 +92,11 @@ public class BrandDeliverableService {
         this.meeraInteractionLogService = meeraInteractionLogService;
         this.collaborationRepository = collaborationRepository;
         this.applicationHistoryService = applicationHistoryService;
+    }
+
+    @Override
+    public void setApplicationEventPublisher(ApplicationEventPublisher applicationEventPublisher) {
+        this.eventPublisher = applicationEventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -191,6 +207,15 @@ public class BrandDeliverableService {
                     e);
         }
 
+        // F-0288-approval-event — the deal trail recorded that a deliverable was SUBMITTED but
+        // never that it was APPROVED, the moment escrow money is released. DealService owns that
+        // trail and had nothing to listen to on this path: the history write above goes through
+        // ApplicationHistoryService, which publishes no Spring event, and PayoutReleasedEvent —
+        // the only signal that reaches DealService from an approval today — is not published at
+        // all on the eight "held" branches inside tryReleaseOnApproval (F-0223, the residual gap
+        // DealService#onPayoutReleased documents). This event is that missing signal.
+        publishApproved(deliverable);
+
         // F-0223 — the release outcome travels with the approval. Eight conditions inside
         // tryReleaseOnApproval end in "held", and every one of them used to be reported to the
         // brand as a plain success while the creator was paid nothing.
@@ -205,6 +230,50 @@ public class BrandDeliverableService {
         return new ReviewResponse(
                 DeliverableStatus.APPROVED, release.released(), release.heldReason());
     }
+
+    /**
+     * Emits {@link DeliverableApprovedEvent} for an approval that has just been applied in the
+     * current transaction. Best-effort twice over: the only consumer is a {@code
+     * @TransactionalEventListener(AFTER_COMMIT)} handler (so it cannot run — let alone fail —
+     * until this transaction, and the escrow release it performed, are durable), and the publish
+     * call itself is wrapped so that a future synchronous {@code @EventListener} on this type
+     * could not turn a trail concern into a rolled-back approval either.
+     */
+    private void publishApproved(Deliverable deliverable) {
+        if (eventPublisher == null) {
+            return;
+        }
+        try {
+            eventPublisher.publishEvent(
+                    new DeliverableApprovedEvent(
+                            deliverable.getId(), deliverable.getCollaborationId()));
+        } catch (RuntimeException e) {
+            log.error(
+                    "Could not publish the deliverable-approved event for deliverable {} — the"
+                            + " approval, and any escrow release it caused, already stand",
+                    deliverable.getId(),
+                    e);
+        }
+    }
+
+    /**
+     * Internal-only signal (F-0288-approval-event) — published by {@link #approve} from inside the
+     * transaction that flipped the {@code Deliverable} to {@code APPROVED} and attempted its escrow
+     * release, consumed by {@code DealService#onDeliverableApproved} via {@code
+     * @TransactionalEventListener(AFTER_COMMIT)}.
+     *
+     * <p>Deliberately <b>not</b> a {@code NotificationEvent}: that sealed interface is the input to
+     * {@code NotificationListener}, i.e. every member of it fans out to an e-mail/push for a user.
+     * Approval needs no new notification — the creator-facing story is already covered by {@code
+     * PayoutReleasedEvent} on the paying path — and this event exists solely so the deal-room trail
+     * gains its missing row. Same shape as {@code AnalyzeSiteRequestedEvent} (H-23): an in-JVM
+     * hand-off between two services, not a user-visible notification.
+     *
+     * <p>{@code collaborationId} rides along rather than being re-derived by the listener because
+     * it is the one field the trail row cannot be written without; the deliverable row is looked up
+     * on the far side only to render its type as prose.
+     */
+    public record DeliverableApprovedEvent(String deliverableId, String collaborationId) {}
 
     @Transactional
     public ReviewResponse requestRevision(

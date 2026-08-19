@@ -452,13 +452,32 @@ public class CreatorDeliverableService {
         if (campaign == null) {
             return;
         }
+        // F-0364 — DeliverableSubmittedEvent drives TWO things: the brand's notification
+        // (NotificationListener) AND the durable deal-trail row + SSE frame (DealService
+        // #onDeliverableSubmitted). Returning early because no billing recipient resolved used to
+        // suppress BOTH, so a workspace with no ACTIVE OWNER member (owner deactivated, admins
+        // still working) got no record of the submission at all, not even after a reload.
+        //
+        // The event must therefore always be published; only the recipient is allowed to degrade.
+        // It cannot degrade to null: NotificationService writes the in-app row with
+        // event.userId(), and notifications.user_id is NOT NULL with an FK to users(id). So fall
+        // back to the campaign's creator — campaigns.created_by is NOT NULL and itself FK'd to
+        // users(id), so it is always a real brand-side user of this exact campaign.
         var recipient = brandContext.resolveBillingRecipient(campaign.getWorkspaceId());
-        if (recipient == null) {
+        String notifyUserId = recipient != null ? recipient.userId() : campaign.getCreatedBy();
+        if (notifyUserId == null || notifyUserId.isBlank()) {
+            // Unreachable against the real schema; guarded so a malformed row degrades to "no
+            // trail row" rather than to a null-userId event reaching the notification path.
+            log.warn(
+                    "No brand-side recipient for deliverable {} on workspace {} — deal-trail row"
+                            + " skipped",
+                    deliverable.getId(),
+                    campaign.getWorkspaceId());
             return;
         }
         eventPublisher.publishEvent(
                 new DeliverableSubmittedEvent(
-                        recipient.userId(),
+                        notifyUserId,
                         campaign.getWorkspaceId(),
                         deliverable.getId(),
                         profile.getDisplayName(),
@@ -1111,7 +1130,14 @@ public class CreatorDeliverableService {
                         : "Version " + deliverable.getVersionNumber();
         Integer currentRevision =
                 deliverable.getRevisionCount() > 0 ? deliverable.getRevisionCount() : null;
-        Integer maxRevisions = deliverable.getRevisionCount() > 0 ? 2 : null;
+        // F-0360 — this platform has NO revision cap, so the wire carries none. The literal `2`
+        // that used to sit here was a display constant nothing enforced: {@link
+        // Deliverable#applyRevision} increments {@code revisionCount} unconditionally, and {@link
+        // BrandDeliverableService#requestRevision} gates only on {@code canReview}, which is true
+        // for SUBMITTED *and* RESUBMITTED — so brand-revise -> creator-resubmit -> brand-revise
+        // loops without limit and a real row reaches revision 3, 4, 5 while the UI said "of 2".
+        // `maxRevisions` therefore stays null until a per-deal limit is actually persisted and
+        // rejected server-side; the creator surfaces render the real count and claim no maximum.
         return new DeliverableListItem(
                 deliverable.getId(),
                 deliverable.getTitle(),
@@ -1119,7 +1145,7 @@ public class CreatorDeliverableService {
                 status,
                 completed,
                 currentRevision,
-                maxRevisions);
+                null);
     }
 
     private DeliverableStatusResponse toStatusResponse(Deliverable deliverable) {

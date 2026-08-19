@@ -12,6 +12,7 @@ import com.influora.domain.entity.Contract;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.DealMessage;
 import com.influora.domain.entity.Deliverable;
+import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.ApplicationHistoryActorType;
@@ -36,8 +37,13 @@ import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.notification.event.BidAcceptedEvent;
 import com.influora.service.notification.event.BidCounteredEvent;
+import com.influora.service.notification.event.ContractPendingSignatureEvent;
+import com.influora.service.notification.event.ContractSignedEvent;
 import com.influora.service.notification.event.CreatorFirstMessageEvent;
+import com.influora.service.notification.event.DeliverableSubmittedEvent;
+import com.influora.service.notification.event.EscrowFundedEvent;
 import com.influora.service.notification.event.FirstMessageSentEvent;
+import com.influora.service.notification.event.PayoutReleasedEvent;
 import com.influora.service.notification.event.ProposalAcceptedEvent;
 import com.influora.service.notification.event.ProposalSentEvent;
 import com.influora.web.dto.deal.DealDtos.CounterRequest;
@@ -57,6 +63,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -67,8 +74,11 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -714,6 +724,271 @@ public class DealService {
     @Transactional(readOnly = true)
     public void authorizeMessageStream(AuthPrincipal principal, String dealId) {
         requireOwnedCollaboration(principal, dealId);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // F-0288 — the post-agreement half of the deal trail.
+    //
+    // The DealMessage timeline is the only chronological record either party can read in the deal
+    // room, and until now exactly two system rows were ever written to it: doAccept's "… accepted
+    // the proposal" and doReject's "… rejected: …". Everything that happens after terms are agreed
+    // — contract generated, contract signed, escrow funded, deliverable submitted — moved the deal
+    // through four more statuses in silence, so a creator scrolling the room saw the negotiation
+    // and then nothing at all until payout.
+    //
+    // Those transitions are owned by ContractService / EscrowService / CreatorDeliverableService /
+    // BrandDeliverableService, not by this class, so the rows below are appended off the events
+    // those services publish rather than by reaching into them. All but one of those events already
+    // existed as notifications; brand approval had none, so F-0288-approval-event added a
+    // deliberately non-notification event for it (see onDeliverableApproved).
+    //
+    // Why "@Async @TransactionalEventListener(AFTER_COMMIT)" — the same pairing NotificationListener
+    // uses, and here BOTH halves are load-bearing for "a failed trail write must never roll back the
+    // business operation":
+    //   * AFTER_COMMIT: the contract/escrow/deliverable transaction is already durable before a
+    //     handler runs, so there is nothing left for a failure here to undo. A plain @EventListener
+    //     fires inside that transaction instead, where a swallowed failure leaves it rollback-only
+    //     — the UnexpectedRollbackException trap already documented on settleLatestProposal.
+    //   * @Async: puts the handler on a thread with no transaction bound to it, which is what lets
+    //     the save in appendLifecycleRow open a transaction of its own. An AFTER_COMMIT handler
+    //     left on the publisher's thread would JOIN the just-committed transaction, and its insert
+    //     would be discarded unflushed at cleanup. It also keeps any escaping exception on the
+    //     executor, where it can no longer resurface out of the publisher's commit() as a 500 for
+    //     an operation that in fact succeeded.
+    //
+    // Each handler still catches its own RuntimeException so a failure is logged as itself with the
+    // event that produced it, rather than as an anonymous async-executor stack trace.
+    // ---------------------------------------------------------------------------------------
+
+    /** Contract generated ({@code ContractService#generate}) — one event per generated version. */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onContractGenerated(ContractPendingSignatureEvent event) {
+        try {
+            contractRepository
+                    .findById(event.entityId())
+                    .ifPresent(
+                            contract ->
+                                    appendLifecycleRow(
+                                            contract.getCollaborationId(),
+                                            "Contract v"
+                                                    + contract.getVersion()
+                                                    + " generated — awaiting signatures"));
+        } catch (RuntimeException e) {
+            logTrailFailure("contract.pending_signature", event.entityId(), e);
+        }
+    }
+
+    /**
+     * Contract signed by both parties. {@code ContractService} publishes {@link ContractSignedEvent}
+     * TWICE for one signing — once addressed to the brand owner, once to the creator — so this
+     * deliberately acts only on the creator's copy. Keying on the recipient rather than
+     * de-duplicating by content is what makes the single row deterministic: the two copies are
+     * handed to the async executor independently and can run concurrently, which a read-then-write
+     * dedupe would race into two rows anyway.
+     */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onContractSigned(ContractSignedEvent event) {
+        try {
+            Contract contract = contractRepository.findById(event.entityId()).orElse(null);
+            if (contract == null) {
+                return;
+            }
+            Collaboration collaboration =
+                    collaborationRepository.findById(contract.getCollaborationId()).orElse(null);
+            if (collaboration == null || !collaboration.getCreatorId().equals(event.userId())) {
+                return;
+            }
+            appendLifecycleRow(
+                    collaboration.getId(),
+                    "Contract v" + contract.getVersion() + " signed by both parties");
+        } catch (RuntimeException e) {
+            logTrailFailure("contract.signed", event.entityId(), e);
+        }
+    }
+
+    /**
+     * Escrow funded. {@code EscrowService#notifyEscrowFunded} returns early for a hold with no
+     * {@code collaborationId}, so this event only ever carries a hold that resolves — no need for
+     * the milestone-aware lookup CR-49/CR-50 required elsewhere. Deliberately per-hold: a
+     * multi-milestone deal funds more than once and each funding is its own timeline entry.
+     */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onEscrowFunded(EscrowFundedEvent event) {
+        try {
+            escrowHoldRepository
+                    .findById(event.entityId())
+                    .ifPresent(
+                            hold ->
+                                    appendLifecycleRow(
+                                            hold.getCollaborationId(),
+                                            "Escrow funded — "
+                                                    + hold.getAmount()
+                                                    + " "
+                                                    + hold.getCurrency()
+                                                    + " is held for this deal"));
+        } catch (RuntimeException e) {
+            logTrailFailure("escrow.funded", event.entityId(), e);
+        }
+    }
+
+    /**
+     * Deliverable submitted for review. Deliberately NOT de-duplicated: a resubmission after a
+     * revision request publishes the event again, and that is a genuinely new entry on the trail
+     * rather than a repeat of the first submission. The type is read off the row rather than off
+     * {@code event.deliverableType()} only so it renders as prose — a raw {@code INSTAGRAM_REEL}
+     * enum name has no business in a message bubble.
+     */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onDeliverableSubmitted(DeliverableSubmittedEvent event) {
+        try {
+            deliverableRepository
+                    .findById(event.entityId())
+                    .ifPresent(
+                            deliverable ->
+                                    appendLifecycleRow(
+                                            deliverable.getCollaborationId(),
+                                            "Creator submitted a deliverable for review: "
+                                                    + deliverable
+                                                            .getType()
+                                                            .name()
+                                                            .toLowerCase(Locale.ROOT)
+                                                            .replace('_', ' ')));
+        } catch (RuntimeException e) {
+            logTrailFailure("deliverable.submitted", event.entityId(), e);
+        }
+    }
+
+    /**
+     * Deliverable approved by the brand — the transition that unlocks payment, and the row this
+     * trail was missing (F-0288-approval-event). Written from {@link
+     * BrandDeliverableService.DeliverableApprovedEvent}, an internal-only event added to {@code
+     * BrandDeliverableService#approve} for exactly this purpose; it is deliberately not a {@code
+     * NotificationEvent}, so no e-mail is sent for it (see that record's javadoc).
+     *
+     * <p>Distinct from {@link #onPayoutReleased} below, and both rows are wanted: this one is the
+     * brand's decision, that one is the money actually leaving escrow. They are not
+     * interchangeable in either direction — an approval whose milestone release is HELD (the eight
+     * held branches of {@code EscrowService#tryReleaseOnApproval}, F-0223) publishes no payout
+     * event at all, and three of the four payout call sites are not approvals.
+     *
+     * <p>Not de-duplicated, for the same reason {@link #onDeliverableSubmitted} is not: a
+     * multi-deliverable deal is approved once per deliverable and each approval is its own entry.
+     * The collaboration comes off the event rather than the row so the row lookup can fail without
+     * costing the trail entry; the lookup only supplies the type as prose, since a raw {@code
+     * INSTAGRAM_REEL} enum name has no business in a message bubble.
+     */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onDeliverableApproved(BrandDeliverableService.DeliverableApprovedEvent event) {
+        try {
+            String type =
+                    deliverableRepository
+                            .findById(event.deliverableId())
+                            .map(
+                                    deliverable ->
+                                            ": "
+                                                    + deliverable
+                                                            .getType()
+                                                            .name()
+                                                            .toLowerCase(Locale.ROOT)
+                                                            .replace('_', ' '))
+                            .orElse("");
+            appendLifecycleRow(
+                    event.collaborationId(), "Brand approved the deliverable" + type);
+        } catch (RuntimeException e) {
+            logTrailFailure("deliverable.approved", event.deliverableId(), e);
+        }
+    }
+
+    /**
+     * Escrow released — the terminal money event, and the closing row of the trail.
+     *
+     * <p><b>Why this row is about the release and not the approval.</b> Brand approval is the
+     * transition that unlocks payment, but it is a different fact and now has its own handler —
+     * {@link #onDeliverableApproved}, added by F-0288-approval-event once {@code
+     * BrandDeliverableService#approve} gained an event to publish. {@link PayoutReleasedEvent}
+     * remains what {@code EscrowService} publishes once a release has actually happened.
+     *
+     * <p>That makes this row about the release rather than about the approval, and it is worded
+     * that way deliberately — three of the four {@code publishPayoutReleasedEvent} call sites are
+     * NOT approvals (a brand's manual {@code release}, a dispute-resolved release, a dispute
+     * split), so a row claiming "the brand approved your deliverable" would be a lie on those
+     * paths. The amount is {@code EscrowHold.amount}, i.e. what left escrow, which is true on the
+     * split path too where only part of it reaches the creator.
+     *
+     * <p><b>Former residual gap, now closed:</b> an approval whose milestone release is HELD
+     * (unfunded milestone, or an unsatisfied B5 {@code release_condition} — the eight held branches
+     * inside {@code EscrowService#tryReleaseOnApproval}, F-0223) publishes no payout event and so
+     * still writes no row here; {@link #onDeliverableApproved} is what records that approval
+     * instead. A held approval therefore gets the approval row and no payment row, which is the
+     * truth.
+     *
+     * <p>{@code entityId} is the milestone id when the release was milestone-scoped and the hold id
+     * otherwise (see {@code EscrowService#publishPayoutReleasedEvent}), so the collaboration is
+     * resolved through both linkages — the same union the repository documents on {@code
+     * hasEscrowForCollaboration}.
+     */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onPayoutReleased(PayoutReleasedEvent event) {
+        try {
+            appendLifecycleRow(
+                    collaborationIdForPayout(event.entityId()),
+                    "Payment released from escrow — " + event.amount());
+        } catch (RuntimeException e) {
+            logTrailFailure("payout.released", event.entityId(), e);
+        }
+    }
+
+    /**
+     * Collaboration behind a {@link PayoutReleasedEvent}: the id is a hold id on the campaign-level
+     * release path and a milestone id on the milestone path. Returns null when neither lookup binds
+     * a collaboration — holds created by the ordinary brand escrow flow can still carry a null
+     * {@code collaboration_id} (CR-35), and {@link #appendLifecycleRow} treats null as "no trail
+     * row" rather than guessing at a deal.
+     */
+    private String collaborationIdForPayout(String entityId) {
+        if (entityId == null) {
+            return null;
+        }
+        String direct =
+                escrowHoldRepository.findById(entityId).map(EscrowHold::getCollaborationId).orElse(null);
+        if (direct != null) {
+            return direct;
+        }
+        return escrowHoldRepository.findByMilestoneId(entityId).stream()
+                .map(EscrowHold::getCollaborationId)
+                .filter(id -> id != null)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Shared tail for the F-0288 handlers: persists the system row, then fans it out exactly the way
+     * doAccept/doReject do, so a party with the deal room open sees the lifecycle land without a
+     * reload. Runs with no ambient transaction (see the section comment above), so
+     * {@link #appendSystemMessage}'s save opens its own and {@link #publishToStream}, finding no
+     * synchronization active, publishes inline against an already-committed row.
+     */
+    private void appendLifecycleRow(String collaborationId, String content) {
+        if (collaborationId == null) {
+            return;
+        }
+        publishToStream(
+                collaborationId, toMessageResponse(appendSystemMessage(collaborationId, content)));
+    }
+
+    private void logTrailFailure(String eventType, String entityId, RuntimeException e) {
+        log.error(
+                "Could not append the {} row to the deal trail for entity {} — the operation that"
+                        + " produced the event already committed and stands",
+                eventType,
+                entityId,
+                e);
     }
 
     private void notifyFirstMessage(Collaboration collaboration, DealSenderType senderType) {
