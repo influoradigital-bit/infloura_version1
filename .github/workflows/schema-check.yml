@@ -152,9 +152,25 @@ jobs:
           fi
           echo ""
 
-          # EXPECTED EXCEPTION (Priya ruling — wiki/ai-review/T4-schema-fix-correction.md):
-          # Python exposing 3 of Java's 4 campaign_type values (STANDARD absent) is CORRECT BY DESIGN.
-          # STANDARD is the server-side default/fallback and is deliberately NOT exposed to the AI.
+          # NOTE (corrected 2026-08-20): this block used to claim that Python exposing only 3 of
+          # Java's 4 campaign_type values — STANDARD "deliberately NOT exposed to the AI" — was
+          # correct by design, citing wiki/ai-review/T4-schema-fix-correction.md. Both halves were
+          # wrong. That file has never existed in this repo's history, and the claim was reversed
+          # by 2a67512 (2026-07-23), which added STANDARD deliberately, as a bug fix:
+          #
+          #   campaign_type was a REQUIRED enum of HYPE|DIRECT|REVIEW, so every AI draft became
+          #   HYPE; HypeCampaignCard did `if (!hype) return null`, so hype-less drafts vanished
+          #   from the brand's campaign grid while the stat tiles still counted them. That is the
+          #   "Meera said created but the draft isn't in my list" bug. The fix was to add STANDARD
+          #   and make campaign_type optional, defaulting to STANDARD server-side.
+          #
+          # Current truth: influora-ai/app/tools/schemas.py exposes all four values, matching
+          # influora-api/src/main/java/com/influora/domain/enums/CampaignIntentType.java exactly.
+          # There is no exception left to document here.
+          #
+          # What IS still true is the reason the comparison below never blocks: goal and
+          # campaign_type are different vocabularies, so an equality check between them reports a
+          # difference on every run by construction. It is kept as a report, not a gate.
           # The goal ↔ campaign_type MAPPING (which goal implies which type) is a Wave-2 ruling,
           # not Wave 1 drift. These two fields are different concepts (marketing objective vs.
           # execution format), not one vocabulary. This check will flip to BLOCKING after the
@@ -171,7 +187,7 @@ jobs:
             echo ""
             echo "REASON: These represent different concepts (marketing objective vs. execution format)."
             echo "ACTION: Wave-2 task — needs goal↔campaign_type mapping ruling (Priya/Swapnil sign-off)."
-            echo "See: wiki/ai-review/T4-schema-fix-correction.md, 00-AI-FEATURES-ARCHITECTURE.md §5 rule 6"
+            echo "See: influora-ai/app/tools/schemas.py and CampaignIntentType.java (both list all four)"
             DRIFT_DETECTED=1
           else
             echo "✅ goal and campaign_type enums match"
@@ -186,7 +202,7 @@ jobs:
           if [ $TOOLNAME_DRIFT -eq 1 ]; then
             echo ""
             echo "❌ BLOCKING: Python TOOL_SCHEMAS tool names have drifted from Java MeeraToolName."
-            echo "   Java is canonical (00-AI-FEATURES-ARCHITECTURE.md §5 rule 6) — reconcile schemas.py."
+            echo "   Java is canonical (MeeraToolName.java is the source of truth) — reconcile schemas.py."
             exit 1
           fi
 
