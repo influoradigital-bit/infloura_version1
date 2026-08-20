@@ -96,16 +96,26 @@ describe('payments gate', () => {
    * Withdraw is exposed against an unconfigured RazorpayX; off, and brands cannot fund anything.
    */
   it('lets collection go live while payouts stay closed — the whole point of the split', async () => {
-    const { api, payments, PaymentsUnavailableError, isMoneyActionBlocked } = await loadApiWith({
-      VITE_API_MODE: 'live',
-      VITE_PAYMENTS_IN_ENABLED: 'true',
-      // VITE_PAYOUTS_ENABLED deliberately unset — RazorpayX is not provisioned.
-    });
+    const { api, payments, ApiError, PaymentsUnavailableError, isMoneyActionBlocked } =
+      await loadApiWith({
+        VITE_API_MODE: 'live',
+        VITE_PAYMENTS_IN_ENABLED: 'true',
+        // VITE_PAYOUTS_ENABLED deliberately unset — RazorpayX is not provisioned.
+      });
 
     // Money in flows: these reach the network layer rather than throwing.
     expect(isMoneyActionBlocked('topup')).toBe(false);
     expect(isMoneyActionBlocked('escrow-fund')).toBe(false);
-    expect(() => payments.fundEscrow('camp_1', 'idem-a')).not.toThrow();
+
+    // `fundEscrow` is NOT gated here, so it issues the request and returns a promise. The
+    // stubbed fetch answers with a bare `{}` — no `success` flag — so that promise rejects with
+    // ApiError. That rejection is an artifact of the stub, not the property under test, but it
+    // must be awaited: left floating it escapes the test as an unhandled rejection and fails the
+    // entire vitest run, reported under whichever unrelated test happened to be running when it
+    // landed. Awaiting it also states the property more directly than `.not.toThrow()` did —
+    // only a call that actually reached the network layer can come back with a network error.
+    await expect(payments.fundEscrow('camp_1', 'idem-a')).rejects.toBeInstanceOf(ApiError);
+    expect(fetchSpy).toHaveBeenCalled();
 
     // Money out stays shut, and the request is still never issued.
     expect(isMoneyActionBlocked('withdraw')).toBe(true);
