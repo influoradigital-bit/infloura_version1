@@ -1,0 +1,26 @@
+· tsc --noEmit
+· eslint (project config)
+(node:21448) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/eslint.config.js?mtime=1785755847741 is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\Sage world\Downloads\New Influora Ai\New Influora\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\dashboard\KpiCard.tsx
+  128:14  warning  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\dashboard\KpiCard.tsx:128:14
+  126 |           <span className="text-sm font-medium text-muted-foreground">{title}</span>
+  127 |           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+> 128 |             <Icon className="size-4.5" aria-hidden="true" />
+      |              ^^^^ This component is created during render
+  129 |           </span>
+  130 |         </div>
+  131 |
+
+C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\admin\components\dashboard\KpiCard.tsx:86:16
+· npm run build
+· npm test
+VERDICT: broken (real findings above)
+NOT CHECKED: anything deployed (no health URL given); runtime behaviour, data correctness, mocked responses, security, accessibility, and whether an ENOENT naming a non-module path was code or environment

@@ -22,8 +22,9 @@ export default function CreatorCouponsPage() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold">My Coupons</h1>
           <p className="text-muted-foreground">
-            Coupon codes and tracking links assigned to you across campaigns — copy and share
-            with your audience.
+            Coupon codes and tracking links assigned to you across campaigns. Tracking links
+            work immediately; a coupon code only works once the brand has added it to their
+            store, so check with them before you promote it.
           </p>
         </div>
 

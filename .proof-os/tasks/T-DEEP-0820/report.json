@@ -1,0 +1,45 @@
+{"rows":[
+{"subject":"influora-api/src/main/java/com/influora/web/ConversionWebhookSecretController.java",
+ "owner":"vikram","status":"broken","isolation":"oracle",
+ "evidence":{"oracle":"grep","command":"grep -rn 'webhook-secret|webhookSecret' src/ --include=*.ts --include=*.tsx","result":"0 matches in the working tree (all hits were in .claude/worktrees/** sibling trees); sole backend caller of secretService.generate is this controller","where":"influora-api/src/main/java/com/influora/web/ConversionWebhookSecretController.java:50"}},
+
+{"subject":"influora-api/src/main/java/com/influora/service/tracking/CampaignTrackingService.createCoupon",
+ "owner":"vikram","status":"broken","isolation":"oracle",
+ "evidence":{"oracle":"grep","command":"grep -rn 'shopify|Shopify|wooCommerce|priceRule|discount_code' influora-api/src/main/java/com/influora/service/tracking/*.java","result":"no store-push call on the create path; only redemption-side references. No FE copy instructs the brand to mirror the code in their store.","where":"influora-api/src/main/java/com/influora/web/CampaignTrackingController.java:94"}},
+
+{"subject":"influora-api/src/main/java/com/influora/job/MetricsPollingJob.java",
+ "owner":"vikram","status":"broken","isolation":"oracle",
+ "evidence":{"oracle":"grep","command":"grep -rln 'creatorMetricRepository.save|CreatorMetric.builder' influora-api/src/main/java","result":"CreatorMetric is written only by MetricsPollingJob (gated on MetaOAuthToken rows) and PortfolioService (CREATOR_REPORTED); Meta app 850102124044922 is is_live:false, so zero tokens exist","where":"influora-api/src/main/java/com/influora/job/MetricsPollingJob.java:110"}},
+
+{"subject":"influora-api/src/main/java/com/influora/integration/meta/client/FacebookPageClient.java",
+ "owner":"vikram","status":"broken","isolation":"oracle",
+ "evidence":{"oracle":"meta-graph-api","command":"GET /850102124044922/permissions via Meta DevTools MCP","result":"pages_read_engagement grant_status=REJECTED, access_level=none; getPage() requires it","where":"wiki/reports/META-FEATURE-SURFACE-VS-CODE-2026-08-20.md:1"}},
+
+{"subject":"influora-api/src/main/java/com/influora/web/EscrowController.java",
+ "owner":"vikram","status":"partial","isolation":"oracle",
+ "evidence":{"oracle":"grep","command":"FE/BE endpoint reconciliation (.proof-os/tasks/T-DEEP-0820/recon2.py)","result":"fund/release/get/list have FE callers; refund and payout have zero callers in src/ and are reachable only by a hand-made request","where":"influora-api/src/main/java/com/influora/web/EscrowController.java:128"}},
+
+{"subject":"influora-api/src/main/java/com/influora/web/DeliverableMetricController.java",
+ "owner":"vikram","status":"partial","isolation":"oracle",
+ "evidence":{"oracle":"grep","command":"FE/BE endpoint reconciliation (.proof-os/tasks/T-DEEP-0820/recon2.py)","result":"PUT /deliverables/{id}/metrics has no FE caller; the UI submits to POST /creator/deliverables/{id}/metrics instead — two write paths for the same data","where":"influora-api/src/main/java/com/influora/web/DeliverableMetricController.java:38"}},
+
+{"subject":"src/lib/api.ts",
+ "owner":"ananya","status":"aligned","isolation":"oracle",
+ "evidence":{"oracle":"tsc","command":"npx tsc --noEmit","result":"0 errors","where":"src/lib/api.ts:1"}},
+
+{"subject":"influora-api",
+ "owner":"meera","status":"aligned","isolation":"oracle",
+ "evidence":{"oracle":"maven","command":"mvn -q -o compile","result":"exit 0 — the module compiles","where":"influora-api/pom.xml:1"}},
+
+{"subject":"src/pages/brand-wallet.tsx",
+ "owner":"ananya","status":"aligned","isolation":"oracle",
+ "evidence":{"oracle":"grep","command":"dead-control scan (.proof-os/tasks/T-DEEP-0820/deadctl.py) over 55 surface files","result":"17 candidates, all resolved to Radix asChild triggers or a deliberately disabled Export with an honest tooltip — 0 real dead controls","where":"src/pages/brand-wallet.tsx:761"}},
+
+{"subject":"package.json",
+ "owner":"meera","status":"broken","isolation":"oracle",
+ "evidence":{"oracle":"npm","command":"npx vitest run","result":"esbuild OOM — all 130 suites fail to collect, 0 tests execute (ledgered F-0376)","where":"vitest.config.ts:1"}},
+
+{"subject":"src/lib/razorpay.ts",
+ "owner":"ananya","status":"aligned","isolation":"oracle",
+ "evidence":{"oracle":"gitleaks","command":"gitleaks detect --no-banner -s .","result":"284 commits scanned, no leaks found","where":"src/lib/razorpay.ts:1"}}
+]}

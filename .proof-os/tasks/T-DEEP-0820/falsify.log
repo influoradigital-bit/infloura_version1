@@ -1,0 +1,5 @@
+* endpoint reachability [--only webhook-secret]: 2 user-facing endpoints, 261 frontend call sites
+  POST   /webhook-secret/generate                             no shipped UI reaches this  ConversionWebhookSecretController.java:50
+  DELETE /webhook-secret                                      no shipped UI reaches this  ConversionWebhookSecretController.java:63
+VERDICT: broken (real findings above)
+NOT CHECKED: whether the frontend caller is reachable by NAVIGATION (a called endpoint in an unmounted component still counts here - see the StoreIntegrationSetup case); whether the call fires with correct arguments; authorization; whether an exempt path is genuinely server-to-server or was merely named to look like one; and any call shape not written as one of the recognised helpers (a hand-rolled fetch built from concatenated variables is invisible here and will be reported as an orphan)

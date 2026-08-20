@@ -1,0 +1,1742 @@
+[
+{
+"file": "influora-api/src/main/java/com/influora/web\\AccountController.java",
+"line": 68,
+"verb": "DELETE",
+"path": "/me/account"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AccountController.java",
+"line": 105,
+"verb": "POST",
+"path": "/me/password"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminAuthController.java",
+"line": 68,
+"verb": "POST",
+"path": "/admin/auth/login"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminAuthController.java",
+"line": 82,
+"verb": "POST",
+"path": "/admin/auth/refresh"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminAuthController.java",
+"line": 100,
+"verb": "POST",
+"path": "/admin/auth/logout"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminAuthController.java",
+"line": 108,
+"verb": "GET",
+"path": "/admin/auth/me"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminAuthController.java",
+"line": 113,
+"verb": "POST",
+"path": "/admin/auth/mfa/setup"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminAuthController.java",
+"line": 119,
+"verb": "POST",
+"path": "/admin/auth/mfa/verify"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminBillingController.java",
+"line": 104,
+"verb": "GET",
+"path": "/admin/billing/subscriptions"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminBillingController.java",
+"line": 114,
+"verb": "GET",
+"path": "/admin/billing/metrics"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminBillingController.java",
+"line": 119,
+"verb": "POST",
+"path": "/admin/billing/comp"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminBillingController.java",
+"line": 127,
+"verb": "POST",
+"path": "/admin/billing/override"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminBrandController.java",
+"line": 64,
+"verb": "GET",
+"path": "/admin/brands"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminBrandController.java",
+"line": 75,
+"verb": "GET",
+"path": "/admin/brands/{id}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminBrandController.java",
+"line": 87,
+"verb": "PUT",
+"path": "/admin/brands/{id}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminBrandController.java",
+"line": 103,
+"verb": "POST",
+"path": "/admin/brands/{id}/campaigns/{campaignId}/budget-override"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminBrandController.java",
+"line": 114,
+"verb": "POST",
+"path": "/admin/brands/{id}/verify-kyc"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminBrandController.java",
+"line": 123,
+"verb": "POST",
+"path": "/admin/brands/{id}/suspend"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminBrandController.java",
+"line": 132,
+"verb": "POST",
+"path": "/admin/brands/{id}/reinstate"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCampaignController.java",
+"line": 54,
+"verb": "GET",
+"path": "/admin/campaigns"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCampaignController.java",
+"line": 72,
+"verb": "GET",
+"path": "/admin/campaigns/{id}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCampaignController.java",
+"line": 85,
+"verb": "GET",
+"path": "/admin/campaigns/at-risk"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCampaignController.java",
+"line": 96,
+"verb": "GET",
+"path": "/admin/campaigns/hype/ops"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCreatorController.java",
+"line": 58,
+"verb": "GET",
+"path": "/admin/creators"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCreatorController.java",
+"line": 75,
+"verb": "GET",
+"path": "/admin/creators/applications/pending"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCreatorController.java",
+"line": 83,
+"verb": "GET",
+"path": "/admin/creators/{id}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCreatorController.java",
+"line": 95,
+"verb": "PUT",
+"path": "/admin/creators/{id}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCreatorController.java",
+"line": 108,
+"verb": "PUT",
+"path": "/admin/creators/{id}/tier"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCreatorController.java",
+"line": 117,
+"verb": "POST",
+"path": "/admin/creators/{id}/review-application"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCreatorController.java",
+"line": 135,
+"verb": "POST",
+"path": "/admin/creators/{id}/instagram/force-reauth"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCreatorController.java",
+"line": 144,
+"verb": "POST",
+"path": "/admin/creators/{id}/suspend"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminCreatorController.java",
+"line": 153,
+"verb": "POST",
+"path": "/admin/creators/{id}/reinstate"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminDashboardController.java",
+"line": 45,
+"verb": "GET",
+"path": "/admin/dashboard/pulse"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminDashboardController.java",
+"line": 50,
+"verb": "GET",
+"path": "/admin/dashboard/operations"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminDashboardController.java",
+"line": 62,
+"verb": "GET",
+"path": "/admin/dashboard/financial"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminDisputeController.java",
+"line": 44,
+"verb": "GET",
+"path": "/admin/disputes"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminDisputeController.java",
+"line": 73,
+"verb": "POST",
+"path": "/admin/disputes/{disputeId}/resolve"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminEmailController.java",
+"line": 40,
+"verb": "GET",
+"path": "/admin/emails/queue"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminEmailController.java",
+"line": 49,
+"verb": "POST",
+"path": "/admin/emails/queue/{id}/retry"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminEmailController.java",
+"line": 55,
+"verb": "GET",
+"path": "/admin/emails/templates"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminEmailController.java",
+"line": 60,
+"verb": "GET",
+"path": "/admin/emails/stats"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminEmailController.java",
+"line": 75,
+"verb": "POST",
+"path": "/admin/emails/send-bulk"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminErrorLogController.java",
+"line": 37,
+"verb": "GET",
+"path": "/admin/errors/recent"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminErrorLogController.java",
+"line": 44,
+"verb": "GET",
+"path": "/admin/errors/stats"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminErrorLogController.java",
+"line": 49,
+"verb": "GET",
+"path": "/admin/errors/{id}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminErrorLogController.java",
+"line": 55,
+"verb": "POST",
+"path": "/admin/errors/{id}/resolve"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminEscrowController.java",
+"line": 41,
+"verb": "GET",
+"path": "/admin/escrow/flagged"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminFinanceController.java",
+"line": 44,
+"verb": "GET",
+"path": "/admin/finance/escrow"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminFinanceController.java",
+"line": 54,
+"verb": "GET",
+"path": "/admin/finance/reconciliation"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminFinanceController.java",
+"line": 66,
+"verb": "POST",
+"path": "/admin/finance/payouts/{id}/retry"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminMarketingController.java",
+"line": 40,
+"verb": "GET",
+"path": "/admin/marketing/reputation"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminMarketingController.java",
+"line": 53,
+"verb": "GET",
+"path": "/admin/marketing/growth"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminModerationController.java",
+"line": 58,
+"verb": "GET",
+"path": "/admin/moderation/flags"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminModerationController.java",
+"line": 72,
+"verb": "POST",
+"path": "/admin/moderation/flags/{id}/action"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminModerationController.java",
+"line": 88,
+"verb": "GET",
+"path": "/admin/moderation/suspensions"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminRevenueController.java",
+"line": 36,
+"verb": "GET",
+"path": "/admin/finance/revenue"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminSupportController.java",
+"line": 41,
+"verb": "GET",
+"path": "/admin/support/tickets/stats"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminSupportController.java",
+"line": 57,
+"verb": "GET",
+"path": "/admin/support/tickets"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminSupportController.java",
+"line": 72,
+"verb": "GET",
+"path": "/admin/support/tickets/{id}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminSupportController.java",
+"line": 78,
+"verb": "POST",
+"path": "/admin/support/tickets/{id}/reply"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminSupportController.java",
+"line": 87,
+"verb": "PUT",
+"path": "/admin/support/tickets/{id}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminSupportController.java",
+"line": 96,
+"verb": "POST",
+"path": "/admin/support/tickets/{id}/assign"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminSupportController.java",
+"line": 105,
+"verb": "POST",
+"path": "/admin/support/tickets/{id}/escalate"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminSupportStatsController.java",
+"line": 15,
+"verb": "GET",
+"path": "/admin/support/stats"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AdminSupportStatsController.java",
+"line": 35,
+"verb": "GET",
+"path": "/admin/support/stats"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AnalyticsController.java",
+"line": 61,
+"verb": "GET",
+"path": "/analytics/creators/{creatorId}/metrics"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AnalyticsController.java",
+"line": 74,
+"verb": "GET",
+"path": "/analytics/creators/{creatorId}/scores"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AnalyticsController.java",
+"line": 84,
+"verb": "GET",
+"path": "/analytics/creators/{creatorId}/demographics"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AnalyticsController.java",
+"line": 101,
+"verb": "GET",
+"path": "/analytics/creators/{creatorId}/media"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ApprovalWorkflowController.java",
+"line": 51,
+"verb": "GET",
+"path": "/admin/moderation/approvals/pending"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ApprovalWorkflowController.java",
+"line": 58,
+"verb": "POST",
+"path": "/admin/moderation/approvals/{id}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuditLogController.java",
+"line": 70,
+"verb": "GET",
+"path": "/admin/audit"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuditLogController.java",
+"line": 84,
+"verb": "GET",
+"path": "/admin/audit/entity/{entityType}/{entityId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuditLogController.java",
+"line": 100,
+"verb": "POST",
+"path": "/admin/audit"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuthController.java",
+"line": 51,
+"verb": "POST",
+"path": "/auth/brand/send-email-otp"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuthController.java",
+"line": 57,
+"verb": "POST",
+"path": "/auth/brand/verify-email"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuthController.java",
+"line": 64,
+"verb": "POST",
+"path": "/auth/brand/register"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuthController.java",
+"line": 73,
+"verb": "POST",
+"path": "/auth/brand/login"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuthController.java",
+"line": 81,
+"verb": "POST",
+"path": "/auth/creator/send-email-otp"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuthController.java",
+"line": 87,
+"verb": "POST",
+"path": "/auth/creator/verify-email"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuthController.java",
+"line": 94,
+"verb": "POST",
+"path": "/auth/creator/register"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuthController.java",
+"line": 103,
+"verb": "POST",
+"path": "/auth/creator/login"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuthController.java",
+"line": 117,
+"verb": "POST",
+"path": "/auth/refresh"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuthController.java",
+"line": 136,
+"verb": "POST",
+"path": "/auth/logout"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuthController.java",
+"line": 146,
+"verb": "POST",
+"path": "/auth/forgot-password"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\AuthController.java",
+"line": 153,
+"verb": "POST",
+"path": "/auth/reset-password"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BillingController.java",
+"line": 88,
+"verb": "GET",
+"path": "/billing/plan"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BillingController.java",
+"line": 98,
+"verb": "GET",
+"path": "/billing/invoices"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BillingController.java",
+"line": 110,
+"verb": "GET",
+"path": "/billing/usage"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BillingController.java",
+"line": 149,
+"verb": "GET",
+"path": "/billing/invoices/{invoiceId}/pdf"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BillingController.java",
+"line": 172,
+"verb": "POST",
+"path": "/billing/checkout"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BillingController.java",
+"line": 185,
+"verb": "POST",
+"path": "/billing/cancel"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandDeliverableController.java",
+"line": 39,
+"verb": "GET",
+"path": "/deliverables/{deliverableId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandDeliverableController.java",
+"line": 46,
+"verb": "POST",
+"path": "/deliverables/{deliverableId}/approve"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandDeliverableController.java",
+"line": 53,
+"verb": "POST",
+"path": "/deliverables/{deliverableId}/revise"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandDeliverableController.java",
+"line": 64,
+"verb": "POST",
+"path": "/deliverables/{deliverableId}/reject"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandDeliverableController.java",
+"line": 81,
+"verb": "GET",
+"path": "/deliverables/{deliverableId}/safety-review"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandDisputeController.java",
+"line": 40,
+"verb": "GET",
+"path": "/brand/disputes/list"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandInvoicingController.java",
+"line": 48,
+"verb": "GET",
+"path": "/billing/campaign-invoices"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandInvoicingController.java",
+"line": 59,
+"verb": "GET",
+"path": "/billing/campaign-invoices/{invoiceId}/pdf"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandInvoicingController.java",
+"line": 68,
+"verb": "GET",
+"path": "/billing/commission-invoices"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandInvoicingController.java",
+"line": 79,
+"verb": "GET",
+"path": "/billing/commission-invoices/{invoiceId}/pdf"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandPlatformFeeController.java",
+"line": 29,
+"verb": "GET",
+"path": "/brand/platform-fee"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandReviewController.java",
+"line": 36,
+"verb": "POST",
+"path": "/brand/reviews"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandReviewController.java",
+"line": 45,
+"verb": "GET",
+"path": "/brand/reviews/received"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\BrandReviewController.java",
+"line": 51,
+"verb": "POST",
+"path": "/brand/reviews/{reviewId}/flag"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignController.java",
+"line": 45,
+"verb": "GET",
+"path": "/campaigns"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignController.java",
+"line": 58,
+"verb": "GET",
+"path": "/campaigns/{campaignId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignController.java",
+"line": 64,
+"verb": "POST",
+"path": "/campaigns"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignController.java",
+"line": 72,
+"verb": "PATCH",
+"path": "/campaigns/{campaignId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignController.java",
+"line": 80,
+"verb": "DELETE",
+"path": "/campaigns/{campaignId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignController.java",
+"line": 86,
+"verb": "POST",
+"path": "/campaigns/{campaignId}/duplicate"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignController.java",
+"line": 97,
+"verb": "GET",
+"path": "/campaigns/{campaignId}/analytics"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignTemplateController.java",
+"line": 41,
+"verb": "GET",
+"path": "/campaign-templates"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignTemplateController.java",
+"line": 47,
+"verb": "GET",
+"path": "/campaign-templates/{templateId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignTemplateController.java",
+"line": 54,
+"verb": "POST",
+"path": "/campaign-templates"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignTemplateController.java",
+"line": 62,
+"verb": "DELETE",
+"path": "/campaign-templates/{templateId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignTrackingController.java",
+"line": 67,
+"verb": "POST",
+"path": "/campaigns/{campaignId}/tracking-links"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignTrackingController.java",
+"line": 85,
+"verb": "GET",
+"path": "/campaigns/{campaignId}/tracking-links"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignTrackingController.java",
+"line": 94,
+"verb": "POST",
+"path": "/campaigns/{campaignId}/coupons"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CampaignTrackingController.java",
+"line": 113,
+"verb": "GET",
+"path": "/campaigns/{campaignId}/coupons"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ClientErrorController.java",
+"line": 85,
+"verb": "POST",
+"path": "/client-errors"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ContractController.java",
+"line": 38,
+"verb": "POST",
+"path": "/contracts"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ContractController.java",
+"line": 46,
+"verb": "GET",
+"path": "/contracts"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ContractController.java",
+"line": 58,
+"verb": "GET",
+"path": "/contracts/unsigned"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ContractController.java",
+"line": 68,
+"verb": "GET",
+"path": "/contracts/{contractId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ContractController.java",
+"line": 78,
+"verb": "POST",
+"path": "/contracts/{contractId}/sign"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ContractController.java",
+"line": 120,
+"verb": "GET",
+"path": "/contracts/{contractId}/pdf-download-url"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ConversionWebhookController.java",
+"line": 194,
+"verb": "POST",
+"path": "/webhooks/redemption"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ConversionWebhookController.java",
+"line": 246,
+"verb": "POST",
+"path": "/webhooks/conversion"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ConversionWebhookController.java",
+"line": 288,
+"verb": "GET",
+"path": "/track/click/{utmCampaignId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ConversionWebhookSecretController.java",
+"line": 50,
+"verb": "POST",
+"path": "/webhook-secret/generate"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ConversionWebhookSecretController.java",
+"line": 63,
+"verb": "DELETE",
+"path": "/webhook-secret"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorAffiliateEarningController.java",
+"line": 30,
+"verb": "GET",
+"path": "/creator/affiliate-earnings"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorAnalyticsController.java",
+"line": 37,
+"verb": "GET",
+"path": "/creator/analytics/me/metrics"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorAnalyticsController.java",
+"line": 48,
+"verb": "GET",
+"path": "/creator/analytics/me/scores"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorAnalyticsController.java",
+"line": 54,
+"verb": "GET",
+"path": "/creator/analytics/me/demographics"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorAnalyticsController.java",
+"line": 65,
+"verb": "GET",
+"path": "/creator/analytics/me/media"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorApplicationController.java",
+"line": 33,
+"verb": "GET",
+"path": "/creator/applications"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorApplicationController.java",
+"line": 45,
+"verb": "GET",
+"path": "/creator/applications/{dealId}/history"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorCampaignController.java",
+"line": 40,
+"verb": "GET",
+"path": "/creator/campaigns"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorCampaignController.java",
+"line": 54,
+"verb": "GET",
+"path": "/creator/campaigns/{campaignId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorCampaignController.java",
+"line": 60,
+"verb": "POST",
+"path": "/creator/campaigns/{campaignId}/apply"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorController.java",
+"line": 40,
+"verb": "GET",
+"path": "/creators"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorController.java",
+"line": 81,
+"verb": "GET",
+"path": "/creators/search"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorController.java",
+"line": 127,
+"verb": "GET",
+"path": "/creators/featured"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorController.java",
+"line": 136,
+"verb": "POST",
+"path": "/creators/suggestions"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorController.java",
+"line": 144,
+"verb": "GET",
+"path": "/creators/{username}/similar"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorController.java",
+"line": 153,
+"verb": "GET",
+"path": "/creators/{creatorId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorController.java",
+"line": 159,
+"verb": "GET",
+"path": "/creators/profile/{usernameOrId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorController.java",
+"line": 166,
+"verb": "POST",
+"path": "/creators/{creatorId}/save"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorController.java",
+"line": 176,
+"verb": "POST",
+"path": "/creators/{creatorId}/invite"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorCopilotController.java",
+"line": 42,
+"verb": "GET",
+"path": "/creator/copilot/suggestion/today"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorCopilotController.java",
+"line": 54,
+"verb": "POST",
+"path": "/creator/copilot/suggestion/{id}/dismiss"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorCopilotController.java",
+"line": 63,
+"verb": "POST",
+"path": "/creator/copilot/suggestion/{id}/acted"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorCouponController.java",
+"line": 29,
+"verb": "GET",
+"path": "/creator/coupons"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorDeliverableController.java",
+"line": 48,
+"verb": "GET",
+"path": "/creator/deliverables"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorDeliverableController.java",
+"line": 63,
+"verb": "GET",
+"path": "/creator/deliverables/bulk"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorDeliverableController.java",
+"line": 72,
+"verb": "POST",
+"path": "/creator/deliverables/{deliverableId}/upload"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorDeliverableController.java",
+"line": 87,
+"verb": "GET",
+"path": "/creator/deliverables/{deliverableId}/status"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorDeliverableController.java",
+"line": 94,
+"verb": "POST",
+"path": "/creator/deliverables/{deliverableId}/submit"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorDeliverableController.java",
+"line": 103,
+"verb": "POST",
+"path": "/creator/deliverables/{deliverableId}/metrics"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorDeliverableController.java",
+"line": 112,
+"verb": "POST",
+"path": "/creator/deliverables/{deliverableId}/proof"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorDeliverableController.java",
+"line": 121,
+"verb": "POST",
+"path": "/creator/deliverables/{deliverableId}/mark-posted"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorDeliverableController.java",
+"line": 135,
+"verb": "POST",
+"path": "/creator/deliverables/{deliverableId}/verify"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorDisputeController.java",
+"line": 33,
+"verb": "GET",
+"path": "/creator/disputes"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorDisputeController.java",
+"line": 45,
+"verb": "GET",
+"path": "/creator/disputes/eligible-deals"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorInvoicingController.java",
+"line": 49,
+"verb": "GET",
+"path": "/creator/campaign-invoices"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorInvoicingController.java",
+"line": 60,
+"verb": "GET",
+"path": "/creator/campaign-invoices/{invoiceId}/pdf"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorInvoicingController.java",
+"line": 69,
+"verb": "GET",
+"path": "/creator/commission-invoices"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorInvoicingController.java",
+"line": 80,
+"verb": "GET",
+"path": "/creator/commission-invoices/{invoiceId}/pdf"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorOnboardingController.java",
+"line": 39,
+"verb": "POST",
+"path": "/onboarding/creator/socials"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorOnboardingController.java",
+"line": 46,
+"verb": "POST",
+"path": "/onboarding/creator/profile"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorOnboardingController.java",
+"line": 53,
+"verb": "POST",
+"path": "/onboarding/creator/complete"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorOnboardingController.java",
+"line": 59,
+"verb": "POST",
+"path": "/onboarding/creator/kyc"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorOnboardingController.java",
+"line": 65,
+"verb": "POST",
+"path": "/onboarding/creator/payout"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorPlatformFeeController.java",
+"line": 28,
+"verb": "GET",
+"path": "/creator/platform-fee"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorReviewController.java",
+"line": 36,
+"verb": "POST",
+"path": "/creator/reviews"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorReviewController.java",
+"line": 45,
+"verb": "GET",
+"path": "/creator/reviews/received"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\CreatorReviewController.java",
+"line": 51,
+"verb": "POST",
+"path": "/creator/reviews/{reviewId}/flag"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DashboardController.java",
+"line": 34,
+"verb": "GET",
+"path": "/dashboard/actions"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DashboardController.java",
+"line": 41,
+"verb": "GET",
+"path": "/dashboard/pipeline"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 65,
+"verb": "GET",
+"path": "/deals"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 72,
+"verb": "GET",
+"path": "/deals/{id}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 78,
+"verb": "POST",
+"path": "/deals"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 86,
+"verb": "POST",
+"path": "/deals/{id}/accept"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 94,
+"verb": "POST",
+"path": "/deals/{id}/reject"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 104,
+"verb": "POST",
+"path": "/deals/{id}/counter"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 114,
+"verb": "GET",
+"path": "/deals/{dealId}/messages"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 141,
+"verb": "GET",
+"path": "/deals/{dealId}/messages/stream"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 160,
+"verb": "POST",
+"path": "/deals/{dealId}/messages"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 169,
+"verb": "POST",
+"path": "/deals/{dealId}/messages/read"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 179,
+"verb": "GET",
+"path": "/deals/{dealId}/deliverables"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 186,
+"verb": "POST",
+"path": "/deals/{dealId}/disputes"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 199,
+"verb": "POST",
+"path": "/deals/{id}/shipping-address"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 208,
+"verb": "POST",
+"path": "/deals/{id}/shipment"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 217,
+"verb": "POST",
+"path": "/deals/{id}/shipment/confirm-receipt"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DealController.java",
+"line": 226,
+"verb": "GET",
+"path": "/deals/{id}/shipment"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\DeliverableMetricController.java",
+"line": 38,
+"verb": "PUT",
+"path": "/deliverables/{milestoneId}/metrics"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\EscrowController.java",
+"line": 58,
+"verb": "GET",
+"path": "/wallet/escrow"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\EscrowController.java",
+"line": 68,
+"verb": "POST",
+"path": "/wallet/escrow/fund"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\EscrowController.java",
+"line": 91,
+"verb": "GET",
+"path": "/wallet/escrow/{escrowHoldId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\EscrowController.java",
+"line": 107,
+"verb": "POST",
+"path": "/wallet/escrow/release"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\EscrowController.java",
+"line": 128,
+"verb": "POST",
+"path": "/wallet/escrow/refund"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\EscrowController.java",
+"line": 135,
+"verb": "POST",
+"path": "/wallet/escrow/payout"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\HealthController.java",
+"line": 25,
+"verb": "GET",
+"path": "/health"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\JwksController.java",
+"line": 55,
+"verb": "GET",
+"path": "/.well-known/jwks.json"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeCreatorProfileController.java",
+"line": 27,
+"verb": "GET",
+"path": "/me/creator-profile"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeCreatorProfileController.java",
+"line": 33,
+"verb": "PATCH",
+"path": "/me/creator-profile"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeTaxIdentityController.java",
+"line": 36,
+"verb": "POST",
+"path": "/me/tax-identity"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraController.java",
+"line": 95,
+"verb": "POST",
+"path": "/meera/sessions"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraController.java",
+"line": 117,
+"verb": "POST",
+"path": "/meera/sessions/{conversationId}/messages"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraController.java",
+"line": 166,
+"verb": "GET",
+"path": "/meera/sessions/{conversationId}/messages"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraController.java",
+"line": 181,
+"verb": "GET",
+"path": "/meera/credits"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraController.java",
+"line": 199,
+"verb": "GET",
+"path": "/meera/brand-profile"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraController.java",
+"line": 237,
+"verb": "POST",
+"path": "/meera/voice/speak"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraController.java",
+"line": 279,
+"verb": "POST",
+"path": "/meera/voice/transcribe"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraInteractionController.java",
+"line": 46,
+"verb": "POST",
+"path": "/workspaces/{workspaceId}/meera/interactions/option-tapped"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraInternalController.java",
+"line": 133,
+"verb": "POST",
+"path": "/internal/meera/context"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraInternalController.java",
+"line": 141,
+"verb": "POST",
+"path": "/internal/meera/show_creators"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraInternalController.java",
+"line": 156,
+"verb": "POST",
+"path": "/internal/meera/calculate_budget"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraInternalController.java",
+"line": 168,
+"verb": "POST",
+"path": "/internal/meera/create_campaign"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraInternalController.java",
+"line": 191,
+"verb": "POST",
+"path": "/internal/meera/request_payment"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraInternalController.java",
+"line": 211,
+"verb": "POST",
+"path": "/internal/meera/confirm_launch"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraInternalController.java",
+"line": 233,
+"verb": "POST",
+"path": "/internal/meera/get_campaign_performance"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraInternalController.java",
+"line": 252,
+"verb": "POST",
+"path": "/internal/meera/messages"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraInternalController.java",
+"line": 283,
+"verb": "POST",
+"path": "/internal/meera/turns/release"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraInternalController.java",
+"line": 308,
+"verb": "POST",
+"path": "/internal/meera/analyze_site_result"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MeeraInternalController.java",
+"line": 335,
+"verb": "POST",
+"path": "/internal/meera/interaction-log"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MetaOAuthController.java",
+"line": 65,
+"verb": "GET",
+"path": "/meta/oauth/authorize"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MetaOAuthController.java",
+"line": 110,
+"verb": "GET",
+"path": "/meta/oauth/callback"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MetaOAuthController.java",
+"line": 151,
+"verb": "GET",
+"path": "/meta/oauth/status"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\MetaOAuthController.java",
+"line": 164,
+"verb": "POST",
+"path": "/meta/oauth/disconnect"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\NotificationController.java",
+"line": 76,
+"verb": "GET",
+"path": "/notifications"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\NotificationController.java",
+"line": 97,
+"verb": "POST",
+"path": "/notifications/read"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\NotificationController.java",
+"line": 127,
+"verb": "POST",
+"path": "/notifications/read-all"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\NotificationController.java",
+"line": 138,
+"verb": "POST",
+"path": "/notifications/unsubscribe"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\NotificationController.java",
+"line": 169,
+"verb": "GET",
+"path": "/notifications/unsubscribe-link"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\NotificationController.java",
+"line": 224,
+"verb": "GET",
+"path": "/notifications/preferences"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\NotificationController.java",
+"line": 241,
+"verb": "POST",
+"path": "/notifications/preferences"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\OnboardingController.java",
+"line": 32,
+"verb": "POST",
+"path": "/onboarding/brand/company"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\OnboardingController.java",
+"line": 39,
+"verb": "POST",
+"path": "/onboarding/brand/complete"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\OnboardingController.java",
+"line": 45,
+"verb": "POST",
+"path": "/onboarding/brand/kyc"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\OnboardingController.java",
+"line": 57,
+"verb": "GET",
+"path": "/onboarding/brand/status"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\OnboardingController.java",
+"line": 69,
+"verb": "POST",
+"path": "/onboarding/brand/kyc-prompt-dismissed"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\PlatformFeeAdminController.java",
+"line": 62,
+"verb": "GET",
+"path": "/admin/finance/fee-config"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\PlatformFeeAdminController.java",
+"line": 76,
+"verb": "PUT",
+"path": "/admin/finance/fee-config"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\PlatformFeeAdminController.java",
+"line": 91,
+"verb": "GET",
+"path": "/admin/finance/fee-config/history"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\PortfolioController.java",
+"line": 39,
+"verb": "GET",
+"path": "/portfolio/{username}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\PortfolioController.java",
+"line": 54,
+"verb": "POST",
+"path": "/portfolio/{username}/contact"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\PortfolioController.java",
+"line": 62,
+"verb": "GET",
+"path": "/me/portfolio"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\PortfolioController.java",
+"line": 68,
+"verb": "PATCH",
+"path": "/me/portfolio"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\PortfolioController.java",
+"line": 75,
+"verb": "POST",
+"path": "/me/portfolio/sync"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\PortfolioController.java",
+"line": 81,
+"verb": "POST",
+"path": "/me/portfolio/cover"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\PortfolioController.java",
+"line": 88,
+"verb": "GET",
+"path": "/me/portfolio/analytics"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\PublicConfigController.java",
+"line": 57,
+"verb": "GET",
+"path": "/config/public"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\PublicConfigController.java",
+"line": 69,
+"verb": "GET",
+"path": "/config/razorpay"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ReportExportController.java",
+"line": 37,
+"verb": "GET",
+"path": "/campaigns/{campaignId}/export"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ShopifyConnectController.java",
+"line": 64,
+"verb": "GET",
+"path": "/shopify/oauth/authorize"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ShopifyConnectController.java",
+"line": 79,
+"verb": "GET",
+"path": "/shopify/oauth/callback"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\ShopifyWebhookController.java",
+"line": 106,
+"verb": "POST",
+"path": "/webhooks/shopify"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\StoreIntegrationStatusController.java",
+"line": 75,
+"verb": "GET",
+"path": "/integrations/store/status"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\StoreIntegrationStatusController.java",
+"line": 113,
+"verb": "DELETE",
+"path": "/integrations/store/disconnect"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\TrendSparkController.java",
+"line": 40,
+"verb": "GET",
+"path": "/brand/trendspark/nudge"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\TrendSparkController.java",
+"line": 50,
+"verb": "POST",
+"path": "/brand/trendspark/nudge/{nudgeId}/click"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\TrendSparkController.java",
+"line": 59,
+"verb": "POST",
+"path": "/brand/trendspark/nudge/{nudgeId}/purchase"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\UploadController.java",
+"line": 32,
+"verb": "POST",
+"path": "/uploads"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\UserController.java",
+"line": 27,
+"verb": "GET",
+"path": "/users/me"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\UserController.java",
+"line": 32,
+"verb": "PATCH",
+"path": "/users/me"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WalletController.java",
+"line": 61,
+"verb": "GET",
+"path": "/wallet/balance"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WalletController.java",
+"line": 73,
+"verb": "GET",
+"path": "/wallet"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WalletController.java",
+"line": 95,
+"verb": "POST",
+"path": "/wallet/topup"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WalletController.java",
+"line": 116,
+"verb": "POST",
+"path": "/wallet/withdraw"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WalletController.java",
+"line": 141,
+"verb": "GET",
+"path": "/wallet/transactions"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WalletController.java",
+"line": 175,
+"verb": "GET",
+"path": "/wallet/payouts"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WalletController.java",
+"line": 191,
+"verb": "GET",
+"path": "/wallet/payout-methods"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WalletController.java",
+"line": 207,
+"verb": "POST",
+"path": "/wallet/payout-methods"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WalletController.java",
+"line": 223,
+"verb": "PUT",
+"path": "/wallet/payout-methods/{id}/primary"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WooCommerceConnectController.java",
+"line": 61,
+"verb": "POST",
+"path": "/woocommerce/connect"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WooCommerceWebhookController.java",
+"line": 145,
+"verb": "POST",
+"path": "/webhooks/woocommerce"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WorkspaceController.java",
+"line": 36,
+"verb": "GET",
+"path": "/workspaces/slug-check"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WorkspaceController.java",
+"line": 52,
+"verb": "GET",
+"path": "/workspaces/me"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WorkspaceController.java",
+"line": 65,
+"verb": "PATCH",
+"path": "/workspaces/me"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WorkspaceMemberController.java",
+"line": 51,
+"verb": "POST",
+"path": "/workspace/members/invite"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WorkspaceMemberController.java",
+"line": 59,
+"verb": "POST",
+"path": "/workspace/members/accept"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WorkspaceMemberController.java",
+"line": 66,
+"verb": "DELETE",
+"path": "/workspace/members/{memberId}"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WorkspaceMemberController.java",
+"line": 74,
+"verb": "GET",
+"path": "/workspace/members"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WorkspaceMemberController.java",
+"line": 85,
+"verb": "GET",
+"path": "/workspace/members/invites"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WorkspaceMemberController.java",
+"line": 96,
+"verb": "POST",
+"path": "/workspace/members/invites/{inviteId}/revoke"
+},
+{
+"file": "influora-api/src/main/java/com/influora/web\\WorkspaceMemberController.java",
+"line": 104,
+"verb": "POST",
+"path": "/workspace/members/switch"
+}
+]

@@ -61,7 +61,11 @@ export function CouponsTable({ coupons, loading, error, className }: CouponsTabl
     <Card className={className}>
       <CardHeader>
         <CardTitle>Coupon Redemptions</CardTitle>
-        <CardDescription>Coupon codes issued to creators on this campaign</CardDescription>
+        <CardDescription>
+          Coupon codes issued to creators on this campaign. Influora mints the code and
+          counts redemptions reported by your store &mdash; it does not create the discount
+          in Shopify or WooCommerce for you.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {coupons.length === 0 ? (
@@ -72,7 +76,8 @@ export function CouponsTable({ coupons, loading, error, className }: CouponsTabl
               </EmptyMedia>
               <EmptyTitle>No coupons yet</EmptyTitle>
               <EmptyDescription>
-                Create a coupon above to give a creator a code their audience can redeem.
+                Create a coupon above, then add the same code in your store so a
+                creator&apos;s audience can redeem it.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -85,7 +90,7 @@ export function CouponsTable({ coupons, loading, error, className }: CouponsTabl
                   <TableHead>Creator</TableHead>
                   <TableHead>Discount</TableHead>
                   <TableHead className="text-right">Uses</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Store status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -103,8 +108,8 @@ export function CouponsTable({ coupons, loading, error, className }: CouponsTabl
                         {coupon.usageLimit != null ? ` / ${coupon.usageLimit}` : ''}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={isActive ? 'default' : 'secondary'}>
-                          {expired ? 'Expired' : atLimit ? 'Limit reached' : 'Active'}
+                        <Badge variant={isActive ? 'outline' : 'secondary'}>
+                          {expired ? 'Expired' : atLimit ? 'Limit reached' : 'Not in store yet'}
                         </Badge>
                       </TableCell>
                     </TableRow>

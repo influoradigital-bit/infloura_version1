@@ -2857,3 +2857,100 @@
 {"ts": "2026-08-20T02:16:13", "who": "meera", "what": "verdict", "file": "package.json", "task": "T-IGLOGIN-0820", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
 {"ts": "2026-08-20T02:29:14", "who": "vikram", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/ContractController.java:107 + ContractService.java:598", "task": "", "stage": "intake", "gate_result": "F-0368"}
 {"ts": "2026-08-20T02:29:14", "who": "vikram", "what": "fix", "file": "influora-api/src/main/java/com/influora/web/ContractController.java", "task": "T-SIGNROLE-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T14:09:45", "who": "arjun", "what": "create", "file": ".proof-os/tasks/T-IGDISCOVERY-0820/TASKS.md", "task": "T-IGDISCOVERY-0820", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-20T15:03:51", "who": "swapnil", "what": "create", "file": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md", "task": "T-ROADMAP-0820", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-20T15:07:32", "who": "ananya", "what": "ledger-add", "file": "src/components/brand/settings/StoreIntegrationSetup.tsx", "task": "", "stage": "intake", "gate_result": "F-0369"}
+{"ts": "2026-08-20T15:13:03", "who": "human:swapnil", "what": "ledger-add", "file": "https://influora.in", "task": "", "stage": "intake", "gate_result": "F-0370"}
+{"ts": "2026-08-20T15:24:46", "who": "swapnil", "what": "create", "file": ".proof-os/tasks/T-DOMAIN-0820/TASKS.md", "task": "T-DOMAIN-0820", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-20T15:39:25", "who": "tejas", "what": "create", "file": "wiki/website/content-standard.md", "task": "T-DOMAIN-0820", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-20T15:39:25", "who": "ananya", "what": "ledger-add", "file": "src/pages/blog/post.tsx", "task": "", "stage": "intake", "gate_result": "F-0371"}
+{"ts": "2026-08-20T15:45:55", "who": "kabir", "what": "ledger-add", "file": ".proof-os/gates/schema_helpers_emitted.py", "task": "", "stage": "intake", "gate_result": "F-0372"}
+{"ts": "2026-08-20T15:45:56", "who": "kabir", "what": "verdict", "file": ".proof-os/gates/schema_helpers_emitted.py", "task": "T-QUEUE-0820", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-20T15:46:44", "who": "swapnil", "what": "create", "file": ".proof-os/tasks/T-QUEUE-0820/TASKS.md", "task": "T-QUEUE-0820", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-20T15:46:45", "who": "dev", "what": "create", "file": ".proof-os/gates/schema_helpers_emitted.py", "task": "T-QUEUE-0820", "stage": "produce", "gate_result": "proved"}
+{"ts": "2026-08-20T16:14:40", "who": "swapnil", "what": "ledger-add", "file": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md", "task": "", "stage": "intake", "gate_result": "F-0373"}
+{"ts": "2026-08-20T16:14:40", "who": "kabir", "what": "audit", "file": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md", "task": "T-ROADMAP-0820", "stage": "judgment", "gate_result": "echo", "isolation": "shared-context"}
+{"ts": "2026-08-20T16:23:19", "who": "meera", "what": "ledger-add", "file": "deploy/hostinger/docker-compose.hostinger.yml", "task": "", "stage": "intake", "gate_result": "F-0374"}
+{"ts": "2026-08-20T16:24:16", "who": "meera", "what": "create", "file": ".proof-os/tasks/T-UTHO-0820/TASKS.md", "task": "T-UTHO-0820", "stage": "produce", "gate_result": "believed"}
+{"ts": "2026-08-20T17:01:12", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/integration/meta/oauth/MetaOAuthService.java", "task": "T-META-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T17:01:12", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/integration/meta/client/InstagramInsightsClient.java", "task": "T-META-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T17:01:13", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/integration/meta/client/FacebookPageClient.java", "task": "T-META-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T17:01:13", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/config/MetaApiProperties.java", "task": "T-META-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T17:01:13", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/web/MetaOAuthController.java", "task": "T-META-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T17:01:13", "who": "swapnil", "what": "read", "file": "src/components/creator/connected-accounts.tsx", "task": "T-META-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T17:04:36", "who": "vikram", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/integration/meta/client/FacebookPageClient.java", "task": "", "stage": "intake", "gate_result": "F-0375"}
+{"ts": "2026-08-20T17:05:08", "who": "vikram", "what": "verdict", "file": "wiki/reports/META-FEATURE-SURFACE-VS-CODE-2026-08-20.md", "task": "T-META-0820", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-20T17:08:58", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/service/CreatorDiscoveryService.java", "task": "T-META-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T17:08:59", "who": "tara", "what": "create", "file": "wiki/reports/META-IMPLEMENTATION-PLAN-2026-08-20.md", "task": "T-META-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T18:16:29", "who": "meera", "what": "ledger-add", "file": "vitest.config.ts", "task": "", "stage": "intake", "gate_result": "F-0376"}
+{"ts": "2026-08-20T18:44:49", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/web/ConversionWebhookSecretController.java", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T18:44:49", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/web/ConversionWebhookController.java", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T18:44:50", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/web/CampaignTrackingController.java", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T18:44:50", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/web/EscrowController.java", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T18:44:50", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/web/WalletController.java", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T18:44:50", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/web/DeliverableMetricController.java", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T18:44:51", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/job/MetricsPollingJob.java", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T18:44:51", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/service/tracking/RedemptionService.java", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T18:44:51", "who": "swapnil", "what": "read", "file": "src/lib/api.ts", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T18:44:51", "who": "swapnil", "what": "read", "file": "src/components/campaigns/tracking/CouponCodeGenerator.tsx", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T18:44:52", "who": "swapnil", "what": "read", "file": "wiki/reports/META-FEATURE-SURFACE-VS-CODE-2026-08-20.md", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T18:45:18", "who": "ananya", "what": "edit", "file": "src/lib/api.ts", "task": "T-PAYGATE-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T18:45:19", "who": "ananya", "what": "edit", "file": "src/components/payments/money-flow-steps.tsx", "task": "T-PAYGATE-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T18:45:19", "who": "ananya", "what": "edit", "file": "src/components/payments/payments-unavailable-notice.tsx", "task": "T-PAYGATE-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T18:45:19", "who": "ananya", "what": "edit", "file": "src/pages/creator-wallet.tsx", "task": "T-PAYGATE-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T18:45:19", "who": "ananya", "what": "edit", "file": "src/lib/payments-gate.test.tsx", "task": "T-PAYGATE-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T18:45:35", "who": "vikram", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/ConversionWebhookSecretController.java:50", "task": "", "stage": "intake", "gate_result": "F-0377"}
+{"ts": "2026-08-20T18:45:53", "who": "vikram", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/CampaignTrackingController.java:94", "task": "", "stage": "intake", "gate_result": "F-0378"}
+{"ts": "2026-08-20T18:45:53", "who": "vikram", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/job/MetricsPollingJob.java:110", "task": "", "stage": "intake", "gate_result": "F-0379"}
+{"ts": "2026-08-20T18:45:54", "who": "vikram", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/DeliverableMetricController.java:38", "task": "", "stage": "intake", "gate_result": "F-0380"}
+{"ts": "2026-08-20T18:45:54", "who": "vikram", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/EscrowController.java:128", "task": "", "stage": "intake", "gate_result": "F-0381"}
+{"ts": "2026-08-20T18:46:48", "who": "swapnil", "what": "audit", "file": ".proof-os/tasks/T-DEEP-0820/report.json", "task": "T-DEEP-0820", "stage": "judgment", "gate_result": "echo", "isolation": "shared-context"}
+{"ts": "2026-08-20T18:50:04", "who": "kabir", "what": "verdict", "file": "influora-api/src/main/java/com/influora/web/ConversionWebhookSecretController.java", "task": "T-DEEP-0820", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-20T18:50:04", "who": "kabir", "what": "verdict", "file": "influora-api/src/main/java/com/influora/web/CampaignTrackingController.java", "task": "T-DEEP-0820", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-20T18:50:55", "who": "ananya", "what": "edit", "file": "src/pages/brand-wallet.tsx", "task": "T-PAYGATE-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T18:50:55", "who": "ananya", "what": "edit", "file": "src/components/feature/meera/FundEscrowButton.tsx", "task": "T-PAYGATE-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T18:50:55", "who": "ananya", "what": "edit", "file": "src/lib/meera-api.ts", "task": "T-PAYGATE-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T18:50:55", "who": "ananya", "what": "ledger-add", "file": "src/lib/meera-api.ts", "task": "", "stage": "intake", "gate_result": "F-0382"}
+{"ts": "2026-08-20T18:52:32", "who": "kabir", "what": "ledger-add", "file": "src/pages/landing.tsx:167", "task": "", "stage": "intake", "gate_result": "F-0383"}
+{"ts": "2026-08-20T18:53:05", "who": "kabir", "what": "ledger-add", "file": "src/components/campaigns/tracking/CouponsTable.tsx:105", "task": "", "stage": "intake", "gate_result": "F-0384"}
+{"ts": "2026-08-20T18:53:06", "who": "kabir", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/config/ShopifyProperties.java:31", "task": "", "stage": "intake", "gate_result": "F-0385"}
+{"ts": "2026-08-20T18:56:33", "who": "priya", "what": "audit", "file": "influora-api/src/main/java/com/influora/web/CampaignTrackingController.java", "task": "T-DEEP-0820", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-20T18:56:33", "who": "swapnil", "what": "audit", "file": "influora-api/src/main/java/com/influora/service/tracking/CampaignLinkService.java", "task": "T-DEEP-0820", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-08-20T18:59:13", "who": "swapnil", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/tracking/CouponCodeService.java:24", "task": "", "stage": "intake", "gate_result": "F-0386"}
+{"ts": "2026-08-20T19:00:12", "who": "priya", "what": "ledger-add", "file": "BrandF.md:5400", "task": "", "stage": "intake", "gate_result": "F-0387"}
+{"ts": "2026-08-20T19:07:19", "who": "vikram", "what": "edit", "file": "influora-api/src/main/resources/db/migration/V71__payouts_manual_rail.sql", "task": "T-MANUALPAYOUT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:07:19", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/domain/entity/Payout.java", "task": "T-MANUALPAYOUT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:07:19", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/service/admin/AdminFinanceService.java", "task": "T-MANUALPAYOUT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:07:19", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/web/AdminFinanceController.java", "task": "T-MANUALPAYOUT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:07:20", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/web/dto/admin/AdminFinanceDtos.java", "task": "T-MANUALPAYOUT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:07:20", "who": "vikram", "what": "edit", "file": "influora-api/src/main/java/com/influora/repository/PayoutRepository.java", "task": "T-MANUALPAYOUT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:07:20", "who": "vikram", "what": "edit", "file": "src/admin/services/api-contracts.ts", "task": "T-MANUALPAYOUT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:07:20", "who": "vikram", "what": "edit", "file": "src/admin/components/finance/ManualPayoutPanel.tsx", "task": "T-MANUALPAYOUT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:07:20", "who": "vikram", "what": "edit", "file": "src/admin/components/finance/FinanceConsole.tsx", "task": "T-MANUALPAYOUT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:13:52", "who": "ananya", "what": "read", "file": "src/lib/api.ts", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T19:13:52", "who": "ananya", "what": "read", "file": "src/pages/brand-campaign-tracking.tsx", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T19:13:52", "who": "ananya", "what": "read", "file": "src/components/campaigns/tracking/CouponsTable.tsx", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T19:13:52", "who": "ananya", "what": "read", "file": "src/components/campaigns/tracking/CouponCodeGenerator.tsx", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T19:13:52", "who": "ananya", "what": "read", "file": "src/pages/creator-coupons.tsx", "task": "T-DEEP-0820", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-08-20T19:14:39", "who": "ananya", "what": "edit", "file": "src/lib/api.ts", "task": "T-FLAGSPLIT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:14:39", "who": "ananya", "what": "edit", "file": "src/lib/meera-api.ts", "task": "T-FLAGSPLIT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:14:39", "who": "ananya", "what": "edit", "file": "src/pages/creator-wallet.tsx", "task": "T-FLAGSPLIT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:14:39", "who": "ananya", "what": "edit", "file": "src/pages/brand-wallet.tsx", "task": "T-FLAGSPLIT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:14:39", "who": "ananya", "what": "edit", "file": "src/components/feature/meera/FundEscrowButton.tsx", "task": "T-FLAGSPLIT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:14:39", "who": "ananya", "what": "edit", "file": "src/components/payments/payments-unavailable-notice.tsx", "task": "T-FLAGSPLIT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:14:39", "who": "ananya", "what": "edit", "file": "src/lib/payments-gate.test.tsx", "task": "T-FLAGSPLIT-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:18:03", "who": "ananya", "what": "edit", "file": "src/lib/api.ts", "task": "T-DEEP-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:18:03", "who": "ananya", "what": "edit", "file": "src/components/brand/settings/ConversionWebhookSecretCard.tsx", "task": "T-DEEP-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:18:03", "who": "ananya", "what": "edit", "file": "src/pages/brand-settings.tsx", "task": "T-DEEP-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:18:03", "who": "ananya", "what": "edit", "file": "src/components/campaigns/tracking/CouponsTable.tsx", "task": "T-DEEP-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:18:03", "who": "ananya", "what": "edit", "file": "src/components/campaigns/tracking/CouponCodeGenerator.tsx", "task": "T-DEEP-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:18:03", "who": "ananya", "what": "edit", "file": "src/pages/creator-coupons.tsx", "task": "T-DEEP-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:18:03", "who": "ananya", "what": "edit", "file": ".proof-os/gates/empty_state_honesty.py", "task": "T-DEEP-0820", "stage": "produce", "gate_result": ""}
+{"ts": "2026-08-20T19:22:11", "who": "ananya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0377"}
+{"ts": "2026-08-20T19:22:11", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0377 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\endpoint_reachability.py"}
+{"ts": "2026-08-20T19:22:11", "who": "ananya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0384"}
+{"ts": "2026-08-20T19:22:11", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0384 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\empty_state_honesty.py"}
+{"ts": "2026-08-20T19:22:29", "who": "ananya", "what": "ledger-add", "file": "src/ (23 sites)", "task": "", "stage": "intake", "gate_result": "F-0388"}
+{"ts": "2026-08-20T19:22:29", "who": "ananya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/ (29 endpoints)", "task": "", "stage": "intake", "gate_result": "F-0389"}
+{"ts": "2026-08-20T19:22:46", "who": "meera", "what": "verdict", "file": "influora-api/src/main/resources/db/migration/V71__payouts_manual_rail.sql", "task": "T-MANUALPAYOUT-0820", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-08-20T19:22:49", "who": "ananya", "what": "verdict", "file": ".proof-os/tasks/T-DEEP-0820/fix-verdict.json", "task": "T-DEEP-0820", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}

@@ -1,0 +1,32 @@
+* endpoint reachability: 202 user-facing endpoints, 261 frontend call sites
+  GET    /admin/moderation/approvals/pending                  no shipped UI reaches this  ApprovalWorkflowController.java:51
+  POST   /admin/moderation/approvals/*                        no shipped UI reaches this  ApprovalWorkflowController.java:58
+  GET    /admin/audit                                         no shipped UI reaches this  AuditLogController.java:70
+  GET    /admin/audit/entity/*/*                              no shipped UI reaches this  AuditLogController.java:84
+  POST   /admin/audit                                         no shipped UI reaches this  AuditLogController.java:100
+  GET    /contracts/unsigned                                  no shipped UI reaches this  ContractController.java:58
+  GET    /creators/search                                     no shipped UI reaches this  CreatorController.java:81
+  GET    /creators/featured                                   no shipped UI reaches this  CreatorController.java:127
+  POST   /onboarding/creator/payout                           no shipped UI reaches this  CreatorOnboardingController.java:65
+  GET    /deals/*/messages/stream                             no shipped UI reaches this  DealController.java:141
+  PUT    /deliverables/*/metrics                              no shipped UI reaches this  DeliverableMetricController.java:38
+  POST   /wallet/escrow/refund                                no shipped UI reaches this  EscrowController.java:128
+  POST   /wallet/escrow/payout                                no shipped UI reaches this  EscrowController.java:135
+  POST   /meera/voice/speak                                   no shipped UI reaches this  MeeraController.java:237
+  POST   /meera/voice/transcribe                              no shipped UI reaches this  MeeraController.java:279
+  POST   /notifications/unsubscribe                           no shipped UI reaches this  NotificationController.java:138
+  GET    /notifications/unsubscribe-link                      no shipped UI reaches this  NotificationController.java:169
+  GET    /admin/finance/fee-config                            no shipped UI reaches this  PlatformFeeAdminController.java:62
+  PUT    /admin/finance/fee-config                            no shipped UI reaches this  PlatformFeeAdminController.java:76
+  GET    /admin/finance/fee-config/history                    no shipped UI reaches this  PlatformFeeAdminController.java:91
+  GET    /brand/trendspark/nudge                              no shipped UI reaches this  TrendSparkController.java:40
+  GET    /users/*                                             no shipped UI reaches this  UserController.java:27
+  PATCH  /users/*                                             no shipped UI reaches this  UserController.java:32
+  GET    /wallet/balance                                      no shipped UI reaches this  WalletController.java:61
+  POST   /workspace/members/accept                            no shipped UI reaches this  WorkspaceMemberController.java:59
+  DELETE /workspace/members/*                                 no shipped UI reaches this  WorkspaceMemberController.java:66
+  GET    /workspace/members/invites                           no shipped UI reaches this  WorkspaceMemberController.java:85
+  POST   /workspace/members/invites/*/revoke                  no shipped UI reaches this  WorkspaceMemberController.java:96
+  POST   /workspace/members/switch                            no shipped UI reaches this  WorkspaceMemberController.java:104
+VERDICT: broken (real findings above)
+NOT CHECKED: whether the frontend caller is reachable by NAVIGATION (a called endpoint in an unmounted component still counts here - see the StoreIntegrationSetup case); whether the call fires with correct arguments; authorization; whether an exempt path is genuinely server-to-server or was merely named to look like one; and any call shape not written as one of the recognised helpers (a hand-rolled fetch built from concatenated variables is invisible here and will be reported as an orphan)

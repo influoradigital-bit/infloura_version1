@@ -1,0 +1,6 @@
+* empty-state honesty over src
+  src/pages/brand-notifications.tsx:48  asserts "All caught up" from local emptiness, with no verified-state field in scope
+  src/pages/brand-wallet.tsx:1443  asserts "No active campaigns to fund right now." from local emptiness, with no verified-state field in scope
+  src/pages/creator-notifications.tsx:47  asserts "All caught up" from local emptiness, with no verified-state field in scope
+VERDICT: broken (real findings above)
+NOT CHECKED: whether a claim tied to a verifiedAt/syncStatus field is tied to the RIGHT one, or whether that field is ever populated; affirmative claims phrased in wording this gate does not know; claims assembled at runtime from i18n catalogues or server strings; and whether the empty state, once honest, is the one the user actually needed

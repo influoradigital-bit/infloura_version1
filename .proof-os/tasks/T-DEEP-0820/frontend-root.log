@@ -1,0 +1,20 @@
+· tsc --noEmit
+· eslint (sage rules, flat config)
+  eslint exceeded 300s — unavailable (F-0025)
+· gitleaks (detect --no-banner -s .)
+[90m6:28PM[0m [32mINF[0m [1m284 commits scanned.[0m
+[90m6:28PM[0m [32mINF[0m [1mscanned ~172189131 bytes (172.19 MB) in 29.1s[0m
+[90m6:28PM[0m [32mINF[0m [1mno leaks found[0m
+· grep: raw hex colors outside tokens — scope: src
+src/admin/components/moderation/FlagQueue.tsx:110:  // solid-fill treatments elsewhere, e.g. button.tsx/sidebar.tsx) — #5b4db3
+src/components/3d/CanvasFallback.tsx:11:  auth: 'from-[#ede9fe]/90 via-[#f0ebfa] to-[#e8f4fc]/80',
+src/components/3d/CanvasFallback.tsx:12:  discover: 'from-[#ddd6fe]/85 via-[#f0ebfa] to-[#c4b5fd]/60',
+src/components/3d/CanvasFallback.tsx:13:  portfolio: 'from-[#f0ebfa] via-[#ede9fe]/70 to-[#7ec8e8]/40',
+src/components/3d/CanvasFallback.tsx:42:          <div className="absolute -left-[10%] -top-[15%] h-[55%] w-[55%] rounded-full bg-[#7c6ae8]/35 blur-[100px]" />
+src/components/3d/CanvasFallback.tsx:43:          <div className="absolute -right-[5%] top-[10%] h-[50%] w-[50%] rounded-full bg-[#c4b5fd]/30 blur-[100px]" />
+src/components/3d/CanvasFallback.tsx:44:          <div className="absolute bottom-[-20%] left-[20%] h-[60%] w-[60%] rounded-full bg-[#7ec8e8]/25 blur-[100px]" />
+src/components/3d/DiscoverCanvas.tsx:16:const PRIMARY = '#7c6ae8'; // committed brand violet (2026-07-17 palette recalibration)
+src/components/3d/DiscoverCanvas.tsx:21:  { label: 'Instagram', color: '#E1306C', radius: 1.9, speed: 0.9, tilt: 0.42 },
+src/components/3d/DiscoverCanvas.tsx:22:  { label: 'YouTube', color: '#FF4444', radius: 2.5, speed: 1.1, tilt: -0.55 },
+VERDICT: broken (real findings above)
+NOT CHECKED: kavya's ruleset (eslint timed out); hex colours outside .tsx/.jsx (css, scss, styled-components and inline strings elsewhere are not scanned); runtime behaviour, visual regression, accessibility beyond whichever jsx-a11y rules loaded, bundle size, and whether the UI does what the user actually asked for

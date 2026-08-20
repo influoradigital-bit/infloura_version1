@@ -1,11 +1,13 @@
 import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Settings, Bell, Lock, Users, LogOut, Save, Crown, ArrowRight, UserPlus, Loader2 } from 'lucide-react';
+import { Settings, Bell, Lock, Users, LogOut, Save, Crown, ArrowRight, UserPlus, Loader2, Plug } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { StoreIntegrationSetup } from '@/components/brand/settings/StoreIntegrationSetup';
+import { ConversionWebhookSecretCard } from '@/components/brand/settings/ConversionWebhookSecretCard';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -459,7 +461,7 @@ export default function BrandSettingsPage() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto">
+          <TabsList className="grid w-full grid-cols-5 lg:w-auto">
             <TabsTrigger value="general" className="gap-2">
               <Users className="h-4 w-4" />
               <span className="hidden sm:inline">General</span>
@@ -475,6 +477,10 @@ export default function BrandSettingsPage() {
             <TabsTrigger value="security" className="gap-2">
               <Lock className="h-4 w-4" />
               <span className="hidden sm:inline">Security</span>
+            </TabsTrigger>
+            <TabsTrigger value="integrations" className="gap-2">
+              <Plug className="h-4 w-4" />
+              <span className="hidden sm:inline">Integrations</span>
             </TabsTrigger>
           </TabsList>
 
@@ -803,6 +809,16 @@ export default function BrandSettingsPage() {
                     surface, not a settings toggle. */}
               </div>
             </Card>
+          </TabsContent>
+
+          {/* Integrations — F-0377. Both cards below existed as code with no route to them:
+              StoreIntegrationSetup was imported by nothing, and the webhook signing secret had
+              no issuing surface at all, which silently disabled the whole conversion pipeline.
+              They belong together: the secret is only useful once a store is connected, and a
+              connected store reports nothing without the secret. */}
+          <TabsContent value="integrations" className="space-y-6">
+            <StoreIntegrationSetup />
+            <ConversionWebhookSecretCard />
           </TabsContent>
         </Tabs>
 

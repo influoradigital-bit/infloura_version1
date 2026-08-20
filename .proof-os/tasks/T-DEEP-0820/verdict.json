@@ -1,0 +1,15 @@
+{"verdict":"echo","oracle":"model","isolation":"shared-context",
+ "done_when":"each available oracle ran, findings are classed into ledger records with missed_by, and the blind spots are named",
+ "not_checked":[
+  "whether any of the six flows works at runtime — no test suite executed (vitest OOMs, F-0376) and no live environment was driven",
+  "whether the webhook-secret path is truly unreachable in the deployed build rather than only in this working tree",
+  "whether a brand already holds a webhook secret issued before the UI was removed, which would mask F-0377 in production",
+  "database state: no query confirmed that zero MetaOAuthToken rows exist in the live DB",
+  "the admin surface (src/admin) beyond endpoint reconciliation",
+  "authorization correctness on any endpoint reconciled — only that a caller exists or does not",
+  "Shopify/WooCommerce redemption paths end-to-end; only the generic conversion path was traced"],
+ "skipped":[
+  {"step":"gates/graph_source.py","reason":"exit 2 — the graphify graph carries no edges in the schema this gate reads, so there was nothing to attest"},
+  {"step":"gates/frontend.sh eslint stage","reason":"exceeded the 300s budget and reported itself unavailable (F-0025); kavya's ruleset was therefore never applied"},
+  {"step":"gates/e2e.sh","reason":"no deployed URL was given for this task, so no live flow could be driven"},
+  {"step":"judgment-agent dispatch","reason":"FLOW law 4 — AUDIT runs oracles and does not dispatch judgment agents; the consequence is that every non-oracle finding here is shared-context and scores nothing"}]}

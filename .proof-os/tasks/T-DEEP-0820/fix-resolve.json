@@ -1,0 +1,34 @@
+{
+ "text": "fix F-0377 and F-0378",
+ "verb": "FIX",
+ "resolution": "proved",
+ "verbs_matched": [
+  "FIX"
+ ],
+ "modifiers": {},
+ "target": {
+  "kind": "ledger",
+  "id": "F-0377",
+  "resolution": "proved",
+  "note": "unreachable-endpoint",
+  "status": "open"
+ },
+ "scope": [
+  "influora-api/src/main/java/com/influora/web/ConversionWebhookSecretController.java"
+ ],
+ "scope_from": "ledger.where",
+ "owner": "vikram",
+ "reviewer": "kabir",
+ "oracles": [],
+ "oracle_first": false,
+ "exit_gate": null,
+ "done_when": null,
+ "ask": "F-0377 has no `fix` recorded \u2014 what must be true for it to be closed?",
+ "refused": null,
+ "prior_failures": [
+  "F-0377"
+ ],
+ "dispatch": "ask",
+ "oracles_skipped_no_toolchain": [],
+ "graph_nodes": 928
+}

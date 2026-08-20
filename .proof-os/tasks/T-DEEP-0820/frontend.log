@@ -1,0 +1,17 @@
+· tsc/eslint UNAVAILABLE (no node project here)
+· gitleaks (detect --no-git --no-banner -s .)
+[90m6:22PM[0m [32mINF[0m [1mscanned ~5412073 bytes (5.41 MB) in 536ms[0m
+[90m6:22PM[0m [32mINF[0m [1mno leaks found[0m
+· grep: raw hex colors outside tokens — scope: app components
+components/3d/CanvasFallback.tsx:11:  auth: 'from-[#ede9fe]/90 via-[#f0ebfa] to-[#e8f4fc]/80',
+components/3d/CanvasFallback.tsx:12:  discover: 'from-[#ddd6fe]/85 via-[#f0ebfa] to-[#c4b5fd]/60',
+components/3d/CanvasFallback.tsx:13:  portfolio: 'from-[#f0ebfa] via-[#ede9fe]/70 to-[#7ec8e8]/40',
+components/3d/CanvasFallback.tsx:42:          <div className="absolute -left-[10%] -top-[15%] h-[55%] w-[55%] rounded-full bg-[#7c6ae8]/35 blur-[100px]" />
+components/3d/CanvasFallback.tsx:43:          <div className="absolute -right-[5%] top-[10%] h-[50%] w-[50%] rounded-full bg-[#c4b5fd]/30 blur-[100px]" />
+components/3d/CanvasFallback.tsx:44:          <div className="absolute bottom-[-20%] left-[20%] h-[60%] w-[60%] rounded-full bg-[#7ec8e8]/25 blur-[100px]" />
+components/3d/DiscoverCanvas.tsx:16:const PRIMARY = '#7c6ae8'; // committed brand violet (2026-07-17 palette recalibration)
+components/3d/DiscoverCanvas.tsx:21:  { label: 'Instagram', color: '#E1306C', radius: 1.9, speed: 0.9, tilt: 0.42 },
+components/3d/DiscoverCanvas.tsx:22:  { label: 'YouTube', color: '#FF4444', radius: 2.5, speed: 1.1, tilt: -0.55 },
+components/3d/DiscoverCanvas.tsx:23:  { label: 'LinkedIn', color: '#0A66C2', radius: 2.9, speed: 0.85, tilt: 0.62 },
+VERDICT: broken (real findings above)
+NOT CHECKED: types and kavya's ruleset (no npx, or no package.json here); the git history (this tree is not a git repository — gitleaks ran in --no-git mode over working files only); hex colours outside .tsx/.jsx (css, scss, styled-components and inline strings elsewhere are not scanned); runtime behaviour, visual regression, accessibility beyond whichever jsx-a11y rules loaded, bundle size, and whether the UI does what the user actually asked for

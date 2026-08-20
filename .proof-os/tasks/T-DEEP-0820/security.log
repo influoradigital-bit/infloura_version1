@@ -1,0 +1,7 @@
+· npm audit --audit-level=high (budget 300s)
+· gitleaks detect --no-banner -s . (budget 300s)
+[90m6:29PM[0m [32mINF[0m [1m284 commits scanned.[0m
+[90m6:29PM[0m [32mINF[0m [1mscanned ~172189131 bytes (172.19 MB) in 27.6s[0m
+[90m6:29PM[0m [32mINF[0m [1mno leaks found[0m
+VERDICT: aligned (proved)
+NOT CHECKED: response headers (no live URL was given); SAST / taint analysis (no semgrep, codeql or equivalent runs here); licence compliance; authentication and authorisation logic; secrets in git HISTORY; container, IaC and CI-workflow configuration; runtime behaviour

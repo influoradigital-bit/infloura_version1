@@ -1,0 +1,2 @@
+· graph has no edges — nothing to attest (unavailable)
+NOT CHECKED: every edge: the graph is empty | whether the edges are TRUE — this gate audits provenance and status, never re-derives the topology from source | whether evidence.where still points at the line it was captured from (see gates/citations.py for that check) | nodes: only edges are audited

@@ -1,0 +1,1283 @@
+[
+{
+"file": "src/lib/api.ts",
+"line": 846,
+"verb": "POST",
+"path": "/auth/brand/login",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 875,
+"verb": "POST",
+"path": "/auth/creator/login",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 897,
+"verb": "POST",
+"path": "/auth/brand/register",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 913,
+"verb": "POST",
+"path": "/auth/creator/register",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 932,
+"verb": "POST",
+"path": "/auth/brand/send-email-otp",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 942,
+"verb": "POST",
+"path": "/auth/brand/verify-email",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 956,
+"verb": "POST",
+"path": "/auth/creator/send-email-otp",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 966,
+"verb": "POST",
+"path": "/auth/creator/verify-email",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 976,
+"verb": "POST",
+"path": "/auth/forgot-password",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 990,
+"verb": "POST",
+"path": "/auth/reset-password",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1008,
+"verb": "POST",
+"path": "/me/password",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1022,
+"verb": "POST",
+"path": "/auth/logout",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1103,
+"verb": "GET",
+"path": "/workspace/members",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1115,
+"verb": "POST",
+"path": "/workspace/members/invite",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1132,
+"verb": "GET",
+"path": "/workspaces/slug-check",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1145,
+"verb": "GET",
+"path": "/workspaces/me",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1165,
+"verb": "PATCH",
+"path": "/workspaces/me",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1184,
+"verb": "POST",
+"path": "/onboarding/brand/company",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1190,
+"verb": "POST",
+"path": "/onboarding/brand/complete",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1200,
+"verb": "POST",
+"path": "/onboarding/brand/kyc",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1211,
+"verb": "GET",
+"path": "/onboarding/brand/status",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1226,
+"verb": "POST",
+"path": "/onboarding/brand/kyc-prompt-dismissed",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1232,
+"verb": "POST",
+"path": "/onboarding/creator/socials",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1250,
+"verb": "POST",
+"path": "/onboarding/creator/profile",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1259,
+"verb": "POST",
+"path": "/onboarding/creator/complete",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1267,
+"verb": "POST",
+"path": "/onboarding/creator/kyc",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1443,
+"verb": "GET",
+"path": "/campaigns",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1467,
+"verb": "GET",
+"path": "/campaigns/${id}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1474,
+"verb": "POST",
+"path": "/campaigns",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1483,
+"verb": "PATCH",
+"path": "/campaigns/${id}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1492,
+"verb": "DELETE",
+"path": "/campaigns/${id}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1498,
+"verb": "POST",
+"path": "/campaigns/${id}/duplicate",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1509,
+"verb": "GET",
+"path": "/campaigns/${id}/analytics",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1661,
+"verb": "GET",
+"path": "/creators",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1678,
+"verb": "GET",
+"path": "/creators/${id}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1685,
+"verb": "POST",
+"path": "/creators/${id}/save",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1691,
+"verb": "POST",
+"path": "/creators/${creatorId}/invite",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1727,
+"verb": "POST",
+"path": "/creators/suggestions",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1747,
+"verb": "GET",
+"path": "/creators/${encodeURIComponent(username)}/similar",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1760,
+"verb": "GET",
+"path": "/creators/profile/${encodeURIComponent(usernameOrId)}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1797,
+"verb": "GET",
+"path": "/campaign-templates",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1803,
+"verb": "GET",
+"path": "/campaign-templates/${templateId}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1812,
+"verb": "POST",
+"path": "/campaign-templates",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1818,
+"verb": "DELETE",
+"path": "/campaign-templates/${templateId}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1892,
+"verb": "GET",
+"path": "/deals",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1898,
+"verb": "GET",
+"path": "/deals/${id}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1910,
+"verb": "POST",
+"path": "/deals/${id}/accept",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1920,
+"verb": "POST",
+"path": "/deals/${id}/reject",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1950,
+"verb": "POST",
+"path": "/deals/${id}/counter",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 1983,
+"verb": "POST",
+"path": "/deals",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2027,
+"verb": "GET",
+"path": "/deals/${dealId}/messages",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2033,
+"verb": "POST",
+"path": "/deals/${dealId}/messages",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2052,
+"verb": "POST",
+"path": "/deals/${dealId}/messages/read",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2419,
+"verb": "GET",
+"path": "/deals/${dealId}/shipment",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2425,
+"verb": "POST",
+"path": "/deals/${dealId}/shipping-address",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2437,
+"verb": "POST",
+"path": "/deals/${dealId}/shipment/confirm-receipt",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2450,
+"verb": "POST",
+"path": "/deals/${dealId}/shipment",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2542,
+"verb": "GET",
+"path": "/contracts",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2557,
+"verb": "GET",
+"path": "/contracts/${id}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2584,
+"verb": "POST",
+"path": "/contracts",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2608,
+"verb": "POST",
+"path": "/contracts/${id}/sign",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2641,
+"verb": "GET",
+"path": "/contracts/${id}/pdf-download-url",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2719,
+"verb": "GET",
+"path": "/deals/${dealId}/deliverables",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2725,
+"verb": "GET",
+"path": "/deliverables/${id}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2759,
+"verb": "POST",
+"path": "/creator/deliverables/${id}/submit",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2780,
+"verb": "POST",
+"path": "/deliverables/${id}/approve",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2794,
+"verb": "POST",
+"path": "/deliverables/${id}/revise",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2806,
+"verb": "POST",
+"path": "/deliverables/${id}/reject",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2824,
+"verb": "GET",
+"path": "/deliverables/${id}/safety-review",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2964,
+"verb": "GET",
+"path": "/config/razorpay",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2980,
+"verb": "GET",
+"path": "/config/public",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2991,
+"verb": "GET",
+"path": "/wallet",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3006,
+"verb": "POST",
+"path": "/wallet/topup",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3019,
+"verb": "GET",
+"path": "/creator/platform-fee",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3036,
+"verb": "GET",
+"path": "/brand/platform-fee",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3051,
+"verb": "POST",
+"path": "/wallet/withdraw",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3066,
+"verb": "GET",
+"path": "/wallet/transactions",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3087,
+"verb": "GET",
+"path": "/wallet/payouts",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3096,
+"verb": "GET",
+"path": "/wallet/payout-methods",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3110,
+"verb": "POST",
+"path": "/wallet/payout-methods",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3122,
+"verb": "PUT",
+"path": "/wallet/payout-methods/${id}/primary",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3133,
+"verb": "GET",
+"path": "/wallet/escrow",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3222,
+"verb": "GET",
+"path": "/me/creator-profile",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3228,
+"verb": "PATCH",
+"path": "/me/creator-profile",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3242,
+"verb": "DELETE",
+"path": "/me/account",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3254,
+"verb": "POST",
+"path": "/wallet/escrow/fund",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3275,
+"verb": "POST",
+"path": "/wallet/escrow/release",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3289,
+"verb": "GET",
+"path": "/dashboard/actions",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3304,
+"verb": "GET",
+"path": "/dashboard/pipeline",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3379,
+"verb": "GET",
+"path": "/notifications",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3386,
+"verb": "POST",
+"path": "/notifications/read",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3396,
+"verb": "POST",
+"path": "/notifications/read-all",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3411,
+"verb": "GET",
+"path": "/notifications/preferences",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3421,
+"verb": "POST",
+"path": "/notifications/preferences",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3527,
+"verb": "GET",
+"path": "/billing/plan",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3533,
+"verb": "GET",
+"path": "/billing/invoices",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3539,
+"verb": "GET",
+"path": "/billing/usage",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3545,
+"verb": "GET",
+"path": "/billing/invoices/${encodeURIComponent(invoiceId)}/pdf",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3556,
+"verb": "POST",
+"path": "/billing/checkout",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3570,
+"verb": "POST",
+"path": "/billing/cancel",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3587,
+"verb": "GET",
+"path": "/campaigns/${encodeURIComponent(campaignId)}/export?format=${format}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3644,
+"verb": "GET",
+"path": "/billing/campaign-invoices",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3650,
+"verb": "GET",
+"path": "/billing/campaign-invoices/${encodeURIComponent(invoiceId)}/pdf",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3656,
+"verb": "GET",
+"path": "/billing/commission-invoices",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3662,
+"verb": "GET",
+"path": "/billing/commission-invoices/${encodeURIComponent(invoiceId)}/pdf",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3671,
+"verb": "GET",
+"path": "/creator/campaign-invoices",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3677,
+"verb": "GET",
+"path": "/creator/campaign-invoices/${encodeURIComponent(invoiceId)}/pdf",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3683,
+"verb": "GET",
+"path": "/creator/commission-invoices",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3689,
+"verb": "GET",
+"path": "/creator/commission-invoices/${encodeURIComponent(invoiceId)}/pdf",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3717,
+"verb": "POST",
+"path": "/me/tax-identity",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3733,
+"verb": "GET",
+"path": "/uploads",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3876,
+"verb": "GET",
+"path": "/portfolio/${encodeURIComponent(username)}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3882,
+"verb": "GET",
+"path": "/me/portfolio",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3888,
+"verb": "PATCH",
+"path": "/me/portfolio",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3897,
+"verb": "POST",
+"path": "/me/portfolio/sync",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3903,
+"verb": "GET",
+"path": "/me/portfolio/cover",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3912,
+"verb": "POST",
+"path": "/portfolio/${encodeURIComponent(username)}/contact",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 3926,
+"verb": "GET",
+"path": "/me/portfolio/analytics",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4083,
+"verb": "GET",
+"path": "/analytics/creators/${creatorId}/metrics",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4091,
+"verb": "GET",
+"path": "/analytics/creators/${creatorId}/scores",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4097,
+"verb": "GET",
+"path": "/analytics/creators/${creatorId}/demographics",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4109,
+"verb": "GET",
+"path": "/creator/analytics/me/metrics",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4117,
+"verb": "GET",
+"path": "/creator/analytics/me/scores",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4123,
+"verb": "GET",
+"path": "/creator/analytics/me/demographics",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4133,
+"verb": "GET",
+"path": "/creator/analytics/me/media",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4176,
+"verb": "GET",
+"path": "/analytics/creators/${creatorId}/media",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4237,
+"verb": "GET",
+"path": "/campaigns/${campaignId}/tracking-links",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4244,
+"verb": "POST",
+"path": "/campaigns/${campaignId}/tracking-links",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4257,
+"verb": "GET",
+"path": "/campaigns/${campaignId}/coupons",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4264,
+"verb": "POST",
+"path": "/campaigns/${campaignId}/coupons",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4314,
+"verb": "POST",
+"path": "/webhook-secret/generate",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4325,
+"verb": "DELETE",
+"path": "/webhook-secret",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4332,
+"verb": "GET",
+"path": "/shopify/oauth/authorize",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4340,
+"verb": "POST",
+"path": "/woocommerce/connect",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4346,
+"verb": "GET",
+"path": "/integrations/store/status",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4352,
+"verb": "DELETE",
+"path": "/integrations/store/disconnect",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4412,
+"verb": "POST",
+"path": "/creator/reviews",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4419,
+"verb": "GET",
+"path": "/creator/reviews/received",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4429,
+"verb": "POST",
+"path": "/creator/reviews/${reviewId}/flag",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4442,
+"verb": "POST",
+"path": "/brand/reviews",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4449,
+"verb": "GET",
+"path": "/brand/reviews/received",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4459,
+"verb": "POST",
+"path": "/brand/reviews/${reviewId}/flag",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4533,
+"verb": "GET",
+"path": "/meta/oauth/authorize",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4545,
+"verb": "GET",
+"path": "/meta/oauth/callback",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4556,
+"verb": "GET",
+"path": "/meta/oauth/status",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4578,
+"verb": "POST",
+"path": "/meta/oauth/disconnect",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4769,
+"verb": "GET",
+"path": "/creator/coupons",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4780,
+"verb": "GET",
+"path": "/creator/affiliate-earnings",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4889,
+"verb": "GET",
+"path": "/creator/applications",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4914,
+"verb": "GET",
+"path": "/creator/applications/${dealId}/history",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 4996,
+"verb": "GET",
+"path": "/creator/campaigns",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5009,
+"verb": "GET",
+"path": "/creator/campaigns/${id}",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5015,
+"verb": "POST",
+"path": "/creator/campaigns/${id}/apply",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5192,
+"verb": "GET",
+"path": "/creator/deliverables",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5206,
+"verb": "GET",
+"path": "/creator/deliverables/bulk",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5248,
+"verb": "GET",
+"path": "/creator/deliverables/${deliverableId}/status",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5282,
+"verb": "POST",
+"path": "/creator/deliverables/${deliverableId}/verify",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5302,
+"verb": "POST",
+"path": "/creator/deliverables/${deliverableId}/mark-posted",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5324,
+"verb": "POST",
+"path": "/creator/deliverables/${deliverableId}/metrics",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5437,
+"verb": "GET",
+"path": "/creator/disputes",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5449,
+"verb": "GET",
+"path": "/creator/disputes/eligible-deals",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5455,
+"verb": "POST",
+"path": "/deals/${dealId}/disputes",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5474,
+"verb": "GET",
+"path": "/brand/disputes/list",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5494,
+"verb": "POST",
+"path": "/deals/${dealId}/disputes",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5568,
+"verb": "POST",
+"path": "/brand/trendspark/nudge/${nudgeId}/click",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5574,
+"verb": "POST",
+"path": "/brand/trendspark/nudge/${nudgeId}/purchase",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5622,
+"verb": "GET",
+"path": "/creator/copilot/suggestion/today",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5628,
+"verb": "POST",
+"path": "/creator/copilot/suggestion/${id}/dismiss",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5634,
+"verb": "POST",
+"path": "/creator/copilot/suggestion/${id}/acted",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 426,
+"verb": "ANY",
+"path": "${API_BASE_URL}/auth/refresh",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 2133,
+"verb": "ANY",
+"path": "${API_BASE_URL}/deals/${dealId}/messages/stream",
+"test": false
+},
+{
+"file": "src/lib/api.ts",
+"line": 5713,
+"verb": "ANY",
+"path": "${API_BASE_URL}/client-errors",
+"test": false
+},
+{
+"file": "src/lib/meera-api.ts",
+"line": 487,
+"verb": "POST",
+"path": "/meera/sessions",
+"test": false
+},
+{
+"file": "src/lib/meera-api.ts",
+"line": 515,
+"verb": "POST",
+"path": "/meera/sessions/${conversationId}/messages",
+"test": false
+},
+{
+"file": "src/lib/meera-api.ts",
+"line": 536,
+"verb": "GET",
+"path": "/meera/credits",
+"test": false
+},
+{
+"file": "src/lib/meera-api.ts",
+"line": 554,
+"verb": "GET",
+"path": "/meera/brand-profile",
+"test": false
+},
+{
+"file": "src/lib/meera-api.ts",
+"line": 585,
+"verb": "POST",
+"path": "/wallet/escrow/fund",
+"test": false
+},
+{
+"file": "src/lib/meera-api.ts",
+"line": 607,
+"verb": "GET",
+"path": "/wallet/escrow/${escrowHoldId}",
+"test": false
+},
+{
+"file": "src/lib/meera-api.ts",
+"line": 622,
+"verb": "GET",
+"path": "/meera/sessions/${conversationId}/messages",
+"test": false
+},
+{
+"file": "src/lib/meera-api.ts",
+"line": 646,
+"verb": "GET",
+"path": "/meera/sessions/${conversationId}/messages",
+"test": false
+},
+{
+"file": "src/lib/meera-api.ts",
+"line": 788,
+"verb": "POST",
+"path": "/workspaces/me/meera/interactions/option-tapped",
+"test": false
+},
+{
+"file": "src/lib/meera-api.ts",
+"line": 683,
+"verb": "ANY",
+"path": "${API_BASE_URL}/meera/voice/speak",
+"test": false
+},
+{
+"file": "src/lib/meera-api.ts",
+"line": 733,
+"verb": "ANY",
+"path": "${API_BASE_URL}/meera/voice/transcribe",
+"test": false
+}
+]

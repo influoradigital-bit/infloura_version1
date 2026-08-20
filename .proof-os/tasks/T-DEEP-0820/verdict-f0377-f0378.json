@@ -1,0 +1,10 @@
+{"verdict":"believed","oracle":"model","isolation":"fresh-context",
+ "done_when":"F-0377 and F-0378 are each re-derived by a checker that received the artifact and the done_when only, and the two readings are compared",
+ "not_checked":[
+  "runtime confirmation — neither checker executed the code, drove a live store, or queried a database",
+  "whether any brand already holds a webhook secret issued out-of-band (curl/support), which would mask F-0377 for that workspace",
+  "whether any brand has already hand-created matching discount codes in their store, which would mask F-0378 for that workspace",
+  "the deployed build — both checkers read this working tree, not what is live on the VPS",
+  "whether re-consent for write_discounts is commercially acceptable to existing connected brands"],
+ "skipped":[
+  {"step":"promote.py gate for class empty-state-misleads","reason":"--recurrence now exits 1 BLOCK on ×3 (F-0278, F-0349, F-0384); the gate is owed before further work in that class and has not been written"}]}

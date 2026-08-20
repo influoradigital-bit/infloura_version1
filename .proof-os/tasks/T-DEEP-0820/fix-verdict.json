@@ -1,0 +1,33 @@
+{
+ "verdict": "proved",
+ "oracle": "tsc",
+ "isolation": "oracle",
+ "done_when": "npx tsc --noEmit exits 0; a brand can reach a control in the shipped frontend that calls POST /webhook-secret/generate and reveals the plaintext once with a not-shown-again warning; the coupon creation surface states the brand must create the identical code in their own store; and no coupon UI renders an availability claim (Active) that Influora cannot verify",
+ "not_checked": [
+  "runtime: no browser rendered the Integrations tab and no request was sent to a live backend - vitest still OOMs (F-0376), so no test executes either",
+  "whether the generated secret, pasted into a real Shopify or WooCommerce backend, actually produces a signature our verifier accepts end-to-end",
+  "whether the Integrations tab is reachable for a brand account below Owner/Admin role - the role gate on /brand/settings was not examined",
+  "F-0378's actual defect: coupon codes STILL never reach the merchant's store. Only the disclosure was fixed; the integration gap is untouched and blocked by F-0385",
+  "whether the amber callout copy is the copy an operator actually acts on - this is a wording claim no oracle can settle"
+ ],
+ "skipped": [
+  {
+   "step": "promotion of F-0378",
+   "reason": "the filed defect is that nothing pushes the code to the store; that is still true, so closing it would be false. It stays open, harm mitigated by disclosure only"
+  },
+  {
+   "step": "promotion of F-0383, F-0385, F-0386, F-0387",
+   "reason": "out of the scope the user authorised (F-0377 and F-0378); each needs its own fix, and F-0385 needs a product decision on re-consent"
+  },
+  {
+   "step": "gates/e2e.sh",
+   "reason": "no deployed URL for this branch; the change is unverified against a running system"
+  }
+ ],
+ "evidence": {
+  "oracle": "tsc",
+  "command": "npx tsc --noEmit && npm run build && python .proof-os/gates/endpoint_reachability.py --only webhook-secret && python .proof-os/gates/empty_state_honesty.py src",
+  "result": "tsc 0 errors; vite build exit 0 (20/20 routes prerendered); reachability gate exit 0 over 2 scoped endpoints (exit 1 on the pre-fix tree, verified by falsification); empty-state gate reports 0 coupon findings, down from 2",
+  "where": "src/components/brand/settings/ConversionWebhookSecretCard.tsx:1"
+ }
+}

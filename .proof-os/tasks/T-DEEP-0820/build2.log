@@ -1,0 +1,91 @@
+
+> my-project@0.1.0 build
+> vite build
+
+▲ [WARNING] Duplicate key "baseUrl" in object literal [duplicate-object-key]
+
+    ../../tsconfig.json:21:4:
+      21 │     "baseUrl": ".",
+         ╵     ~~~~~~~~~
+
+  The original key "baseUrl" is here:
+
+    ../../tsconfig.json:20:4:
+      20 │     "baseUrl": ".",
+         ╵     ~~~~~~~~~
+
+[36mvite v6.4.3 [32mbuilding for production...[36m[39m
+transforming...
+[32m✓[39m 4844 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html                              [39m[1m[2m    7.11 kB[22m[1m[22m[2m │ gzip:   2.68 kB[22m
+[2mdist/[22m[35massets/index-DfjFwOn-.css               [39m[1m[2m  226.32 kB[22m[1m[22m[2m │ gzip:  33.42 kB[22m
+[2mdist/[22m[36massets/Float-bryvUzPu.js                [39m[1m[2m    1.43 kB[22m[1m[22m[2m │ gzip:   0.77 kB[22m
+[2mdist/[22m[36massets/login-scene-3d--ObEuvgL.js       [39m[1m[2m    1.96 kB[22m[1m[22m[2m │ gzip:   0.96 kB[22m
+[2mdist/[22m[36massets/MeshDistortMaterial-BYjTGE2A.js  [39m[1m[2m    2.66 kB[22m[1m[22m[2m │ gzip:   1.25 kB[22m
+[2mdist/[22m[36massets/HeroGlobe-BeVhcBPw.js            [39m[1m[2m    2.79 kB[22m[1m[22m[2m │ gzip:   1.34 kB[22m
+[2mdist/[22m[36massets/DiscoverCanvas-DqPIn5d5.js       [39m[1m[2m    3.13 kB[22m[1m[22m[2m │ gzip:   1.47 kB[22m
+[2mdist/[22m[36massets/PortfolioCanvas-BN3ZX3Xh.js      [39m[1m[2m    3.14 kB[22m[1m[22m[2m │ gzip:   1.39 kB[22m
+[2mdist/[22m[36massets/Html-BSYFRpD6.js                 [39m[1m[2m    7.73 kB[22m[1m[22m[2m │ gzip:   3.12 kB[22m
+[2mdist/[22m[36massets/PerformanceMonitor-Ckm_kk0w.js   [39m[1m[33m  891.81 kB[39m[22m[2m │ gzip: 240.72 kB[22m
+[2mdist/[22m[36massets/index-CYILON2n.js                [39m[1m[33m3,010.09 kB[39m[22m[2m │ gzip: 813.78 kB[22m
+[33m
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+[32m✓ built in 36.03s[39m
+
+> my-project@0.1.0 postbuild
+> node scripts/generate-sitemap.mjs && node scripts/prerender.mjs
+
+[sitemap] wrote 17 URLs to dist/sitemap.xml
+[sitemap] excluded /terms — noindex — v0 legal draft pending counsel review
+[sitemap] excluded /privacy — noindex — v0 legal draft pending counsel review
+[sitemap] excluded /support — placeholder stub, no content yet
+[sitemap] NOT LISTED: /brand/*, /creator/*, /admin/* (authenticated) and /:handle creator portfolios (user-generated, no build-time list).
+  wrote dist/app-shell.html (pristine SPA fallback for private zones)
+  captured /
+  captured /pricing
+  captured /how-it-works/brands
+  captured /how-it-works/creators
+  captured /features/secure-payments
+  captured /features/deal-room
+  captured /features/hype
+  captured /blog
+  captured /about
+  captured /contact
+  captured /terms
+  captured /privacy
+  captured /support
+  captured /blog/5-clauses-you-must-have-in-your-next-brand-collaboration-agreement
+  captured /blog/how-to-find-micro-influencers-in-india
+  captured /blog/how-to-pay-influencers-safely-india-2026
+  captured /blog/micro-influencer-pricing-guide-india-2026
+  captured /blog/nano-vs-micro-vs-macro-influencers-india
+  captured /blog/what-is-a-deal-room-in-influencer-marketing
+  captured /blog/what-is-payment-protection-in-influencer-marketing
+  ok   /                                             -> dist\index.html (89805 bytes)
+  ok   /pricing                                      -> dist\pricing\index.html (83925 bytes)
+  ok   /how-it-works/brands                          -> dist\how-it-works\brands\index.html (40138 bytes)
+  ok   /how-it-works/creators                        -> dist\how-it-works\creators\index.html (40691 bytes)
+  ok   /features/secure-payments                     -> dist\features\secure-payments\index.html (51708 bytes)
+  ok   /features/deal-room                           -> dist\features\deal-room\index.html (45994 bytes)
+  ok   /features/hype                                -> dist\features\hype\index.html (47649 bytes)
+  ok   /blog                                         -> dist\blog\index.html (25390 bytes)
+  ok   /about                                        -> dist\about\index.html (31889 bytes)
+  ok   /contact                                      -> dist\contact\index.html (25340 bytes)
+  ok   /terms                                        -> dist\terms\index.html (30470 bytes)
+  ok   /privacy                                      -> dist\privacy\index.html (32417 bytes)
+  ok   /support                                      -> dist\support\index.html (5714 bytes)
+  ok   /blog/5-clauses-you-must-have-in-your-next-brand-collaboration-agreement -> dist\blog\5-clauses-you-must-have-in-your-next-brand-collaboration-agreement\index.html (31621 bytes)
+  ok   /blog/how-to-find-micro-influencers-in-india  -> dist\blog\how-to-find-micro-influencers-in-india\index.html (34115 bytes)
+  ok   /blog/how-to-pay-influencers-safely-india-2026 -> dist\blog\how-to-pay-influencers-safely-india-2026\index.html (34720 bytes)
+  ok   /blog/micro-influencer-pricing-guide-india-2026 -> dist\blog\micro-influencer-pricing-guide-india-2026\index.html (33630 bytes)
+  ok   /blog/nano-vs-micro-vs-macro-influencers-india -> dist\blog\nano-vs-micro-vs-macro-influencers-india\index.html (27694 bytes)
+  ok   /blog/what-is-a-deal-room-in-influencer-marketing -> dist\blog\what-is-a-deal-room-in-influencer-marketing\index.html (35717 bytes)
+  ok   /blog/what-is-payment-protection-in-influencer-marketing -> dist\blog\what-is-payment-protection-in-influencer-marketing\index.html (33349 bytes)
+
+=== PRERENDER: 20/20 routes snapshotted ===
+All marketing routes prerendered successfully.

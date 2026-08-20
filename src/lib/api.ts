@@ -60,6 +60,53 @@ export function isApiLive(): boolean {
   return API_MODE === 'live';
 }
 
+/** The three client actions that move real money. */
+export type MoneyOperation = 'topup' | 'withdraw' | 'escrow-fund';
+
+/**
+ * Money IN — `POST /wallet/topup` and `POST /wallet/escrow/fund`. Backed by **standard Razorpay**
+ * (`RazorpayClient`: orders, plans, subscriptions), which needs only `RAZORPAY_KEY_ID` and
+ * `RAZORPAY_KEY_SECRET`.
+ */
+const PAYMENTS_IN_ENABLED: boolean = import.meta.env?.VITE_PAYMENTS_IN_ENABLED === 'true';
+
+/**
+ * Money OUT — `POST /wallet/withdraw`. Backed by **RazorpayX** (`RazorpayXClient`: contacts, fund
+ * accounts, payouts), a SEPARATE product with its own account, onboarding and
+ * `RAZORPAYX_ACCOUNT_NUMBER`.
+ *
+ * <p>Split from {@link PAYMENTS_IN_ENABLED} because the two are independently provisioned and the
+ * intended operating state is "collection live, payouts manual": brands fund escrow through
+ * Razorpay while an admin sends creator payments from the company bank account and records them
+ * via `POST /admin/finance/payouts/manual`. A single combined flag could not express that — it
+ * would either block funding (nothing works) or expose Withdraw against an unconfigured
+ * RazorpayX.
+ *
+ * <p>That second case is the one that matters: `WalletService.requestCreatorWithdrawal` debits the
+ * creator's wallet through the ledger BEFORE it calls RazorpayX, so an unconfigured gateway throws
+ * only after the debit has posted — the creator's balance drops and no money is sent. That is the
+ * orphaned-debit window `PayoutOrphanedDebitSweepJob` exists to sweep, and catching the error
+ * client-side would already be too late. Hence the guard is PREEMPTIVE: the request never leaves
+ * the browser.
+ *
+ * <p>Both flags default to DISABLED. A deploy that forgets one hides a working feature
+ * (recoverable); the opposite mistake debits real creators (not).
+ */
+const PAYOUTS_ENABLED: boolean = import.meta.env?.VITE_PAYOUTS_ENABLED === 'true';
+
+/**
+ * Whether a money action must be blocked. The ONE predicate the API guards and every call site
+ * read, so the UI and the network layer cannot disagree about what is available.
+ *
+ * <p>Mock mode is deliberately exempt. It exists to demonstrate the flow end to end without real
+ * rails, so blocking its money actions would break the only mode in which the flow can currently
+ * be shown working — and there is nothing to protect, since a mock withdrawal debits nothing.
+ */
+export function isMoneyActionBlocked(operation: MoneyOperation): boolean {
+  if (!isApiLive()) return false;
+  return operation === 'withdraw' ? !PAYOUTS_ENABLED : !PAYMENTS_IN_ENABLED;
+}
+
 /**
  * CR-11 — resolves the `__APP_BUILD_ID__` Vite `define` (vite.config.ts) to a value that is
  * safe to read from ANY test/build context, not just a real `vite build`.
@@ -89,6 +136,31 @@ export class MockAuthDisabledError extends Error {
   constructor() {
     super('Mock authentication is disabled in production builds. VITE_API_MODE must be "live".');
     this.name = 'MockAuthDisabledError';
+  }
+}
+
+/**
+ * Thrown INSTEAD OF issuing a money-moving request when {@link isPaymentsEnabled} is false.
+ *
+ * <p>`operation` names the step the user was attempting so the UI can say which part of the flow
+ * is waiting, rather than a generic failure. Carries no server response because, by design, no
+ * request was made — see {@link PAYMENTS_ENABLED} for why catching the server error instead
+ * would already be too late.
+ */
+export class PaymentsUnavailableError extends Error {
+  readonly operation: MoneyOperation;
+
+  constructor(operation: MoneyOperation) {
+    super('Payments are not enabled on this environment yet.');
+    this.name = 'PaymentsUnavailableError';
+    this.operation = operation;
+  }
+}
+
+/** Fail closed before a money-moving request is issued. See {@link PaymentsUnavailableError}. */
+function requirePaymentsEnabled(operation: MoneyOperation): void {
+  if (isMoneyActionBlocked(operation)) {
+    throw new PaymentsUnavailableError(operation);
   }
 }
 
@@ -2930,7 +3002,7 @@ export const wallet = {
    * returned `razorpayOrderId`, then re-fetches the balance.
    */
   topUp: (body: { amount: number; pan?: string; gstin?: string }, idempotencyKey: string) =>
-    isLive()
+    (requirePaymentsEnabled('topup'), isLive())
       ? http.request<WalletTopUpResponse>('POST', '/wallet/topup', { body, idempotencyKey })
       : mockOr<WalletTopUpResponse>({
           topUpId: 'tu_mock', amount: body.amount, currency: 'INR',
@@ -2975,7 +3047,7 @@ export const wallet = {
    * pass one (B10 — money-moving mutation reachable by client retry).
    */
   withdraw: (amount: number, idempotencyKey: string) =>
-    isLive()
+    (requirePaymentsEnabled('withdraw'), isLive())
       ? http.request<{ payoutId: string }>('POST', '/wallet/withdraw', {
           role: 'creator',
           body: { amount },
@@ -3178,7 +3250,7 @@ export const payments = {
    * persisted budget or the named milestone. `Idempotency-Key` is required by the controller.
    */
   fundEscrow: (campaignId: string, idempotencyKey: string, milestoneId?: string) =>
-    isLive()
+    (requirePaymentsEnabled('escrow-fund'), isLive())
       ? http.request<{
           escrowHoldId: string;
           amount: number;
@@ -4217,6 +4289,41 @@ export interface IntegrationStatus {
   shopDomainOrSiteUrl?: string;
   connectedAt?: string;
 }
+
+/**
+ * POST /webhook-secret/generate response (ConversionWebhookSecretDtos).
+ *
+ * F-0377 - this is the ONLY response that ever carries the plaintext. Calling generate
+ * again ROTATES the secret and invalidates the previous one; there is deliberately no
+ * "show it to me again" endpoint (ConversionWebhookSecretController:26-30). Never persist
+ * this value client-side - render it once and let the operator copy it.
+ */
+export interface ConversionWebhookSecretResult {
+  secret: string;
+}
+
+export const conversionWebhookSecret = {
+  /**
+   * POST /webhook-secret/generate (ConversionWebhookSecretController.java:50).
+   * Generates or rotates the calling workspace's HMAC signing secret. The brand configures
+   * this in their own commerce backend and sends it back as X-Influora-Signature on every
+   * /webhooks/conversion and /webhooks/redemption call.
+   */
+  generate: () =>
+    isLive()
+      ? http.request<ConversionWebhookSecretResult>('POST', '/webhook-secret/generate')
+      : mockOr<ConversionWebhookSecretResult>({
+          secret: 'whsec_mock_0000000000000000000000000000000000000000000000000000000000000000',
+        }),
+
+  /**
+   * DELETE /webhook-secret (ConversionWebhookSecretController.java:63). After this the
+   * workspace's conversion/redemption webhooks are rejected INVALID_WEBHOOK_SIGNATURE
+   * until a new secret is generated - the same fail-closed state as never having one.
+   */
+  revoke: () =>
+    isLive() ? http.request<void>('DELETE', '/webhook-secret') : mockOr<void>(undefined as void),
+};
 
 export const storeIntegrations = {
   /** GET /shopify/oauth/authorize?shop= (ShopifyConnectController.java:64) */
@@ -5652,6 +5759,7 @@ export const api = {
   contentPerformance,
   campaignTracking,
   storeIntegrations,
+  conversionWebhookSecret,
   creatorReviews,
   brandReviews,
   metaOAuth,

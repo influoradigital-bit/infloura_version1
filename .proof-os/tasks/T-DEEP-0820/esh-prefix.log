@@ -1,0 +1,30 @@
+* empty-state honesty over src
+  src/components/brand/dashboard/dashboard-page.tsx:113  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/components/brand/dashboard/dashboard-page.tsx:114  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/components/brand/dashboard/dashboard-page.tsx:129  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/components/brand/dashboard/dashboard-page.tsx:130  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/components/brand/dashboard/dashboard-page.tsx:131  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/components/brand/dashboard/dashboard-page.tsx:362  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/components/brand/dashboard/dashboard-page.tsx:546  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/components/campaigns/tracking/CouponsTable.tsx:107  asserts "Active" from local emptiness, with no verified-state field in scope
+  src/hooks/useDailySuggestion.ts:39  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/lib/api.ts:1080  asserts "active" from local emptiness, with no verified-state field in scope
+  src/lib/api.ts:2615  asserts "ACTIVE" from local emptiness, with no verified-state field in scope
+  src/lib/api.ts:5560  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/lib/api.ts:5568  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/pages/brand-new-hype-campaign.tsx:174  asserts "ACTIVE" from local emptiness, with no verified-state field in scope
+  src/pages/brand-notifications.tsx:48  asserts "All caught up" from local emptiness, with no verified-state field in scope
+  src/pages/brand-wallet.tsx:1290  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/pages/brand-wallet.tsx:1295  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/pages/brand-wallet.tsx:1443  asserts "No active campaigns to fund right now." from local emptiness, with no verified-state field in scope
+  src/pages/brand-wallet.tsx:1528  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/pages/brand-wallet.tsx:1533  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/pages/brand-wallet.tsx:1691  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/pages/brand-wallet.tsx:1696  asserts "ready" from local emptiness, with no verified-state field in scope
+  src/pages/creator-coupons.tsx:13  asserts "live" from local emptiness, with no verified-state field in scope
+  src/pages/creator-deals.tsx:84  asserts "Active" from local emptiness, with no verified-state field in scope
+  src/pages/creator-login.tsx:39  asserts "live" from local emptiness, with no verified-state field in scope
+  src/pages/creator-notifications.tsx:47  asserts "All caught up" from local emptiness, with no verified-state field in scope
+  src/pages/creator-register.tsx:85  asserts "live" from local emptiness, with no verified-state field in scope
+VERDICT: broken (real findings above)
+NOT CHECKED: whether a claim tied to a verifiedAt/syncStatus field is tied to the RIGHT one, or whether that field is ever populated; affirmative claims phrased in wording this gate does not know; claims assembled at runtime from i18n catalogues or server strings; and whether the empty state, once honest, is the one the user actually needed

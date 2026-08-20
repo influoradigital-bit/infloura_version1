@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useReducedMotion, motion } from 'framer-motion';
-import { Check, Copy, Loader2, Tag } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Loader2, Tag } from 'lucide-react';
 
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -95,7 +95,7 @@ export function CouponCodeGenerator({ onCreate, creating, className }: CouponCod
           <Tag className="h-5 w-5" aria-hidden="true" />
           Coupon Code Generator
         </CardTitle>
-        <CardDescription>Add a coupon code for a creator on this campaign.</CardDescription>
+        <CardDescription>Add a coupon code for a creator on this campaign. You will need to create the same code in your store.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
@@ -177,6 +177,26 @@ export function CouponCodeGenerator({ onCreate, creating, className }: CouponCod
               >
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </Button>
+            </div>
+            {/* F-0378 - Influora mints the code and matches it on inbound order webhooks, but
+                nothing in this product creates the discount in the merchant's own store
+                (CouponCodeService is DB-write-only, and the Shopify grant is read_orders,
+                read_products only - F-0385). Until that changes, the manual step is real and
+                the operator has to be told, or the creator distributes a code that fails at
+                checkout. */}
+            <div
+              role="note"
+              className="flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+              <div className="space-y-1">
+                <p className="font-medium">One more step &mdash; add this code to your store</p>
+                <p className="text-muted-foreground">
+                  Influora tracks redemptions your store reports, but it does not create the
+                  discount for you. Create a discount with this exact code in Shopify or
+                  WooCommerce now, or it will be rejected at checkout.
+                </p>
+              </div>
             </div>
           </motion.div>
         )}
