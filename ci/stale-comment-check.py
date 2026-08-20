@@ -16,6 +16,15 @@ specific claims that ARE mechanically falsifiable, one per ledger record:
                    many lines. Catches the subset of comment rot where the cited code moved or
                    was deleted. It does NOT catch a comment that cites live code and describes it
                    wrongly, which was F-0095's actual form; see LIMITS below.
+  Rule 4 (F-0341)  Every doc a .github/workflows file cites must exist. Workflow comments were
+                   the one commented surface no gate read, and three citations had rotted there
+                   unnoticed — two naming files that only ever existed inside the nested worktree
+                   copies commit 8900bbc committed by accident, one naming a file with no history
+                   at all. Scoped to workflows ON PURPOSE: the same doc-existence rule applied
+                   repo-wide currently reports ~550 dead .md references across src/, Java and
+                   Python, which is a real backlog but a separate decision, not this gate's job
+                   to spring on a push. Rules 1-2 are unchanged and still skip workflow files.
+
   Rule 3 (F-0150)  If the Meera prompt text or tool schemas changed, PROMPT_VERSION must have
                    changed in the same range. Not cosmetic: PROMPT_VERSION is a component of
                    `cache_key_for`, so a missed bump keeps serving a stale cached persona —
@@ -45,6 +54,14 @@ SKIP = ("node_modules", ".venv", ".claude", "dist", "graphify-out", "_archive", 
 UNSHIPPED = re.compile(r"NOT_YET_IMPLEMENTED|not yet implemented|ships in Phase\s*\d|is a stub\b", re.I)
 # `foo/bar.ts:123` or `Bar.java:45`, optionally a range.
 CITATION = re.compile(r"([A-Za-z0-9_\-./]+\.(?:ts|tsx|java|py))\s*:\s*(\d+)(?:\s*-\s*\d+)?")
+# A bare doc reference: `wiki/a/b.md` or `SPEC.md`. Unlike CITATION these carry no line number,
+# so only existence is checkable — which is exactly the rot that hid in workflow comments.
+DOC_CITATION = re.compile(r"([A-Za-z0-9_\-./]+\.md)\b")
+# An escape hatch for the most valuable comment in this repo: the one recording that a cited file
+# is GONE. Rule 1's docstring already makes this argument for history notes; the same holds here,
+# and without it the only way to document a dead doc is to stop naming it.
+IGNORE_MARK = re.compile(r"stale-comment:\s*ignore", re.I)
+WORKFLOWS = ROOT / ".github" / "workflows"
 # Files whose content is baked into the Meera system prompt / tool schemas.
 PROMPT_SOURCES = ("influora-ai/app/prompt/", "influora-ai/app/tools/schemas.py")
 VERSION_FILE = "influora-ai/app/config.py"
@@ -100,12 +117,16 @@ def rule1_unshipped_claims() -> list[str]:
     return out
 
 
-def rule2_citations() -> list[str]:
+def _basename_index() -> dict[str, list[Path]]:
     index: dict[str, list[Path]] = {}
     for p in ROOT.rglob("*"):
         if p.is_file() and not any(k in str(p) for k in SKIP):
             index.setdefault(p.name, []).append(p)
+    return index
 
+
+def rule2_citations() -> list[str]:
+    index = _basename_index()
     out: list[str] = []
     for path in list(_walk(ROOT / "src", ".ts", ".tsx")) + list(
         _walk(ROOT / "influora-api" / "src" / "main" / "java", ".java")
@@ -125,6 +146,75 @@ def rule2_citations() -> list[str]:
                 out.append(
                     f"{rel} cites {m.group(0)} but that file has only {longest} lines (F-0095)"
                 )
+    return out
+
+
+def _exempt_lines(raw: list[str]) -> set[int]:
+    """1-based line numbers exempted by `stale-comment: ignore`.
+
+    A marker exempts every line of the contiguous `#`-comment run it sits in; on a non-comment
+    line it exempts only itself.
+    """
+    exempt: set[int] = set()
+    i, n = 0, len(raw)
+    while i < n:
+        if raw[i].lstrip().startswith("#"):
+            j = i
+            while j < n and raw[j].lstrip().startswith("#"):
+                j += 1
+            block = range(i, j)
+            if any(IGNORE_MARK.search(raw[k]) for k in block):
+                exempt.update(k + 1 for k in block)
+            i = j
+        else:
+            if IGNORE_MARK.search(raw[i]):
+                exempt.add(i + 1)
+            i += 1
+    return exempt
+
+
+def rule4_workflow_citations() -> list[str]:
+    """Docs and code cited from .github/workflows must exist (F-0341).
+
+    Rules 1-2 walk src/, influora-api Java and influora-ai Python only, so nothing has ever read
+    a citation inside a workflow file. Both kinds are checked here: `file.ext:NN` through the
+    same CITATION grammar rules 2 uses, and bare `*.md` paths, which is the form workflow
+    comments actually use and which carries no line number to verify beyond existence.
+
+    `stale-comment: ignore` anywhere in a contiguous run of `#` comment lines exempts that whole
+    run, so a note may state that a file is gone without the gate reading the statement as a
+    fresh citation. Block scope rather than line scope because these notes are several lines
+    long and the marker never lands on the same line as the name it is excusing.
+    """
+    if not WORKFLOWS.is_dir():
+        return []
+    index = _basename_index()
+    out: list[str] = []
+    for path in sorted(_walk(WORKFLOWS, ".yml", ".yaml")):
+        rel = path.relative_to(ROOT).as_posix()
+        raw = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        exempt = _exempt_lines(raw)
+        for n, line in enumerate(raw, 1):
+            if n in exempt:
+                continue
+            for m in DOC_CITATION.finditer(line):
+                if not index.get(m.group(1).split("/")[-1]):
+                    out.append(
+                        f"{rel}:{n} cites {m.group(1)} — no such file exists anywhere (F-0341)"
+                    )
+            for m in CITATION.finditer(line):
+                ref, line_no = m.group(1), int(m.group(2))
+                cands = index.get(ref.split("/")[-1])
+                if not cands:
+                    out.append(f"{rel}:{n} cites {m.group(0)} — no such file exists anywhere (F-0341)")
+                    continue
+                longest = max(
+                    len(c.read_text(encoding="utf-8", errors="replace").splitlines()) for c in cands
+                )
+                if line_no > longest:
+                    out.append(
+                        f"{rel}:{n} cites {m.group(0)} but that file has only {longest} lines (F-0341)"
+                    )
     return out
 
 
@@ -186,7 +276,7 @@ def rule3_prompt_version(ref: str) -> list[str]:
 
 
 def main() -> int:
-    findings = rule1_unshipped_claims() + rule2_citations()
+    findings = rule1_unshipped_claims() + rule2_citations() + rule4_workflow_citations()
     if "--since" in sys.argv:
         findings += rule3_prompt_version(sys.argv[sys.argv.index("--since") + 1])
 
@@ -200,6 +290,7 @@ def main() -> int:
         return 1
     print("stale-comment: OK — no contradicted claims, all citations resolve")
     print("  NOT CHECKED: a comment that cites live code and describes it wrongly")
+    print("  NOT CHECKED: dead .md references outside .github/workflows (~550 today, rule 4 note)")
     return 0
 
 

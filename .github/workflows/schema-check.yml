@@ -155,7 +155,9 @@ jobs:
           # NOTE (corrected 2026-08-20): this block used to claim that Python exposing only 3 of
           # Java's 4 campaign_type values — STANDARD "deliberately NOT exposed to the AI" — was
           # correct by design, citing wiki/ai-review/T4-schema-fix-correction.md. Both halves were
-          # wrong. That file has never existed in this repo's history, and the claim was reversed
+          # wrong — and naming that dead file IS the point of this note, hence the marker:
+          # stale-comment: ignore
+          # That file has never existed in this repo's history, and the claim was reversed
           # by 2a67512 (2026-07-23), which added STANDARD deliberately, as a bug fix:
           #
           #   campaign_type was a REQUIRED enum of HYPE|DIRECT|REVIEW, so every AI draft became

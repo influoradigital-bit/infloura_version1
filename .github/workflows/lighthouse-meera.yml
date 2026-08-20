@@ -1,6 +1,10 @@
 name: Lighthouse — Meera workspace (M2.5 DoD gate)
 
-# Closes FRONTEND-BUILD-SPEC-MEERA.md §9 "Lighthouse ≥85 mobile; no layout shift"
+# Enforces the M2.5 DoD gate "Lighthouse ≥85 mobile; no layout shift"
+# The spec this used to cite, FRONTEND-BUILD-SPEC-MEERA.md §9, is not in this repo and
+# never was — it existed only inside the nested worktree copies commit 8900bbc committed
+# by accident. The thresholds themselves are the source of truth now and live below as
+# LH_PERF_MIN / LH_CLS_MAX.  stale-comment: ignore
 # for /brand/meera. The route is behind ProtectedRoute (src/App.tsx), and the
 # ?demo=true bypass is dead-stripped from prod builds, so the job seeds a
 # brand_token via puppeteer-core before Lighthouse navigates. See
