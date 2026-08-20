@@ -1,0 +1,100 @@
+{
+ "rows": [
+  {
+   "subject": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md#controller-count",
+   "owner": "swapnil",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "ls influora-api/src/main/java/com/influora/web/*.java | wc -l",
+    "result": "76 \u2014 the doc claims 78 in a table headed 'verified, not from wiki trackers'",
+    "where": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md:14"
+   }
+  },
+  {
+   "subject": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md#page-counts",
+   "owner": "swapnil",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "ls src/pages | grep -E '^brand-|^creator-' | grep -v test | wc -l",
+    "result": "brand=31 creator=24 \u2014 matches the doc exactly",
+    "where": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md:14"
+   }
+  },
+  {
+   "subject": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md#scoring-tests",
+   "owner": "swapnil",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -o -Dtest=BrandSafetyScoreServiceTest,FakeFollowerDetectionServiceTest,QualityScoreServiceTest,RateEstimationServiceTest,ScoreCalculationJobTest test",
+    "result": "all 78 scoring tests passed; BUILD SUCCESS",
+    "where": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md:15"
+   }
+  },
+  {
+   "subject": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md#cron-and-failclosed",
+   "owner": "swapnil",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "sed -n '135p;203p;273p' influora-api/src/main/java/com/influora/job/ScoreCalculationJob.java",
+    "result": "L135 @Scheduled(cron = \"0 0 4 * * *\", zone = \"UTC\"); L203 if (!brandSafetyScoringProperties.isEnabled()); L273 if (latestMetric.isEmpty()) \u2014 all three line citations resolve exactly as claimed",
+    "where": "influora-api/src/main/java/com/influora/job/ScoreCalculationJob.java:135"
+   }
+  },
+  {
+   "subject": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md#creatormetric-writers",
+   "owner": "swapnil",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -rl 'creatorMetricRepository.save|CreatorMetric.builder' influora-api/src/main/java | wc -l",
+    "result": "2 \u2014 MetricsPollingJob and PortfolioService, as claimed",
+    "where": "influora-api/src/main/java/com/influora/job/MetricsPollingJob.java:1"
+   }
+  },
+  {
+   "subject": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md#utm-not-wired",
+   "owner": "swapnil",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -n recordConversion influora-api/src/main/java/com/influora/web/ShopifyWebhookController.java",
+    "result": "only javadoc references stating it is NOT wired; no call site \u2014 claim holds",
+    "where": "influora-api/src/main/java/com/influora/web/ShopifyWebhookController.java:63"
+   }
+  },
+  {
+   "subject": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md#usage-rights-freetext",
+   "owner": "swapnil",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "sed -n '53,54p' influora-api/src/main/java/com/influora/domain/entity/Collaboration.java",
+    "result": "@Column(name = \"usage_rights\", columnDefinition = \"TEXT\") private String usageRights \u2014 free text, as claimed",
+    "where": "influora-api/src/main/java/com/influora/domain/entity/Collaboration.java:53"
+   }
+  },
+  {
+   "subject": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md#tier0-sequencing",
+   "owner": "swapnil",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "curl",
+    "command": "curl -s -o /dev/null -w '%{http_code}' https://api.influora.in/actuator/health ; curl https://influora.in",
+    "result": "api.influora.in returns 000 (does not resolve); influora.in returns 200 serving WordPress. The doc presents TIER 0 as runnable paperwork, but App Review cannot be submitted against URLs no deployment serves \u2014 a deploy step is missing from the plan entirely",
+    "where": ".proof-os/tasks/T-ROADMAP-0820/TASKS.md:1"
+   }
+  }
+ ]
+}

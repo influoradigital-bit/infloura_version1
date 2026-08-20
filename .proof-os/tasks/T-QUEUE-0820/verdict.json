@@ -1,0 +1,18 @@
+{
+ "verdict": "believed",
+ "oracle": "script",
+ "isolation": "oracle",
+ "done_when": "the items below each carry a written exit test, and queue.py --next returns a runnable item instead of refusing",
+ "not_checked": [
+  "queue.py --next STILL REFUSES \u2014 F-0051 sits at rank 1 and needs a live click-through, not a static gate, so the second half of the done_when is NOT met",
+  "whether any exit test written in section 3 is achievable as written \u2014 only the schema gate was actually run",
+  "whether the queue's other 144 records are still real; nothing re-verifies a record after it is opened",
+  "business impact ordering in section 3 is in-session judgment, not measured against revenue data"
+ ],
+ "skipped": [
+  {
+   "step": "fresh-context checker",
+   "reason": "no independent model review dispatched; the one falsifiable claim was checked by a gate, which refuted it"
+  }
+ ]
+}

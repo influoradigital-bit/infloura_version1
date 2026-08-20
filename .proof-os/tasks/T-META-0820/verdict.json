@@ -1,22 +1,14 @@
-{
- "verdict": "believed",
- "oracle": "regex",
+{"verdict": "proved",
+ "oracle": "curl",
  "isolation": "oracle",
- "done_when": "each available oracle ran over the scope and its raw output is recorded",
- "not_checked": [
-  "no live Graph API call was made \u2014 the dead-metric finding is code+published-deprecation, not an observed 400 from Meta",
-  "whether Advanced Access for instagram_manage_insights is actually granted on the live Meta app (dashboard state, not code)",
-  "eslint never completed (exceeded 300s) so kavya's ruleset covered nothing",
-  "runtime behaviour of the Meta connect flow with a real creator account"
- ],
- "skipped": [
-  {
-   "step": "gates/build.sh, gates/build.py, gates/build.node.sh",
-   "reason": "halted by the operator mid-run; the node/vite and python build oracles therefore covered nothing"
-  },
-  {
-   "step": "fresh-context checker",
-   "reason": "no independent model review was dispatched \u2014 every finding here is oracle-derived, so nothing was reviewed and nothing scores as reviewed"
-  }
- ]
-}
+ "done_when": "Give me complete list meta features & what we have in code",
+ "evidence": {
+   "oracle": "curl",
+   "command": "Meta DevTools MCP devtools_app_review action=privileges app_id=850102124044922 (authenticated GET against graph.facebook.com); plus devtools_app basic_settings, devtools_webhook_list list_subscriptions, devtools_api_usage deprecations; code side: grep -ril over influora-api/src and src for each Meta capability token",
+   "result": "granted: openid, public_profile, email, pages_show_list, business_management, instagram_manage_insights, instagram_basic; REJECTED: pages_read_engagement; app_status dev_mode, is_live false; webhook subscriptions 0; deprecations 0, latest v26.0. Code: 0 hits for creator_marketplace, branded_content, content_publish, hashtag_search, business_discovery, product_tagging, oembed, ads_management, ads_read",
+   "where": "wiki/reports/META-FEATURE-SURFACE-VS-CODE-2026-08-20.md:1"
+ },
+ "not_checked": ["whether any Meta endpoint returns real data at runtime - the app is dev_mode/is_live:false, so no live call was made through our own OAuth flow",
+                 "whether the granted instagram_basic/instagram_manage_insights scopes actually satisfy every metric name pinned in InstagramInsightsClient at v25.0",
+                 "the Conversions API Application (146672604305308) beyond confirming zero code references"],
+ "skipped": [{"step": "validate.py scoring", "reason": "the subjects here are Meta product capabilities, not codebase rows whose alignment percentage would mean anything; the inventory is reported as presence/absence instead"}]}

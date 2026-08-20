@@ -1,0 +1,19 @@
+{
+ "verdict": "believed",
+ "oracle": "curl",
+ "isolation": "oracle",
+ "done_when": "https://api.influora.in/actuator/health returns 200 over valid TLS, AND a real person can register, log in and reach a dashboard at https://app.influora.in",
+ "not_checked": [
+  "the done_when is NOT met \u2014 this task plans the deploy, it does not perform it; api.influora.in still returns 000",
+  "whether the GHCR images are current with main \u2014 publish-images.yml last successful run was not confirmed",
+  "whether the Utho instance size is adequate \u2014 no spec was provided",
+  "whether all 40 compose variables have known-good values anywhere",
+  "whether Flyway migrations apply cleanly to a FRESH database \u2014 they have only run against existing ones"
+ ],
+ "skipped": [
+  {
+   "step": "fresh-context checker",
+   "reason": "no independent model review dispatched; the state facts are curl/nslookup/grep-derived, the runbook and risk ordering are in-session judgment"
+  }
+ ]
+}

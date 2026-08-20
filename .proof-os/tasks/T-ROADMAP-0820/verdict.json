@@ -1,0 +1,18 @@
+{
+ "verdict": "believed",
+ "oracle": "regex",
+ "isolation": "oracle",
+ "done_when": "the roadmap doc exists and every item names what already exists in code, what is new, its Meta dependency, and its own exit gate",
+ "not_checked": [
+  "whether discovery RANKING respects the verified/unverified provenance flag \u2014 scoring labels it correctly, ranking was not inspected",
+  "whether the four scoring services produce USEFUL scores on real Meta data \u2014 78 passing tests prove they compute, not that the numbers are good",
+  "whether the market-standard comparison is right \u2014 it is against competitors named from memory, not a structured competitive audit",
+  "whether any exit gate listed is achievable as written \u2014 none of them were run"
+ ],
+ "skipped": [
+  {
+   "step": "fresh-context checker",
+   "reason": "no independent model review was dispatched; the code facts are oracle-derived (mvn/regex) but the sequencing and rankings are judgment made inside this conversation"
+  }
+ ]
+}
