@@ -93,8 +93,14 @@ jobs:
           mvn --batch-mode flyway:info
 
           echo ""
-          echo "=== Running Flyway validate ==="
-          mvn --batch-mode flyway:validate
+          echo "=== Running Flyway validate (pending allowed) ==="
+          # The database this job runs against is a FRESH container: the schema history table
+          # does not exist and all 107 migrations are pending. Plain `validate` treats pending
+          # as a failure, so validating here — before the migrate step below — could only ever
+          # fail, which is exactly what it did the first time this step was ever reached.
+          # At this point the meaningful question is "do the migrations resolve and checksum
+          # cleanly", not "are they applied"; the post-migrate validate below answers the rest.
+          mvn --batch-mode flyway:validate -Dflyway.ignoreMigrationPatterns='*:pending'
 
       - name: Run migrations (dry-run)
         working-directory: influora-api
@@ -111,6 +117,13 @@ jobs:
         run: |
           echo "=== Running all migrations in test environment ==="
           mvn --batch-mode flyway:migrate
+
+          echo ""
+          # NOW validate for real. Everything is applied, so this is the check the job is
+          # named for — resolved migrations against the schema history, with no pending
+          # exemption — and it can only run after migrate.
+          echo "=== Validating applied migrations (no exemptions) ==="
+          mvn --batch-mode flyway:validate
 
           echo ""
           echo "=== Final migration state ==="
