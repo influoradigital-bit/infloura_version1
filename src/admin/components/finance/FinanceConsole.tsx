@@ -30,6 +30,7 @@ import {
   Clock,
   Flag,
   Gauge,
+  Banknote,
   ListChecks,
   ScrollText,
   ShieldOff,
@@ -62,6 +63,7 @@ import { useFinanceConsole, type FinancialPeriod } from '../../hooks/useFinanceC
 import RevenueRangePanel from './RevenueRangePanel';
 import EntityAuditPanel from './EntityAuditPanel';
 import ReconciliationPanel from './ReconciliationPanel';
+import { ManualPayoutPanel } from './ManualPayoutPanel';
 
 // ============================================
 // FORMATTING
@@ -252,6 +254,10 @@ export default function FinanceConsole({ className }: FinanceConsoleProps) {
           <TabsTrigger value="reconciliation">
             <ListChecks className="size-4" aria-hidden="true" />
             Reconciliation
+          </TabsTrigger>
+          <TabsTrigger value="manual-payout">
+            <Banknote className="size-4" aria-hidden="true" />
+            Manual Payout
           </TabsTrigger>
         </TabsList>
 
@@ -715,6 +721,11 @@ export default function FinanceConsole({ className }: FinanceConsoleProps) {
         {/* ---------------- Reconciliation (on-demand, per-date) ---------------- */}
         <TabsContent value="reconciliation" className="flex flex-col gap-4">
           <ReconciliationPanel />
+        </TabsContent>
+
+        {/* ---------------- Manual payout ---------------- */}
+        <TabsContent value="manual-payout" className="flex flex-col gap-4">
+          <ManualPayoutPanel />
         </TabsContent>
       </Tabs>
     </div>

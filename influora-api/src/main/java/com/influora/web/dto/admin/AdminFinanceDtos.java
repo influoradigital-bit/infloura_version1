@@ -1,5 +1,10 @@
 package com.influora.web.dto.admin;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import java.math.BigDecimal;
+
 /**
  * DTOs for the admin Finance/Escrow console (Phase 2 per the CEO directive — see
  * {@code PlatformFeeAdminController} class javadoc for why the whole {@code financeApi} surface is
@@ -103,4 +108,32 @@ public final class AdminFinanceDtos {
      */
     public record PayoutRetryResultDto(
             String payoutId, String status, String razorpayPayoutId, String updatedAt) {}
+
+    /**
+     * Request body for {@code POST /admin/finance/payouts/manual}.
+     *
+     * <p>No {@code currency} field: it is read from the creator's wallet, never accepted from the
+     * client, so a recorded payout cannot claim a different currency to the balance it debits.
+     *
+     * <p>{@code tdsAmount} is nullable on purpose — {@code null} means no TDS was applied, {@code
+     * 0.00} means it was considered and none was due. Collapsing the two would make a later filing
+     * unable to tell "not handled" from "handled, nothing owed".
+     */
+    public record ManualPayoutRequest(
+            @NotBlank String creatorUserId,
+            @NotNull @DecimalMin(value = "0.01") BigDecimal amount,
+            @NotBlank String bankReference,
+            BigDecimal tdsAmount,
+            String note) {}
+
+    /** Result of recording an out-of-band bank transfer. */
+    public record ManualPayoutResultDto(
+            String payoutId,
+            String creatorUserId,
+            BigDecimal amount,
+            String currency,
+            String status,
+            String bankReference,
+            BigDecimal tdsAmount,
+            String confirmedAt) {}
 }

@@ -29,6 +29,7 @@ import { Loader2, Lock, Check, AlertCircle, Wallet } from 'lucide-react';
 
 import { useEscrowFund, type EscrowFundStatus } from '@/hooks/useEscrowFund';
 import { openRazorpayCheckout } from '@/lib/razorpay';
+import { isMoneyActionBlocked } from '@/lib/api';
 import { formatINR, cn } from '@/lib/utils';
 
 interface FundEscrowButtonProps {
@@ -286,13 +287,17 @@ export function FundEscrowButton({
   // Use server amount if available, otherwise display amount hint
   const amount = serverAmount ?? displayAmount;
   const helperText = getStatusHelperText(status);
+  // Rails unprovisioned: block the control itself rather than letting the click reach
+  // payments.fundEscrow and come back as an unexplained server fault. The helper text below
+  // carries the reason, so the brand is told what is waiting rather than shown a dead button.
+  const paymentsBlocked = isMoneyActionBlocked('escrow-fund');
 
   return (
     <div className={cn('space-y-2', className)}>
       <button
         type="button"
         onClick={handleClick}
-        disabled={disabled || isLoading || isSuccess}
+        disabled={paymentsBlocked || disabled || isLoading || isSuccess}
         className={cn(
           'inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg px-6 text-sm font-semibold transition-all duration-150 ease-out',
           'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--meera-accent-glow)]',
@@ -304,13 +309,21 @@ export function FundEscrowButton({
           // Error: allow retry
           isError && 'bg-meera-danger text-white hover:bg-meera-danger/90',
           // Disabled
-          (disabled || isLoading) && 'cursor-not-allowed opacity-60',
+          (paymentsBlocked || disabled || isLoading) && 'cursor-not-allowed opacity-60',
         )}
         aria-live="polite"
       >
         {getButtonIcon(status)}
         <span>{getButtonLabel(status, amount)}</span>
       </button>
+
+      {paymentsBlocked && (
+        <p className="text-xs leading-5 text-muted-foreground">
+          Payment collection is being switched on. The deal terms and this amount are saved — you
+          can fund it as soon as it opens, and the creator will see the money held before they
+          start work.
+        </p>
+      )}
 
       {/* Error message */}
       {error && (

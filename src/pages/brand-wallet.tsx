@@ -67,7 +67,9 @@ import {
   type WalletTransactionRow,
   type WalletTopUpResponse,
   type EscrowHoldRow,
+  isMoneyActionBlocked,
 } from '@/lib/api';
+import { PaymentsUnavailableNotice } from '@/components/payments/payments-unavailable-notice';
 import type { Campaign } from '@/lib/types';
 import { openRazorpayCheckout } from '@/lib/razorpay';
 import { runwayTone as computeRunwayTone } from '@/lib/wallet-runway';
@@ -746,6 +748,9 @@ export default function BrandWalletPage() {
                 <AlertCircle className="h-3.5 w-3.5" /> {loadError}
               </p>
             )}
+            {isMoneyActionBlocked('topup') && (
+              <PaymentsUnavailableNotice operation="topup" className="mt-4 max-w-xl" />
+            )}
           </div>
           <div className="flex gap-2">
             {/* F-0264: no transaction-export endpoint exists anywhere in src/lib/api.ts,
@@ -768,7 +773,15 @@ export default function BrandWalletPage() {
             </Tooltip>
             <Dialog open={isAddFundsOpen} onOpenChange={handleAddFundsDialogChange}>
               <DialogTrigger asChild>
-                <Button className="gap-2">
+                {/* Mirrors the creator-side Withdraw control: disabled rather than hidden, and
+                    disabled at the TRIGGER so POST /wallet/topup is never issued while the rails
+                    are off. api.wallet.topUp guards itself too — this just avoids walking the
+                    brand into a dialog that cannot complete. */}
+                <Button
+                  className="gap-2"
+                  disabled={isMoneyActionBlocked('topup')}
+                  title={isMoneyActionBlocked('topup') ? 'Payment collection is being switched on' : undefined}
+                >
                   <Plus className="h-4 w-4" />
                   Add Funds
                 </Button>

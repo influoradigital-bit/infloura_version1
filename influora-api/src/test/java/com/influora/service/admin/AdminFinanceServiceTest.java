@@ -1,10 +1,12 @@
 package com.influora.service.admin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -17,15 +19,23 @@ import com.influora.domain.entity.Payout;
 import com.influora.domain.enums.AdminRole;
 import com.influora.domain.enums.DisputeOpenerType;
 import com.influora.domain.enums.EscrowStatus;
+import com.influora.domain.enums.TxnReferenceType;
+import com.influora.domain.enums.WalletTransactionType;
 import com.influora.integration.razorpay.RazorpayClient;
 import com.influora.integration.razorpay.RazorpayXClient;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.DisputeRepository;
 import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.PayoutRepository;
+import com.influora.domain.entity.Wallet;
+import com.influora.repository.WalletRepository;
 import com.influora.repository.WalletTopUpRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.PayoutReconciliationService;
+import com.influora.service.PlatformWalletService;
+import com.influora.service.WalletLedgerService;
+import com.influora.web.dto.admin.AdminFinanceDtos.ManualPayoutResultDto;
+import jakarta.servlet.http.HttpServletRequest;
 import com.influora.web.dto.admin.AdminFinanceDtos.EscrowSummaryDto;
 import com.influora.web.dto.admin.AdminFinanceDtos.FlaggedEscrowDto;
 import com.influora.web.dto.admin.AdminFinanceDtos.PayoutRetryResultDto;
@@ -33,9 +43,11 @@ import com.influora.web.dto.admin.AdminFinanceDtos.ReconciliationItemDto;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -65,7 +77,12 @@ class AdminFinanceServiceTest {
     @Mock private RazorpayXClient razorpayXClient;
     @Mock private RazorpayClient razorpayClient;
     @Mock private PayoutReconciliationService payoutReconciliationService;
+    @Mock private WalletRepository walletRepository;
+    @Mock private WalletLedgerService ledgerService;
+    @Mock private PlatformWalletService platformWalletService;
+    @Mock private AdminAuditLogService adminAuditLogService;
     @Mock private AuthPrincipal principal;
+    @Mock private HttpServletRequest request;
 
     private AdminFinanceService service() {
         return new AdminFinanceService(
@@ -77,7 +94,11 @@ class AdminFinanceServiceTest {
                 walletTopUpRepository,
                 razorpayXClient,
                 razorpayClient,
-                payoutReconciliationService);
+                payoutReconciliationService,
+                walletRepository,
+                ledgerService,
+                platformWalletService,
+                adminAuditLogService);
     }
 
     // --- helpers: real entities via their builders (getters are non-mockable value accessors;
@@ -350,5 +371,154 @@ class AdminFinanceServiceTest {
         assertEquals("01HRETRYPAYOUT123456", result.payoutId());
         assertEquals("queued", result.status());
         assertEquals("payout_retried_1", result.razorpayPayoutId());
+    }
+
+    // ---------------------------------------------------------------------------
+    // recordManualPayout — the rail used while RazorpayX is unprovisioned.
+    //
+    // These cover the invariants that make a manually-recorded payout SAFE, none of which
+    // a compile or a happy-path assertion would catch. Each one, if broken, produces a
+    // system that looks fine and is quietly wrong about real money.
+    // ---------------------------------------------------------------------------
+
+    private Wallet creatorWalletWith(BigDecimal balance) {
+        Wallet w = Wallet.forUser("wal_creator_1", "usr_creator_1");
+        w.applyBalanceDelta(balance);
+        return w;
+    }
+
+    private ManualPayoutResultDto recordPayout(BigDecimal amount, BigDecimal tds) {
+        return service()
+                .recordManualPayout(
+                        principal, request, "usr_creator_1", amount, "UTR123456789", tds, "idem-1", "NEFT sent");
+    }
+
+    @Test
+    @DisplayName("stamps confirmedAt, so paid money stops counting as 'pending payout' forever")
+    void manualPayoutIsTerminalAtCreation() {
+        when(payoutRepository.findByBankReference("UTR123456789")).thenReturn(Optional.empty());
+        when(walletRepository.findByOwnerIdForUpdate("usr_creator_1"))
+                .thenReturn(Optional.of(creatorWalletWith(new BigDecimal("5000.00"))));
+        when(platformWalletService.requireClearingWallet())
+                .thenReturn(Wallet.forWorkspace("wal_clearing", "ws_platform"));
+        when(payoutRepository.save(any(Payout.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        recordPayout(new BigDecimal("1000.00"), new BigDecimal("100.00"));
+
+        ArgumentCaptor<Payout> saved = ArgumentCaptor.forClass(Payout.class);
+        verify(payoutRepository).save(saved.capture());
+        Payout p = saved.getValue();
+
+        // PayoutRepository#sumAmountByCreatorUserIdAndConfirmedAtIsNull treats a null confirmedAt
+        // as "still in flight" and feeds the creator wallet's Pending Payouts tile. A manual payout
+        // has already landed, so a null here would tell the creator their money is still coming —
+        // permanently, with no webhook that could ever correct it.
+        assertNotNull(p.getConfirmedAt(), "confirmedAt must be stamped or the payout shows as pending forever");
+
+        // The orphaned-debit sweeper matches on STATUS_PENDING. If a manual payout wore that
+        // status, the sweeper would eventually "reclaim" a debit backing money that really did
+        // leave the bank — re-crediting a creator who was already paid.
+        assertEquals(Payout.STATUS_MANUAL_PAID, p.getStatus());
+        assertEquals(Payout.METHOD_MANUAL, p.getPayoutMethod());
+        assertEquals("UTR123456789", p.getBankReference());
+        assertEquals(new BigDecimal("100.00"), p.getTdsAmount());
+    }
+
+    @Test
+    @DisplayName("posts the debit through the ledger, carrying the UTR as the gateway reference")
+    void manualPayoutDebitsThroughTheLedger() {
+        when(payoutRepository.findByBankReference(anyString())).thenReturn(Optional.empty());
+        when(walletRepository.findByOwnerIdForUpdate("usr_creator_1"))
+                .thenReturn(Optional.of(creatorWalletWith(new BigDecimal("5000.00"))));
+        when(platformWalletService.requireClearingWallet())
+                .thenReturn(Wallet.forWorkspace("wal_clearing", "ws_platform"));
+        when(payoutRepository.save(any(Payout.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        recordPayout(new BigDecimal("1000.00"), null);
+
+        // gatewayRef = the UTR: this is what lets a wallet transaction be traced to a line on a
+        // bank statement without joining through the payouts table.
+        verify(ledgerService)
+                .post(
+                        eq("wal_creator_1"),
+                        eq("wal_clearing"),
+                        eq(new BigDecimal("1000.00")),
+                        eq("INR"),
+                        eq(WalletTransactionType.WITHDRAWAL),
+                        eq(TxnReferenceType.MANUAL),
+                        anyString(),
+                        anyString(),
+                        eq("idem-1"),
+                        eq("UTR123456789"));
+    }
+
+    @Test
+    @DisplayName("refuses a duplicate UTR — the same transfer must not debit twice")
+    void duplicateBankReferenceIsRejected() {
+        when(payoutRepository.findByBankReference("UTR123456789"))
+                .thenReturn(Optional.of(Payout.createManualPaid(
+                        "p_existing", "usr_creator_1", new BigDecimal("1000.00"), "INR",
+                        "UTR123456789", null, "idem-0", Instant.now())));
+
+        ApiException ex = assertThrows(ApiException.class, () -> recordPayout(new BigDecimal("1000.00"), null));
+
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        verify(ledgerService, never())
+                .post(anyString(), anyString(), any(), anyString(), any(), any(), anyString(), anyString(),
+                        anyString(), anyString());
+        verify(payoutRepository, never()).save(any(Payout.class));
+    }
+
+    @Test
+    @DisplayName("refuses to record more than the creator actually holds")
+    void insufficientBalanceIsRejected() {
+        when(payoutRepository.findByBankReference(anyString())).thenReturn(Optional.empty());
+        when(walletRepository.findByOwnerIdForUpdate("usr_creator_1"))
+                .thenReturn(Optional.of(creatorWalletWith(new BigDecimal("500.00"))));
+
+        ApiException ex = assertThrows(ApiException.class, () -> recordPayout(new BigDecimal("1000.00"), null));
+
+        assertEquals("INSUFFICIENT_BALANCE", ex.getCode());
+        verify(payoutRepository, never()).save(any(Payout.class));
+    }
+
+    @Test
+    @DisplayName("a blank bank reference is refused — it is the only proof the payout happened")
+    void bankReferenceIsRequired() {
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service().recordManualPayout(
+                                principal, request, "usr_creator_1", new BigDecimal("1000.00"),
+                                "   ", null, "idem-1", null));
+
+        assertEquals("BANK_REFERENCE_REQUIRED", ex.getCode());
+        verify(payoutRepository, never()).save(any(Payout.class));
+    }
+
+    @Test
+    @DisplayName("TDS above the payout amount is refused — a net payout cannot exceed its gross")
+    void tdsCannotExceedAmount() {
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> recordPayout(new BigDecimal("1000.00"), new BigDecimal("1500.00")));
+
+        assertEquals("INVALID_TDS_AMOUNT", ex.getCode());
+        verify(payoutRepository, never()).save(any(Payout.class));
+    }
+
+    @Test
+    @DisplayName("a caller who fails the MFA/role gate records nothing")
+    void gateIsEnforcedBeforeAnyWrite() {
+        when(adminContext.requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN))
+                .thenThrow(new ApiException("FORBIDDEN", "nope", HttpStatus.FORBIDDEN));
+
+        assertThrows(ApiException.class, () -> recordPayout(new BigDecimal("1000.00"), null));
+
+        verify(payoutRepository, never()).save(any(Payout.class));
+        verify(walletRepository, never()).findByOwnerIdForUpdate(anyString());
     }
 }

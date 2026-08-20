@@ -49,7 +49,9 @@ import {
   type WalletTransactionRow,
   type CreatorPayoutRow,
   type PayoutMethod,
+  isMoneyActionBlocked,
 } from '@/lib/api';
+import { PaymentsUnavailableNotice } from '@/components/payments/payments-unavailable-notice';
 import { useServiceInvoices } from '@/hooks/creator/useServiceInvoices';
 import { useToast } from '@/hooks/use-toast';
 
@@ -670,7 +672,17 @@ export default function CreatorWalletPage() {
             <p className="text-muted-foreground">Track your earnings and payouts</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={() => setShowWithdrawDialog(true)}>
+            {/* Disabled rather than hidden: the creator should still see that withdrawing is a
+                thing this product does. The dialog is the only route to POST /wallet/withdraw,
+                so blocking it here is what keeps the request from being issued at all — which
+                matters because the server debits the wallet BEFORE it calls the payout gateway
+                (WalletService.requestCreatorWithdrawal), so a failed attempt would leave the
+                balance reduced with no transfer made. */}
+            <Button
+              onClick={() => setShowWithdrawDialog(true)}
+              disabled={isMoneyActionBlocked('withdraw')}
+              title={isMoneyActionBlocked('withdraw') ? 'Bank transfers are being switched on' : undefined}
+            >
               <ArrowUpRight className="h-4 w-4 mr-2" />
               Withdraw
             </Button>
@@ -680,6 +692,10 @@ export default function CreatorWalletPage() {
             </Button>
           </div>
         </div>
+
+        {isMoneyActionBlocked('withdraw') && (
+          <PaymentsUnavailableNotice operation="withdraw" className="mb-4" />
+        )}
 
         {walletError && (
           <div className="flex items-center gap-2 rounded-lg border border-stage-disputed-border bg-red-50 px-3 py-2 text-sm text-stage-disputed-fg mb-4">

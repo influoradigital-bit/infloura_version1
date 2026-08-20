@@ -3,13 +3,19 @@ package com.influora.web;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.admin.AdminFinanceService;
 import com.influora.web.dto.admin.AdminFinanceDtos.EscrowSummaryDto;
+import com.influora.web.dto.admin.AdminFinanceDtos.ManualPayoutRequest;
+import com.influora.web.dto.admin.AdminFinanceDtos.ManualPayoutResultDto;
 import com.influora.web.dto.admin.AdminFinanceDtos.PayoutRetryResultDto;
 import com.influora.web.dto.admin.AdminFinanceDtos.ReconciliationItemDto;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -67,5 +73,35 @@ public class AdminFinanceController {
     public PayoutRetryResultDto retryPayout(
             @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String id) {
         return adminFinanceService.retryPayout(principal, id);
+    }
+
+    /**
+     * {@code POST /admin/finance/payouts/manual} — records a bank transfer that ALREADY HAPPENED.
+     *
+     * <p>The payout rail while RazorpayX is unprovisioned: a human sends the money from the company
+     * bank account, then records it here so the creator's balance stops showing funds they have
+     * already received. Nothing outbound is called — see {@code
+     * AdminFinanceService#recordManualPayout}.
+     *
+     * <p>{@code Idempotency-Key} is REQUIRED rather than optional (unlike the creator withdrawal
+     * endpoint, where it is nominally optional and rejected in the service): this debits a real
+     * balance on the strength of an assertion, and a retried form submission must not be able to
+     * debit twice. SUPER_ADMIN-only and MFA-gated in the service.
+     */
+    @PostMapping("/payouts/manual")
+    public ManualPayoutResultDto recordManualPayout(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            HttpServletRequest request,
+            @Valid @RequestBody ManualPayoutRequest body,
+            @RequestHeader("Idempotency-Key") String idempotencyKey) {
+        return adminFinanceService.recordManualPayout(
+                principal,
+                request,
+                body.creatorUserId(),
+                body.amount(),
+                body.bankReference(),
+                body.tdsAmount(),
+                idempotencyKey,
+                body.note());
     }
 }

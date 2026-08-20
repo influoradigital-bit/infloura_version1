@@ -64,6 +64,17 @@ public interface PayoutRepository extends JpaRepository<Payout, String> {
     List<Payout> findByStatusIn(List<String> statuses);
 
     /**
+     * [V71, manual payout rail] Looks a payout up by its bank UTR / transaction reference.
+     *
+     * <p>Backs the pre-insert duplicate check in {@code AdminFinanceService#recordManualPayout}: a
+     * UTR identifies exactly one real bank transfer, so a second row carrying the same one means
+     * either the money was sent twice or an admin double-submitted the form. The unique index on
+     * the column is the actual guarantee — this exists so the caller can return a clean 409 instead
+     * of surfacing a constraint violation.
+     */
+    Optional<Payout> findByBankReference(String bankReference);
+
+    /**
      * [Admin finance console, reconciliation] Backing query for {@code
      * AdminFinanceService#getReconciliation} — every {@link Payout} whose {@code createdAt} falls
      * on the admin-requested date, compared against RazorpayX's own record for the same id.

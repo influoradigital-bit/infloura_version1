@@ -374,6 +374,43 @@ export const financeApi = {
       updatedAt: string;
     }>(`/finance/payouts/${id}/retry`, { method: 'POST' }),
 
+  /**
+   * Records a bank transfer that ALREADY HAPPENED — POST /admin/finance/payouts/manual.
+   *
+   * <p>This is the payout rail while RazorpayX is unprovisioned. It moves no money: a human sent
+   * it from the company bank account, and this makes the ledger agree. Without it a creator's
+   * balance keeps showing funds already sitting in their bank account.
+   *
+   * <p>`idempotencyKey` is REQUIRED by the controller and must be minted once per logical
+   * submission and reused across retries of that SAME submission — a fresh key on a retry would
+   * debit the creator twice. `tdsAmount` omitted means no TDS applied, which the backend keeps
+   * distinct from a recorded 0.
+   */
+  recordManualPayout: (
+    body: {
+      creatorUserId: string;
+      amount: number;
+      bankReference: string;
+      tdsAmount?: number | null;
+      note?: string;
+    },
+    idempotencyKey: string
+  ) =>
+    apiRequest<{
+      payoutId: string;
+      creatorUserId: string;
+      amount: number;
+      currency: string;
+      status: string;
+      bankReference: string;
+      tdsAmount: number | null;
+      confirmedAt: string;
+    }>('/finance/payouts/manual', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(body),
+    }),
+
   getReconciliation: (date: string) =>
     apiRequest<ReconciliationItem[]>(`/finance/reconciliation?date=${date}`),
 

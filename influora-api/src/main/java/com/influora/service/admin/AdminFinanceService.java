@@ -6,8 +6,17 @@ import com.influora.common.ApiException;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Dispute;
 import com.influora.domain.entity.EscrowHold;
+import com.influora.common.Ulids;
 import com.influora.domain.entity.Payout;
+import com.influora.domain.entity.Wallet;
 import com.influora.domain.entity.WalletTopUp;
+import com.influora.domain.enums.TxnReferenceType;
+import com.influora.domain.enums.WalletTransactionType;
+import com.influora.repository.WalletRepository;
+import com.influora.service.PlatformWalletService;
+import com.influora.service.WalletLedgerService;
+import com.influora.web.dto.admin.AdminFinanceDtos.ManualPayoutResultDto;
+import jakarta.servlet.http.HttpServletRequest;
 import com.influora.domain.enums.AdminRole;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.WalletTopUpStatus;
@@ -84,6 +93,10 @@ public class AdminFinanceService {
     private final RazorpayXClient razorpayXClient;
     private final RazorpayClient razorpayClient;
     private final PayoutReconciliationService payoutReconciliationService;
+    private final WalletRepository walletRepository;
+    private final WalletLedgerService ledgerService;
+    private final PlatformWalletService platformWalletService;
+    private final AdminAuditLogService adminAuditLogService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AdminFinanceService(
@@ -95,7 +108,11 @@ public class AdminFinanceService {
             WalletTopUpRepository walletTopUpRepository,
             RazorpayXClient razorpayXClient,
             RazorpayClient razorpayClient,
-            PayoutReconciliationService payoutReconciliationService) {
+            PayoutReconciliationService payoutReconciliationService,
+            WalletRepository walletRepository,
+            WalletLedgerService ledgerService,
+            PlatformWalletService platformWalletService,
+            AdminAuditLogService adminAuditLogService) {
         this.adminContext = adminContext;
         this.escrowHoldRepository = escrowHoldRepository;
         this.campaignRepository = campaignRepository;
@@ -105,6 +122,147 @@ public class AdminFinanceService {
         this.razorpayXClient = razorpayXClient;
         this.razorpayClient = razorpayClient;
         this.payoutReconciliationService = payoutReconciliationService;
+        this.walletRepository = walletRepository;
+        this.ledgerService = ledgerService;
+        this.platformWalletService = platformWalletService;
+        this.adminAuditLogService = adminAuditLogService;
+    }
+
+    /**
+     * {@code POST /admin/finance/payouts/manual} — records a bank transfer an admin ALREADY MADE.
+     *
+     * <p>This is the payout rail while RazorpayX is unprovisioned. It does not move money: a human
+     * moved it, from the company bank account, and this makes the ledger agree with that fact.
+     * Without it a creator's balance keeps showing money already sitting in their bank — the
+     * ledger and the bank statement diverge on the first payout and never re-converge.
+     *
+     * <p><b>Ordering matches {@code WalletService#doProcessWithdrawal} deliberately.</b> The wallet
+     * is locked with {@code findByOwnerIdForUpdate} before the balance is read, so two admins
+     * recording the same payout concurrently cannot both pass the sufficiency check. The ledger
+     * post carries the caller's idempotency key, whose UNIQUE constraint is the real backstop
+     * against a double-debit, and the bank reference rides along as the ledger's {@code gatewayRef}
+     * so a wallet transaction can be traced to a bank statement line without joining anything.
+     *
+     * <p>The {@code Payout} row is terminal at creation — see {@link Payout#createManualPaid} for
+     * why {@code confirmedAt} must be stamped and why the status must not be {@code PENDING}.
+     */
+    @Transactional
+    public ManualPayoutResultDto recordManualPayout(
+            AuthPrincipal principal,
+            HttpServletRequest request,
+            String creatorUserId,
+            BigDecimal amount,
+            String bankReference,
+            BigDecimal tdsAmount,
+            String idempotencyKey,
+            String note) {
+        // Moving a creator's balance on the strength of an admin's assertion that a transfer
+        // happened is the highest-trust action in this console — same bar as retryPayout.
+        adminContext.requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN);
+
+        if (amount == null || amount.signum() <= 0) {
+            throw new ApiException(
+                    "INVALID_AMOUNT", "Payout amount must be greater than zero", HttpStatus.BAD_REQUEST);
+        }
+        if (bankReference == null || bankReference.isBlank()) {
+            throw new ApiException(
+                    "BANK_REFERENCE_REQUIRED",
+                    "The bank UTR / transaction reference is required — it is the only proof this payout happened",
+                    HttpStatus.BAD_REQUEST);
+        }
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new ApiException(
+                    "IDEMPOTENCY_KEY_REQUIRED",
+                    "Idempotency-Key header is required for a manual payout",
+                    HttpStatus.BAD_REQUEST);
+        }
+        // TDS is optional (null = not applied) but must never be negative or exceed the payout.
+        if (tdsAmount != null && (tdsAmount.signum() < 0 || tdsAmount.compareTo(amount) > 0)) {
+            throw new ApiException(
+                    "INVALID_TDS_AMOUNT",
+                    "TDS must be between zero and the payout amount",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        // Recording the same UTR twice means either a duplicate transfer or a double-submitted
+        // form. Checked here for a clean 409 rather than surfacing the unique-index violation.
+        if (payoutRepository.findByBankReference(bankReference).isPresent()) {
+            throw new ApiException(
+                    "DUPLICATE_BANK_REFERENCE",
+                    "A payout with this bank reference has already been recorded",
+                    HttpStatus.CONFLICT);
+        }
+
+        Wallet wallet =
+                walletRepository
+                        .findByOwnerIdForUpdate(creatorUserId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "WALLET_NOT_FOUND",
+                                                "This creator has no wallet",
+                                                HttpStatus.NOT_FOUND));
+
+        if (wallet.getBalance().compareTo(amount) < 0) {
+            throw new ApiException(
+                    "INSUFFICIENT_BALANCE",
+                    "The creator's balance is lower than the amount recorded as paid",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        String payoutId = Ulids.newUlid();
+        Wallet clearingWallet = platformWalletService.requireClearingWallet();
+
+        ledgerService.post(
+                wallet.getId(),
+                clearingWallet.getId(),
+                amount,
+                wallet.getCurrency(),
+                WalletTransactionType.WITHDRAWAL,
+                TxnReferenceType.MANUAL,
+                payoutId,
+                "Manual payout recorded by admin",
+                idempotencyKey,
+                bankReference);
+
+        Payout payout =
+                payoutRepository.save(
+                        Payout.createManualPaid(
+                                payoutId,
+                                creatorUserId,
+                                amount,
+                                wallet.getCurrency(),
+                                bankReference,
+                                tdsAmount,
+                                idempotencyKey,
+                                Instant.now()));
+
+        // The bank reference is the audit link; the amounts are what a later TDS filing needs.
+        // No creator PII beyond the user id — mirrors what the other admin money actions record.
+        adminAuditLogService.record(
+                principal,
+                request,
+                "PAYOUT_RECORDED_MANUAL",
+                "Payout",
+                payout.getId(),
+                null,
+                Map.of(
+                        "creatorUserId", creatorUserId,
+                        "amount", amount.toPlainString(),
+                        "currency", wallet.getCurrency(),
+                        "bankReference", bankReference,
+                        "tdsAmount", tdsAmount == null ? "none" : tdsAmount.toPlainString()),
+                note == null || note.isBlank() ? "Manual bank transfer" : note);
+
+        return new ManualPayoutResultDto(
+                payout.getId(),
+                creatorUserId,
+                amount,
+                wallet.getCurrency(),
+                payout.getStatus(),
+                bankReference,
+                tdsAmount,
+                timestamp(payout.getConfirmedAt()));
     }
 
     /**

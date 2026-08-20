@@ -11,7 +11,14 @@
  * The browser NEVER calls /internal/meera/* (Python-to-Spring only).
  */
 
-import { ApiError, extractInsufficientFundsDetails, isApiLive, type ApiErrorPayload } from './api';
+import {
+  ApiError,
+  PaymentsUnavailableError,
+  extractInsufficientFundsDetails,
+  isApiLive,
+  isMoneyActionBlocked,
+  type ApiErrorPayload,
+} from './api';
 
 // ---------------------------------------------------------------------------
 // Environment / config
@@ -557,6 +564,13 @@ export const meeraApi = {
     idempotencyKey: string,
     milestoneId?: string
   ): Promise<MeeraEscrowFundResponse> => {
+    // This is the SECOND route to POST /wallet/escrow/fund — `api.payments.fundEscrow` in api.ts
+    // is the first, and `useEscrowFund` reaches the endpoint through here rather than there.
+    // Guarding only api.ts would have left this path open, so the same preemptive check lives on
+    // both. See `PAYMENTS_ENABLED` in api.ts for why the request must never be issued at all.
+    if (isMoneyActionBlocked('escrow-fund')) {
+      throw new PaymentsUnavailableError('escrow-fund');
+    }
     if (!isApiLive()) {
       await delay(800);
       // Mirrors the live server's actual behavior post-fix: escrow is funded immediately
