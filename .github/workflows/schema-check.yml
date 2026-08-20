@@ -47,34 +47,54 @@ jobs:
           python3 << 'EOF'
           import sys
           import json
+          import os
           sys.path.insert(0, 'app')
           from tools.schemas import TOOL_SCHEMAS
 
+          # Every value goes to BOTH the step log (readable) and $GITHUB_OUTPUT (functional).
+          # `print` alone does NOT create a step output, so `steps.python-schema.outputs.*`
+          # read empty on every run: the tool-name and context-field comparisons became
+          # '' vs '' (always pass, checking nothing) and the template_id guard became
+          # '' != 'true' (always fail). That is why this job failed on every push even
+          # though schemas.py does expose template_id.
+          out = open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8')
+
+          # Compact separators are REQUIRED, not cosmetic: the Java side of every comparison
+          # below is produced by `jq -c`, which emits ["a","b"] with no space after the comma,
+          # while json.dumps defaults to ["a", "b"]. These values are compared as raw strings
+          # in the shell, so the default spacing would report drift on two identical sets.
+          def emit(key, value):
+              line = key + "=" + json.dumps(value, separators=(",", ":"))
+              print(line)
+              print(line, file=out)
+
           # Extract tool names
           tool_names = sorted([t['name'] for t in TOOL_SCHEMAS])
-          print("PYTHON_TOOL_NAMES=" + json.dumps(tool_names))
+          emit("PYTHON_TOOL_NAMES", tool_names)
 
           # Extract calculate_budget goal enum
           calc_budget = next(t for t in TOOL_SCHEMAS if t['name'] == 'calculate_budget')
           goal_enum = calc_budget['input_schema']['properties']['goal']['enum']
-          print("PYTHON_GOAL_ENUM=" + json.dumps(sorted(goal_enum)))
+          emit("PYTHON_GOAL_ENUM", sorted(goal_enum))
 
           # Extract create_campaign campaign_type enum
           create_camp = next(t for t in TOOL_SCHEMAS if t['name'] == 'create_campaign')
           campaign_type_enum = create_camp['input_schema']['properties']['campaign_type']['enum']
-          print("PYTHON_CAMPAIGN_TYPE_ENUM=" + json.dumps(sorted(campaign_type_enum)))
+          emit("PYTHON_CAMPAIGN_TYPE_ENUM", sorted(campaign_type_enum))
 
           # Platform-AI Phase 1 W2a (Priya A3): create_campaign must expose optional
           # template_id so Spring's template-copy path (CreateCampaignExecutor) is reachable.
           has_template_id = 'template_id' in create_camp['input_schema']['properties']
-          print("PYTHON_HAS_TEMPLATE_ID=" + json.dumps(has_template_id))
+          emit("PYTHON_HAS_TEMPLATE_ID", has_template_id)
 
           # Platform-AI Phase 1 W2a: the /internal/meera/context payload's canonical field
           # set now lives in assembler.py (CONTEXT_PAYLOAD_FIELDS) instead of a pinned string
           # here, so this check is a real Python<->Java diff, not a copy-pasted EXPECTED list.
           sys.path.insert(0, '.')
           from app.prompt.assembler import CONTEXT_PAYLOAD_FIELDS
-          print("PYTHON_CONTEXT_FIELDS=" + json.dumps(sorted(CONTEXT_PAYLOAD_FIELDS)))
+          emit("PYTHON_CONTEXT_FIELDS", sorted(CONTEXT_PAYLOAD_FIELDS))
+
+          out.close()
           EOF
 
       - name: Extract Java schema (MeeraToolName enum)
@@ -84,6 +104,7 @@ jobs:
           # Extract enum values from MeeraToolName.java
           JAVA_TOOL_NAMES=$(grep -oP '^\s+\K\w+(?=,?)' src/main/java/com/influora/domain/enums/MeeraToolName.java | jq -R -s -c 'split("\n")[:-1] | sort')
           echo "JAVA_TOOL_NAMES=$JAVA_TOOL_NAMES"
+          echo "JAVA_TOOL_NAMES=$JAVA_TOOL_NAMES" >> "$GITHUB_OUTPUT"
 
       - name: Check for drift
         run: |
@@ -183,6 +204,7 @@ jobs:
             | grep -oP '@JsonProperty\("\K[a-z_]+(?="\))' \
             | jq -R -s -c 'split("\n")[:-1] | sort')
           echo "JAVA_CONTEXT_FIELDS=$JAVA_CONTEXT_FIELDS"
+          echo "JAVA_CONTEXT_FIELDS=$JAVA_CONTEXT_FIELDS" >> "$GITHUB_OUTPUT"
 
       - name: Check context payload field names — LIVE Python<->Java diff (Wave 2)
         run: |

@@ -59,11 +59,16 @@ jobs:
         run: |
           echo "=== Checking migration file naming conventions ==="
 
-          # Check all migrations follow V{version}__{description}.sql pattern
+          # Check all migrations follow V{version}__{description}.sql pattern.
+          # The description allows digits: real migrations name the types they touch
+          # (V20260718130000__ulid_char26_to_varchar26.sql). The original [a-z_]+ rejected
+          # that file and failed this job on every push, while Flyway itself imposes no such
+          # restriction. Renaming a migration that has already run in production is the far
+          # riskier fix, so the pattern is what changes here.
           for file in V*.sql; do
-            if [[ ! "$file" =~ ^V[0-9]+__[a-z_]+\.sql$ ]]; then
+            if [[ ! "$file" =~ ^V[0-9]+__[a-z0-9_]+\.sql$ ]]; then
               echo "❌ Invalid migration filename: $file"
-              echo "   Expected format: V{number}__{lowercase_description}.sql"
+              echo "   Expected format: V{number}__{lowercase_description}.sql (digits allowed)"
               echo "   Example: V48__creator_reliability_stats.sql"
               exit 1
             fi
@@ -74,9 +79,15 @@ jobs:
       - name: Validate migration checksums
         working-directory: influora-api
         env:
-          SPRING_FLYWAY_URL: jdbc:mysql://127.0.0.1:3306/influora_flyway
-          SPRING_FLYWAY_USER: flyway_user
-          SPRING_FLYWAY_PASSWORD: flyway_password
+          # These MUST be FLYWAY_*, not SPRING_FLYWAY_*. The steps below invoke the Flyway
+          # MAVEN plugin, which reads flyway.url / FLYWAY_URL — it knows nothing about Spring
+          # Boot's property names. With SPRING_FLYWAY_* the plugin saw no configuration at all
+          # and died on "Unable to connect to the database. Configure the url, user and
+          # password!", which is what these steps would have hit the moment the naming check
+          # above stopped failing first.
+          FLYWAY_URL: jdbc:mysql://127.0.0.1:3306/influora_flyway
+          FLYWAY_USER: flyway_user
+          FLYWAY_PASSWORD: flyway_password
         run: |
           echo "=== Running Flyway info ==="
           mvn --batch-mode flyway:info
@@ -88,9 +99,15 @@ jobs:
       - name: Run migrations (dry-run)
         working-directory: influora-api
         env:
-          SPRING_FLYWAY_URL: jdbc:mysql://127.0.0.1:3306/influora_flyway
-          SPRING_FLYWAY_USER: flyway_user
-          SPRING_FLYWAY_PASSWORD: flyway_password
+          # These MUST be FLYWAY_*, not SPRING_FLYWAY_*. The steps below invoke the Flyway
+          # MAVEN plugin, which reads flyway.url / FLYWAY_URL — it knows nothing about Spring
+          # Boot's property names. With SPRING_FLYWAY_* the plugin saw no configuration at all
+          # and died on "Unable to connect to the database. Configure the url, user and
+          # password!", which is what these steps would have hit the moment the naming check
+          # above stopped failing first.
+          FLYWAY_URL: jdbc:mysql://127.0.0.1:3306/influora_flyway
+          FLYWAY_USER: flyway_user
+          FLYWAY_PASSWORD: flyway_password
         run: |
           echo "=== Running all migrations in test environment ==="
           mvn --batch-mode flyway:migrate
