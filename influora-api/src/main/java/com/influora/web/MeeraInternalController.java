@@ -202,9 +202,15 @@ public class MeeraInternalController {
                 onBehalfAuthResolver.resolveForWorkspaceRequiringElevatedRoleAndScope(
                         onBehalfJwt, workspaceId, MeeraToolName.request_payment.name());
         requireTool(MeeraToolName.request_payment, workspaceId);
+        // BUG FIX (2026-07-23 follow-up to create_campaign): like create_campaign, the
+        // request_payment tool body is raw AI-proposed input + workspace_id (see class javadoc) —
+        // it never carries a conversation_id field, so conversationIdOf(body) was always null and
+        // the meera_tool_calls ledger row was written with no conversation link. ctx.conversationId()
+        // is the JWT-verified, server-minted claim (see OnBehalfAuthResolver.OnBehalfContext javadoc)
+        // — tenant-safe and always the real conversation for this turn, unlike a client-body value.
         var result =
                 requestPaymentExecutor.execute(
-                        ctx.workspaceId(), conversationIdOf(body), idempotencyKey, body);
+                        ctx.workspaceId(), ctx.conversationId(), idempotencyKey, body);
         return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
@@ -218,9 +224,16 @@ public class MeeraInternalController {
                 onBehalfAuthResolver.resolveForWorkspaceRequiringElevatedRoleAndScope(
                         onBehalfJwt, workspaceId, MeeraToolName.confirm_launch.name());
         requireTool(MeeraToolName.confirm_launch, workspaceId);
+        // BUG FIX (2026-07-23 follow-up to create_campaign): same reasoning as request_payment
+        // above. The confirm_launch body carries no conversation_id, so conversationIdOf(body) was
+        // always null — leaving both the meera_tool_calls ledger row AND the fire-and-forget
+        // DRAFT_FUNDED flywheel event (MeeraInteractionLog.sessionId) with no conversation link.
+        // ctx.conversationId() is the JWT-verified, server-minted claim (see
+        // OnBehalfAuthResolver.OnBehalfContext javadoc) — tenant-safe and always the real
+        // conversation for this turn.
         var result =
                 confirmLaunchExecutor.execute(
-                        ctx.workspaceId(), conversationIdOf(body), idempotencyKey, body);
+                        ctx.workspaceId(), ctx.conversationId(), idempotencyKey, body);
         return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
@@ -371,12 +384,6 @@ public class MeeraInternalController {
                     "WORKSPACE_ID_REQUIRED", "Request body must include workspace_id", HttpStatus.BAD_REQUEST);
         }
         return String.valueOf(value);
-    }
-
-    /** {@code conversation_id} is optional on most tool bodies — not every tool schema carries one. */
-    private static String conversationIdOf(Map<String, Object> body) {
-        Object value = body == null ? null : body.get("conversation_id");
-        return value == null ? null : String.valueOf(value);
     }
 
     private static String stringOrNull(Object value) {
