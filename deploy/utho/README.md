@@ -23,7 +23,8 @@ Caddyfile's global block. Every service, image, env var, volume and site block i
   build time and currently defaults to `http://200.141.1.6/api/v1`. Run `publish-images.yml` via
   `workflow_dispatch` with `vite_api_base_url=https://api.influora.in/api/v1` and
   `vite_meera_stream_url=https://ai.influora.in`. No env var on the box can fix this after the fact.
-- The `.env` needs the 29 `${VAR}` placeholders in the compose **plus the 7 `META_*` vars**
+- The `.env` needs `ROOT_DOMAIN=influora.in` (new — drives the apex/www site block), the other
+  29 `${VAR}` placeholders in the compose, **plus the 7 `META_*` vars**
   (F-0374). Without `META_APP_ID`/`META_APP_SECRET`, `MetaApiProperties.isConfigured()` is false,
   Connect Instagram is dead at boot, and Meta App Review fails on that alone.
 
@@ -45,8 +46,13 @@ certbot needs port 80, which nginx already serves. Issue first, then enable the 
 
 ```bash
 certbot certonly --webroot -w /var/www/html \
+  -d influora.in -d www.influora.in \
   -d app.influora.in -d api.influora.in -d ai.influora.in
 ```
+
+The apex and `www` are included because this deployment also serves the marketing site — see
+§6. certbot writes that pair under `/etc/letsencrypt/live/influora.in/`, the path the
+`influora.in` and `www.influora.in` server blocks expect.
 
 Then enable and reload:
 
@@ -98,9 +104,14 @@ any rate limit.
 ## 5 · Exit test — run from a machine that is NOT the server
 
 ```bash
+curl -sS -o /dev/null -w "apex %{http_code}  tls=%{ssl_verify_result}\n" https://influora.in/
+curl -sS -o /dev/null -w "www  %{http_code}  tls=%{ssl_verify_result}\n" https://www.influora.in/
 curl -sS -o /dev/null -w "api  %{http_code}  tls=%{ssl_verify_result}\n" https://api.influora.in/actuator/health
 curl -sS -o /dev/null -w "app  %{http_code}  tls=%{ssl_verify_result}\n" https://app.influora.in/
 ```
+
+`www` returns **301**; every other line must be **200**, all with `tls=0`. A non-zero `tls` is
+exactly the apex symptom this fixes — a certificate issued for the wrong domain.
 
 Both `200` with `tls=0`. Then by hand: register, log in, land on a dashboard
 (`app.influora.in/brand/dashboard` or `/creator/dashboard`). A green health check with a broken
@@ -116,9 +127,21 @@ Finally confirm you did not break the neighbour:
 curl -sS -o /dev/null -w "snapsby %{http_code} tls=%{ssl_verify_result}\n" https://snapsby.com
 ```
 
-## 6 · Not covered here
+## 6 · The apex, and why there is no WordPress to migrate
 
-The apex `influora.in` currently resolves to this box and nginx has no server block for it, so it
-falls through to the snapsby.com vhost: port 80 answers **502** and port 443 serves a certificate
-for the wrong domain. That is a live outage and a separate decision (marketing site moves here,
-returns to Hostinger, or the apex redirects to `app.influora.in`). Nothing in this runbook fixes it.
+`influora.in` resolves to this box but nginx had no server block for it, so it fell through to the
+default vhost: **502** on `:80` and a `CN=snapsby.com` certificate on `:443`. Visitors got an error
+page or a browser warning. This runbook now fixes that.
+
+The fix needs no new hosting, because the SPA already *is* the marketing site: `/` renders
+`LandingPage`, with `/pricing`, `/about`, `/contact` and `/blog` alongside it, and `npm run build`
+prerenders those routes to static HTML for SEO. So the apex proxies to the same Caddy -> frontend
+container as `app.influora.in`.
+
+Two consequences worth stating plainly:
+
+- **Retiring Hostinger costs nothing here.** The marketing site lives in this repo and deploys with
+  the app — no WordPress content to migrate, no second host to keep paying for. Export the old
+  WordPress copy first if any of its wording is worth keeping; once the account closes it is gone.
+- **`www` 301s to the bare domain**, so one canonical hostname owns the SEO instead of two
+  hostnames serving identical content and splitting it.

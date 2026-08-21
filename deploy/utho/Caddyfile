@@ -16,6 +16,15 @@
 	http_port 8080
 }
 
+# ---- Marketing site: apex + www ----
+# The SPA already contains the marketing site (/ -> LandingPage, /pricing, /about,
+# /contact, /blog), and `npm run build` prerenders those routes for SEO. So the apex is
+# served by the SAME frontend container as app.influora.in -- there is no separate
+# WordPress to host, and retiring Hostinger costs nothing.
+{$ROOT_DOMAIN}, www.{$ROOT_DOMAIN} {
+	reverse_proxy frontend:80
+}
+
 # ---- Frontend (static SPA) ----
 {$APP_DOMAIN} {
 	reverse_proxy frontend:80
