@@ -103,6 +103,13 @@ any rate limit.
 
 ## 5 · Exit test — run from a machine that is NOT the server
 
+> **curl cannot pass this section on its own.** curl never sends an `Origin` header, so **every
+> CORS failure returns 200 to curl and only appears in a real browser.** Both breaks found in
+> `bd5aa0b` — the apex origin and the empty `MEERA_ALLOWED_ORIGINS` — would have sailed through a
+> curl-only check. The browser pass in §5.2 is the gate that actually closes them.
+
+### 5.1 · Reachability and TLS
+
 ```bash
 curl -sS -o /dev/null -w "apex %{http_code}  tls=%{ssl_verify_result}\n" https://influora.in/
 curl -sS -o /dev/null -w "www  %{http_code}  tls=%{ssl_verify_result}\n" https://www.influora.in/
@@ -120,6 +127,31 @@ registration is not a deploy.
 Then the one that catches F-0374: open **Connect Instagram** and confirm the Meta dialog URL
 carries a non-empty `client_id`. A blank one renders Meta's "Invalid app ID" screen — exactly what
 a reviewer would see.
+
+### 5.2 · Browser pass — the CORS gate
+
+Open a real browser with the **devtools console visible** and keep it open throughout. A red
+`blocked by CORS policy` line is a failure even if the page looks fine.
+
+1. **Load `https://influora.in`.** Marketing page renders, padlock valid, console clean.
+2. **Click through to Login from the apex — do not type the app URL by hand.** This is the exact
+   path that was broken: you stay on the `influora.in` origin, so the API calls carry
+   `Origin: https://influora.in`. Typing `app.influora.in` directly skips the origin under test
+   and the check proves nothing.
+3. **Register a new account, then log in.** Watch for `blocked by CORS policy` and for a failed
+   `/auth/refresh` — the latter means the session cookie is not being sent.
+4. **Land on a dashboard** (`/brand/dashboard` or `/creator/dashboard`), and confirm data loads
+   rather than empty cards. Empty panels with a clean console usually mean the API returned an
+   error the UI swallowed — check the Network tab, not just the console.
+5. **Send one Meera message and watch it stream.** This is the only check that exercises
+   `MEERA_ALLOWED_ORIGINS` and the SSE path together. Two distinct failures to tell apart:
+   — nothing arrives at all, with a CORS error → the AI allowlist is wrong;
+   — the reply arrives complete in one burst after a long pause → CORS is fine but SSE buffering
+   is on, i.e. `proxy_buffering off` is missing from the `ai.` nginx block.
+6. **Repeat step 2 from `https://app.influora.in`.** Both origins must work, not just one.
+
+Then the Meta check, which no amount of curl will catch either: open **Connect Instagram** and
+confirm the dialog URL carries a non-empty `client_id` (F-0374).
 
 Finally confirm you did not break the neighbour:
 
