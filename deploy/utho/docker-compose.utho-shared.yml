@@ -1,17 +1,19 @@
-# Influora on Utho -- SHARED BOX variant (Snapsby + n8n + host MySQL already live here).
+# Influora on Utho -- SHARED BOX variant (Snapsby + n8n already live on 150.241.245.242).
 #
-# Use this while Influora shares 150.241.245.242. Switch to docker-compose.utho.yml (the full
-# stack, with its own MySQL) the moment Influora gets a dedicated server.
+# Differs from docker-compose.utho.yml ONLY by JAVA_TOOL_OPTIONS. Everything else, including
+# the MySQL 8.0 container, is identical.
 #
-# Differences from docker-compose.utho.yml, and why:
-#   - no mysql container -> reuses the host mysql.service        (saves ~400 MB)
-#   - JAVA_TOOL_OPTIONS  -> caps JVM heap at 900m                (saves ~600 MB vs default)
-#   - clamav KEPT        -> ClamAvMalwareScanService is @Profile("prod") and FAILS CLOSED on a
-#                           socket error, so removing it rejects EVERY upload. That 1.2 GB
-#                           cannot be reclaimed without disabling deliverable submission.
+# Why the mysql container is KEPT even though the host runs MySQL (measured 2026-08-21):
+#   - the host is MySQL 8.4.7. Flyway 10.10.0 supports up to 8.1 and warns that 8.4 is
+#     untested -- Snapsby logs that warning on every boot. Influora has 107 migrations that
+#     were CI-proven against MySQL 8.0 specifically; that proof does not carry to 8.4, and a
+#     half-applied migration on an escrow/payout schema is worse than 400 MB of RAM.
+#   - isolation: one shared instance couples both products backups, restarts and failure
+#     modes. A heavy Influora query would land on Snapsby.
 #
-# Measured 2026-08-21: 7.3 GB total, 4.0 GB available, SWAP 0B, and snaps-backend was in a
-# restart loop. Add 4 GB of swap BEFORE starting this.
+# Box facts 2026-08-21: 7.3 GB total, ~3.5 GB available, 4 GB swap added. Expect ~3.3 GB
+# resident for this stack. It fits because of the swap, not comfortably -- move to a
+# dedicated server before real payment volume.
 name: influora
 
 # Influora on Utho — OPTION A: Caddy behind the box's existing nginx.
@@ -90,6 +92,27 @@ services:
       - influora-api
       - influora-ai
 
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: influora
+      MYSQL_USER: influora_app
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --require-secure-transport=ON
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -114,23 +137,14 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      # Cap the heap. Left alone the JVM sizes MaxHeap to ~25% of HOST RAM (7.3 GB here), i.e.
-      # memory it reserves from a neighbour rather than from itself. With swap at 0 the kernel
-      # does not throttle, it kills -- and the largest RSS on this box is Snapsby, not Influora.
+      # SHARED BOX: cap the heap. Uncapped, the JVM sizes MaxHeap to ~25% of HOST RAM
+      # (7.3 GB here) -- memory it reserves from its neighbours rather than from itself.
       JAVA_TOOL_OPTIONS: "-Xmx900m -XX:MaxMetaspaceSize=256m"
       # ---- Boot gates: BOTH required, both must be prod (doc 06 §2.3) ----
       APP_ENV: prod
       SPRING_PROFILES_ACTIVE: prod
       # ---- Database (useSSL=true is mandatory) ----
-      # SHARED BOX: points at the MySQL already running on the HOST (mysql.service), not a
-      # second container. Saves ~400 MB. useSSL=false because this connection never leaves the
-      # machine -- it crosses the docker bridge only. Prerequisites on the host:
-      #   bind-address = 0.0.0.0 in mysqld.cnf, then restart mysql
-      #   CREATE DATABASE influora CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-      #   CREATE USER 'influora_app'@'172.%' IDENTIFIED BY '<MYSQL_PASSWORD>';
-      #   GRANT ALL ON influora.* TO 'influora_app'@'172.%'; FLUSH PRIVILEGES;
-      # Keep 3306 CLOSED at the Utho firewall -- binding 0.0.0.0 exposes it otherwise.
-      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3306/influora?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/influora?useSSL=true&allowPublicKeyRetrieval=true&serverTimezone=UTC
       SPRING_DATASOURCE_USERNAME: influora_app
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
       # ---- Public URLs ----
@@ -192,10 +206,8 @@ services:
       INFLUORA_COMPANY_GSTIN: ${INFLUORA_COMPANY_GSTIN}
       INFLUORA_COMPANY_ADDRESS: ${INFLUORA_COMPANY_ADDRESS}
       INFLUORA_LEGAL_NAME: ${INFLUORA_LEGAL_NAME}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
-      clamav: { condition: service_started }
+      mysql: { condition: service_healthy }
 
   influora-ai:
     image: ghcr.io/influoradigital-bit/influora-ai:latest
@@ -239,6 +251,7 @@ services:
     # No env here — the API URL is already baked into the bundle at build time.
 
 volumes:
+  mysql_data:
   clamav_data:
   caddy_data:
   caddy_config:

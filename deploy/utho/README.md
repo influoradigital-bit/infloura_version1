@@ -233,21 +233,17 @@ echo "/swapfile none swap sw 0 0" >> /etc/fstab
 free -h
 ```
 
-**2. Prepare the host MySQL** (the compose no longer ships one):
+**2. ~~Prepare the host MySQL~~ — NOT NEEDED, superseded 2026-08-21.**
 
-```sql
-CREATE DATABASE influora CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'influora_app'@'172.%' IDENTIFIED BY '<MYSQL_PASSWORD from .env>';
-GRANT ALL ON influora.* TO 'influora_app'@'172.%'; FLUSH PRIVILEGES;
-```
+The plan was to reuse the host `mysql.service` and save ~400 MB. Then the host turned out to be
+**MySQL 8.4.7**, and Flyway 10.10.0 supports up to 8.1 — Snapsby logs that untested-version
+warning on every boot. Influora has 107 migrations CI-proven against **MySQL 8.0**, and that
+proof does not carry to 8.4. A half-applied migration on an escrow/payout schema costs more than
+400 MB of RAM, and a shared instance would also couple both products' backups and restarts.
 
-Set `bind-address = 0.0.0.0` in `/etc/mysql/mysql.conf.d/mysqld.cnf`, restart mysql, then
-**confirm 3306 is closed at the Utho firewall** — binding 0.0.0.0 exposes it to the internet
-otherwise. Verify from your own machine, not from the box:
-
-```bash
-nc -zv 150.241.245.242 3306     # must FAIL
-```
+So `docker-compose.utho-shared.yml` keeps the `mysql:8.0` container. No database, user, grant or
+`bind-address` change is required on the host, and **3306 stays closed** — there is now no reason
+to bind it beyond localhost at all, which removes that exposure risk entirely.
 
 **3. Reclaim the dead containers:**
 
