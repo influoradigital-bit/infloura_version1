@@ -1,0 +1,244 @@
+# Influora on Utho -- SHARED BOX variant (Snapsby + n8n + host MySQL already live here).
+#
+# Use this while Influora shares 150.241.245.242. Switch to docker-compose.utho.yml (the full
+# stack, with its own MySQL) the moment Influora gets a dedicated server.
+#
+# Differences from docker-compose.utho.yml, and why:
+#   - no mysql container -> reuses the host mysql.service        (saves ~400 MB)
+#   - JAVA_TOOL_OPTIONS  -> caps JVM heap at 900m                (saves ~600 MB vs default)
+#   - clamav KEPT        -> ClamAvMalwareScanService is @Profile("prod") and FAILS CLOSED on a
+#                           socket error, so removing it rejects EVERY upload. That 1.2 GB
+#                           cannot be reclaimed without disabling deliverable submission.
+#
+# Measured 2026-08-21: 7.3 GB total, 4.0 GB available, SWAP 0B, and snaps-backend was in a
+# restart loop. Add 4 GB of swap BEFORE starting this.
+name: influora
+
+# Influora on Utho — OPTION A: Caddy behind the box's existing nginx.
+#
+# Derived from deploy/hostinger/docker-compose.hostinger.yml. The ONLY difference is the
+# caddy `ports:` block; every service, image, env var and volume below is unchanged, so
+# anything documented for the Hostinger file still applies here.
+#
+# Use WITH deploy/utho/Caddyfile (not the hostinger one) — that variant sets `auto_https
+# off` and `http_port 8080`, because Caddy must not attempt ACME on a box where it cannot
+# reach :443.
+#
+# On the box:  /opt/influora/docker-compose.yml + /opt/influora/Caddyfile + /opt/influora/.env
+
+# Meera/Priya — Hostinger VPS production stack, REGISTRY-IMAGES path.
+#
+# Difference from BLUEPRINT/10's docker-compose.prod.yml: that one uses `build:` contexts
+# (builds on the box, needs SSH + source checkout). THIS one pulls pre-built images from
+# GHCR (published by .github/workflows/publish-images.yml) and adds Caddy for automatic TLS,
+# so the whole stack deploys through the Hostinger management API with NO SSH.
+#
+# Deploy: Hostinger MCP `createNewProject(project_name="influora", content=<this file>,
+#         environment=<all the VARs below>)`. Redeploy: `updateProjectV1`.
+#
+# Env contract: every ${VAR} below must be supplied via the MCP `environment` field
+# (Hostinger writes them to the project .env). Full list + how to generate each:
+# BLUEPRINT/06-DEPLOYMENT-AND-API-KEYS.md and BLUEPRINT/10 §5. The PII keys encrypt every
+# email/phone/bank row — back them up OFF this box before go-live or the data is lost forever.
+#
+# Nothing but Caddy publishes a host port. mysql/redis/clamav/api/ai/web are reachable only
+# on the internal Docker network — strictly better than exposing 8080/8000/3306 at all.
+
+# [SEC: Kabir CR-11 red-team, M-4] Log rotation. Every service previously inherited Docker's
+# `json-file` driver with its default `max-size` of UNLIMITED, and logback-spring.xml has a single
+# CONSOLE appender with no rolling policy — so container logs grew in
+# /var/lib/docker/containers/<id>/*-json.log until the disk filled.
+#
+# That is a product-down path, not a tidiness issue: this box has ONE disk, shared by the
+# `mysql_data` volume, `clamav_data`, and `caddy_data` (issued TLS certs). Disk-full takes MySQL
+# with it, and Caddy's certificate renewal too.
+#
+# It became reachable from the internet with `POST /client-errors`: an unauthenticated endpoint
+# that logs ~9 KB per max-size report at WARN. The client-side dedupe only stops an honest browser
+# looping; a script posting distinct `message` values is unaffected. 50m x 5 caps each service at
+# 250 MB.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    # OPTION A (Utho, 2026-08-21): nginx already owns 80/443 on this box as the
+    # Cloudflare origin for snapsby.com, so Caddy CANNOT bind them — and stopping nginx
+    # would take snapsby.com down. Caddy therefore listens on 8080 for plain HTTP only
+    # and nginx reverse-proxies to it. Bound to 127.0.0.1 so 8080 is not reachable from
+    # the internet. TLS terminates at nginx; see deploy/utho/nginx-influora.conf.
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      ROOT_DOMAIN: ${ROOT_DOMAIN}   # influora.in -- apex + www, serves the marketing site
+      APP_DOMAIN: ${APP_DOMAIN}     # app.yourdomain.com
+      API_DOMAIN: ${API_DOMAIN}     # api.yourdomain.com
+      AI_DOMAIN: ${AI_DOMAIN}       # ai.yourdomain.com
+      ACME_EMAIL: ${ACME_EMAIL}     # for Let's Encrypt expiry notices
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data            # issued certs — persist across redeploys
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - influora-api
+      - influora-ai
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+  clamav:
+    image: clamav/clamav:1.3
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - clamav_data:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  influora-api:
+    image: ghcr.io/influoradigital-bit/influora-api:latest
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      # Cap the heap. Left alone the JVM sizes MaxHeap to ~25% of HOST RAM (7.3 GB here), i.e.
+      # memory it reserves from a neighbour rather than from itself. With swap at 0 the kernel
+      # does not throttle, it kills -- and the largest RSS on this box is Snapsby, not Influora.
+      JAVA_TOOL_OPTIONS: "-Xmx900m -XX:MaxMetaspaceSize=256m"
+      # ---- Boot gates: BOTH required, both must be prod (doc 06 §2.3) ----
+      APP_ENV: prod
+      SPRING_PROFILES_ACTIVE: prod
+      # ---- Database (useSSL=true is mandatory) ----
+      # SHARED BOX: points at the MySQL already running on the HOST (mysql.service), not a
+      # second container. Saves ~400 MB. useSSL=false because this connection never leaves the
+      # machine -- it crosses the docker bridge only. Prerequisites on the host:
+      #   bind-address = 0.0.0.0 in mysqld.cnf, then restart mysql
+      #   CREATE DATABASE influora CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+      #   CREATE USER 'influora_app'@'172.%' IDENTIFIED BY '<MYSQL_PASSWORD>';
+      #   GRANT ALL ON influora.* TO 'influora_app'@'172.%'; FLUSH PRIVILEGES;
+      # Keep 3306 CLOSED at the Utho firewall -- binding 0.0.0.0 exposes it otherwise.
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3306/influora?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: influora_app
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
+      # ---- Public URLs ----
+      INFLUORA_API_PUBLIC_URL: https://${API_DOMAIN}/api/v1
+      INFLUORA_WEB_BASE_URL: https://${APP_DOMAIN}
+      # Exact-origin allowlist — CorsConfig.java calls setAllowCredentials(true), so a wildcard
+      # is not legal and every origin the SPA is served from must be listed verbatim. The apex
+      # and www are here because they serve the SAME bundle as app.: a visitor who lands on
+      # influora.in and clicks Login stays on that origin, so its API calls carry
+      # `Origin: https://influora.in` and would otherwise be refused.
+      CORS_ALLOWED_ORIGINS: https://${APP_DOMAIN},https://${ROOT_DOMAIN},https://www.${ROOT_DOMAIN}
+      # ---- Behind Caddy (TLS terminates at the proxy) ----
+      # [SEC: Kabir CR-11 red-team, Blocker-1] `framework` here defeated EVERY IP-keyed rate limit,
+      # login brute-force included: ForwardedHeaderFilter takes the left-most (client-spoofable)
+      # X-Forwarded-For entry, does no trusted-proxy validation, and strips the headers before the
+      # Security chain sees them. `native` uses Tomcat's RemoteIpValve, which validates against
+      # server.tomcat.remoteip.internal-proxies and walks XFF right-to-left. See application.yml.
+      SERVER_FORWARD_HEADERS_STRATEGY: native
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES}   # verify: docker network inspect (bridge gateway)
+      AUTH_REFRESH_COOKIE_SECURE: "true"
+      # ---- Signing secrets (all distinct, >=32 bytes) ----
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      MEERA_STREAM_SIGNING_SECRET: ${MEERA_STREAM_SIGNING_SECRET}
+      INTERNAL_SERVICE_TOKEN_SECRET: ${INTERNAL_SERVICE_TOKEN_SECRET}
+      INTERNAL_REQUEST_HMAC_SECRET: ${INTERNAL_REQUEST_HMAC_SECRET}
+      INFLUORA_BRANDSAFETYSERVICETOKEN_SIGNINGSECRET: ${INFLUORA_BRANDSAFETYSERVICETOKEN_SIGNINGSECRET}
+      # ---- Keys with no YAML default (doc 06 §2.2) ----
+      INFLUORA_JWKS_PRIVATEKEYPEM: ${INFLUORA_JWKS_PRIVATEKEYPEM}
+      INFLUORA_JWKS_PUBLICKEYPEM: ${INFLUORA_JWKS_PUBLICKEYPEM}
+      INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY: ${INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY}
+      INFLUORA_PII_EMAILPHONEENCRYPTIONKEY: ${INFLUORA_PII_EMAILPHONEENCRYPTIONKEY}
+      INFLUORA_PII_BANKENCRYPTIONKEY: ${INFLUORA_PII_BANKENCRYPTIONKEY}
+      # ---- Internal service URLs (validator rejects localhost) ----
+      BRAND_SAFETY_AI_BASE_URL: http://influora-ai:8000
+      TRENDSPARK_AI_BASE_URL: http://influora-ai:8000
+      MEERA_CHAT_AI_BASE_URL: http://influora-ai:8000
+      ANALYZE_SITE_AI_BASE_URL: http://influora-ai:8000
+      INFLUORA_MEERA_STREAM_PUBLICCHATURL: https://${AI_DOMAIN}/chat
+      CLAMAV_HOST: clamav
+      # ---- Money + comms (no validator — break silently if wrong) ----
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET}
+      RAZORPAYX_ACCOUNT_NUMBER: ${RAZORPAYX_ACCOUNT_NUMBER}
+      MSG91_AUTH_KEY: ${MSG91_AUTH_KEY}
+      MSG91_TOKEN_AUTH: ${MSG91_TOKEN_AUTH}
+      MSG91_WIDGET_ID: ${MSG91_WIDGET_ID}
+      MSG91_OTP_TEMPLATE_ID: ${MSG91_OTP_TEMPLATE_ID}
+      MSG91_WELCOME_TEMPLATE_ID: ${MSG91_WELCOME_TEMPLATE_ID}
+      MSG91_EMAIL_TRANSACTIONAL_TEMPLATE_ID: ${MSG91_EMAIL_TRANSACTIONAL_TEMPLATE_ID}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME}
+      R2_ENDPOINT: ${R2_ENDPOINT}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
+      # ---- GST identity (CompanyTaxStartupValidator rejects placeholders) ----
+      INFLUORA_COMPANY_GSTIN: ${INFLUORA_COMPANY_GSTIN}
+      INFLUORA_COMPANY_ADDRESS: ${INFLUORA_COMPANY_ADDRESS}
+      INFLUORA_LEGAL_NAME: ${INFLUORA_LEGAL_NAME}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      clamav: { condition: service_started }
+
+  influora-ai:
+    image: ghcr.io/influoradigital-bit/influora-ai:latest
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      APP_ENV: prod
+      LOG_LEVEL: INFO
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      SARVAM_API_KEY: ${SARVAM_API_KEY}
+      # MUST byte-match the Java side (do not swap the two)
+      INTERNAL_HMAC_KEY: ${INTERNAL_REQUEST_HMAC_SECRET}
+      SERVICE_TOKEN_SIGNING_KEY: ${INTERNAL_SERVICE_TOKEN_SECRET}
+      SPRING_JWKS_URL: https://${API_DOMAIN}/api/v1/.well-known/jwks.json
+      SPRING_INTERNAL_BASE_URL: http://influora-api:8080/api/v1
+      REDIS_URL: redis://redis:6379
+      AI_DAILY_SPEND_CEILING_USD: "15.0"
+      AI_SPEND_KILL_SWITCH: "false"
+      # P1 BLANK TURN fix (2026-07-24, wiki/ai-review/meera-blank-turn-ai-
+      # review.md): previously UNSET here, silently inheriting the Python
+      # default (384), which sat exactly on create_campaign's tool-JSON
+      # truncation boundary and caused ~28% of Meera turns on this box to
+      # come back completely blank. PINNED explicitly so it can never again
+      # silently fall back to a code default.
+      # Meera streams to the BROWSER (meera-api.ts hits `${VITE_MEERA_STREAM_URL}/stream`
+      # directly), so the AI service needs its own CORS allowlist — separate from the Java
+      # one above. This was previously UNSET, which config.py defaults to "" — an empty list,
+      # i.e. every browser origin refused. Same three origins as the API for the same reason.
+      # Never "*": a bearer Authorization header requires an explicit origin echo.
+      MEERA_ALLOWED_ORIGINS: https://${APP_DOMAIN},https://${ROOT_DOMAIN},https://www.${ROOT_DOMAIN}
+      MEERA_CHAT_MAX_TOKENS: "1536"
+      MEERA_CHAT_MAX_TOKENS_RETRY: "2048"
+    depends_on:
+      - influora-api
+
+  frontend:
+    image: ghcr.io/influoradigital-bit/influora-web:latest
+    restart: unless-stopped
+    logging: *default-logging
+    # No env here — the API URL is already baked into the bundle at build time.
+
+volumes:
+  clamav_data:
+  caddy_data:
+  caddy_config:

@@ -209,3 +209,68 @@ Two consequences worth stating plainly:
   WordPress copy first if any of its wording is worth keeping; once the account closes it is gone.
 - **`www` 301s to the bare domain**, so one canonical hostname owns the SEO instead of two
   hostnames serving identical content and splitting it.
+
+## 7 · Shared box: use `docker-compose.utho-shared.yml`
+
+`150.241.245.242` is not a clean box. Measured 2026-08-21:
+
+```
+Mem:  7.3Gi total, 4.0Gi available     Swap: 0B
+Also running: snaps-backend (Java, in a RESTART LOOP), n8n, host mysql.service, nginx
+Dead since ~5 weeks: grafana, loki, promtail containers
+```
+
+Deploy `docker-compose.utho-shared.yml` here, not `docker-compose.utho.yml`. Do these four
+first — the first is not optional.
+
+**1. Add swap.** 4.0 GB available against a ~2.6 GB trimmed stack is a thin margin, and at swap
+0 the kernel does not throttle under pressure, it kills the largest RSS. On this box that is
+Snapsby or MySQL, not Influora — so an Influora memory spike takes down the neighbour.
+
+```bash
+fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+echo "/swapfile none swap sw 0 0" >> /etc/fstab
+free -h
+```
+
+**2. Prepare the host MySQL** (the compose no longer ships one):
+
+```sql
+CREATE DATABASE influora CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'influora_app'@'172.%' IDENTIFIED BY '<MYSQL_PASSWORD from .env>';
+GRANT ALL ON influora.* TO 'influora_app'@'172.%'; FLUSH PRIVILEGES;
+```
+
+Set `bind-address = 0.0.0.0` in `/etc/mysql/mysql.conf.d/mysqld.cnf`, restart mysql, then
+**confirm 3306 is closed at the Utho firewall** — binding 0.0.0.0 exposes it to the internet
+otherwise. Verify from your own machine, not from the box:
+
+```bash
+nc -zv 150.241.245.242 3306     # must FAIL
+```
+
+**3. Reclaim the dead containers:**
+
+```bash
+docker rm grafana loki promtail
+```
+
+**4. Fix `snaps-backend` first.** It was `Restarting (1)` — crash-looping, burning CPU, and
+Snapsby is down while it does. Debugging two broken products on one box at once is how a short
+outage becomes a long one.
+
+```bash
+docker logs --tail 100 snaps-backend
+```
+
+### What was NOT trimmed, and why
+
+ClamAV stays, despite being the single largest container at ~1.2 GB.
+`ClamAvMalwareScanService` is `@Profile("prod")` and documents itself as *fail-closed on every
+non-OK outcome — infected, unparseable clamd reply, AND socket failure*. Remove the container
+while `SPRING_PROFILES_ACTIVE=prod` and every upload throws, so deliverable submission stops
+working. `NoOpMalwareScanService` cannot cover for it either — it is `@Profile("!prod")`.
+
+The honest framing: this variant makes Influora fit beside a live product, it does not make the
+box comfortable. Move to a dedicated server and `docker-compose.utho.yml` once the concept is
+proven — before real payment volume, not after.
