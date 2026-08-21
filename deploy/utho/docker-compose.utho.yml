@@ -183,6 +183,19 @@ services:
       R2_BUCKET_NAME: ${R2_BUCKET_NAME}
       R2_ENDPOINT: ${R2_ENDPOINT}
       R2_PUBLIC_URL: ${R2_PUBLIC_URL}
+      # ---- Meta / Instagram OAuth (F-0374) ----
+      # MetaApiProperties.isConfigured() is "app-id AND app-secret both non-blank". Absent these,
+      # Meta OAuth is OFF at boot and Connect Instagram does nothing -- which fails Meta App
+      # Review on its own, because a reviewer tests the submitted app and finds login disabled.
+      # Two DISTINCT credential pairs: Facebook Login, and Business Login for Instagram.
+      META_APP_ID: ${META_APP_ID}
+      META_APP_SECRET: ${META_APP_SECRET}
+      META_REDIRECT_URI: ${META_REDIRECT_URI}
+      META_INSTAGRAM_APP_ID: ${META_INSTAGRAM_APP_ID}
+      META_INSTAGRAM_APP_SECRET: ${META_INSTAGRAM_APP_SECRET}
+      META_INSTAGRAM_REDIRECT_URI: ${META_INSTAGRAM_REDIRECT_URI}
+      # DISTINCT AES-256 key, must decode to EXACTLY 32 bytes (enforced in MetaTokenStorage).
+      META_TOKEN_ENCRYPTION_KEY: ${META_TOKEN_ENCRYPTION_KEY}
       # ---- GST identity (CompanyTaxStartupValidator rejects placeholders) ----
       INFLUORA_COMPANY_GSTIN: ${INFLUORA_COMPANY_GSTIN}
       INFLUORA_COMPANY_ADDRESS: ${INFLUORA_COMPANY_ADDRESS}
