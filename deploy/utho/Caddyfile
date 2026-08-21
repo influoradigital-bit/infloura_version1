@@ -1,0 +1,48 @@
+# Influora on Utho — OPTION A: Caddy behind the box's existing nginx.
+#
+# Differs from deploy/hostinger/Caddyfile in the global block ONLY. The three site blocks
+# are byte-identical, because they carry the settings that are easy to get wrong by hand:
+# SSE buffering off for the AI host, a 1GB body limit for the API, and the read timeouts.
+#
+# Why auto_https is off: this box's nginx owns :80 and :443 as the Cloudflare origin for
+# snapsby.com. Caddy cannot complete an ACME challenge without those ports, and every
+# attempt burns one of five Let's Encrypt failures per domain per week. TLS therefore
+# terminates at nginx (certbot), which proxies plain HTTP to Caddy on 127.0.0.1:8080.
+# Caddy still routes by Host, so the site blocks below keep working unchanged.
+
+{
+	email {$ACME_EMAIL}
+	auto_https off
+	http_port 8080
+}
+
+# ---- Frontend (static SPA) ----
+{$APP_DOMAIN} {
+	reverse_proxy frontend:80
+}
+
+# ---- Core API (Java) ----
+{$API_DOMAIN} {
+	# matches Spring's 1GB max-request-size for large deliverable uploads
+	request_body {
+		max_size 1GB
+	}
+	reverse_proxy influora-api:8080 {
+		# large uploads need a generous read timeout
+		transport http {
+			read_timeout 300s
+		}
+	}
+}
+
+# ---- AI service (Python, SSE streaming) ----
+{$AI_DOMAIN} {
+	reverse_proxy influora-ai:8000 {
+		# Meera streams token-by-token. flush_interval -1 disables response buffering
+		# so SSE chunks reach the browser immediately instead of all-at-once at the end.
+		flush_interval -1
+		transport http {
+			read_timeout 3600s
+		}
+	}
+}
