@@ -127,6 +127,38 @@ Finally confirm you did not break the neighbour:
 curl -sS -o /dev/null -w "snapsby %{http_code} tls=%{ssl_verify_result}\n" https://snapsby.com
 ```
 
+## 5b · Cross-origin: two allowlists, both must list all three origins
+
+Serving the apex from the same bundle as `app.` has a consequence that is easy to miss until the
+browser console fills with CORS errors: a visitor who lands on `influora.in` and clicks Login
+**stays on that origin**. Their API calls carry `Origin: https://influora.in`, not
+`https://app.influora.in`.
+
+There are **two independent allowlists**, and they are enforced by different services:
+
+| var | service | enforced by |
+|---|---|---|
+| `CORS_ALLOWED_ORIGINS` | Java API | `CorsConfig.java` |
+| `MEERA_ALLOWED_ORIGINS` | Python AI | `config.py` |
+
+Both are set in the compose to `https://${APP_DOMAIN},https://${ROOT_DOMAIN},https://www.${ROOT_DOMAIN}`.
+
+Two things to know:
+
+- **A wildcard is not an option.** `CorsConfig` calls `setAllowCredentials(true)`, and the AI side
+  echoes an explicit origin for bearer auth. `*` is rejected by the browser in both cases, so every
+  origin must be listed verbatim.
+- **`MEERA_ALLOWED_ORIGINS` was previously absent entirely**, which `config.py` defaults to `""` —
+  an empty allowlist, i.e. every browser origin refused. Meera streams to the browser
+  (`meera-api.ts` calls `${VITE_MEERA_STREAM_URL}/stream` directly), so this would have broken
+  Meera in production independently of the apex change. It is now set.
+
+**The session cookie is fine and needs no change.** `AuthCookieService` issues it
+`HttpOnly; Secure; SameSite=Strict` with `Path=/auth` and no explicit `Domain`, so it is host-only
+to the API. `SameSite=Strict` is judged on the registrable domain, and `influora.in`,
+`www.influora.in`, `app.influora.in` and `api.influora.in` all share `influora.in` — so the cookie
+is still sent from every one of them. Only CORS needed widening, not the cookie scope.
+
 ## 6 · The apex, and why there is no WordPress to migrate
 
 `influora.in` resolves to this box but nginx had no server block for it, so it fell through to the

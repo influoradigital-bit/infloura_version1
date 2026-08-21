@@ -131,7 +131,12 @@ services:
       # ---- Public URLs ----
       INFLUORA_API_PUBLIC_URL: https://${API_DOMAIN}/api/v1
       INFLUORA_WEB_BASE_URL: https://${APP_DOMAIN}
-      CORS_ALLOWED_ORIGINS: https://${APP_DOMAIN}
+      # Exact-origin allowlist — CorsConfig.java calls setAllowCredentials(true), so a wildcard
+      # is not legal and every origin the SPA is served from must be listed verbatim. The apex
+      # and www are here because they serve the SAME bundle as app.: a visitor who lands on
+      # influora.in and clicks Login stays on that origin, so its API calls carry
+      # `Origin: https://influora.in` and would otherwise be refused.
+      CORS_ALLOWED_ORIGINS: https://${APP_DOMAIN},https://${ROOT_DOMAIN},https://www.${ROOT_DOMAIN}
       # ---- Behind Caddy (TLS terminates at the proxy) ----
       # [SEC: Kabir CR-11 red-team, Blocker-1] `framework` here defeated EVERY IP-keyed rate limit,
       # login brute-force included: ForwardedHeaderFilter takes the left-most (client-spoofable)
@@ -209,6 +214,12 @@ services:
       # truncation boundary and caused ~28% of Meera turns on this box to
       # come back completely blank. PINNED explicitly so it can never again
       # silently fall back to a code default.
+      # Meera streams to the BROWSER (meera-api.ts hits `${VITE_MEERA_STREAM_URL}/stream`
+      # directly), so the AI service needs its own CORS allowlist — separate from the Java
+      # one above. This was previously UNSET, which config.py defaults to "" — an empty list,
+      # i.e. every browser origin refused. Same three origins as the API for the same reason.
+      # Never "*": a bearer Authorization header requires an explicit origin echo.
+      MEERA_ALLOWED_ORIGINS: https://${APP_DOMAIN},https://${ROOT_DOMAIN},https://www.${ROOT_DOMAIN}
       MEERA_CHAT_MAX_TOKENS: "1536"
       MEERA_CHAT_MAX_TOKENS_RETRY: "2048"
     depends_on:
