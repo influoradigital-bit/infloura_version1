@@ -24,11 +24,52 @@ deployment serves, so this task runs first and everything Meta-shaped queues beh
 | Images published to GHCR by `publish-images.yml` | `.github/workflows/publish-images.yml` |
 | **No CD workflow exists** — CI tests and publishes images, nothing deploys | workflow scan |
 
-### The DNS trap
-The domain is registered at **GoDaddy** but its nameservers point at **Hostinger**. Editing A
-records in the GoDaddy panel will do nothing. **Records go in Hostinger's DNS panel** unless you
-first repoint the nameservers at GoDaddy. Recommendation: leave nameservers at Hostinger while
-WordPress still lives there — fewer moving parts.
+### The DNS trap — INVERTED on 2026-08-21, read this before editing records
+The advice below was correct when written and is now **backwards**. The nameservers have been
+repointed to GoDaddy, so **records go in the GoDaddy panel** and edits in Hostinger's panel will
+do nothing. Superseded text, kept so nobody re-applies it: *"nameservers point at Hostinger …
+records go in Hostinger's DNS panel … leave nameservers at Hostinger while WordPress still lives
+there."*
+
+## 1b · Actual DNS state, measured 2026-08-21
+
+| Name | 2026-08-20 (opened) | 2026-08-21 (measured) |
+|---|---|---|
+| Nameservers | `ns1/ns2.dns-parking.com` (Hostinger) | **`ns35/ns36.domaincontrol.com` (GoDaddy)** |
+| `influora.in` | `147.79.69.252`, `91.108.106.154` | **`150.241.245.242`** |
+| `www.influora.in` | — | **`150.241.245.242`** |
+| `app.influora.in` | none | **still NO RECORD** |
+| `api.influora.in` | none | **still NO RECORD** |
+| `ai.influora.in` | none | **still NO RECORD** |
+
+Measured with `nslookup -type=A <host> 8.8.8.8` from outside the box.
+
+**Step 2 is therefore half-done.** The root and `www` moved to Utho, but the three names the
+stack actually routes on do not exist. `APP_DOMAIN`/`API_DOMAIN`/`AI_DOMAIN` are what the
+Caddyfile matches and what `INFLUORA_API_PUBLIC_URL`, `CORS_ALLOWED_ORIGINS`, `SPRING_JWKS_URL`
+and `INFLUORA_MEERA_STREAM_PUBLICCHATURL` are all derived from. Until they resolve there is
+nothing to deploy against, and step 3 must not be run — Caddy issuing against a non-resolving
+name burns one of five Let's Encrypt failures per domain per week.
+
+### F-0375 (new, BLOCKING) — nginx already owns ports 80 and 443
+
+Probing `150.241.245.242` on 2026-08-21:
+
+```
+http://150.241.245.242/    -> 502 Bad Gateway    Server: nginx/1.26.3 (Ubuntu)
+https://150.241.245.242/   -> 200 OK (143 KB)    Server: nginx/1.26.3 (Ubuntu)
+https://influora.in        -> TLS FAILS: SEC_E_WRONG_PRINCIPAL (cert is for another name)
+```
+
+Three consequences:
+
+1. **The compose stack is not deployed.** Caddy is not what is answering; nginx is, and its
+   port-80 upstream is down (502).
+2. **`docker compose up -d` will fail on a port conflict.** The compose binds `80:80`, `443:443`
+   and `443:443/udp`. Decide first: stop/disable nginx, or move Caddy to alternate ports and have
+   nginx proxy to it. Doing nothing means Caddy never starts.
+3. **TLS on the apex is currently broken** — the served certificate does not match
+   `influora.in`, so browsers warn today.
 
 ---
 
@@ -79,9 +120,10 @@ a provider that is no longer the target.
 1. **Secrets.** Assemble all 40 compose vars plus the 7 Meta vars from §2 into `/opt/influora/.env`
    on the box, root-owned, `chmod 600`. Generate fresh values for anything that ever lived in a
    repo or a doc. Never commit this file.
-2. **DNS (Hostinger panel).** `A app.influora.in -> <utho-ip>`, `A api.influora.in -> <utho-ip>`,
-   `A ai.influora.in -> <utho-ip>`. Leave the root `influora.in` records alone — WordPress keeps
-   serving while this is proven.
+2. **DNS (GoDaddy panel — NOT Hostinger, see §1b).** `A app -> 150.241.245.242`,
+   `A api -> 150.241.245.242`, `A ai -> 150.241.245.242`. The root and `www` already point at
+   Utho as of 2026-08-21; leave them alone until the subdomains are proven. Confirm all three
+   resolve from off-box before step 3.
 3. **Bring it up.** `docker compose -f docker-compose.hostinger.yml --env-file .env up -d` with
    `APP_DOMAIN=app.influora.in`, `API_DOMAIN=api.influora.in`, `AI_DOMAIN=ai.influora.in`.
 4. **Let Caddy issue certs.** Watch `docker compose logs -f caddy`. Certs need port 80 reachable
@@ -126,8 +168,22 @@ produces a Meta dialog URL with a non-empty `client_id`.** A blank `client_id` r
 
 ## 7 · NOT CHECKED
 
-Whether the GHCR images are current with `main` — `publish-images.yml` triggers on push to a
-branch and on `workflow_dispatch`, and no one confirmed the last successful run. Whether the Utho
-instance size is adequate — no specification was provided. Whether all 40 compose variables have
-known-good values anywhere, or whether some must be regenerated. Whether Flyway migrations apply
-cleanly against a fresh database — they have only ever been run against existing ones.
+**RESOLVED 2026-08-21 — GHCR images are current.** `Publish Images (GHCR)` succeeded on
+`88e249a`, the current head of `main`, so all three images (`influora-api`, `influora-ai`,
+`influora-web`) are built from the consolidated trunk. Caveat that still stands: `influora-web`
+bakes `VITE_API_BASE_URL` at build time and the workflow default is `http://200.141.1.6/api/v1`.
+Re-run `publish-images.yml` via `workflow_dispatch` with `vite_api_base_url=https://api.influora.in`
+before go-live, or the frontend calls the wrong API.
+
+**RESOLVED 2026-08-21 — Flyway applies cleanly to a fresh database.** This was the open risk
+"they have only ever been run against existing ones". `flyway-validate.yml` had never once passed
+(6 runs, 6 failures) and was repaired in `802d9f7`/`b25fb98`; it now runs `flyway:migrate` against
+a clean MySQL 8 container on every push. Evidence: *Successfully applied 107 migrations to schema
+`influora_flyway`, now at version v20260820120000*, followed by a post-migrate `flyway:validate`
+with no exemptions. Includes `V20260820120000__meta_oauth_auth_path.sql`, so step 5 is
+pre-verified.
+
+Still not checked: whether the Utho instance size is adequate — no specification was provided.
+Whether all 40 compose variables have known-good values anywhere, or whether some must be
+regenerated. What nginx on the box is currently serving and whether anything depends on it
+before it is stopped (see F-0375).
