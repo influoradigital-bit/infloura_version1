@@ -28,16 +28,53 @@ on:
         description: 'Meera SSE stream URL to bake into the frontend bundle'
         type: string
         default: 'http://200.141.1.6/meera'
+      # F-0390 — these gate every money action in the bundle (src/lib/api.ts:71,104). They were
+      # absent from build-args entirely, so both baked in as false and the money path was dead in
+      # every published image with no lever to change it. Exposed as inputs so the state is chosen
+      # at publish time. See the Dockerfile ARG block for why the two are split.
+      # `choice`, not `boolean`, for two reasons (priya, F-0390 round 3):
+      #
+      # 1. A boolean input has no "unset". Its `default: true` was applied on EVERY dispatch, and
+      #    because a rendered boolean is always a non-empty string it short-circuited past
+      #    `vars.PAYMENTS_IN_ENABLED` — so an operator who had set that variable to hold collection
+      #    off would have it silently turned back on by the next dispatch made for an unrelated
+      #    reason (changing the API URL, say), without touching this field. The incident lever
+      #    worked on `push` only. 'default' here means "defer to the repository variable".
+      # 2. A free-text value that is not exactly lowercase 'true' fails the `=== 'true'` test at
+      #    src/lib/api.ts:71 and silently means OFF. `choice` makes the UI incapable of emitting
+      #    'True', '1', or a trailing space. (The repository variables are still free text — the
+      #    `verify money flags` step below is what guards those.)
+      vite_payments_in_enabled:
+        description: 'Money IN (Razorpay orders) — wallet top-up + escrow funding. "default" defers to the PAYMENTS_IN_ENABLED repository variable.'
+        type: choice
+        options: ['default', 'true', 'false']
+        default: 'default'
+      vite_payouts_enabled:
+        description: 'Money OUT (RazorpayX payouts) — creator withdrawal. Leave off unless RAZORPAYX_ACCOUNT_NUMBER is really provisioned: WalletService debits the creator BEFORE calling RazorpayX. "default" defers to the PAYOUTS_ENABLED repository variable.'
+        type: choice
+        options: ['default', 'true', 'false']
+        default: 'default'
   push:
     branches:
       - main
-      - feat/creator-taxonomy-keyword-patch   # so it runs without needing main / the dispatch button
-      # Same reason as above: `main` holds only README.md, so this workflow does not exist on the
-      # default branch and GitHub never renders the "Run workflow" button — workflow_dispatch is
-      # unreachable in the UI. Adding the active branch here is the only route to a published image.
-      # Remove this line once Waves 1-2 have shipped: while it is present, every push to this branch
-      # redeploys the influora-test box that Neha runs live verification against.
-      - feat/creator-my-applications
+      # The two feat/* branches that used to be listed here were deleted in the 2026-08-20
+      # single-branch consolidation, and the comment justifying them ("`main` holds only
+      # README.md, so workflow_dispatch is unreachable in the UI") is no longer true — this
+      # workflow now lives on the default branch and the Run-workflow button exists.
+      #
+      # CONSEQUENCE, since this is now effectively push-to-main (priya, F-0390 review): any
+      # money-flag choice made through the dispatch form is reverted by the next push that
+      # touches `src/**`, `Dockerfile`, or this file, because a push takes the fallbacks below.
+      # VITE_PAYOUTS_ENABLED reverting to `false` is the safe direction; VITE_PAYMENTS_IN_ENABLED
+      # reverting to `true` is not.
+      #
+      # So the push fallback is a repository VARIABLE, not a literal: `vars.PAYMENTS_IN_ENABLED`
+      # / `vars.PAYOUTS_ENABLED` (Settings > Secrets and variables > Actions > Variables). Set
+      # PAYMENTS_IN_ENABLED=false there to hold collection off during an incident and every
+      # subsequent push republishes with it off — no commit, no code review, no rebuild-from-
+      # source. Unset, the variable is an empty string, which is falsy in a GitHub expression, so
+      # the literal after it applies and behaviour matches the documented default. An explicit
+      # 'false' in the variable is a non-empty string and therefore survives the `||`.
     paths:
       - 'influora-api/**'
       - 'influora-ai/**'
@@ -104,6 +141,48 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      # F-0390 — the ONLY runtime check on these two values, and the reason the repo variables can
+      # stay free text. src/lib/api.ts:71 compares against the exact string 'true', so 'True',
+      # 'TRUE', '1', 'yes' and a trailing space all mean OFF — silently, and via a change that
+      # lives in repository settings where no gate and no diff can see it. Money IN reverting to
+      # off that way is the original F-0390 symptom restored through the back door; money OUT
+      # flipping on that way debits creators against an unprovisioned gateway. Fail the publish
+      # instead of baking an unreadable value into an image.
+      # Runs the F-0390 gate HERE, not only in frontend-checks.yml. Both workflows fire on the same
+      # push to main, in parallel, with no `needs:` possible between them — so a gate that lives
+      # only in the other workflow can fail while this job publishes the bad image anyway. The job
+      # that ships the bundle is the one that has to refuse to ship it.
+      - name: Money-flag build wiring (F-0390)
+        run: bash .proof-os/gates/F-0390-money-flags-declared-in-build.sh
+
+      - name: verify money flags
+        env:
+          IN: ${{ (inputs.vite_payments_in_enabled != 'default' && inputs.vite_payments_in_enabled) || vars.PAYMENTS_IN_ENABLED || 'true' }}
+          OUT: ${{ (inputs.vite_payouts_enabled != 'default' && inputs.vite_payouts_enabled) || vars.PAYOUTS_ENABLED || 'false' }}
+        run: |
+          fail=0
+          for pair in "VITE_PAYMENTS_IN_ENABLED=$IN" "VITE_PAYOUTS_ENABLED=$OUT"; do
+            name=${pair%%=*}; value=${pair#*=}
+            case "$value" in
+              true|false) echo "$name=$value" ;;
+              *) echo "::error::$name resolved to '$value' — must be exactly 'true' or 'false' (src/lib/api.ts compares to the literal string 'true', so anything else silently means OFF). Check the repository variable."; fail=1 ;;
+            esac
+          done
+
+          # The safety invariant, checked against the value that will ACTUALLY be baked in.
+          # Gate leg 6 encodes the same rule but runs against repo files, so it cannot see
+          # `vars.PAYOUTS_ENABLED` — meaning the one hazard the IN/OUT split exists to prevent was
+          # reachable from a repository-settings toggle with no commit, no diff and no gate
+          # (priya, F-0390 round 4). WalletService debits the creator through the ledger BEFORE
+          # calling RazorpayX, and RazorpayXClient.isConfigured() is a blankness check, so
+          # REPLACE_ME reads as configured and a live 401 is what comes back.
+          if [ "$OUT" = "true" ] && grep -qE '^RAZORPAYX_ACCOUNT_NUMBER=REPLACE_ME' deploy/utho/generate-env.sh; then
+            echo "::error::VITE_PAYOUTS_ENABLED resolved to true while RAZORPAYX_ACCOUNT_NUMBER is still REPLACE_ME in deploy/utho/generate-env.sh. Publishing this image would expose creator withdrawal against an unprovisioned gateway, and the wallet is debited before the payout call. Provision RazorpayX first, or unset the PAYOUTS_ENABLED repository variable."
+            fail=1
+          fi
+          exit $fail
+
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -113,10 +192,40 @@ jobs:
         with:
           context: .
           push: true
+          # F-0390 — these two build-args are what actually decide the money flags in the
+          # published image. `.env.production` does NOT: Vite's loadEnv merges `process.env` over
+          # the .env files, and the Dockerfile turns each --build-arg into an ENV, so whatever is
+          # passed here wins. Change the shipped behaviour HERE (or via the dispatch inputs), not
+          # in .env.production — that file governs only a local `npm run build`.
+          #
+          # The expression deliberately avoids the `inputs.x || 'default'` idiom the two URLs
+          # above use. These are booleans, and `false || 'true'` evaluates to 'true' in GitHub
+          # expressions, so an explicit "off" from the dispatch form would be silently flipped
+          # back on — for VITE_PAYOUTS_ENABLED that means publishing creator withdrawals against
+          # an unprovisioned RazorpayX.
+          #
+          # The shape is `(inputs.X != 'default' && inputs.X) || vars.Y || '<literal>'`, which
+          # resolves correctly on all four paths: a push (inputs null → falls to the variable, then
+          # the literal); a dispatch left on 'default' (defers to the variable — this is what makes
+          # the incident lever work on dispatch too); and a dispatch set explicitly, where 'false'
+          # is a non-empty string and therefore survives the `||`. `type: choice` at :35-56 keeps
+          # the UI from emitting 'True' / '1' / a trailing space; the `verify money flags` step is
+          # what guards the repository variables, which are free text.
+          #
+          # This block previously carried a nine-line rationale for `format('{0}', x)` vs
+          # `toJSON(x)` and a `github.event_name` guard. Neither appears in the expressions below
+          # any more — that shape was replaced by the sentinel comparison. The explanation outlived
+          # the code it explained, which is the failure this repo keeps paying for; if you change
+          # the expressions again, change this paragraph in the same commit.
+          #
+          # (Comments must stay OUT of the build-args block itself — the action parses every
+          # non-empty line there as a KEY=VALUE pair, so a `#` line becomes a bogus build arg.)
           build-args: |
             VITE_API_MODE=live
             VITE_API_BASE_URL=${{ inputs.vite_api_base_url || 'http://200.141.1.6/api/v1' }}
             VITE_MEERA_STREAM_URL=${{ inputs.vite_meera_stream_url || 'http://200.141.1.6/meera' }}
+            VITE_PAYMENTS_IN_ENABLED=${{ (inputs.vite_payments_in_enabled != 'default' && inputs.vite_payments_in_enabled) || vars.PAYMENTS_IN_ENABLED || 'true' }}
+            VITE_PAYOUTS_ENABLED=${{ (inputs.vite_payouts_enabled != 'default' && inputs.vite_payouts_enabled) || vars.PAYOUTS_ENABLED || 'false' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:latest
             ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:${{ github.sha }}

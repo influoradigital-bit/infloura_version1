@@ -1,0 +1,136 @@
+{
+  "rows": [
+    {
+      "subject": "Dockerfile",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "bash .proof-os/gates/F-0390-money-flags-declared-in-build.sh",
+        "result": "exit 0 — PROVED: both money flags declared, promoted to ENV inside the BUILD stage, ARG before ENV before RUN npx vite build",
+        "where": "Dockerfile:62"
+      }
+    },
+    {
+      "subject": ".github/workflows/publish-images.yml",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "python .proof-os/gates/F-0390-falsify.py",
+        "result": "36/36 probes matched their specified exit codes: the current tree certifies, and no subverted tree does",
+        "where": ".github/workflows/publish-images.yml:204"
+      }
+    },
+    {
+      "subject": ".env.production",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "node",
+        "command": "node -e \"loadEnv('production', repoRoot, 'VITE_')\"",
+        "result": "VITE_PAYMENTS_IN_ENABLED=true VITE_PAYOUTS_ENABLED=false (pre-fix: both <UNDECLARED>)",
+        "where": ".env.production:41"
+      }
+    },
+    {
+      "subject": "src/lib/api.ts",
+      "owner": "ananya",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "npx tsc --noEmit -p tsconfig.json",
+        "result": "exit 0, 0 errors",
+        "where": "src/lib/api.ts:104"
+      }
+    },
+    {
+      "subject": "dist/assets/index-*.js (money guard as compiled)",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "node",
+        "command": "npx vite build --mode production && grep the folded isMoneyActionBlocked",
+        "result": "function Uu(e){return e===\"withdraw\"} — only payouts blocked. Pre-fix the same function was function $u(e){return!0} — every money action blocked unconditionally",
+        "where": "src/lib/api.ts:106"
+      }
+    },
+    {
+      "subject": ".proof-os/gates/F-0390-money-flags-declared-in-build.sh",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "python .proof-os/gates/F-0390-falsify.py",
+        "result": "36/36 probes matched their specified exit codes: the current tree certifies, and no subverted tree does",
+        "where": ".proof-os/gates/F-0390-falsify.py:222"
+      }
+    },
+    {
+      "subject": "F-0390 fix reviewed for correctness (round 1)",
+      "owner": "priya",
+      "status": "broken",
+      "isolation": "fresh-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "Agent(subagent_type=priya) — artifact paths + done_when only, no producer transcript",
+        "result": "FAIL — 8 defects incl. gate greening 5 broken trees, .env.production being a decoy for the published image, and toJSON() quoting a string input",
+        "where": ".proof-os/tasks/T-F0390-0825/report.json:1"
+      }
+    },
+    {
+      "subject": "F-0390 fix reviewed for correctness (round 2)",
+      "owner": "priya",
+      "status": "broken",
+      "isolation": "fresh-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "Agent(subagent_type=priya) — artifact paths + done_when only, fresh invocation, no round-1 context",
+        "result": "FAIL — 9 defects incl. gate greening 6 more trees, no assertion on the shipped value, and citation drift introduced by the round-1 fix",
+        "where": ".proof-os/tasks/T-F0390-0825/report.json:1"
+      }
+    },
+    {
+      "subject": "F-0390 fix reviewed for correctness (round 3, post-remediation)",
+      "owner": "priya",
+      "status": "broken",
+      "isolation": "fresh-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "Agent(subagent_type=priya) — artifact paths + done_when only, fresh invocation, no round-1/2 context",
+        "result": "FAIL — 11 defects; 2 were live workflow bugs (dispatch short-circuits past the vars lever; repo variables unnormalised), 9 were gate blindness",
+        "where": ".proof-os/tasks/T-F0390-0825/report.json:1"
+      }
+    },
+    {
+      "subject": ".github/workflows/frontend-checks.yml",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "python .proof-os/gates/F-0390-falsify.py",
+        "result": "36/36 probes matched their specified exit codes: the current tree certifies, and no subverted tree does",
+        "where": ".github/workflows/frontend-checks.yml:77"
+      }
+    },
+    {
+      "subject": "F-0390 fix reviewed for correctness (round 4, post-remediation)",
+      "owner": "priya",
+      "status": "broken",
+      "isolation": "fresh-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "Agent(subagent_type=priya) — artifact paths + done_when only, fresh invocation",
+        "result": "FAIL — 8 defects; 2 severe and live (the CI step invoked untracked files so it would exit 127; payouts-on reachable from repository settings with nothing checking it), 6 in the gate/harness",
+        "where": ".proof-os/tasks/T-F0390-0825/report.json:1"
+      }
+    }
+  ]
+}

@@ -16,6 +16,14 @@ on:
       - 'vitest.config.ts'
       - 'vitest.live.config.ts'
       - '.github/workflows/frontend-checks.yml'
+      # F-0390 — the money-flag gate below reads these four, and none of them was in this filter,
+      # so a PR that changed ONLY the build wiring (which is the entire content of F-0390) merged
+      # without the gate ever running. A guard whose trigger excludes its own subject matter is
+      # not a guard.
+      - 'Dockerfile'
+      - '.env.production'
+      - '.github/workflows/publish-images.yml'
+      - '.proof-os/gates/F-0390-**'
   push:
     branches:
       - main
@@ -60,6 +68,24 @@ jobs:
       # serving the old prompt. Checks the three claims that are mechanically falsifiable.
       - name: Stale comments (contradicted claims, dead citations, PROMPT_VERSION)
         run: python ci/stale-comment-check.py --since "${{ github.event.pull_request.base.sha || github.event.before }}"
+
+      # F-0390 — the money flags (VITE_PAYMENTS_IN_ENABLED / VITE_PAYOUTS_ENABLED) gate every
+      # money action in the bundle and were once declared in no build input at all, so both baked
+      # in as false and wallet top-up + escrow funding were dead in every published image. The
+      # gate asserts they are still declared in .env.production, promoted to ENV inside the
+      # Dockerfile BUILD stage, passed by the frontend publish job, and wired to their own
+      # dispatch input and repository variable. Run here because a guard that only runs when
+      # someone remembers to run it cannot block the push that regresses it — which was the
+      # standing criticism of it (priya, F-0390 round 3).
+      #
+      # The second command is the gate's own falsification harness: it rebuilds ~28 deliberately
+      # broken trees and asserts the gate REFUSES each one. It runs in CI because the failure mode
+      # this whole record is about is a gate that passes everything, and that is invisible unless
+      # something regularly tries to break it.
+      - name: Money-flag build wiring (F-0390) + its falsification
+        run: |
+          bash .proof-os/gates/F-0390-money-flags-declared-in-build.sh
+          python .proof-os/gates/F-0390-falsify.py
 
       - name: Unit tests + FE↔BE contract test
         run: npm test

@@ -1,0 +1,34 @@
+{
+  "verdict": "believed",
+  "oracle": "script",
+  "isolation": "fresh-context",
+  "done_when": "priya confirma all broken limk are fix",
+  "not_checked": [
+    "priya has NOT confirmed. FOUR fresh-context passes: FAIL (8), FAIL (9), FAIL (11), FAIL (8). Round 4's two severe findings were both in apparatus added by round 3 — the CI step invoked files that were never git-added (exit 127, the F-0324 pattern), and payouts-on became reachable from a repository-variable toggle that no gate could see. Both fixed, plus all 6 gate/harness holes. The runtime fix itself has been independently confirmed correct in every round; what keeps failing is the apparatus, and each round of hardening has added surface the next round found. That trend is the argument for stopping or continuing, and it is Swapnil's call, not the dispatcher's.",
+    "no `docker build` was run — the --build-arg -> ARG -> ENV handoff is asserted by reading the Dockerfile, not by observing Docker resolve it; only the process.env -> vite.loadEnv -> bundle half was executed",
+    "no GitHub Actions run — the rendered build-arg strings for the push and dispatch paths are analysed statically; `format('{0}', x)` behaviour on a REST-dispatched boolean input is reasoned from GitHub's documented truthiness, never observed",
+    "whether a top-up or escrow-fund actually SUCCEEDS. RAZORPAY_KEY_ID is still REPLACE_ME (deploy/utho/generate-env.sh:59) and RazorpayProperties.isConfigured() is a blankness check, so a placeholder reads as configured. Turning money IN on replaces a clean 'payments not enabled' notice with a gateway error until real keys are provisioned — accepted by Swapnil when choosing the ON default",
+    "F-0391 (opened, not fixed): with keys provisioned but RAZORPAY_WEBHOOK_SECRET left at REPLACE_ME, confirmCredited never runs and a brand's captured payment is never credited to the wallet. Latent before this change; reachable because of it",
+    "gate leg 6 greps deploy/utho/generate-env.sh — the generator TEMPLATE, not the live .env on the VPS. It is a tripwire on the repo's declared state, not a probe of the deployment",
+    "the gate cannot distinguish a deliberate money-IN=false (incident rollback) from an accidental one; it pins the committed literal to the recorded ruling and leaves runtime override to vars.<NAME> and the dispatch input",
+    "priya's attack suite still reports X11 as a hole. Verified false: that probe's only edit landed in a prose comment (diff confirmed), so the tree it graded was the passing tree. The equivalent break, anchored on the build-args line, is refused. Her harness does not assert that a probe changed an effective line.",
+    "the F-0390 gate and its harness now run in .github/workflows/frontend-checks.yml, but that CI job has never executed with these steps present — the wiring is asserted from the YAML, not observed green.",
+    "payouts-on vs unprovisioned RazorpayX is now refused in the publish workflow's `verify money flags` step, which is the only place vars.PAYOUTS_ENABLED is visible. That step has never executed — the check is asserted from the YAML, not observed failing a real run.",
+    "the CURRENT values of vars.PAYMENTS_IN_ENABLED / vars.PAYOUTS_ENABLED in repository settings are invisible from the repo and override the committed literals on every push. Someone with settings access must read them out before this is called done.",
+    "whether `frontend-checks` is a required status check on main — branch protection is not in the repo, so the gate can fail without blocking a merge."
+  ],
+  "skipped": [
+    {
+      "step": "§7 queue conversion",
+      "reason": "the ask was bounded to the 2 `broken` rows of the brand audit, which resolved to one shared root cause (F-0390). Nothing unbounded to convert."
+    },
+    {
+      "step": "promote.py on F-0390 and F-0391",
+      "reason": "promotion CLOSES a ledger record, and closing F-0390 asserts the done_when is satisfied. It is not, until priya or Swapnil signs. The gate exists on disk and is ready to promote against."
+    },
+    {
+      "step": "browser verification",
+      "reason": "the change is build-pipeline configuration; its only observable effect is which literal Vite inlines, which the bundle grep proves directly and a running dev server would not."
+    }
+  ]
+}

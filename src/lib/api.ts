@@ -89,8 +89,17 @@ const PAYMENTS_IN_ENABLED: boolean = import.meta.env?.VITE_PAYMENTS_IN_ENABLED =
  * client-side would already be too late. Hence the guard is PREEMPTIVE: the request never leaves
  * the browser.
  *
- * <p>Both flags default to DISABLED. A deploy that forgets one hides a working feature
- * (recoverable); the opposite mistake debits real creators (not).
+ * <p>This flag still defaults to DISABLED, and that asymmetry is the point: a deploy that forgets
+ * it hides a working feature (recoverable); the opposite mistake debits real creators (not).
+ *
+ * <p>F-0390 (2026-08-25) — the rule used to read "BOTH flags default to disabled", and until that
+ * ticket neither was declared in any build input at all, so both were disabled by ACCIDENT rather
+ * than by decision and no deploy could turn either on without editing this file. Both are now
+ * real build inputs (Dockerfile `ARG`/`ENV`, `publish-images.yml` build-args, `.env.production`).
+ * Swapnil then set money IN to default ENABLED; money OUT — this flag — stays disabled, because
+ * the orphaned-debit hazard above is a hazard to a third party, not to us. The published image's
+ * value comes from the workflow build-arg, NOT from `.env.production`: Vite's `loadEnv` merges
+ * `process.env` over the .env files, and the Dockerfile promotes each build-arg to an ENV.
  */
 const PAYOUTS_ENABLED: boolean = import.meta.env?.VITE_PAYOUTS_ENABLED === 'true';
 

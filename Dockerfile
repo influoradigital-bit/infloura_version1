@@ -10,8 +10,14 @@
 # IMPORTANT: Vite inlines every `VITE_*` env var into the JS bundle at BUILD time, not at
 # container-run time (see .env.local.example) — setting `VITE_API_BASE_URL` as a `docker run -e`
 # var on the runtime image does nothing, because by then the bundle is already static files. The
-# staging/prod values must be supplied as `--build-arg` at `docker build` time instead (defaults
-# below match local dev / .env.local.example so an unparameterized build still works).
+# staging/prod values must be supplied as `--build-arg` at `docker build` time instead.
+#
+# CORRECTION (priya, F-0390 review): the sentence that used to end this paragraph — "defaults
+# below match local dev / .env.local.example so an unparameterized build still works" — is false.
+# The default VITE_API_BASE_URL below is promoted to ENV, wins in Vite's loadEnv over
+# .env.production, and vite.config.ts then throws "Refusing to build" for a localhost URL in a
+# production build. `docker build .` with no --build-arg HARD-FAILS, by design. Keep it that way:
+# it is the only reason the ARG defaults added for F-0390 cannot silently ship a wrong bundle.
 
 # ---- Build stage --------------------------------------------------------------------------
 FROM node:20-alpine AS build
@@ -25,12 +31,36 @@ RUN npm ci
 
 COPY . .
 
+# F-0390 — the two money flags below are READ by src/lib/api.ts:71,104 and gate every money
+# action (`requirePaymentsEnabled`, api.ts:3014/3059/3262 and meera-api.ts:571). Before this
+# they were declared NOWHERE in the build pipeline, so Vite inlined nothing, both evaluated
+# false in every published image, and Add-funds / Fund-escrow threw PaymentsUnavailableError
+# before a request was ever issued — with no way to change that short of a code edit. They are
+# ARGs now so the state is a deploy-time decision instead of an accident.
+#
+# The two are SPLIT because they are independently provisioned products (see the long note at
+# src/lib/api.ts:67-104):
+#   VITE_PAYMENTS_IN_ENABLED  — money IN, standard Razorpay (orders). Default `true` per
+#                               Swapnil's ruling on F-0390 (2026-08-25): collection is on.
+#                               NOTE: influora.razorpay.key-id is still REPLACE_ME in
+#                               deploy/utho/generate-env.sh:59, so until real keys are supplied
+#                               the backend — not this flag — is what fails the call.
+#   VITE_PAYOUTS_ENABLED      — money OUT, RazorpayX (payouts). Stays `false`: this is the
+#                               documented "collection live, payouts manual" operating state,
+#                               and WalletService.requestCreatorWithdrawal debits the creator's
+#                               wallet BEFORE calling RazorpayX, so enabling it against an
+#                               unconfigured gateway orphans real creator debits
+#                               (PayoutOrphanedDebitSweepJob is the cleanup for exactly that).
 ARG VITE_API_MODE=live
 ARG VITE_API_BASE_URL=http://localhost:8080/api/v1
 ARG VITE_MEERA_STREAM_URL=https://ai.influora.internal
+ARG VITE_PAYMENTS_IN_ENABLED=true
+ARG VITE_PAYOUTS_ENABLED=false
 ENV VITE_API_MODE=$VITE_API_MODE \
     VITE_API_BASE_URL=$VITE_API_BASE_URL \
-    VITE_MEERA_STREAM_URL=$VITE_MEERA_STREAM_URL
+    VITE_MEERA_STREAM_URL=$VITE_MEERA_STREAM_URL \
+    VITE_PAYMENTS_IN_ENABLED=$VITE_PAYMENTS_IN_ENABLED \
+    VITE_PAYOUTS_ENABLED=$VITE_PAYOUTS_ENABLED
 
 # `npm run build` also fires the `postbuild` prerender (scripts/prerender.mjs), which needs a
 # Chrome binary not present in this alpine build stage. Run vite directly to skip prerender —
