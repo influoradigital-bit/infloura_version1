@@ -164,4 +164,42 @@ class MeeraVoiceAiClientTest {
         assertFalse(client.speak("", "hello").ok());
         verify(httpClient, never()).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
     }
+
+    @Test
+    @DisplayName("C4 regression: speak(workspaceId, text, lang) includes \"lang\" in the request body sent to influora-ai")
+    void testSpeakWithLangIncludesLangInRequestBody() throws Exception {
+        mockExecuteReturning(fakeResponse(200, new byte[0], "audio/wav"));
+
+        ArgumentCaptor<HttpPost> requestCaptor = ArgumentCaptor.forClass(HttpPost.class);
+
+        client.speak(WORKSPACE_ID, "namaste", "hi-IN");
+
+        verify(httpClient).execute(requestCaptor.capture(), any(HttpClientResponseHandler.class));
+        String sentBody =
+                new String(
+                        requestCaptor.getValue().getEntity().getContent().readAllBytes(),
+                        StandardCharsets.UTF_8);
+        assertTrue(sentBody.contains("\"lang\":\"hi-IN\""));
+        assertTrue(sentBody.contains("\"text\":\"namaste\""));
+    }
+
+    @Test
+    @DisplayName(
+            "C4 regression: speak(workspaceId, text) (no lang) omits \"lang\" from the request body"
+                    + " entirely — never sends a JSON null, which would defeat voice.py's"
+                    + " body.get(\"lang\", \"en-IN\") default")
+    void testSpeakWithoutLangOmitsLangFromRequestBody() throws Exception {
+        mockExecuteReturning(fakeResponse(200, new byte[0], "audio/wav"));
+
+        ArgumentCaptor<HttpPost> requestCaptor = ArgumentCaptor.forClass(HttpPost.class);
+
+        client.speak(WORKSPACE_ID, "hello there");
+
+        verify(httpClient).execute(requestCaptor.capture(), any(HttpClientResponseHandler.class));
+        String sentBody =
+                new String(
+                        requestCaptor.getValue().getEntity().getContent().readAllBytes(),
+                        StandardCharsets.UTF_8);
+        assertFalse(sentBody.contains("lang"));
+    }
 }

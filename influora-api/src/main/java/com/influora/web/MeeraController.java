@@ -239,7 +239,7 @@ public class MeeraController {
             @AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody VoiceSpeakRequest body) {
         var workspace = brandContextService.requireBrandWorkspace(principal);
 
-        MeeraVoiceAiClient.SpeakResult result = voiceAiClient.speak(workspace.getId(), body.text());
+        MeeraVoiceAiClient.SpeakResult result = voiceAiClient.speak(workspace.getId(), body.text(), body.lang());
         if (result.ok()) {
             MediaType mediaType;
             try {
@@ -324,6 +324,14 @@ public class MeeraController {
     /** Request body for {@link #speak}. Deliberately local to this controller rather than {@code
      * MeeraDtos} — this endpoint's shape (bare {@code {"fallback": true}} JSON / raw audio bytes on
      * the response side) is intentionally outside the {@code ApiResponse} envelope every other
-     * route here uses, so it doesn't share that file's conventions either. */
-    public record VoiceSpeakRequest(@NotBlank @Size(max = 1000) String text) {}
+     * route here uses, so it doesn't share that file's conventions either.
+     *
+     * <p>{@code lang} (C4/W3): the BCP-47-ish code the browser detected for the turn being replied
+     * to (see {@code src/lib/meera-api.ts}'s {@code meeraApi.speak}, e.g. {@code hi-IN}) — optional,
+     * omitted (or blank) when no detection is available, in which case {@link MeeraVoiceAiClient}
+     * lets influora-ai's own {@code body.get("lang", "en-IN")} default apply, exactly as before this
+     * field existed. Previously silently dropped here: this DTO had no {@code lang} field at all, so
+     * every Hindi-detected turn was still spoken back as {@code en-IN}. */
+    public record VoiceSpeakRequest(
+            @NotBlank @Size(max = 1000) String text, @Size(max = 20) String lang) {}
 }

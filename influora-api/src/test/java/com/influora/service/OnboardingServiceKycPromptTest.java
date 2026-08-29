@@ -4,8 +4,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.influora.config.R2Properties;
 import com.influora.domain.entity.User;
 import com.influora.domain.enums.UserType;
+import com.influora.integration.storage.R2StorageService;
 import com.influora.repository.UserRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
@@ -33,6 +35,8 @@ class OnboardingServiceKycPromptTest {
     @Mock private BrandContextService brandContext;
     @Mock private WorkspaceSlugService slugService;
     @Mock private AnalyzeSiteTriggerService analyzeSiteTrigger;
+    @Mock private R2StorageService r2StorageService;
+    @Mock private R2Properties r2Properties;
 
     private OnboardingService service;
 
@@ -40,7 +44,13 @@ class OnboardingServiceKycPromptTest {
     void setUp() {
         service =
                 new OnboardingService(
-                        userRepository, workspaceRepository, brandContext, slugService, analyzeSiteTrigger);
+                        userRepository,
+                        workspaceRepository,
+                        brandContext,
+                        slugService,
+                        analyzeSiteTrigger,
+                        r2StorageService,
+                        r2Properties);
     }
 
     @Test

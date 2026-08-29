@@ -123,6 +123,18 @@ public class SecurityConfig {
                                         .permitAll()
                                         .requestMatchers(HttpMethod.POST, "/webhooks/redemption")
                                         .permitAll()
+                                        // F-0392 (Track E) — Meta's Deauthorize + Data Deletion
+                                        // callbacks. Identical trust boundary to /webhooks/razorpay
+                                        // above: Meta is not a logged-in user and cannot present a
+                                        // JWT, so the boundary is the signed_request HMAC, verified
+                                        // in full BEFORE any field of the payload is parsed (see
+                                        // MetaPlatformCallbackController#verifyOrReject). Both are
+                                        // named explicitly rather than /webhooks/meta/** so a future
+                                        // Meta endpoint cannot inherit permitAll by accident.
+                                        .requestMatchers(HttpMethod.POST, "/webhooks/meta/deauthorize")
+                                        .permitAll()
+                                        .requestMatchers(HttpMethod.POST, "/webhooks/meta/data-deletion")
+                                        .permitAll()
                                         // JWKS discovery — serves ONLY public key material (public by
                                         // design, RFC 7517-adjacent convention). See JwksController.
                                         .requestMatchers(HttpMethod.GET, "/.well-known/jwks.json")

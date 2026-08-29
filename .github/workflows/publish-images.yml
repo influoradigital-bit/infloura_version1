@@ -23,11 +23,11 @@ on:
       vite_api_base_url:
         description: 'API base URL to bake into the frontend bundle'
         type: string
-        default: 'http://200.141.1.6/api/v1'
+        default: 'https://api.influora.in/api/v1'
       vite_meera_stream_url:
         description: 'Meera SSE stream URL to bake into the frontend bundle'
         type: string
-        default: 'http://200.141.1.6/meera'
+        default: 'https://ai.influora.in'
       # F-0390 — these gate every money action in the bundle (src/lib/api.ts:71,104). They were
       # absent from build-args entirely, so both baked in as false and the money path was dead in
       # every published image with no lever to change it. Exposed as inputs so the state is chosen
@@ -222,8 +222,8 @@ jobs:
           # non-empty line there as a KEY=VALUE pair, so a `#` line becomes a bogus build arg.)
           build-args: |
             VITE_API_MODE=live
-            VITE_API_BASE_URL=${{ inputs.vite_api_base_url || 'http://200.141.1.6/api/v1' }}
-            VITE_MEERA_STREAM_URL=${{ inputs.vite_meera_stream_url || 'http://200.141.1.6/meera' }}
+            VITE_API_BASE_URL=${{ inputs.vite_api_base_url || 'https://api.influora.in/api/v1' }}
+            VITE_MEERA_STREAM_URL=${{ inputs.vite_meera_stream_url || 'https://ai.influora.in' }}
             VITE_PAYMENTS_IN_ENABLED=${{ (inputs.vite_payments_in_enabled != 'default' && inputs.vite_payments_in_enabled) || vars.PAYMENTS_IN_ENABLED || 'true' }}
             VITE_PAYOUTS_ENABLED=${{ (inputs.vite_payouts_enabled != 'default' && inputs.vite_payouts_enabled) || vars.PAYOUTS_ENABLED || 'false' }}
           tags: |

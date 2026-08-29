@@ -1,6 +1,7 @@
 package com.influora.service.creatorcopilot;
 
 import com.influora.integration.meta.client.FacebookPageClient;
+import com.influora.integration.meta.client.MetaGraphApiClient;
 import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.dto.FacebookAccountsListResponse.InstagramBusinessAccount;
 import com.influora.integration.meta.dto.MetaPermissionsResponse;
@@ -54,14 +55,17 @@ public class CreatorMetaOAuthService {
     private final MetaOAuthService oAuthService;
     private final MetaTokenStorage tokenStorage;
     private final FacebookPageClient facebookPageClient;
+    private final MetaGraphApiClient graphApiClient;
 
     public CreatorMetaOAuthService(
             MetaOAuthService oAuthService,
             MetaTokenStorage tokenStorage,
-            FacebookPageClient facebookPageClient) {
+            FacebookPageClient facebookPageClient,
+            MetaGraphApiClient graphApiClient) {
         this.oAuthService = oAuthService;
         this.tokenStorage = tokenStorage;
         this.facebookPageClient = facebookPageClient;
+        this.graphApiClient = graphApiClient;
     }
 
     /** {@code accountType} is {@code "personal" | "business"}, matching API-CONTRACT.md §4.2's
@@ -122,13 +126,23 @@ public class CreatorMetaOAuthService {
 
         List<String> grantedScopes = resolveGrantedScopesSafely(longLived.accessToken(), creatorProfileId);
 
+        // C5 (Kabir Track E, Meta deauthorize/data-deletion callback) — the FB app-scoped user id.
+        // Neither the code exchange nor the long-lived exchange response carries it (Facebook's
+        // token responses are {access_token, token_type, expires_in} only), and neither of the
+        // existing resolveIgAccountSafely/resolveGrantedScopesSafely calls' responses (/me/accounts,
+        // /me/permissions) return the caller's OWN id either — so this is a genuinely new Graph
+        // round trip, not a duplicate of one already made. GET /me?fields=id needs no permission
+        // beyond the default public_profile scope every Facebook Login grants.
+        String metaUserId = resolveMetaUserIdSafely(longLived.accessToken(), creatorProfileId);
+
         tokenStorage.storeCreatorToken(
                 creatorProfileId,
                 longLived.accessToken(),
                 expiresAt,
                 grantedScopes,
                 igBusinessAccountId,
-                MetaAuthPath.FACEBOOK_LOGIN);
+                MetaAuthPath.FACEBOOK_LOGIN,
+                metaUserId);
 
         if (igAccount == null) {
             return new ConnectResult(false, grantedScopes, ACCOUNT_TYPE_PERSONAL);
@@ -202,6 +216,32 @@ public class CreatorMetaOAuthService {
             return null;
         }
     }
+
+    /**
+     * C5 — resolves the FB app-scoped user id (see {@code connect}'s call-site comment for why
+     * this is a genuinely new Graph call). Same resilience discipline as {@link
+     * #resolveIgAccountSafely}/{@link #resolveGrantedScopesSafely}: a transient Graph API failure
+     * here must not fail the whole connect flow (the token exchange already succeeded and the
+     * token is worth keeping) — {@code null} just means the deauthorize callback won't be able to
+     * match this row later by {@code meta_user_id}, same backward-compat case as a pre-C5 row.
+     */
+    private String resolveMetaUserIdSafely(String accessToken, String creatorProfileId) {
+        try {
+            MetaMeResponse response = graphApiClient.get("/me?fields=id", accessToken, MetaMeResponse.class, "me");
+            return response != null ? response.id() : null;
+        } catch (MetaApiException e) {
+            log.warn(
+                    "CreatorMetaOAuthService: FB app-scoped user id resolution failed for creator {}: {}",
+                    creatorProfileId,
+                    e.getMessage());
+            return null;
+        }
+    }
+
+    /** {@code GET /me?fields=id} response shape — just the caller's own app-scoped id.
+     * Package-private (not {@code private}) purely so {@code CreatorMetaOAuthServiceTest} can
+     * construct one to stub {@code graphApiClient.get(...)}'s return value. */
+    record MetaMeResponse(String id) {}
 
     /**
      * CR-104 — resolves the REAL granted-scope set via {@link FacebookPageClient#fetchPermissions},

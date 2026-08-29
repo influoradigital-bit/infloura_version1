@@ -163,4 +163,132 @@ class UploadServiceTest {
         assertEquals(true, response.key().endsWith(".pdf"));
         verify(fileUploadRepository).save(any());
     }
+
+    @Test
+    @DisplayName(
+            "[F-0390 D3] uploadPrivate: never calls publicUrl() — returns the bare key plus a"
+                    + " short-lived presigned GET for preview only, matching PortfolioService/"
+                    + "CreatorDeliverableService's established key-not-URL storage pattern")
+    void testUploadPrivateReturnsKeyNotPublicUrl() {
+        when(principal.getUserType()).thenReturn(UserType.CREATOR);
+        when(principal.getUserId()).thenReturn("01HCREATORUSER1234AB");
+        when(r2StorageService.isAvailable()).thenReturn(true);
+        when(r2StorageService.putStream(anyString(), any(InputStream.class), eq((long) MINIMAL_PNG.length), eq("image/png")))
+                .thenReturn("etag-789");
+        when(r2StorageService.presignGet(anyString()))
+                .thenAnswer(
+                        inv ->
+                                new R2StorageService.PresignResult(
+                                        "https://r2.influora.com/presigned/" + inv.getArgument(0),
+                                        inv.getArgument(0),
+                                        "influora-dev",
+                                        java.time.Instant.now().plusSeconds(900),
+                                        0L));
+        when(r2Properties.getBucketName()).thenReturn("influora-dev");
+
+        MockMultipartFile file = new MockMultipartFile("file", "selfie.png", "image/png", MINIMAL_PNG);
+
+        UploadResponse response = service.uploadPrivate(principal, file);
+
+        assertEquals(true, response.key().startsWith("uploads/creator/01HCREATORUSER1234AB/"));
+        assertEquals(true, response.url().startsWith("https://r2.influora.com/presigned/"));
+        verify(r2StorageService, never()).publicUrl(anyString());
+        verify(fileUploadRepository).save(any());
+    }
+
+    @Test
+    @DisplayName(
+            "[F-0390 D4] uploadForPurpose(purpose=creator_kyc_selfie) routes to the private path —"
+                    + " stores the bare key, never a public URL")
+    void testUploadForPurposeRoutesKycSelfieToPrivate() {
+        when(principal.getUserType()).thenReturn(UserType.CREATOR);
+        when(principal.getUserId()).thenReturn("01HCREATORUSER1234AB");
+        when(r2StorageService.isAvailable()).thenReturn(true);
+        when(r2StorageService.putStream(anyString(), any(InputStream.class), eq((long) MINIMAL_PNG.length), eq("image/png")))
+                .thenReturn("etag-kyc");
+        when(r2StorageService.presignGet(anyString()))
+                .thenAnswer(
+                        inv ->
+                                new R2StorageService.PresignResult(
+                                        "https://r2.influora.com/presigned/" + inv.getArgument(0),
+                                        inv.getArgument(0),
+                                        "influora-dev",
+                                        java.time.Instant.now().plusSeconds(900),
+                                        0L));
+        when(r2Properties.getBucketName()).thenReturn("influora-dev");
+        MockMultipartFile file = new MockMultipartFile("file", "selfie.png", "image/png", MINIMAL_PNG);
+
+        UploadResponse response = service.uploadForPurpose(principal, file, "creator_kyc_selfie");
+
+        assertEquals(true, response.key().startsWith("uploads/creator/01HCREATORUSER1234AB/"));
+        assertEquals(true, response.url().startsWith("https://r2.influora.com/presigned/"));
+        verify(r2StorageService, never()).publicUrl(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "[F-0390 D4] uploadForPurpose(purpose=brand_kyc_gstin_doc) also routes to the private"
+                    + " path (case/whitespace tolerant)")
+    void testUploadForPurposeRoutesBrandGstinDocToPrivate() {
+        when(principal.getUserType()).thenReturn(UserType.BRAND);
+        when(principal.getUserId()).thenReturn("01HBRANDUSER1234AB");
+        when(r2StorageService.isAvailable()).thenReturn(true);
+        when(r2StorageService.putStream(
+                        anyString(), any(InputStream.class), eq((long) MINIMAL_PDF.length), eq("application/pdf")))
+                .thenReturn("etag-gstin");
+        when(r2StorageService.presignGet(anyString()))
+                .thenAnswer(
+                        inv ->
+                                new R2StorageService.PresignResult(
+                                        "https://r2.influora.com/presigned/" + inv.getArgument(0),
+                                        inv.getArgument(0),
+                                        "influora-dev",
+                                        java.time.Instant.now().plusSeconds(900),
+                                        0L));
+        when(r2Properties.getBucketName()).thenReturn("influora-dev");
+        MockMultipartFile file = new MockMultipartFile("file", "gstin.pdf", "application/pdf", MINIMAL_PDF);
+
+        UploadResponse response = service.uploadForPurpose(principal, file, "  Brand_KYC_Gstin_Doc  ");
+
+        assertEquals(true, response.key().startsWith("uploads/brand/01HBRANDUSER1234AB/"));
+        verify(r2StorageService, never()).publicUrl(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "[F-0390 D4] uploadForPurpose(purpose=null/blank) keeps today's exact public-upload"
+                    + " behavior — backward compatible with every caller that never sends purpose")
+    void testUploadForPurposeDefaultsToPublicWhenAbsent() {
+        when(principal.getUserType()).thenReturn(UserType.BRAND);
+        when(principal.getUserId()).thenReturn("01HBRANDUSER1234AB");
+        when(r2StorageService.isAvailable()).thenReturn(true);
+        when(r2StorageService.putStream(anyString(), any(InputStream.class), eq((long) MINIMAL_PNG.length), eq("image/png")))
+                .thenReturn("etag-logo");
+        when(r2StorageService.publicUrl(anyString())).thenAnswer(inv -> "https://r2.influora.com/" + inv.getArgument(0));
+        when(r2Properties.getBucketName()).thenReturn("influora-dev");
+        MockMultipartFile file = new MockMultipartFile("file", "logo.png", "image/png", MINIMAL_PNG);
+
+        UploadResponse nullPurpose = service.uploadForPurpose(principal, file, null);
+        UploadResponse blankPurpose = service.uploadForPurpose(principal, file, "   ");
+
+        assertEquals(true, nullPurpose.url().startsWith("https://r2.influora.com/uploads/"));
+        assertEquals(true, blankPurpose.url().startsWith("https://r2.influora.com/uploads/"));
+        verify(r2StorageService, never()).presignGet(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "[F-0390 D4] uploadForPurpose rejects an unrecognized purpose (400 INVALID_UPLOAD_PURPOSE)"
+                    + " rather than silently defaulting to public — the server decides privacy, not the"
+                    + " client's chosen string")
+    void testUploadForPurposeRejectsUnknownPurpose() {
+        MockMultipartFile file = new MockMultipartFile("file", "logo.png", "image/png", MINIMAL_PNG);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.uploadForPurpose(principal, file, "totally_made_up"));
+
+        assertEquals("INVALID_UPLOAD_PURPOSE", ex.getCode());
+        verify(r2StorageService, never()).putStream(anyString(), any(InputStream.class), anyLong(), anyString());
+    }
 }

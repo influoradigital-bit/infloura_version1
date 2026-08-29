@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.influora.config.R2Properties;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.UserType;
 import com.influora.domain.enums.WorkspaceType;
+import com.influora.integration.storage.R2StorageService;
 import com.influora.repository.UserRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
@@ -33,6 +35,8 @@ class OnboardingServiceAnalyzeSiteTest {
     @Mock private BrandContextService brandContext;
     @Mock private WorkspaceSlugService slugService;
     @Mock private AnalyzeSiteTriggerService analyzeSiteTrigger;
+    @Mock private R2StorageService r2StorageService;
+    @Mock private R2Properties r2Properties;
 
     private OnboardingService service;
 
@@ -44,7 +48,9 @@ class OnboardingServiceAnalyzeSiteTest {
                         workspaceRepository,
                         brandContext,
                         slugService,
-                        analyzeSiteTrigger);
+                        analyzeSiteTrigger,
+                        r2StorageService,
+                        r2Properties);
     }
 
     @Test

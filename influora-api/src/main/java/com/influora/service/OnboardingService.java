@@ -2,9 +2,11 @@ package com.influora.service;
 
 import com.influora.common.ApiException;
 import com.influora.common.SlugUtils;
+import com.influora.config.R2Properties;
 import com.influora.domain.entity.User;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.VerificationStatus;
+import com.influora.integration.storage.R2StorageService;
 import com.influora.repository.UserRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
@@ -28,17 +30,26 @@ public class OnboardingService {
     private final WorkspaceSlugService slugService;
     private final com.influora.service.brand.AnalyzeSiteTriggerService analyzeSiteTrigger;
 
+    /** [F-0390 D4] KYC-doc read-path key resolution — see {@link #resolveKycDocUrl}. */
+    private final R2StorageService r2StorageService;
+
+    private final R2Properties r2Properties;
+
     public OnboardingService(
             UserRepository userRepository,
             WorkspaceRepository workspaceRepository,
             BrandContextService brandContext,
             WorkspaceSlugService slugService,
-            com.influora.service.brand.AnalyzeSiteTriggerService analyzeSiteTrigger) {
+            com.influora.service.brand.AnalyzeSiteTriggerService analyzeSiteTrigger,
+            R2StorageService r2StorageService,
+            R2Properties r2Properties) {
         this.userRepository = userRepository;
         this.workspaceRepository = workspaceRepository;
         this.brandContext = brandContext;
         this.slugService = slugService;
         this.analyzeSiteTrigger = analyzeSiteTrigger;
+        this.r2StorageService = r2StorageService;
+        this.r2Properties = r2Properties;
     }
 
     @Transactional
@@ -135,6 +146,57 @@ public class OnboardingService {
 
         workspaceRepository.save(workspace);
         return new KycResponse(VerificationStatus.PENDING.name());
+    }
+
+    /**
+     * [F-0390 D4] Resolves a stored {@code Workspace.kycGstinDocUrl}/{@code kycPanDocUrl} value —
+     * bare R2 key (new, post-D4 uploads via {@code uploadForPurpose(..., "brand_kyc_gstin_doc"/
+     * "brand_kyc_pan_doc")}) OR a legacy permanent public URL (pre-D4 rows, still world-readable if
+     * the bucket is public-read) — to a short-lived presigned GET. Mirrors {@code
+     * PortfolioService#resolveCoverUrl}/{@code #toCoverObjectKey} exactly (same codebase convention
+     * of a private, per-service copy rather than a shared util — see also {@code
+     * CreatorDeliverableService#resolveDownloadUrl}/{@code #toObjectKey}).
+     *
+     * <p><b>Not called anywhere in this codebase yet.</b> An exhaustive search (every {@code
+     * @RestController}/response DTO under {@code web/dto/}, {@code AdminBrandService}, {@code
+     * AdminCreatorService}) turned up NO existing endpoint that ever serves {@code
+     * kycGstinDocUrl}/{@code kycPanDocUrl}/{@code selfieUrl} back to any client — {@code
+     * KycResponse} (this class's {@code submitBrandKyc} return value) carries only {@code
+     * kycStatus}. Implemented and unit-tested per the brief (a real read path must not regress a
+     * bare key back into a permanent public URL, whenever one is added), but wiring it into a
+     * specific response is a product decision this fix does not make unasked — reported, not
+     * guessed.
+     */
+    String resolveKycDocUrl(String stored) {
+        if (stored == null || stored.isBlank()) {
+            return null;
+        }
+        String key = toKycDocObjectKey(stored);
+        if (key == null || !r2StorageService.isAvailable()) {
+            return stored;
+        }
+        try {
+            return r2StorageService.presignGet(key).uploadUrl();
+        } catch (RuntimeException e) {
+            return stored;
+        }
+    }
+
+    private String toKycDocObjectKey(String stored) {
+        if (!stored.startsWith("http://") && !stored.startsWith("https://")) {
+            return stored;
+        }
+        String base = r2Properties.getPublicUrl();
+        if (base == null || base.isBlank()) {
+            return null;
+        }
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (stored.startsWith(base + "/")) {
+            return stored.substring(base.length() + 1);
+        }
+        return null;
     }
 
     private static boolean hasChanged(String oldValue, String newValue) {

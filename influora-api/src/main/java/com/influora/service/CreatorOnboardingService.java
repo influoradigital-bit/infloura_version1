@@ -2,9 +2,11 @@ package com.influora.service;
 
 import com.influora.common.ApiException;
 import com.influora.common.JsonLists;
+import com.influora.config.R2Properties;
 import com.influora.domain.entity.CreatorBankAccount;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.User;
+import com.influora.integration.storage.R2StorageService;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.UserRepository;
 import com.influora.security.AuthPrincipal;
@@ -36,15 +38,24 @@ public class CreatorOnboardingService {
     private final UserRepository userRepository;
     private final CreatorBankAccountService creatorBankAccountService;
 
+    /** [F-0390 D4] KYC-doc read-path key resolution — see {@link #resolveKycDocUrl}. */
+    private final R2StorageService r2StorageService;
+
+    private final R2Properties r2Properties;
+
     public CreatorOnboardingService(
             CreatorContextService creatorContext,
             CreatorProfileRepository creatorProfileRepository,
             UserRepository userRepository,
-            CreatorBankAccountService creatorBankAccountService) {
+            CreatorBankAccountService creatorBankAccountService,
+            R2StorageService r2StorageService,
+            R2Properties r2Properties) {
         this.creatorContext = creatorContext;
         this.creatorProfileRepository = creatorProfileRepository;
         this.userRepository = userRepository;
         this.creatorBankAccountService = creatorBankAccountService;
+        this.r2StorageService = r2StorageService;
+        this.r2Properties = r2Properties;
     }
 
     /**
@@ -170,5 +181,46 @@ public class CreatorOnboardingService {
         // [Priya flag] req.accountName() (bank-transfer beneficiary name) is accepted for client
         // contract compatibility but has no column on CreatorBankAccount yet — not persisted.
         return new CreatorPayoutResponse(account.getId());
+    }
+
+    /**
+     * [F-0390 D4] Resolves a stored {@code CreatorProfile.selfieUrl} value — bare R2 key (new,
+     * post-D4 uploads via {@code uploadForPurpose(..., "creator_kyc_selfie")}) OR a legacy
+     * permanent public URL (pre-D4 rows) — to a short-lived presigned GET. Mirrors {@code
+     * PortfolioService#resolveCoverUrl}/{@code #toCoverObjectKey} exactly, same as {@code
+     * OnboardingService#resolveKycDocUrl}'s brand-side counterpart — see that method's javadoc for
+     * why nothing in this codebase calls this yet (no existing response DTO exposes {@code
+     * selfieUrl} back to a client today).
+     */
+    String resolveKycDocUrl(String stored) {
+        if (stored == null || stored.isBlank()) {
+            return null;
+        }
+        String key = toKycDocObjectKey(stored);
+        if (key == null || !r2StorageService.isAvailable()) {
+            return stored;
+        }
+        try {
+            return r2StorageService.presignGet(key).uploadUrl();
+        } catch (RuntimeException e) {
+            return stored;
+        }
+    }
+
+    private String toKycDocObjectKey(String stored) {
+        if (!stored.startsWith("http://") && !stored.startsWith("https://")) {
+            return stored;
+        }
+        String base = r2Properties.getPublicUrl();
+        if (base == null || base.isBlank()) {
+            return null;
+        }
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (stored.startsWith(base + "/")) {
+            return stored.substring(base.length() + 1);
+        }
+        return null;
     }
 }

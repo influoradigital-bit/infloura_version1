@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
@@ -61,11 +62,11 @@ class MeeraControllerTest {
         when(brandContextService.requireBrandWorkspace(principal)).thenReturn(workspace);
 
         byte[] audioBytes = {1, 2, 3, 4};
-        when(voiceAiClient.speak(eq(WORKSPACE_ID), eq("hello there")))
+        when(voiceAiClient.speak(eq(WORKSPACE_ID), eq("hello there"), isNull()))
                 .thenReturn(MeeraVoiceAiClient.SpeakResult.audio(audioBytes, "audio/wav"));
 
         ResponseEntity<?> response =
-                controller.speak(principal, new MeeraController.VoiceSpeakRequest("hello there"));
+                controller.speak(principal, new MeeraController.VoiceSpeakRequest("hello there", null));
 
         assertEquals(200, response.getStatusCode().value());
         assertEquals("audio/wav", response.getHeaders().getContentType().toString());
@@ -77,14 +78,34 @@ class MeeraControllerTest {
     void testSpeakFallbackReturnsFallbackJson() {
         Workspace workspace = Workspace.newBrand(WORKSPACE_ID, "Test Brand", "test-brand", "Beauty", "1-10");
         when(brandContextService.requireBrandWorkspace(principal)).thenReturn(workspace);
-        when(voiceAiClient.speak(eq(WORKSPACE_ID), eq("hello there")))
+        when(voiceAiClient.speak(eq(WORKSPACE_ID), eq("hello there"), isNull()))
                 .thenReturn(MeeraVoiceAiClient.SpeakResult.fallback());
 
         ResponseEntity<?> response =
-                controller.speak(principal, new MeeraController.VoiceSpeakRequest("hello there"));
+                controller.speak(principal, new MeeraController.VoiceSpeakRequest("hello there", null));
 
         assertEquals(200, response.getStatusCode().value());
         assertEquals(java.util.Map.of("fallback", true), response.getBody());
+    }
+
+    @Test
+    @DisplayName(
+            "C4 regression: lang is threaded from the request body to MeeraVoiceAiClient#speak,"
+                    + " not silently dropped")
+    void testSpeakThreadsLangThroughToVoiceAiClient() {
+        Workspace workspace = Workspace.newBrand(WORKSPACE_ID, "Test Brand", "test-brand", "Beauty", "1-10");
+        when(brandContextService.requireBrandWorkspace(principal)).thenReturn(workspace);
+
+        byte[] audioBytes = {5, 6, 7, 8};
+        when(voiceAiClient.speak(eq(WORKSPACE_ID), eq("namaste"), eq("hi-IN")))
+                .thenReturn(MeeraVoiceAiClient.SpeakResult.audio(audioBytes, "audio/wav"));
+
+        ResponseEntity<?> response =
+                controller.speak(principal, new MeeraController.VoiceSpeakRequest("namaste", "hi-IN"));
+
+        assertEquals(200, response.getStatusCode().value());
+        assertArrayEquals(audioBytes, (byte[]) response.getBody());
+        org.mockito.Mockito.verify(voiceAiClient).speak(WORKSPACE_ID, "namaste", "hi-IN");
     }
 
     @Test
@@ -96,7 +117,7 @@ class MeeraControllerTest {
         ApiException exception =
                 assertThrows(
                         ApiException.class,
-                        () -> controller.speak(null, new MeeraController.VoiceSpeakRequest("hello there")));
+                        () -> controller.speak(null, new MeeraController.VoiceSpeakRequest("hello there", null)));
 
         assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
         org.mockito.Mockito.verifyNoInteractions(voiceAiClient);

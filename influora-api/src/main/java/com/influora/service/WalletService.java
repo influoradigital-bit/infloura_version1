@@ -4,6 +4,7 @@ import com.influora.common.ApiException;
 import com.influora.common.PageMeta;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.CreatorBankAccount;
+import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.Payout;
 import com.influora.domain.entity.Wallet;
 import com.influora.domain.entity.WalletTransaction;
@@ -11,9 +12,11 @@ import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MilestoneStatus;
 import com.influora.domain.enums.TxnDirection;
 import com.influora.domain.enums.TxnReferenceType;
+import com.influora.domain.enums.VerificationStatus;
 import com.influora.domain.enums.WalletTransactionType;
 import com.influora.integration.razorpay.RazorpayXClient;
 import com.influora.repository.CreatorBankAccountRepository;
+import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.PayoutRepository;
@@ -77,6 +80,9 @@ public class WalletService {
     private final IdempotencyService idempotencyService;
     private final EscrowHoldRepository escrowHoldRepository;
 
+    /** [F-0390 D2] KYC/tax-identity precondition on withdrawal — see {@link #requestCreatorWithdrawal}. */
+    private final CreatorProfileRepository creatorProfileRepository;
+
     public WalletService(
             WalletRepository walletRepository,
             WalletLedgerService ledgerService,
@@ -88,7 +94,8 @@ public class WalletService {
             RazorpayFundAccountService fundAccountService,
             PayoutRepository payoutRepository,
             IdempotencyService idempotencyService,
-            EscrowHoldRepository escrowHoldRepository) {
+            EscrowHoldRepository escrowHoldRepository,
+            CreatorProfileRepository creatorProfileRepository) {
         this.walletRepository = walletRepository;
         this.ledgerService = ledgerService;
         this.walletTransactionRepository = walletTransactionRepository;
@@ -100,6 +107,7 @@ public class WalletService {
         this.payoutRepository = payoutRepository;
         this.idempotencyService = idempotencyService;
         this.escrowHoldRepository = escrowHoldRepository;
+        this.creatorProfileRepository = creatorProfileRepository;
     }
 
     public record PagedWalletTransactions(List<WalletTransactionRowResponse> items, PageMeta meta) {}
@@ -290,6 +298,8 @@ public class WalletService {
                                                 "No primary bank/UPI account on file for withdrawal",
                                                 HttpStatus.CONFLICT));
 
+        requireIdentityKycSubmitted(userId);
+
         // Namespaced, never the raw client header — see method javadoc [M-6].
         String scopedKey = "creator-withdraw:" + userId + ":" + idempotencyKey;
 
@@ -308,6 +318,54 @@ public class WalletService {
             throw new ApiException(
                     "IDEMPOTENCY_KEY_IN_PROGRESS",
                     "This withdrawal is already being processed — retry shortly",
+                    HttpStatus.CONFLICT);
+        }
+    }
+
+    /**
+     * [F-0390 D2] Money-out KYC gate — neither this method nor the payout path checked creator
+     * identity/tax status before disbursing (F-0390 audit: zero {@code kyc}/{@code taxIdentity}
+     * hits in {@code WalletService}). Mirrors the bank-account precondition immediately above it
+     * (same {@link ApiException} shape, same {@code HttpStatus.CONFLICT} — "you have more setup to
+     * do before this succeeds", not a 400/403).
+     *
+     * <p><b>What "verified" resolves to, and why this does NOT require {@link
+     * VerificationStatus#VERIFIED}:</b> {@link CreatorProfile#getIdentityKycStatus()}
+     * ({@code identity_kyc_status}, V20260715190000__creator_identity_kyc.sql) is the only KYC
+     * status field on the creator identity path (distinct from {@code taxRegistrationStatus}, the
+     * D14 GST business-registration field, which {@code CreatorTaxIdentityService} owns and which
+     * has no bearing on personal-identity KYC). {@link CreatorOnboardingService#submitKyc} —
+     * {@code POST /onboarding/creator/kyc}, explicitly "deferred to first withdrawal per the
+     * onboarding UI" per its own javadoc — sets this to {@link VerificationStatus#PENDING} and
+     * ONLY ever PENDING; a repo-wide search turns up no code path anywhere that ever sets a {@code
+     * CreatorProfile}'s {@code identityKycStatus} to {@link VerificationStatus#VERIFIED} (no admin
+     * KYC review/approve endpoint exists — {@code VerificationStatus.VERIFIED} is set for {@code
+     * Workspace} (brand) verification in {@code AdminBrandService}, never for a creator's identity
+     * KYC). Gating on exactly {@code VERIFIED} would therefore make this withdrawal permanently
+     * unreachable for every creator, forever — a functional regression, not a security fix. The
+     * gate implemented here instead requires the creator to have actually SUBMITTED identity KYC
+     * (status is not {@code null}/{@link VerificationStatus#UNVERIFIED}), matching what "deferred
+     * to first withdrawal" was describing in the first place. [Reported, not silently assumed: a
+     * real PENDING -> VERIFIED admin review workflow does not exist in this codebase yet — that is
+     * a genuine gap or a separate ticket, not something this fix can close from within {@code
+     * WalletService}/{@code CampaignServiceInvoiceService}/{@code EscrowService}/{@code
+     * UploadService} alone.]
+     */
+    private void requireIdentityKycSubmitted(String userId) {
+        CreatorProfile profile =
+                creatorProfileRepository
+                        .findByUserId(userId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "IDENTITY_KYC_REQUIRED",
+                                                "Complete identity verification (KYC) before withdrawing funds",
+                                                HttpStatus.CONFLICT));
+        VerificationStatus status = profile.getIdentityKycStatus();
+        if (status == null || status == VerificationStatus.UNVERIFIED || status == VerificationStatus.REJECTED) {
+            throw new ApiException(
+                    "IDENTITY_KYC_REQUIRED",
+                    "Complete identity verification (KYC) before withdrawing funds",
                     HttpStatus.CONFLICT);
         }
     }

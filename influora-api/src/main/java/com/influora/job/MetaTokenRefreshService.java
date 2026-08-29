@@ -92,7 +92,8 @@ public class MetaTokenRefreshService {
                         creatorProfileId,
                         tokenRow.getGrantedScopesJson(),
                         tokenRow.getIgBusinessAccountId(),
-                        tokenRow.getAuthPath())) {
+                        tokenRow.getAuthPath(),
+                        tokenRow.getMetaUserId())) {
                     refreshed++;
                 } else {
                     failed++;
@@ -127,7 +128,8 @@ public class MetaTokenRefreshService {
             String creatorProfileId,
             String grantedScopesJson,
             String igBusinessAccountId,
-            MetaAuthPath authPath) {
+            MetaAuthPath authPath,
+            String metaUserId) {
         // F-0171 fix: this sweep is system-wide (findTokensExpiringSoon has no workspace filter,
         // by design — see class javadoc), so it processes both brand rows (workspaceId non-null)
         // and creator rows (workspaceId always null). It was calling the WORKSPACE-scoped
@@ -175,8 +177,24 @@ public class MetaTokenRefreshService {
             // storeCreatorToken's own revoke-before-insert step exists to prevent — see its
             // javadoc). storeCreatorToken is the correct, race-safe writer for this key-space.
             if (isCreatorOwned) {
+                // T-IGLOGIN-0820 / C1 fix: the 5-arg overload hardcodes MetaAuthPath.FACEBOOK_LOGIN
+                // (MetaTokenStorage#storeCreatorToken javadoc), which would silently rewrite an
+                // Instagram-Login creator's auth_path to FACEBOOK_LOGIN on its very first refresh.
+                // The row's actual authPath is already known (it's what selected the refresh
+                // endpoint above), so thread it through to the 7-arg overload instead of defaulting.
+                //
+                // C5: metaUserId gets the exact same treatment for the exact same reason — the
+                // revoke-before-insert step mints a brand-new row on every refresh, so a metaUserId
+                // already resolved on this row (FACEBOOK_LOGIN only; always null on INSTAGRAM_LOGIN
+                // by design) must be carried forward or it would be silently wiped every ~55 days.
                 tokenStorage.storeCreatorToken(
-                        creatorProfileId, refreshed.accessToken(), newExpiresAt, grantedScopes, igBusinessAccountId);
+                        creatorProfileId,
+                        refreshed.accessToken(),
+                        newExpiresAt,
+                        grantedScopes,
+                        igBusinessAccountId,
+                        authPath,
+                        metaUserId);
             } else {
                 tokenStorage.storeToken(
                         creatorProfileId,

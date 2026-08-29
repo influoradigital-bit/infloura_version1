@@ -1217,11 +1217,18 @@ public class EscrowService {
         } catch (RuntimeException e) {
             log.error(
                     "Doc#2 creator service invoice failed for escrow hold {} (collaboration {}) — the"
-                            + " completed escrow release/ledger posting is NOT affected; invoice must be"
-                            + " backfilled manually",
+                            + " completed escrow release/ledger posting is NOT affected; a durable failure"
+                            + " marker is recorded below for retryFailedInvoiceFailures to pick up",
                     hold.getId(),
                     collaboration.getId(),
                     e);
+            // [F-0390 D1] Previously this log line WAS the entire recovery story — no outbox row, no
+            // retry, no failure marker, no metric, no backfill tool anywhere in the codebase. This
+            // persists a queryable, retryable marker (escrow_invoice_failures) in the SAME
+            // transaction as the release that just committed above, so the marker can never exist
+            // without the money movement it documents (or vice versa). Never throws.
+            campaignServiceInvoiceService.recordInvoiceCreationFailure(
+                    hold.getId(), collaboration.getId(), ledgerCreditLegId, e.getMessage());
         }
     }
 

@@ -1,5 +1,6 @@
 package com.influora.repository;
 
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.MetaOAuthToken;
 import java.time.Instant;
 import java.util.List;
@@ -77,4 +78,37 @@ public interface MetaOAuthTokenRepository extends JpaRepository<MetaOAuthToken, 
      * #findByRevokedFalseAndExpiresAtAfter(Instant)} above, restricted to the creator key-space only.
      */
     List<MetaOAuthToken> findByWorkspaceIdIsNullAndRevokedFalseAndExpiresAtAfter(Instant now);
+
+    /**
+     * C5 (Kabir Track E, Meta deauthorize/data-deletion callback) — resolves a FACEBOOK_LOGIN row
+     * by the FB app-scoped {@code meta_user_id} a deauthorize {@code signed_request} carries.
+     * CR-111-hardened form, same reasoning as {@link
+     * #findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse}: a plain derived {@code
+     * findByMetaUserIdAnd...} query would translate a {@code null}-bound {@code metaUserId}
+     * argument into a SQL {@code IS NULL} check (Spring Data's null-to-isNull rewrite for a
+     * {@code SIMPLE_PROPERTY} part) and match every pre-existing row with a NULL {@code
+     * meta_user_id} column — a blank/malformed webhook payload must never mass-match. The explicit
+     * {@code IS NOT NULL} predicate makes "a null argument can never match any row" textually
+     * load-bearing rather than accidental, exactly like the brand-scoped method above.
+     */
+    @Query(
+            "SELECT t FROM MetaOAuthToken t WHERE t.metaUserId IS NOT NULL "
+                    + "AND t.metaUserId = :metaUserId AND t.authPath = :authPath AND t.revoked = false")
+    Optional<MetaOAuthToken> findByMetaUserIdAndAuthPathAndRevokedFalse(
+            @Param("metaUserId") String metaUserId, @Param("authPath") MetaAuthPath authPath);
+
+    /**
+     * C5 (Kabir Track E) — resolves an INSTAGRAM_LOGIN row by {@code ig_business_account_id}, the
+     * column that already carries the Instagram user id for that path (see {@code
+     * CreatorMetaOAuthService#connectViaInstagramLogin}). Same CR-111-hardened
+     * explicit-{@code IS NOT NULL} form as {@link #findByMetaUserIdAndAuthPathAndRevokedFalse}
+     * above, for the same reason — a null/blank argument must never mass-match every
+     * not-yet-resolved row.
+     */
+    @Query(
+            "SELECT t FROM MetaOAuthToken t WHERE t.igBusinessAccountId IS NOT NULL "
+                    + "AND t.igBusinessAccountId = :igBusinessAccountId AND t.authPath = :authPath "
+                    + "AND t.revoked = false")
+    Optional<MetaOAuthToken> findByIgBusinessAccountIdAndAuthPathAndRevokedFalse(
+            @Param("igBusinessAccountId") String igBusinessAccountId, @Param("authPath") MetaAuthPath authPath);
 }

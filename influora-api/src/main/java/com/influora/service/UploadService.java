@@ -14,6 +14,7 @@ import com.influora.service.security.MalwareScanService;
 import com.influora.web.dto.upload.UploadDtos.UploadResponse;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +40,18 @@ public class UploadService {
     /** Generic cap for logos/KYC docs/selfies — same as PortfolioService's cover-image cap. Not for video. */
     static final long MAX_BYTES = 10_485_760L;
 
+    /**
+     * [F-0390 D4] Server-side allowlist of upload {@code purpose} values that MUST route through
+     * {@link #uploadPrivate} — every identity/KYC document this generic upload endpoint accepts.
+     * The three real KYC document uploads in this codebase: creator selfie ({@code
+     * CreatorOnboardingService#submitKyc} -> {@code CreatorProfile.selfieUrl}) and brand GSTIN/PAN
+     * docs ({@code OnboardingService#submitBrandKyc} -> {@code Workspace.kycGstinDocUrl}/{@code
+     * .kycPanDocUrl}). Deliberately an allowlist, not a denylist — an unrecognized purpose is
+     * rejected (see {@link #uploadForPurpose}) rather than assumed safe to publish.
+     */
+    static final Set<String> KYC_UPLOAD_PURPOSES =
+            Set.of("creator_kyc_selfie", "brand_kyc_gstin_doc", "brand_kyc_pan_doc");
+
     private final R2StorageService r2StorageService;
     private final R2Properties r2Properties;
     private final MalwareScanService malwareScanService;
@@ -55,8 +68,88 @@ public class UploadService {
         this.fileUploadRepository = fileUploadRepository;
     }
 
+    /**
+     * [F-0390 D4] Purpose-aware entrypoint — {@code UploadController} routes {@code POST /uploads}
+     * through this method (not {@link #upload(AuthPrincipal, MultipartFile)} directly) so every
+     * future KYC purpose is enforced at one call site instead of trusting each caller to remember.
+     * The SERVER decides public vs. private from {@code purpose} against {@link
+     * #KYC_UPLOAD_PURPOSES} — never the client. {@code purpose} absent/blank preserves today's
+     * exact public-upload behavior (backward compatible with every existing caller — brand logo,
+     * portfolio cover, etc. — that never sends it and doesn't need to). A non-blank, unrecognized
+     * purpose is REJECTED rather than silently defaulting to public: a typo or a malicious client
+     * must never be able to downgrade a KYC upload's privacy by mis-naming the purpose.
+     */
+    @Transactional
+    public UploadResponse uploadForPurpose(AuthPrincipal principal, MultipartFile file, String purpose) {
+        String normalized = purpose == null ? null : purpose.trim().toLowerCase();
+        if (normalized == null || normalized.isBlank()) {
+            return upload(principal, file);
+        }
+        if (KYC_UPLOAD_PURPOSES.contains(normalized)) {
+            return uploadPrivate(principal, file);
+        }
+        throw new ApiException(
+                "INVALID_UPLOAD_PURPOSE", "Unknown upload purpose: " + normalized, HttpStatus.BAD_REQUEST);
+    }
+
     @Transactional
     public UploadResponse upload(AuthPrincipal principal, MultipartFile file) {
+        UploadedObject stored = validateAndStore(principal, file);
+
+        // publicUrl() assumes a public-read bucket base — correct for this method's remaining
+        // callers (brand logo, portfolio cover, etc.): genuinely public assets. [F-0390 D3/D4] KYC
+        // documents no longer reach this branch — UploadController routes them through {@link
+        // #uploadForPurpose} -> {@link #uploadPrivate} instead, based on the server-validated
+        // `purpose` allowlist, never a client choice.
+        String url = r2StorageService.publicUrl(stored.key());
+        persistMetadata(principal, stored, url);
+        return new UploadResponse(url, stored.key());
+    }
+
+    /**
+     * [F-0390 D3/D4] Private-asset counterpart to {@link #upload} — same validation/malware-scan/
+     * R2-stream pipeline (via {@link #validateAndStore}), but never calls {@link
+     * R2StorageService#publicUrl}: the persisted {@code file_uploads.public_url} column, and the
+     * {@code key} this returns, are both the bare R2 object key (never a permanent public URL). The
+     * {@code url} field returned here is a short-lived presigned GET (same {@link
+     * R2StorageService#presignGet} the established pattern already uses — see {@code
+     * CreatorDeliverableService#uploadProof}/{@code PortfolioService#resolveCoverUrl}) for
+     * immediate client-side preview ONLY; callers must persist the {@code key}, not this {@code
+     * url}, anywhere they store a long-lived reference (mirrors what those two established callers
+     * already do).
+     *
+     * <p><b>Wired</b> (D4): {@link #uploadForPurpose} routes every {@link #KYC_UPLOAD_PURPOSES}
+     * purpose here. The FE change needed to actually send a private KYC upload through {@code POST
+     * /uploads} — and to persist the response's {@code key} (not {@code url}) into {@code
+     * gstinDocUrl}/{@code panDocUrl}/{@code selfieUrl} — is reported separately (frontend files are
+     * outside this task's scope); the write-side onboarding paths ({@code
+     * OnboardingService#submitBrandKyc}, {@code CreatorOnboardingService#submitKyc}) already persist
+     * whatever string they're given verbatim, so they needed no code change for this. Read-side key
+     * resolution (tolerating both a legacy full URL and a new bare key, mirroring {@code
+     * PortfolioService#resolveCoverUrl}/{@code toCoverObjectKey}) is implemented in {@code
+     * OnboardingService#resolveKycDocUrl}/{@code CreatorOnboardingService#resolveKycDocUrl} — see
+     * those methods' javadoc for why nothing currently calls them (no existing response DTO exposes
+     * these fields back to a client today; confirmed by an exhaustive repo search, reported rather
+     * than fabricated a consumer).
+     *
+     * <p>{@code R2StorageService#presignPut} is separately noted (F-0390 audit) as dead code with
+     * zero callers — NOT wired up here per the brief; this method still uses the existing
+     * server-side {@code putStream} upload path, not a client-direct presigned PUT.
+     */
+    @Transactional
+    public UploadResponse uploadPrivate(AuthPrincipal principal, MultipartFile file) {
+        UploadedObject stored = validateAndStore(principal, file);
+        String previewUrl =
+                r2StorageService.isAvailable() ? r2StorageService.presignGet(stored.key()).uploadUrl() : null;
+        // Never persist a permanent public URL for a private asset — public_url stays null/absent
+        // (or could store the bare key too; null is clearer that this row is not publicly served).
+        persistMetadata(principal, stored, null);
+        return new UploadResponse(previewUrl, stored.key());
+    }
+
+    private record UploadedObject(String key, String mime, long size, String etag) {}
+
+    private UploadedObject validateAndStore(AuthPrincipal principal, MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new ApiException("INVALID_FILE", "A file is required", HttpStatus.BAD_REQUEST);
         }
@@ -98,14 +191,10 @@ public class UploadService {
             throw new ApiException("FILE_TOO_LARGE", e.getMessage(), HttpStatus.BAD_REQUEST);
         }
 
-        // [Flag for Priya/Kabir] publicUrl() assumes a public-read bucket base — fine for brand
-        // logos, but a genuinely private-KYC-doc access model (signed, expiring, audit-logged
-        // reads) is a real gap this endpoint doesn't close. Matches the existing `file_uploads`
-        // schema's own `public_url` column naming, and is required here because the frontend
-        // persists the returned `url` long-term into DB fields (gstinDocUrl/panDocUrl/selfieUrl) —
-        // a short-lived presigned GET would silently rot.
-        String url = r2StorageService.publicUrl(key);
+        return new UploadedObject(key, sniffedMime, size, etag);
+    }
 
+    private void persistMetadata(AuthPrincipal principal, UploadedObject stored, String publicUrl) {
         FileUpload record =
                 FileUpload.create(
                         Ulids.newUlid(),
@@ -113,14 +202,12 @@ public class UploadService {
                         FileOwnerType.USER,
                         "GENERIC",
                         r2Properties.getBucketName(),
-                        key,
-                        sniffedMime,
-                        size,
-                        etag,
-                        url);
+                        stored.key(),
+                        stored.mime(),
+                        stored.size(),
+                        stored.etag(),
+                        publicUrl);
         fileUploadRepository.save(record);
-
-        return new UploadResponse(url, key);
     }
 
     private static String sniffMime(MultipartFile file) {

@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.influora.config.MetaApiProperties;
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
@@ -590,5 +591,153 @@ class MetaTokenStorageTest {
         // Token should still be saved and encrypted
         assertNotNull(saved.getId());
         assertFalse(saved.getEncryptedAccessToken().equals(plainToken));
+    }
+
+    // ===========================================================================================
+    // C5 (Kabir Track E, Meta deauthorize/data-deletion callback): meta_user_id persistence +
+    // storage-level revoke-by-lookup.
+    // ===========================================================================================
+
+    @Test
+    @DisplayName("storeCreatorToken (7-arg): persists metaUserId on the FACEBOOK_LOGIN row")
+    void testStoreCreatorTokenPersistsMetaUserId() {
+        String plainToken = "token-with-meta-user-id";
+        Instant expiresAt = Instant.now().plus(Duration.ofDays(60));
+        List<String> scopes = List.of("instagram_basic");
+        String metaUserId = "10000000000000001";
+
+        when(repository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.empty());
+
+        storage.storeCreatorToken(
+                CREATOR_PROFILE_ID,
+                plainToken,
+                expiresAt,
+                scopes,
+                null,
+                MetaAuthPath.FACEBOOK_LOGIN,
+                metaUserId);
+
+        verify(repository).save(tokenCaptor.capture());
+        MetaOAuthToken saved = tokenCaptor.getValue();
+        assertEquals(metaUserId, saved.getMetaUserId());
+        assertEquals(MetaAuthPath.FACEBOOK_LOGIN, saved.getAuthPath());
+    }
+
+    @Test
+    @DisplayName("storeCreatorToken: legacy 5-arg overload leaves metaUserId null (backward compat)")
+    void testStoreCreatorTokenLegacyOverloadLeavesMetaUserIdNull() {
+        when(repository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.empty());
+
+        storage.storeCreatorToken(
+                CREATOR_PROFILE_ID,
+                "legacy-token",
+                Instant.now().plus(Duration.ofDays(60)),
+                List.of("instagram_basic"),
+                null);
+
+        verify(repository).save(tokenCaptor.capture());
+        assertEquals(null, tokenCaptor.getValue().getMetaUserId());
+    }
+
+    @Test
+    @DisplayName("revokeByMetaUserId: FACEBOOK_LOGIN match (meta_user_id) is revoked and audited")
+    void testRevokeByMetaUserIdRevokesFacebookLoginMatch() {
+        String metaUserId = "10000000000000002";
+        MetaOAuthToken match =
+                MetaOAuthToken.builder()
+                        .id(TOKEN_ID)
+                        .creatorProfileId(CREATOR_PROFILE_ID)
+                        .encryptedAccessToken("encrypted")
+                        .expiresAt(Instant.now().plus(Duration.ofDays(30)))
+                        .grantedScopesJson("[]")
+                        .lastRefreshedAt(Instant.now())
+                        .build();
+
+        when(repository.findByMetaUserIdAndAuthPathAndRevokedFalse(metaUserId, MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(Optional.of(match));
+
+        Optional<String> result = storage.revokeByMetaUserId(metaUserId);
+
+        assertTrue(result.isPresent());
+        assertEquals(CREATOR_PROFILE_ID, result.get());
+        verify(repository).save(tokenCaptor.capture());
+        assertTrue(tokenCaptor.getValue().isRevoked());
+        // FACEBOOK_LOGIN matched first — the INSTAGRAM_LOGIN key-space must not even be queried.
+        verify(repository, never())
+                .findByIgBusinessAccountIdAndAuthPathAndRevokedFalse(any(), any());
+
+        verify(auditLog)
+                .recordToolCall(
+                        eq(null),
+                        eq("META_OAUTH_TOKEN_REVOKED_VIA_DEAUTHORIZE"),
+                        eq("SENSITIVE"),
+                        eq(AuditLogService.OUTCOME_ALLOWED),
+                        eq(null),
+                        eq(null),
+                        eq(null),
+                        detailCaptor.capture());
+        assertEquals(CREATOR_PROFILE_ID, detailCaptor.getValue().get("creatorProfileId"));
+    }
+
+    @Test
+    @DisplayName(
+            "revokeByMetaUserId: falls back to the INSTAGRAM_LOGIN key-space"
+                    + " (ig_business_account_id) when no FACEBOOK_LOGIN row matches")
+    void testRevokeByMetaUserIdFallsBackToInstagramLoginMatch() {
+        String igUserId = "17841400000000321";
+        MetaOAuthToken match =
+                MetaOAuthToken.builder()
+                        .id(TOKEN_ID)
+                        .creatorProfileId(CREATOR_PROFILE_ID)
+                        .igBusinessAccountId(igUserId)
+                        .encryptedAccessToken("encrypted")
+                        .expiresAt(Instant.now().plus(Duration.ofDays(30)))
+                        .grantedScopesJson("[]")
+                        .lastRefreshedAt(Instant.now())
+                        .build();
+
+        when(repository.findByMetaUserIdAndAuthPathAndRevokedFalse(igUserId, MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(Optional.empty());
+        when(repository.findByIgBusinessAccountIdAndAuthPathAndRevokedFalse(igUserId, MetaAuthPath.INSTAGRAM_LOGIN))
+                .thenReturn(Optional.of(match));
+
+        Optional<String> result = storage.revokeByMetaUserId(igUserId);
+
+        assertTrue(result.isPresent());
+        assertEquals(CREATOR_PROFILE_ID, result.get());
+        verify(repository).save(tokenCaptor.capture());
+        assertTrue(tokenCaptor.getValue().isRevoked());
+    }
+
+    @Test
+    @DisplayName(
+            "revokeByMetaUserId: no match on either key-space (e.g. pre-C5 NULL-column rows) is a"
+                    + " safe no-op, never throws")
+    void testRevokeByMetaUserIdNoMatchIsNoOp() {
+        String unknownId = "99999999999999999";
+        when(repository.findByMetaUserIdAndAuthPathAndRevokedFalse(unknownId, MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(Optional.empty());
+        when(repository.findByIgBusinessAccountIdAndAuthPathAndRevokedFalse(unknownId, MetaAuthPath.INSTAGRAM_LOGIN))
+                .thenReturn(Optional.empty());
+
+        Optional<String> result = storage.revokeByMetaUserId(unknownId);
+
+        assertFalse(result.isPresent());
+        verify(repository, never()).save(any());
+        verify(auditLog, never()).recordToolCall(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("revokeByMetaUserId: blank/null id is a no-op without touching the repository")
+    void testRevokeByMetaUserIdBlankInputIsNoOp() {
+        assertFalse(storage.revokeByMetaUserId(null).isPresent());
+        assertFalse(storage.revokeByMetaUserId("").isPresent());
+        assertFalse(storage.revokeByMetaUserId("   ").isPresent());
+
+        verify(repository, never()).findByMetaUserIdAndAuthPathAndRevokedFalse(any(), any());
+        verify(repository, never()).findByIgBusinessAccountIdAndAuthPathAndRevokedFalse(any(), any());
+        verify(repository, never()).save(any());
     }
 }

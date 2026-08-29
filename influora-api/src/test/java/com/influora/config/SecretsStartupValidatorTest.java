@@ -70,6 +70,10 @@ class SecretsStartupValidatorTest {
 
         razorpayProperties = new RazorpayProperties();
         razorpayProperties.setWebhookSecret("real-razorpay-webhook-secret-distinct-from-placeholder");
+        // [C3] Real, non-placeholder key-id/key-secret — the "everything is fine" baseline needs
+        // these too now that validateRazorpayWebhookSecret also checks them.
+        razorpayProperties.setKeyId("rzp_live_realKeyIdDistinctFromPlaceholder");
+        razorpayProperties.setKeySecret("real-razorpay-key-secret-distinct-from-placeholder");
 
         dataSourceProperties = new DataSourceProperties();
         dataSourceProperties.setUrl(
@@ -143,6 +147,12 @@ class SecretsStartupValidatorTest {
         // [CR-81] Real, non-loopback value for the "everything is fine" baseline — the localhost
         // default is asserted by its own tests below, same convention as forwardHeadersStrategy.
         setField(validator, "apiPublicUrl", "https://api.influora.example");
+        // [C3] Real, distinct, >=32-byte value for the "everything is fine" baseline — the
+        // committed dev-default is asserted by its own tests below.
+        setField(
+                validator,
+                "unsubscribeSigningSecret",
+                "real-unsubscribe-signing-secret-at-least-32-bytes-long!!!");
         return validator;
     }
 
@@ -641,6 +651,100 @@ class SecretsStartupValidatorTest {
     void testDefaultLocalhostApiPublicUrlOnlyWarnsInDev() throws Exception {
         SecretsStartupValidator validator = buildValidator("dev");
         setField(validator, "apiPublicUrl", "http://localhost:8080");
+        assertDoesNotThrow(validator::validate);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // C3: Razorpay key-id/key-secret placeholders (validateRazorpayWebhookSecret previously only
+    // checked webhook-secret) + influora.notification.unsubscribe-signing-secret dev-default boot
+    // validation.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("validate: committed placeholder Razorpay key-id fails closed in prod")
+    void testPlaceholderRazorpayKeyIdFailsClosedInProd() throws Exception {
+        razorpayProperties.setKeyId("rzp_test_REPLACE_WITH_YOUR_KEY");
+        SecretsStartupValidator validator = buildValidator("prod");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.razorpay.key-id"));
+        assertTrue(ex.getMessage().contains("placeholder"));
+    }
+
+    @Test
+    @DisplayName("validate: committed placeholder Razorpay key-secret fails closed in prod")
+    void testPlaceholderRazorpayKeySecretFailsClosedInProd() throws Exception {
+        razorpayProperties.setKeySecret("REPLACE_WITH_YOUR_RAZORPAY_SECRET");
+        SecretsStartupValidator validator = buildValidator("prod");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.razorpay.key-secret"));
+        assertTrue(ex.getMessage().contains("placeholder"));
+    }
+
+    @Test
+    @DisplayName("validate: missing Razorpay key-id/key-secret fails closed in prod")
+    void testMissingRazorpayKeyIdAndSecretFailsClosedInProd() throws Exception {
+        razorpayProperties.setKeyId("");
+        razorpayProperties.setKeySecret(null);
+        SecretsStartupValidator validator = buildValidator("staging");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.razorpay.key-id"));
+        assertTrue(ex.getMessage().contains("influora.razorpay.key-secret"));
+        assertTrue(ex.getMessage().contains("missing"));
+    }
+
+    @Test
+    @DisplayName("validate: placeholder Razorpay key-id/key-secret only WARN (do not throw) in env=dev")
+    void testPlaceholderRazorpayKeyIdAndSecretOnlyWarnInDev() throws Exception {
+        razorpayProperties.setKeyId("rzp_test_REPLACE_WITH_YOUR_KEY");
+        razorpayProperties.setKeySecret("REPLACE_WITH_YOUR_RAZORPAY_SECRET");
+        SecretsStartupValidator validator = buildValidator("dev");
+        assertDoesNotThrow(validator::validate);
+    }
+
+    @Test
+    @DisplayName("validate: real, distinct Razorpay key-id/key-secret boot clean in prod")
+    void testRealRazorpayKeyIdAndSecretBootCleanInProd() throws Exception {
+        SecretsStartupValidator validator = buildValidator("prod");
+        assertDoesNotThrow(validator::validate);
+    }
+
+    @Test
+    @DisplayName("validate: committed dev-default unsubscribe-signing-secret fails closed in prod")
+    void testDevDefaultUnsubscribeSigningSecretFailsClosedInProd() throws Exception {
+        SecretsStartupValidator validator = buildValidator("prod");
+        setField(validator, "unsubscribeSigningSecret", "change-me-unsubscribe-signing-secret-min-32-chars");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.notification.unsubscribe-signing-secret"));
+        assertTrue(ex.getMessage().contains("dev default"));
+    }
+
+    @Test
+    @DisplayName("validate: too-short unsubscribe-signing-secret fails closed in prod")
+    void testTooShortUnsubscribeSigningSecretFailsClosedInProd() throws Exception {
+        SecretsStartupValidator validator = buildValidator("prod");
+        setField(validator, "unsubscribeSigningSecret", "too-short");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.notification.unsubscribe-signing-secret"));
+        assertTrue(ex.getMessage().contains("32 bytes"));
+    }
+
+    @Test
+    @DisplayName("validate: dev-default unsubscribe-signing-secret only WARNS (does not throw) in env=dev")
+    void testDevDefaultUnsubscribeSigningSecretOnlyWarnsInDev() throws Exception {
+        SecretsStartupValidator validator = buildValidator("dev");
+        setField(validator, "unsubscribeSigningSecret", "change-me-unsubscribe-signing-secret-min-32-chars");
+        assertDoesNotThrow(validator::validate);
+    }
+
+    @Test
+    @DisplayName("validate: real, distinct unsubscribe-signing-secret boots clean in prod")
+    void testRealUnsubscribeSigningSecretBootsCleanInProd() throws Exception {
+        SecretsStartupValidator validator = buildValidator("prod");
         assertDoesNotThrow(validator::validate);
     }
 }

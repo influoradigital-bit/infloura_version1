@@ -4,12 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.influora.config.MetaApiProperties;
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.integration.meta.dto.MetaTokenResponse;
 import com.influora.integration.meta.exception.MetaApiException;
@@ -207,17 +209,99 @@ class MetaTokenRefreshServiceTest {
 
         refreshService.refreshExpiringTokens();
 
+        // C1 fix: authPath is now always threaded through to the 7-arg overload (this test's
+        // token defaults to FACEBOOK_LOGIN via createTestToken) — never the 5-arg overload, which
+        // would silently hardcode FACEBOOK_LOGIN regardless of the row's real auth_path.
+        // C5: metaUserId is null on this row (createTestToken doesn't set it), and must be
+        // threaded through as null too, not omitted via a shorter overload.
         verify(tokenStorage)
                 .storeCreatorToken(
                         eq(CREATOR_ID),
                         eq(REFRESHED_TOKEN),
                         any(Instant.class),
                         eq(List.of("instagram_basic")),
-                        eq(igBusinessAccountId));
+                        eq(igBusinessAccountId),
+                        eq(MetaAuthPath.FACEBOOK_LOGIN),
+                        isNull());
         // The regression this guards against: the shared workspace-scoped writer, which would
         // silently mint a duplicate non-revoked creator row on every refresh (self-DoS).
         verify(tokenStorage, never())
                 .storeToken(anyString(), eq((String) null), anyString(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "C1 regression: an INSTAGRAM_LOGIN creator's auth_path survives a refresh — must be"
+                    + " threaded into the 6-arg storeCreatorToken overload, never the 5-arg overload"
+                    + " which hardcodes FACEBOOK_LOGIN")
+    void testRefreshPreservesInstagramLoginAuthPath() {
+        String igUserId = "17841400000000001";
+        MetaOAuthToken token =
+                createTestToken(null, CREATOR_ID, "[\"instagram_basic\"]", igUserId, MetaAuthPath.INSTAGRAM_LOGIN);
+        when(tokenStorage.findTokensExpiringSoon(props.getTokenRefreshDaysBeforeExpiry()))
+                .thenReturn(List.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(CURRENT_TOKEN));
+        when(oAuthService.refreshInstagramLongLivedToken(CURRENT_TOKEN))
+                .thenReturn(new MetaTokenResponse(REFRESHED_TOKEN, "bearer", 5184000L));
+
+        refreshService.refreshExpiringTokens();
+
+        // The refresh must hit the Instagram-specific endpoint, not the Facebook one.
+        verify(oAuthService).refreshInstagramLongLivedToken(CURRENT_TOKEN);
+        verify(oAuthService, never()).refreshLongLivedToken(anyString());
+
+        // The regression this guards against: calling the 5-arg storeCreatorToken overload, which
+        // hardcodes MetaAuthPath.FACEBOOK_LOGIN and would silently flip this creator's stored
+        // auth_path away from INSTAGRAM_LOGIN on the very first refresh. metaUserId stays null
+        // here by design — INSTAGRAM_LOGIN rows never populate it (see MetaOAuthToken's javadoc).
+        verify(tokenStorage)
+                .storeCreatorToken(
+                        eq(CREATOR_ID),
+                        eq(REFRESHED_TOKEN),
+                        any(Instant.class),
+                        eq(List.of("instagram_basic")),
+                        eq(igUserId),
+                        eq(MetaAuthPath.INSTAGRAM_LOGIN),
+                        isNull());
+        verify(tokenStorage, never())
+                .storeCreatorToken(anyString(), anyString(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "C5 regression: a FACEBOOK_LOGIN creator's meta_user_id survives a refresh — must be"
+                    + " threaded into the 7-arg storeCreatorToken overload, never silently dropped"
+                    + " to null on an already-resolved row")
+    void testRefreshPreservesMetaUserId() {
+        String metaUserId = "10000000000000099";
+        MetaOAuthToken token =
+                createTestToken(
+                        null,
+                        CREATOR_ID,
+                        "[\"instagram_basic\"]",
+                        null,
+                        MetaAuthPath.FACEBOOK_LOGIN,
+                        metaUserId);
+        when(tokenStorage.findTokensExpiringSoon(props.getTokenRefreshDaysBeforeExpiry()))
+                .thenReturn(List.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(CURRENT_TOKEN));
+        when(oAuthService.refreshLongLivedToken(CURRENT_TOKEN))
+                .thenReturn(new MetaTokenResponse(REFRESHED_TOKEN, "bearer", 5184000L));
+
+        refreshService.refreshExpiringTokens();
+
+        // The regression this guards against: passing null for metaUserId on a refresh, which
+        // would silently wipe a previously-resolved FB app-scoped id every ~55-day cycle — the
+        // exact class of bug C1 fixed for authPath, now closed for this column too.
+        verify(tokenStorage)
+                .storeCreatorToken(
+                        eq(CREATOR_ID),
+                        eq(REFRESHED_TOKEN),
+                        any(Instant.class),
+                        eq(List.of("instagram_basic")),
+                        isNull(),
+                        eq(MetaAuthPath.FACEBOOK_LOGIN),
+                        eq(metaUserId));
     }
 
     @Test
@@ -321,6 +405,27 @@ class MetaTokenRefreshServiceTest {
             String creatorProfileId,
             String grantedScopesJson,
             String igBusinessAccountId) {
+        return createTestToken(
+                workspaceId, creatorProfileId, grantedScopesJson, igBusinessAccountId, MetaAuthPath.FACEBOOK_LOGIN);
+    }
+
+    private MetaOAuthToken createTestToken(
+            String workspaceId,
+            String creatorProfileId,
+            String grantedScopesJson,
+            String igBusinessAccountId,
+            MetaAuthPath authPath) {
+        return createTestToken(
+                workspaceId, creatorProfileId, grantedScopesJson, igBusinessAccountId, authPath, null);
+    }
+
+    private MetaOAuthToken createTestToken(
+            String workspaceId,
+            String creatorProfileId,
+            String grantedScopesJson,
+            String igBusinessAccountId,
+            MetaAuthPath authPath,
+            String metaUserId) {
         return new MetaOAuthToken() {
             @Override
             public String getId() {
@@ -355,6 +460,16 @@ class MetaTokenRefreshServiceTest {
             @Override
             public boolean isRevoked() {
                 return false;
+            }
+
+            @Override
+            public MetaAuthPath getAuthPath() {
+                return authPath;
+            }
+
+            @Override
+            public String getMetaUserId() {
+                return metaUserId;
             }
         };
     }

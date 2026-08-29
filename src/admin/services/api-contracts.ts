@@ -82,8 +82,15 @@ async function apiRequest<T>(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Request failed' }));
-    return { success: false, error: error.message };
+    // GlobalExceptionHandler returns { success, data, error: { code, message }, meta, timestamp }.
+    // Reading `error.message` off that envelope yields undefined, so EVERY admin error rendered as
+    // a generic fallback — a SUPER_ADMIN blocked by MFA_ENROLLMENT_REQUIRED just saw "Login failed.
+    // Check your credentials and authenticator code." Prefer the nested message, fall back to a
+    // flat { message } body, then to the status code. See AdminAuthController class javadoc.
+    const body = await response.json().catch(() => null);
+    const message =
+      body?.error?.message ?? body?.message ?? `Request failed (${response.status})`;
+    return { success: false, error: message };
   }
 
   let data: T;

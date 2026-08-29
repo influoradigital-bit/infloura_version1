@@ -159,10 +159,14 @@ services:
       INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY: ${INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY}
       INFLUORA_PII_EMAILPHONEENCRYPTIONKEY: ${INFLUORA_PII_EMAILPHONEENCRYPTIONKEY}
       INFLUORA_PII_BANKENCRYPTIONKEY: ${INFLUORA_PII_BANKENCRYPTIONKEY}
+      INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY: ${INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY}
+      INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY: ${INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY}
+      INFLUORA_CONVERSIONWEBHOOK_TOKENENCRYPTIONKEY: ${INFLUORA_CONVERSIONWEBHOOK_TOKENENCRYPTIONKEY}
       # ---- Internal service URLs (validator rejects localhost) ----
       BRAND_SAFETY_AI_BASE_URL: http://influora-ai:8000
       TRENDSPARK_AI_BASE_URL: http://influora-ai:8000
       MEERA_CHAT_AI_BASE_URL: http://influora-ai:8000
+      VOICE_AI_BASE_URL: http://influora-ai:8000
       ANALYZE_SITE_AI_BASE_URL: http://influora-ai:8000
       INFLUORA_MEERA_STREAM_PUBLICCHATURL: https://${AI_DOMAIN}/chat
       CLAMAV_HOST: clamav
@@ -177,6 +181,19 @@ services:
       MSG91_OTP_TEMPLATE_ID: ${MSG91_OTP_TEMPLATE_ID}
       MSG91_WELCOME_TEMPLATE_ID: ${MSG91_WELCOME_TEMPLATE_ID}
       MSG91_EMAIL_TRANSACTIONAL_TEMPLATE_ID: ${MSG91_EMAIL_TRANSACTIONAL_TEMPLATE_ID}
+      # TLD is .in, not application.yml's .com default (F-0390 A5)
+      MSG91_EMAIL_DOMAIN: ${MSG91_EMAIL_DOMAIN}
+      MSG91_FROM_EMAIL: ${MSG91_FROM_EMAIL}
+      MSG91_FROM_NAME: ${MSG91_FROM_NAME}
+      MSG91_EMAIL_COMPANY_NAME: ${MSG91_EMAIL_COMPANY_NAME}
+      # SMTP relay for Msg91EmailClient — unset SMTP_HOST means no JavaMailSender bean at all,
+      # i.e. all outbound email silently dead (F-0390 A2)
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      # Signs one-click unsubscribe links (F-0390 A3) — no default is the git-committed placeholder
+      UNSUBSCRIBE_SIGNING_SECRET: ${UNSUBSCRIBE_SIGNING_SECRET}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
@@ -202,6 +219,10 @@ services:
       INFLUORA_LEGAL_NAME: ${INFLUORA_LEGAL_NAME}
     depends_on:
       mysql: { condition: service_healthy }
+      # clamav has a 90s start_period (ClamAvMalwareScanService is active under prod) -- do NOT
+      # use service_healthy here, it would delay API start by up to 90s (F-0390 A8)
+      clamav: { condition: service_started }
+      redis: { condition: service_started }
 
   influora-ai:
     image: ghcr.io/influoradigital-bit/influora-ai:latest
@@ -216,9 +237,14 @@ services:
       # MUST byte-match the Java side (do not swap the two)
       INTERNAL_HMAC_KEY: ${INTERNAL_REQUEST_HMAC_SECRET}
       SERVICE_TOKEN_SIGNING_KEY: ${INTERNAL_SERVICE_TOKEN_SECRET}
-      SPRING_JWKS_URL: https://${API_DOMAIN}/api/v1/.well-known/jwks.json
+      # Internal, not the public https URL -- avoids DNS + a certbot cert existing at first
+      # boot (F-0390 A6).
+      SPRING_JWKS_URL: http://influora-api:8080/api/v1/.well-known/jwks.json
       SPRING_INTERNAL_BASE_URL: http://influora-api:8080/api/v1
       REDIS_URL: redis://redis:6379
+      # n8n trend tagger — read at config.py:394, fails closed (503) on /internal/trendspark/tag
+      # without this (F-0390 A7)
+      TREND_TAG_INGEST_SECRET: ${TREND_TAG_INGEST_SECRET}
       AI_DAILY_SPEND_CEILING_USD: "15.0"
       AI_SPEND_KILL_SWITCH: "false"
       # P1 BLANK TURN fix (2026-07-24, wiki/ai-review/meera-blank-turn-ai-

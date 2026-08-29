@@ -34,17 +34,31 @@ class UploadControllerTest {
     }
 
     @Test
-    @DisplayName("POST /uploads delegates to service and returns 201 with {url, key}")
+    @DisplayName("POST /uploads with no purpose delegates to service and returns 201 with {url, key}")
     void testUploadDelegatesToService() {
         MockMultipartFile file = new MockMultipartFile("file", "logo.png", "image/png", new byte[] {1, 2, 3});
-        when(uploadService.upload(principal, file))
+        when(uploadService.uploadForPurpose(principal, file, null))
                 .thenReturn(new UploadResponse("https://r2.influora.com/uploads/x", "uploads/x"));
 
-        ResponseEntity<ApiResponse<UploadResponse>> response = controller.upload(principal, file);
+        ResponseEntity<ApiResponse<UploadResponse>> response = controller.upload(principal, file, null);
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         assertNotNull(response.getBody());
         assertEquals("uploads/x", response.getBody().data().key());
-        verify(uploadService).upload(principal, file);
+        verify(uploadService).uploadForPurpose(principal, file, null);
+    }
+
+    @Test
+    @DisplayName("[F-0390 D4] POST /uploads?purpose=creator_kyc_selfie passes the purpose through verbatim")
+    void testUploadPassesPurposeThrough() {
+        MockMultipartFile file = new MockMultipartFile("file", "selfie.png", "image/png", new byte[] {1, 2, 3});
+        when(uploadService.uploadForPurpose(principal, file, "creator_kyc_selfie"))
+                .thenReturn(new UploadResponse("https://r2.influora.com/presigned/x", "uploads/x"));
+
+        ResponseEntity<ApiResponse<UploadResponse>> response =
+                controller.upload(principal, file, "creator_kyc_selfie");
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        verify(uploadService).uploadForPurpose(principal, file, "creator_kyc_selfie");
     }
 }

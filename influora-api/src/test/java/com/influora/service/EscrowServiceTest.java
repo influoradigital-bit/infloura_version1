@@ -1235,6 +1235,34 @@ class EscrowServiceTest {
 
     @Test
     @DisplayName(
+            "[F-0390 D1] release: a Doc#2 invoice creation failure is swallowed (release still succeeds"
+                    + " and RELEASED is returned) but a durable failure marker is now recorded instead of"
+                    + " only a log line")
+    void releaseRecordsDurableFailureMarkerWhenServiceInvoiceCreationThrows() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        PaymentMilestone milestone = releasableMilestone();
+        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestone));
+        Collaboration healthy = Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(healthy));
+        EscrowHold hold = fundedHold();
+        when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
+        stubSuccessfulReleaseLedgerCalls(CREATOR_USER_ID);
+        when(campaignServiceInvoiceService.createAtRelease(any(), any(), any()))
+                .thenThrow(new ApiException("CREATOR_PROFILE_NOT_FOUND", "no profile", org.springframework.http.HttpStatus.CONFLICT));
+
+        EscrowStatusResponse response = service.release(principal, WORKSPACE_ID, MILESTONE_ID);
+
+        // The money movement must not be affected by the invoice failure.
+        assertEquals(EscrowStatus.RELEASED, response.status());
+        verify(escrowHoldRepository).save(hold);
+        // [F-0390 D1] — the new durable-marker call, replacing the old log-only handling.
+        verify(campaignServiceInvoiceService)
+                .recordInvoiceCreationFailure(eq(ESCROW_HOLD_ID), eq(COLLAB_ID), any(), eq("no profile"));
+    }
+
+    @Test
+    @DisplayName(
             "[Kabir gate CR-35 HIGH-1] a hold that left FROZEN between the unlocked read and the row"
                     + " lock is SKIPPED, not paid out a second time")
     void adminReleaseForDisputeSkipsHoldThatLeftFrozenBeforeTheLock() {

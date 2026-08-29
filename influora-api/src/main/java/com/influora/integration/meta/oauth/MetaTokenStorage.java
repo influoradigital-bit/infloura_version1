@@ -18,6 +18,8 @@ import java.util.Optional;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class MetaTokenStorage {
+
+    private static final Logger log = LoggerFactory.getLogger(MetaTokenStorage.class);
 
     /** [SEC] Matches whatever tool-tier taxonomy the codebase's AuditLogService callers use
      * (see ToolCallValidator: e.g. "R" for read tools). No "SENSITIVE" tier constant exists yet
@@ -212,7 +216,8 @@ public class MetaTokenStorage {
                 expiresAt,
                 grantedScopes,
                 igBusinessAccountId,
-                MetaAuthPath.FACEBOOK_LOGIN);
+                MetaAuthPath.FACEBOOK_LOGIN,
+                null);
     }
 
     /**
@@ -220,6 +225,12 @@ public class MetaTokenStorage {
      * (T-IGLOGIN-0820). Everything downstream — API host, refresh endpoint, whether a Facebook
      * Page lookup applies — branches on this, so it must be the path the OAuth flow actually
      * used and never a default.
+     *
+     * <p>{@code metaUserId} (C5) is left {@code null} on this overload — callers that have it
+     * (currently {@link com.influora.service.creatorcopilot.CreatorMetaOAuthService}'s
+     * FACEBOOK_LOGIN branch and {@link com.influora.job.MetaTokenRefreshService}'s refresh, which
+     * must preserve whatever was already on the row) should call the 7-arg overload directly
+     * instead of this one.
      */
     public void storeCreatorToken(
             String creatorProfileId,
@@ -228,6 +239,34 @@ public class MetaTokenStorage {
             List<String> grantedScopes,
             String igBusinessAccountId,
             MetaAuthPath authPath) {
+        storeCreatorToken(
+                creatorProfileId, accessToken, expiresAt, grantedScopes, igBusinessAccountId, authPath, null);
+    }
+
+    /**
+     * As above, additionally persisting {@code metaUserId} (C5, Kabir Track E — Meta deauthorize/
+     * data-deletion callback). This is the FB app-scoped user id for THIS app — what a Meta
+     * deauthorize {@code signed_request} carries as {@code user_id} — and it is ONLY ever
+     * meaningful on a {@code FACEBOOK_LOGIN} row; on {@code INSTAGRAM_LOGIN} that same callback's
+     * {@code user_id} IS the Instagram user id already captured in {@code igBusinessAccountId}
+     * (see {@code CreatorMetaOAuthService#connectViaInstagramLogin}), so callers on that path
+     * should pass {@code null} here, not the Instagram id a second time.
+     *
+     * <p>Same F-0173 discipline as the 6-arg overload below applies to this field too: the
+     * revoke-before-insert step mints a brand-new row on EVERY call including refreshes, so a
+     * caller that already has a {@code metaUserId} on the row it's rotating (e.g. {@code
+     * MetaTokenRefreshService}) MUST thread it back through here — passing {@code null} on a
+     * refresh would silently wipe a previously-resolved id, the exact class of bug C1 fixed for
+     * {@code authPath}.
+     */
+    public void storeCreatorToken(
+            String creatorProfileId,
+            String accessToken,
+            Instant expiresAt,
+            List<String> grantedScopes,
+            String igBusinessAccountId,
+            MetaAuthPath authPath,
+            String metaUserId) {
         // F-0173 — the revoke-before-insert step above mints a brand-new row (fresh createdAt)
         // on EVERY call, not just first-connect: MetaTokenRefreshService routes every creator
         // token refresh through this same method (F-0171), so the row this creator's Meta
@@ -257,6 +296,7 @@ public class MetaTokenStorage {
                         // .workspaceId(...) intentionally omitted — stays null (creator-owned row).
                         .authPath(authPath)
                         .igBusinessAccountId(igBusinessAccountId)
+                        .metaUserId(metaUserId)
                         .encryptedAccessToken(encrypted)
                         .expiresAt(expiresAt)
                         .grantedScopesJson(scopesJson)
@@ -321,6 +361,65 @@ public class MetaTokenStorage {
                                     null,
                                     Map.of("creatorProfileId", creatorProfileId));
                         });
+    }
+
+    /**
+     * Storage-level revoke-by-lookup for the Meta deauthorize/data-deletion webhook (C5, Kabir
+     * Track E — {@code MetaPlatformCallbackController}) — lets that controller revoke the matching
+     * token by the raw {@code user_id} a Meta signed_request carries, without needing direct
+     * repository/entity access into this storage domain.
+     *
+     * <p>Tries BOTH key-spaces since a single incoming id can't be told apart at the callback: a
+     * FACEBOOK_LOGIN row's own app-scoped id ({@code meta_user_id}) first, then an INSTAGRAM_LOGIN
+     * row's Instagram user id ({@code ig_business_account_id}, where the Instagram-Login code
+     * exchange puts it — see {@code CreatorMetaOAuthService#connectViaInstagramLogin}'s own
+     * comment on that). Both repo lookups are the CR-111-hardened form (explicit {@code IS NOT
+     * NULL} predicate on the matched column) so a blank/null argument — or a pre-existing row with
+     * a NULL {@code meta_user_id}/{@code ig_business_account_id} column (rows connected before
+     * this fix shipped) — can NEVER accidentally match; that is a fail-safe no-op, not an
+     * exception, for exactly that backward-compat case.
+     *
+     * @return the {@code creatorProfileId} of the row that was revoked, or {@link Optional#empty()}
+     *     if no non-revoked row matched this id on either key-space. Callers should treat an empty
+     *     result as a logged no-op, never an error — a stale, duplicate, or unrecognized
+     *     deauthorize/data-deletion callback is expected Meta behavior, not a bug.
+     */
+    @Transactional
+    public Optional<String> revokeByMetaUserId(String metaUserId) {
+        if (metaUserId == null || metaUserId.isBlank()) {
+            log.warn("MetaTokenStorage: revokeByMetaUserId called with a blank/null id, no-op");
+            return Optional.empty();
+        }
+
+        Optional<MetaOAuthToken> match =
+                repository
+                        .findByMetaUserIdAndAuthPathAndRevokedFalse(metaUserId, MetaAuthPath.FACEBOOK_LOGIN)
+                        .or(
+                                () ->
+                                        repository.findByIgBusinessAccountIdAndAuthPathAndRevokedFalse(
+                                                metaUserId, MetaAuthPath.INSTAGRAM_LOGIN));
+
+        if (match.isEmpty()) {
+            log.warn(
+                    "MetaTokenStorage: deauthorize/data-deletion callback id {} matched no"
+                            + " non-revoked token on either key-space (no-op)",
+                    metaUserId);
+            return Optional.empty();
+        }
+
+        MetaOAuthToken token = match.get();
+        token.revoke();
+        repository.save(token);
+        auditLog.recordToolCall(
+                token.getWorkspaceId(),
+                "META_OAUTH_TOKEN_REVOKED_VIA_DEAUTHORIZE",
+                TOOL_TIER_SENSITIVE,
+                AuditLogService.OUTCOME_ALLOWED,
+                null,
+                null,
+                null,
+                Map.of("creatorProfileId", token.getCreatorProfileId()));
+        return Optional.of(token.getCreatorProfileId());
     }
 
     private String encrypt(String plaintext) {

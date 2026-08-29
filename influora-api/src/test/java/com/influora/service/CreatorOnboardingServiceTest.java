@@ -8,8 +8,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
+import com.influora.config.R2Properties;
 import com.influora.domain.entity.CreatorBankAccount;
 import com.influora.domain.entity.CreatorProfile;
+import com.influora.integration.storage.R2StorageService;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.UserRepository;
 import com.influora.security.AuthPrincipal;
@@ -46,6 +48,8 @@ class CreatorOnboardingServiceTest {
     @Mock private CreatorProfileRepository creatorProfileRepository;
     @Mock private UserRepository userRepository;
     @Mock private CreatorBankAccountService creatorBankAccountService;
+    @Mock private R2StorageService r2StorageService;
+    @Mock private R2Properties r2Properties;
     @Mock private AuthPrincipal principal;
 
     private CreatorOnboardingService service;
@@ -58,7 +62,9 @@ class CreatorOnboardingServiceTest {
                         creatorContext,
                         creatorProfileRepository,
                         userRepository,
-                        creatorBankAccountService);
+                        creatorBankAccountService,
+                        r2StorageService,
+                        r2Properties);
         profile = CreatorProfile.newForUser("prof_1", CREATOR_USER_ID, "Priya Creates");
         // lenient: the payout-method tests below don't touch creatorContext at all (savePayout
         // goes straight to CreatorBankAccountService, which does its own principal resolution).
@@ -166,5 +172,65 @@ class CreatorOnboardingServiceTest {
         ApiException ex = assertThrows(ApiException.class, () -> service.savePayout(principal, req));
         assertEquals("INVALID_PAYOUT_METHOD", ex.getCode());
         verify(creatorBankAccountService, never()).addInstrument(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("[F-0390 D4] resolveKycDocUrl: a bare R2 key (new, post-D4 upload) resolves to a presigned GET")
+    void testResolveKycDocUrlPresignsBareKey() {
+        when(r2StorageService.isAvailable()).thenReturn(true);
+        when(r2StorageService.presignGet("uploads/creator/u1/selfie.png"))
+                .thenReturn(
+                        new com.influora.integration.storage.R2StorageService.PresignResult(
+                                "https://r2.influora.com/presigned/uploads/creator/u1/selfie.png",
+                                "uploads/creator/u1/selfie.png",
+                                "influora-dev",
+                                Instant.now().plusSeconds(900),
+                                0L));
+
+        String resolved = service.resolveKycDocUrl("uploads/creator/u1/selfie.png");
+
+        assertEquals("https://r2.influora.com/presigned/uploads/creator/u1/selfie.png", resolved);
+    }
+
+    @Test
+    @DisplayName(
+            "[F-0390 D4] resolveKycDocUrl: a legacy absolute public URL that does not match the"
+                    + " configured R2 public base passes through unchanged")
+    void testResolveKycDocUrlPassesThroughUnmatchedLegacyUrl() {
+        when(r2Properties.getPublicUrl()).thenReturn("https://r2.influora.com");
+
+        String resolved = service.resolveKycDocUrl("https://some-other-cdn.example.com/old-selfie.png");
+
+        assertEquals("https://some-other-cdn.example.com/old-selfie.png", resolved);
+        verify(r2StorageService, never()).presignGet(any());
+    }
+
+    @Test
+    @DisplayName(
+            "[F-0390 D4] resolveKycDocUrl: a legacy absolute URL matching the configured R2 public"
+                    + " base is still resolved to a fresh presigned GET, not left permanently public")
+    void testResolveKycDocUrlResolvesMatchingLegacyUrl() {
+        when(r2Properties.getPublicUrl()).thenReturn("https://r2.influora.com");
+        when(r2StorageService.isAvailable()).thenReturn(true);
+        when(r2StorageService.presignGet("uploads/creator/u1/legacy-selfie.png"))
+                .thenReturn(
+                        new com.influora.integration.storage.R2StorageService.PresignResult(
+                                "https://r2.influora.com/presigned/uploads/creator/u1/legacy-selfie.png",
+                                "uploads/creator/u1/legacy-selfie.png",
+                                "influora-dev",
+                                Instant.now().plusSeconds(900),
+                                0L));
+
+        String resolved =
+                service.resolveKycDocUrl("https://r2.influora.com/uploads/creator/u1/legacy-selfie.png");
+
+        assertEquals("https://r2.influora.com/presigned/uploads/creator/u1/legacy-selfie.png", resolved);
+    }
+
+    @Test
+    @DisplayName("[F-0390 D4] resolveKycDocUrl: null/blank input returns null")
+    void testResolveKycDocUrlNullForBlank() {
+        assertEquals(null, service.resolveKycDocUrl(null));
+        assertEquals(null, service.resolveKycDocUrl(""));
     }
 }

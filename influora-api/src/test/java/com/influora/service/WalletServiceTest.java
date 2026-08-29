@@ -19,15 +19,18 @@ import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
 import com.influora.domain.entity.CreatorBankAccount;
+import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.Payout;
 import com.influora.domain.entity.Wallet;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.MilestoneStatus;
 import com.influora.domain.enums.TxnReferenceType;
+import com.influora.domain.enums.VerificationStatus;
 import com.influora.domain.enums.WalletTransactionType;
 import com.influora.integration.razorpay.RazorpayXClient;
 import com.influora.integration.razorpay.RazorpayXClient.PayoutResult;
 import com.influora.repository.CreatorBankAccountRepository;
+import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.PayoutRepository;
@@ -77,6 +80,7 @@ class WalletServiceTest {
     @Mock private PayoutRepository payoutRepository;
     @Mock private IdempotencyService idempotencyService;
     @Mock private EscrowHoldRepository escrowHoldRepository;
+    @Mock private CreatorProfileRepository creatorProfileRepository;
 
     private WalletService walletService;
 
@@ -94,7 +98,15 @@ class WalletServiceTest {
                         fundAccountService,
                         payoutRepository,
                         idempotencyService,
-                        escrowHoldRepository);
+                        escrowHoldRepository,
+                        creatorProfileRepository);
+    }
+
+    /** [F-0390 D2] A creator who has submitted identity KYC (status PENDING) — the withdrawal gate passes. */
+    private CreatorProfile kycSubmittedProfile() {
+        CreatorProfile profile = CreatorProfile.newForUser("01HCREATORPROFILE1234", USER_ID, "Test Creator");
+        profile.applyIdentityKyc("ABCDE1234F", "1234", "kyc/selfie-key.jpg");
+        return profile;
     }
 
     /** Mirrors {@code PayoutServiceTest#mockIdempotencyExecuteOnce}: run the supplier as the race winner. */
@@ -331,6 +343,7 @@ class WalletServiceTest {
         CreatorBankAccount bankAccount = primaryBankAccount();
         when(creatorBankAccountRepository.findByCreatorUserIdAndPrimaryTrue(USER_ID))
                 .thenReturn(Optional.of(bankAccount));
+        when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(kycSubmittedProfile()));
         com.influora.domain.entity.Wallet clearingWallet =
                 com.influora.domain.entity.Wallet.forWorkspace(PLATFORM_WALLET_ID, "platform-clearing");
         when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
@@ -393,6 +406,63 @@ class WalletServiceTest {
     }
 
     @Test
+    @DisplayName(
+            "[F-0390 D2] requestCreatorWithdrawal: IDENTITY_KYC_REQUIRED (409) when the creator has never"
+                    + " submitted identity KYC — no CreatorProfile row bearing identityKycStatus at all")
+    void testWithdrawalRequiresIdentityKycNoProfile() {
+        com.influora.domain.entity.Wallet wallet = userWallet(new BigDecimal("5000.00"));
+        when(walletRepository.findByOwnerIdForUpdate(USER_ID)).thenReturn(Optional.of(wallet));
+        when(walletTransactionRepository.countByWalletIdAndTypeAndCreatedAtAfter(
+                        eq(WALLET_ID), eq(WalletTransactionType.WITHDRAWAL), any()))
+                .thenReturn(0L);
+        when(creatorBankAccountRepository.findByCreatorUserIdAndPrimaryTrue(USER_ID))
+                .thenReturn(Optional.of(primaryBankAccount()));
+        when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                walletService.requestCreatorWithdrawal(
+                                        USER_ID, new BigDecimal("1000.00"), IDEMPOTENCY_KEY));
+
+        assertEquals("IDENTITY_KYC_REQUIRED", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        verify(idempotencyService, never()).executeOnce(any(), any(), any(), any());
+        verify(razorpayXClient, never()).initiatePayout(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "[F-0390 D2] requestCreatorWithdrawal: IDENTITY_KYC_REQUIRED (409) when the profile exists but"
+                    + " identityKycStatus is still UNVERIFIED (creator never called POST"
+                    + " /onboarding/creator/kyc)")
+    void testWithdrawalRequiresIdentityKycUnverified() {
+        com.influora.domain.entity.Wallet wallet = userWallet(new BigDecimal("5000.00"));
+        when(walletRepository.findByOwnerIdForUpdate(USER_ID)).thenReturn(Optional.of(wallet));
+        when(walletTransactionRepository.countByWalletIdAndTypeAndCreatedAtAfter(
+                        eq(WALLET_ID), eq(WalletTransactionType.WITHDRAWAL), any()))
+                .thenReturn(0L);
+        when(creatorBankAccountRepository.findByCreatorUserIdAndPrimaryTrue(USER_ID))
+                .thenReturn(Optional.of(primaryBankAccount()));
+        CreatorProfile unverified =
+                CreatorProfile.newForUser("01HCREATORPROFILE1234", USER_ID, "Test Creator"); // identityKycStatus = UNVERIFIED
+        when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(unverified));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                walletService.requestCreatorWithdrawal(
+                                        USER_ID, new BigDecimal("1000.00"), IDEMPOTENCY_KEY));
+
+        assertEquals("IDENTITY_KYC_REQUIRED", ex.getCode());
+        assertEquals(VerificationStatus.UNVERIFIED, unverified.getIdentityKycStatus());
+        verify(idempotencyService, never()).executeOnce(any(), any(), any(), any());
+        verify(razorpayXClient, never()).initiatePayout(any(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("requestCreatorWithdrawal: INSUFFICIENT_BALANCE (400) when the wallet balance is below the requested amount")
     void testWithdrawalInsufficientBalance() {
         com.influora.domain.entity.Wallet wallet = userWallet(new BigDecimal("100.00"));
@@ -421,6 +491,7 @@ class WalletServiceTest {
                 .thenReturn(0L);
         when(creatorBankAccountRepository.findByCreatorUserIdAndPrimaryTrue(USER_ID))
                 .thenReturn(Optional.of(primaryBankAccount()));
+        when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(kycSubmittedProfile()));
         when(idempotencyService.executeOnce(anyString(), any(), anyString(), any()))
                 .thenThrow(new IdempotencyService.AlreadyCompletedException(SCOPED_KEY));
         Payout existing =
@@ -457,6 +528,7 @@ class WalletServiceTest {
                 .thenReturn(0L);
         when(creatorBankAccountRepository.findByCreatorUserIdAndPrimaryTrue(USER_ID))
                 .thenReturn(Optional.of(primaryBankAccount()));
+        when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(kycSubmittedProfile()));
         when(idempotencyService.executeOnce(anyString(), any(), anyString(), any()))
                 .thenThrow(new IdempotencyService.AlreadyInProgressException(SCOPED_KEY));
         when(payoutRepository.findByIdempotencyKey(SCOPED_KEY)).thenReturn(Optional.empty());

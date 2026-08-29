@@ -226,6 +226,21 @@ influora:
     signing-secret: ${INTERNAL_SERVICE_TOKEN_SECRET:dev-internal-service-token-secret-change-in-production-min-32-chars}
     hmac-signing-secret: ${INTERNAL_REQUEST_HMAC_SECRET:dev-internal-request-hmac-secret-change-in-production-min-32-chars}
     clock-skew-seconds: ${INTERNAL_REQUEST_CLOCK_SKEW_SECONDS:30}
+  # Wave C task C3 — the service token Spring MINTS for POST /internal/brand-safety on influora-ai
+  # (Spring -> Python), the OPPOSITE direction from internal-service-token above. Distinct secret
+  # from every other credential surface, same blast-radius-isolation convention (Kabir guardrail 6).
+  #
+  # This line was missing until now. The property had no yaml entry at all, so
+  # BRAND_SAFETY_SERVICE_TOKEN_SECRET — the env var named in BrandSafetyServiceTokenProperties'
+  # javadoc, in wiki/decisions/2026-07-07-spring-python-service-auth-jwks-gap.md, and actually set
+  # on the deploy box — bound to nothing. The value fell back to the POJO's "" and every non-dev
+  # boot died in SecretsStartupValidator ("missing or shorter than 32 bytes") while dev stayed
+  # warn-only. The default below is the one KNOWN_DEV_DEFAULTS has always expected to match.
+  #
+  # Local dev: must equal influora-ai's DEV_SHARED_JWT_SECRET byte-for-byte (its HS256 fallback).
+  # Prod: influora-ai verifies via Spring's JWKS, so only length/distinctness matter here.
+  brand-safety-service-token:
+    signing-secret: ${BRAND_SAFETY_SERVICE_TOKEN_SECRET:dev-brand-safety-service-token-secret-change-in-production-min-32-chars}
   # Asymmetric EC/ES256 (P-256) keypair Spring signs BrandSafetyServiceTokenService / StreamTokenService
   # tokens with; the PUBLIC key is served at GET /.well-known/jwks.json for influora-ai to verify.
   # DELIBERATELY no committed default — a private key must never be checked in, not even "dev-only".
@@ -328,6 +343,29 @@ influora:
     # exactly 32 bytes (enforced in MetaTokenStorage). No committed default here — application-dev.yml
     # supplies a throwaway dev value; a real deploy MUST set META_TOKEN_ENCRYPTION_KEY.
     token-encryption-key: ${META_TOKEN_ENCRYPTION_KEY:}
+  # AES-256 token/PII encryption keys that had NO entry in this file at all, so the only way to
+  # supply them was Spring's relaxed binding on the @ConfigurationProperties prefix — the env var
+  # name appeared in no yaml, no .env.example and no deploy doc. Each of these beans is an
+  # unconditional @Service whose constructor throws on a blank key (AesGcmCipher#decodeKey and the
+  # per-class copies in MetaTokenStorage / ShopifyTokenStorage / WooCommerceIntegrationService /
+  # ConversionWebhookSecretService), so a deploy missing any one dies at bean init — one bean per
+  # restart, with no single startup report naming them the way SecretsStartupValidator does.
+  #
+  # Same convention as meta.token-encryption-key above: deliberately NO committed default.
+  # application-dev.yml (V0-1) supplies throwaway dev-profile values and profile-specific config
+  # wins over this file, so the dev profile is unaffected; a real deploy MUST set these.
+  #
+  # Names are the relaxed-binding form already used by deploy/utho/generate-env.sh and every
+  # docker-compose file, kept byte-identical so no live box has to be re-keyed.
+  pii:
+    email-phone-encryption-key: ${INFLUORA_PII_EMAILPHONEENCRYPTIONKEY:}
+    bank-encryption-key: ${INFLUORA_PII_BANKENCRYPTIONKEY:}
+  shopify:
+    token-encryption-key: ${INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY:}
+  woocommerce:
+    token-encryption-key: ${INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY:}
+  conversion-webhook:
+    token-encryption-key: ${INFLUORA_CONVERSIONWEBHOOK_TOKENENCRYPTIONKEY:}
   # [SEC: Kabir Option-1 audit P1 must-fix] Wallet business limits. max-topup-amount is the
   # authoritative server-side ceiling on POST /wallet/topup — enforced in
   # WalletTopUpService#initiateTopUp, right after the existing positive-amount check. The DTO's

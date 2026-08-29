@@ -49,7 +49,10 @@ class CreatorCouponServiceTest {
     @Mock private UtmCampaignRepository utmCampaignRepository;
     @Mock private AuthPrincipal principal;
 
-    private static final String API_PUBLIC_URL = "http://localhost:8080/api/v1";
+    // influora.api.public-url is the API's ORIGIN only (application.yml); the service appends the
+    // context path, mirroring Msg91EmailClient. Split so the expected absolute link is unchanged.
+    private static final String API_PUBLIC_URL = "http://localhost:8080";
+    private static final String CONTEXT_PATH = "/api/v1";
     private static final String UTM_ID = "01HUTM12345678901234A";
 
     private CreatorCouponService service;
@@ -64,7 +67,8 @@ class CreatorCouponServiceTest {
                         campaignRepository,
                         workspaceRepository,
                         utmCampaignRepository,
-                        API_PUBLIC_URL);
+                        API_PUBLIC_URL,
+                        CONTEXT_PATH);
         creatorA = CreatorProfile.newForUser(CREATOR_PROFILE_A, CREATOR_USER_ID, "Creator A");
     }
 
@@ -116,7 +120,8 @@ class CreatorCouponServiceTest {
         assertEquals(BigDecimal.valueOf(20), item.discountValue());
         assertEquals(500, item.usageLimit());
         assertEquals("https://nykaa.com/summer?utm_source=influora", item.trackingUrl());
-        assertEquals(API_PUBLIC_URL + "/track/click/" + UTM_ID, item.redirectUrl());
+        assertEquals(
+                API_PUBLIC_URL + CONTEXT_PATH + "/track/click/" + UTM_ID, item.redirectUrl());
     }
 
     @Test
@@ -168,7 +173,8 @@ class CreatorCouponServiceTest {
 
         assertEquals(1, result.size());
         CreatorCouponListItem item = result.get(0);
-        assertEquals(API_PUBLIC_URL + "/track/click/" + UTM_ID, item.redirectUrl());
+        assertEquals(
+                API_PUBLIC_URL + CONTEXT_PATH + "/track/click/" + UTM_ID, item.redirectUrl());
         assertTrue(item.redirectUrl().startsWith(API_PUBLIC_URL));
         // Sanity: redirectUrl must never equal the raw brand tracking URL — that's the whole bug.
         assertTrue(!item.redirectUrl().equals(item.trackingUrl()));

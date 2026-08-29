@@ -118,7 +118,10 @@ public class SecretsStartupValidator {
                     "dev-meera-stream-secret-change-in-production-min-32-chars",
                     "dev-internal-service-token-secret-change-in-production-min-32-chars",
                     "dev-internal-request-hmac-secret-change-in-production-min-32-chars",
-                    "dev-brand-safety-service-token-secret-change-in-production-min-32-chars");
+                    "dev-brand-safety-service-token-secret-change-in-production-min-32-chars",
+                    // [C3] influora.notification.unsubscribe-signing-secret dev default — treated
+                    // as just another signing secret in this set/check, same as the others above.
+                    "change-me-unsubscribe-signing-secret-min-32-chars");
 
     // Must match the literal influora.jwks.private-key-pem dev default in application.yml exactly
     // (with its \n escapes intact, matching the raw config-bound string, not the parsed PEM).
@@ -140,6 +143,14 @@ public class SecretsStartupValidator {
     // application.yml exactly.
     private static final String KNOWN_PLACEHOLDER_RAZORPAY_WEBHOOK_SECRET =
             "REPLACE_WITH_YOUR_WEBHOOK_SECRET";
+
+    // [C3] Must match the literal influora.razorpay.{key-id,key-secret} placeholder defaults in
+    // application.yml exactly. Both are NON-BLANK placeholders, so RazorpayProperties.isConfigured()
+    // (keyId/keySecret non-blank) returns true and the app boots clean even though every live
+    // Razorpay call would 401 — validateRazorpayWebhookSecret only ever checked webhook-secret.
+    private static final String KNOWN_PLACEHOLDER_RAZORPAY_KEY_ID = "rzp_test_REPLACE_WITH_YOUR_KEY";
+    private static final String KNOWN_PLACEHOLDER_RAZORPAY_KEY_SECRET =
+            "REPLACE_WITH_YOUR_RAZORPAY_SECRET";
 
     // Must match the literal spring.datasource.{username,password} dev defaults in
     // application.yml exactly (Wave-1 S1-DB/D7).
@@ -189,6 +200,16 @@ public class SecretsStartupValidator {
     @Value("${influora.api.public-url:http://localhost:8080}")
     private String apiPublicUrl;
 
+    /**
+     * [C3] Bound here for the same reason as the cookie flags/forward-headers-strategy/api-public-url
+     * above: {@code UnsubscribeTokenService} binds this same key via a bare {@code @Value}, not a
+     * shared {@code @ConfigurationProperties} bean, and nothing previously stopped a real deploy
+     * from booting on the committed {@code application.yml} default — letting anyone forge a validly
+     * -signed one-click-unsubscribe token for any user/eventType pair.
+     */
+    @Value("${influora.notification.unsubscribe-signing-secret}")
+    private String unsubscribeSigningSecret;
+
     public SecretsStartupValidator(
             JwtProperties jwtProperties,
             MeeraStreamProperties meeraStreamProperties,
@@ -233,6 +254,10 @@ public class SecretsStartupValidator {
         secrets.put(
                 "influora.brand-safety-service-token.signing-secret",
                 brandSafetyServiceTokenProperties.getSigningSecret());
+        // [C3] Treated as just another signing secret here (>=32 bytes, not the committed dev
+        // default) — same problems-list accumulation as every entry above.
+        secrets.put(
+                "influora.notification.unsubscribe-signing-secret", unsubscribeSigningSecret);
 
         // [I8] isDev now requires the 'dev' Spring profile to ALSO be active (InfluoraEnvironment,
         // profile-keyed), not just influora.env in isolation — see class javadoc "I8 fix".
@@ -397,6 +422,14 @@ public class SecretsStartupValidator {
      * path) uses this value to verify incoming webhook signatures; the placeholder is PUBLIC
      * (checked into {@code application.yml}), so leaving it in place in a real deploy means anyone
      * can forge a validly-signed webhook call.
+     *
+     * <p><b>C3 addition:</b> {@code influora.razorpay.key-id} and {@code key-secret} used to have
+     * NO boot-time check at all here — only webhook-secret was validated. Both placeholder defaults
+     * ({@code rzp_test_REPLACE_WITH_YOUR_KEY} / {@code REPLACE_WITH_YOUR_RAZORPAY_SECRET}) are
+     * NON-BLANK, so {@link RazorpayProperties#isConfigured()} (which only checks blank-ness) returns
+     * {@code true} and the app boots clean while every live Razorpay call would 401 — leaving a
+     * stray {@code PENDING} {@code wallet_top_ups} row behind each time. Same problems-list
+     * accumulation and same dev-vs-prod fail-closed treatment as the webhook-secret check above.
      */
     private void validateRazorpayWebhookSecret(StringBuilder problems) {
         String secret = razorpayProperties.getWebhookSecret();
@@ -406,6 +439,22 @@ public class SecretsStartupValidator {
             problems.append("  - ").append(name).append(" is missing\n");
         } else if (KNOWN_PLACEHOLDER_RAZORPAY_WEBHOOK_SECRET.equals(secret.trim())) {
             problems.append("  - ").append(name).append(" is still the committed placeholder\n");
+        }
+
+        String keyId = razorpayProperties.getKeyId();
+        String keyIdName = "influora.razorpay.key-id";
+        if (keyId == null || keyId.isBlank()) {
+            problems.append("  - ").append(keyIdName).append(" is missing\n");
+        } else if (KNOWN_PLACEHOLDER_RAZORPAY_KEY_ID.equals(keyId.trim())) {
+            problems.append("  - ").append(keyIdName).append(" is still the committed placeholder\n");
+        }
+
+        String keySecret = razorpayProperties.getKeySecret();
+        String keySecretName = "influora.razorpay.key-secret";
+        if (keySecret == null || keySecret.isBlank()) {
+            problems.append("  - ").append(keySecretName).append(" is missing\n");
+        } else if (KNOWN_PLACEHOLDER_RAZORPAY_KEY_SECRET.equals(keySecret.trim())) {
+            problems.append("  - ").append(keySecretName).append(" is still the committed placeholder\n");
         }
     }
 

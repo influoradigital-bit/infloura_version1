@@ -17,6 +17,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Instagram,
   Youtube,
   CheckCircle2,
@@ -33,7 +42,13 @@ import {
   X,
 } from 'lucide-react';
 import { cn, publicProfileLabel } from '@/lib/utils';
-import { api, ApiError, type CreatorProfileSelfResponse, type CreatorProfilePatchPayload } from '@/lib/api';
+import {
+  api,
+  ApiError,
+  type CreatorProfileSelfResponse,
+  type CreatorProfilePatchPayload,
+  type MetaAuthPath,
+} from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 import { Switch } from '@/components/ui/switch';
 
@@ -189,22 +204,30 @@ export default function CreatorProfilePage() {
   };
 
   const [isConnectingMeta, setIsConnectingMeta] = React.useState(false);
-  const handleConnectMoreAccounts = async () => {
+  // B3/F-0390 — mirrors the path-choice pattern in connected-accounts.tsx (T-IGLOGIN-0820):
+  // Meta offers two OAuth configurations and only one requires a Facebook Page, so a creator
+  // with no Page dead-ended when this always called authorize() with no argument (which
+  // defaults to FACEBOOK_LOGIN). Ask before redirecting instead.
+  const [showMetaPathChoice, setShowMetaPathChoice] = React.useState(false);
+  const handleConnectMoreAccounts = (authPath: MetaAuthPath) => {
+    setShowMetaPathChoice(false);
     setIsConnectingMeta(true);
-    try {
-      // F-0168 — plain initiator, no return-path of its own; clear any leftover marker from an
-      // abandoned Deal Room/Co-pilot connect first, so it can't misroute this one.
-      api.metaOAuth.clearConnectReturnTo();
-      const { authorizationUrl } = await api.metaOAuth.authorize();
-      window.location.href = authorizationUrl;
-    } catch (err) {
-      setIsConnectingMeta(false);
-      toast({
-        variant: 'destructive',
-        title: 'Could not start Instagram/Facebook connect',
-        description: err instanceof ApiError ? err.message : 'Please try again in a moment.',
-      });
-    }
+    (async () => {
+      try {
+        // F-0168 — plain initiator, no return-path of its own; clear any leftover marker from an
+        // abandoned Deal Room/Co-pilot connect first, so it can't misroute this one.
+        api.metaOAuth.clearConnectReturnTo();
+        const { authorizationUrl } = await api.metaOAuth.authorize(authPath);
+        window.location.href = authorizationUrl;
+      } catch (err) {
+        setIsConnectingMeta(false);
+        toast({
+          variant: 'destructive',
+          title: 'Could not start Instagram/Facebook connect',
+          description: err instanceof ApiError ? err.message : 'Please try again in a moment.',
+        });
+      }
+    })();
   };
 
   const formatSyncTime = (date?: Date) => {
@@ -438,7 +461,7 @@ export default function CreatorProfilePage() {
             <Button
               variant="outline"
               className="w-full"
-              onClick={handleConnectMoreAccounts}
+              onClick={() => setShowMetaPathChoice(true)}
               disabled={isConnectingMeta}
             >
               {isConnectingMeta ? (
@@ -450,6 +473,55 @@ export default function CreatorProfilePage() {
             </Button>
           </CardContent>
         </Card>
+
+        {/* B3/F-0390 — same path-choice dialog pattern as connected-accounts.tsx
+            (T-IGLOGIN-0820): asked before the redirect since the two Meta configurations
+            differ in whether a Facebook Page is required. */}
+        <AlertDialog open={showMetaPathChoice} onOpenChange={setShowMetaPathChoice}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Is your Instagram linked to a Facebook Page?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Instagram offers two ways to connect. Pick the one that matches your setup — you
+                can change it later from this page.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => handleConnectMoreAccounts('FACEBOOK_LOGIN')}
+                disabled={isConnectingMeta}
+                className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted disabled:opacity-60"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  Yes — I have a Facebook Page
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Connect with Facebook. Needed later for paid partnership ads run from your
+                  handle. You must be able to manage the Page.
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConnectMoreAccounts('INSTAGRAM_LOGIN')}
+                disabled={isConnectingMeta}
+                className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted disabled:opacity-60"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Instagram className="h-4 w-4" aria-hidden="true" />
+                  No — Instagram only
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Connect with your Instagram login. No Facebook Page needed. Profile, media and
+                  insights all work; paid partnership ads do not.
+                </span>
+              </button>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isConnectingMeta}>Cancel</AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Stats — the real fields the backend actually returns; no fabricated
             "total collabs" / "rating" / "on-time %" (not part of CreatorProfileSelfResponse). */}

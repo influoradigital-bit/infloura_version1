@@ -28,7 +28,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { ApiError, uploads } from '@/lib/api';
+import { ApiError, uploads, type UploadPurpose } from '@/lib/api';
 import { useBrandKyc, type BrandKycResult } from '@/hooks/brand/useBrandKyc';
 
 // 15-char GSTIN: 2-digit state code, 5 letters (PAN prefix), 4 digits, 1 letter,
@@ -83,11 +83,14 @@ export function BrandKycForm({ onSubmitted }: BrandKycFormProps) {
   const uploadDoc = async (
     file: File,
     setDoc: React.Dispatch<React.SetStateAction<UploadedDoc>>,
+    purpose: UploadPurpose,
   ) => {
     setDoc({ url: null, name: null, uploading: true, error: null });
     try {
-      const { url } = await uploads.upload(file, 'brand');
-      setDoc({ url, name: file.name, uploading: false, error: null });
+      // [F-0390 D4] `key` (not `url`) is what gets persisted below — `url` here is a short-lived
+      // presigned preview URL for a private KYC upload, never a long-lived reference.
+      const { key } = await uploads.upload(file, 'brand', purpose);
+      setDoc({ url: key, name: file.name, uploading: false, error: null });
     } catch (err) {
       setDoc({
         url: null,
@@ -156,7 +159,7 @@ export function BrandKycForm({ onSubmitted }: BrandKycFormProps) {
           label="GSTIN document"
           hint="A photo or PDF of your GST registration certificate."
           doc={gstinDoc}
-          onPick={(file) => uploadDoc(file, setGstinDoc)}
+          onPick={(file) => uploadDoc(file, setGstinDoc, 'brand_kyc_gstin_doc')}
         />
 
         <FormField
@@ -186,7 +189,7 @@ export function BrandKycForm({ onSubmitted }: BrandKycFormProps) {
           label="PAN document"
           hint="A photo or PDF of your PAN card."
           doc={panDoc}
-          onPick={(file) => uploadDoc(file, setPanDoc)}
+          onPick={(file) => uploadDoc(file, setPanDoc, 'brand_kyc_pan_doc')}
         />
 
         {error && (

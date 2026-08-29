@@ -42,19 +42,30 @@ public class CreatorCouponService {
      */
     private final String apiPublicUrl;
 
+    /**
+     * {@code server.servlet.context-path} (/api/v1), appended between {@link #apiPublicUrl} and the
+     * path below for the same reason {@code Msg91EmailClient} does it: application.yml documents
+     * {@code influora.api.public-url} as the API's ORIGIN only ("Msg91EmailClient appends
+     * server.servlet.context-path ... to it"). This class concatenated the path straight onto the
+     * origin, so with a correctly-set origin every generated link 404'd.
+     */
+    private final String contextPath;
+
     public CreatorCouponService(
             CreatorContextService creatorContext,
             CouponCodeRepository couponCodeRepository,
             CampaignRepository campaignRepository,
             WorkspaceRepository workspaceRepository,
             UtmCampaignRepository utmCampaignRepository,
-            @Value("${influora.api.public-url}") String apiPublicUrl) {
+            @Value("${influora.api.public-url}") String apiPublicUrl,
+            @Value("${server.servlet.context-path:}") String contextPath) {
         this.creatorContext = creatorContext;
         this.couponCodeRepository = couponCodeRepository;
         this.campaignRepository = campaignRepository;
         this.workspaceRepository = workspaceRepository;
         this.utmCampaignRepository = utmCampaignRepository;
         this.apiPublicUrl = apiPublicUrl;
+        this.contextPath = contextPath;
     }
 
     @Transactional(readOnly = true)
@@ -104,7 +115,9 @@ public class CreatorCouponService {
         // NOT count clicks — this is what the frontend must surface as the share link. Null when no
         // UTM link row exists for this campaign/creator pair (FE guards on it, same as trackingUrl).
         String redirectUrl =
-                utmLink.map(utm -> apiPublicUrl + "/track/click/" + utm.getId()).orElse(null);
+                utmLink
+                        .map(utm -> apiPublicUrl + contextPath + "/track/click/" + utm.getId())
+                        .orElse(null);
 
         return new CreatorCouponListItem(
                 coupon.getId(),

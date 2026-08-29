@@ -236,6 +236,21 @@ public class Workspace {
         return pan;
     }
 
+    /**
+     * [F-0390 D4] Previously no getter existed for either KYC document column at all — not merely
+     * unread by a response DTO, unreadable in Java full stop. Added so a future read path (admin
+     * KYC review, brand's own "my submitted documents") can resolve this through {@code
+     * OnboardingService#resolveKycDocUrl} instead of reading the raw stored value (bare key or
+     * legacy public URL) straight through.
+     */
+    public String getKycGstinDocUrl() {
+        return kycGstinDocUrl;
+    }
+
+    public String getKycPanDocUrl() {
+        return kycPanDocUrl;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }

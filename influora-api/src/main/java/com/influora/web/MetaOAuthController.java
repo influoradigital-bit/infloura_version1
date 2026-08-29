@@ -83,6 +83,18 @@ public class MetaOAuthController {
                     HttpStatus.SERVICE_UNAVAILABLE);
         }
 
+        // Same guard for the DEFAULT path. This was missing: the check above covered only the
+        // Instagram branch, so a deploy with no META_APP_ID still handed back an authorize URL
+        // with client_id= empty and Meta answered "Invalid app ID" — exactly the failure mode the
+        // comment above says this guard exists to prevent, on the branch that is hit unless the
+        // client explicitly asks for INSTAGRAM_LOGIN. Verified live 2026-08-28.
+        if (resolved == MetaAuthPath.FACEBOOK_LOGIN && !metaApiProperties.isConfigured()) {
+            throw new ApiException(
+                    "META_NOT_CONFIGURED",
+                    "Connecting an Instagram account is not available on this environment",
+                    HttpStatus.SERVICE_UNAVAILABLE);
+        }
+
         String state = stateStore.issue(principal.getUserId(), resolved);
         String url =
                 resolved == MetaAuthPath.INSTAGRAM_LOGIN

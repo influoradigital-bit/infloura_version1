@@ -3735,12 +3735,37 @@ export const creatorTaxIdentity = {
 // File uploads (logo, KYC docs, deliverable files)
 // ---------------------------------------------------------------------------
 
+/**
+ * [F-0390 D4] Server allowlist (UploadService.KYC_UPLOAD_PURPOSES) that routes an upload through
+ * the PRIVATE path — every KYC document this app collects. Kept in sync with that constant.
+ */
+export type UploadPurpose = 'creator_kyc_selfie' | 'brand_kyc_gstin_doc' | 'brand_kyc_pan_doc';
+
 export const uploads = {
-  /** POST /uploads  → returns { url, key } stored in S3/R2 */
-  upload: (file: File, role: Role = 'brand') =>
-    isLive()
+  /**
+   * POST /uploads → { url, key } stored in S3/R2 (public upload, when `purpose` is omitted —
+   * this path is byte-identical to the pre-D4 behavior).
+   *
+   * [F-0390 D4] When `purpose` is one of the allowlisted `UploadPurpose` values, the upload is
+   * PRIVATE instead (`UploadService#uploadForPurpose` -> `#uploadPrivate`): `url` becomes a
+   * short-lived presigned preview URL for display ONLY — never persist it — and `key` is the bare
+   * object key callers must persist (into `gstinDocUrl` / `panDocUrl` / `selfieUrl`). An
+   * unrecognized non-blank purpose 400s server-side (`INVALID_UPLOAD_PURPOSE`), never silently
+   * falls back to public.
+   */
+  upload: (file: File, role: Role = 'brand', purpose?: UploadPurpose) => {
+    if (purpose) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('purpose', purpose);
+      return isLive()
+        ? http.uploadForm<{ url: string; key: string }>('/uploads', formData, role)
+        : mockOr({ url: URL.createObjectURL(file), key: `mock_${file.name}` });
+    }
+    return isLive()
       ? http.upload<{ url: string; key: string }>('/uploads', file, role)
-      : mockOr({ url: URL.createObjectURL(file), key: `mock_${file.name}` }),
+      : mockOr({ url: URL.createObjectURL(file), key: `mock_${file.name}` });
+  },
 };
 
 // ---------------------------------------------------------------------------

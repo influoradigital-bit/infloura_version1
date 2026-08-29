@@ -65,6 +65,12 @@ class MetaOAuthControllerTest {
 
     @BeforeEach
     void setUp() {
+        // C2: MetaApiProperties.isConfigured() now gates the default FACEBOOK_LOGIN branch (same
+        // as the pre-existing Instagram guard) — the "everything is fine" baseline for every other
+        // test in this class needs real, non-blank appId/appSecret. The dedicated
+        // not-configured tests below reset these to blank.
+        metaApiProperties.setAppId("test-fb-app-id");
+        metaApiProperties.setAppSecret("test-fb-app-secret");
         controller =
                 new MetaOAuthController(
                         oAuthService,
@@ -91,6 +97,36 @@ class MetaOAuthControllerTest {
         assertTrue(response.data() instanceof MetaAuthorizeResponse);
         assertEquals("state-123", response.data().state());
         verify(stateStore, times(1)).issue(eq(USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
+    }
+
+    @Test
+    @DisplayName(
+            "C2 regression: authorize FACEBOOK_LOGIN (default) fails closed when META_APP_ID/SECRET"
+                    + " are blank, mirroring the pre-existing Instagram guard exactly")
+    void authorize_facebookLoginNotConfigured_failsClosed() {
+        metaApiProperties.setAppId("");
+        metaApiProperties.setAppSecret("");
+
+        ApiException ex = assertThrows(ApiException.class, () -> controller.authorize(CREATOR_PRINCIPAL, null));
+
+        assertEquals("META_NOT_CONFIGURED", ex.getCode());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, ex.getStatus());
+        verify(stateStore, never()).issue(anyString(), any(MetaAuthPath.class));
+    }
+
+    @Test
+    @DisplayName("authorize INSTAGRAM_LOGIN fails closed when the Instagram app id/secret are blank")
+    void authorize_instagramLoginNotConfigured_failsClosed() {
+        // instagramAppId/instagramAppSecret default to blank — only appId/appSecret are set in
+        // setUp() for the FACEBOOK_LOGIN baseline.
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> controller.authorize(CREATOR_PRINCIPAL, MetaAuthPath.INSTAGRAM_LOGIN));
+
+        assertEquals("META_INSTAGRAM_LOGIN_NOT_CONFIGURED", ex.getCode());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, ex.getStatus());
+        verify(stateStore, never()).issue(anyString(), any(MetaAuthPath.class));
     }
 
     @Test

@@ -1,6 +1,49 @@
 # TASK INBOX — Sage Digital
 
-> **Orchestrator:** Arjun Kapoor  
+> **Orchestrator:** Arjun Kapoor
+> **Last Updated:** 2026-08-28 (FIX-WAVE-0828 dispatched by Priya, CTO)
+
+---
+
+## 🚨 CURRENT WAVE — FIX-WAVE-0828 (launch blockers) — 2026-08-28
+
+**Spec:** `wiki/tech/TASK-FIX-WAVE-0828-PRIYA.md` · **Bus:** `SHARED_CONTEXT.md`
+**Origin:** deep production-readiness audit — 33 features traced, baseline **54.5%**
+(12 aligned · 12 partial · 6 broken · 3 missing).
+**Question answered:** *"production ready if we added the keys?"* → **No.** Five gates, none of
+which a key fixes.
+
+| Track | Owner | Domain | Headline | Status |
+|---|---|---|---|---|
+| A | Meera | `deploy/**`, `generate-env.sh` | A1 `VOICE_AI_BASE_URL` unset → **API does not boot** | ✅ DONE (A1–A8) |
+| B | Ananya | CSP, `publish-images.yml`, `creator-profile.tsx` | B1 CSP blocks Razorpay Checkout → **money-in dead** | ✅ DONE (B1–B3, build+tsc clean) |
+| C | Vikram | `SecretsStartupValidator`, `Meta*`, `MeeraController` | C1 refresh drops `authPath` → IG dies ~55d | ✅ DONE (C1–C4, 110 tests 0F; C2 pre-fixed by concurrent session, coverage added) |
+| D | Vikram | `EscrowService`, `WalletService`, `UploadService` | D1 GST Doc#2 loss is `log.error`-only | ✅ D1/D2 DONE, 92/92 tests · D3 → follow-up **D4** (wire `uploadPrivate` into controller + read paths, IN PROGRESS) |
+
+**Follow-ups:** C5 ✅ (ASID persisted, repo lookups, `revokeByMetaUserId`; 131 tests) · D4 ✅ (purpose-gated private KYC uploads, 123 tests; found: no endpoint ever served KYC doc URLs — exposure was write-side only) · E3 ✅ (callback controller on the real storage API, FB revoke now works, 18/18) · B4 ✅ (FE sends `purpose` + persists `key` at all 4 KYC call sites — Ananya found a 4th site, `brand-kyc-prompt.tsx`, beyond the brief; build + tsc clean).
+
+**Wave status: ALL TRACKS + FOLLOW-UPS DONE.** Consolidation gate (single composite run of every touched backend test class) in progress; close-out report follows.
+
+**Manual steps for Swapnil/ops (no code):** register the two Meta callback URLs in BOTH App Dashboards (`https://api.influora.in/api/v1/webhooks/meta/deauthorize`, `.../data-deletion`) · paste real SMTP creds + vendor keys via `generate-env.sh` output · rotate Anthropic/Gemini/Sarvam keys (env.example leak) · authorize the meta_developer_tools connector in an interactive session if dashboard verification via tooling is wanted.
+**New follow-up tickets (logged, NOT in this wave):** admin review endpoint for creator `identityKycStatus` — today no code path can set VERIFIED (found in D2); promote D1's EntityManager-based invoice-failure retry to an idiomatic `EmailOutbox`-style Entity/Repository/Worker; align `Dockerfile:85-86` local-build ARG defaults with the fixed CI URLs.
+| E | Kabir | new Meta platform-callback controller | E1/E2 no deauthorize / data-deletion callback | ✅ DONE 18/18 tests — FB-side resolve BLOCKED on C5 (ASID column, dispatched to Vikram) |
+
+**File domains are strictly non-overlapping** — no two owners share a file (this repo has a
+documented history of concurrent sessions clobbering in-progress edits). No owner commits or pushes.
+
+### ⛔ CTO ruling — excluded from this wave
+- **TDS §194-O** — unbuilt statutory subsystem, not a bug. Spec: `wiki/tech/TASK-TDS-194O-SPEC.md`.
+  Needs Swapnil sign-off + CA review. **Do not flip `VITE_PAYOUTS_ENABLED=true` until DONE.**
+- **Meta media insights** — product call, not a defect.
+- **`presignPut` dead code** — leave it.
+
+### 🔴 Standing gate (independent of this wave)
+Rotate Anthropic / Gemini / Sarvam keys — `influora-ai/env.example` is git-tracked with
+real-shaped credentials (`:12`, `:19`); `git rm --cached` any tracked secret file.
+
+---
+
+> **Previous sprint header (archived context below):**
 > **Last Updated:** 2026-07-10 ~15:50 IST (Tick #36 — Priya #38/#39/#40 CTO sign-off)
 > **Active Sprint:** Creator GA hardening — Weeks 3–4 ✅ 100%; full-platform blended **~84%**; #38/#39/#40 gates **CLOSED**; remaining = P1 + K6-3/4 + E2E 80%
 > **Source of truth:** `wiki/tech/creator/CREATOR_GA_ASSIGNMENTS_PRIYA.md` (supersedes reconciliation §5 for who-does-what)

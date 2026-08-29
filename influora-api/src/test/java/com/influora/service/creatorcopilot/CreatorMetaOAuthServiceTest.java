@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.client.FacebookPageClient;
+import com.influora.integration.meta.client.MetaGraphApiClient;
 import com.influora.integration.meta.dto.FacebookAccountsListResponse.InstagramBusinessAccount;
 import com.influora.integration.meta.dto.MetaPermissionsResponse;
 import com.influora.integration.meta.dto.MetaPermissionsResponse.Permission;
@@ -48,18 +49,22 @@ class CreatorMetaOAuthServiceTest {
     @Mock private MetaOAuthService oAuthService;
     @Mock private MetaTokenStorage tokenStorage;
     @Mock private FacebookPageClient facebookPageClient;
+    @Mock private MetaGraphApiClient graphApiClient;
 
     private CreatorMetaOAuthService service;
 
     @BeforeEach
     void setUp() {
-        service = new CreatorMetaOAuthService(oAuthService, tokenStorage, facebookPageClient);
+        service = new CreatorMetaOAuthService(oAuthService, tokenStorage, facebookPageClient, graphApiClient);
 
         when(oAuthService.exchangeCodeForToken(CODE))
                 .thenReturn(new MetaTokenResponse(SHORT_LIVED_TOKEN, "bearer", 3600L));
         when(oAuthService.exchangeForLongLivedToken(SHORT_LIVED_TOKEN))
                 .thenReturn(new MetaTokenResponse(LONG_LIVED_TOKEN, "bearer", 5_184_000L));
         when(facebookPageClient.resolveConnectedInstagram(LONG_LIVED_TOKEN)).thenReturn(null);
+        // C5: unstubbed here on purpose for most tests — graphApiClient.get(...) returns Mockito's
+        // default null, so resolveMetaUserIdSafely resolves metaUserId=null, matching every
+        // pre-existing verify()'s isNull() 7th argument below unless a test overrides it.
     }
 
     @Test
@@ -90,7 +95,8 @@ class CreatorMetaOAuthServiceTest {
                         any(),
                         eq(List.of("instagram_basic", "pages_show_list")),
                         isNull(),
-                        eq(MetaAuthPath.FACEBOOK_LOGIN));
+                        eq(MetaAuthPath.FACEBOOK_LOGIN),
+                        isNull());
     }
 
     @Test
@@ -109,7 +115,8 @@ class CreatorMetaOAuthServiceTest {
                         any(),
                         isNull(),
                         isNull(),
-                        eq(MetaAuthPath.FACEBOOK_LOGIN));
+                        eq(MetaAuthPath.FACEBOOK_LOGIN),
+                        isNull());
     }
 
     @Test
@@ -143,6 +150,57 @@ class CreatorMetaOAuthServiceTest {
     }
 
     @Test
+    @DisplayName("C5: connect resolves metaUserId via GET /me?fields=id and persists it on the FACEBOOK_LOGIN row")
+    void connect_resolvesMetaUserId_persistsOnFacebookLoginRow() {
+        when(facebookPageClient.fetchPermissions(LONG_LIVED_TOKEN))
+                .thenReturn(new MetaPermissionsResponse(List.of(new Permission("instagram_basic", "granted"))));
+        when(graphApiClient.get(
+                        eq("/me?fields=id"),
+                        eq(LONG_LIVED_TOKEN),
+                        eq(CreatorMetaOAuthService.MetaMeResponse.class),
+                        eq("me")))
+                .thenReturn(new CreatorMetaOAuthService.MetaMeResponse("17841400000099999"));
+
+        service.connect(CREATOR_PROFILE_ID, CODE);
+
+        verify(tokenStorage)
+                .storeCreatorToken(
+                        eq(CREATOR_PROFILE_ID),
+                        eq(LONG_LIVED_TOKEN),
+                        any(),
+                        eq(List.of("instagram_basic")),
+                        isNull(),
+                        eq(MetaAuthPath.FACEBOOK_LOGIN),
+                        eq("17841400000099999"));
+    }
+
+    @Test
+    @DisplayName("C5: a metaUserId resolution failure does not block connect — falls back to null, same as igResolution")
+    void connect_metaUserIdResolutionFails_stillSucceedsWithNullMetaUserId() {
+        when(facebookPageClient.fetchPermissions(LONG_LIVED_TOKEN))
+                .thenReturn(new MetaPermissionsResponse(List.of(new Permission("instagram_basic", "granted"))));
+        when(graphApiClient.get(
+                        eq("/me?fields=id"),
+                        eq(LONG_LIVED_TOKEN),
+                        eq(CreatorMetaOAuthService.MetaMeResponse.class),
+                        eq("me")))
+                .thenThrow(new MetaApiException("me lookup failed"));
+
+        ConnectResult result = service.connect(CREATOR_PROFILE_ID, CODE);
+
+        assertEquals(List.of("instagram_basic"), result.grantedScopes());
+        verify(tokenStorage)
+                .storeCreatorToken(
+                        eq(CREATOR_PROFILE_ID),
+                        eq(LONG_LIVED_TOKEN),
+                        any(),
+                        eq(List.of("instagram_basic")),
+                        isNull(),
+                        eq(MetaAuthPath.FACEBOOK_LOGIN),
+                        isNull());
+    }
+
+    @Test
     @DisplayName(
             "CR-114: a null expires_in falls back to the ~60-day default, not an already-expired"
                     + " Instant.now()")
@@ -164,7 +222,8 @@ class CreatorMetaOAuthServiceTest {
                         expiresAtCaptor.capture(),
                         any(),
                         isNull(),
-                        eq(MetaAuthPath.FACEBOOK_LOGIN));
+                        eq(MetaAuthPath.FACEBOOK_LOGIN),
+                        isNull());
 
         // Before the fix this was Instant.now() (0-second lifetime) — an already-expired token
         // stored as if the connect had succeeded. Assert it lands close to the ~60-day default,

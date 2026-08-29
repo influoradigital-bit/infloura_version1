@@ -79,8 +79,11 @@ export function KycIdentityForm({ onSubmitted }: KycIdentityFormProps) {
     setSelfieError(null);
     setUploading(true);
     try {
-      const { url } = await uploads.upload(file, 'creator');
-      setSelfieUrl(url);
+      // [F-0390 D4] `purpose` routes this through the PRIVATE upload path — `key` (not `url`) is
+      // what gets persisted as `selfieUrl` below; `url` here is only a short-lived presigned
+      // preview.
+      const { key } = await uploads.upload(file, 'creator', 'creator_kyc_selfie');
+      setSelfieUrl(key);
       setSelfieName(file.name);
     } catch (err) {
       setSelfieUrl(null);

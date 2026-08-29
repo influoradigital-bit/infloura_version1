@@ -22,6 +22,7 @@ This policy explains what personal data we collect, why, and how you can control
 | Payment data | Bank/UPI details, transaction history | To route payment protection funding and Payouts through our licensed Payment Aggregator |
 | Usage data | Device, IP address, log data, cookies | Security, analytics, product improvement |
 | Communications | Support tickets, grievance submissions | To respond to you |
+| Connected social accounts | Instagram profile, your own media, account insights, aggregated audience demographics | Verified analytics and deliverable verification — only if you choose to connect an account. See our [Meta Platform Data & Instagram Data Policy](/meta-data-policy) for the exact fields, permissions and deletion process |
 
 We do not store full card numbers or bank credentials ourselves — these are handled by our licensed Payment Aggregator.
 
@@ -54,6 +55,12 @@ We share data only where necessary:
 - **Regulators and authorities** — where required by Indian law (tax, AML, law enforcement requests).
 
 We do not sell your personal data.
+
+### Data from Meta (Instagram and Facebook)
+
+If you connect an Instagram Business or Creator account, we receive profile, media and insights data from Meta's APIs. We use it only to verify your account, verify campaign deliverables, and produce the analytics shown on Influora. We never receive your password, your direct messages, or the personal data of your individual followers, and we never sell this data or share it with data brokers or ad networks. Our use of information received from Meta APIs adheres to the [Meta Platform Terms](https://developers.facebook.com/terms/) and [Meta Developer Policies](https://developers.facebook.com/devpolicy/).
+
+Full details — every permission we request, every field we store, retention periods, and how to have this data deleted — are in our [Meta Platform Data & Instagram Data Policy](/meta-data-policy).
 
 ## 6. Your rights under the DPDP Act
 

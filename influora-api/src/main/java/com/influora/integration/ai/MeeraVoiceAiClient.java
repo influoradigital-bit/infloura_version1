@@ -1,5 +1,6 @@
 package com.influora.integration.ai;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.service.integration.BrandSafetyServiceTokenService;
@@ -168,24 +169,39 @@ public class MeeraVoiceAiClient {
     }
 
     /**
-     * Requests TTS audio for {@code text} scoped to {@code workspaceId}. influora-ai truncates
-     * the text to ~200 chars itself (P18) and applies its own spend gate — this client sends
-     * whatever it's given and trusts the Python side's degrade-not-error behavior; on ANY
-     * provider failure Python responds 200 with a small JSON fallback signal instead of audio
-     * bytes, which this method surfaces as {@link SpeakResult#fallback()}, same as every other
-     * failure mode here.
+     * Requests TTS audio for {@code text} scoped to {@code workspaceId}, defaulting to no {@code
+     * lang} override (influora-ai's own {@code body.get("lang", "en-IN")} applies). Kept for
+     * backward compatibility with existing callers/tests that don't care about {@code lang}.
      */
     public SpeakResult speak(String workspaceId, String text) {
+        return speak(workspaceId, text, null);
+    }
+
+    /**
+     * As above, threading {@code lang} (C4/W3) — the BCP-47-ish code {@code /meera/voice/transcribe}
+     * detected for the turn being replied to (e.g. {@code hi-IN}) — through to influora-ai so the
+     * spoken reply matches the language the user actually spoke. {@code null}/blank omits the {@code
+     * lang} key from the request body entirely (never sends it as a JSON {@code null}), so
+     * influora-ai's {@code voice.py} default ({@code en-IN}) applies exactly as before this
+     * parameter existed. influora-ai truncates the text to ~200 chars itself (P18) and applies its
+     * own spend gate — this client sends whatever it's given and trusts the Python side's
+     * degrade-not-error behavior; on ANY provider failure Python responds 200 with a small JSON
+     * fallback signal instead of audio bytes, which this method surfaces as {@link
+     * SpeakResult#fallback()}, same as every other failure mode here.
+     */
+    public SpeakResult speak(String workspaceId, String text, String lang) {
         if (workspaceId == null || workspaceId.isBlank() || text == null || text.isBlank()) {
             log.warn("MeeraVoiceAiClient: missing workspaceId/text, skipping call");
             return SpeakResult.fallback();
         }
 
+        String resolvedLang = (lang == null || lang.isBlank()) ? null : lang;
+
         String token;
         String requestBody;
         try {
             token = tokenService.mint(workspaceId);
-            requestBody = objectMapper.writeValueAsString(new SpeakRequest(workspaceId, text));
+            requestBody = objectMapper.writeValueAsString(new SpeakRequest(workspaceId, text, resolvedLang));
         } catch (Exception e) {
             log.warn(
                     "MeeraVoiceAiClient: failed to build request for workspace={}: {}",
@@ -242,7 +258,14 @@ public class MeeraVoiceAiClient {
         return SpeakResult.fallback();
     }
 
-    private record SpeakRequest(@JsonProperty("workspace_id") String workspaceId, String text) {}
+    // [C4/W3] lang is @JsonInclude(NON_NULL) — omitted entirely (never serialized as a JSON null)
+    // when absent, so voice.py's `body.get("lang", "en-IN")` default still applies. Sending an
+    // explicit `"lang": null` would defeat that default: dict.get on a key present with a None
+    // value returns None, not "en-IN".
+    private record SpeakRequest(
+            @JsonProperty("workspace_id") String workspaceId,
+            String text,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String lang) {}
 
     /**
      * Result of a {@link #transcribe} call — the voice-INPUT mirror of {@link SpeakResult}. {@code

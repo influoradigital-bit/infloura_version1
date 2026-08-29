@@ -63,6 +63,20 @@ public class MetaOAuthToken {
     @Column(name = "ig_business_account_id", length = 64)
     private String igBusinessAccountId;
 
+    /**
+     * The FB app-scoped user id for THIS app (V20260828130000, C5 / Kabir Track E deauthorize
+     * callback) — what a Meta deauthorize {@code signed_request} carries as {@code user_id}. Only
+     * ever populated on {@link MetaAuthPath#FACEBOOK_LOGIN} rows: on {@link
+     * MetaAuthPath#INSTAGRAM_LOGIN} the deauthorize callback's {@code user_id} IS the Instagram
+     * user id already captured in {@link #igBusinessAccountId} (the Instagram-Login code exchange
+     * returns it as {@code user_id} — see {@code CreatorMetaOAuthService#connectViaInstagramLogin}),
+     * so this column stays {@code null} for those rows by design, not by omission. Nullable for
+     * every FACEBOOK_LOGIN row connected before this fix shipped, same backfill-to-NULL convention
+     * as {@link #igBusinessAccountId} (V65) — lookups must treat NULL the same as "no match".
+     */
+    @Column(name = "meta_user_id", length = 64)
+    private String metaUserId;
+
     @Column(name = "encrypted_access_token", nullable = false, columnDefinition = "TEXT")
     private String encryptedAccessToken;
 
@@ -116,6 +130,10 @@ public class MetaOAuthToken {
     public void applyIgBusinessAccountId(String igBusinessAccountId) {
         this.igBusinessAccountId = igBusinessAccountId;
         touch();
+    }
+
+    public String getMetaUserId() {
+        return metaUserId;
     }
 
     public String getEncryptedAccessToken() {
@@ -210,6 +228,11 @@ public class MetaOAuthToken {
 
         public Builder igBusinessAccountId(String igBusinessAccountId) {
             t.igBusinessAccountId = igBusinessAccountId;
+            return this;
+        }
+
+        public Builder metaUserId(String metaUserId) {
+            t.metaUserId = metaUserId;
             return this;
         }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Influora .env generator -- run ON the Utho box:   bash generate-env.sh
 #
-# Generates the 14 values no vendor can give you; leaves REPLACE_ME for the rest.
+# Generates the 16 values no vendor can give you; leaves REPLACE_ME for the rest.
 # Refuses to overwrite an existing .env.
 #
 # Formats are enforced at runtime, not cosmetic:
@@ -52,13 +52,21 @@ INFLUORA_PII_EMAILPHONEENCRYPTIONKEY=$(aes32)
 INFLUORA_PII_BANKENCRYPTIONKEY=$(aes32)
 INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY=$(aes32)
 META_TOKEN_ENCRYPTION_KEY=$(aes32)
+INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY=$(aes32)
+INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY=$(aes32)
+INFLUORA_CONVERSIONWEBHOOK_TOKENENCRYPTIONKEY=$(aes32)
 INFLUORA_JWKS_PRIVATEKEYPEM="$JWKS_PRIV"
 INFLUORA_JWKS_PUBLICKEYPEM="$JWKS_PUB"
+UNSUBSCRIBE_SIGNING_SECRET=$(secret)
+TREND_TAG_INGEST_SECRET=$(secret)
 
 # ---- paste your own ----
-RAZORPAY_KEY_ID=REPLACE_ME
-RAZORPAY_KEY_SECRET=REPLACE_ME
-RAZORPAY_WEBHOOK_SECRET=REPLACE_ME
+# NOTE: these three MUST use the exact literal SecretsStartupValidator rejects
+# (application.yml's own ${VAR:default}), not a generic REPLACE_ME -- otherwise an
+# unfilled placeholder boots clean with a non-functional Razorpay integration (F-0390 A4).
+RAZORPAY_KEY_ID=rzp_test_REPLACE_WITH_YOUR_KEY
+RAZORPAY_KEY_SECRET=REPLACE_WITH_YOUR_RAZORPAY_SECRET
+RAZORPAY_WEBHOOK_SECRET=REPLACE_WITH_YOUR_WEBHOOK_SECRET
 RAZORPAYX_ACCOUNT_NUMBER=REPLACE_ME
 MSG91_AUTH_KEY=REPLACE_ME
 MSG91_TOKEN_AUTH=REPLACE_ME
@@ -66,6 +74,18 @@ MSG91_WIDGET_ID=REPLACE_ME
 MSG91_OTP_TEMPLATE_ID=REPLACE_ME
 MSG91_WELCOME_TEMPLATE_ID=REPLACE_ME
 MSG91_EMAIL_TRANSACTIONAL_TEMPLATE_ID=REPLACE_ME
+# Deploy TLD is .in, not the application.yml default of .com (F-0390 A5) -- already correct,
+# nothing to paste.
+MSG91_EMAIL_DOMAIN=mail.influora.in
+MSG91_FROM_EMAIL=noreply@influora.in
+MSG91_FROM_NAME=Influora
+MSG91_EMAIL_COMPANY_NAME=Influora
+# MSG91's SMTP relay (Msg91EmailClient) -- SMTP_HOST unset means Spring never creates a
+# JavaMailSender bean at all, i.e. all outbound email silently dead (F-0390 A2).
+SMTP_HOST=REPLACE_ME
+SMTP_PORT=587
+SMTP_USERNAME=REPLACE_ME
+SMTP_PASSWORD=REPLACE_ME
 R2_ACCOUNT_ID=REPLACE_ME
 R2_ACCESS_KEY_ID=REPLACE_ME
 R2_SECRET_ACCESS_KEY=REPLACE_ME
@@ -79,8 +99,14 @@ META_APP_ID=REPLACE_ME
 META_APP_SECRET=REPLACE_ME
 META_INSTAGRAM_APP_ID=REPLACE_ME
 META_INSTAGRAM_APP_SECRET=REPLACE_ME
-META_REDIRECT_URI=https://api.influora.in/api/v1/meta/callback
-META_INSTAGRAM_REDIRECT_URI=https://api.influora.in/api/v1/meta/instagram/callback
+# Meta redirects the BROWSER here, so this must be the SPA route, not an API path. The React page
+# (src/pages/creator-meta-callback.tsx, routed at App.tsx) reads code/state off its own query
+# string and calls GET /meta/oauth/callback itself as an authenticated XHR. Pointing this at the
+# API instead returns UNAUTHENTICATED every time: that endpoint requires @AuthenticationPrincipal
+# and Meta's redirect carries no bearer token. One route serves both auth paths — the backend
+# recovers which one from the state token. Must match a Valid OAuth Redirect URI byte-for-byte.
+META_REDIRECT_URI=https://app.influora.in/creator/settings/meta/callback
+META_INSTAGRAM_REDIRECT_URI=https://app.influora.in/creator/settings/meta/callback
 # CompanyTaxStartupValidator REJECTS placeholders -- the API will not boot until these are real
 INFLUORA_COMPANY_GSTIN=REPLACE_ME
 INFLUORA_LEGAL_NAME=REPLACE_ME
@@ -91,4 +117,4 @@ chmod 600 "$ENV_PATH"
 echo "wrote $ENV_PATH"
 echo "still REPLACE_ME: $(grep -c REPLACE_ME "$ENV_PATH")"
 echo "AES keys must each read 32 bytes:"
-for k in INFLUORA_PII_EMAILPHONEENCRYPTIONKEY INFLUORA_PII_BANKENCRYPTIONKEY INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY META_TOKEN_ENCRYPTION_KEY; do v=$(grep "^$k=" "$ENV_PATH" | cut -d= -f2-); n=$(printf %s "$v" | base64 -d 2>/dev/null | wc -c); echo "  $k -> $n bytes"; done
+for k in INFLUORA_PII_EMAILPHONEENCRYPTIONKEY INFLUORA_PII_BANKENCRYPTIONKEY INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY META_TOKEN_ENCRYPTION_KEY INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY INFLUORA_CONVERSIONWEBHOOK_TOKENENCRYPTIONKEY; do v=$(grep "^$k=" "$ENV_PATH" | cut -d= -f2-); n=$(printf %s "$v" | base64 -d 2>/dev/null | wc -c); echo "  $k -> $n bytes"; done

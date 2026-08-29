@@ -160,15 +160,17 @@ export function BrandKycPrompt() {
     }
     setSubmitting(true);
     try {
+      // [F-0390 D4] `purpose` routes both docs through the PRIVATE upload path — `key` (not
+      // `url`) is what gets persisted; `url` here is only a short-lived presigned preview.
       const [g, p] = await Promise.all([
-        api.uploads.upload(gstinFile),
-        api.uploads.upload(panFile),
+        api.uploads.upload(gstinFile, 'brand', 'brand_kyc_gstin_doc'),
+        api.uploads.upload(panFile, 'brand', 'brand_kyc_pan_doc'),
       ]);
       await api.onboarding.submitBrandKyc({
         gstin: gstin.trim(),
         pan: pan.trim().toUpperCase(),
-        gstinDocUrl: g.url,
-        panDocUrl: p.url,
+        gstinDocUrl: g.key,
+        panDocUrl: p.key,
       });
       rememberDismiss();
       setDone(true);

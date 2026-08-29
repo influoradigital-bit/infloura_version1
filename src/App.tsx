@@ -776,6 +776,24 @@ export default function App() {
             />
           }
         />
+        {/*
+          Meta App Review — the Instagram/Facebook integration (MetaOAuthService)
+          requests instagram_basic / instagram_manage_insights / pages_show_list,
+          and Meta Platform Terms §4.a requires the disclosure to sit behind an
+          active, publicly available, non-geoblocked URL. This is that URL, and
+          §9 of the doc doubles as the "Data Deletion Instructions URL" the App
+          Dashboard asks for. Kept `noindex` like every other legal draft.
+        */}
+        <Route
+          path="/meta-data-policy"
+          element={
+            <LegalPage
+              docSlug="meta-platform-data-policy"
+              description="What Instagram and Facebook data Influora receives, how it is used, how long it is kept, and how to have it deleted."
+              canonical="/meta-data-policy"
+            />
+          }
+        />
         <Route
           path="/support"
           element={
