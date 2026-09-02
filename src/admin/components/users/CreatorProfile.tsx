@@ -35,6 +35,7 @@ import { useState, type ReactNode } from 'react';
 import {
   UserRound,
   Mail,
+  Phone,
   MapPin,
   Instagram,
   BadgeCheck,
@@ -387,6 +388,12 @@ export default function CreatorProfile({ creatorId, className }: CreatorProfileP
               <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                 <Mail className="size-3.5" aria-hidden="true" />
                 {creator.email}
+              </p>
+              {/* PHONE-0829 P3 — every creator that existed before this feature is null; the
+                  em-dash makes that legible instead of reading as a missing/loading value. */}
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Phone className="size-3.5" aria-hidden="true" />
+                {creator.phone ? `+91 ${creator.phone}` : '— Not provided'}
               </p>
               <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                 <MapPin className="size-3.5" aria-hidden="true" />

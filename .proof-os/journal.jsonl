@@ -2980,3 +2980,204 @@
 {"ts": "2026-08-25T16:00:30", "who": "meera", "what": "edit", "file": ".github/workflows/frontend-checks.yml", "task": "T-F0390-0825", "stage": "produce", "gate_result": ""}
 {"ts": "2026-08-25T16:00:30", "who": "meera", "what": "edit", "file": ".proof-os/gates/F-0390-money-flags-declared-in-build.sh", "task": "T-F0390-0825", "stage": "produce", "gate_result": ""}
 {"ts": "2026-08-25T16:00:31", "who": "meera", "what": "edit", "file": ".proof-os/gates/F-0390-falsify.py", "task": "T-F0390-0825", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-01T18:56:19", "who": "tester", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/dto/auth/BrandRegisterRequest.java", "task": "", "stage": "intake", "gate_result": "F-0392"}
+{"ts": "2026-09-01T18:56:20", "who": "tester", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/dto/admin/AdminCreatorDtos.java", "task": "", "stage": "intake", "gate_result": "F-0393"}
+{"ts": "2026-09-01T18:56:20", "who": "tester", "what": "ledger-add", "file": "src/pages/brand-onboarding.tsx", "task": "", "stage": "intake", "gate_result": "F-0394"}
+{"ts": "2026-09-01T18:56:32", "who": "tester", "what": "ledger-add", "file": "src/components/brand/onboarding/onboarding-steps.tsx", "task": "", "stage": "intake", "gate_result": "F-0395"}
+{"ts": "2026-09-01T18:56:32", "who": "tester", "what": "ledger-add", "file": "src/components/brand/onboarding/onboarding-steps.tsx", "task": "", "stage": "intake", "gate_result": "F-0396"}
+{"ts": "2026-09-01T18:56:32", "who": "tester", "what": "ledger-add", "file": "influora-api/src/test/java/com/influora/service", "task": "", "stage": "intake", "gate_result": "F-0397"}
+{"ts": "2026-09-01T18:57:29", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/web/dto/auth/BrandRegisterRequest.java", "task": "T-PHONE-0829-FIX", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-01T18:57:29", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/service/AuthService.java", "task": "T-PHONE-0829-FIX", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-01T18:57:29", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/web/dto/admin/AdminCreatorDtos.java", "task": "T-PHONE-0829-FIX", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-01T18:57:29", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/common/IndianPhoneUtils.java", "task": "T-PHONE-0829-FIX", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-01T18:57:29", "who": "ananya", "what": "read", "file": "src/pages/brand-onboarding.tsx", "task": "T-PHONE-0829-FIX", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-01T18:57:30", "who": "ananya", "what": "read", "file": "src/components/brand/onboarding/onboarding-steps.tsx", "task": "T-PHONE-0829-FIX", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-01T18:57:30", "who": "ananya", "what": "read", "file": "src/pages/brand-register.tsx", "task": "T-PHONE-0829-FIX", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-01T19:00:03", "who": "ananya", "what": "edit", "file": "src/components/brand/onboarding/onboarding-steps.tsx", "task": "T-PHONE-0829-FIX", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-01T19:00:03", "who": "ananya", "what": "edit", "file": "src/pages/brand-onboarding.tsx", "task": "T-PHONE-0829-FIX", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-01T19:11:15", "who": "ananya", "what": "create", "file": "src/components/brand/onboarding/__tests__/onboarding-steps.persistence.test.tsx", "task": "T-PHONE-0829-FIX", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-01T19:11:15", "who": "meera", "what": "verdict", "file": "src/components/brand/onboarding/onboarding-steps.tsx", "task": "T-PHONE-0829-FIX", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-09-01T19:11:16", "who": "meera", "what": "verdict", "file": "src/pages/brand-onboarding.tsx", "task": "T-PHONE-0829-FIX", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-09-01T19:11:16", "who": "meera", "what": "verdict", "file": "influora-api/src/main/java/com/influora/service/AuthService.java", "task": "T-PHONE-0829-FIX", "stage": "judgment", "gate_result": "proved", "isolation": "oracle"}
+{"ts": "2026-09-01T19:15:54", "who": "vikram", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0392"}
+{"ts": "2026-09-01T19:15:54", "who": "vikram", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0392 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0392-F-0397-onboarding-field-persistence.sh"}
+{"ts": "2026-09-01T19:15:54", "who": "vikram", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0393"}
+{"ts": "2026-09-01T19:15:54", "who": "vikram", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0393 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0392-F-0397-onboarding-field-persistence.sh"}
+{"ts": "2026-09-01T19:15:55", "who": "ananya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0394"}
+{"ts": "2026-09-01T19:15:55", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0394 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0392-F-0397-onboarding-field-persistence.sh"}
+{"ts": "2026-09-01T19:15:55", "who": "ananya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0395"}
+{"ts": "2026-09-01T19:15:55", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0395 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0392-F-0397-onboarding-field-persistence.sh"}
+{"ts": "2026-09-01T19:15:55", "who": "ananya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0396"}
+{"ts": "2026-09-01T19:15:55", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0396 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0392-F-0397-onboarding-field-persistence.sh"}
+{"ts": "2026-09-01T19:15:56", "who": "ananya", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0397"}
+{"ts": "2026-09-01T19:15:56", "who": "ananya", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0397 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0392-F-0397-onboarding-field-persistence.sh"}
+{"ts": "2026-09-01T19:16:08", "who": "tester", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/AuthService.java", "task": "", "stage": "intake", "gate_result": "F-0398"}
+{"ts": "2026-09-01T19:16:16", "who": "tester", "what": "read", "file": "tasks/T-PHONE-0829-FIX/*", "task": "T-PHONE-0829-FIX", "stage": "cleanup", "gate_result": "scanned 2 file(s) for failure markers before archive"}
+{"ts": "2026-09-01T19:16:16", "who": "tester", "what": "delete", "file": "tasks/T-PHONE-0829-FIX/*", "task": "T-PHONE-0829-FIX", "stage": "cleanup", "gate_result": "archived \u2192 _archive/T-PHONE-0829-FIX, purge 2026-10-01"}
+{"ts": "2026-09-01T19:52:57", "who": "human:Swapnil Maruti", "what": "create", "file": ".proof-os/tasks/T-QA-0901-BASES", "task": "T-QA-0901-BASES", "stage": "confirm", "gate_result": ""}
+{"ts": "2026-09-01T19:54:52", "who": "priya", "what": "audit", "file": ".proof-os/tasks/T-QA-0901-BASES/A1-features.answers.md", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-01T20:09:15", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/DealService.java", "task": "", "stage": "intake", "gate_result": "F-0399"}
+{"ts": "2026-09-01T20:09:16", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/CampaignService.java", "task": "", "stage": "intake", "gate_result": "F-0400"}
+{"ts": "2026-09-01T20:09:16", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/CampaignService.java", "task": "", "stage": "intake", "gate_result": "F-0401"}
+{"ts": "2026-09-01T20:09:16", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/CreatorAffiliateEarningService.java", "task": "", "stage": "intake", "gate_result": "F-0402"}
+{"ts": "2026-09-01T20:09:17", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/domain/entity/Contract.java", "task": "", "stage": "intake", "gate_result": "F-0403"}
+{"ts": "2026-09-01T20:09:17", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/resources/application.yml", "task": "", "stage": "intake", "gate_result": "F-0404"}
+{"ts": "2026-09-01T20:09:17", "who": "priya", "what": "ledger-add", "file": "src/components/brand/discover/creator-discovery.tsx", "task": "", "stage": "intake", "gate_result": "F-0405"}
+{"ts": "2026-09-01T20:09:18", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/EscrowService.java", "task": "", "stage": "intake", "gate_result": "F-0406"}
+{"ts": "2026-09-02T11:59:13", "who": "priya", "what": "ledger-add", "file": ".proof-os/gates/endpoint_reachability.py", "task": "", "stage": "intake", "gate_result": "F-0407"}
+{"ts": "2026-09-02T11:59:13", "who": "priya", "what": "ledger-add", "file": "src/lib/api.ts", "task": "", "stage": "intake", "gate_result": "F-0408"}
+{"ts": "2026-09-02T11:59:13", "who": "priya", "what": "ledger-add", "file": "src/components/brand/discover/creator-discovery.tsx", "task": "", "stage": "intake", "gate_result": "F-0409"}
+{"ts": "2026-09-02T11:59:13", "who": "priya", "what": "ledger-add", "file": "src/components/brand/discover/creator-discovery.tsx", "task": "", "stage": "intake", "gate_result": "F-0410"}
+{"ts": "2026-09-02T11:59:14", "who": "priya", "what": "ledger-add", "file": "src/components/brand/discover/creator-discovery.tsx", "task": "", "stage": "intake", "gate_result": "F-0411"}
+{"ts": "2026-09-02T11:59:14", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/CreatorCampaignService.java", "task": "", "stage": "intake", "gate_result": "F-0412"}
+{"ts": "2026-09-02T11:59:14", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/domain/entity/Contract.java", "task": "", "stage": "intake", "gate_result": "F-0413"}
+{"ts": "2026-09-02T11:59:14", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/ContractController.java", "task": "", "stage": "intake", "gate_result": "F-0414"}
+{"ts": "2026-09-02T11:59:36", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/EscrowService.java", "task": "", "stage": "intake", "gate_result": "F-0415"}
+{"ts": "2026-09-02T11:59:36", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/EscrowController.java", "task": "", "stage": "intake", "gate_result": "F-0416"}
+{"ts": "2026-09-02T11:59:36", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/DeliverableService.java", "task": "", "stage": "intake", "gate_result": "F-0417"}
+{"ts": "2026-09-02T11:59:37", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/DeliverableService.java", "task": "", "stage": "intake", "gate_result": "F-0418"}
+{"ts": "2026-09-02T11:59:37", "who": "priya", "what": "ledger-add", "file": "src/pages/brand-analytics.tsx", "task": "", "stage": "intake", "gate_result": "F-0419"}
+{"ts": "2026-09-02T11:59:37", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/common/CreatorScoreMath.java", "task": "", "stage": "intake", "gate_result": "F-0420"}
+{"ts": "2026-09-02T11:59:37", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/analytics/AnalyticsService.java", "task": "", "stage": "intake", "gate_result": "F-0421"}
+{"ts": "2026-09-02T11:59:37", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/MetaConnectionService.java", "task": "", "stage": "intake", "gate_result": "F-0422"}
+{"ts": "2026-09-02T12:03:13", "who": "priya", "what": "read", "file": ".proof-os/gates/endpoint_reachability.py", "task": "T-QA-0901-BASES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T12:06:25", "who": "priya", "what": "fix", "file": ".proof-os/gates/endpoint_reachability.py", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T12:06:26", "who": "priya", "what": "ledger-add", "file": ".proof-os/gates/endpoint_reachability.py", "task": "", "stage": "intake", "gate_result": "F-0423"}
+{"ts": "2026-09-02T12:08:03", "who": "priya", "what": "audit", "file": ".proof-os/tasks/T-QA-0901-BASES/R2-A1-features.answers.md", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T12:08:35", "who": "swapnil", "what": "read", "file": "src/pages/admin-console.tsx", "task": "T-QA-ADMIN-100", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T12:08:35", "who": "swapnil", "what": "read", "file": "influora-api/src/main/java/com/influora/web/AdminMarketingController.java", "task": "T-QA-ADMIN-100", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T12:08:35", "who": "swapnil", "what": "read", "file": "src/admin/services/api-contracts.ts", "task": "T-QA-ADMIN-100", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T12:08:35", "who": "swapnil", "what": "read", "file": "src/admin/hooks/useFinanceConsole.ts", "task": "T-QA-ADMIN-100", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T12:08:36", "who": "swapnil", "what": "read", "file": "src/admin/pages/RevenuePage.tsx", "task": "T-QA-ADMIN-100", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T12:11:25", "who": "priya", "what": "audit", "file": ".proof-os/tasks/T-QA-ADMIN-100/QUESTIONS.md", "task": "T-QA-ADMIN-100", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T12:24:09", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/config/SecretsStartupValidator.java", "task": "", "stage": "intake", "gate_result": "F-0424"}
+{"ts": "2026-09-02T12:24:09", "who": "priya", "what": "ledger-add", "file": ".proof-os/tasks/T-QA-ADMIN-100/ADMIN-QA-100.md", "task": "", "stage": "intake", "gate_result": "F-0425"}
+{"ts": "2026-09-02T12:24:40", "who": "priya", "what": "verdict", "file": ".proof-os/tasks/T-QA-ADMIN-100/ADMIN-QA-100.md", "task": "T-QA-ADMIN-100", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T12:31:55", "who": "priya", "what": "ledger-add", "file": ".proof-os/gates/citations.py", "task": "", "stage": "intake", "gate_result": "F-0426"}
+{"ts": "2026-09-02T12:32:25", "who": "priya", "what": "ledger-add", "file": ".proof-os/tasks/T-QA-0901-BASES/R2-A1-features.answers.md", "task": "", "stage": "intake", "gate_result": "F-0427"}
+{"ts": "2026-09-02T12:35:17", "who": "priya", "what": "ledger-add", "file": ".proof-os/gates/", "task": "", "stage": "intake", "gate_result": "F-0428"}
+{"ts": "2026-09-02T12:35:17", "who": "priya", "what": "update", "file": ".proof-os/gates/citations.py", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T12:35:48", "who": "priya", "what": "audit", "file": ".proof-os/tasks/T-QA-0901-BASES/R2-A1-features.answers.md", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T12:40:41", "who": "priya", "what": "ledger-add", "file": ".proof-os/gates/", "task": "", "stage": "intake", "gate_result": "F-0429"}
+{"ts": "2026-09-02T12:40:41", "who": "priya", "what": "update", "file": ".proof-os/gates", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T12:57:16", "who": "priya", "what": "ledger-add", "file": ".proof-os/gates/endpoint_reachability.py", "task": "", "stage": "intake", "gate_result": "F-0430"}
+{"ts": "2026-09-02T15:39:53", "who": "priya", "what": "ledger-add", "file": "src/lib/api.ts", "task": "", "stage": "intake", "gate_result": "F-0431"}
+{"ts": "2026-09-02T15:39:54", "who": "priya", "what": "ledger-add", "file": "src/pages/brand-chat.tsx", "task": "", "stage": "intake", "gate_result": "F-0432"}
+{"ts": "2026-09-02T15:39:54", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/DealController.java", "task": "", "stage": "intake", "gate_result": "F-0433"}
+{"ts": "2026-09-02T15:39:54", "who": "priya", "what": "ledger-add", "file": "src/pages/creator-portfolio-editor.tsx", "task": "", "stage": "intake", "gate_result": "F-0434"}
+{"ts": "2026-09-02T15:39:54", "who": "priya", "what": "ledger-add", "file": "src/lib/api.ts", "task": "", "stage": "intake", "gate_result": "F-0435"}
+{"ts": "2026-09-02T15:39:54", "who": "priya", "what": "ledger-add", "file": "src/hooks/useNotifications.ts", "task": "", "stage": "intake", "gate_result": "F-0436"}
+{"ts": "2026-09-02T15:39:54", "who": "priya", "what": "ledger-add", "file": "src/components/brand/deal-room/deal-payments-tab.tsx", "task": "", "stage": "intake", "gate_result": "F-0437"}
+{"ts": "2026-09-02T15:39:55", "who": "priya", "what": "ledger-add", "file": "src/lib/api.ts", "task": "", "stage": "intake", "gate_result": "F-0438"}
+{"ts": "2026-09-02T15:40:10", "who": "priya", "what": "ledger-add", "file": "src/lib/api.ts", "task": "", "stage": "intake", "gate_result": "F-0439"}
+{"ts": "2026-09-02T15:40:11", "who": "priya", "what": "ledger-add", "file": "src/components/brand/deal-room", "task": "", "stage": "intake", "gate_result": "F-0440"}
+{"ts": "2026-09-02T15:40:11", "who": "priya", "what": "ledger-add", "file": "src/pages/brand-creator-analytics.tsx", "task": "", "stage": "intake", "gate_result": "F-0441"}
+{"ts": "2026-09-02T15:40:11", "who": "priya", "what": "ledger-add", "file": "src/lib/api.ts", "task": "", "stage": "intake", "gate_result": "F-0442"}
+{"ts": "2026-09-02T15:40:28", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/WorkspaceMemberController.java", "task": "", "stage": "intake", "gate_result": "F-0443"}
+{"ts": "2026-09-02T15:40:28", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/NotificationController.java", "task": "", "stage": "intake", "gate_result": "F-0444"}
+{"ts": "2026-09-02T15:40:28", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/EscrowController.java", "task": "", "stage": "intake", "gate_result": "F-0445"}
+{"ts": "2026-09-02T15:40:28", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/CreatorController.java", "task": "", "stage": "intake", "gate_result": "F-0446"}
+{"ts": "2026-09-02T15:40:28", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/ContractController.java", "task": "", "stage": "intake", "gate_result": "F-0447"}
+{"ts": "2026-09-02T15:40:28", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/UserController.java", "task": "", "stage": "intake", "gate_result": "F-0448"}
+{"ts": "2026-09-02T15:40:28", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/DeliverableMetricController.java", "task": "", "stage": "intake", "gate_result": "F-0449"}
+{"ts": "2026-09-02T15:40:29", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/CreatorOnboardingController.java", "task": "", "stage": "intake", "gate_result": "F-0450"}
+{"ts": "2026-09-02T15:41:53", "who": "priya", "what": "audit", "file": ".proof-os/tasks/T-QA-0901-BASES/R2-A2-user.answers.md", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T16:04:28", "who": "priya", "what": "audit", "file": ".proof-os/tasks/T-QA-0901-BASES/R2-A2-user.answers.md", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T16:05:10", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/admin/AdminBrandService.java:306, influora-api/src/main/java/com/influora/service/admin/AdminCreatorService.java:314", "task": "", "stage": "intake", "gate_result": "F-0451"}
+{"ts": "2026-09-02T16:05:10", "who": "priya", "what": "ledger-add", "file": "src/admin/services/api-contracts.ts:142, influora-api/src/main/java/com/influora/web/AdminAuthController.java:113", "task": "", "stage": "intake", "gate_result": "F-0452"}
+{"ts": "2026-09-02T16:05:10", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/repository/CreatorProfileSpecs.java:26, influora-api/src/main/java/com/influora/service/admin/AdminCreatorService.java:183", "task": "", "stage": "intake", "gate_result": "F-0453"}
+{"ts": "2026-09-02T16:05:10", "who": "priya", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/ClientErrorController.java:134", "task": "", "stage": "intake", "gate_result": "F-0454"}
+{"ts": "2026-09-02T16:05:10", "who": "priya", "what": "ledger-add", "file": "src/admin/components/users/CreatorProfile.tsx:804", "task": "", "stage": "intake", "gate_result": "F-0455"}
+{"ts": "2026-09-02T16:05:11", "who": "priya", "what": "ledger-add", "file": "src/content/legal/privacy-policy.md:65", "task": "", "stage": "intake", "gate_result": "F-0456"}
+{"ts": "2026-09-02T16:07:08", "who": "vikram", "what": "read", "file": "influora-api/src/main/java/com/influora/service/AuthService.java", "task": "T-FIX-0451", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T16:11:52", "who": "vikram", "what": "fix", "file": "influora-api/src/main/java/com/influora/service/AuthService.java", "task": "T-FIX-0451", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:11:52", "who": "vikram", "what": "create", "file": "influora-api/src/test/java/com/influora/service/AuthServiceTest.java", "task": "T-FIX-0451", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:12:16", "who": "human:Swapnil Maruti", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0451"}
+{"ts": "2026-09-02T16:12:16", "who": "human:Swapnil Maruti", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0451 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0451-suspension-blocks-auth.sh"}
+{"ts": "2026-09-02T16:12:42", "who": "kabir", "what": "review", "file": "influora-api/src/main/java/com/influora/service/AuthService.java", "task": "T-FIX-0451", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T16:20:53", "who": "kabir", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/WorkspaceMemberService.java:387, influora-api/src/main/java/com/influora/service/BrandContextService.java:43", "task": "", "stage": "intake", "gate_result": "F-0457"}
+{"ts": "2026-09-02T16:20:53", "who": "kabir", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/AuthService.java:247", "task": "", "stage": "intake", "gate_result": "F-0458"}
+{"ts": "2026-09-02T16:23:46", "who": "priya", "what": "ledger-add", "file": "src/App.tsx", "task": "", "stage": "intake", "gate_result": "F-0459"}
+{"ts": "2026-09-02T16:23:47", "who": "priya", "what": "ledger-add", "file": "src/components/brand/brand-layout.tsx", "task": "", "stage": "intake", "gate_result": "F-0460"}
+{"ts": "2026-09-02T16:23:47", "who": "priya", "what": "ledger-add", "file": "src/lib/upload.ts", "task": "", "stage": "intake", "gate_result": "F-0461"}
+{"ts": "2026-09-02T16:23:47", "who": "priya", "what": "ledger-add", "file": "src/pages/brand-settings.tsx", "task": "", "stage": "intake", "gate_result": "F-0462"}
+{"ts": "2026-09-02T16:23:47", "who": "priya", "what": "ledger-add", "file": "src/pages/brand-register.tsx", "task": "", "stage": "intake", "gate_result": "F-0463"}
+{"ts": "2026-09-02T16:23:47", "who": "priya", "what": "ledger-add", "file": "src/lib/api.ts", "task": "", "stage": "intake", "gate_result": "F-0464"}
+{"ts": "2026-09-02T16:23:47", "who": "priya", "what": "ledger-add", "file": "src/admin/services/websocket.ts", "task": "", "stage": "intake", "gate_result": "F-0465"}
+{"ts": "2026-09-02T16:23:48", "who": "priya", "what": "ledger-add", "file": "src/lib/api.ts", "task": "", "stage": "intake", "gate_result": "F-0466"}
+{"ts": "2026-09-02T16:24:11", "who": "priya", "what": "ledger-add", "file": ".proof-os/tasks/T-QA-0901-BASES/R2-A2-user.answers.md", "task": "", "stage": "intake", "gate_result": "F-0467"}
+{"ts": "2026-09-02T16:31:13", "who": "arjun", "what": "edit", "file": "TASK_INBOX.md", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:33:28", "who": "vikram", "what": "fix", "file": "influora-api/src/main/java/com/influora/service/WorkspaceMemberService.java", "task": "T-FIX-0451", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:33:29", "who": "vikram", "what": "fix", "file": "influora-api/src/main/java/com/influora/service/BrandContextService.java", "task": "T-FIX-0451", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:33:29", "who": "vikram", "what": "fix", "file": "influora-api/src/main/java/com/influora/service/CreatorContextService.java", "task": "T-FIX-0451", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:33:29", "who": "vikram", "what": "create", "file": "influora-api/src/test/java/com/influora/service/BrandContextServiceTest.java", "task": "T-FIX-0451", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:33:29", "who": "human:Swapnil Maruti", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0457"}
+{"ts": "2026-09-02T16:33:29", "who": "human:Swapnil Maruti", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0457 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0451-suspension-blocks-auth.sh"}
+{"ts": "2026-09-02T16:33:29", "who": "human:Swapnil Maruti", "what": "read", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0458"}
+{"ts": "2026-09-02T16:33:29", "who": "human:Swapnil Maruti", "what": "update", "file": ".proof-os/ledger/failures.jsonl", "task": "", "stage": "promote", "gate_result": "F-0458 closed \u2192 C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\.proof-os\\gates\\F-0451-suspension-blocks-auth.sh"}
+{"ts": "2026-09-02T16:36:35", "who": "ananya", "what": "fix", "file": "F-0459", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:36:35", "who": "ananya", "what": "fix", "file": "F-0460", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:36:36", "who": "ananya", "what": "fix", "file": "F-0461", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:36:36", "who": "ananya", "what": "fix", "file": "F-0462", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:36:36", "who": "ananya", "what": "fix", "file": "F-0465", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:36:36", "who": "dev", "what": "create", "file": ".proof-os/gates/stale-runtime-copy", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:36:37", "who": "dev", "what": "create", "file": ".proof-os/gates/unenforced-limit", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:36:37", "who": "dev", "what": "create", "file": ".proof-os/gates/empty-state-misleads", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:36:37", "who": "dev", "what": "create", "file": ".proof-os/gates/missing-feature", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T16:36:37", "who": "kabir", "what": "review", "file": "F-0459", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T16:36:37", "who": "kabir", "what": "review", "file": "F-0460", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T16:36:37", "who": "kabir", "what": "review", "file": "F-0461", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T16:36:38", "who": "kabir", "what": "review", "file": "F-0462", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T16:36:38", "who": "kabir", "what": "review", "file": "F-0465", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T16:47:08", "who": "arjun", "what": "create", "file": ".proof-os/tasks/T-ASSIGN-0902/ASSIGNMENT-BOARD.md", "task": "T-ASSIGN-0902", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:02:14", "who": "kabir", "what": "ledger-add", "file": "src/pages/brand-settings.tsx", "task": "", "stage": "intake", "gate_result": "F-0468"}
+{"ts": "2026-09-02T17:02:15", "who": "dev", "what": "ledger-add", "file": ".proof-os/gates/", "task": "", "stage": "intake", "gate_result": "F-0469"}
+{"ts": "2026-09-02T17:11:26", "who": "priya", "what": "read", "file": "influora-api/src/main/java/com/influora/web/dto/workspace/WorkspaceMemberDtos.java", "task": "T-QA-0901-BASES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:11:26", "who": "priya", "what": "fix", "file": "influora-api/src/main/java/com/influora/web/dto/workspace/WorkspaceMemberDtos.java", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:11:26", "who": "priya", "what": "read", "file": "influora-api/src/main/java/com/influora/web/WorkspaceController.java", "task": "T-QA-0901-BASES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:11:27", "who": "priya", "what": "fix", "file": "influora-api/src/main/java/com/influora/web/WorkspaceController.java", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:11:27", "who": "priya", "what": "read", "file": "src/lib/api.ts", "task": "T-QA-0901-BASES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:11:27", "who": "priya", "what": "fix", "file": "src/lib/api.ts", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:11:27", "who": "priya", "what": "read", "file": "src/pages/brand-settings.tsx", "task": "T-QA-0901-BASES", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:11:27", "who": "priya", "what": "fix", "file": "src/pages/brand-settings.tsx", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:11:28", "who": "kabir", "what": "review", "file": "F-0462", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:11:28", "who": "kabir", "what": "review", "file": "F-0399", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:11:28", "who": "kabir", "what": "review", "file": "F-0402", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:11:28", "who": "kabir", "what": "review", "file": "F-0406", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:11:28", "who": "kabir", "what": "review", "file": "F-0444", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:11:28", "who": "kabir", "what": "review", "file": "F-0415", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:25:25", "who": "kabir", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/DealService.java", "task": "", "stage": "intake", "gate_result": "F-0470"}
+{"ts": "2026-09-02T17:25:25", "who": "kabir", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/EscrowService.java", "task": "", "stage": "intake", "gate_result": "F-0471"}
+{"ts": "2026-09-02T17:25:25", "who": "kabir", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/web/NotificationController.java", "task": "", "stage": "intake", "gate_result": "F-0472"}
+{"ts": "2026-09-02T17:25:25", "who": "kabir", "what": "ledger-add", "file": "influora-api/src/main/java/com/influora/service/CreatorAffiliateEarningService.java", "task": "", "stage": "intake", "gate_result": "F-0473"}
+{"ts": "2026-09-02T17:27:55", "who": "vikram", "what": "create", "file": "influora-api/src/test/java/com/influora/service/DealServiceBudgetTest.java", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:27:55", "who": "vikram", "what": "create", "file": "influora-api/src/test/java/com/influora/service/CreatorAffiliateEarningSettlementTest.java", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:27:56", "who": "vikram", "what": "fix", "file": "influora-api/src/main/java/com/influora/service/DealService.java", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:27:56", "who": "vikram", "what": "fix", "file": "influora-api/src/main/java/com/influora/service/CreatorAffiliateEarningService.java", "task": "T-QA-0901-BASES", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:27:56", "who": "kabir", "what": "review", "file": "F-0399", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:27:56", "who": "kabir", "what": "review", "file": "F-0402", "task": "T-QA-0901-BASES", "stage": "judgment", "gate_result": "believed", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:28:02", "who": "dev", "what": "create", "file": ".proof-os/gates/unreachable-endpoint.py", "task": "T-UNBLOCK-0902", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:28:02", "who": "kabir", "what": "reject", "file": ".proof-os/gates/unreachable-endpoint.py", "task": "T-UNBLOCK-0902", "stage": "judgment", "gate_result": "broken", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:28:02", "who": "dev", "what": "create", "file": ".proof-os/gates/empty-state-misleads.py", "task": "T-UNBLOCK-0902", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:28:02", "who": "kabir", "what": "reject", "file": ".proof-os/gates/empty-state-misleads.py", "task": "T-UNBLOCK-0902", "stage": "judgment", "gate_result": "broken", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:28:02", "who": "dev", "what": "create", "file": ".proof-os/gates/unenforced-limit.py", "task": "T-UNBLOCK-0902", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:28:02", "who": "kabir", "what": "reject", "file": ".proof-os/gates/unenforced-limit.py", "task": "T-UNBLOCK-0902", "stage": "judgment", "gate_result": "broken", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:28:02", "who": "dev", "what": "create", "file": ".proof-os/gates/contract-drift.py", "task": "T-UNBLOCK-0902", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:28:02", "who": "kabir", "what": "reject", "file": ".proof-os/gates/contract-drift.py", "task": "T-UNBLOCK-0902", "stage": "judgment", "gate_result": "broken", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:28:03", "who": "dev", "what": "create", "file": ".proof-os/gates/dead-control.py", "task": "T-UNBLOCK-0902", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:28:03", "who": "kabir", "what": "reject", "file": ".proof-os/gates/dead-control.py", "task": "T-UNBLOCK-0902", "stage": "judgment", "gate_result": "broken", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:28:03", "who": "dev", "what": "create", "file": ".proof-os/gates/missing-feature.py", "task": "T-UNBLOCK-0902", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:28:03", "who": "kabir", "what": "reject", "file": ".proof-os/gates/missing-feature.py", "task": "T-UNBLOCK-0902", "stage": "judgment", "gate_result": "broken", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:28:03", "who": "dev", "what": "create", "file": ".proof-os/gates/stale-runtime-copy.sh", "task": "T-UNBLOCK-0902", "stage": "produce", "gate_result": ""}
+{"ts": "2026-09-02T17:28:03", "who": "kabir", "what": "reject", "file": ".proof-os/gates/stale-runtime-copy.sh", "task": "T-UNBLOCK-0902", "stage": "judgment", "gate_result": "broken", "isolation": "fresh-context"}
+{"ts": "2026-09-02T17:28:03", "who": "kabir", "what": "ledger-add", "file": ".proof-os/gates/unreachable-endpoint.py, .proof-os/gates/empty-state-misleads.py, .proof-os/gates/unenforced-limit.py, .proof-os/gates/contract-drift.py, .proof-os/gates/dead-control.py, .proof-os/gates/missing-feature.py, .proof-os/gates/stale-runtime-copy.sh", "task": "", "stage": "intake", "gate_result": "F-0474"}
+{"ts": "2026-09-02T17:52:56", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/job/MetricsPollingJob.java", "task": "T-IGAUDIT-0902", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:52:56", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/job/AudienceDemographicsJob.java", "task": "T-IGAUDIT-0902", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:52:57", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/job/CreatorCaptionSyncJob.java", "task": "T-IGAUDIT-0902", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:52:57", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/integration/meta/client/InstagramInsightsClient.java", "task": "T-IGAUDIT-0902", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:52:58", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/integration/meta/oauth/MetaOAuthService.java", "task": "T-IGAUDIT-0902", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:52:59", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/integration/meta/webhook/MetaPlatformCallbackController.java", "task": "T-IGAUDIT-0902", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:52:59", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/web/CreatorController.java", "task": "T-IGAUDIT-0902", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:53:00", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/domain/entity/CreatorMetric.java", "task": "T-IGAUDIT-0902", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:53:00", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/job/PlatformStatsAggregationJob.java", "task": "T-IGAUDIT-0902", "stage": "lookup", "gate_result": ""}
+{"ts": "2026-09-02T17:53:00", "who": "arjun", "what": "read", "file": "influora-api/src/main/java/com/influora/service/verification/DeliverableVerificationService.java", "task": "T-IGAUDIT-0902", "stage": "lookup", "gate_result": ""}

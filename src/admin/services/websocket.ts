@@ -16,10 +16,15 @@
  *   wiki/tech/approved-deps.md). Native WS keeps the bundle lean and matches
  *   the SSE-style edge already used by src/lib/meera-api.ts.
  * - The browser WebSocket API cannot set request headers, so the bearer token
- *   is passed as a `token` query param (same `admin_token` used by
- *   api-contracts.ts). The server MUST validate it on handshake and MAY reject
- *   with a 4401 close code; this client treats 4401/4403 as terminal (no
- *   reconnect) so an expired session doesn't hammer the endpoint.
+ *   (same `admin_token` used by api-contracts.ts) travels as a WS subprotocol
+ *   — `new WebSocket(url, [token])` — which the browser sends as the
+ *   `Sec-WebSocket-Protocol` header on the opening handshake, never in the
+ *   URL, so it can't leak into proxy/server access logs or browser history
+ *   the way a `?token=` query param would. The server MUST read the token
+ *   from that header (not `req.url`) and validate it during the handshake,
+ *   and MAY reject with a 4401 close code; this client treats 4401/4403 as
+ *   terminal (no reconnect) so an expired session doesn't hammer the
+ *   endpoint.
  * - Reconnect uses exponential backoff with full jitter, capped both in delay
  *   and in attempt count (see `DEFAULTS.maxReconnectAttempts`), and is
  *   skipped on intentional close (code 1000) and auth-failure close codes.
@@ -266,13 +271,16 @@ export class AdminSocketClient {
       return;
     }
 
-    const url = `${this.cfg.url}${this.cfg.url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
     this.setStatus(
       this.reconnectAttempts > 0 ? AdminSocketStatus.RECONNECTING : AdminSocketStatus.CONNECTING,
     );
 
     try {
-      this.ws = new WebSocket(url);
+      // Carry the token as a WS subprotocol instead of a URL query param —
+      // the browser sends this list as `Sec-WebSocket-Protocol` on the
+      // opening handshake request, which proxy/server access logs and
+      // browser history don't capture the way a `?token=` query string does.
+      this.ws = new WebSocket(this.cfg.url, [token]);
     } catch (err) {
       log('construct failed', err);
       this.scheduleReconnect();

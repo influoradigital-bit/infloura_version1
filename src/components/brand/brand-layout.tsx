@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { api, isApiLive } from '@/lib/api';
 import { useAuthStore, useUIStore } from '@/lib/store';
 import { useNotifications } from '@/hooks/useNotifications';
 import { Button } from '@/components/ui/button';
@@ -213,9 +213,32 @@ export function BrandLayout({ children }: BrandLayoutProps) {
     return pathname.startsWith(href);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // F-0460 — mirrors CreatorLayout's handleLogout (CR-90/CR-06): the server never saw a
+    // logout from this path, so the HttpOnly refresh cookie / refresh token stayed live and
+    // a new access token could be silently re-issued via /auth/refresh. Call the server
+    // first so it can still resolve the principal from the still-present token, then always
+    // clear locally below even if the server call fails — a failed request must never
+    // strand the brand user in a logged-in-looking shell.
+    try {
+      if (isApiLive()) {
+        await api.auth.logout('brand');
+      }
+    } catch (err) {
+      console.error('Logout request failed', err);
+    }
     logout();
+    // Clears every identity/onboarding key persistBrandSession (src/lib/auth-session.ts)
+    // writes, not just the token — otherwise the next person on this browser inherits the
+    // previous brand user's name/company and onboarding state.
     localStorage.removeItem('brand_token');
+    localStorage.removeItem('brand_user_id');
+    localStorage.removeItem('brand_email');
+    localStorage.removeItem('brand_display_name');
+    localStorage.removeItem('brand_company');
+    localStorage.removeItem('brand_workspace_id');
+    localStorage.removeItem('brand_onboarding_complete');
+    localStorage.removeItem('onboarding_complete');
     navigate('/brand/login');
   };
 

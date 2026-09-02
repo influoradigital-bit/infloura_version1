@@ -29,8 +29,15 @@ spring:
       mail:
         smtp:
           auth: true
+          # Port 587 = STARTTLS (default). If the host provider blocks outbound 587 -- most VPS
+          # providers drop outbound SMTP by default as anti-spam, which surfaces as
+          # SocketTimeoutException "Connect timed out", NOT a refusal -- switch to implicit TLS
+          # on 465 instead: SMTP_PORT=465, SMTP_SSL_ENABLE=true, SMTP_STARTTLS_ENABLE=false.
+          # Both flags are env-driven so that fallback needs no rebuild.
           starttls:
-            enable: true
+            enable: ${SMTP_STARTTLS_ENABLE:true}
+          ssl:
+            enable: ${SMTP_SSL_ENABLE:false}
           connectiontimeout: 10000
           timeout: 10000
           writetimeout: 10000
@@ -219,6 +226,14 @@ influora:
     base-url: ${MEERA_CHAT_AI_BASE_URL:http://localhost:8000}
   analyze-site-ai:
     base-url: ${ANALYZE_SITE_AI_BASE_URL:http://localhost:8000}
+  # Fifth influora-ai client, added with the Creator AI Co-pilot. Same localhost-default trap the
+  # four above document: CreatorSuggestionAiProperties defaults base-url to http://localhost:8000,
+  # which inside the api container reaches nothing. CreatorNudgeService.callAiSafely swallows the
+  # failure and falls back to template copy, so a missed override degrades the suggestion wording
+  # silently rather than erroring — which is exactly why it needs the placeholder and the
+  # SecretsStartupValidator check its siblings already have.
+  creator-copilot-ai:
+    base-url: ${CREATOR_COPILOT_AI_BASE_URL:http://localhost:8000}
   internal-service-token:
     # Kabir 2.2/2.4, MF-2, LB-2 — distinct secret from every other key (JWT/stream/R2/Razorpay).
     # Verifies X-Meera-Service-Token (aud=influora-internal, iss=meera-python, exp<=60s) and signs
@@ -268,8 +283,8 @@ influora:
     widget-id: ${MSG91_WIDGET_ID:REPLACE_WITH_YOUR_MSG91_WIDGET_ID}
     token-auth: ${MSG91_TOKEN_AUTH:REPLACE_WITH_YOUR_MSG91_TOKEN_AUTH}
     email:
-      domain: ${MSG91_EMAIL_DOMAIN:mail.influora.com}
-      from-email: ${MSG91_FROM_EMAIL:noreply@influora.com}
+      domain: ${MSG91_EMAIL_DOMAIN:mail.influora.in}
+      from-email: ${MSG91_FROM_EMAIL:noreply@mail.influora.in}
       from-name: ${MSG91_FROM_NAME:Influora}
       template-id: ${MSG91_EMAIL_TEMPLATE_ID:otpman}
       transactional-template-id: ${MSG91_EMAIL_TRANSACTIONAL_TEMPLATE_ID:REPLACE_WITH_TEMPLATE_ID}
@@ -383,6 +398,31 @@ influora:
   brand-safety-scoring:
     enabled: ${BRAND_SAFETY_SCORING_ENABLED:false}
     max-creators-per-run: ${BRAND_SAFETY_SCORING_MAX_CREATORS_PER_RUN:100}
+  # Creator AI Co-pilot daily suggestion (CreatorCopilotProperties). OFF by default, same
+  # conservative convention as brand-safety-scoring above — but note the failure is SILENT and
+  # user-visible, not merely inert: with enabled=false both CreatorCaptionSyncJob (2 AM UTC) and
+  # CreatorThemeTaggingJob (3 AM UTC) return immediately, so creator_captions stays empty,
+  # CreatorProfile.theme_tags stays NULL (that job is its only writer), and CreatorNudgeService
+  # returns 'pending_tagging' on every request — which the FE renders as "Usually ready within a
+  # day." forever, to a creator who has successfully connected Instagram.
+  #
+  # Turning it on costs, per night: one Meta Graph media call per connected creator (caption sync,
+  # capped by caption-sync-max-creators-per-run) and one influora-ai phrasing call per creator who
+  # actually clears score-threshold. Theme tagging itself is pure Java keyword matching against
+  # trendspark/theme-taxonomy.json — no model call, no caption text leaves the box.
+  #
+  # theme-tag-batch-cron / caption-sync-cron are read as @Scheduled placeholders on the two job
+  # classes, not as CreatorCopilotProperties fields (see that class's javadoc); they live under this
+  # prefix so the whole feature has one config block, and the binder ignores them by default.
+  creator-copilot:
+    enabled: ${CREATOR_COPILOT_ENABLED:false}
+    score-threshold: ${CREATOR_COPILOT_SCORE_THRESHOLD:2}
+    max-suggestions-per-creator-per-day: ${CREATOR_COPILOT_DAILY_CAP:1}
+    prompt-version: ${CREATOR_COPILOT_PROMPT_VERSION:creator-copilot-v1}
+    caption-sync-media-limit: ${CREATOR_COPILOT_CAPTION_SYNC_MEDIA_LIMIT:25}
+    caption-sync-max-creators-per-run: ${CREATOR_COPILOT_CAPTION_SYNC_MAX_CREATORS_PER_RUN:0}
+    caption-sync-cron: ${CREATOR_COPILOT_CAPTION_SYNC_CRON:0 0 2 * * *}
+    theme-tag-batch-cron: ${CREATOR_COPILOT_THEME_TAG_CRON:0 0 3 * * *}
   # meera_interaction_log retention purge (MeeraInteractionLogRetentionPurgeJob). HARD, MANDATORY
   # predecessor to any future read/join/analytics consumer of this table (Priya's PARTIAL-2 ruling,
   # wiki/build/partials-resolution-plan.md) and Kabir's L1 fast-follow (wiki/build/phase2-kabir-

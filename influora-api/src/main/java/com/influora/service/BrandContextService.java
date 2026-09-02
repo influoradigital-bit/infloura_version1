@@ -56,12 +56,29 @@ public class BrandContextService {
             workspaceId = member.getWorkspaceId();
         }
         final String resolvedId = workspaceId;
-        return workspaceRepository
-                .findById(resolvedId)
-                .orElseThrow(
-                        () ->
-                                new ApiException(
-                                        "WORKSPACE_NOT_FOUND", "Workspace not found", HttpStatus.NOT_FOUND));
+        Workspace workspace =
+                workspaceRepository
+                        .findById(resolvedId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "WORKSPACE_NOT_FOUND",
+                                                "Workspace not found",
+                                                HttpStatus.NOT_FOUND));
+
+        // F-0457: this resolver is what every brand endpoint funnels through, so it is the only
+        // place that closes F-0451's ACTUAL stated symptom — "a suspended brand keeps full access
+        // to its current workspace". Gating login and refresh alone left a window equal to the
+        // access-token lifetime (900s, application.yml:185) during which a just-suspended brand
+        // kept operating normally, because JwtAuthenticationFilter is a pure token parse and never
+        // touches the database. Enforcing here makes suspension effective on the very next request.
+        if (workspace.isSuspended()) {
+            throw new ApiException(
+                    "WORKSPACE_SUSPENDED",
+                    "This workspace has been suspended. Contact support.",
+                    HttpStatus.FORBIDDEN);
+        }
+        return workspace;
     }
 
     public WorkspaceMember requireMember(AuthPrincipal principal, String workspaceId) {

@@ -89,6 +89,7 @@ public class WorkspaceController {
                 workspace.getIndustry(),
                 workspace.getCompanySize(),
                 workspace.getWebsiteUrl(),
+                workspace.getDescription(),
                 workspace.getLogoUrl(),
                 workspace.getVerificationStatus() != null ? workspace.getVerificationStatus().name() : null);
     }

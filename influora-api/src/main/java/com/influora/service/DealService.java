@@ -1073,6 +1073,16 @@ public class DealService {
                     HttpStatus.CONFLICT);
         }
 
+        // F-0399 — validateProposalAmount only ever checked THIS offer's amount against
+        // campaign.budgetMax in isolation, both at creation and (implicitly, since accept
+        // never re-checked anything) at accept time. Nothing summed what the campaign had
+        // already committed to OTHER creators, so N accepted offers could each sit under
+        // budgetMax individually while the campaign as a whole committed N times its budget.
+        // Enforced here, not in validateProposalAmount, because commitment happens at ACCEPT
+        // (the transition to TERMS_AGREED below), not at proposal/counter time — a campaign can
+        // carry any number of merely-negotiating offers without over-committing anything.
+        requireWithinRemainingBudget(collaboration);
+
         collaboration.transitionTo(CollaborationStatus.TERMS_AGREED);
         collaborationRepository.save(collaboration);
         String actorLabel = role == UserType.CREATOR ? "Creator" : "Brand";
@@ -1591,6 +1601,94 @@ public class DealService {
             throw new ApiException(
                     "AMOUNT_BELOW_BUDGET",
                     "Proposed amount is below campaign minimum budget",
+                    HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    /**
+     * F-0399 — {@link CollaborationStatus} values that represent money a campaign has actually
+     * committed: accepted terms and everything downstream of that (contract, escrow-funded,
+     * in-flight, delivered), including {@code DISPUTED} — a disputed collaboration still holds
+     * committed/escrowed funds, it just has not released them. Deliberately excludes the
+     * pre-commitment states ({@code INVITED}/{@code APPLIED}/{@code SHORTLISTED}/
+     * {@code IN_NEGOTIATION} — an open offer nobody has accepted yet) and {@code CANCELLED} (a
+     * rejected/withdrawn offer commits nothing).
+     */
+    private static final Set<CollaborationStatus> BUDGET_COMMITTED_STATUSES =
+            Set.of(
+                    CollaborationStatus.TERMS_AGREED,
+                    CollaborationStatus.CONTRACT_PENDING,
+                    CollaborationStatus.CONTRACTED,
+                    CollaborationStatus.IN_PROGRESS,
+                    CollaborationStatus.REVIEW_PENDING,
+                    CollaborationStatus.REVISION_REQUESTED,
+                    CollaborationStatus.COMPLETED,
+                    CollaborationStatus.DISPUTED);
+
+    /**
+     * F-0399 — {@link #doAccept}'s cumulative-budget gate. {@link #validateProposalAmount} and
+     * {@link #validateCounterAmount} only ever checked ONE offer against {@code
+     * campaign.budgetMax} in isolation; nothing summed what the campaign had already committed to
+     * OTHER creators, so N creators could each be accepted at up to {@code budgetMax} and the
+     * campaign would commit N times its own budget. Sums {@code agreedRate} across every OTHER
+     * collaboration on this campaign already in a {@link #BUDGET_COMMITTED_STATUSES} state, adds
+     * this offer's amount, and rejects with the existing {@code AMOUNT_EXCEEDS_BUDGET} shape if
+     * the total would clear {@code budgetMax}. Excludes {@code collaboration} itself by id (it is
+     * not yet in a committed status here — {@link Collaboration#canAccept()} guarantees that — but
+     * excluding by id too keeps this correct even if that invariant ever changes) so nothing is
+     * double-counted.
+     *
+     * <p>A {@code null budgetMax} means the campaign carries no cap, matching {@link
+     * #validateProposalAmount}'s existing null-skip behavior — this does not newly invent a
+     * ceiling where the brand set none.
+     *
+     * <p>F-0399 — a null {@code agreedRate} must fail this gate, not clear it. {@link
+     * Collaboration#apply()} and {@link Collaboration#invite()} never set {@code agreedRate} (only
+     * {@code propose()}/{@code updateAgreedRate()} do), yet both {@code APPLIED} and {@code
+     * INVITED} pass {@link Collaboration#canAccept()} — so a brand accepting a creator's bid
+     * directly, with no proposal exchanged, used to reach this gate with a null rate. Folding that
+     * to {@code BigDecimal.ZERO} let it clear any budget outright, and dropping it from the
+     * committed-sum stream erased it from accounting forever after. Per CTO ruling, a collaboration
+     * may not reach {@code TERMS_AGREED} without an agreed rate: a null rate — this offer's or an
+     * already-committed row's — is an unverified, not a zero, amount, so it fails the gate closed
+     * with the existing {@code AMOUNT_EXCEEDS_BUDGET} shape rather than being guessed at.
+     */
+    private void requireWithinRemainingBudget(Collaboration collaboration) {
+        Campaign campaign =
+                campaignRepository
+                        .findById(collaboration.getCampaignId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "CAMPAIGN_NOT_FOUND",
+                                                "Campaign not found",
+                                                HttpStatus.NOT_FOUND));
+        if (campaign.getBudgetMax() == null) {
+            return;
+        }
+        List<Collaboration> committedOthers =
+                collaborationRepository.findByCampaignId(campaign.getId()).stream()
+                        .filter(c -> !c.getId().equals(collaboration.getId()))
+                        .filter(c -> BUDGET_COMMITTED_STATUSES.contains(c.getStatus()))
+                        .collect(Collectors.toList());
+        boolean unaccountedRate =
+                collaboration.getAgreedRate() == null
+                        || committedOthers.stream().anyMatch(c -> c.getAgreedRate() == null);
+        if (unaccountedRate) {
+            throw new ApiException(
+                    "AMOUNT_EXCEEDS_BUDGET",
+                    "Proposed amount exceeds campaign budget",
+                    HttpStatus.BAD_REQUEST);
+        }
+        BigDecimal alreadyCommitted =
+                committedOthers.stream()
+                        .map(Collaboration::getAgreedRate)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal thisOffer = collaboration.getAgreedRate();
+        if (alreadyCommitted.add(thisOffer).compareTo(campaign.getBudgetMax()) > 0) {
+            throw new ApiException(
+                    "AMOUNT_EXCEEDS_BUDGET",
+                    "Proposed amount exceeds campaign budget",
                     HttpStatus.BAD_REQUEST);
         }
     }

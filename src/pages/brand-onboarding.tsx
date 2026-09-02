@@ -69,8 +69,19 @@ export default function BrandOnboardingPage() {
           lastName: data.lastName,
           companyName: data.companyName,
           industry: data.industry || 'other',
-          companySize: data.companySize || '1-5',
-          acceptedTerms: true,
+          // F-0395 — 'STARTUP', not '1-5'. `companySize` is the closed STARTUP/SMB/ENTERPRISE
+          // union `AdminBrandService.KNOWN_SIZES` enforces; the old fallback was a fourth
+          // vocabulary that matched neither the dropdown nor the admin allow-list.
+          companySize: data.companySize || 'STARTUP',
+          // F-0394 — the real value from the Terms checkbox in AccountSetupStep. This was
+          // hardcoded `true`, which made the server's @AssertTrue permanently unfailable and
+          // recorded an agreement the user was never shown.
+          acceptedTerms: data.acceptTerms,
+          // P2/PHONE-0829 — onboarding-steps.tsx (AccountSetupStep) already collects and
+          // validates this (Required, /^[6-9]\d{9}$/), but it was never included in the
+          // registration payload despite BrandRegisterPayload.phone already existing —
+          // every brand's mobile number was collected and silently discarded.
+          phone: data.phone,
         });
       }
 

@@ -48,7 +48,7 @@ import { clearCreatorSession } from '@/lib/auth-session';
 import { TaxIdentityForm } from '@/components/creator/TaxIdentityForm';
 import { KycIdentityForm } from '@/components/creator/KycIdentityForm';
 import { ConnectedAccounts } from '@/components/creator/connected-accounts';
-import { api, isApiLive } from '@/lib/api';
+import { api, isApiLive, ApiError, type CreatorProfileSelfResponse } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 import { COMPANY } from '@/lib/company';
 
@@ -82,6 +82,16 @@ export default function CreatorSettingsPage() {
   const [emailPrefLoading, setEmailPrefLoading] = React.useState(false);
   const [emailPrefSaving, setEmailPrefSaving] = React.useState(false);
   const [emailPrefError, setEmailPrefError] = React.useState<string | null>(null);
+
+  // PHONE-0829 P1 — creators never had a phone field anywhere (registration, onboarding, or
+  // settings). Loaded from GET /me/creator-profile (same endpoint creator-profile.tsx already
+  // uses) so this row can show the saved number instead of always reading "Add your number".
+  const [savedPhone, setSavedPhone] = React.useState<string | null>(null);
+  const [phoneLoading, setPhoneLoading] = React.useState(true);
+  const [showPhoneDialog, setShowPhoneDialog] = React.useState(false);
+  const [phoneDraft, setPhoneDraft] = React.useState('');
+  const [phoneError, setPhoneError] = React.useState<string | null>(null);
+  const [isSavingPhone, setIsSavingPhone] = React.useState(false);
 
   const [showTaxIdentityDialog, setShowTaxIdentityDialog] = React.useState(false);
   const [showKycDialog, setShowKycDialog] = React.useState(false);
@@ -124,6 +134,76 @@ export default function CreatorSettingsPage() {
       cancelled = true;
     };
   }, []);
+
+  // PHONE-0829 P1 — load the creator's saved phone (if any) so the settings row reflects
+  // reality instead of always prompting to "add" a number that's already on file.
+  React.useEffect(() => {
+    let cancelled = false;
+    setPhoneLoading(true);
+    api.creatorProfile
+      .getMe()
+      .then((profile: CreatorProfileSelfResponse) => {
+        if (cancelled) return;
+        setSavedPhone(profile.phone);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Failed to load creator phone', err);
+        // Non-fatal — the row just falls back to "Add your mobile number".
+      })
+      .finally(() => {
+        if (!cancelled) setPhoneLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const openPhoneDialog = () => {
+    setPhoneDraft(savedPhone ?? '');
+    setPhoneError(null);
+    setShowPhoneDialog(true);
+  };
+
+  const closePhoneDialog = (open: boolean) => {
+    setShowPhoneDialog(open);
+    if (!open) {
+      setPhoneError(null);
+    }
+  };
+
+  // PATCH /me/creator-profile — optional field, save is never blocked when empty (clearing is
+  // allowed). Validation mirrors brand onboarding's exactly (onboarding-steps.tsx:465) so both
+  // surfaces agree on what a valid Indian mobile number looks like.
+  const handleSavePhone = async () => {
+    const stripped = phoneDraft.replace(/\s+/g, '');
+    if (stripped && !/^[6-9]\d{9}$/.test(stripped)) {
+      setPhoneError('Enter a valid 10-digit mobile number');
+      return;
+    }
+    setPhoneError(null);
+    setIsSavingPhone(true);
+    try {
+      const updated = await api.creatorProfile.patchMe({ phone: stripped });
+      setSavedPhone(updated.phone);
+      setShowPhoneDialog(false);
+      toast({ title: stripped ? 'Mobile number updated' : 'Mobile number removed' });
+    } catch (err) {
+      // 409 = duplicate phone (server-enforced uniqueness) — shown inline, next to the field,
+      // not as a generic toast failure per the ticket's explicit ask.
+      if (err instanceof ApiError && err.status === 409) {
+        setPhoneError('This mobile number is already registered');
+      } else {
+        toast({
+          title: 'Could not save changes',
+          description: err instanceof ApiError ? err.message : 'Please try again.',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      setIsSavingPhone(false);
+    }
+  };
 
   const handleEmailPrefChange = async (checked: boolean) => {
     const previous = notifications.email;
@@ -276,6 +356,19 @@ export default function CreatorSettingsPage() {
     {
       title: 'Account',
       items: [
+        {
+          // PHONE-0829 P1 — real Mobile Number field, distinct from the SMS Notifications
+          // row above (that Smartphone icon is decoration for a channel that doesn't exist
+          // server-side; this one opens a dialog wired to PATCH /me/creator-profile).
+          icon: Smartphone,
+          label: 'Mobile Number',
+          description: phoneLoading
+            ? 'Loading…'
+            : savedPhone
+              ? `+91 ${savedPhone}`
+              : 'Add your mobile number',
+          onClick: openPhoneDialog,
+        },
         {
           icon: Shield,
           label: 'Tax Identity (GSTIN/PAN)',
@@ -612,6 +705,58 @@ export default function CreatorSettingsPage() {
             </Button>
             <Button onClick={handleChangePassword} disabled={isChangingPassword}>
               {isChangingPassword ? 'Updating…' : 'Update Password'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mobile Number Dialog — PHONE-0829 P1 */}
+      <Dialog open={showPhoneDialog} onOpenChange={closePhoneDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mobile Number</DialogTitle>
+            <DialogDescription>
+              Optional. Brands and Influora use this to reach you about deals. Leave it blank to
+              remove a saved number.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {phoneError && (
+              <p role="alert" className="text-sm text-destructive-foreground">
+                {phoneError}
+              </p>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="phone">Mobile number</Label>
+              <div className="flex gap-2">
+                <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
+                  +91
+                </div>
+                <Input
+                  id="phone"
+                  placeholder="98765 43210"
+                  value={phoneDraft}
+                  onChange={(e) => setPhoneDraft(e.target.value.replace(/[^0-9\s]/g, ''))}
+                  className="flex-1"
+                  maxLength={12}
+                  disabled={isSavingPhone}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => closePhoneDialog(false)} disabled={isSavingPhone}>
+              Cancel
+            </Button>
+            <Button onClick={handleSavePhone} disabled={isSavingPhone}>
+              {isSavingPhone ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                'Save'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

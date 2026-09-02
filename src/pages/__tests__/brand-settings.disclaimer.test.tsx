@@ -110,6 +110,7 @@ describe('BrandSettingsPage — Notifications persistence copy (F-0262)', () => 
       industry: null,
       companySize: null,
       websiteUrl: null,
+      description: null,
       logoUrl: null,
       verificationStatus: 'VERIFIED',
     });

@@ -437,6 +437,7 @@ function CreatorsTable() {
           <TableHeader>
             <TableRow>
               <TableHead>Creator</TableHead>
+              <TableHead>Phone</TableHead>
               <TableHead>Instagram</TableHead>
               <TableHead>Followers</TableHead>
               <TableHead>Tier</TableHead>
@@ -448,7 +449,7 @@ function CreatorsTable() {
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 6 }).map((__, j) => (
+                  {Array.from({ length: 7 }).map((__, j) => (
                     <TableCell key={j}>
                       <div className="h-4 w-full max-w-24 animate-pulse rounded bg-muted" />
                     </TableCell>
@@ -457,7 +458,7 @@ function CreatorsTable() {
               ))
             ) : creators.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
                     <UserRound className="size-6 text-muted-foreground/60" aria-hidden="true" />
                     No creators match the current filters.
@@ -483,6 +484,10 @@ function CreatorsTable() {
                   <TableCell className="max-w-56 whitespace-normal font-medium text-foreground">
                     {creator.name}
                     <div className="text-xs font-normal text-muted-foreground">{creator.email}</div>
+                  </TableCell>
+                  {/* PHONE-0829 P3 — null for every creator until they add one via Settings. */}
+                  <TableCell className="text-muted-foreground">
+                    {creator.phone ? `+91 ${creator.phone}` : '— Not provided'}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5">

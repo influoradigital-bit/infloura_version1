@@ -81,9 +81,15 @@ import CreatorAffiliateEarningsPage from '@/pages/creator-affiliate-earnings';
 import CreatorMetaCallbackPage from '@/pages/creator-meta-callback';
 import DevMotionSkillsPage from '@/pages/dev-motion-skills';
 
+// F-0459 — "remember me" (see HttpClient.tokenStorage / setToken in src/lib/api.ts) puts the
+// token in localStorage when checked but sessionStorage when unchecked; api.ts's own private
+// getToken() already reads both, so the guards below do the same rather than checking
+// localStorage alone and bouncing a just-logged-in, unremembered session back to the login form.
+const readAuthToken = (key: string): string | null => localStorage.getItem(key) ?? sessionStorage.getItem(key);
+
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const isAuthenticated = localStorage.getItem('brand_token');
+  const isAuthenticated = readAuthToken('brand_token');
   // Demo/test bypass — dev-only. `import.meta.env.DEV` is a compile-time
   // constant (Vite `define`s it to a literal boolean per mode), so a
   // production build statically resolves this branch to `false` and the
@@ -134,7 +140,7 @@ const BrandLayoutWrapper = ({ children }: { children: React.ReactNode }) => {
 
 // Creator Protected Route Component
 const CreatorProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const isAuthenticated = localStorage.getItem('creator_token');
+  const isAuthenticated = readAuthToken('creator_token');
   // Demo/test bypass — dev-only, see ProtectedRoute above (Kabir A2).
   const isDemoMode = import.meta.env.DEV && new URLSearchParams(window.location.search).get('demo') === 'true';
   return isAuthenticated || isDemoMode ? <>{children}</> : <Navigate to="/creator/login" />;

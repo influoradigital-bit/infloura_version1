@@ -151,6 +151,24 @@ public class User {
         return email;
     }
 
+    public String getPhoneNumber() {
+        return phoneNumber;
+    }
+
+    /**
+     * PHONE-0829 — first setter/update path {@code users.phone_number} has ever had (it previously
+     * had zero callers outside {@link #softDelete}'s null-out). Full-replace, same semantics as
+     * {@link com.influora.domain.entity.Workspace#updatePhone}: a blank/null value clears the
+     * stored number. Format validation (Indian-mobile pattern) and normalization happen in the
+     * calling service ({@code CreatorProfileService}) before this is called — this setter does not
+     * validate, matching this class's existing convention (see {@link #setDisplayName}) and {@code
+     * Workspace}'s documented split of "entity applies, service validates".
+     */
+    public void setPhoneNumber(String phoneNumber) {
+        this.phoneNumber = (phoneNumber == null || phoneNumber.isBlank()) ? null : phoneNumber;
+        this.updatedAt = Instant.now();
+    }
+
     public String getPasswordHash() {
         return passwordHash;
     }

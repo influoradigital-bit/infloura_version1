@@ -58,7 +58,8 @@ class MeCreatorProfileControllerTest {
                         0,
                         null,
                         false,
-                        40);
+                        40,
+                        null);
 
         when(creatorProfileService.getMyProfile(principal)).thenReturn(dto);
 
@@ -75,7 +76,8 @@ class MeCreatorProfileControllerTest {
     void testPatch() {
         CreatorProfilePatchRequest patch =
                 new CreatorProfilePatchRequest(
-                        "Priya", null, "Updated bio", null, null, null, null, null, null, null, null, null);
+                        "Priya", null, "Updated bio", null, null, null, null, null, null, null, null, null,
+                        null);
         CreatorProfileSelfResponse dto =
                 new CreatorProfileSelfResponse(
                         "p1",
@@ -98,7 +100,8 @@ class MeCreatorProfileControllerTest {
                         0,
                         null,
                         false,
-                        30);
+                        30,
+                        null);
 
         when(creatorProfileService.patchMyProfile(principal, patch)).thenReturn(dto);
 

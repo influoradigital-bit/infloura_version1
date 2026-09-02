@@ -46,13 +46,26 @@ public class CreatorContextService {
 
     public CreatorProfile requireCreatorProfile(AuthPrincipal principal) {
         requireCreator(principal);
-        return creatorProfileRepository
-                .findByUserId(principal.getUserId())
-                .orElseThrow(
-                        () ->
-                                new ApiException(
-                                        "CREATOR_PROFILE_NOT_FOUND",
-                                        "Creator profile not found",
-                                        HttpStatus.NOT_FOUND));
+        CreatorProfile profile =
+                creatorProfileRepository
+                        .findByUserId(principal.getUserId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "CREATOR_PROFILE_NOT_FOUND",
+                                                "Creator profile not found",
+                                                HttpStatus.NOT_FOUND));
+
+        // F-0457: symmetric with BrandContextService.requireBrandWorkspace. Gating creatorLogin and
+        // refresh alone left a window equal to the access-token lifetime during which a
+        // just-suspended creator kept acting on existing deals, because JwtAuthenticationFilter
+        // never touches the database. creator_profiles.is_suspended was previously read only by
+        // discovery/deal listing filters, which hid the creator from the marketplace without
+        // stopping them. Same code and message as creatorLogin.
+        if (profile.isSuspended()) {
+            throw new ApiException(
+                    "ACCOUNT_SUSPENDED", "Your account has been suspended", HttpStatus.FORBIDDEN);
+        }
+        return profile;
     }
 }

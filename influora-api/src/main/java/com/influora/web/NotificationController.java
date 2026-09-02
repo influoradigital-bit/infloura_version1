@@ -21,6 +21,7 @@ import com.influora.web.dto.notification.NotificationDtos.UnsubscribeRequest;
 import com.influora.web.dto.notification.NotificationDtos.UnsubscribeResponse;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -159,6 +160,49 @@ public class NotificationController {
     }
 
     /**
+     * [F-0444] {@code Msg91EmailClient#buildUnsubscribeUrl} signs the token with the email's
+     * {@code templateKey} (e.g. {@code "creator.campaign_match"} — needed there to pick the copy
+     * out of {@code EmailTemplateRegistry}), NOT the domain {@code eventType} (e.g. {@code
+     * "campaign.created"}) that {@code NotificationService#isUnsubscribed} actually gates future
+     * sends on and that the in-app preference toggles ({@code brand-settings.tsx}/{@code
+     * creator-settings.tsx}) already read/write. Writing an {@code EmailPreference} row keyed by
+     * the raw templateKey would show the recipient a "you've been unsubscribed" page that does
+     * nothing — nothing else in the codebase ever looks up that key. This table is the exact,
+     * mechanical templateKey -> eventType mapping already implied by every {@code
+     * NotificationListener#on(...)} handler's {@code notify(event, ..., templateKey, ...)} call
+     * (one entry per handler whose templateKey differs from {@code event.eventType()}); a
+     * templateKey absent here is used as-is via the {@code getOrDefault} fallback below, which
+     * covers the handlers where the two strings already coincide (e.g. {@code "portfolio.contact"},
+     * the {@code billing.*} events) plus any future key added without an entry here — same
+     * unsubscribe-key correctness bug, just not yet mapped, rather than a link that 400s.
+     */
+    private static final Map<String, String> TEMPLATE_KEY_TO_EVENT_TYPE =
+            Map.ofEntries(
+                    Map.entry("creator.campaign_match", "campaign.created"),
+                    Map.entry("creator.new_conversation", "message.first"),
+                    Map.entry("creator.proposal_received", "proposal.sent"),
+                    Map.entry("creator.bid_accepted", "bid.accepted"),
+                    Map.entry("creator.campaign_live", "escrow.funded"),
+                    Map.entry("creator.product_shipped", "shipment.created"),
+                    Map.entry("creator.sign_contract", "contract.pending_signature"),
+                    Map.entry("creator.payout_released", "payout.released"),
+                    Map.entry("creator.kyc_approved", "kyc.approved"),
+                    Map.entry("creator.kyc_rejected", "kyc.rejected"),
+                    Map.entry("brand.new_application", "application.created"),
+                    Map.entry("brand.counter_bid", "bid.countered"),
+                    Map.entry("brand.proposal_accepted", "proposal.accepted"),
+                    Map.entry("brand.contract_signed", "contract.signed"),
+                    Map.entry("brand.contract_ready_for_escrow", "contract.ready_for_escrow"),
+                    Map.entry("brand.deliverable_ready", "deliverable.submitted"),
+                    Map.entry("brand.product_received", "shipment.received"),
+                    Map.entry("brand.new_conversation", "message.first"),
+                    Map.entry("brand.low_balance", "wallet.low_balance"),
+                    Map.entry("brand.credits_exhausted", "ai.credits_exhausted"),
+                    Map.entry("welcome.brand", "user.created"),
+                    Map.entry("welcome.creator", "user.created"),
+                    Map.entry("user.monthly_statement", "cron.monthly_statement"));
+
+    /**
      * GET /notifications/unsubscribe-link?token=... - one-click unsubscribe from the link in an
      * email footer ({@code EmailTemplateRegistry}). Deliberately unauthenticated: the recipient is
      * reading their inbox, not a logged-in session — {@link UnsubscribeTokenService}'s HMAC
@@ -172,15 +216,21 @@ public class NotificationController {
                 .verify(token)
                 .map(
                         parsed -> {
+                            // [F-0444] parsed.eventType() is really the email's templateKey (see
+                            // the table above) — translate it to the real eventType before this
+                            // touches EmailPreference, or the unsubscribe silently no-ops.
+                            String eventType =
+                                    TEMPLATE_KEY_TO_EVENT_TYPE.getOrDefault(
+                                            parsed.eventType(), parsed.eventType());
                             EmailPreference preference =
                                     emailPreferenceRepository
-                                            .findByUserIdAndEventType(parsed.userId(), parsed.eventType())
+                                            .findByUserIdAndEventType(parsed.userId(), eventType)
                                             .orElseGet(
                                                     () ->
                                                             EmailPreference.builder()
                                                                     .id(Ulids.newUlid())
                                                                     .userId(parsed.userId())
-                                                                    .eventType(parsed.eventType())
+                                                                    .eventType(eventType)
                                                                     .unsubscribed(false)
                                                                     .build());
                             preference.setUnsubscribed(true);

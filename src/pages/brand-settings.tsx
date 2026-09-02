@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { api, isApiLive, ApiError, type NotificationPreference } from '@/lib/api';
+import { api, isApiLive, ApiError, type NotificationPreference, type WorkspaceMeResponse } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { toast } from '@/hooks/use-toast';
 
@@ -124,6 +124,13 @@ export default function BrandSettingsPage() {
   // seed is never sent to a real server so it IS the authoritative value. Save stays disabled
   // (below) until this is true, so a load failure can never leave a submittable mock seed.
   const [workspaceInfoLoaded, setWorkspaceInfoLoaded] = React.useState(!liveApi);
+  // F-0462 — the last-loaded (or last-saved) full workspace record, held alongside `settings`
+  // so a save can merge the edited fields over it. PATCH /workspaces/me is full-replace: an
+  // omitted field is CLEARED server-side, and this form only edits name/email/phone/website —
+  // it never surfaces industry/companySize/logoUrl. Without this snapshot, saving would silently
+  // wipe those fields. Stays null in mock mode (loadWorkspaceInfo never runs there), which is
+  // fine — mock mode's local seed is already the whole story.
+  const [loadedWorkspace, setLoadedWorkspace] = React.useState<WorkspaceMeResponse | null>(null);
 
   // F-0249 — extracted from the effect so a failed load can be retried from the UI.
   const loadWorkspaceInfo = React.useCallback(() => {
@@ -135,6 +142,7 @@ export default function BrandSettingsPage() {
       .getMe()
       .then((ws) => {
         if (cancelled) return;
+        setLoadedWorkspace(ws);
         setSettings((prev) => ({
           ...prev,
           workspaceName: ws.name,
@@ -185,12 +193,23 @@ export default function BrandSettingsPage() {
       // these four fields is guaranteed to be either the server's own loaded value or
       // something the user typed after that load — never the mock seed and never an
       // unloaded/stale value (see workspaceInfoLoaded and the guard above).
+      // F-0462 — PATCH /workspaces/me is full-replace, and this form only edits four fields,
+      // so sending those four alone silently cleared every field it does not surface:
+      // industry, companySize, description and logoUrl. Carry them all forward from the
+      // last-loaded workspace (undefined when it had no value, which JSON-serializes to the
+      // same "omitted" a never-set field already was). `description` also required adding the
+      // field to WorkspaceReadResponse — it was write-only, so there was nothing to echo back.
       const updated = await api.workspaces.updateMe({
+        industry: loadedWorkspace?.industry ?? undefined,
+        companySize: loadedWorkspace?.companySize ?? undefined,
+        description: loadedWorkspace?.description ?? undefined,
+        logoUrl: loadedWorkspace?.logoUrl ?? undefined,
         name: settings.workspaceName,
         email: settings.email,
         phone: settings.phone,
         websiteUrl: settings.website,
       });
+      setLoadedWorkspace(updated);
       setSettings((prev) => ({
         ...prev,
         workspaceName: updated.name,

@@ -384,6 +384,20 @@ public class WorkspaceMemberService {
                                         new ApiException(
                                                 "WORKSPACE_NOT_FOUND", "Workspace not found", HttpStatus.NOT_FOUND));
 
+        // F-0457 (CRITICAL): this mints a fresh access token, and until now it never read
+        // is_suspended. A user holding any still-valid token could POST their own suspended
+        // workspaceId here and get another full-length token, repeating forever — indefinite
+        // session renewal that never touches /auth/refresh and so bypassed the F-0451 gates
+        // entirely. Note WorkspaceService.switchWorkspace is a SECOND copy of this operation that
+        // DID carry the check but has no production caller; the guarded twin is why this one
+        // looked covered. Same code/message as there, so behaviour is identical by either route.
+        if (workspace.isSuspended()) {
+            throw new ApiException(
+                    "WORKSPACE_SUSPENDED",
+                    "This workspace has been suspended. Contact support.",
+                    HttpStatus.FORBIDDEN);
+        }
+
         String access =
                 jwtService.createAccessToken(
                         principal.getUserId(), principal.getUserType(), principal.getEmail(), workspaceId);

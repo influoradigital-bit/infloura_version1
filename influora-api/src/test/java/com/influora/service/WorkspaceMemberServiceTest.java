@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import static org.mockito.Mockito.verifyNoInteractions;
 import com.influora.common.ApiException;
 import com.influora.config.InfluoraEnvironment;
 import com.influora.domain.entity.Plan;
@@ -383,5 +384,26 @@ class WorkspaceMemberServiceTest {
                 .invitedByUserId(INVITER_USER_ID)
                 .expiresAt(Instant.now().plus(6, ChronoUnit.DAYS))
                 .build();
+    }
+
+    @Test
+    @DisplayName("F-0457: switchWorkspace into a SUSPENDED workspace -> 403, no token minted")
+    void switchWorkspace_suspendedTarget_rejected() {
+        // This is the REACHABLE switch (WorkspaceMemberController:105). Before F-0457 it minted a
+        // fresh 900s access token with no isSuspended check, so a suspended brand renewed its
+        // session indefinitely without ever calling /auth/refresh.
+        when(principal.getUserId()).thenReturn(OWNER_USER_ID);
+        Workspace suspended =
+                Workspace.newBrand(WORKSPACE_ID, "Acme Co", "acme-co", "RETAIL", "SMALL");
+        suspended.suspend("fraud review", "01HADMIN000000000000AA");
+        when(workspaceMemberRepository.findByWorkspaceIdAndUserIdAndActiveTrue(WORKSPACE_ID, OWNER_USER_ID))
+                .thenReturn(Optional.of(WorkspaceMember.owner("01HMEMBER00000000000A", WORKSPACE_ID, OWNER_USER_ID)));
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(suspended));
+
+        ApiException ex =
+                assertThrows(ApiException.class, () -> service.switchWorkspace(principal, WORKSPACE_ID));
+
+        assertEquals("WORKSPACE_SUSPENDED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
     }
 }

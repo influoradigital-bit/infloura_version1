@@ -66,6 +66,8 @@ influora:
     base-url: ${MEERA_CHAT_AI_BASE_URL:https://ai.influora.internal}
   analyze-site-ai:
     base-url: ${ANALYZE_SITE_AI_BASE_URL:https://ai.influora.internal}
+  creator-copilot-ai:
+    base-url: ${CREATOR_COPILOT_AI_BASE_URL:https://ai.influora.internal}
   # Deploy blocker 2 — MeeraStreamProperties#publicChatUrl (Java field default) is
   # http://localhost:8000/chat and no profile previously overrode it, so a prod boot
   # would hand browsers a localhost URL for the browser-direct Meera SSE connection

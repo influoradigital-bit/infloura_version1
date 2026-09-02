@@ -6,9 +6,14 @@
  * - MySQL stores the R2 object URL + metadata (filename, size, mime, uploaded_by)
  * - On fetch, the app reads the URL from MySQL and loads from R2
  *
- * Currently: Mock implementation that simulates the R2 upload
- * When backend is ready, replace mock functions with real API calls
+ * F-0461 — `uploadToR2` used to be a mock that fabricated a `https://r2.influora.com/...`
+ * URL pointing at nothing, which then got persisted into `workspaces.logo_url`. It now goes
+ * through `api.uploads.upload()` — the same `POST /uploads` public-upload path the creator
+ * avatar upload already uses (see creator-profile.tsx's `handleAvatarFileSelected`) — with no
+ * `purpose`, so the server returns a real, persistable R2 URL rather than a private preview URL.
  */
+
+import { api } from './api';
 
 export interface UploadResult {
   success: boolean;
@@ -35,49 +40,39 @@ export interface UploadProgress {
 type ProgressCallback = (progress: UploadProgress) => void;
 
 /**
- * Upload a file to Cloudflare R2
+ * Upload a file to Cloudflare R2, via `POST /uploads` (the same public-upload endpoint and
+ * `api.uploads.upload()` client call the creator avatar upload already uses — see
+ * creator-profile.tsx). Returns the real R2 URL the server stores the file at, so callers can
+ * persist it (e.g. `workspaces.logo_url`) instead of a fabricated one.
  *
- * Real flow (when backend is ready):
- * 1. POST /api/upload/presign  -> get { presignedUrl, key }
- * 2. PUT presignedUrl with file body
- * 3. POST /api/upload/confirm  -> save R2 URL to MySQL
+ * `folder` has no server-side equivalent on this endpoint (the server key-namespaces uploads
+ * itself) and is accepted only so existing callers keep compiling; it is not sent.
  *
- * Current: mock that creates a local blob URL
+ * The endpoint has no progress-streaming equivalent (`api.uploads.upload` is a single
+ * fetch/FormData POST, not XHR), so `onProgress` is reported at start (0%) and completion
+ * (100%) rather than fabricating intermediate steps.
  */
 export async function uploadToR2(
   file: File,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for call-site compatibility, see doc comment above
   folder: string = 'uploads',
   onProgress?: ProgressCallback,
 ): Promise<UploadResult> {
-  // Simulate upload with progress
-  const totalSteps = 10;
-  for (let i = 1; i <= totalSteps; i++) {
-    await new Promise((r) => setTimeout(r, 150));
-    onProgress?.({
-      loaded: (file.size / totalSteps) * i,
-      total: file.size,
-      percentage: Math.round((i / totalSteps) * 100),
-    });
-  }
+  onProgress?.({ loaded: 0, total: file.size, percentage: 0 });
 
-  // In production: this would be the R2 public URL
-  const mockKey = `${folder}/${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-  const mockUrl = `https://r2.influora.com/${mockKey}`;
+  const { url, key } = await api.uploads.upload(file, 'brand');
 
-  const result: UploadResult = {
+  onProgress?.({ loaded: file.size, total: file.size, percentage: 100 });
+
+  return {
     success: true,
-    url: mockUrl,
-    key: mockKey,
+    url,
+    key,
     filename: file.name,
     size: file.size,
     mimeType: file.type,
     uploadedAt: new Date().toISOString(),
   };
-
-  // In production: POST /api/upload/confirm to save URL in MySQL
-  // await apiClient.post('/upload/confirm', { key, url, filename, size, mimeType });
-
-  return result;
 }
 
 /**

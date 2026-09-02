@@ -1,6 +1,7 @@
 package com.influora.service;
 
 import com.influora.common.ApiException;
+import com.influora.common.IndianPhoneUtils;
 import com.influora.common.PasswordPolicy;
 import com.influora.common.SlugUtils;
 import com.influora.common.Ulids;
@@ -31,6 +32,7 @@ import com.influora.web.dto.auth.BrandRegisterRequest;
 import com.influora.web.dto.auth.CreatorRegisterRequest;
 import com.influora.web.dto.auth.LoginRequest;
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -117,6 +119,32 @@ public class AuthService {
         }
         PasswordPolicy.validate(req.password());
 
+        // PHONE-0829 Gap A — req.phone() is OPTIONAL (older clients omit it entirely); null/blank
+        // means "no phone captured at signup", never an error. When present it is normalized
+        // (strips spaces/+91/leading 0) and validated against the same strict Indian-mobile rule
+        // as creator phone capture (CreatorProfileService#applyPhone) BEFORE the user row is ever
+        // built, so a bad phone never gets as far as allocating a userId/workspace. Same
+        // upfront-check convention as the email dup check just above: users.phone_number is
+        // UNIQUE, so this narrows the common case, but the try/catch below (mirroring the email
+        // race-loser handling documented on this method) is what actually guarantees a clean 409
+        // rather than a raw 500 on a race.
+        String normalizedPhone = null;
+        if (req.phone() != null && !req.phone().isBlank()) {
+            normalizedPhone = IndianPhoneUtils.normalize(req.phone());
+            if (!IndianPhoneUtils.isValid(normalizedPhone)) {
+                throw new ApiException(
+                        "INVALID_PHONE",
+                        "Enter a valid 10-digit Indian mobile number",
+                        HttpStatus.BAD_REQUEST);
+            }
+            if (userRepository.existsByPhoneNumber(normalizedPhone)) {
+                throw new ApiException(
+                        "PHONE_ALREADY_EXISTS",
+                        "An account with this phone number already exists",
+                        HttpStatus.CONFLICT);
+            }
+        }
+
         String displayName = (req.firstName() + " " + req.lastName()).trim();
         String userId = Ulids.newUlid();
         User user =
@@ -127,6 +155,9 @@ public class AuthService {
                         req.firstName(),
                         req.lastName(),
                         displayName);
+        if (normalizedPhone != null) {
+            user.setPhoneNumber(normalizedPhone);
+        }
 
         if (requireEmailOtpBeforeRegister) {
             // Throws if the email hasn't completed OTP verification -- only reachable
@@ -157,6 +188,17 @@ public class AuthService {
             workspaceMemberRepository.save(WorkspaceMember.owner(Ulids.newUlid(), workspaceId, userId));
             walletRepository.save(Wallet.forWorkspace(Ulids.newUlid(), workspaceId));
         } catch (DataIntegrityViolationException dup) {
+            // PHONE-0829 Gap A — the upfront existsByPhoneNumber check above narrows the common
+            // case but doesn't close the race (same TOCTOU shape as email); re-check here so a
+            // raced duplicate PHONE surfaces its own accurate 409 instead of the misleading
+            // EMAIL_ALREADY_EXISTS every other constraint violation on this save still falls back
+            // to (unchanged from before this fix).
+            if (normalizedPhone != null && userRepository.existsByPhoneNumber(normalizedPhone)) {
+                throw new ApiException(
+                        "PHONE_ALREADY_EXISTS",
+                        "An account with this phone number already exists",
+                        HttpStatus.CONFLICT);
+            }
             throw new ApiException(
                     "EMAIL_ALREADY_EXISTS", "An account with this email already exists", HttpStatus.CONFLICT);
         }
@@ -203,29 +245,61 @@ public class AuthService {
 
         // H-16: deterministic (oldest-first) so the same user always lands in the same workspace
         // across logins, instead of an arbitrary one when they hold ≥2 active memberships.
-        WorkspaceMember member =
-                workspaceMemberRepository
-                        .findFirstByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId())
-                        .orElseThrow(
-                                () ->
-                                        new ApiException(
-                                                "WORKSPACE_NOT_FOUND",
-                                                "No workspace found for this user",
-                                                HttpStatus.NOT_FOUND));
+        // F-0458: and SKIP suspended workspaces rather than hard-failing on the oldest one. The
+        // first cut of F-0451 resolved exactly one membership and threw if it was suspended, which
+        // locked a multi-workspace user out of workspaces the admin never touched — the precise
+        // outcome the comment below says must not happen. Landing order is still oldest-first among
+        // the workspaces the user may actually enter.
+        List<WorkspaceMember> memberships =
+                workspaceMemberRepository.findByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId());
+        if (memberships.isEmpty()) {
+            throw new ApiException(
+                    "WORKSPACE_NOT_FOUND", "No workspace found for this user", HttpStatus.NOT_FOUND);
+        }
 
-        Workspace workspace =
-                workspaceRepository
-                        .findById(member.getWorkspaceId())
-                        .orElseThrow(
-                                () ->
-                                        new ApiException(
-                                                "WORKSPACE_NOT_FOUND",
-                                                "Workspace not found",
-                                                HttpStatus.NOT_FOUND));
+        Workspace workspace = firstEnterableWorkspace(memberships);
 
         user.markLogin();
         userRepository.save(user);
         return issueTokens(user, workspace);
+    }
+
+    /**
+     * F-0451/F-0458 — resolve the workspace a user should land in, skipping suspended ones.
+     *
+     * <p>Admin suspend writes {@code workspaces.is_suspended}, and no authentication path read it:
+     * a suspended brand simply logged in again and kept operating. Suspension is deliberately NOT
+     * cascaded to {@code users.status}, because a Workspace has many members and a member may
+     * belong to other, unsuspended workspaces — disabling the person's account would punish the
+     * wrong party. So the flag is enforced per-workspace here instead.
+     *
+     * <p>Throws only when EVERY active membership is suspended, which is the one case where there
+     * is genuinely nowhere for the user to go. Same code and message as
+     * {@code WorkspaceMemberService.switchWorkspace}, so the client sees one behaviour whichever
+     * route it arrives by.
+     */
+    private Workspace firstEnterableWorkspace(List<WorkspaceMember> memberships) {
+        Workspace firstFound = null;
+        for (WorkspaceMember m : memberships) {
+            Workspace ws = workspaceRepository.findById(m.getWorkspaceId()).orElse(null);
+            if (ws == null) {
+                continue;
+            }
+            if (firstFound == null) {
+                firstFound = ws;
+            }
+            if (!ws.isSuspended()) {
+                return ws;
+            }
+        }
+        if (firstFound == null) {
+            throw new ApiException(
+                    "WORKSPACE_NOT_FOUND", "Workspace not found", HttpStatus.NOT_FOUND);
+        }
+        throw new ApiException(
+                "WORKSPACE_SUSPENDED",
+                "This workspace has been suspended. Contact support.",
+                HttpStatus.FORBIDDEN);
     }
 
     @Transactional
@@ -316,6 +390,23 @@ public class AuthService {
                     "EMAIL_NOT_VERIFIED", "Please verify your email before signing in", HttpStatus.FORBIDDEN);
         }
 
+        // F-0451: creator_profiles.is_suspended was read only by CreatorDiscoveryService (:900,:918,
+        // :929) and DealService (:223) -- i.e. it hid the creator from the marketplace but never
+        // stopped them signing in. A creator profile is 1:1 with a user (CreatorProfile.user_id is
+        // unique), but the flag stays the single source of truth rather than being mirrored onto
+        // users.status: two flags that can disagree is how a reinstate ends up restoring the wrong
+        // state (ACTIVE vs PENDING_VERIFICATION).
+        creatorProfileRepository
+                .findByUserId(user.getId())
+                .filter(CreatorProfile::isSuspended)
+                .ifPresent(
+                        p -> {
+                            throw new ApiException(
+                                    "ACCOUNT_SUSPENDED",
+                                    "Your account has been suspended",
+                                    HttpStatus.FORBIDDEN);
+                        });
+
         user.markLogin();
         userRepository.save(user);
         return issueTokens(user, null);
@@ -380,7 +471,34 @@ public class AuthService {
                 workspaceMemberRepository
                         .findFirstByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId())
                         .orElse(null);
-        String workspaceId = member != null ? member.getWorkspaceId() : null;
+
+        // F-0451: without these, the login gates above are a 15-minute speed bump -- refresh tokens
+        // rotate on a 30-day window, so a suspended brand or creator kept minting fresh access
+        // tokens indefinitely. Same placement rationale as the AUTH-1 block above: BEFORE the
+        // revoke/rotate, so a rejected refresh does not burn the presented token and the caller
+        // sees WORKSPACE_SUSPENDED/ACCOUNT_SUSPENDED rather than INVALID_REFRESH_TOKEN on retry.
+        // F-0458: resolved through the same skip-suspended helper as brandLogin, so a refresh can
+        // move a multi-workspace user off a newly-suspended workspace instead of locking them out.
+        String workspaceId = null;
+        if (member != null) {
+            workspaceId =
+                    firstEnterableWorkspace(
+                                    workspaceMemberRepository.findByUserIdAndActiveTrueOrderByCreatedAtAsc(
+                                            user.getId()))
+                            .getId();
+        }
+        if (user.getUserType() == UserType.CREATOR) {
+            creatorProfileRepository
+                    .findByUserId(user.getId())
+                    .filter(CreatorProfile::isSuspended)
+                    .ifPresent(
+                            p -> {
+                                throw new ApiException(
+                                        "ACCOUNT_SUSPENDED",
+                                        "Your account has been suspended",
+                                        HttpStatus.FORBIDDEN);
+                            });
+        }
 
         // Rotation (Kabir B3): burn the presented token and mint a new one, so a leaked refresh token
         // is single-use and a replay after rotation fails.

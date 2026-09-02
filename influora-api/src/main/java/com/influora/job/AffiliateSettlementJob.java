@@ -28,15 +28,18 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>What "settle" means in this slice</b> -- exactly like {@code PayoutService#queuePayout},
  * settlement here is the internal ledger action (marking {@link AffiliateEarning} rows {@code
- * SETTLED} under a batch) that represents the creator becoming entitled to be paid; it does NOT
- * itself call RazorpayX or move real money. Wiring a settled creator's total into an actual bank
- * transfer (via the existing {@code PayoutService}/RazorpayX path, or a dedicated affiliate payout
- * flow) is a separate, deliberately out-of-scope follow-up -- inventing a second money-movement
- * gateway integration in this task, on top of an already money-moving schema/job, was judged
- * out of scope without a product/Rohan decision on how affiliate payouts should actually be
- * disbursed (same wallet as milestone payouts? a separate RazorpayX contact? batched wire?). This
- * job's job is to make "how much does creator X get for period Y, and has it already been paid"
- * unambiguous and safe to compute exactly once -- the disbursement mechanism can be layered on top
+ * SETTLED} under a batch, and -- since [F-0402] -- crediting the settled amount to the creator's
+ * Influora wallet via {@link AffiliateSettlementWriter#doSettleCreator}, the same {@code
+ * WalletLedgerService} double-entry path {@code LedgerEscrowBackend#release} uses) that represents
+ * the creator becoming entitled to be paid; it does NOT itself call RazorpayX or move real bank
+ * money. Wiring a settled creator's wallet balance into an actual bank transfer (via the existing
+ * {@code PayoutService}/RazorpayX path, or a dedicated affiliate payout flow) is a separate,
+ * deliberately out-of-scope follow-up -- inventing a second money-movement gateway integration in
+ * this task, on top of an already money-moving schema/job, was judged out of scope without a
+ * product/Rohan decision on how affiliate payouts should actually be disbursed (same wallet as
+ * milestone payouts? a separate RazorpayX contact? batched wire?). This job's job is to make "how
+ * much does creator X get for period Y, and has it already been paid into their wallet" unambiguous
+ * and safe to compute exactly once -- the RazorpayX disbursement mechanism can be layered on top
  * without reopening this class's idempotency guarantees.
  *
  * <p><b>Double-payout structurally impossible [mirrors PayoutService/IdempotencyService's

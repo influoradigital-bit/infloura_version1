@@ -176,8 +176,13 @@ public class AdminCreatorService {
         // sets it to null — see User#anonymize-style setter around line 272), and toMap's default
         // Map::merge accumulator throws NPE on a null value.
         Map<String, String> emailsByUserId = new HashMap<>();
+        // PHONE-0829 Gap B — same batch-load, same null-safety reasoning: most creators have never
+        // captured a phone (CreatorProfileService#applyPhone is the first write path this column
+        // ever had), so this map is expected to be full of nulls, not empty of entries.
+        Map<String, String> phonesByUserId = new HashMap<>();
         for (User u : userRepository.findAllById(userIds)) {
             emailsByUserId.put(u.getId(), u.getEmail());
+            phonesByUserId.put(u.getId(), u.getPhoneNumber());
         }
 
         List<String> profileIds = profiles.stream().map(CreatorProfile::getId).toList();
@@ -190,7 +195,7 @@ public class AdminCreatorService {
 
         List<CreatorSummaryDto> summaries =
                 profiles.stream()
-                        .map(p -> toSummaryDto(p, emailsByUserId, instagramByProfileId))
+                        .map(p -> toSummaryDto(p, emailsByUserId, phonesByUserId, instagramByProfileId))
                         .toList();
 
         int totalPages = pageResult.getTotalPages();
@@ -491,14 +496,17 @@ public class AdminCreatorService {
     private CreatorSummaryDto toSummaryDto(
             CreatorProfile profile,
             Map<String, String> emailsByUserId,
+            Map<String, String> phonesByUserId,
             Map<String, PlatformStat> instagramByProfileId) {
         String email = emailsByUserId.get(profile.getUserId());
+        String phone = phonesByUserId.get(profile.getUserId());
         PlatformStat instagram = instagramByProfileId.get(profile.getId());
 
         return new CreatorSummaryDto(
                 profile.getId(),
                 profile.getDisplayName(),
                 email,
+                phone,
                 instagram != null ? instagram.getHandle() : null,
                 profile.getTotalFollowers(),
                 profile.getApplicationStatus().name(),
@@ -508,7 +516,11 @@ public class AdminCreatorService {
     }
 
     private CreatorDetailDto toDetailDto(CreatorProfile profile) {
-        String email = userRepository.findById(profile.getUserId()).map(User::getEmail).orElse(null);
+        User creatorUser = userRepository.findById(profile.getUserId()).orElse(null);
+        String email = creatorUser != null ? creatorUser.getEmail() : null;
+        // PHONE-0829 Gap B — same visibility as email (no separate access-control tier); reuses
+        // the User row already loaded for email rather than a second query.
+        String phone = creatorUser != null ? creatorUser.getPhoneNumber() : null;
 
         PlatformStat instagram =
                 platformStatRepository.findByCreatorProfileId(profile.getId()).stream()
@@ -538,6 +550,7 @@ public class AdminCreatorService {
                 profile.getId(),
                 profile.getDisplayName(),
                 email,
+                phone,
                 JsonLists.stringListFromJson(profile.getCategoriesJson()),
                 profile.getTotalFollowers(),
                 profile.getEngagementRate() != null ? profile.getEngagementRate() : BigDecimal.ZERO,

@@ -53,6 +53,7 @@ const UNVERIFIED_ME = {
   industry: null,
   companySize: null,
   websiteUrl: null,
+  description: null,
   logoUrl: null,
   verificationStatus: 'UNVERIFIED' as const,
 };

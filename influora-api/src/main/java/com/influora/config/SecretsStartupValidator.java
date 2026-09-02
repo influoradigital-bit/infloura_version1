@@ -169,6 +169,7 @@ public class SecretsStartupValidator {
     private final TrendSparkAiProperties trendSparkAiProperties;
     private final MeeraChatAiProperties meeraChatAiProperties;
     private final AnalyzeSiteAiProperties analyzeSiteAiProperties;
+    private final CreatorSuggestionAiProperties creatorSuggestionAiProperties;
     private final InfluoraEnvironment influoraEnvironment;
 
     @Value("${influora.env:dev}")
@@ -223,6 +224,7 @@ public class SecretsStartupValidator {
             TrendSparkAiProperties trendSparkAiProperties,
             MeeraChatAiProperties meeraChatAiProperties,
             AnalyzeSiteAiProperties analyzeSiteAiProperties,
+            CreatorSuggestionAiProperties creatorSuggestionAiProperties,
             InfluoraEnvironment influoraEnvironment) {
         this.jwtProperties = jwtProperties;
         this.meeraStreamProperties = meeraStreamProperties;
@@ -236,6 +238,7 @@ public class SecretsStartupValidator {
         this.trendSparkAiProperties = trendSparkAiProperties;
         this.meeraChatAiProperties = meeraChatAiProperties;
         this.analyzeSiteAiProperties = analyzeSiteAiProperties;
+        this.creatorSuggestionAiProperties = creatorSuggestionAiProperties;
         this.influoraEnvironment = influoraEnvironment;
     }
 
@@ -566,6 +569,13 @@ public class SecretsStartupValidator {
         // http://localhost:8000 exactly like its three siblings, so leaving it out would let a prod
         // deploy silently point site analysis at localhost — the precise failure W0-5 exists to stop.
         checkNotLocalhost(problems, "influora.analyze-site-ai.base-url", analyzeSiteAiProperties.getBaseUrl());
+        // Fifth sibling, added with the Creator AI Co-pilot: CreatorSuggestionAiProperties.baseUrl
+        // has the same http://localhost:8000 default. Worth failing closed even though
+        // CreatorNudgeService.callAiSafely swallows the transport error and falls back to template
+        // copy — that fallback is precisely what makes a localhost misconfig invisible in prod,
+        // which is the failure mode W0-5 exists to stop.
+        checkNotLocalhost(
+                problems, "influora.creator-copilot-ai.base-url", creatorSuggestionAiProperties.getBaseUrl());
     }
 
     /**

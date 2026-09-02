@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import type { WorkspaceType, MemberRole } from '@/lib/types';
+import type { WorkspaceType } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -64,30 +64,21 @@ export interface OnboardingData {
   companyName: string;
   companySlug: string;
   workspaceType: WorkspaceType;
-  industry: string;
+  /** One of STARTUP | SMB | ENTERPRISE — see `companySizes` for why this is the closed union. */
   companySize: string;
+  industry: string;
   websiteUrl: string;
   description: string;
   logoFile: File | null;
   logoPreview: string | null;
   logoUpload: UploadResult | null;
-  // Step 3: Verification
-  gstin: string;
-  pan: string;
-  gstinDoc: File | null;
-  gstinDocPreview: string | null;
-  gstinDocUpload: UploadResult | null;
-  panDoc: File | null;
-  panDocPreview: string | null;
-  panDocUpload: UploadResult | null;
-  // Step 4: Team
-  teamMembers: Array<{ email: string; role: MemberRole }>;
-  // Step 5: Trust (no data - informational)
-  // Step 6: Wallet
-  walletAmount: string;
-  // Agreements
+  /**
+   * F-0394 — covers Terms of Service AND Privacy Policy, the same single control
+   * `brand-register.tsx` uses. This used to be two booleans that no step ever rendered while
+   * `brand-onboarding.tsx` hardcoded `acceptedTerms: true` in the register payload, so the
+   * server's @AssertTrue could never fail and no user ever actually agreed to anything.
+   */
   acceptTerms: boolean;
-  acceptPrivacy: boolean;
 }
 
 export const initialData: OnboardingData = {
@@ -103,25 +94,14 @@ export const initialData: OnboardingData = {
   companyName: '',
   companySlug: '',
   workspaceType: 'BRAND',
-  industry: '',
   companySize: '',
+  industry: '',
   websiteUrl: '',
   description: '',
   logoFile: null,
   logoPreview: null,
   logoUpload: null,
-  gstin: '',
-  pan: '',
-  gstinDoc: null,
-  gstinDocPreview: null,
-  gstinDocUpload: null,
-  panDoc: null,
-  panDocPreview: null,
-  panDocUpload: null,
-  teamMembers: [],
-  walletAmount: '',
   acceptTerms: false,
-  acceptPrivacy: false,
 };
 
 const industries = [
@@ -139,13 +119,18 @@ const industries = [
   'Other',
 ];
 
-const companySizes = [
-  '1-10 employees',
-  '11-50 employees',
-  '51-200 employees',
-  '201-500 employees',
-  '501-1000 employees',
-  '1000+ employees',
+/**
+ * F-0395 — value/label pairs, NOT display strings. `workspaces.company_size` is free-text at the
+ * DB level, but `AdminBrandService.KNOWN_SIZES` is the closed set STARTUP/SMB/ENTERPRISE and its
+ * update endpoint throws INVALID_BRAND_SIZE for anything else, while `admin.types.ts` types the
+ * value as that same closed union. Onboarding used to write six display strings
+ * ('1-10 employees' ...), so a brand's own size could never be re-saved through admin and rendered
+ * as an empty Select there. The stored value is now the union member; the label is presentation.
+ */
+export const companySizes: Array<{ value: string; label: string }> = [
+  { value: 'STARTUP', label: 'Startup — 1-10 employees' },
+  { value: 'SMB', label: 'SMB — 11-200 employees' },
+  { value: 'ENTERPRISE', label: 'Enterprise — 200+ employees' },
 ];
 
 // ===========================
@@ -466,6 +451,11 @@ export function AccountSetupStep({
     if (!data.password) e.password = 'Required';
     else if (data.password.length < 8) e.password = 'Min 8 characters';
     if (data.password !== data.confirmPassword) e.confirmPassword = 'Does not match';
+    // F-0394 — the account this step creates is the one the Terms bind. Gating here (rather than
+    // at the final "You're in" screen) is what makes the agreement real: `brand-onboarding.tsx`
+    // sends `acceptedTerms: data.acceptTerms`, so a false value now actually reaches the server's
+    // @AssertTrue instead of being overwritten by a hardcoded `true`.
+    if (!data.acceptTerms) e.acceptTerms = 'You must agree to the Terms of Service to continue';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -756,6 +746,36 @@ export function AccountSetupStep({
           />
           {errors.confirmPassword && <p className="text-xs text-destructive-foreground">{errors.confirmPassword}</p>}
         </div>
+
+        {/* F-0394 — the consent control this wizard never had. Same plain checkbox + new-tab links
+            as brand-register.tsx: a same-document navigation to /terms would unmount this form and
+            discard every field typed so far. */}
+        <div className="flex flex-col gap-1.5">
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={data.acceptTerms}
+              onChange={(e) => {
+                onUpdate({ acceptTerms: e.target.checked });
+                if (errors.acceptTerms) setErrors((prev) => ({ ...prev, acceptTerms: '' }));
+              }}
+              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-input bg-muted accent-primary"
+            />
+            <span className="text-sm text-muted-foreground">
+              I agree to the{' '}
+              <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                Terms of Service
+              </a>{' '}
+              and{' '}
+              <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                Privacy Policy
+              </a>
+            </span>
+          </label>
+          {errors.acceptTerms && (
+            <p className="text-xs text-destructive-foreground">{errors.acceptTerms}</p>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-3 mt-8">
@@ -889,6 +909,11 @@ export function CompanyDetailsStep({
     else if (slugStatus === 'taken') e.companySlug = 'That workspace URL is already taken';
     if (!data.industry) e.industry = 'Required';
     if (!data.companySize) e.companySize = 'Required';
+    // F-0396 — the logo uploads to R2 asynchronously and only lands in `logoUpload` on completion,
+    // so advancing mid-upload sent `logoUrl: undefined` and `Workspace.applyCompanyDetails` wrote
+    // null — with the preview still on screen and no error shown. Guarding here as well as
+    // disabling the button covers the Enter-key submit path, which never touches the button.
+    if (isUploadingLogo) e.logo = 'Your logo is still uploading — one moment.';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -922,6 +947,7 @@ export function CompanyDetailsStep({
             onRemove={handleLogoRemove}
             isImage
           />
+          {errors.logo && <p className="text-xs text-destructive-foreground">{errors.logo}</p>}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -1038,7 +1064,7 @@ export function CompanyDetailsStep({
               </SelectTrigger>
               <SelectContent>
                 {companySizes.map((s) => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1069,7 +1095,9 @@ export function CompanyDetailsStep({
         </div>
       </div>
 
-      <StepFooter onBack={onBack} />
+      {/* F-0396 — StepFooter already accepted `disabled`; this call site simply never passed it,
+          which is what left Continue live while the logo was still uploading. */}
+      <StepFooter onBack={onBack} disabled={isUploadingLogo} />
     </form>
   );
 }

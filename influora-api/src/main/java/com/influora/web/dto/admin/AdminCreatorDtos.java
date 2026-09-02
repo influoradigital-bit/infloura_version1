@@ -21,6 +21,11 @@ public final class AdminCreatorDtos {
             String id,
             String name,
             String email,
+            // PHONE-0829 Gap B — users.phone_number, same visibility as email (any admin who can
+            // see this row's email sees its phone too — no separate access-control tier). Nullable:
+            // most existing creators have never captured one (see CreatorProfileService#applyPhone,
+            // the first write path this column ever had).
+            String phone,
             String instagramHandle,
             long followers,
             String applicationStatus,
@@ -36,6 +41,8 @@ public final class AdminCreatorDtos {
             String id,
             String name,
             String email,
+            // PHONE-0829 Gap B — same field/semantics as CreatorSummaryDto.phone above.
+            String phone,
             List<String> niche,
             long followers,
             BigDecimal engagementRate,

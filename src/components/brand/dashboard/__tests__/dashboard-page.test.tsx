@@ -224,6 +224,7 @@ describe('BrandLayout sidebar — F-0246 no fabricated identity in live mode', (
       industry: null,
       companySize: null,
       websiteUrl: null,
+      description: null,
       logoUrl: null,
       verificationStatus: 'VERIFIED',
     });

@@ -35,11 +35,16 @@ import org.springframework.stereotype.Component;
  * is set, so a deployment with no SMTP host configured (e.g. dev-mock, or before SMTP creds exist)
  * must still boot — a direct dependency would throw {@code NoSuchBeanDefinitionException}.
  *
- * <p><b>Sender domain constraint:</b> the SMTP relay account only accepts its own authenticated
- * domain as the envelope sender — live-tested {@code MAIL FROM:<...@influora.com>} under these
- * credentials and got {@code 550 5.7.1 Invalid Mail From address received}. {@code fromEmail}
- * therefore stays on the relay account's domain until that domain is verified with MSG91
- * separately; only the display name ({@code fromName}) is Influora-branded.
+ * <p><b>Sender domain constraint:</b> the SMTP relay account only accepts a domain verified with
+ * MSG91 as the envelope sender — live-tested {@code MAIL FROM:<...@influora.com>} (an unverified
+ * domain) and got {@code 550 5.7.1 Invalid Mail From address received}. Both {@code influora.in}
+ * and {@code mail.influora.in} are verified in MSG91, but {@code fromEmail} defaults to the
+ * SUBDOMAIN ({@code noreply@mail.influora.in}) because that is the only one that is also
+ * DNS-complete. MSG91-side verification alone does not get mail delivered: the sending domain
+ * must additionally carry {@code include:mailer91.com} in its SPF and a resolvable DKIM key at
+ * {@code spaceship._domainkey.<domain>}, or DMARC {@code p=quarantine} bins it at the receiver
+ * no matter what the MSG91 dashboard reports. Only {@code mail.influora.in} has both today; the
+ * apex has neither, so do not move this default until GoDaddy carries the apex records.
  *
  * <p>SMTP has no MSG91 dashboard templates to render server-side, so the previous
  * {@code template_id} handling is gone — subject/HTML body/plain-text fallback are rendered from
@@ -65,7 +70,7 @@ public class Msg91EmailClient {
 
     public Msg91EmailClient(
             ObjectProvider<JavaMailSender> mailSenderProvider,
-            @Value("${influora.msg91.email.from-email:noreply@influora.com}") String fromEmail,
+            @Value("${influora.msg91.email.from-email:noreply@mail.influora.in}") String fromEmail,
             @Value("${influora.msg91.email.from-name:Influora}") String fromName,
             @Value("${influora.api.public-url}") String apiPublicUrl,
             @Value("${server.servlet.context-path:}") String contextPath,

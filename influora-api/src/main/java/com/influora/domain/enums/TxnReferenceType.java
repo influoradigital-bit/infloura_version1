@@ -6,5 +6,7 @@ public enum TxnReferenceType {
     MILESTONE,
     CAMPAIGN,
     DEPOSIT_ORDER,
-    MANUAL
+    MANUAL,
+    // [F-0402] referenceId is the settled AffiliateEarning's own id.
+    AFFILIATE_EARNING
 }

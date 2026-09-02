@@ -94,4 +94,32 @@ class CreatorContextServiceTest {
         ApiException ex = assertThrows(ApiException.class, () -> service.requireCreator(principal));
         assertEquals("ACCOUNT_DELETED", ex.getCode());
     }
+
+    @Test
+    @DisplayName("F-0457: requireCreatorProfile refuses a SUSPENDED creator -> ACCOUNT_SUSPENDED 403")
+    void requireCreatorProfile_suspended_rejected() {
+        // Gating creatorLogin/refresh alone left a window equal to the access-token lifetime during
+        // which a just-suspended creator kept acting on existing deals: this resolver is what every
+        // creator endpoint funnels through, so it is what makes suspension bite immediately.
+        when(principal.getUserType()).thenReturn(com.influora.domain.enums.UserType.CREATOR);
+        when(principal.getUserId()).thenReturn("01HCREATORUSER123456789A");
+        com.influora.domain.entity.User u =
+                com.influora.domain.entity.User.newCreator(
+                        "01HCREATORUSER123456789A", "riya@example.com", "h", "Riya", "S", "Riya S");
+        when(userRepository.findById("01HCREATORUSER123456789A")).thenReturn(java.util.Optional.of(u));
+        com.influora.domain.entity.CreatorProfile profile =
+                com.influora.domain.entity.CreatorProfile.newForUser(
+                        "01HCREATORPROF123456AA", "01HCREATORUSER123456789A", "Riya Sharma");
+        profile.suspend("policy violation", "01HADMIN000000000000AA");
+        when(creatorProfileRepository.findByUserId("01HCREATORUSER123456789A"))
+                .thenReturn(java.util.Optional.of(profile));
+
+        com.influora.common.ApiException ex =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        com.influora.common.ApiException.class,
+                        () -> service.requireCreatorProfile(principal));
+
+        org.junit.jupiter.api.Assertions.assertEquals("ACCOUNT_SUSPENDED", ex.getCode());
+        org.junit.jupiter.api.Assertions.assertEquals(403, ex.getStatus().value());
+    }
 }

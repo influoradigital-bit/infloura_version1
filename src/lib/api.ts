@@ -1058,6 +1058,12 @@ export interface WorkspaceMeResponse {
   industry: string | null;
   companySize: string | null;
   websiteUrl: string | null;
+  /**
+   * F-0462 — read back so the client can echo it on the next PATCH. /workspaces/me is
+   * full-replace and accepts `description`, but this response used to omit it, so brand
+   * settings had no value to resend and every save cleared the bio set at onboarding.
+   */
+  description: string | null;
   logoUrl: string | null;
   verificationStatus: VerificationStatus | null;
 }
@@ -1161,6 +1167,7 @@ export const workspaces = {
           industry: null,
           companySize: null,
           websiteUrl: 'www.techbrands.in',
+          description: null,
           logoUrl: null,
           verificationStatus: 'VERIFIED',
         }),
@@ -1181,6 +1188,7 @@ export const workspaces = {
           industry: payload.industry ?? null,
           companySize: payload.companySize ?? null,
           websiteUrl: payload.websiteUrl ?? null,
+          description: payload.description ?? null,
           logoUrl: payload.logoUrl ?? null,
           verificationStatus: 'VERIFIED',
         }),
@@ -3167,6 +3175,10 @@ export interface CreatorProfileSelfResponse {
   avatarUrl: string | null;
   coverImageUrl: string | null;
   city: string | null;
+  /** PHONE-0829 P1 — optional, normalized Indian mobile (10 digits, no +91/spaces). null until
+   *  a creator adds one; unlike brand's workspaces.phone, no creator ever had a phone field
+   *  before this. */
+  phone: string | null;
   categories: string[];
   languages: string[];
   contentStyles: string[];
@@ -3190,6 +3202,10 @@ export interface CreatorProfilePatchPayload {
   avatarUrl?: string;
   coverImageUrl?: string;
   city?: string;
+  /** PHONE-0829 P1 — optional. Empty string clears it (same convention as bio/city above).
+   *  Server validates Indian mobile (10 digits, first digit 6-9), normalizes spaces/+91/leading
+   *  0, and returns 409 on a duplicate phone already registered to another account. */
+  phone?: string;
   categories?: string[];
   languages?: string[];
   contentStyles?: string[];
@@ -3207,6 +3223,7 @@ const mockCreatorProfileSelf: CreatorProfileSelfResponse = {
   avatarUrl: '',
   coverImageUrl: '',
   city: 'Mumbai',
+  phone: null,
   categories: ['Fashion & Lifestyle', 'Beauty & Skincare'],
   languages: ['Hindi', 'English'],
   contentStyles: [],

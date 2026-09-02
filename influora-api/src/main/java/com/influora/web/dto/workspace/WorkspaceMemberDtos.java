@@ -34,9 +34,16 @@ public final class WorkspaceMemberDtos {
     public record ChangeRoleRequest(@NotBlank String role) {}
 
     /**
-     * L-9 — {@code GET /workspaces/me} response. No {@code description} field: {@code
-     * Workspace} has a {@code description} column but no getter for it (entity is out of scope
-     * for this pass), so it cannot be safely surfaced or round-tripped here.
+     * L-9 — {@code GET /workspaces/me} response.
+     *
+     * <p>[F-0462] {@code description} is surfaced here deliberately. This record originally
+     * omitted it because {@code Workspace} had no getter for the column; the getter now exists
+     * ({@link com.influora.domain.entity.Workspace#getDescription}), and the omission had become
+     * a data-loss bug rather than a scoping note. {@code WorkspaceUpdateRequest} accepts {@code
+     * description} and {@link com.influora.domain.entity.Workspace#updateCompanyDetails} assigns
+     * it unconditionally, so a client that cannot READ the value back has no way to echo it on
+     * the next full-replace PATCH — every settings save silently cleared the brand bio captured
+     * at onboarding. A write-only field on a full-replace endpoint is a destructive contract.
      *
      * <p>{@code email} maps to {@code workspaces.billing_email} server-side (see {@link
      * com.influora.domain.entity.Workspace#updateContactEmail}) — same field the admin panel
@@ -53,6 +60,7 @@ public final class WorkspaceMemberDtos {
             String industry,
             String companySize,
             String websiteUrl,
+            String description,
             String logoUrl,
             String verificationStatus) {}
 

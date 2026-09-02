@@ -1,6 +1,7 @@
 package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -24,6 +25,7 @@ import com.influora.domain.entity.PasswordResetToken;
 import com.influora.domain.entity.RefreshToken;
 import com.influora.domain.entity.User;
 import com.influora.domain.entity.Wallet;
+import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.UserStatus;
 import com.influora.domain.enums.UserType;
@@ -84,7 +86,8 @@ class AuthServiceTest {
                     "Acme Co",
                     "RETAIL",
                     "SMALL",
-                    true);
+                    true,
+                    null);
 
     private static final CreatorRegisterRequest CREATOR_REQUEST =
             new CreatorRegisterRequest(
@@ -193,6 +196,117 @@ class AuthServiceTest {
 
         assertEquals("EMAIL_ALREADY_EXISTS", ex.getCode());
         assertEquals(409, ex.getStatus().value());
+    }
+
+    // ── PHONE-0829 Gap A: brand register persists phone to users.phone_number ──────────────
+
+    @Test
+    @DisplayName("brandRegister: persists a normalized phone (spaces/+91 stripped) to users.phone_number")
+    void testBrandRegisterPersistsNormalizedPhone() {
+        BrandRegisterRequest req = brandRequestWithPhone("+91 98765 43210");
+        when(userRepository.existsByEmailIgnoreCase(req.email())).thenReturn(false);
+        when(userRepository.existsByPhoneNumber("9876543210")).thenReturn(false);
+        when(passwordEncoder.encode(any())).thenReturn("hashed");
+        when(workspaceRepository.existsBySlug(any())).thenReturn(false);
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(workspaceMemberRepository.save(any(WorkspaceMember.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(walletRepository.save(any(Wallet.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtService.createAccessToken(anyString(), eq(UserType.BRAND), anyString(), anyString()))
+                .thenReturn("access-jwt");
+        when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        authService.brandRegister(req);
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).saveAndFlush(userCaptor.capture());
+        assertEquals("9876543210", userCaptor.getValue().getPhoneNumber());
+    }
+
+    @Test
+    @DisplayName("brandRegister: registration still succeeds when phone is omitted (older clients)")
+    void testBrandRegisterSucceedsWithoutPhone() {
+        // REQUEST has phone = null. Same happy-path stubs as the normalized-phone test above.
+        when(userRepository.existsByEmailIgnoreCase(REQUEST.email())).thenReturn(false);
+        when(passwordEncoder.encode(any())).thenReturn("hashed");
+        when(workspaceRepository.existsBySlug(any())).thenReturn(false);
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(workspaceMemberRepository.save(any(WorkspaceMember.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(walletRepository.save(any(Wallet.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtService.createAccessToken(anyString(), eq(UserType.BRAND), anyString(), anyString()))
+                .thenReturn("access-jwt");
+        when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TokenPair pair = authService.brandRegister(REQUEST);
+
+        assertNotNull(pair);
+        verify(userRepository, never()).existsByPhoneNumber(any());
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).saveAndFlush(userCaptor.capture());
+        assertNull(userCaptor.getValue().getPhoneNumber());
+    }
+
+    @Test
+    @DisplayName("brandRegister: rejects an invalid phone format before touching persistence")
+    void testBrandRegisterRejectsInvalidPhone() {
+        BrandRegisterRequest req = brandRequestWithPhone("12345");
+        when(userRepository.existsByEmailIgnoreCase(req.email())).thenReturn(false);
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.brandRegister(req));
+
+        assertEquals("INVALID_PHONE", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(userRepository, never()).saveAndFlush(any(User.class));
+    }
+
+    @Test
+    @DisplayName(
+            "brandRegister: sequential duplicate phone (existsByPhoneNumber true) throws a clean 409,"
+                    + " not a raw 500")
+    void testBrandRegisterDuplicatePhoneThrowsFriendly409() {
+        BrandRegisterRequest req = brandRequestWithPhone("9876543210");
+        when(userRepository.existsByEmailIgnoreCase(req.email())).thenReturn(false);
+        when(userRepository.existsByPhoneNumber("9876543210")).thenReturn(true);
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.brandRegister(req));
+
+        assertEquals("PHONE_ALREADY_EXISTS", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        verify(userRepository, never()).saveAndFlush(any(User.class));
+    }
+
+    @Test
+    @DisplayName(
+            "brandRegister: TOCTOU race on phone -- existsByPhoneNumber says false (loser of the"
+                    + " race) but the final save() hits the DB UNIQUE constraint -- must surface"
+                    + " PHONE_ALREADY_EXISTS, never a raw 500 or the misleading EMAIL_ALREADY_EXISTS")
+    void testBrandRegisterPhoneRaceLoserGetsFriendly409NotRaw500() {
+        BrandRegisterRequest req = brandRequestWithPhone("9876543210");
+        when(userRepository.existsByEmailIgnoreCase(req.email())).thenReturn(false);
+        when(userRepository.existsByPhoneNumber("9876543210"))
+                .thenReturn(false) // upfront check: loser hasn't lost yet
+                .thenReturn(true); // re-check inside the catch block: now it has
+        lenient().when(passwordEncoder.encode(any())).thenReturn("hashed");
+        lenient().when(workspaceRepository.existsBySlug(any())).thenReturn(false);
+        doThrow(new DataIntegrityViolationException("Duplicate entry for key 'users.phone_number'"))
+                .when(userRepository)
+                .saveAndFlush(any(User.class));
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.brandRegister(req));
+
+        assertEquals("PHONE_ALREADY_EXISTS", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+    }
+
+    private BrandRegisterRequest brandRequestWithPhone(String phone) {
+        return new BrandRegisterRequest(
+                "Ada", "Lovelace", "ada@example.com", "Supersecret1", "Acme Co", "RETAIL", "SMALL",
+                true, phone);
     }
 
     @Test
@@ -517,7 +631,7 @@ class AuthServiceTest {
 
         assertEquals("ACCOUNT_SUSPENDED", ex.getCode());
         assertEquals(403, ex.getStatus().value());
-        assertTrue(!stored.isRevoked());
+        assertFalse(stored.isRevoked());
     }
 
     @Test
@@ -539,7 +653,7 @@ class AuthServiceTest {
 
         assertEquals("EMAIL_NOT_VERIFIED", ex.getCode());
         assertEquals(403, ex.getStatus().value());
-        assertTrue(!stored.isRevoked());
+        assertFalse(stored.isRevoked());
         verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
     }
 
@@ -695,5 +809,191 @@ class AuthServiceTest {
         assertEquals(401, ex.getStatus().value());
         verify(userRepository, never()).save(any(User.class));
         verifyNoInteractions(refreshTokenRepository);
+    }
+
+    // ── F-0451: suspension must actually stop authentication ────────────────
+    // Before this fix, workspaces.is_suspended was read only by WorkspaceService.switchWorkspace
+    // -- which has NO production caller (F-0457). The reachable twin is
+    // WorkspaceMemberService.switchWorkspace via WorkspaceMemberController:105.
+    // and creator_profiles.is_suspended only by discovery/deal filters, so admin "suspend"
+    // hid the account from the marketplace while it kept logging in and kept rotating tokens.
+
+    private static final LoginRequest BRAND_LOGIN =
+            new LoginRequest("ada@example.com", "Supersecret1");
+
+    private User brandLoginUser() {
+        User user =
+                User.newBrand(
+                        "01HBRANDUSER1234567890AA",
+                        "ada@example.com",
+                        "hashed-pw",
+                        "Ada",
+                        "Lovelace",
+                        "Ada Lovelace");
+        user.setEmailVerified(true);
+        return user;
+    }
+
+    private Workspace suspendedBrandWorkspace() {
+        Workspace ws = Workspace.newBrand("01HWORKSPACE123456789AA", "Acme Co", "acme-co", "RETAIL", "SMALL");
+        ws.suspend("fraud review", "01HADMIN12345678901234AA");
+        return ws;
+    }
+
+    @Test
+    @DisplayName("F-0451: brandLogin on a SUSPENDED workspace → WORKSPACE_SUSPENDED 403")
+    void testBrandLoginSuspendedWorkspace() {
+        User user = brandLoginUser();
+        Workspace ws = suspendedBrandWorkspace();
+        when(userRepository.findByEmailIgnoreCase(BRAND_LOGIN.email())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Supersecret1", "hashed-pw")).thenReturn(true);
+        when(workspaceMemberRepository.findByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId()))
+                .thenReturn(
+                        java.util.List.of(
+                                WorkspaceMember.owner("01HMEMBER123456789012AA", ws.getId(), user.getId())));
+        when(workspaceRepository.findById(ws.getId())).thenReturn(Optional.of(ws));
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.brandLogin(BRAND_LOGIN));
+
+        assertEquals("WORKSPACE_SUSPENDED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        // no token minted and no login stamped: the refusal must be total, not cosmetic
+        verify(userRepository, never()).save(any(User.class));
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    @Test
+    @DisplayName("F-0451: creatorLogin with a SUSPENDED creator profile → ACCOUNT_SUSPENDED 403")
+    void testCreatorLoginSuspendedProfile() {
+        User user = creatorUser(true);
+        CreatorProfile profile =
+                CreatorProfile.newForUser("01HCREATORPROF123456AA", user.getId(), "Riya Sharma");
+        profile.suspend("policy violation", "01HADMIN12345678901234AA");
+        when(userRepository.findByEmailIgnoreCase(CREATOR_LOGIN.email())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Supersecret1", "hashed-pw")).thenReturn(true);
+        when(creatorProfileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.creatorLogin(CREATOR_LOGIN));
+
+        assertEquals("ACCOUNT_SUSPENDED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        verify(userRepository, never()).save(any(User.class));
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    @Test
+    @DisplayName("F-0451: refresh on a SUSPENDED workspace → WORKSPACE_SUSPENDED 403, token NOT burned")
+    void testRefreshSuspendedWorkspace() {
+        User user = brandLoginUser();
+        Workspace ws = suspendedBrandWorkspace();
+        RefreshToken stored =
+                RefreshToken.create(
+                        "01HREFRESH1234567890AA",
+                        user.getId(),
+                        JwtService.hashToken("refresh-raw"),
+                        Instant.now().plusSeconds(3600));
+        when(refreshTokenRepository.findByTokenHashAndRevokedFalse(JwtService.hashToken("refresh-raw")))
+                .thenReturn(Optional.of(stored));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findFirstByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId()))
+                .thenReturn(Optional.of(WorkspaceMember.owner("01HMEMBER123456789012AA", ws.getId(), user.getId())));
+        when(workspaceMemberRepository.findByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId()))
+                .thenReturn(
+                        java.util.List.of(
+                                WorkspaceMember.owner("01HMEMBER123456789012AA", ws.getId(), user.getId())));
+        when(workspaceRepository.findById(ws.getId())).thenReturn(Optional.of(ws));
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.refresh("refresh-raw"));
+
+        assertEquals("WORKSPACE_SUSPENDED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        // the presented token must survive a rejected refresh, so the retry shows the real reason
+        assertFalse(stored.isRevoked());
+        verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
+    }
+
+    @Test
+    @DisplayName("F-0451: refresh for a SUSPENDED creator → ACCOUNT_SUSPENDED 403, token NOT burned")
+    void testRefreshSuspendedCreator() {
+        User user = creatorUser(true);
+        CreatorProfile profile =
+                CreatorProfile.newForUser("01HCREATORPROF123456AA", user.getId(), "Riya Sharma");
+        profile.suspend("policy violation", "01HADMIN12345678901234AA");
+        RefreshToken stored =
+                RefreshToken.create(
+                        "01HREFRESH1234567890AB",
+                        user.getId(),
+                        JwtService.hashToken("refresh-raw"),
+                        Instant.now().plusSeconds(3600));
+        when(refreshTokenRepository.findByTokenHashAndRevokedFalse(JwtService.hashToken("refresh-raw")))
+                .thenReturn(Optional.of(stored));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findFirstByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId()))
+                .thenReturn(Optional.empty());
+        when(creatorProfileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.refresh("refresh-raw"));
+
+        assertEquals("ACCOUNT_SUSPENDED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        assertFalse(stored.isRevoked());
+        verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
+    }
+
+    @Test
+    @DisplayName(
+            "F-0458: multi-workspace user whose OLDEST workspace is suspended still logs in,"
+                    + " landing in the first non-suspended one")
+    void testBrandLoginMultiWorkspaceSkipsSuspended() {
+        User user = brandLoginUser();
+        Workspace suspended = suspendedBrandWorkspace();
+        Workspace healthy =
+                Workspace.newBrand("01HWORKSPACE123456789BB", "Beta Co", "beta-co", "RETAIL", "SMALL");
+        when(userRepository.findByEmailIgnoreCase(BRAND_LOGIN.email())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Supersecret1", "hashed-pw")).thenReturn(true);
+        when(workspaceMemberRepository.findByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId()))
+                .thenReturn(
+                        java.util.List.of(
+                                WorkspaceMember.owner("01HMEMBER123456789012AA", suspended.getId(), user.getId()),
+                                WorkspaceMember.owner("01HMEMBER123456789012BB", healthy.getId(), user.getId())));
+        when(workspaceRepository.findById(suspended.getId())).thenReturn(Optional.of(suspended));
+        when(workspaceRepository.findById(healthy.getId())).thenReturn(Optional.of(healthy));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtService.createAccessToken(eq(user.getId()), eq(UserType.BRAND), anyString(), eq(healthy.getId())))
+                .thenReturn("access-jwt");
+        when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TokenPair pair = authService.brandLogin(BRAND_LOGIN);
+
+        // the admin suspended ONE workspace, not the person: they must land in the other
+        assertEquals("access-jwt", pair.accessToken());
+        assertEquals(healthy.getId(), pair.workspace().id());
+    }
+
+    @Test
+    @DisplayName("F-0458: when EVERY active workspace is suspended, brandLogin still refuses")
+    void testBrandLoginAllWorkspacesSuspendedStillRefused() {
+        User user = brandLoginUser();
+        Workspace suspendedA = suspendedBrandWorkspace();
+        Workspace suspendedB =
+                Workspace.newBrand("01HWORKSPACE123456789CC", "Gamma Co", "gamma-co", "RETAIL", "SMALL");
+        suspendedB.suspend("fraud review", "01HADMIN12345678901234AA");
+        when(userRepository.findByEmailIgnoreCase(BRAND_LOGIN.email())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Supersecret1", "hashed-pw")).thenReturn(true);
+        when(workspaceMemberRepository.findByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId()))
+                .thenReturn(
+                        java.util.List.of(
+                                WorkspaceMember.owner("01HMEMBER123456789012AA", suspendedA.getId(), user.getId()),
+                                WorkspaceMember.owner("01HMEMBER123456789012CC", suspendedB.getId(), user.getId())));
+        when(workspaceRepository.findById(suspendedA.getId())).thenReturn(Optional.of(suspendedA));
+        when(workspaceRepository.findById(suspendedB.getId())).thenReturn(Optional.of(suspendedB));
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.brandLogin(BRAND_LOGIN));
+
+        assertEquals("WORKSPACE_SUSPENDED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
     }
 }

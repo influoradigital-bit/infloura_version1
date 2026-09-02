@@ -40,6 +40,7 @@ class SecretsStartupValidatorTest {
     private TrendSparkAiProperties trendSparkAiProperties;
     private MeeraChatAiProperties meeraChatAiProperties;
     private AnalyzeSiteAiProperties analyzeSiteAiProperties;
+    private CreatorSuggestionAiProperties creatorSuggestionAiProperties;
 
     @BeforeEach
     void setUp() {
@@ -92,6 +93,8 @@ class SecretsStartupValidatorTest {
 
         analyzeSiteAiProperties = new AnalyzeSiteAiProperties();
         analyzeSiteAiProperties.setBaseUrl("https://ai.influora.internal");
+        creatorSuggestionAiProperties = new CreatorSuggestionAiProperties();
+        creatorSuggestionAiProperties.setBaseUrl("https://ai.influora.internal");
     }
 
     /** Defaults both refresh-cookie {@code secure} flags to {@code true} (the "everything is fine" state) — override via the 3-arg overload for the dedicated secure-flag tests. */
@@ -136,6 +139,7 @@ class SecretsStartupValidatorTest {
                         trendSparkAiProperties,
                         meeraChatAiProperties,
                         analyzeSiteAiProperties,
+                        creatorSuggestionAiProperties,
                         new InfluoraEnvironment(mockEnvironment));
         setField(validator, "env", env);
         setField(validator, "refreshCookieSecure", refreshCookieSecure);
@@ -453,6 +457,20 @@ class SecretsStartupValidatorTest {
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
         assertTrue(ex.getMessage().contains("influora.analyze-site-ai.base-url"));
+        assertTrue(ex.getMessage().contains("localhost"));
+    }
+
+    @Test
+    @DisplayName("validate: localhost creator-copilot-ai base-url fails closed in prod")
+    void testLocalhostCreatorCopilotAiUrlFailsClosedInProd() throws Exception {
+        // Same localhost default as its four siblings. Unlike them, a miss here degrades silently
+        // (CreatorNudgeService.callAiSafely falls back to template copy instead of erroring), so the
+        // boot-time check is the only signal a deploy would ever get.
+        creatorSuggestionAiProperties.setBaseUrl("http://localhost:8000");
+        SecretsStartupValidator validator = buildValidator("prod");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.creator-copilot-ai.base-url"));
         assertTrue(ex.getMessage().contains("localhost"));
     }
 

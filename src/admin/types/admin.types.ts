@@ -208,6 +208,9 @@ export interface Creator {
   tier: 'NANO' | 'MICRO' | 'MID' | 'MACRO';
   isSuspended: boolean;
   createdAt: string;
+  /** PHONE-0829 P3 — FLAG FOR CONFIRMATION, see the identical note on `CreatorSummary.phone`
+   *  above; same assumed shape, applies here too since `CreatorDetail extends Creator`. */
+  phone: string | null;
 }
 
 /**
@@ -230,6 +233,14 @@ export interface CreatorSummary {
   tier: 'NANO' | 'MICRO' | 'MID' | 'MACRO';
   isSuspended: boolean;
   createdAt: string;
+  /**
+   * PHONE-0829 P3 — FLAG FOR CONFIRMATION: Vikram's backend contract (parallel FRONTEND/BACKEND
+   * split, PHONE-0829) had not reported the exact `CreatorSummaryDto` field name at the time this
+   * was written. Assumed `phone: string | null`, normalized (no +91/spaces), matching the shape
+   * `CreatorProfileSelfResponse.phone` already uses in src/lib/api.ts. Every creator that existed
+   * before this feature will be null. Confirm against the real DTO before treating this as final.
+   */
+  phone: string | null;
 }
 
 export interface CreatorDetail extends Creator {

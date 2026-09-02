@@ -126,6 +126,7 @@ describe('BrandSettingsPage — Workspace Information (F-0249)', () => {
       industry: null,
       companySize: null,
       websiteUrl: 'www.realbrand.com',
+      description: null,
       logoUrl: null,
       verificationStatus: 'VERIFIED',
     });
@@ -138,6 +139,7 @@ describe('BrandSettingsPage — Workspace Information (F-0249)', () => {
       industry: null,
       companySize: null,
       websiteUrl: 'www.realbrand.com',
+      description: null,
       logoUrl: null,
       verificationStatus: 'VERIFIED',
     });
