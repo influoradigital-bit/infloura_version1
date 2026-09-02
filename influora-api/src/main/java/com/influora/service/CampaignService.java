@@ -148,6 +148,7 @@ public class CampaignService {
 
         validator.validateBudget(req.budget());
         validator.validateTimeline(req.timeline(), req.applicationDeadline());
+        validateMaxCollaborators(req.maxCollaborators());
 
         CampaignStatus status = req.status() != null ? req.status() : CampaignStatus.DRAFT;
         validator.validateStatusForWorkspace(status, workspace);
@@ -229,6 +230,7 @@ public class CampaignService {
         if (req.budget() != null) {
             validator.validateBudget(req.budget());
         }
+        validateMaxCollaborators(req.maxCollaborators());
         TimelineDto mergedTimeline = mergedTimeline(campaign, req);
         if (req.timeline() != null || req.applicationDeadline() != null) {
             validator.validateTimeline(
@@ -616,6 +618,35 @@ public class CampaignService {
                 && req.isPrivate() == null
                 && req.maxCollaborators() == null
                 && req.targetAudience() == null;
+    }
+
+    /**
+     * F-0400 (write-edge half) — {@code maxCollaborators} used to be accepted here, persisted, and
+     * echoed back with nothing anywhere reading it, so the cap was decorative. The count gate that
+     * makes it real now lives at the accept edge in {@code DealService} ({@code
+     * MAX_COLLABORATORS_REACHED}), which is where a creator actually joins the campaign — this
+     * service adds no collaborators and so enforces no count.
+     *
+     * <p>What this method closes is the other half: the value itself was never validated on either
+     * write DTO ({@code CampaignWriteRequest} / {@code CampaignPatchRequest} declare no positivity
+     * constraint), and the accept-edge gate has to treat a stored {@code 0} or negative as "no cap"
+     * — reading it literally would brick every accept on such a campaign. That meant a caller could
+     * silently disable the cap it had just asked for by writing {@code 0}. Rejecting a non-positive
+     * value at the only two paths that can write one keeps "a cap is stored" and "the cap is
+     * enforced" from diverging. Null still means "the brand set no cap", exactly as {@code
+     * budgetMax} nulls are treated, and the real client only ever sends 1..50 (a slider).
+     *
+     * <p>Deliberately not retroactive: campaigns already carrying a non-positive cap keep working
+     * (uncapped) rather than becoming un-patchable, since a PATCH that leaves the field null never
+     * reaches this check.
+     */
+    private static void validateMaxCollaborators(Integer maxCollaborators) {
+        if (maxCollaborators != null && maxCollaborators <= 0) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "maxCollaborators must be greater than 0",
+                    HttpStatus.BAD_REQUEST);
+        }
     }
 
     private static TimelineDto mergedTimeline(Campaign campaign, CampaignPatchRequest req) {

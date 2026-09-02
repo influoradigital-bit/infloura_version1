@@ -125,6 +125,20 @@ public class EscrowController {
                 escrowService.releaseByHoldId(principal, workspace.getId(), body.escrowHoldId()));
     }
 
+    /**
+     * [F-0416] DELIBERATELY HAS NO FRONTEND CALLER — do not delete it as dead code. The published
+     * Payment protection &amp; Refund Policy (src/content/legal/escrow-and-refund-policy.md §3) says
+     * funds move ONLY through release or a dispute-resolution outcome, with no on-demand refund, and
+     * the admin console parks direct escrow mutation for the same reason (api-contracts.ts, "Tier B
+     * parked: use the dispute-mediated flow"). The refund a brand can actually reach in product runs
+     * through {@code DisputeService.resolve} → {@code EscrowService.adminRefundForDispute}, not here.
+     *
+     * <p>This route remains the operator/back-office primitive for the cases that policy carves out
+     * (a cancelled campaign whose hold was never disputed). Wiring a brand-facing button to it is a
+     * product decision that would contradict the policy text above, so it needs a ruling, not a
+     * patch. Delegates to {@code EscrowService.refund}, which enforces OWNER/ADMIN, workspace
+     * ownership, FUNDED-only, the dispute-freeze guard, and idempotency.
+     */
     @PostMapping("/refund")
     public ApiResponse<EscrowStatusResponse> refund(
             @AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody EscrowRefundRequest body) {
